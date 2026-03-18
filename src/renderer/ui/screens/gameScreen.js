@@ -1,4 +1,4 @@
-import { ASSET_CATALOG, getCardImage, formatElement } from "../../utils/index.js";
+import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 let lastFlashedWarSignature = null;
@@ -126,17 +126,19 @@ function renderWarPileSummary(pileCards, cardImages, emphasize) {
 }
 
 function renderPlayedCard(label, card, options) {
+  const safeLabel = escapeHtml(label);
+
   if (options.faceDown) {
     return `
       <div class="played-slot is-facedown">
-        <p class="played-slot-label">${label}</p>
+        <p class="played-slot-label">${safeLabel}</p>
         <span class="card-art played-art card-art-facedown" style="background-image: url('${options.backImage ?? ASSET_CATALOG.cards.back}')"></span>
       </div>
     `;
   }
 
   if (!card) {
-    return `<div class="played-slot"><p class="played-slot-label">${label}: -</p></div>`;
+    return `<div class="played-slot"><p class="played-slot-label">${safeLabel}: -</p></div>`;
   }
 
   const classes = ["played-slot"];
@@ -146,15 +148,15 @@ function renderPlayedCard(label, card, options) {
 
   return `
     <div class="${classes.join(" ")}">
-      <p class="played-slot-label">${label}: ${formatElement(card)}</p>
+      <p class="played-slot-label">${safeLabel}: ${formatElement(card)}</p>
       <span class="card-art played-art" style="background-image: url('${getCardImage(card, options.variantMap)}')"></span>
     </div>
   `;
 }
 
 function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
-  const name = playerDisplay?.name ?? fallbackName;
-  const title = playerDisplay?.title ?? "Initiate";
+  const name = escapeHtml(playerDisplay?.name ?? fallbackName);
+  const title = escapeHtml(playerDisplay?.title ?? "Initiate");
   const avatar = playerDisplay?.avatar ?? ASSET_CATALOG.avatars.default_avatar;
   const titleIcon = playerDisplay?.titleIcon ?? null;
   const featuredBadge = playerDisplay?.featuredBadge ?? null;
@@ -214,11 +216,11 @@ function roundOutcomeLabel(vm, names) {
   }
 
   if (vm.lastRound.result === "p1") {
-    return `${names.p1} wins`;
+    return `${escapeHtml(names.p1)} wins`;
   }
 
   if (vm.lastRound.result === "p2") {
-    return `${names.p2} wins`;
+    return `${escapeHtml(names.p2)} wins`;
   }
 
   return "No effect";
@@ -316,9 +318,9 @@ export const gameScreen = {
       roundMessage = "Resolving clash...";
     }
 
-    const compactTurnLabel = context.hotseat?.turnLabel ?? "Player Turn";
-    const capturedLeftName = context.playerDisplay?.name ?? names.p1;
-    const capturedRightName = context.opponentDisplay?.name ?? names.p2;
+    const compactTurnLabel = escapeHtml(context.hotseat?.turnLabel ?? "Player Turn");
+    const capturedLeftName = escapeHtml(context.playerDisplay?.name ?? names.p1);
+    const capturedRightName = escapeHtml(context.opponentDisplay?.name ?? names.p2);
     const warStatus = vm.pileCount > 0 || vm.totalWarClashes > 0
       ? `WAR Pile: ${vm.pileCount} | Clashes: ${vm.totalWarClashes}`
       : "WAR Pile: 0 | Clashes: 0";

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { GameController, MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
+import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
 
 function createMinimalMatch(mode = "pve") {
   return {
@@ -1040,6 +1041,50 @@ test("gameController: local PvP WAR auto-resolves when p2 cannot continue", asyn
     assert.equal(controller.lastRound.result, "p1");
     assert.equal(controller.match.war.active, false);
     assert.equal(controller.match.currentPile.length, 0);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: local WAR exhaustion helper uses engine card requirement threshold", async () => {
+  const originalWindow = globalThis.window;
+
+  const controller = new GameController({
+    username: "LocalWarThreshold",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.LOCAL_PVP),
+      players: {
+        p1: {
+          hand: Array.from({ length: Math.max(0, WAR_REQUIRED_CARDS - 1) }, () => "fire"),
+          wonRounds: 0
+        },
+        p2: {
+          hand: Array.from({ length: WAR_REQUIRED_CARDS }, () => "earth"),
+          wonRounds: 0
+        }
+      },
+      war: { active: true, clashes: 1, pendingClashes: 1, pendingPileSizes: [2] },
+      currentPile: ["fire", "fire"],
+      history: [],
+      meta: { totalCards: Math.max(0, WAR_REQUIRED_CARDS - 1) + WAR_REQUIRED_CARDS + 2 }
+    };
+
+    const result = await controller.maybeAutoResolveLocalWarExhaustion();
+
+    assert.equal(result?.status, "round_resolved");
+    assert.equal(controller.match.war.active, false);
+    assert.equal(controller.lastRound.result, "p2");
   } finally {
     controller.stopTimer();
     controller.stopMatchClock();

@@ -1,5 +1,6 @@
 import {
   AI_DIFFICULTY,
+  WAR_REQUIRED_CARDS,
   chooseAiCardIndex,
   completeMatch,
   completeMatchByCardCount,
@@ -111,6 +112,10 @@ function getOpponentCardsCaptured(round) {
   }
 
   return Math.max(0, Math.floor(Number(round?.capturedCards ?? 0) / 2));
+}
+
+function hasRequiredWarCards(hand) {
+  return Array.isArray(hand) && hand.length >= WAR_REQUIRED_CARDS;
 }
 
 export class GameController {
@@ -422,8 +427,8 @@ export class GameController {
       return null;
     }
 
-    const p1CanContinue = this.match.players.p1.hand.length > 0;
-    const p2CanContinue = this.match.players.p2.hand.length > 0;
+    const p1CanContinue = hasRequiredWarCards(this.match.players.p1.hand);
+    const p2CanContinue = hasRequiredWarCards(this.match.players.p2.hand);
     if (p1CanContinue && p2CanContinue) {
       return null;
     }

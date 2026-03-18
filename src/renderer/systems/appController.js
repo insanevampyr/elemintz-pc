@@ -12,7 +12,7 @@ import {
   storeScreen
 } from "../ui/screens/index.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../utils/assets.js";
-import { getAssetPath } from "../utils/dom.js";
+import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
 import { COSMETIC_CATALOG, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
@@ -40,15 +40,6 @@ const TITLE_ICON_MAP = Object.freeze({
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function normalizeName(value, fallback) {

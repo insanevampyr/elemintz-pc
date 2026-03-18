@@ -1101,6 +1101,59 @@ test("ui: game screen uses provided variant card images", () => {
   assert.doesNotMatch(html, /hand-slot-name/);
 });
 
+test("ui: game screen escapes player-controlled names before inserting markup", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: {
+      name: `<Hero "One">`,
+      title: `Initiate & "Ready"`,
+      avatar: "assets/avatars/default.png"
+    },
+    opponentDisplay: {
+      name: `Villain's <Tag>`,
+      title: "Arena Rival",
+      avatar: "assets/avatars/default.png"
+    },
+    hotseat: {
+      enabled: true,
+      activePlayer: "p1",
+      turnLabel: `<Hero "One"> Turn`,
+      p1Name: `<Hero "One">`,
+      p2Name: `Villain's <Tag>`
+    },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    game: {
+      roundOutcome: { key: "player_win", label: "Player wins" },
+      roundResult: "Resolved.",
+      round: 3,
+      timerSeconds: 18,
+      totalMatchSeconds: 180,
+      canSelectCard: true,
+      mode: "local_pvp",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 2, p2: 1 },
+      lastRound: { result: "p1", p1Card: "fire", p2Card: "water" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /&lt;Hero &quot;One&quot;&gt;/);
+  assert.match(html, /Villain&#39;s &lt;Tag&gt;/);
+  assert.match(html, /Initiate &amp; &quot;Ready&quot;/);
+  assert.match(html, /&lt;Hero &quot;One&quot;&gt; Turn/);
+  assert.doesNotMatch(html, /<Hero "One">/);
+  assert.doesNotMatch(html, /Villain's <Tag>/);
+});
+
 test("ui: appController applies random PvE AI style from the global catalog", () => {
   const shown = [];
   const originalRandom = Math.random;
