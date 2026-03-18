@@ -1,6 +1,17 @@
-﻿node_modules/
+node_modules/
 dist/
 out/
 *.log
 EleMintz_PC_Codex_Build_Plan.zip
 docx_extract/
+OLD GPT data/
+Screenshots/
+Elemintz_Complete_AI_Developer_Handoff.docx
+Expansion Cosmetics.docx
+NEXT Features.docx
+.tmp-test
+.tmp-test*
+.tmp-test2
+.tmp-test2*
+elemintz_runlog
+elemintz_runlog*
