@@ -1,0 +1,6 @@
+﻿node_modules/
+dist/
+out/
+*.log
+EleMintz_PC_Codex_Build_Plan.zip
+docx_extract/

@@ -1,0 +1,50 @@
+[
+  {
+    "username": "TestUser123",
+    "title": "Initiate",
+    "wins": 0,
+    "losses": 0,
+    "warsEntered": 0,
+    "warsWon": 0,
+    "longestWar": 0,
+    "cardsCaptured": 0,
+    "cosmetics": {
+      "avatar": "default",
+      "cardBack": "default",
+      "badge": "none",
+      "background": "default"
+    }
+  },
+  {
+    "username": "NewUserFlowCheck",
+    "title": "Initiate",
+    "wins": 0,
+    "losses": 0,
+    "warsEntered": 0,
+    "warsWon": 0,
+    "longestWar": 0,
+    "cardsCaptured": 0,
+    "cosmetics": {
+      "avatar": "default",
+      "cardBack": "default",
+      "badge": "none",
+      "background": "default"
+    }
+  },
+  {
+    "username": "RuntimeCheckUser",
+    "title": "Initiate",
+    "wins": 0,
+    "losses": 0,
+    "warsEntered": 0,
+    "warsWon": 0,
+    "longestWar": 0,
+    "cardsCaptured": 0,
+    "cosmetics": {
+      "avatar": "default",
+      "cardBack": "default",
+      "badge": "none",
+      "background": "default"
+    }
+  }
+]

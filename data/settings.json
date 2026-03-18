@@ -1,0 +1,10 @@
+﻿{
+  "audio": {
+    "master": 0.8,
+    "music": 0.7,
+    "sfx": 0.9
+  },
+  "gameplay": {
+    "timerSeconds": 30
+  }
+}

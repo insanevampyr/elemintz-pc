@@ -1,0 +1,18 @@
+:root {
+  --bg-1: #041127;
+  --bg-2: #0b1f33;
+  --panel: #13293f;
+  --panel-border: #2f4e69;
+  --text: #ecf5ff;
+  --muted: #9db6cd;
+  --accent: #35d6a7;
+  --danger: #ea5f6d;
+  --title-glow: #6fd5ff;
+  --title-core: #dff4ff;
+  --section-glow: rgba(111, 213, 255, 0.35);
+  --overlay-dark: rgba(4, 13, 22, 0.62);
+  --screen-background-veil: rgba(5, 14, 22, 0.18);
+  --screen-panel-start: rgba(18, 42, 67, 0.58);
+  --screen-panel-end: rgba(15, 34, 55, 0.58);
+  --screen-panel-image-veil: rgba(5, 14, 22, 0.58);
+}
