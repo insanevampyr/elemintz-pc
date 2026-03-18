@@ -240,12 +240,12 @@ test("store: purchase deduction persists across restart-style reload", async () 
   assert.ok(afterRestart.catalog.avatar.find((item) => item.id === "fire_avatar_f")?.owned);
 });
 
-test("store: one-time test token grant does not reset spent tokens", async () => {
+test("store: username-specific test token grant is not applied through store access", async () => {
   const dataDir = await createTempDataDir();
   const stateA = new StateCoordinator({ dataDir });
 
   const first = await stateA.getStore("VampyrLee");
-  assert.equal(first.tokens, 10000);
+  assert.equal(first.tokens, 200);
 
   await stateA.buyStoreItem({
     username: "VampyrLee",
@@ -255,7 +255,7 @@ test("store: one-time test token grant does not reset spent tokens", async () =>
 
   const stateB = new StateCoordinator({ dataDir });
   const afterRestart = await stateB.getStore("VampyrLee");
-  assert.equal(afterRestart.tokens, 9850);
+  assert.equal(afterRestart.tokens, 50);
 });
 
 test("store: buying one element variant does not grant other element variants", async () => {

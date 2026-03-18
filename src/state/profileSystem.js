@@ -23,9 +23,6 @@ import { normalizeProfileStore } from "./storeSystem.js";
 import { normalizeProfileDailyChallenges } from "./dailyChallengesSystem.js";
 import { deriveLevelFromXp, normalizeProfileLevelRewards } from "./levelRewardsSystem.js";
 
-const TEST_TOKEN_GRANT_USERNAME = "VampyrLee";
-const TEST_TOKEN_GRANT_AMOUNT = 10000;
-
 function normalizeUsername(username) {
   const normalized = String(username ?? "").trim();
   return normalized.length > 0 ? normalized : "Player";
@@ -92,22 +89,6 @@ function snapshot(profile) {
     playerLevel: profile?.playerLevel ?? 1,
     achievements: Object.keys(profile?.achievements ?? {}).length
   };
-}
-
-function applyOneTimeTestTokenGrant(profile) {
-  if (profile.username !== TEST_TOKEN_GRANT_USERNAME) {
-    return profile;
-  }
-
-  if (profile.testTokenGrantApplied) {
-    return profile;
-  }
-
-  return normalizeProfile({
-    ...profile,
-    tokens: Math.max(Number(profile.tokens ?? 0), TEST_TOKEN_GRANT_AMOUNT),
-    testTokenGrantApplied: true
-  });
 }
 
 export class ProfileSystem {
@@ -181,20 +162,10 @@ export class ProfileSystem {
         const existing = profiles.find((profile) => profile.username === normalized);
 
         if (existing) {
-          const ensured = applyOneTimeTestTokenGrant(existing);
-
-          if (ensured !== existing) {
-            const nextProfiles = profiles.map((profile) =>
-              profile.username === normalized ? ensured : profile
-            );
-            await this.store.write(nextProfiles);
-            this.inMemoryProfiles = nextProfiles;
-          }
-
           console.info("[ProfileSystem] ensureProfile existing profile returned", {
             username: normalized
           });
-          return ensured;
+          return existing;
         }
 
         const createdSeed = {
@@ -202,12 +173,10 @@ export class ProfileSystem {
           username: normalized
         };
 
-        const created = applyOneTimeTestTokenGrant(
-          normalizeProfile({
-            ...createDefaultProfile(normalized),
-            ...createdSeed
-          })
-        );
+        const created = normalizeProfile({
+          ...createDefaultProfile(normalized),
+          ...createdSeed
+        });
 
         const nextProfiles = [...profiles, created];
 

@@ -907,16 +907,18 @@ test("state: persistence survives coordinator restart", async () => {
   assert.ok(profiles.some((item) => item.username === "RestartUser"));
 });
 
-test("state: VampyrLee receives 10000 tokens for local testing", async () => {
+test("state: username-specific test token grants are not applied at runtime", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
   const profile = await state.profiles.ensureProfile("VampyrLee");
-  assert.equal(profile.tokens, 10000);
+  assert.equal(profile.tokens, 200);
+  assert.equal(profile.testTokenGrantApplied, false);
 
   const reloaded = new StateCoordinator({ dataDir });
   const profileAfterRestart = await reloaded.profiles.getProfile("VampyrLee");
-  assert.equal(profileAfterRestart.tokens, 10000);
+  assert.equal(profileAfterRestart.tokens, 200);
+  assert.equal(profileAfterRestart.testTokenGrantApplied, false);
 });
 
 test("state: AliceEvermore token update persists correctly", async () => {
