@@ -1554,7 +1554,7 @@ test("ui: viewed profile mode hides cosmetic selectors and applies viewed backgr
 
   assert.doesNotMatch(html, /id="cosmetic-form"/);
   assert.match(html, /viewed-profile-panel/);
-  assert.match(html, /background-image: url\('(?:\.\.\/\.\.\/)?assets\/backgrounds\/windBattleArena\.png'\)/);
+  assert.match(html, /background-image: url\('(?:file:.*\/)?assets\/backgrounds\/windBattleArena\.png'\)/);
   assert.doesNotMatch(html, /Equipped Avatar:/);
   assert.doesNotMatch(html, /Equipped Title:/);
   assert.doesNotMatch(html, /Equipped Background:/);
@@ -1682,7 +1682,7 @@ test("ui: viewed profile panel falls back to default background and keeps owner 
 
   assert.match(html, /background-image: url\('assets\/backgrounds\/lava_throne_background\.png'\)/);
   assert.match(html, /viewed-profile-panel/);
-  assert.match(html, /background-image: url\('(?:\.\.\/\.\.\/)?assets\/EleMintzIcon\.png'\)/);
+  assert.match(html, /background-image: url\('(?:file:.*\/)?assets\/EleMintzIcon\.png'\)/);
 });
 
 test("ui: title reward renders icon and text on profile and game headers", () => {
@@ -1717,7 +1717,7 @@ test("ui: title reward renders icon and text on profile and game headers", () =>
 
   assert.match(profileHtml, /title-icon/);
   assert.match(profileHtml, /Flame Vanguard/);
-  assert.match(profileHtml, /\.\.\/\.\.\/assets\/titles\/title_flame_vanguard\.png/);
+  assert.match(profileHtml, /(?:file:.*\/)?assets\/titles\/title_flame_vanguard\.png/);
 
   const gameHtml = gameScreen.render({
     reducedMotion: true,
@@ -3768,7 +3768,7 @@ test("ui: profile header uses equipped title cosmetic image instead of fallback 
     }
   });
 
-  assert.match(html, /src="(?:\.\.\/\.\.\/)?assets\/titles\/title_apprentice\.png"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/titles\/title_apprentice\.png"/);
   assert.doesNotMatch(html, /src="assets\/badges\/firstFlame\.png" alt="Apprentice" class="title-icon"/);
 });
 

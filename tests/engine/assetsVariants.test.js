@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { getAssetPath } from "../../src/renderer/utils/dom.js";
 import { getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 
 test("assets: per-element variant selection affects only selected element", () => {
@@ -50,4 +51,11 @@ test("assets: default and founder card backs resolve to card_backs assets", () =
     getCardBackImage("supporter_card_back"),
     /card_backs\/founder_deluxe_card_back\.png$/
   );
+});
+
+test("assets: getAssetPath resolves assets from module location as a file URL", () => {
+  const resolved = getAssetPath("titles/title_apprentice.png");
+
+  assert.match(resolved, /^file:/);
+  assert.match(resolved, /assets\/titles\/title_apprentice\.png$/);
 });

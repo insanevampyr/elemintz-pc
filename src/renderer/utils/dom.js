@@ -12,8 +12,10 @@ export function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+const ASSET_BASE_URL = new URL("../../../assets/", import.meta.url);
+
 export function getAssetPath(relativePath) {
-  return `../../assets/${relativePath}`;
+  return new URL(String(relativePath ?? ""), ASSET_BASE_URL).toString();
 }
 
 export function byId(id) {
