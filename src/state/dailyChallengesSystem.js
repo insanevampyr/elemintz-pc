@@ -1,7 +1,10 @@
 import { buildXpBreakdown, deriveLevelFromXp, getLevelProgress, getXpThresholds } from "./levelRewardsSystem.js";
+import { grantChest } from "./chestSystem.js";
 
 const RESET_TIME_ZONE = "America/Chicago";
 const RESET_HOUR = 18;
+const DAILY_COMPLETION_CHEST_AMOUNT = 1;
+const WEEKLY_COMPLETION_CHEST_AMOUNT = 2;
 
 const WEEKDAY_INDEX = Object.freeze({
   Mon: 1,
@@ -440,7 +443,8 @@ function buildChallengeState(definitions, lastResetMs) {
     lastReset: safeIsoFromMs(lastResetMs),
     progress: buildProgressDefaults(),
     completed: buildBooleanMap(definitions, false),
-    rewarded: buildBooleanMap(definitions, false)
+    rewarded: buildBooleanMap(definitions, false),
+    completionChestGranted: false
   };
 }
 
@@ -458,7 +462,8 @@ function normalizeChallengeState(current, definitions, fallbackResetMs) {
     lastReset: safeIsoFromMs(toMs(current?.lastReset, fallbackResetMs)),
     progress,
     completed,
-    rewarded
+    rewarded,
+    completionChestGranted: Boolean(current?.completionChestGranted)
   };
 }
 
@@ -603,6 +608,10 @@ function applyChallengeProgress({ definitions, state, metrics }) {
   };
 }
 
+function areAllChallengesCompleted(definitions, state) {
+  return definitions.every((challenge) => Boolean(state?.completed?.[challenge.id]));
+}
+
 export function createDefaultDailyChallenges(nowMs = Date.now()) {
   return buildDefaultState(nowMs);
 }
@@ -631,6 +640,8 @@ export function applyDailyChallengesForMatch({
 
   let dailyRewards = [];
   let weeklyRewards = [];
+  let dailyChestDelta = 0;
+  let weeklyChestDelta = 0;
 
   const didWin = matchState.winner === perspective;
   const didDraw = matchState.winner === "draw";
@@ -698,11 +709,55 @@ export function applyDailyChallengesForMatch({
   const nextXp = previousXp + xpDelta;
   const nextLevel = deriveLevelFromXp(nextXp);
 
-  const nextProfile = {
+  let nextProfile = {
     ...profile,
     tokens: Math.max(0, Number(profile.tokens ?? 0) + tokenDelta),
     playerXP: nextXp,
     playerLevel: nextLevel,
+    dailyChallenges: {
+      daily: dailyState,
+      weekly: weeklyState
+    }
+  };
+
+  if (areAllChallengesCompleted(DAILY_CHALLENGE_DEFINITIONS, dailyState) && !dailyState.completionChestGranted) {
+    dailyState = {
+      ...dailyState,
+      completionChestGranted: true
+    };
+    nextProfile = grantChest(
+      {
+        ...nextProfile,
+        dailyChallenges: {
+          ...nextProfile.dailyChallenges,
+          daily: dailyState
+        }
+      },
+      { amount: DAILY_COMPLETION_CHEST_AMOUNT }
+    );
+    dailyChestDelta = DAILY_COMPLETION_CHEST_AMOUNT;
+  }
+
+  if (areAllChallengesCompleted(WEEKLY_CHALLENGE_DEFINITIONS, weeklyState) && !weeklyState.completionChestGranted) {
+    weeklyState = {
+      ...weeklyState,
+      completionChestGranted: true
+    };
+    nextProfile = grantChest(
+      {
+        ...nextProfile,
+        dailyChallenges: {
+          ...nextProfile.dailyChallenges,
+          weekly: weeklyState
+        }
+      },
+      { amount: WEEKLY_COMPLETION_CHEST_AMOUNT }
+    );
+    weeklyChestDelta = WEEKLY_COMPLETION_CHEST_AMOUNT;
+  }
+
+  nextProfile = {
+    ...nextProfile,
     dailyChallenges: {
       daily: dailyState,
       weekly: weeklyState
@@ -722,6 +777,8 @@ export function applyDailyChallengesForMatch({
     matchTokenDelta,
     challengeTokenDelta,
     challengeXpDelta,
+    dailyChestDelta,
+    weeklyChestDelta,
     xpDelta,
     xpBreakdown,
     levelBefore: deriveLevelFromXp(previousXp),

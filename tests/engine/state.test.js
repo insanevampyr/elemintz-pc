@@ -25,6 +25,31 @@ async function createTempDataDir() {
   return root;
 }
 
+function constantRandom(value) {
+  return () => value;
+}
+
+function createRewardHookMatch({ winner = "p1", endReason = null } = {}) {
+  return {
+    status: "completed",
+    endReason,
+    winner,
+    mode: "pve",
+    round: 3,
+    history: [
+      { round: 1, result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 1, capturedOpponentCards: 1 },
+      { round: 2, result: "p1", p1Card: "water", p2Card: "fire", warClashes: 1, capturedOpponentCards: 0 },
+      { round: 3, result: "p1", p1Card: "earth", p2Card: "wind", warClashes: 5, capturedOpponentCards: 23 },
+      { round: 4, result: "p1", p1Card: "wind", p2Card: "water", warClashes: 0, capturedOpponentCards: 0 }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: { totalCards: 16 }
+  };
+}
+
 test("state: records completed match into profile and saves", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -1096,6 +1121,122 @@ test("state: daily challenges progress and rewards are granted once per day on c
   assert.ok(!secondRewardIds.includes("daily_win_1_war"));
   assert.ok(!secondRewardIds.includes("daily_use_all_4_elements"));
   assert.ok(afterSecond.tokens >= afterFirst.tokens);
+});
+
+test("state: completing all daily challenges grants 1 basic chest once per daily reset window", async () => {
+  const dataDir = await createTempDataDir();
+  const nowMs = Date.parse("2026-03-18T02:00:00.000Z");
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.5)
+  });
+
+  const seededChallenges = createDefaultDailyChallenges(nowMs);
+  seededChallenges.daily.progress = {
+    ...seededChallenges.daily.progress,
+    matchesPlayed: 4,
+    matchesWon: 1,
+    warsWon: 1,
+    cardsCaptured: 23,
+    usedAllElementsInMatch: 0,
+    triggeredTwoWarsInMatch: 0
+  };
+
+  await state.profiles.updateProfile("DailyChestUser", (current) => ({
+    ...current,
+    dailyChallenges: seededChallenges
+  }));
+
+  const first = await state.recordMatchResult({
+    username: "DailyChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1" })
+  });
+  const second = await state.recordMatchResult({
+    username: "DailyChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1" })
+  });
+
+  assert.equal(first.profile.chests.basic, 1);
+  assert.equal(first.profile.dailyChallenges.daily.completionChestGranted, true);
+  assert.equal(second.profile.chests.basic, 1);
+  assert.equal(second.profile.dailyChallenges.daily.completionChestGranted, true);
+});
+
+test("state: completing all weekly challenges grants 2 basic chests once per weekly reset window", async () => {
+  const dataDir = await createTempDataDir();
+  const nowMs = Date.parse("2026-03-18T02:00:00.000Z");
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.5)
+  });
+
+  const seededChallenges = createDefaultDailyChallenges(nowMs);
+  seededChallenges.weekly.progress = {
+    ...seededChallenges.weekly.progress,
+    matchesPlayed: 14,
+    matchesWon: 19,
+    warsWon: 14,
+    cardsCaptured: 63,
+    usedAllElementsInMatch: 9,
+    reachedWinStreak3: 0,
+    survivedLongestWar5: 0
+  };
+
+  await state.profiles.updateProfile("WeeklyChestUser", (current) => ({
+    ...current,
+    winStreak: 3,
+    dailyChallenges: seededChallenges
+  }));
+
+  const first = await state.recordMatchResult({
+    username: "WeeklyChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1" })
+  });
+  const second = await state.recordMatchResult({
+    username: "WeeklyChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1" })
+  });
+
+  assert.equal(first.profile.chests.basic, 2);
+  assert.equal(first.profile.dailyChallenges.weekly.completionChestGranted, true);
+  assert.equal(second.profile.chests.basic, 2);
+  assert.equal(second.profile.dailyChallenges.weekly.completionChestGranted, true);
+});
+
+test("state: match win chest chance can grant one basic chest", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.05)
+  });
+
+  const result = await state.recordMatchResult({
+    username: "WinChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1" })
+  });
+
+  assert.equal(result.profile.chests.basic, 1);
+});
+
+test("state: match loss chest chance can grant one basic chest", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.01)
+  });
+
+  const result = await state.recordMatchResult({
+    username: "LossChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p2" })
+  });
+
+  assert.equal(result.profile.chests.basic, 1);
 });
 
 test("state: quit forfeits do not grant daily challenge progress", async () => {

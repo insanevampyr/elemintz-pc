@@ -29,6 +29,8 @@ import { applyLevelRewardsForLevelChange, getLevelProgress } from "./levelReward
 
 const DAILY_LOGIN_TOKENS = 5;
 const DAILY_LOGIN_XP = 2;
+const MATCH_WIN_CHEST_CHANCE = 0.1;
+const MATCH_LOSS_CHEST_CHANCE = 0.02;
 
 function profilesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -219,6 +221,18 @@ export class StateCoordinator {
       toLevel: challengeResult.levelAfter
     });
     workingProfile = levelRewardResult.profile;
+
+    const didWin = matchState.winner === perspective;
+    const didLose = matchState.winner && matchState.winner !== "draw" && matchState.winner !== perspective;
+    const matchChestChance = didWin
+      ? MATCH_WIN_CHEST_CHANCE
+      : didLose
+        ? MATCH_LOSS_CHEST_CHANCE
+        : 0;
+
+    if (matchChestChance > 0 && this.random() < matchChestChance) {
+      workingProfile = grantChest(workingProfile, { amount: 1 });
+    }
 
     let unlockEvents = [];
     let grantedRewards = [];
