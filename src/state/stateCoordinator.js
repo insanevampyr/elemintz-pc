@@ -19,6 +19,7 @@ import {
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
 import { buyStoreItem, getStoreViewForProfile, grantSupporterPass } from "./storeSystem.js";
+import { grantChest, openChest } from "./chestSystem.js";
 import {
   applyDailyChallengesForMatch,
   getDailyChallengesView,
@@ -75,6 +76,7 @@ export class StateCoordinator {
     this.profiles = new ProfileSystem(options);
     this.saves = new SaveSystem(options);
     this.settings = new SettingsService(options);
+    this.random = typeof options.random === "function" ? options.random : Math.random;
   }
 
   buildCosmeticsView(profile) {
@@ -379,6 +381,39 @@ export class StateCoordinator {
       profile,
       granted: supportResult?.granted ?? [],
       store: getStoreViewForProfile(profile)
+    };
+  }
+
+  async grantChest({ username, chestType = "basic", amount = 1 }) {
+    const profile = await this.profiles.updateProfile(username, (current) =>
+      grantChest(current, { chestType, amount })
+    );
+
+    return {
+      profile,
+      chests: profile.chests,
+      granted: {
+        chestType,
+        amount
+      }
+    };
+  }
+
+  async openChest({ username, chestType = "basic" }) {
+    let openResult = null;
+
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      openResult = openChest(current, { chestType, random: this.random });
+      return openResult.profile;
+    });
+
+    return {
+      profile,
+      chests: profile.chests,
+      chestType: openResult?.chestType ?? chestType,
+      consumed: openResult?.consumed ?? 0,
+      remaining: openResult?.remaining ?? 0,
+      rewards: openResult?.rewards ?? { xp: 0, tokens: 0, cosmetic: null }
     };
   }
 

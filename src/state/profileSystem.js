@@ -14,6 +14,7 @@ import {
   getCosmeticCatalogForProfile,
   normalizeProfileCosmetics
 } from "./cosmeticSystem.js";
+import { normalizeProfileChests } from "./chestSystem.js";
 import {
   applyMatchStatsToProfile,
   createDefaultProfile,
@@ -50,11 +51,13 @@ async function checkDirectoryWritable(dirPath) {
 function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   let normalized = normalizeProfileDailyChallenges(
     normalizeProfileLevelRewards(
-      normalizeProfileStore(
-        normalizeProfileCosmetics({
-          ...normalizeProfileModeStats(profile),
-          achievements: normalizeAchievementProgressMap(profile?.achievements)
-        })
+      normalizeProfileChests(
+        normalizeProfileStore(
+          normalizeProfileCosmetics({
+            ...normalizeProfileModeStats(profile),
+            achievements: normalizeAchievementProgressMap(profile?.achievements)
+          })
+        )
       )
     )
   );

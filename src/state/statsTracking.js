@@ -1,4 +1,5 @@
 import { ACHIEVEMENT_DEFINITIONS } from "./achievementSystem.js";
+import { createDefaultChestState } from "./chestSystem.js";
 import { createDefaultCosmeticsState } from "./cosmeticSystem.js";
 import { createDefaultEconomyState } from "./storeSystem.js";
 import { createDefaultDailyChallenges } from "./dailyChallengesSystem.js";
@@ -126,6 +127,7 @@ export function createDefaultProfile(username) {
     achievements: {},
     ...createDefaultCosmeticsState(),
     ...createDefaultEconomyState(),
+    ...createDefaultChestState(),
     dailyChallenges: createDefaultDailyChallenges(),
     achievementCatalogVersion: ACHIEVEMENT_DEFINITIONS.length,
     levelRewardsClaimed: {}
