@@ -597,6 +597,16 @@ export class AppController {
     return Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
   }
 
+  emitChestOpenToast(result) {
+    if (!result?.rewards) {
+      return;
+    }
+
+    this.toastManager.showChestOpenReward?.({
+      rewards: result.rewards
+    });
+  }
+
   async claimDailyLoginRewardFor(username, { showToasts = false } = {}) {
     if (!username || !globalThis.window?.elemintz?.state?.claimDailyLoginReward) {
       console.info("[DailyLogin][Renderer] claim unavailable", {
@@ -1761,6 +1771,23 @@ export class AppController {
       searchResults,
       viewedProfile,
       actions: {
+        openBasicChest: async () => {
+          try {
+            const result = await window.elemintz.state.openChest({
+              username: this.username,
+              chestType: "basic"
+            });
+            this.profile = result.profile ?? this.profile;
+            this.emitChestOpenToast(result);
+            await this.showProfile();
+          } catch (error) {
+            this.modalManager.show({
+              title: "Chest Unavailable",
+              body: String(error?.message ?? "Unable to open Basic Chest."),
+              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+            });
+          }
+        },
         equip: async (type, cosmeticId) => {
           const result = await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
           this.profile = result.profile;

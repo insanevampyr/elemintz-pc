@@ -115,6 +115,30 @@ function renderXpProgress(profile) {
     </section>
   `;
 }
+
+function renderChestPanel(profile) {
+  const basicChestCount = Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
+  const chestIcon = getAssetPath("icons/chest_basic.png");
+
+  return `
+    <section class="stack-sm chest-panel">
+      <h3 class="section-title">Basic Chests</h3>
+      <div class="player-header">
+        <img class="player-avatar" src="${chestIcon}" alt="Basic Chest" />
+        <div>
+          <p>Basic Chests: <strong>${basicChestCount}</strong></p>
+          <button
+            id="open-basic-chest-btn"
+            class="btn"
+            ${basicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+          >
+            Open Basic Chest
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+}
 function renderReadOnlyProfile(viewedProfile) {
   if (!viewedProfile) {
     return "";
@@ -217,6 +241,7 @@ export const profileScreen = {
           <p>Tokens: <strong>${profile.tokens ?? 0}</strong></p>
           <p>Founder / Supporter: <strong>${profile.supporterPass ? "Active" : "Not Active"}</strong></p>
           ${renderXpProgress(profile)}
+          ${renderChestPanel(profile)}
 
           <div class="grid two-col">
             <p>Wins: ${profile.wins}</p>
@@ -270,6 +295,10 @@ export const profileScreen = {
   },
   bind(context) {
     document.getElementById("profile-back-btn").addEventListener("click", context.actions.back);
+    const openBasicChestButton = document.getElementById("open-basic-chest-btn");
+    if (openBasicChestButton && context.actions.openBasicChest) {
+      openBasicChestButton.addEventListener("click", context.actions.openBasicChest);
+    }
 
     const searchForm = document.getElementById("profile-search-form");
     searchForm.addEventListener("submit", async (event) => {

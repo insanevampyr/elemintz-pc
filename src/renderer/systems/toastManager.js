@@ -136,6 +136,36 @@ export class ToastManager {
     });
   }
 
+  showChestOpenReward({ rewards = {} } = {}) {
+    const xpAmount = Math.max(0, Number(rewards?.xp) || 0);
+    const tokenAmount = Math.max(0, Number(rewards?.tokens) || 0);
+    const cosmeticName = String(rewards?.cosmetic?.name ?? "").trim();
+
+    let heading = "";
+    if (xpAmount > 0) {
+      heading = `+${xpAmount} XP`;
+    } else if (tokenAmount > 0) {
+      heading = `+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}`;
+    } else if (cosmeticName) {
+      heading = `New Common Cosmetic: ${cosmeticName}`;
+    }
+
+    if (!heading) {
+      return;
+    }
+
+    this.enqueueToast({
+      className: "reward-toast chest-open-toast",
+      durationMs: 2200,
+      html: `
+        <div class="reward-toast-icon">\uD83E\uDDF0</div>
+        <div>
+          <h4>${heading}</h4>
+        </div>
+      `
+    });
+  }
+
   showXpBreakdown({ lines = [], total = 0, label = "XP Summary" }) {
     const filtered = Array.isArray(lines) ? lines.filter((line) => Number(line?.amount ?? 0) > 0) : [];
     if (!filtered.length || Number(total ?? 0) <= 0) {

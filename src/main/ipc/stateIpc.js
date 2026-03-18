@@ -54,6 +54,10 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
     coordinator.grantSupporterPass(username)
   );
 
+  ipcMain.handle("state:openChest", async (_event, payload) =>
+    coordinator.openChest(payload)
+  );
+
   ipcMain.handle("state:getCosmetics", async (_event, username) =>
     coordinator.getCosmetics(username)
   );

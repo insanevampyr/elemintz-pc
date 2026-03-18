@@ -1185,6 +1185,104 @@ test("appController: reward toasts are labeled with receiving player", () => {
   assert.equal(levelCalls[0].playerName, "Alice");
 });
 
+test("appController: opening a basic chest from profile uses state path, refreshes profile, and emits reward toast", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const chestOpenCalls = [];
+  const chestToastCalls = [];
+
+  const initialProfile = {
+    username: "ChestUser",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 0,
+    playerXP: 0,
+    playerLevel: 1,
+    supporterPass: false,
+    chests: { basic: 1 },
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+  };
+  const openedProfile = {
+    ...initialProfile,
+    playerXP: 5,
+    chests: { basic: 0 }
+  };
+  let profileReads = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {
+      showChestOpenReward: (payload) => chestToastCalls.push(payload)
+    }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => {
+            profileReads += 1;
+            return profileReads === 1 ? initialProfile : openedProfile;
+          },
+          getCosmetics: async () => ({
+            equipped: initialProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
+          getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+          listProfiles: async () => [],
+          openChest: async (payload) => {
+            chestOpenCalls.push(payload);
+            return {
+              profile: openedProfile,
+              chestType: "basic",
+              consumed: 1,
+              remaining: 0,
+              rewards: { xp: 5, tokens: 0, cosmetic: null }
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "ChestUser";
+
+    await app.showProfile();
+    assert.equal(shownScreens.at(-1).context.profile.chests.basic, 1);
+
+    await shownScreens.at(-1).context.actions.openBasicChest();
+
+    assert.deepEqual(chestOpenCalls, [{ username: "ChestUser", chestType: "basic" }]);
+    assert.equal(chestToastCalls.length, 1);
+    assert.deepEqual(chestToastCalls[0], {
+      rewards: { xp: 5, tokens: 0, cosmetic: null }
+    });
+    assert.equal(shownScreens.at(-1).name, "profile");
+    assert.equal(shownScreens.at(-1).context.profile.chests.basic, 0);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: summary and turn flow update only after resolved hotseat round", async () => {
   const originalWindow = globalThis.window;
   const originalAudio = globalThis.Audio;

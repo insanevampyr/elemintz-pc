@@ -199,4 +199,39 @@ test("toast: chest grants render singular and plural labels", () => {
   globalThis.setTimeout = originalSetTimeout;
 });
 
+test("toast: chest open rewards render xp, tokens, and cosmetic messages", () => {
+  const appended = [];
+  const root = {
+    appendChild(node) {
+      appended.push(node);
+    }
+  };
+
+  const originalDocument = globalThis.document;
+  const originalRaf = globalThis.requestAnimationFrame;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  globalThis.document = {
+    createElement: () => makeFakeElement()
+  };
+  globalThis.requestAnimationFrame = (callback) => callback();
+  globalThis.setTimeout = (callback) => { callback(); return 0; };
+
+  const manager = new ToastManager(root);
+  manager.showChestOpenReward({ rewards: { xp: 5, tokens: 0, cosmetic: null } });
+  manager.showChestOpenReward({ rewards: { xp: 0, tokens: 10, cosmetic: null } });
+  manager.showChestOpenReward({
+    rewards: { xp: 0, tokens: 0, cosmetic: { id: "badge_ember", name: "Ember Crest" } }
+  });
+
+  assert.equal(appended.length, 3);
+  assert.match(appended[0].innerHTML, /\+5 XP/);
+  assert.match(appended[1].innerHTML, /\+10 Tokens/);
+  assert.match(appended[2].innerHTML, /New Common Cosmetic: Ember Crest/);
+
+  globalThis.document = originalDocument;
+  globalThis.requestAnimationFrame = originalRaf;
+  globalThis.setTimeout = originalSetTimeout;
+});
+
 

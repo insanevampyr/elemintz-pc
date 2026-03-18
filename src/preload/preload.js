@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("elemintz", {
     getStore: (username) => ipcRenderer.invoke("state:getStore", username),
     buyStoreItem: (payload) => ipcRenderer.invoke("state:buyStoreItem", payload),
     grantSupporterPass: (username) => ipcRenderer.invoke("state:grantSupporterPass", username),
+    openChest: (payload) => ipcRenderer.invoke("state:openChest", payload),
     equipCosmetic: (payload) => ipcRenderer.invoke("state:equipCosmetic", payload),
     updateCosmeticPreferences: (payload) => ipcRenderer.invoke("state:updateCosmeticPreferences", payload),
     saveCosmeticLoadout: (payload) => ipcRenderer.invoke("state:saveCosmeticLoadout", payload),
