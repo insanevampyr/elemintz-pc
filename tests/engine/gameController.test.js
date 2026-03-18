@@ -1136,6 +1136,7 @@ test("gameController: local PvP WAR draw auto-resolves when both players run out
 test("appController: reward toasts are labeled with receiving player", () => {
   const achievementCalls = [];
   const tokenCalls = [];
+  const chestCalls = [];
   const xpCalls = [];
   const levelCalls = [];
 
@@ -1145,6 +1146,7 @@ test("appController: reward toasts are labeled with receiving player", () => {
     toastManager: {
       showAchievement: (achievement, options) => achievementCalls.push({ achievement, options }),
       showTokenReward: (payload) => tokenCalls.push(payload),
+      showChestGrant: (payload) => chestCalls.push(payload),
       showXpBreakdown: (payload) => xpCalls.push(payload),
       showLevelUp: (payload) => levelCalls.push(payload)
     }
@@ -1152,7 +1154,7 @@ test("appController: reward toasts are labeled with receiving player", () => {
 
   app.emitRewardToastsForResult(
     {
-      profile: { username: "Alice" },
+      profile: { username: "Alice", chests: { basic: 3 } },
       unlockedAchievements: [
         { id: "first_flame", name: "First Flame", description: "Win first match." }
       ],
@@ -1165,7 +1167,8 @@ test("appController: reward toasts are labeled with receiving player", () => {
       levelAfter: 2,
       levelRewards: [{ id: "lvl2_tokens", name: "+50 Tokens" }]
     },
-    "Player 1"
+    "Player 1",
+    { username: "Alice", chests: { basic: 1 } }
   );
 
   assert.equal(achievementCalls.length, 1);
@@ -1173,6 +1176,9 @@ test("appController: reward toasts are labeled with receiving player", () => {
   assert.equal(tokenCalls.length, 1);
   assert.equal(tokenCalls[0].label, "Alice reward payout");
   assert.equal(tokenCalls[0].amount, 51);
+  assert.equal(chestCalls.length, 1);
+  assert.equal(chestCalls[0].amount, 2);
+  assert.equal(chestCalls[0].chestLabel, "Basic Chest");
   assert.equal(xpCalls.length, 1);
   assert.equal(xpCalls[0].label, "Alice XP");
   assert.equal(levelCalls.length, 1);

@@ -168,4 +168,35 @@ test("toast: reward presentation can show both token and XP lines with player la
   globalThis.setTimeout = originalSetTimeout;
 });
 
+test("toast: chest grants render singular and plural labels", () => {
+  const appended = [];
+  const root = {
+    appendChild(node) {
+      appended.push(node);
+    }
+  };
+
+  const originalDocument = globalThis.document;
+  const originalRaf = globalThis.requestAnimationFrame;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  globalThis.document = {
+    createElement: () => makeFakeElement()
+  };
+  globalThis.requestAnimationFrame = (callback) => callback();
+  globalThis.setTimeout = (callback) => { callback(); return 0; };
+
+  const manager = new ToastManager(root);
+  manager.showChestGrant({ amount: 1, chestLabel: "Basic Chest" });
+  manager.showChestGrant({ amount: 2, chestLabel: "Basic Chest" });
+
+  assert.equal(appended.length, 2);
+  assert.match(appended[0].innerHTML, /\+1 Basic Chest/);
+  assert.match(appended[1].innerHTML, /\+2 Basic Chests/);
+
+  globalThis.document = originalDocument;
+  globalThis.requestAnimationFrame = originalRaf;
+  globalThis.setTimeout = originalSetTimeout;
+});
+
 

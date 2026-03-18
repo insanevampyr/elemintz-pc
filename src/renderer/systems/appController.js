@@ -593,6 +593,10 @@ export class AppController {
     return normalizeName(result?.profile?.username, fallbackName);
   }
 
+  getBasicChestCount(profile) {
+    return Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
+  }
+
   async claimDailyLoginRewardFor(username, { showToasts = false } = {}) {
     if (!username || !globalThis.window?.elemintz?.state?.claimDailyLoginReward) {
       console.info("[DailyLogin][Renderer] claim unavailable", {
@@ -679,7 +683,7 @@ export class AppController {
     return reward;
   }
 
-  emitRewardToastsForResult(result, fallbackName) {
+  emitRewardToastsForResult(result, fallbackName, previousProfile = null) {
     if (!result) {
       return;
     }
@@ -718,6 +722,17 @@ export class AppController {
       this.toastManager.showTokenReward?.({
         amount: totalTokens,
         label: `${playerName} reward payout`
+      });
+    }
+
+    const chestDelta = Math.max(
+      0,
+      this.getBasicChestCount(result.profile) - this.getBasicChestCount(previousProfile)
+    );
+    if (chestDelta > 0) {
+      this.toastManager.showChestGrant?.({
+        amount: chestDelta,
+        chestLabel: "Basic Chest"
       });
     }
 
@@ -1206,6 +1221,13 @@ export class AppController {
       },
       onMatchComplete: async ({ match, persisted }) => {
         this.clearPassTimer();
+        const previousPveProfile = this.profile ? { ...this.profile } : null;
+        const previousLocalProfiles = this.localProfiles
+          ? {
+              p1: this.localProfiles.p1 ? { ...this.localProfiles.p1 } : null,
+              p2: this.localProfiles.p2 ? { ...this.localProfiles.p2 } : null
+            }
+          : null;
 
         let finalPersisted = persisted;
         if (mode === MATCH_MODE.LOCAL_PVP) {
@@ -1227,10 +1249,10 @@ export class AppController {
 
         const names = this.getLocalNames();
         if (mode === MATCH_MODE.LOCAL_PVP) {
-          this.emitRewardToastsForResult(finalPersisted?.p1, names.p1);
-          this.emitRewardToastsForResult(finalPersisted?.p2, names.p2);
+          this.emitRewardToastsForResult(finalPersisted?.p1, names.p1, previousLocalProfiles?.p1);
+          this.emitRewardToastsForResult(finalPersisted?.p2, names.p2, previousLocalProfiles?.p2);
         } else {
-          this.emitRewardToastsForResult(finalPersisted, this.username);
+          this.emitRewardToastsForResult(finalPersisted, this.username, previousPveProfile);
         }
         const modalPayload = this.buildMatchCompleteModalPayload(mode, match, finalPersisted);
         if (this.roundPresentation.busy || this.screenFlow === "pass") {

@@ -118,6 +118,24 @@ export class ToastManager {
     });
   }
 
+  showChestGrant({ amount = 0, chestLabel = "Basic Chest" } = {}) {
+    const chestAmount = Math.max(0, Number(amount) || 0);
+    if (chestAmount <= 0) {
+      return;
+    }
+
+    this.enqueueToast({
+      className: "reward-toast chest-toast",
+      durationMs: 2200,
+      html: `
+        <div class="reward-toast-icon">\uD83E\uDDF0</div>
+        <div>
+          <h4>+${chestAmount} ${chestLabel}${chestAmount === 1 ? "" : "s"}</h4>
+        </div>
+      `
+    });
+  }
+
   showXpBreakdown({ lines = [], total = 0, label = "XP Summary" }) {
     const filtered = Array.isArray(lines) ? lines.filter((line) => Number(line?.amount ?? 0) > 0) : [];
     if (!filtered.length || Number(total ?? 0) <= 0) {
