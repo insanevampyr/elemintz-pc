@@ -75,6 +75,9 @@ export class AppController {
     this.deferPveOutcomeSound = false;
     this.deferredPveRoundSound = null;
     this.pveOpponentStyle = null;
+    this.profileChestVisualState = {
+      basicOpen: false
+    };
     this.storeViewState = this.createDefaultStoreViewState();
     this.roundPresentation = {
       phase: "idle",
@@ -1767,20 +1770,41 @@ export class AppController {
         : null,
       cosmetics,
       backgroundImage: this.getBackgroundFromProfile(this.profile),
+      basicChestVisualState: this.profileChestVisualState,
       searchQuery: this.profileSearchQuery,
       searchResults,
       viewedProfile,
       actions: {
         openBasicChest: async () => {
+          if (this.getBasicChestCount(this.profile) <= 0) {
+            return;
+          }
+
           try {
+            this.profileChestVisualState = {
+              ...this.profileChestVisualState,
+              basicOpen: true
+            };
+            await this.showProfile();
+            await delay(400);
+
             const result = await window.elemintz.state.openChest({
               username: this.username,
               chestType: "basic"
             });
             this.profile = result.profile ?? this.profile;
             this.emitChestOpenToast(result);
+            this.profileChestVisualState = {
+              ...this.profileChestVisualState,
+              basicOpen: false
+            };
             await this.showProfile();
           } catch (error) {
+            this.profileChestVisualState = {
+              ...this.profileChestVisualState,
+              basicOpen: false
+            };
+            await this.showProfile();
             this.modalManager.show({
               title: "Chest Unavailable",
               body: String(error?.message ?? "Unable to open Basic Chest."),

@@ -3795,6 +3795,7 @@ test("ui: profile screen shows basic chest count and disables open button when e
       equipped: { avatar: "default_avatar", cardBack: "default_card_back", background: "default_background", elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" }, badge: "none", title: "Initiate" },
       catalog: { avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }], cardBack: [{ id: "default_card_back", name: "Default", owned: true }], background: [{ id: "default_background", name: "Default", owned: true }], elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }], badge: [{ id: "none", name: "No Badge", owned: true }], title: [{ id: "Initiate", name: "Initiate", owned: true }] }
     },
+    basicChestVisualState: { basicOpen: false },
     titleIcon: null,
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
@@ -3839,6 +3840,7 @@ test("ui: profile screen enables open chest button when player has a basic chest
       equipped: { avatar: "default_avatar", cardBack: "default_card_back", background: "default_background", elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" }, badge: "none", title: "Initiate" },
       catalog: { avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }], cardBack: [{ id: "default_card_back", name: "Default", owned: true }], background: [{ id: "default_background", name: "Default", owned: true }], elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }], badge: [{ id: "none", name: "No Badge", owned: true }], title: [{ id: "Initiate", name: "Initiate", owned: true }] }
     },
+    basicChestVisualState: { basicOpen: false },
     titleIcon: null,
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
@@ -3855,6 +3857,49 @@ test("ui: profile screen enables open chest button when player has a basic chest
 
   assert.match(html, /Basic Chests: <strong>2<\/strong>/);
   assert.doesNotMatch(html, /disabled aria-disabled="true"/);
+});
+
+test("ui: profile screen swaps to the open chest image when the local visual state is active", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "ChestOwner",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      chests: { basic: 1 },
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: { avatar: "default_avatar", cardBack: "default_card_back", background: "default_background", elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" }, badge: "none", title: "Initiate" },
+      catalog: { avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }], cardBack: [{ id: "default_card_back", name: "Default", owned: true }], background: [{ id: "default_background", name: "Default", owned: true }], elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }], badge: [{ id: "none", name: "No Badge", owned: true }], title: [{ id: "Initiate", name: "Initiate", owned: true }] }
+    },
+    basicChestVisualState: { basicOpen: true },
+    titleIcon: null,
+    backgroundImage: "assets/EleMintzIcon.png",
+    searchQuery: "",
+    searchResults: [],
+    viewedProfile: null,
+    actions: {
+      openBasicChest: () => {},
+      searchProfiles: () => {},
+      viewProfile: () => {},
+      clearViewed: () => {},
+      back: () => {}
+    }
+  });
+
+  assert.match(html, /data-basic-chest-image="true"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/chest_basic_open\.png"/);
+  assert.doesNotMatch(html, /src="(?:file:.*\/)?assets\/icons\/chest_basic\.png" alt="Basic Chest" data-basic-chest-image="true"/);
 });
 
 test("ui: profile unlocked achievements render comeback_win badge once earned", () => {

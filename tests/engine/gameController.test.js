@@ -1185,8 +1185,9 @@ test("appController: reward toasts are labeled with receiving player", () => {
   assert.equal(levelCalls[0].playerName, "Alice");
 });
 
-test("appController: opening a basic chest from profile uses state path, refreshes profile, and emits reward toast", async () => {
+test("appController: opening a basic chest from profile shows the fake open visual, then refreshes and emits reward toast", async () => {
   const originalWindow = globalThis.window;
+  const originalSetTimeout = globalThis.setTimeout;
   const shownScreens = [];
   const chestOpenCalls = [];
   const chestToastCalls = [];
@@ -1230,6 +1231,10 @@ test("appController: opening a basic chest from profile uses state path, refresh
   });
 
   try {
+    globalThis.setTimeout = (callback) => {
+      callback();
+      return 0;
+    };
     globalThis.window = {
       elemintz: {
         state: {
@@ -1268,6 +1273,7 @@ test("appController: opening a basic chest from profile uses state path, refresh
 
     await app.showProfile();
     assert.equal(shownScreens.at(-1).context.profile.chests.basic, 1);
+    assert.equal(shownScreens.at(-1).context.basicChestVisualState.basicOpen, false);
 
     await shownScreens.at(-1).context.actions.openBasicChest();
 
@@ -1276,8 +1282,88 @@ test("appController: opening a basic chest from profile uses state path, refresh
     assert.deepEqual(chestToastCalls[0], {
       rewards: { xp: 5, tokens: 0, cosmetic: null }
     });
+    assert.equal(shownScreens.at(-2).context.basicChestVisualState.basicOpen, true);
     assert.equal(shownScreens.at(-1).name, "profile");
+    assert.equal(shownScreens.at(-1).context.basicChestVisualState.basicOpen, false);
     assert.equal(shownScreens.at(-1).context.profile.chests.basic, 0);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test("appController: opening a basic chest is a no-op when the profile has zero chests", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const chestOpenCalls = [];
+
+  const profile = {
+    username: "NoChestUser",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 0,
+    playerXP: 0,
+    playerLevel: 1,
+    supporterPass: false,
+    chests: { basic: 0 },
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {
+      showChestOpenReward: () => {}
+    }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => profile,
+          getCosmetics: async () => ({
+            equipped: profile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
+          getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+          listProfiles: async () => [],
+          openChest: async (payload) => {
+            chestOpenCalls.push(payload);
+            return {};
+          }
+        }
+      }
+    };
+
+    app.username = "NoChestUser";
+
+    await app.showProfile();
+    const beforeCount = shownScreens.length;
+    await shownScreens.at(-1).context.actions.openBasicChest();
+
+    assert.equal(chestOpenCalls.length, 0);
+    assert.equal(shownScreens.length, beforeCount);
+    assert.equal(shownScreens.at(-1).context.basicChestVisualState.basicOpen, false);
   } finally {
     globalThis.window = originalWindow;
   }

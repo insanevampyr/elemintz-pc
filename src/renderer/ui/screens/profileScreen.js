@@ -116,15 +116,17 @@ function renderXpProgress(profile) {
   `;
 }
 
-function renderChestPanel(profile) {
+function renderChestPanel(profile, visualState = {}) {
   const basicChestCount = Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
-  const chestIcon = getAssetPath("icons/chest_basic.png");
+  const chestIcon = getAssetPath(
+    visualState?.basicOpen ? "icons/chest_basic_open.png" : "icons/chest_basic.png"
+  );
 
   return `
     <section class="stack-sm chest-panel">
       <h3 class="section-title">Basic Chests</h3>
       <div class="player-header">
-        <img class="player-avatar" src="${chestIcon}" alt="Basic Chest" />
+        <img class="player-avatar" src="${chestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
         <div>
           <p>Basic Chests: <strong>${basicChestCount}</strong></p>
           <button
@@ -241,7 +243,7 @@ export const profileScreen = {
           <p>Tokens: <strong>${profile.tokens ?? 0}</strong></p>
           <p>Founder / Supporter: <strong>${profile.supporterPass ? "Active" : "Not Active"}</strong></p>
           ${renderXpProgress(profile)}
-          ${renderChestPanel(profile)}
+          ${renderChestPanel(profile, context.basicChestVisualState)}
 
           <div class="grid two-col">
             <p>Wins: ${profile.wins}</p>
