@@ -33,12 +33,12 @@ test("store: token purchase flow deducts currency and grants ownership", async (
   const bought = await state.buyStoreItem({
     username: "Buyer",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
 
   assert.equal(bought.purchase.status, "purchased");
   assert.ok(bought.store.tokens < before.tokens);
-  assert.ok(bought.profile.ownedCosmetics.avatar.includes("fire_avatar_f"));
+  assert.ok(bought.profile.ownedCosmetics.avatar.includes("fireavatarF"));
 });
 
 test("store: cosmetic unlock tracking updates first-purchase flags and total owned from successful purchases", async () => {
@@ -52,7 +52,7 @@ test("store: cosmetic unlock tracking updates first-purchase flags and total own
   const avatarPurchase = await state.buyStoreItem({
     username: "TrackingBuyer",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
   const cardBackPurchase = await state.buyStoreItem({
     username: "TrackingBuyer",
@@ -92,12 +92,12 @@ test("store: cosmetic unlock tracking does not re-trigger first purchase flags f
   const first = await state.buyStoreItem({
     username: "AlreadyOwnedBuyer",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
   const second = await state.buyStoreItem({
     username: "AlreadyOwnedBuyer",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
 
   assert.deepEqual(first.tracking.unlockedMilestones, ["FIRST_AVATAR_PURCHASED"]);
@@ -128,16 +128,16 @@ test("store: equip works after purchase", async () => {
   await state.buyStoreItem({
     username: "EquipBuyer",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
 
   const equipped = await state.equipCosmetic({
     username: "EquipBuyer",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
 
-  assert.equal(equipped.profile.equippedCosmetics.avatar, "fire_avatar_f");
+  assert.equal(equipped.profile.equippedCosmetics.avatar, "fireavatarF");
 });
 
 test("store: achievement-locked items are not purchasable", async () => {
@@ -227,7 +227,7 @@ test("store: purchase deduction persists across restart-style reload", async () 
   const purchase = await stateA.buyStoreItem({
     username: "PersistBuyer",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
 
   assert.equal(purchase.purchase.status, "purchased");
@@ -237,7 +237,7 @@ test("store: purchase deduction persists across restart-style reload", async () 
   const afterRestart = await stateB.getStore("PersistBuyer");
 
   assert.equal(afterRestart.tokens, before.tokens - 150);
-  assert.ok(afterRestart.catalog.avatar.find((item) => item.id === "fire_avatar_f")?.owned);
+  assert.ok(afterRestart.catalog.avatar.find((item) => item.id === "fireavatarF")?.owned);
 });
 
 test("store: username-specific test token grant is not applied through store access", async () => {
@@ -250,7 +250,7 @@ test("store: username-specific test token grant is not applied through store acc
   await stateA.buyStoreItem({
     username: "VampyrLee",
     type: "avatar",
-    cosmeticId: "fire_avatar_f"
+    cosmeticId: "fireavatarF"
   });
 
   const stateB = new StateCoordinator({ dataDir });
@@ -343,6 +343,7 @@ test("store: newly added elemental avatar can be purchased and equipped", async 
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
+  await state.profiles.updateProfile("WindAvatarBuyer", { tokens: 500 });
   const before = await state.getStore("WindAvatarBuyer");
   const purchased = await state.buyStoreItem({
     username: "WindAvatarBuyer",
@@ -351,7 +352,7 @@ test("store: newly added elemental avatar can be purchased and equipped", async 
   });
 
   assert.equal(purchased.purchase.status, "purchased");
-  assert.equal(purchased.store.tokens, before.tokens - 150);
+  assert.equal(purchased.store.tokens, before.tokens - 300);
 
   const equipped = await state.equipCosmetic({
     username: "WindAvatarBuyer",
@@ -375,22 +376,32 @@ test("store: rarity metadata and stage 2 prices are set correctly", async () => 
   const titles = byType("title");
   const badges = byType("badge");
 
-  assert.equal(avatars.get("fire_avatar_m")?.rarity, "Common");
-  assert.equal(avatars.get("fire_avatar_m")?.price, 150);
-  assert.equal(avatars.get("water_avatar_f")?.rarity, "Rare");
-  assert.equal(avatars.get("water_avatar_f")?.price, 300);
-  assert.equal(avatars.get("earth_avatar_m")?.rarity, "Rare");
-  assert.equal(avatars.get("earth_avatar_m")?.price, 300);
-  assert.equal(avatars.get("wind_avatar_f")?.rarity, "Common");
-  assert.equal(avatars.get("wind_avatar_f")?.price, 150);
+  assert.equal(avatars.get("fire_avatar_m")?.rarity, "Rare");
+  assert.equal(avatars.get("fire_avatar_m")?.price, 300);
+  assert.equal(avatars.get("wateravatarF")?.rarity, "Common");
+  assert.equal(avatars.get("wateravatarF")?.price, 150);
+  assert.equal(avatars.get("earthavatarM")?.rarity, "Common");
+  assert.equal(avatars.get("earthavatarM")?.price, 150);
+  assert.equal(avatars.get("wind_avatar_f")?.rarity, "Rare");
+  assert.equal(avatars.get("wind_avatar_f")?.price, 300);
+  assert.equal(avatars.get("avatar_flame_spirit_f")?.rarity, "Epic");
+  assert.equal(avatars.get("avatar_flame_spirit_f")?.price, 600);
+  assert.equal(avatars.get("avatar_tidal_warden_m")?.rarity, "Epic");
+  assert.equal(avatars.get("avatar_tidal_warden_m")?.price, 600);
   assert.equal(avatars.get("avatar_veteran_champion")?.price, 600);
 
-  assert.equal(backs.get("ember_card_back")?.rarity, "Common");
-  assert.equal(backs.get("ember_card_back")?.price, 120);
+  assert.equal(backs.get("ember_card_back")?.rarity, "Rare");
+  assert.equal(backs.get("ember_card_back")?.price, 250);
   assert.equal(backs.get("crystal_card_back")?.rarity, "Rare");
   assert.equal(backs.get("crystal_card_back")?.price, 250);
+  assert.equal(backs.get("storm_sigil_card_back")?.rarity, "Common");
+  assert.equal(backs.get("storm_sigil_card_back")?.price, 120);
   assert.equal(backs.get("void_card_back")?.rarity, "Epic");
   assert.equal(backs.get("void_card_back")?.price, 500);
+  assert.equal(backs.get("cardback_lava_core")?.rarity, "Epic");
+  assert.equal(backs.get("cardback_lava_core")?.price, 500);
+  assert.equal(backs.get("cardback_obsidian_halo")?.rarity, "Rare");
+  assert.equal(backs.get("cardback_obsidian_halo")?.price, 250);
   assert.equal(backs.get("founder_deluxe_card_back")?.rarity, "Legendary");
   assert.equal(backs.get("founder_deluxe_card_back")?.price, 800);
   assert.equal(backs.get("founder_deluxe_card_back")?.purchasable, false);
@@ -431,14 +442,28 @@ test("store: rarity metadata and stage 2 prices are set correctly", async () => 
   assert.equal(variants.get("arcane_water_card")?.price, 250);
   assert.equal(variants.get("bold_earth_card")?.rarity, "Rare");
   assert.equal(variants.get("bold_earth_card")?.price, 250);
-  assert.equal(variants.get("rock_storm_card")?.rarity, "Rare");
-  assert.equal(variants.get("rock_storm_card")?.price, 250);
+  assert.equal(variants.get("rock_storm_card")?.rarity, "Epic");
+  assert.equal(variants.get("rock_storm_card")?.price, 450);
   assert.equal(variants.get("smokey_wind_card")?.rarity, "Rare");
   assert.equal(variants.get("smokey_wind_card")?.price, 250);
   assert.equal(variants.get("water_variant_crystal")?.rarity, "Rare");
   assert.equal(variants.get("water_variant_crystal")?.price, 250);
   assert.equal(variants.get("earth_variant_titan")?.rarity, "Epic");
   assert.equal(variants.get("earth_variant_titan")?.price, 450);
+  assert.equal(variants.get("fire_variant_blue_inferno")?.rarity, "Epic");
+  assert.equal(variants.get("fire_variant_blue_inferno")?.price, 450);
+  assert.equal(variants.get("fire_variant_crownfire")?.rarity, "Legendary");
+  assert.equal(variants.get("fire_variant_crownfire")?.price, 700);
+  assert.equal(variants.get("fire_variant_ember_core")?.rarity, "Epic");
+  assert.equal(variants.get("fire_variant_ember_core")?.price, 450);
+  assert.equal(variants.get("fire_variant_transparent_flame")?.rarity, "Legendary");
+  assert.equal(variants.get("fire_variant_transparent_flame")?.price, 700);
+  assert.equal(variants.get("water_variant_transparent_wave")?.rarity, "Legendary");
+  assert.equal(variants.get("water_variant_transparent_wave")?.price, 700);
+  assert.equal(variants.get("earth_variant_transparent_crystal")?.rarity, "Legendary");
+  assert.equal(variants.get("earth_variant_transparent_crystal")?.price, 700);
+  assert.equal(variants.get("wind_variant_transparent_vortex")?.rarity, "Legendary");
+  assert.equal(variants.get("wind_variant_transparent_vortex")?.price, 700);
 
   assert.equal(titles.get("Arena Founder")?.rarity, "Legendary");
   assert.equal(titles.get("Arena Founder")?.price, 500);

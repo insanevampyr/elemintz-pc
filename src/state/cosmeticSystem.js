@@ -118,37 +118,37 @@ export const COSMETIC_CATALOG = Object.freeze({
       id: "wateravatarF",
       name: "Water Avatar Classic (F)",
       image: "avatars/wateravatarF.png",
-      rarity: "Rare",
+      rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: AVATAR_RARITY_PRICING.Common
     },
     {
       id: "wateravatarM",
       name: "Water Avatar Classic (M)",
       image: "avatars/wateravatarM.png",
-      rarity: "Rare",
+      rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: AVATAR_RARITY_PRICING.Common
     },
     {
       id: "earthavatarF",
       name: "Earth Avatar Classic (F)",
       image: "avatars/earthavatarF.png",
-      rarity: "Rare",
+      rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: AVATAR_RARITY_PRICING.Common
     },
     {
       id: "earthavatarM",
       name: "Earth Avatar Classic (M)",
       image: "avatars/earthavatarM.png",
-      rarity: "Rare",
+      rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: AVATAR_RARITY_PRICING.Common
     },
     {
       id: "windavatarF",
@@ -172,19 +172,19 @@ export const COSMETIC_CATALOG = Object.freeze({
       id: "fire_avatar_f",
       name: "Fire Warden (F)",
       image: "avatars/fire_avatar_f.png",
-      rarity: "Common",
+      rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: AVATAR_RARITY_PRICING.Rare
     },
     {
       id: "fire_avatar_m",
       name: "Fire Warden (M)",
       image: "avatars/fire_avatar_m.png",
-      rarity: "Common",
+      rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: AVATAR_RARITY_PRICING.Rare
     },
     {
       id: "water_avatar_f",
@@ -226,55 +226,55 @@ export const COSMETIC_CATALOG = Object.freeze({
       id: "wind_avatar_f",
       name: "Storm Ranger (F)",
       image: "avatars/wind_avatar_f.png",
-      rarity: "Common",
+      rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: AVATAR_RARITY_PRICING.Rare
     },
     {
       id: "wind_avatar_m",
       name: "Storm Ranger (M)",
       image: "avatars/wind_avatar_m.png",
-      rarity: "Common",
+      rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: AVATAR_RARITY_PRICING.Rare
     },
     {
       id: "avatar_flame_spirit_f",
       name: "Flame Spirit (F)",
       image: "avatars/avatar_flame_spirit_f.png",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: AVATAR_RARITY_PRICING.Epic
     },
     {
       id: "avatar_flame_spirit_m",
       name: "Flame Spirit (M)",
       image: "avatars/avatar_flame_spirit_m.png",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: AVATAR_RARITY_PRICING.Epic
     },
     {
       id: "avatar_tidal_warden_f",
       name: "Tidal Warden (F)",
       image: "avatars/avatar_tidal_warden_f.png",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: AVATAR_RARITY_PRICING.Epic
     },
     {
       id: "avatar_tidal_warden_m",
       name: "Tidal Warden (M)",
       image: "avatars/avatar_tidal_warden_m.png",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: AVATAR_RARITY_PRICING.Epic
     },
     {
       id: "avatar_wind_whisperer_f",
@@ -435,10 +435,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       id: "ember_card_back",
       name: "Ember Card Back",
       image: "card_backs/ember_card_back.png",
-      rarity: "Common",
+      rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: CARD_BACK_RARITY_PRICING.Rare
     },
     {
       id: "crystal_card_back",
@@ -462,10 +462,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       id: "storm_sigil_card_back",
       name: "Storm Sigil Card Back",
       image: "card_backs/storm_sigil_card_back.png",
-      rarity: "Rare",
+      rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: CARD_BACK_RARITY_PRICING.Common
     },
     {
       id: "void_card_back",
@@ -534,19 +534,19 @@ export const COSMETIC_CATALOG = Object.freeze({
       id: "cardback_lava_core",
       name: "Lava Core Card Back",
       image: "card_backs/cardback_lava_core.png",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: CARD_BACK_RARITY_PRICING.Epic
     },
     {
       id: "cardback_obsidian_halo",
       name: "Obsidian Halo Card Back",
       image: "card_backs/cardback_obsidian_halo.png",
-      rarity: "Epic",
+      rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: CARD_BACK_RARITY_PRICING.Rare
     },
     {
       id: "cardback_storm_spiral",
@@ -917,10 +917,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       name: "Rock Storm",
       image: "cards/rockStorm.jpg",
       element: "earth",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
     },
     {
       id: "arcane_wind_card",
@@ -987,30 +987,30 @@ export const COSMETIC_CATALOG = Object.freeze({
       name: "Blue Inferno",
       image: "cards/fire_variant_blue_inferno.png",
       element: "fire",
-      rarity: "Rare",
-      defaultOwned: false,
-      purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
-    },
-    {
-      id: "fire_variant_crownfire",
-      name: "Crownfire",
-      image: "cards/fire_variant_crownfire.png",
-      element: "fire",
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
     },
     {
+      id: "fire_variant_crownfire",
+      name: "Crownfire",
+      image: "cards/fire_variant_crownfire.png",
+      element: "fire",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+    },
+    {
       id: "fire_variant_ember_core",
       name: "Ember Core",
       image: "cards/fire_variant_ember_core.png",
       element: "fire",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
     },
     {
       id: "fire_variant_phoenix",
@@ -1027,10 +1027,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       name: "Transparent Flame",
       image: "cards/fire_variant_transparent_flame.png",
       element: "fire",
-      rarity: "Common",
+      rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Common
+      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
     },
     {
       id: "water_variant_abyss_wave",
@@ -1067,10 +1067,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       name: "Transparent Wave",
       image: "cards/water_variant_transparent_wave.png",
       element: "water",
-      rarity: "Common",
+      rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Common
+      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
     },
     {
       id: "water_variant_water_pillar",
@@ -1127,10 +1127,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       name: "Transparent Crystal",
       image: "cards/earth_variant_transparent_crystal.png",
       element: "earth",
-      rarity: "Common",
+      rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Common
+      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
     },
     {
       id: "wind_variant_sky_serpent",
@@ -1157,10 +1157,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       name: "Transparent Vortex",
       image: "cards/wind_variant_transparent_vortex.png",
       element: "wind",
-      rarity: "Common",
+      rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Common
+      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
     },
     {
       id: "wind_variant_vortex_spirit",

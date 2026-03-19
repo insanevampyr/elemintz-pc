@@ -905,8 +905,8 @@ test("state: persistence survives coordinator restart", async () => {
   const first = new StateCoordinator({ dataDir });
 
   await first.profiles.ensureProfile("RestartUser");
-  await first.buyStoreItem({ username: "RestartUser", type: "avatar", cosmeticId: "fire_avatar_f" });
-  await first.equipCosmetic({ username: "RestartUser", type: "avatar", cosmeticId: "fire_avatar_f" });
+  await first.buyStoreItem({ username: "RestartUser", type: "avatar", cosmeticId: "fireavatarF" });
+  await first.equipCosmetic({ username: "RestartUser", type: "avatar", cosmeticId: "fireavatarF" });
 
   const completed = {
     ...createMatch({ mode: "pve" }),
@@ -926,9 +926,9 @@ test("state: persistence survives coordinator restart", async () => {
   assert.equal(profile.username, "RestartUser");
   assert.ok(profile.tokens >= 0);
   assert.ok(profile.wins >= 1);
-  assert.ok(profile.equippedCosmetics.avatar === "fire_avatar_f");
+  assert.ok(profile.equippedCosmetics.avatar === "fireavatarF");
   assert.ok(profile.achievements && typeof profile.achievements === "object");
-  assert.ok(store.catalog.avatar.some((item) => item.id === "fire_avatar_f" && item.owned));
+  assert.ok(store.catalog.avatar.some((item) => item.id === "fireavatarF" && item.owned));
   assert.ok(profiles.some((item) => item.username === "RestartUser"));
 });
 
