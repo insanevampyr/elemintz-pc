@@ -6,6 +6,7 @@ import {
   localSetupScreen,
   loginScreen,
   menuScreen,
+  onlinePlayScreen,
   passScreen,
   profileScreen,
   settingsScreen,
@@ -78,6 +79,9 @@ export class AppController {
     this.profileChestVisualState = {
       basicOpen: false
     };
+    this.onlinePlayState = null;
+    this.onlinePlayJoinCode = "";
+    this.onlinePlayUnsubscribe = null;
     this.storeViewState = this.createDefaultStoreViewState();
     this.roundPresentation = {
       phase: "idle",
@@ -106,6 +110,7 @@ export class AppController {
     this.screenManager.register("cosmetics", cosmeticsScreen);
     this.screenManager.register("store", storeScreen);
     this.screenManager.register("settings", settingsScreen);
+    this.screenManager.register("onlinePlay", onlinePlayScreen);
   }
 
   clearPassTimer({ settle = true, result = { reason: "cancelled" } } = {}) {
@@ -338,6 +343,7 @@ export class AppController {
       actions: {
         startPveGame: () => this.startGame(MATCH_MODE.PVE),
         startLocalGame: () => this.showLocalSetup(),
+        openOnlinePlay: async () => this.showOnlinePlay(),
         openProfile: async () => this.showProfile(),
         openAchievements: async () => this.showAchievements(),
         openDailyChallenges: async () => this.showDailyChallenges(),
@@ -607,6 +613,77 @@ export class AppController {
 
     this.toastManager.showChestOpenReward?.({
       rewards: result.rewards
+    });
+  }
+
+  normalizeOnlinePlayState(state) {
+    const fallback = {
+      connectionStatus: "disconnected",
+      socketId: null,
+      room: null,
+      lastError: null,
+      statusMessage: "Offline. Open Online Play to connect."
+    };
+
+    return {
+      ...fallback,
+      ...(state ?? {})
+    };
+  }
+
+  async syncOnlinePlayState() {
+    if (!window.elemintz?.multiplayer?.getState) {
+      this.onlinePlayState = this.normalizeOnlinePlayState(null);
+      return this.onlinePlayState;
+    }
+
+    this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.getState());
+    return this.onlinePlayState;
+  }
+
+  bindOnlinePlayUpdates() {
+    if (this.onlinePlayUnsubscribe || !window.elemintz?.multiplayer?.onUpdate) {
+      return;
+    }
+
+    this.onlinePlayUnsubscribe = window.elemintz.multiplayer.onUpdate((state) => {
+      this.onlinePlayState = this.normalizeOnlinePlayState(state);
+      if (this.screenFlow === "onlinePlay") {
+        this.renderOnlinePlayScreen();
+      }
+    });
+  }
+
+  renderOnlinePlayScreen() {
+    this.screenManager.show("onlinePlay", {
+      multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
+      joinCode: this.onlinePlayJoinCode,
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
+      actions: {
+        createRoom: async () => {
+          if (!window.elemintz?.multiplayer?.createRoom) {
+            return;
+          }
+
+          await window.elemintz.multiplayer.createRoom();
+        },
+        joinRoom: async (roomCode) => {
+          if (!window.elemintz?.multiplayer?.joinRoom) {
+            return;
+          }
+
+          this.onlinePlayJoinCode = String(roomCode ?? "").trim().toUpperCase();
+          this.renderOnlinePlayScreen();
+          await window.elemintz.multiplayer.joinRoom({ roomCode: this.onlinePlayJoinCode });
+        },
+        back: async () => {
+          if (window.elemintz?.multiplayer?.disconnect) {
+            await window.elemintz.multiplayer.disconnect();
+          }
+
+          this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+        }
+      }
     });
   }
 
@@ -1029,7 +1106,9 @@ export class AppController {
           throw new Error("Preload API unavailable: window.elemintz.state is undefined");
         }
 
+        this.bindOnlinePlayUpdates();
         this.settings = await window.elemintz.state.getSettings();
+        await this.syncOnlinePlayState();
       } catch (error) {
         console.error("AppController init failed while loading settings", error);
         this.settings = FALLBACK_SETTINGS;
@@ -1110,6 +1189,19 @@ export class AppController {
           });
         });
     }
+  }
+
+  async showOnlinePlay() {
+    this.clearPassTimer();
+    this.screenFlow = "onlinePlay";
+    await this.syncOnlinePlayState();
+    this.renderOnlinePlayScreen();
+
+    if (!window.elemintz?.multiplayer?.connect) {
+      return;
+    }
+
+    await window.elemintz.multiplayer.connect();
   }
 
   showLocalSetup() {

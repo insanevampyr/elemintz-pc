@@ -1,5 +1,18 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+function subscribeToMultiplayerUpdates(listener) {
+  if (typeof listener !== "function") {
+    return () => {};
+  }
+
+  const handleUpdate = (_event, state) => listener(state);
+  ipcRenderer.on("multiplayer:update", handleUpdate);
+  ipcRenderer.send("multiplayer:subscribe");
+  return () => {
+    ipcRenderer.removeListener("multiplayer:update", handleUpdate);
+  };
+}
+
 contextBridge.exposeInMainWorld("elemintz", {
   version: "0.1.0",
   state: {
@@ -24,5 +37,13 @@ contextBridge.exposeInMainWorld("elemintz", {
     getSettings: () => ipcRenderer.invoke("state:getSettings"),
     updateSettings: (patch) => ipcRenderer.invoke("state:updateSettings", patch),
     listSaves: () => ipcRenderer.invoke("state:listSaves")
+  },
+  multiplayer: {
+    getState: () => ipcRenderer.invoke("multiplayer:getState"),
+    connect: (payload) => ipcRenderer.invoke("multiplayer:connect", payload),
+    createRoom: (payload) => ipcRenderer.invoke("multiplayer:createRoom", payload),
+    joinRoom: (payload) => ipcRenderer.invoke("multiplayer:joinRoom", payload),
+    disconnect: () => ipcRenderer.invoke("multiplayer:disconnect"),
+    onUpdate: (listener) => subscribeToMultiplayerUpdates(listener)
   }
 });

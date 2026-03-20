@@ -9,3 +9,4 @@ export * from "./achievementsScreen.js";
 export * from "./storeScreen.js";
 export * from "./settingsScreen.js";
 export * from "./dailyChallengesScreen.js";
+export * from "./onlinePlayScreen.js";

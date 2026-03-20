@@ -6,6 +6,7 @@ import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.j
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
 import { gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
 import { menuScreen } from "../../src/renderer/ui/screens/menuScreen.js";
+import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
 import { profileScreen } from "../../src/renderer/ui/screens/profileScreen.js";
 import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js";
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
@@ -2250,6 +2251,7 @@ test("ui: menu renders buttons in requested order without standalone challenges 
   const expectedOrder = [
     "start-pve-btn",
     "start-local-btn",
+    "online-play-btn",
     "profile-btn",
     "cosmetics-btn",
     "store-btn",
@@ -2287,6 +2289,7 @@ test("ui: menu action buttons use menu tile artwork backgrounds", () => {
   assert.match(html, /class="menu-tile__visual"/);
   assert.match(html, /id="start-pve-btn"[\s\S]*menu_tiles\/tile_play_ai\.png/);
   assert.match(html, /id="start-local-btn"[\s\S]*menu_tiles\/tile_local_pvp\.png/);
+  assert.match(html, /id="online-play-btn"[\s\S]*menu_tiles\/tile_local_pvp\.png/);
   assert.match(html, /id="profile-btn"[\s\S]*menu_tiles\/tile_profile\.png/);
   assert.match(html, /id="cosmetics-btn"[\s\S]*menu_tiles\/tile_cosmetics\.png/);
   assert.match(html, /id="store-btn"[\s\S]*menu_tiles\/tile_store\.png/);
@@ -3770,6 +3773,38 @@ test("ui: profile header uses equipped title cosmetic image instead of fallback 
 
   assert.match(html, /src="(?:file:.*\/)?assets\/titles\/title_apprentice\.png"/);
   assert.doesNotMatch(html, /src="assets\/badges\/firstFlame\.png" alt="Apprentice" class="title-icon"/);
+});
+
+test("ui: online play screen renders room flow status and room details", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "abc123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "Room ABC123 created. Waiting for another player.",
+      lastError: { message: "Previous error" },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "waiting",
+        host: { socketId: "host-1" },
+        guest: null
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Online Play/);
+  assert.match(html, /Connection:<\/strong> connected/);
+  assert.match(html, /Room ABC123 created\. Waiting for another player\./);
+  assert.match(html, /Error:<\/strong> Previous error/);
+  assert.match(html, /id="online-create-room-btn"/);
+  assert.match(html, /id="online-room-code-input"/);
+  assert.match(html, /value="abc123"/);
+  assert.match(html, /Room Code:<\/strong> ABC123/);
+  assert.match(html, /Status:<\/strong> waiting/);
+  assert.match(html, /Role:<\/strong> Host/);
 });
 
 test("ui: profile screen shows basic chest count and disables open button when empty", () => {

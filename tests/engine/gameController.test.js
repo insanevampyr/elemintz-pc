@@ -190,6 +190,137 @@ test("appController: local mode opens setup screen before match start", () => {
   assert.equal(shownScreens.at(-1).name, "localSetup");
 });
 
+test("appController: menu online play action opens the online play screen", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    getState: 0,
+    connect: 0
+  };
+  const updateListeners = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          onUpdate: (listener) => {
+            updateListeners.push(listener);
+            return () => {};
+          },
+          getState: async () => {
+            calls.getState += 1;
+            return {
+              connectionStatus: "disconnected",
+              room: null,
+              statusMessage: "Offline. Open Online Play to connect."
+            };
+          },
+          connect: async () => {
+            calls.connect += 1;
+            const state = {
+              connectionStatus: "connected",
+              socketId: "socket-1",
+              room: null,
+              lastError: null,
+              statusMessage: "Connected. Create a room or join one."
+            };
+            for (const listener of updateListeners) {
+              listener(state);
+            }
+            return state;
+          }
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    app.bindOnlinePlayUpdates();
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await shownScreens.at(-1).context.actions.openOnlinePlay();
+
+    assert.equal(calls.getState, 1);
+    assert.equal(calls.connect, 1);
+    assert.equal(shownScreens.at(-1).name, "onlinePlay");
+    assert.equal(shownScreens.at(-1).context.multiplayer.connectionStatus, "connected");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online play create and join actions use the multiplayer bridge", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    createRoom: 0,
+    joinRoom: []
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          onUpdate: () => () => {},
+          getState: async () => ({
+            connectionStatus: "connected",
+            socketId: "socket-1",
+            room: null,
+            lastError: null,
+            statusMessage: "Connected. Create a room or join one."
+          }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "socket-1",
+            room: null,
+            lastError: null,
+            statusMessage: "Connected. Create a room or join one."
+          }),
+          createRoom: async () => {
+            calls.createRoom += 1;
+            return {};
+          },
+          joinRoom: async ({ roomCode }) => {
+            calls.joinRoom.push(roomCode);
+            return {};
+          },
+          disconnect: async () => ({})
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    await app.showOnlinePlay();
+
+    await shownScreens.at(-1).context.actions.createRoom();
+    await shownScreens.at(-1).context.actions.joinRoom("abc123");
+
+    assert.equal(calls.createRoom, 1);
+    assert.deepEqual(calls.joinRoom, ["ABC123"]);
+    assert.equal(app.onlinePlayJoinCode, "ABC123");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: reveal sounds are mode-aware and war start only plays when war begins", () => {
   const calls = [];
   const app = new AppController({

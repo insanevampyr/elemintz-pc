@@ -3,6 +3,7 @@ import { getAssetPath } from "../../utils/dom.js";
 const MENU_TILE_IMAGE_MAP = Object.freeze({
   "start-pve-btn": "menu_tiles/tile_play_ai.png",
   "start-local-btn": "menu_tiles/tile_local_pvp.png",
+  "online-play-btn": "menu_tiles/tile_local_pvp.png",
   "profile-btn": "menu_tiles/tile_profile.png",
   "cosmetics-btn": "menu_tiles/tile_cosmetics.png",
   "store-btn": "menu_tiles/tile_store.png",
@@ -108,6 +109,7 @@ export const menuScreen = {
               <div class="grid two-col menu-action-grid">
                 ${renderMenuTile("start-pve-btn", "Play vs AI")}
                 ${renderMenuTile("start-local-btn", "Local 2-Player")}
+                ${renderMenuTile("online-play-btn", "Online Play")}
                 ${renderMenuTile("profile-btn", "Profile")}
                 ${renderMenuTile("cosmetics-btn", "Cosmetics")}
                 ${renderMenuTile("store-btn", "Store")}
@@ -137,6 +139,7 @@ export const menuScreen = {
   bind(context) {
     document.getElementById("start-pve-btn").addEventListener("click", context.actions.startPveGame);
     document.getElementById("start-local-btn").addEventListener("click", context.actions.startLocalGame);
+    document.getElementById("online-play-btn").addEventListener("click", context.actions.openOnlinePlay);
     document.getElementById("profile-btn").addEventListener("click", context.actions.openProfile);
     document.getElementById("achievements-btn").addEventListener("click", context.actions.openAchievements);
     document

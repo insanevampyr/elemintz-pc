@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerMultiplayerIpcHandlers } from "./ipc/multiplayerIpc.js";
 import { registerStateIpcHandlers } from "./ipc/stateIpc.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -92,6 +93,7 @@ function createWindow() {
 app.whenReady().then(() => {
   const dataDir = path.join(app.getPath("userData"), "elemintz-data");
   registerStateIpcHandlers(ipcMain, { dataDir });
+  registerMultiplayerIpcHandlers(ipcMain);
 
   console.info("[Startup] Electron userData", {
     userData: app.getPath("userData"),
