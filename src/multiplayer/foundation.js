@@ -3,14 +3,18 @@ import http from "node:http";
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 
+import { createRoomStore } from "./rooms.js";
+
 const DEFAULT_PORT = 3001;
 
 export function createMultiplayerFoundation({
   port = Number(process.env.PORT) || DEFAULT_PORT,
-  logger = console
+  logger = console,
+  random = Math.random
 } = {}) {
   const app = express();
   const httpServer = http.createServer(app);
+  const roomStore = createRoomStore({ random });
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: "*",
@@ -18,14 +22,14 @@ export function createMultiplayerFoundation({
     }
   });
 
-  // Phase 1 foundation only: deployment health, Socket.IO bootstrap, and
-  // connect/disconnect logging. Room lifecycle, matchmaking, gameplay sync,
-  // and move resolution intentionally do not exist yet.
+  // Phase 2 foundation: private 2-player room create/join lifecycle only.
+  // Matchmaking, gameplay sync, move handling, and reconnect/resume are still
+  // intentionally out of scope for this server module.
   app.get("/health", (_request, response) => {
     response.json({
       ok: true,
       service: "elemintz-multiplayer",
-      phase: 1,
+      phase: 2,
       transport: "socket.io"
     });
   });
@@ -36,7 +40,37 @@ export function createMultiplayerFoundation({
       transport: socket.conn.transport.name
     });
 
+    socket.on("room:create", () => {
+      const result = roomStore.createRoom(socket);
+
+      if (!result.ok) {
+        socket.emit("room:error", result.error);
+        return;
+      }
+
+      socket.join(result.room.roomCode);
+      socket.emit("room:created", result.room);
+    });
+
+    socket.on("room:join", (payload = {}) => {
+      const result = roomStore.joinRoom(socket, payload.roomCode);
+
+      if (!result.ok) {
+        socket.emit("room:error", result.error);
+        return;
+      }
+
+      socket.join(result.room.roomCode);
+      socket.emit("room:joined", result.room);
+      io.to(result.room.roomCode).emit("room:update", result.room);
+    });
+
     socket.on("disconnect", (reason) => {
+      const roomResult = roomStore.removeSocket(socket.id);
+      if (roomResult.room) {
+        io.to(roomResult.room.roomCode).emit("room:update", roomResult.room);
+      }
+
       logger.info("[Multiplayer] client disconnected", {
         socketId: socket.id,
         reason
@@ -50,6 +84,7 @@ export function createMultiplayerFoundation({
     app,
     httpServer,
     io,
+    roomStore,
     async start() {
       await new Promise((resolve, reject) => {
         httpServer.once("error", reject);
