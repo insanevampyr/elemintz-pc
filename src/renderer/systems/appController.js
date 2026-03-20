@@ -38,6 +38,20 @@ const TITLE_ICON_MAP = Object.freeze({
   "Storm Breaker": "badges/badge_longest_war_7.png",
   "Last Card Legend": "badges/badge_comeback_win_25.png"
 });
+const ONLINE_RECONNECT_TIMEOUT_MS = 60000;
+const ONLINE_DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
+  avatar: "default_avatar",
+  background: "default_background",
+  cardBack: "default_card_back",
+  elementCardVariant: Object.freeze({
+    fire: "default_fire_card",
+    water: "default_water_card",
+    earth: "default_earth_card",
+    wind: "default_wind_card"
+  }),
+  title: "Initiate",
+  badge: "none"
+});
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,6 +96,13 @@ export class AppController {
     this.onlinePlayState = null;
     this.onlinePlayJoinCode = "";
     this.onlinePlayUnsubscribe = null;
+    this.onlinePlayChallengeSummary = null;
+    this.onlinePlayChallengeSummaryKey = null;
+    this.onlinePlayProfileRefreshKey = null;
+    this.onlinePlayProfileRefreshPromise = null;
+    this.onlineReconnectReminder = null;
+    this.onlineReconnectReminderDismissedKey = null;
+    this.onlineReconnectUiTimerId = null;
     this.storeViewState = this.createDefaultStoreViewState();
     this.roundPresentation = {
       phase: "idle",
@@ -135,6 +156,13 @@ export class AppController {
     if (this.dailyResetCountdownId) {
       clearInterval(this.dailyResetCountdownId);
       this.dailyResetCountdownId = null;
+    }
+  }
+
+  clearOnlineReconnectUiTimer() {
+    if (this.onlineReconnectUiTimerId) {
+      clearInterval(this.onlineReconnectUiTimerId);
+      this.onlineReconnectUiTimerId = null;
     }
   }
 
@@ -254,6 +282,13 @@ export class AppController {
 
   formatPassTimerLabel(secondsLeft) {
     return `Time Remaining: ${secondsLeft ?? 30}s`;
+  }
+
+  formatReconnectCountdown(msRemaining) {
+    const safeSeconds = Math.max(0, Math.ceil(Math.max(0, Number(msRemaining ?? 0)) / 1000));
+    const minutes = Math.floor(safeSeconds / 60);
+    const seconds = safeSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   }
 
   updatePassCountdown(secondsLeft) {
@@ -523,6 +558,96 @@ export class AppController {
     };
   }
 
+  getOnlineEquippedCosmeticValue(profile = null, key, fallback) {
+    return profile?.cosmetics?.equipped?.[key] ??
+      profile?.equippedCosmetics?.[key] ??
+      profile?.cosmetics?.[key] ??
+      (key === "title" ? profile?.title : undefined) ??
+      fallback;
+  }
+
+  buildOnlineEquippedCosmetics(profile = null) {
+    const equippedVariants =
+      profile?.equippedCosmetics?.elementCardVariant ??
+      profile?.cosmetics?.equipped?.elementCardVariant ??
+      profile?.cosmetics?.elementCardVariant ??
+      {};
+
+    return {
+      avatar: String(this.getOnlineEquippedCosmeticValue(profile, "avatar", ONLINE_DEFAULT_EQUIPPED_COSMETICS.avatar)),
+      background: String(this.getOnlineEquippedCosmeticValue(profile, "background", ONLINE_DEFAULT_EQUIPPED_COSMETICS.background)),
+      cardBack: String(this.getOnlineEquippedCosmeticValue(profile, "cardBack", ONLINE_DEFAULT_EQUIPPED_COSMETICS.cardBack)),
+      elementCardVariant: {
+        fire: String(equippedVariants?.fire ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.fire),
+        water: String(equippedVariants?.water ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.water),
+        earth: String(equippedVariants?.earth ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.earth),
+        wind: String(equippedVariants?.wind ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.wind)
+      },
+      title: String(this.getOnlineEquippedCosmeticValue(profile, "title", ONLINE_DEFAULT_EQUIPPED_COSMETICS.title)),
+      badge: String(this.getOnlineEquippedCosmeticValue(profile, "badge", ONLINE_DEFAULT_EQUIPPED_COSMETICS.badge))
+    };
+  }
+
+  async buildOnlineRoomIdentityPayload() {
+    let latestProfile = this.profile;
+
+    if (this.username && window.elemintz?.state?.getProfile) {
+      latestProfile = await window.elemintz.state.getProfile(this.username);
+      if (latestProfile) {
+        this.profile = latestProfile;
+      }
+    }
+
+    return {
+      username: this.username,
+      equippedCosmetics: this.buildOnlineEquippedCosmetics(latestProfile)
+    };
+  }
+
+  normalizeOnlineRoomPlayer(player) {
+    if (!player) {
+      return null;
+    }
+
+    return {
+      ...player,
+      equippedCosmetics: this.buildOnlineEquippedCosmetics(player)
+    };
+  }
+
+  buildResolvedOnlinePlayerIdentity(player, slotLabel) {
+    if (!player) {
+      return null;
+    }
+
+    const equippedCosmetics = this.buildOnlineEquippedCosmetics(player);
+    const profileLike = {
+      ...player,
+      title: player?.title ?? equippedCosmetics.title,
+      equippedCosmetics,
+      cosmetics: {
+        ...(player?.cosmetics ?? {}),
+        avatar: equippedCosmetics.avatar,
+        background: equippedCosmetics.background,
+        badge: equippedCosmetics.badge
+      }
+    };
+    const playerDisplay = this.buildPlayerDisplay(profileLike, player?.username ?? slotLabel, "Initiate");
+
+    return {
+      slotLabel,
+      username: player?.username ?? slotLabel,
+      connected: player?.connected !== false,
+      titleIcon: playerDisplay.titleIcon ?? null,
+      avatarImage: playerDisplay.avatar,
+      backgroundImage: this.getBackgroundFromProfile(profileLike),
+      cardBackImage: getCardBackImage(equippedCosmetics.cardBack),
+      titleLabel: playerDisplay.title,
+      badgeImage: playerDisplay.featuredBadge,
+      variantImages: getVariantCardImages(equippedCosmetics.elementCardVariant)
+    };
+  }
+
   async maybeShowLoadoutUnlockNotice() {
     if (!this.username || !globalThis.window?.elemintz?.state?.acknowledgeLoadoutUnlocks) {
       return;
@@ -617,9 +742,29 @@ export class AppController {
   }
 
   normalizeOnlinePlayState(state) {
+    const normalizedHost = this.normalizeOnlineRoomPlayer(state?.room?.host);
+    const normalizedGuest = this.normalizeOnlineRoomPlayer(state?.room?.guest);
     const normalizedRoom = state?.room
       ? {
           ...state.room,
+          host: normalizedHost,
+          guest: normalizedGuest,
+          hostResolvedIdentity: this.buildResolvedOnlinePlayerIdentity(normalizedHost, "Host"),
+          guestResolvedIdentity: this.buildResolvedOnlinePlayerIdentity(normalizedGuest, "Guest"),
+          hostHand:
+            state.room.hostHand ??
+            (state.room.status === "full"
+              ? { fire: 2, water: 2, earth: 2, wind: 2 }
+              : null),
+          guestHand:
+            state.room.guestHand ??
+            (state.room.status === "full"
+              ? { fire: 2, water: 2, earth: 2, wind: 2 }
+              : null),
+          warPot: {
+            host: Array.isArray(state.room.warPot?.host) ? [...state.room.warPot.host] : [],
+            guest: Array.isArray(state.room.warPot?.guest) ? [...state.room.warPot.guest] : []
+          },
           moveSync:
             state.room.moveSync ??
             (state.room.status === "full"
@@ -650,6 +795,354 @@ export class AppController {
     };
   }
 
+  deriveOnlineChallengeSummaryKey(state) {
+    const settlementKey = this.deriveOnlineSettlementRefreshKey(state);
+    return settlementKey ? `${settlementKey}:challenges` : null;
+  }
+
+  deriveOnlineSettlementRefreshKey(state) {
+    const room = state?.room;
+    const summary = room?.rewardSettlement?.summary;
+    const username = String(this.username ?? "").trim();
+
+    if (!room?.matchComplete || !room?.rewardSettlement?.granted || !username) {
+      return null;
+    }
+
+    if (summary?.settledHostUsername !== username && summary?.settledGuestUsername !== username) {
+      return null;
+    }
+
+    return `${room.roomCode ?? "room"}:${room.rewardSettlement?.grantedAt ?? "settled"}:${username}`;
+  }
+
+  async refreshOnlinePlayChallengeSummary(state = this.onlinePlayState) {
+    const summaryKey = this.deriveOnlineChallengeSummaryKey(state);
+
+    if (!summaryKey) {
+      return this.onlinePlayChallengeSummary;
+    }
+
+    if (this.onlinePlayChallengeSummaryKey === summaryKey && this.onlinePlayChallengeSummary) {
+      return this.onlinePlayChallengeSummary;
+    }
+
+    if (!window.elemintz?.state?.getDailyChallenges || !this.username) {
+      return null;
+    }
+
+    const result = await window.elemintz.state.getDailyChallenges(this.username);
+    this.onlinePlayChallengeSummary = {
+      daily: result?.daily ?? null,
+      weekly: result?.weekly ?? null
+    };
+    this.onlinePlayChallengeSummaryKey = summaryKey;
+    return this.onlinePlayChallengeSummary;
+  }
+
+  async refreshLocalProfileAfterOnlineSettlement(state = this.onlinePlayState, options = {}) {
+    const refreshKey = this.deriveOnlineSettlementRefreshKey(state);
+
+    if (!refreshKey) {
+      return this.profile;
+    }
+
+    if (this.onlinePlayProfileRefreshKey === refreshKey && this.onlinePlayProfileRefreshPromise) {
+      return this.onlinePlayProfileRefreshPromise;
+    }
+
+    if (this.onlinePlayProfileRefreshKey === refreshKey && this.profile) {
+      return this.profile;
+    }
+
+    if (!window.elemintz?.state?.getProfile || !this.username) {
+      return this.profile;
+    }
+
+    this.onlinePlayProfileRefreshKey = refreshKey;
+    this.onlinePlayProfileRefreshPromise = (async () => {
+      const nextProfile = await window.elemintz.state.getProfile(this.username);
+      if (nextProfile) {
+        this.profile = nextProfile;
+      }
+
+      const providedChallengeStatus =
+        options?.challengeStatus && (options.challengeStatus.daily || options.challengeStatus.weekly)
+          ? options.challengeStatus
+          : null;
+
+      if (providedChallengeStatus || window.elemintz?.state?.getDailyChallenges) {
+        const challengeStatus =
+          providedChallengeStatus ?? await window.elemintz.state.getDailyChallenges(this.username);
+        this.dailyChallenges = {
+          daily: challengeStatus?.daily ?? null,
+          weekly: challengeStatus?.weekly ?? null,
+          dailyLogin: challengeStatus?.dailyLogin ?? this.dailyChallenges?.dailyLogin ?? null
+        };
+        if (challengeStatus?.xp && this.profile) {
+          this.profile = {
+            ...this.profile,
+            ...challengeStatus.xp
+          };
+        }
+      }
+
+      return this.profile;
+    })();
+
+    try {
+      return await this.onlinePlayProfileRefreshPromise;
+    } finally {
+      if (this.onlinePlayProfileRefreshKey === refreshKey) {
+        this.onlinePlayProfileRefreshPromise = null;
+      }
+    }
+  }
+
+  derivePendingReconnectReminderKey(reminder = this.onlineReconnectReminder) {
+    if (!reminder?.roomCode || !reminder?.expiresAt || !reminder?.username) {
+      return null;
+    }
+
+    return `${reminder.roomCode}:${reminder.expiresAt}:${reminder.username}`;
+  }
+
+  getActiveOnlineReconnectReminder(nowMs = Date.now()) {
+    const reminder = this.onlineReconnectReminder;
+    if (!reminder?.roomCode || !reminder?.expiresAt) {
+      return null;
+    }
+
+    const expiresAtMs = new Date(reminder.expiresAt).getTime();
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) {
+      return null;
+    }
+
+    return {
+      ...reminder,
+      msRemaining: Math.max(0, expiresAtMs - nowMs),
+      countdownLabel: this.formatReconnectCountdown(expiresAtMs - nowMs)
+    };
+  }
+
+  clearOnlineReconnectReminder({ hideModal = true } = {}) {
+    this.onlineReconnectReminder = null;
+    this.onlineReconnectReminderDismissedKey = null;
+    if (hideModal && globalThis.document?.querySelector?.("[data-online-reconnect-reminder='true']")) {
+      this.modalManager.hide();
+    }
+  }
+
+  maybeCaptureOnlineReconnectReminder(previousState, nextState) {
+    const previousRoom = previousState?.room ?? null;
+    if (
+      nextState?.connectionStatus !== "disconnected" ||
+      !previousRoom ||
+      previousRoom.status !== "full" ||
+      previousRoom.matchComplete
+    ) {
+      return;
+    }
+
+    const username = String(this.username ?? "").trim();
+    if (!username) {
+      return;
+    }
+
+    if (previousRoom.host?.username !== username && previousRoom.guest?.username !== username) {
+      return;
+    }
+
+    const authoritativeExpiresAt =
+      nextState?.room?.disconnectState?.expiresAt ??
+      previousRoom?.disconnectState?.expiresAt ??
+      null;
+
+    this.onlineReconnectReminder = {
+      username,
+      roomCode: previousRoom.roomCode,
+      expiresAt: authoritativeExpiresAt ?? new Date(Date.now() + ONLINE_RECONNECT_TIMEOUT_MS).toISOString()
+    };
+    this.onlineReconnectReminderDismissedKey = null;
+  }
+
+  clearOnlineReconnectReminderFromState(state) {
+    const reminder = this.getActiveOnlineReconnectReminder();
+    if (!reminder) {
+      this.clearOnlineReconnectReminder();
+      return;
+    }
+
+    const room = state?.room ?? null;
+    const errorCode = String(state?.lastError?.code ?? "");
+    const username = String(this.username ?? "").trim();
+    const reminderKey = this.derivePendingReconnectReminderKey(reminder);
+
+    if (
+      room?.roomCode === reminder.roomCode &&
+      room?.status === "full" &&
+      (room.host?.username === username || room.guest?.username === username)
+    ) {
+      this.clearOnlineReconnectReminder();
+      return;
+    }
+
+    if (["ROOM_EXPIRED", "ROOM_NOT_FOUND", "ROOM_CLOSING"].includes(errorCode)) {
+      this.clearOnlineReconnectReminder();
+      return;
+    }
+
+    if (room?.roomCode === reminder.roomCode && (room?.status === "expired" || room?.status === "closing")) {
+      this.clearOnlineReconnectReminder();
+      return;
+    }
+
+    if (this.onlineReconnectReminderDismissedKey && this.onlineReconnectReminderDismissedKey !== reminderKey) {
+      this.onlineReconnectReminderDismissedKey = null;
+    }
+  }
+
+  ensureOnlineReconnectUiTimer() {
+    const hasPausedCountdown =
+      this.onlinePlayState?.room?.status === "paused" &&
+      Boolean(this.onlinePlayState?.room?.disconnectState?.active) &&
+      Boolean(this.onlinePlayState?.room?.disconnectState?.expiresAt);
+    const hasReminder = Boolean(this.getActiveOnlineReconnectReminder());
+
+    if (!hasPausedCountdown && !hasReminder) {
+      this.clearOnlineReconnectUiTimer();
+      return;
+    }
+
+    if (this.onlineReconnectUiTimerId) {
+      return;
+    }
+
+    this.onlineReconnectUiTimerId = setInterval(() => {
+      if (!this.getActiveOnlineReconnectReminder()) {
+        this.clearOnlineReconnectReminder();
+      }
+
+      if (
+        this.screenFlow === "onlinePlay" &&
+        this.onlinePlayState?.room?.status === "paused" &&
+        this.onlinePlayState?.room?.disconnectState?.expiresAt
+      ) {
+        this.renderOnlinePlayScreen();
+      } else {
+        this.updateOnlineReconnectReminderModal();
+      }
+
+      const stillHasPausedCountdown =
+        this.onlinePlayState?.room?.status === "paused" &&
+        Boolean(this.onlinePlayState?.room?.disconnectState?.active) &&
+        Boolean(this.onlinePlayState?.room?.disconnectState?.expiresAt);
+      const stillHasReminder = Boolean(this.getActiveOnlineReconnectReminder());
+      if (!stillHasPausedCountdown && !stillHasReminder) {
+        this.clearOnlineReconnectUiTimer();
+      }
+    }, 1000);
+
+    this.onlineReconnectUiTimerId?.unref?.();
+  }
+
+  updateOnlineReconnectReminderModal() {
+    const reminder = this.getActiveOnlineReconnectReminder();
+    if (!reminder || this.screenFlow === "onlinePlay") {
+      if (globalThis.document?.querySelector?.("[data-online-reconnect-reminder='true']")) {
+        this.modalManager.hide();
+      }
+      return;
+    }
+
+    const reminderKey = this.derivePendingReconnectReminderKey(reminder);
+    if (this.onlineReconnectReminderDismissedKey === reminderKey) {
+      return;
+    }
+
+    const activeReminderModal = globalThis.document?.querySelector?.("[data-online-reconnect-reminder='true']");
+    const activeModal = globalThis.document?.querySelector?.(".modal-overlay");
+    if (activeModal && !activeReminderModal) {
+      return;
+    }
+
+    this.modalManager.show({
+      title: "Reconnect to Online Match",
+      bodyHtml: `
+        <div data-online-reconnect-reminder="true" class="stack-sm">
+          <p><strong>Room Code:</strong> ${escapeHtml(reminder.roomCode)}</p>
+          <p><strong>Time Remaining:</strong> ${escapeHtml(reminder.countdownLabel)}</p>
+          <p>You have 60 seconds to return before the room expires as no contest.</p>
+        </div>
+      `,
+      actions: [
+        {
+          label: "Reconnect Now",
+          onClick: async () => {
+            this.modalManager.hide();
+            await this.reconnectToPendingOnlineRoom();
+          }
+        },
+        {
+          label: "Dismiss",
+          onClick: () => {
+            this.onlineReconnectReminderDismissedKey = reminderKey;
+            this.modalManager.hide();
+          }
+        }
+      ]
+    });
+  }
+
+  async reconnectToPendingOnlineRoom() {
+    const reminder = this.getActiveOnlineReconnectReminder();
+    if (!reminder || !window.elemintz?.multiplayer?.connect || !window.elemintz?.multiplayer?.joinRoom) {
+      return;
+    }
+
+    this.screenFlow = "onlinePlay";
+    this.onlinePlayJoinCode = reminder.roomCode;
+    this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.connect());
+    this.renderOnlinePlayScreen();
+    this.onlinePlayState = this.normalizeOnlinePlayState(
+      await window.elemintz.multiplayer.joinRoom({
+        roomCode: reminder.roomCode,
+        username: this.username
+      })
+    );
+    this.clearOnlineReconnectReminderFromState(this.onlinePlayState);
+    this.ensureOnlineReconnectUiTimer();
+    this.renderOnlinePlayScreen();
+  }
+
+  reconcileOnlinePlayRoundState(previousState, nextState) {
+    const previousSubmittedCount = Number(previousState?.room?.moveSync?.submittedCount ?? 0);
+    const nextSubmittedCount = Number(nextState?.room?.moveSync?.submittedCount ?? 0);
+    const hasLatestRoundResult = Boolean(nextState?.latestRoundResult);
+
+    if (!hasLatestRoundResult) {
+      return nextState;
+    }
+
+    if (previousSubmittedCount >= 2 && nextSubmittedCount === 0) {
+      console.info("[OnlinePlay][Renderer] new round detected, clearing round result");
+      return this.normalizeOnlinePlayState({
+        ...nextState,
+        latestRoundResult: null
+      });
+    }
+
+    if (previousSubmittedCount === 0 && nextSubmittedCount > 0) {
+      console.info("[OnlinePlay][Renderer] new round detected, clearing round result");
+      return this.normalizeOnlinePlayState({
+        ...nextState,
+        latestRoundResult: null
+      });
+    }
+
+    return nextState;
+  }
+
   async syncOnlinePlayState() {
     if (!window.elemintz?.multiplayer?.getState) {
       this.onlinePlayState = this.normalizeOnlinePlayState(null);
@@ -666,9 +1159,37 @@ export class AppController {
     }
 
     this.onlinePlayUnsubscribe = window.elemintz.multiplayer.onUpdate((state) => {
-      this.onlinePlayState = this.normalizeOnlinePlayState(state);
+      const previousState = this.onlinePlayState;
+      const nextState = this.normalizeOnlinePlayState(state);
+      this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+      this.maybeCaptureOnlineReconnectReminder(previousState, this.onlinePlayState);
+      this.clearOnlineReconnectReminderFromState(this.onlinePlayState);
+      this.ensureOnlineReconnectUiTimer();
+      this.updateOnlineReconnectReminderModal();
+      if (this.onlinePlayState?.latestRoundResult) {
+        console.info("[OnlinePlay][Renderer] latest round result stored in renderer state", this.onlinePlayState.latestRoundResult);
+      }
       if (this.screenFlow === "onlinePlay") {
         this.renderOnlinePlayScreen();
+      }
+      if (this.onlinePlayState?.room?.matchComplete) {
+        void this.refreshOnlinePlayChallengeSummary(this.onlinePlayState)
+          .then((challengeSummary) =>
+            this.refreshLocalProfileAfterOnlineSettlement(this.onlinePlayState, {
+              challengeStatus: challengeSummary
+                ? {
+                    daily: challengeSummary.daily ?? null,
+                    weekly: challengeSummary.weekly ?? null,
+                    dailyLogin: this.dailyChallenges?.dailyLogin ?? null
+                  }
+                : null
+            })
+          )
+          .then(() => {
+          if (this.screenFlow === "onlinePlay") {
+            this.renderOnlinePlayScreen();
+          }
+        });
       }
     });
   }
@@ -676,7 +1197,11 @@ export class AppController {
   renderOnlinePlayScreen() {
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
+      onlineChallengeSummary: this.onlinePlayChallengeSummary,
+      profile: this.profile,
+      username: this.username,
       joinCode: this.onlinePlayJoinCode,
+      now: Date.now(),
       backgroundImage: this.getBackgroundFromProfile(this.profile),
       actions: {
         createRoom: async () => {
@@ -684,7 +1209,11 @@ export class AppController {
             return;
           }
 
-          this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.createRoom());
+          const identityPayload = await this.buildOnlineRoomIdentityPayload();
+          this.onlinePlayState = this.normalizeOnlinePlayState(
+            await window.elemintz.multiplayer.createRoom(identityPayload)
+          );
+          this.ensureOnlineReconnectUiTimer();
           this.renderOnlinePlayScreen();
         },
         joinRoom: async (roomCode) => {
@@ -694,9 +1223,15 @@ export class AppController {
 
           this.onlinePlayJoinCode = String(roomCode ?? "").trim().toUpperCase();
           this.renderOnlinePlayScreen();
+          const identityPayload = await this.buildOnlineRoomIdentityPayload();
           this.onlinePlayState = this.normalizeOnlinePlayState(
-            await window.elemintz.multiplayer.joinRoom({ roomCode: this.onlinePlayJoinCode })
+            await window.elemintz.multiplayer.joinRoom({
+              roomCode: this.onlinePlayJoinCode,
+              ...identityPayload
+            })
           );
+          this.clearOnlineReconnectReminderFromState(this.onlinePlayState);
+          this.ensureOnlineReconnectUiTimer();
           this.renderOnlinePlayScreen();
         },
         submitMove: async (move) => {
@@ -707,7 +1242,36 @@ export class AppController {
           console.info("[OnlinePlay][Renderer] AppController submitMove entered", {
             move
           });
-          this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.submitMove({ move }));
+          const previousState = this.onlinePlayState;
+          const nextState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.submitMove({ move }));
+          this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+          if (this.onlinePlayState?.latestRoundResult) {
+            console.info("[OnlinePlay][Renderer] latest round result stored in renderer state", this.onlinePlayState.latestRoundResult);
+          }
+          if (this.onlinePlayState?.room?.matchComplete) {
+            const challengeSummary = await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
+            await this.refreshLocalProfileAfterOnlineSettlement(this.onlinePlayState, {
+              challengeStatus: challengeSummary
+                ? {
+                    daily: challengeSummary.daily ?? null,
+                    weekly: challengeSummary.weekly ?? null,
+                    dailyLogin: this.dailyChallenges?.dailyLogin ?? null
+                  }
+                : null
+            });
+          }
+          this.ensureOnlineReconnectUiTimer();
+          this.renderOnlinePlayScreen();
+        },
+        readyRematch: async () => {
+          if (!window.elemintz?.multiplayer?.readyRematch) {
+            return;
+          }
+
+          const previousState = this.onlinePlayState;
+          const nextState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.readyRematch());
+          this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+          this.ensureOnlineReconnectUiTimer();
           this.renderOnlinePlayScreen();
         },
         back: async () => {
@@ -1197,6 +1761,7 @@ export class AppController {
     this.localProfiles = null;
 
     this.renderMenuScreen();
+    this.updateOnlineReconnectReminderModal();
     this.refreshDailyChallengesForMenu();
     Promise.resolve().then(() => this.maybeShowLoadoutUnlockNotice());
 
@@ -1229,6 +1794,8 @@ export class AppController {
     this.clearPassTimer();
     this.screenFlow = "onlinePlay";
     await this.syncOnlinePlayState();
+    await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
+    this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();
 
     if (!window.elemintz?.multiplayer?.connect) {
@@ -1236,6 +1803,8 @@ export class AppController {
     }
 
     this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.connect());
+    await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
+    this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();
   }
 
@@ -1960,6 +2529,7 @@ export class AppController {
         back: () => this.showMenu()
       }
     });
+    this.updateOnlineReconnectReminderModal();
   }
 
   async showDailyChallenges() {
@@ -1975,6 +2545,7 @@ export class AppController {
         back: () => this.showMenu()
       }
     });
+    this.updateOnlineReconnectReminderModal();
   }
 
   async showAchievements() {
@@ -1987,6 +2558,7 @@ export class AppController {
         back: () => this.showMenu()
       }
     });
+    this.updateOnlineReconnectReminderModal();
   }
 
   async showCosmetics() {
@@ -2081,6 +2653,7 @@ export class AppController {
         back: () => this.showMenu()
       }
     });
+    this.updateOnlineReconnectReminderModal();
   }
 
   async showStore() {
@@ -2118,6 +2691,7 @@ export class AppController {
         back: () => this.showMenu()
       }
     });
+    this.updateOnlineReconnectReminderModal();
   }
 
   async showSettings() {
@@ -2142,6 +2716,7 @@ export class AppController {
         back: () => this.showMenu()
       }
     });
+    this.updateOnlineReconnectReminderModal();
   }
 }
 

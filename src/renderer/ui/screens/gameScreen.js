@@ -1,22 +1,14 @@
 import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
-
-const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
+import {
+  ELEMENT_ORDER,
+  getCardElement,
+  renderElementHandSummary,
+  renderHiddenHandSummary,
+  renderPlayerHeader
+} from "../shared/playSurfaceShared.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
-
-function getCardElement(card) {
-  if (typeof card === "string") {
-    return card.toLowerCase();
-  }
-
-  if (card && typeof card === "object") {
-    const raw = card.element ?? card.type ?? card.name ?? null;
-    return typeof raw === "string" ? raw.toLowerCase() : null;
-  }
-
-  return null;
-}
 
 function formatClock(seconds) {
   const safe = Math.max(0, Number(seconds) || 0);
@@ -37,66 +29,6 @@ function getWarPresentationSignature(context) {
     getCardElement(lastRound.p1Card) ?? "none",
     getCardElement(lastRound.p2Card) ?? "none"
   ].join("|");
-}
-
-function renderPlayerHandSummary(cards, owner, options) {
-  const selectable = options.selectable;
-  const variantMap = options.variantMap ?? null;
-  const normalizedCards = Array.isArray(cards) ? cards.map((card) => getCardElement(card)) : [];
-
-  return ELEMENT_ORDER.map((element) => {
-    const firstIndex = normalizedCards.findIndex((card) => card === element);
-    const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
-    const isAvailable = count > 0;
-    const isSelected = isAvailable && options.selectedCardIndex === firstIndex;
-    const classes = ["hand-slot", `hand-slot-${element}`];
-
-    if (selectable && isAvailable) {
-      classes.push("is-selectable");
-    }
-
-    if (!isAvailable) {
-      classes.push("is-empty");
-    }
-
-    if (isSelected && options.phase === "play") {
-      classes.push("is-playing");
-    }
-
-    return `
-      <button
-        class="${classes.join(" ")}"
-        data-card-index="${isAvailable ? firstIndex : -1}"
-        data-card-owner="${owner}"
-        data-element="${element}"
-        ${selectable && isAvailable ? "" : "disabled"}
-      >
-        <span class="card-art hand-slot-art" style="background-image: url('${getCardImage(element, variantMap)}')"></span>
-        <span class="hand-slot-count-badge" aria-label="${formatElement(element)} count x${count}">x${count}</span>
-      </button>
-    `;
-  }).join("");
-}
-
-function renderHiddenHandSummary(count, backImage = ASSET_CATALOG.cards.back) {
-  const safeCount = Math.max(0, Number(count) || 0);
-  const previewCount = Math.min(3, Math.max(1, safeCount));
-  const stack = Array.from({ length: previewCount }, (_, index) => `
-    <span
-      class="hidden-hand-card hidden-hand-card-${index}"
-      style="background-image: url('${backImage}')"
-      aria-hidden="true"
-    ></span>
-  `).join("");
-
-  return `
-    <div class="hidden-hand-summary" aria-label="Hidden opponent hand: ${safeCount} cards">
-      <div class="hidden-hand-stack">
-        ${stack}
-      </div>
-      <div class="hidden-hand-count">x${safeCount}</div>
-    </div>
-  `;
 }
 
 function renderWarPileSummary(pileCards, cardImages, emphasize) {
@@ -150,24 +82,6 @@ function renderPlayedCard(label, card, options) {
     <div class="${classes.join(" ")}">
       <p class="played-slot-label">${safeLabel}: ${formatElement(card)}</p>
       <span class="card-art played-art" style="background-image: url('${getCardImage(card, options.variantMap)}')"></span>
-    </div>
-  `;
-}
-
-function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
-  const name = escapeHtml(playerDisplay?.name ?? fallbackName);
-  const title = escapeHtml(playerDisplay?.title ?? "Initiate");
-  const avatar = playerDisplay?.avatar ?? ASSET_CATALOG.avatars.default_avatar;
-  const titleIcon = playerDisplay?.titleIcon ?? null;
-  const featuredBadge = playerDisplay?.featuredBadge ?? null;
-
-  return `
-    <div class="player-header">
-      <img class="player-avatar" src="${avatar}" alt="${name}" />
-      <div>
-        <h3>${name} ${countLabel}</h3>
-        <p class="player-title">${titleIcon ? `<img class="title-icon" src="${titleIcon}" alt="${title}" />` : ""}<span>${title}</span>${featuredBadge ? `<img class="featured-badge" src="${featuredBadge}" alt="Featured Badge" />` : ""}</p>
-      </div>
     </div>
   `;
 }
@@ -235,7 +149,7 @@ function renderHands(vm, context, phase, names) {
   if (!hotseat?.enabled) {
       return {
         leftTitle: renderPlayerHeader(context.playerDisplay, "Player", `(${vm.playerHand.length})`),
-        leftCards: renderPlayerHandSummary(vm.playerHand, "active", {
+        leftCards: renderElementHandSummary(vm.playerHand, "active", {
           selectable: canSelect,
           selectedCardIndex,
           phase,
@@ -263,7 +177,7 @@ function renderHands(vm, context, phase, names) {
   if (activePlayer === "p2") {
     return {
       leftTitle: renderPlayerHeader(context.opponentDisplay, names.p2, `(${vm.opponentHand.length})`),
-      leftCards: renderPlayerHandSummary(vm.opponentHand, "active", {
+      leftCards: renderElementHandSummary(vm.opponentHand, "active", {
         selectable: canSelect,
           selectedCardIndex,
           phase,
@@ -278,7 +192,7 @@ function renderHands(vm, context, phase, names) {
 
   return {
     leftTitle: renderPlayerHeader(context.playerDisplay, names.p1, `(${vm.playerHand.length})`),
-    leftCards: renderPlayerHandSummary(vm.playerHand, "active", {
+    leftCards: renderElementHandSummary(vm.playerHand, "active", {
       selectable: canSelect,
         selectedCardIndex,
         phase,

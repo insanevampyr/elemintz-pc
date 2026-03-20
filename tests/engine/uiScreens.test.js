@@ -11,7 +11,8 @@ import { profileScreen } from "../../src/renderer/ui/screens/profileScreen.js";
 import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js";
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
-import { getArenaBackground, getAvatarImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
+import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
+import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
 
 function createClassList() {
   const values = new Set();
@@ -1424,6 +1425,117 @@ test("ui: profile unlocked achievements render approved expansion badge asset pa
   assert.match(html, /assets\/badges\/badge_longest_war_5\.png/);
   assert.match(html, /assets\/badges\/badge_longest_war_7\.png/);
   assert.match(html, /assets\/badges\/badge_all_elements_25\.png/);
+});
+
+test("ui: profile renders all valid attained achievements and shows achievement progress heading", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "CatalogUser",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 7,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {
+        first_flame: { count: 1 },
+        longest_war_7: { count: 1 },
+        level_50: { count: 1 },
+        quick_draw: { count: 4 },
+        legacy_badge: { count: 9 }
+      },
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(
+    html,
+    new RegExp(`Achievements \\(4\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
+  );
+  assert.match(html, /First Flame/);
+  assert.match(html, /Cataclysm Clash/);
+  assert.match(html, /EleMintz Paragon/);
+  assert.match(html, /Quick Draw/);
+  assert.match(html, /Repeat Count: 4/);
+  assert.doesNotMatch(html, /legacy_badge/);
+});
+
+test("ui: profile achievement progress heading ignores duplicate counts and shows zero state", () => {
+  const zeroHtml = profileScreen.render({
+    profile: {
+      username: "ZeroUser",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(
+    zeroHtml,
+    new RegExp(`Achievements \\(0\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
+  );
+  assert.match(zeroHtml, /No achievements unlocked yet\./);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {
@@ -3796,18 +3908,157 @@ test("ui: online play screen renders room flow status and room details", () => {
   });
 
   assert.match(html, /Online Play/);
-  assert.match(html, /Connection:<\/strong> connected/);
-  assert.match(html, /Room ABC123 created\. Waiting for another player\./);
+  assert.match(html, /State:<\/strong> Waiting for Opponent/);
   assert.match(html, /Error:<\/strong> Previous error/);
-  assert.match(html, /id="online-create-room-btn"/);
-  assert.match(html, /id="online-room-code-input"/);
-  assert.match(html, /value="abc123"/);
   assert.match(html, /Room Code:<\/strong> ABC123/);
-  assert.match(html, /Status:<\/strong> waiting/);
   assert.match(html, /Role:<\/strong> Host/);
+  assert.doesNotMatch(html, /Connection:<\/strong>/);
+  assert.doesNotMatch(html, /id="online-create-room-btn"/);
+  assert.doesNotMatch(html, /id="online-room-code-input"/);
+  assert.doesNotMatch(html, /value="abc123"/);
+});
+
+test("ui: online play waiting host state shows the host's equipped cosmetics cleanly before join", () => {
+  const hostResolvedIdentity = {
+    slotLabel: "Host",
+    username: "HostUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_crystal_soul"),
+    backgroundImage: getArenaBackground("bg_verdant_shrine"),
+    cardBackImage: getCardBackImage("cardback_arcane_galaxy"),
+    titleLabel: "Apprentice",
+    badgeImage: getBadgeImage("badge_element_initiate"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_crownfire",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_transparent_crystal",
+      wind: "wind_variant_vortex_spirit"
+    })
+  };
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "ABC123",
+        status: "waiting",
+        hostResolvedIdentity,
+        guestResolvedIdentity: null,
+        host: {
+          socketId: "host-1",
+          username: "HostUser",
+          equippedCosmetics: {
+            avatar: "avatar_crystal_soul",
+            background: "bg_verdant_shrine",
+            cardBack: "cardback_arcane_galaxy",
+            badge: "badge_element_initiate",
+            title: "title_apprentice",
+            elementCardVariant: {
+              fire: "fire_variant_crownfire",
+              water: "water_variant_tidal_spirit",
+              earth: "earth_variant_transparent_crystal",
+              wind: "wind_variant_vortex_spirit"
+            }
+          }
+        },
+        guest: null
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Waiting for Opponent/);
+  assert.match(html, /Share room code ABC123 to start the online match\./);
+  assert.match(html, /data-online-player-card-back="host-waiting"/);
+  assert.match(html, /<span>Apprentice<\/span>/);
+  assert.match(html, new RegExp(getAvatarImage("avatar_crystal_soul").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getArenaBackground("bg_verdant_shrine").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getCardBackImage("cardback_arcane_galaxy").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, /badge_element_initiate\.png/);
+  assert.match(html, new RegExp(getVariantCardImages({ fire: "fire_variant_crownfire" }).fire.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getVariantCardImages({ water: "water_variant_tidal_spirit" }).water.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getVariantCardImages({ earth: "earth_variant_transparent_crystal" }).earth.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getVariantCardImages({ wind: "wind_variant_vortex_spirit" }).wind.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("ui: online play screen tolerates incomplete room identity during create or join without crashing", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: {
+          socketId: "host-1",
+          username: "HostUser",
+          equippedCosmetics: {
+            avatar: "avatar_crystal_soul",
+            background: "bg_verdant_shrine",
+            cardBack: "cardback_arcane_galaxy",
+            badge: "badge_element_initiate",
+            title: "title_apprentice",
+            elementCardVariant: {
+              fire: "default_fire_card",
+              water: "default_water_card",
+              earth: "default_earth_card",
+              wind: "default_wind_card"
+            }
+          }
+        },
+        guest: null,
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /State:<\/strong> Active Round/);
+  assert.match(html, /Room Code:<\/strong> ABC123/);
+  assert.doesNotMatch(html, /TypeError/);
 });
 
 test("ui: online play screen renders move sync status and submit controls for full rooms", () => {
+  const hostResolvedIdentity = {
+    slotLabel: "Host",
+    username: "Host",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_fourfold_lord"),
+    backgroundImage: getArenaBackground("bg_elemental_throne"),
+    cardBackImage: getCardBackImage("cardback_elemental_nexus"),
+    titleLabel: "War Master",
+    badgeImage: getBadgeImage("badge_arena_legend"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_phoenix",
+      water: "water_variant_crystal",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    })
+  };
+  const guestResolvedIdentity = {
+    slotLabel: "Guest",
+    username: "Guest",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_storm_oracle"),
+    backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackImage: getCardBackImage("cardback_storm_spiral"),
+    titleLabel: "Element Sovereign",
+    badgeImage: getBadgeImage("badge_element_veteran"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    })
+  };
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "ABC123",
@@ -3820,8 +4071,25 @@ test("ui: online play screen renders move sync status and submit controls for fu
         roomCode: "ABC123",
         createdAt: "2026-03-19T12:00:00.000Z",
         status: "full",
+        hostResolvedIdentity,
+        guestResolvedIdentity,
         host: { socketId: "host-1" },
         guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 0,
+        roundNumber: 1,
+        lastOutcomeType: null,
+        matchComplete: false,
+        winner: null,
+        winReason: null,
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 0, water: 1, earth: 2, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
         moveSync: {
           hostSubmitted: true,
           guestSubmitted: false,
@@ -3834,19 +4102,316 @@ test("ui: online play screen renders move sync status and submit controls for fu
     actions: {}
   });
 
-  assert.match(html, /Move Sync:<\/strong> 1\/2 submitted\./);
-  assert.match(html, /Host Submitted:<\/strong> Yes/);
-  assert.match(html, /Guest Submitted:<\/strong> No/);
-  assert.match(html, /Submit Move/);
-  assert.match(html, /data-move="fire"/);
+  assert.match(html, /State:<\/strong> Active Round/);
+  assert.match(html, /Sync:<\/strong> 1\/2 submitted\./);
+  assert.match(html, /Active Round/);
+  assert.match(html, /Choose your move for the current round\./);
+  assert.match(html, /Round 1 \| Host 0 - Guest 0/);
+  assert.match(html, /Move Sync: 1\/2 submitted\./);
+  assert.match(html, /class="player-header"/);
+  assert.match(html, /Guest \(4\)/);
+  assert.match(html, /Host \(8\)/);
+  assert.match(html, /class="hand-slot hand-slot-fire is-empty"/);
   assert.match(html, /data-move="water"/);
-  assert.match(html, /data-move="earth"/);
-  assert.match(html, /data-move="wind"/);
+  assert.match(html, /aria-label="Water count x1"/);
+  assert.match(html, /aria-label="Earth count x2"/);
+  assert.match(html, /aria-label="Wind count x1"/);
+});
+
+test("ui: online play screen renders match complete and rematch readiness state", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Match complete in room ABC123. Ready up for rematch.",
+      lastError: null,
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostScore: 5,
+        guestScore: 3,
+        roundNumber: 9,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rematch: { hostReady: true, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+        guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        hostResult: "win",
+        guestResult: "lose"
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 5,
+        guestScore: 3,
+        roundNumber: 9,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        rematch: { hostReady: true, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+        guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /State:<\/strong> Match Complete/);
+  assert.match(html, /Match Complete/);
+  assert.match(html, /Winner:<\/strong> You Lose/);
+  assert.match(html, /Reason:<\/strong> HAND_EXHAUSTION/);
+  assert.match(html, /Host Ready:<\/strong> Yes/);
+  assert.match(html, /Guest Ready:<\/strong> No/);
+  assert.match(html, /Rewards Granted/);
+  assert.match(html, /You Gained:<\/strong> \+5 Tokens, \+5 XP/);
+  assert.match(html, /id="online-ready-rematch-btn"/);
+  assert.doesNotMatch(html, /Submit Fire/);
+});
+
+test("ui: online play screen reward summary reflects an actual chest grant", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    profile: {
+      username: "HostRewardUser",
+      chests: { basic: 3 }
+    },
+    username: "HostRewardUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "Match complete in room ABC123. Ready up for rematch.",
+      lastError: null,
+      latestRoundResult: null,
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 3,
+        guestScore: 1,
+        roundNumber: 7,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 4, water: 3, earth: 4, wind: 3 },
+        guestHand: { fire: 0, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /You Gained:<\/strong> \+25 Tokens, \+20 XP, \+1 Basic Chest/);
+  assert.match(html, /Basic Chests Waiting:<\/strong> 3 Basic Chests/);
+});
+
+test("ui: online play results use current basic chest inventory without implying a chest grant when none was awarded", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    profile: {
+      username: "GuestRewardUser",
+      chests: { basic: 2 }
+    },
+    username: "GuestRewardUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        matchComplete: true,
+        winner: "host",
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            granted: true,
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        rematch: { hostReady: false, guestReady: false }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /You Gained:<\/strong> \+5 Tokens, \+5 XP/);
+  assert.doesNotMatch(html, /\+5 Tokens, \+5 XP, \+\d+ Basic Chest/);
+  assert.match(html, /Basic Chests Waiting:<\/strong> 2 Basic Chests/);
+});
+
+test("ui: completed online match renders local player daily and weekly challenge progress in the existing results area", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    onlineChallengeSummary: {
+      daily: {
+        msUntilReset: 5400000,
+        challenges: [
+          {
+            id: "daily_win_1_match",
+            name: "Win 1 Match",
+            progress: 1,
+            goal: 1,
+            completed: true
+          },
+          {
+            id: "daily_play_5_matches",
+            name: "Play 5 Matches",
+            progress: 1,
+            goal: 5,
+            completed: false
+          }
+        ]
+      },
+      weekly: {
+        msUntilReset: 176400000,
+        challenges: [
+          {
+            id: "weekly_play_15_matches",
+            name: "Play 15 Matches",
+            progress: 1,
+            goal: 15,
+            completed: false
+          },
+          {
+            id: "weekly_win_streak_3",
+            name: "Reach a 3 Win Streak",
+            progress: 1,
+            goal: 1,
+            completed: true
+          }
+        ]
+      }
+    },
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Match complete in room ABC123. Ready up for rematch.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 5,
+        guestScore: 3,
+        roundNumber: 9,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+        guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Match Complete/);
+  assert.match(html, /Challenges/);
+  assert.match(html, /Daily Progress/);
+  assert.match(html, /Weekly Progress/);
+  assert.match(html, /Win 1 Match/);
+  assert.match(html, /Play 5 Matches/);
+  assert.match(html, /Play 15 Matches/);
+  assert.match(html, /Reach a 3 Win Streak/);
 });
 
 test("ui: online play screen renders round result from the local player perspective", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
+    username: "SignedInGuest",
     joinCode: "ABC123",
     multiplayer: {
       connectionStatus: "connected",
@@ -3857,8 +4422,1764 @@ test("ui: online play screen renders round result from the local player perspect
         roomCode: "ABC123",
         hostMove: "fire",
         guestMove: "water",
+        outcomeType: "resolved",
         hostResult: "lose",
         guestResult: "win"
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 1,
+        roundNumber: 2,
+        lastOutcomeType: "resolved",
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Round Result/);
+  assert.match(html, /Host Move:<\/strong> Fire/);
+  assert.match(html, /Guest Move:<\/strong> Water/);
+  assert.match(html, /Result:<\/strong> You Win/);
+});
+
+test("ui: online play screen keeps settled guest rewards after host migration", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    onlineChallengeSummary: {
+      daily: {
+        msUntilReset: 5400000,
+        challenges: [
+          {
+            id: "daily_play_5_matches",
+            name: "Play 5 Matches",
+            progress: 1,
+            goal: 5,
+            completed: false
+          }
+        ]
+      },
+      weekly: {
+        msUntilReset: 176400000,
+        challenges: [
+          {
+            id: "weekly_play_15_matches",
+            name: "Play 15 Matches",
+            progress: 1,
+            goal: 15,
+            completed: false
+          }
+        ]
+      }
+    },
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Match complete in room ABC123. Ready up for rematch.",
+      lastError: null,
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        hostResult: "win",
+        guestResult: "lose"
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "closing",
+        host: { socketId: "host-1", username: "HostRewardUser", connected: false },
+        guest: { socketId: "guest-1", username: "GuestRewardUser", connected: true },
+        hostScore: 5,
+        guestScore: 3,
+        roundNumber: 9,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        disconnectState: {
+          active: true,
+          disconnectedRole: "host",
+          disconnectedUsername: "HostRewardUser",
+          remainingUsername: "GuestRewardUser",
+          reason: "post_match_disconnect"
+        },
+        closingAt: "2026-03-20T12:00:30.000Z",
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+        guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Winner:<\/strong> You Lose/);
+  assert.match(html, /You Gained:<\/strong> \+5 Tokens, \+5 XP/);
+  assert.match(html, /Reconnect:<\/strong> HostRewardUser disconnected after match completion\./);
+  assert.match(html, /Rematch:<\/strong> Unavailable/);
+  assert.match(html, /Daily Progress/);
+  assert.match(html, /Play 5 Matches/);
+  assert.match(html, /Weekly Progress/);
+  assert.match(html, /Play 15 Matches/);
+  assert.doesNotMatch(html, /\+25 Tokens, \+20 XP, \+1 Basic Chest/);
+});
+
+test("ui: online play rematch reset hides challenge summary while keeping the existing online screen", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    onlineChallengeSummary: {
+      daily: {
+        msUntilReset: 5400000,
+        challenges: [
+          {
+            id: "daily_play_5_matches",
+            name: "Play 5 Matches",
+            progress: 1,
+            goal: 5,
+            completed: false
+          }
+        ]
+      },
+      weekly: {
+        msUntilReset: 176400000,
+        challenges: [
+          {
+            id: "weekly_play_15_matches",
+            name: "Play 15 Matches",
+            progress: 1,
+            goal: 15,
+            completed: false
+          }
+        ]
+      }
+    },
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Rematch started in room ABC123.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 0,
+        roundNumber: 1,
+        lastOutcomeType: null,
+        matchComplete: false,
+        winner: null,
+        winReason: null,
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: false,
+          guestSubmitted: false,
+          submittedCount: 0,
+          bothSubmitted: false,
+          updatedAt: null
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Online Play/);
+  assert.doesNotMatch(html, /Daily Progress/);
+  assert.doesNotMatch(html, /Weekly Progress/);
+  assert.doesNotMatch(html, /id="online-ready-rematch-btn"/);
+});
+
+test("ui: online play screen shows paused reconnect status on the existing screen", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "ResumeHost",
+    joinCode: "ABC123",
+    now: Date.parse("2026-03-20T12:00:00.000Z"),
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "Opponent disconnected. Waiting for reconnect.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        status: "paused",
+        host: { socketId: "host-1", username: "ResumeHost", connected: true },
+        guest: { socketId: "guest-1", username: "ResumeGuest", connected: false },
+        hostScore: 1,
+        guestScore: 0,
+        roundNumber: 2,
+        lastOutcomeType: "resolved",
+        matchComplete: false,
+        winner: null,
+        winReason: null,
+        disconnectState: {
+          active: true,
+          disconnectedRole: "guest",
+          disconnectedUsername: "ResumeGuest",
+          remainingUsername: "ResumeHost",
+          reason: "waiting_for_reconnect",
+          expiresAt: "2026-03-20T12:00:45.000Z",
+          resumedAt: null
+        },
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /State:<\/strong> Reconnect Paused/);
+  assert.match(html, /Reconnect:<\/strong> ResumeGuest disconnected\. Waiting to reconnect\./);
+  assert.match(html, /Room Code:<\/strong> ABC123/);
+  assert.match(html, /Room Expires In:<\/strong> 00:45/);
+  assert.match(html, /Rematch:<\/strong> Unavailable/);
+  assert.doesNotMatch(html, /Match Complete/);
+  assert.doesNotMatch(html, /popup/i);
+});
+
+test("ui: online play screen shows resumed and expired no-contest room notices on the existing screen", () => {
+  const resumedHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "ResumeGuest",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-2",
+      statusMessage: "Match resumed.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1", username: "ResumeHost", connected: true },
+        guest: { socketId: "guest-2", username: "ResumeGuest", connected: true },
+        hostScore: 1,
+        guestScore: 0,
+        roundNumber: 2,
+        lastOutcomeType: "resolved",
+        matchComplete: false,
+        winner: null,
+        winReason: null,
+        disconnectState: {
+          active: false,
+          disconnectedRole: null,
+          disconnectedUsername: null,
+          remainingUsername: null,
+          reason: "match_resumed",
+          expiresAt: null,
+          resumedAt: "2026-03-20T12:00:20.000Z"
+        },
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
+      }
+    },
+    actions: {}
+  });
+  const expiredHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "ResumeHost",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "Reconnect window expired.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        status: "expired",
+        host: { socketId: "host-1", username: "ResumeHost", connected: true },
+        guest: { socketId: "guest-1", username: "ResumeGuest", connected: false },
+        hostScore: 1,
+        guestScore: 0,
+        roundNumber: 2,
+        lastOutcomeType: "resolved",
+        matchComplete: false,
+        winner: null,
+        winReason: null,
+        disconnectState: {
+          active: true,
+          disconnectedRole: "guest",
+          disconnectedUsername: "ResumeGuest",
+          remainingUsername: "ResumeHost",
+          reason: "disconnect_timeout_expired",
+          expiresAt: "2026-03-20T12:01:00.000Z",
+          resumedAt: null
+        },
+        closingAt: "2026-03-20T12:01:30.000Z",
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(resumedHtml, /State:<\/strong> Match Resumed/);
+  assert.match(resumedHtml, /Reconnect:<\/strong> Match resumed\./);
+  assert.match(expiredHtml, /State:<\/strong> No Contest/);
+  assert.match(expiredHtml, /Reconnect:<\/strong> Reconnect timeout expired\. Match ended with no contest\./);
+  assert.match(expiredHtml, /Rematch:<\/strong> Unavailable/);
+  assert.doesNotMatch(expiredHtml, /id="online-ready-rematch-btn"/);
+  assert.doesNotMatch(expiredHtml, /Rewards Granted/);
+});
+
+test("ui: online play screen normalizes waiting active war complete and closing room states", () => {
+  const waitingHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "AAA222",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "AAA222",
+        status: "waiting",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: null
+      }
+    },
+    actions: {}
+  });
+  const activeHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "AAA222",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "AAA222",
+        status: "full",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 }
+      }
+    },
+    actions: {}
+  });
+  const warHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "AAA222",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "AAA222",
+        status: "full",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        warActive: true,
+        warDepth: 1,
+        warRounds: [{ round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 1, water: 2, earth: 2, wind: 2 }
+      }
+    },
+    actions: {}
+  });
+  const completeHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "AAA222",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "AAA222",
+        status: "full",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        rematch: { hostReady: false, guestReady: false },
+        rewardSettlement: {
+          granted: true,
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostUser",
+            settledGuestUsername: "GuestUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        }
+      }
+    },
+    actions: {}
+  });
+  const closingHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "AAA222",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "AAA222",
+        status: "closing",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        host: { socketId: "host-1", username: "HostUser", connected: true },
+        guest: { socketId: "guest-1", username: "GuestUser", connected: false },
+        disconnectState: {
+          active: true,
+          disconnectedRole: "guest",
+          disconnectedUsername: "GuestUser",
+          remainingUsername: "HostUser",
+          reason: "post_match_disconnect",
+          expiresAt: null,
+          resumedAt: null
+        },
+        rematch: { hostReady: false, guestReady: false },
+        rewardSettlement: {
+          granted: true,
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostUser",
+            settledGuestUsername: "GuestUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(waitingHtml, /State:<\/strong> Waiting for Opponent/);
+  assert.match(activeHtml, /State:<\/strong> Active Round/);
+  assert.match(warHtml, /State:<\/strong> WAR Active/);
+  assert.match(completeHtml, /State:<\/strong> Match Complete/);
+  assert.match(closingHtml, /State:<\/strong> Room Closing/);
+});
+
+test("ui: reconnect countdown appears only in paused reconnect state", () => {
+  const activeHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "AAA222",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "AAA222",
+        status: "full",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 }
+      }
+    },
+    actions: {}
+  });
+  const pausedHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostUser",
+    joinCode: "AAA222",
+    now: Date.parse("2026-03-20T12:00:00.000Z"),
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "AAA222",
+        status: "paused",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        disconnectState: {
+          active: true,
+          disconnectedRole: "guest",
+          disconnectedUsername: "GuestUser",
+          remainingUsername: "HostUser",
+          reason: "waiting_for_reconnect",
+          expiresAt: "2026-03-20T12:00:30.000Z",
+          resumedAt: null
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.doesNotMatch(activeHtml, /Reconnect Status/);
+  assert.doesNotMatch(activeHtml, /Room Expires In:/);
+  assert.match(pausedHtml, /Room Expires In:<\/strong> 00:30/);
+});
+
+test("ui: online play screen renders local and opponent cosmetics from synced room identity data", () => {
+  const hostResolvedIdentity = {
+    slotLabel: "Host",
+    username: "LocalUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_fourfold_lord"),
+    backgroundImage: getArenaBackground("bg_elemental_throne"),
+    cardBackImage: getCardBackImage("cardback_elemental_nexus"),
+    titleLabel: "War Master",
+    badgeImage: getBadgeImage("badge_arena_legend"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_phoenix",
+      water: "water_variant_crystal",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    })
+  };
+  const guestResolvedIdentity = {
+    slotLabel: "Guest",
+    username: "RemoteUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_storm_oracle"),
+    backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackImage: getCardBackImage("cardback_storm_spiral"),
+    titleLabel: "Element Sovereign",
+    badgeImage: getBadgeImage("badge_element_veteran"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    })
+  };
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "LocalUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        hostResolvedIdentity,
+        guestResolvedIdentity,
+        host: {
+          socketId: "host-1",
+          username: "LocalUser",
+          equippedCosmetics: {
+            avatar: "avatar_fourfold_lord",
+            background: "bg_elemental_throne",
+            cardBack: "cardback_elemental_nexus",
+            elementCardVariant: {
+              fire: "fire_variant_phoenix",
+              water: "water_variant_crystal",
+              earth: "earth_variant_titan",
+              wind: "wind_variant_storm_eye"
+            },
+            title: "War Master",
+            badge: "badge_arena_legend"
+          }
+        },
+        guest: {
+          socketId: "guest-1",
+          username: "RemoteUser",
+          equippedCosmetics: {
+            avatar: "avatar_storm_oracle",
+            background: "bg_storm_temple",
+            cardBack: "cardback_storm_spiral",
+            elementCardVariant: {
+              fire: "fire_variant_ember",
+              water: "water_variant_tidal_spirit",
+              earth: "earth_variant_rooted_monolith",
+              wind: "wind_variant_sky_serpent"
+            },
+            title: "Element Sovereign",
+            badge: "badge_element_veteran"
+          }
+        },
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, new RegExp(getAvatarImage("avatar_fourfold_lord").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getAvatarImage("avatar_storm_oracle").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getArenaBackground("bg_elemental_throne").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getArenaBackground("bg_storm_temple").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getCardBackImage("cardback_elemental_nexus").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getCardBackImage("cardback_storm_spiral").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, /<span>War Master<\/span>/);
+  assert.match(html, /<span>Element Sovereign<\/span>/);
+  assert.match(html, /class="player-avatar"/);
+  assert.match(html, /class="online-player-card-back-chip"/);
+  assert.match(html, /class="hand-slot-count-badge"/);
+  assert.match(html, /class="featured-badge"/);
+  assert.match(html, new RegExp(getVariantCardImages({ fire: "fire_variant_phoenix" }).fire.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(html, new RegExp(getCardBackImage("cardback_storm_spiral").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("ui: online play screen keeps cosmetics and settled sides aligned through resume and closing states", () => {
+  const hostResolvedIdentity = {
+    slotLabel: "Host",
+    username: "LocalUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_fourfold_lord"),
+    backgroundImage: getArenaBackground("bg_elemental_throne"),
+    cardBackImage: getCardBackImage("cardback_elemental_nexus"),
+    titleLabel: "War Master",
+    badgeImage: getBadgeImage("badge_arena_legend"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_phoenix",
+      water: "water_variant_crystal",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    })
+  };
+  const guestResolvedIdentity = {
+    slotLabel: "Guest",
+    username: "RemoteUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_storm_oracle"),
+    backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackImage: getCardBackImage("cardback_storm_spiral"),
+    titleLabel: "Element Sovereign",
+    badgeImage: getBadgeImage("badge_element_veteran"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    })
+  };
+  const resumedHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "RemoteUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-2",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        hostResolvedIdentity,
+        guestResolvedIdentity,
+        host: {
+          socketId: "host-1",
+          username: "LocalUser",
+          equippedCosmetics: {
+            avatar: "avatar_fourfold_lord",
+            background: "bg_elemental_throne",
+            cardBack: "cardback_elemental_nexus",
+            elementCardVariant: {
+              fire: "fire_variant_phoenix",
+              water: "water_variant_crystal",
+              earth: "earth_variant_titan",
+              wind: "wind_variant_storm_eye"
+            },
+            title: "War Master",
+            badge: "badge_arena_legend"
+          }
+        },
+        guest: {
+          socketId: "guest-2",
+          username: "RemoteUser",
+          equippedCosmetics: {
+            avatar: "avatar_storm_oracle",
+            background: "bg_storm_temple",
+            cardBack: "cardback_storm_spiral",
+            elementCardVariant: {
+              fire: "fire_variant_ember",
+              water: "water_variant_tidal_spirit",
+              earth: "earth_variant_rooted_monolith",
+              wind: "wind_variant_sky_serpent"
+            },
+            title: "Element Sovereign",
+            badge: "badge_element_veteran"
+          }
+        },
+        disconnectState: {
+          active: false,
+          disconnectedRole: null,
+          disconnectedUsername: null,
+          remainingUsername: null,
+          reason: "match_resumed",
+          expiresAt: null,
+          resumedAt: "2026-03-20T12:00:10.000Z"
+        },
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 }
+      }
+    },
+    actions: {}
+  });
+  const closingHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "RemoteUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-2",
+      room: {
+        roomCode: "ABC123",
+        status: "closing",
+        hostResolvedIdentity,
+        guestResolvedIdentity,
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        host: {
+          socketId: "host-1",
+          username: "LocalUser",
+          connected: false,
+          equippedCosmetics: {
+            avatar: "avatar_fourfold_lord",
+            background: "bg_elemental_throne",
+            cardBack: "cardback_elemental_nexus",
+            elementCardVariant: {
+              fire: "fire_variant_phoenix",
+              water: "water_variant_crystal",
+              earth: "earth_variant_titan",
+              wind: "wind_variant_storm_eye"
+            },
+            title: "War Master",
+            badge: "badge_arena_legend"
+          }
+        },
+        guest: {
+          socketId: "guest-2",
+          username: "RemoteUser",
+          connected: true,
+          equippedCosmetics: {
+            avatar: "avatar_storm_oracle",
+            background: "bg_storm_temple",
+            cardBack: "cardback_storm_spiral",
+            elementCardVariant: {
+              fire: "fire_variant_ember",
+              water: "water_variant_tidal_spirit",
+              earth: "earth_variant_rooted_monolith",
+              wind: "wind_variant_sky_serpent"
+            },
+            title: "Element Sovereign",
+            badge: "badge_element_veteran"
+          }
+        },
+        disconnectState: {
+          active: true,
+          disconnectedRole: "host",
+          disconnectedUsername: "LocalUser",
+          remainingUsername: "RemoteUser",
+          reason: "post_match_disconnect",
+          expiresAt: null,
+          resumedAt: null
+        },
+        rematch: { hostReady: false, guestReady: false },
+        rewardSettlement: {
+          granted: true,
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "LocalUser",
+            settledGuestUsername: "RemoteUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(resumedHtml, /State:<\/strong> Match Resumed/);
+  assert.match(resumedHtml, /<span>War Master<\/span>/);
+  assert.match(resumedHtml, /<span>Element Sovereign<\/span>/);
+  assert.match(resumedHtml, new RegExp(getAvatarImage("avatar_fourfold_lord").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(resumedHtml, new RegExp(getAvatarImage("avatar_storm_oracle").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(closingHtml, /Winner:<\/strong> You Lose/);
+  assert.match(closingHtml, /Reconnect:<\/strong> LocalUser disconnected after match completion\./);
+});
+
+test("ui: appController shows disconnected-player reconnect reminder with room code and countdown", () => {
+  const previousDocument = global.document;
+  const previousDateNow = Date.now;
+  const modalCalls = [];
+  let reminderModalVisible = false;
+
+  global.document = {
+    querySelector: (selector) => {
+      if (selector === "[data-online-reconnect-reminder='true']") {
+        return reminderModalVisible ? {} : null;
+      }
+
+      if (selector === ".modal-overlay") {
+        return reminderModalVisible ? {} : null;
+      }
+
+      return null;
+    }
+  };
+  Date.now = () => Date.parse("2026-03-20T12:00:00.000Z");
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => {
+        reminderModalVisible = true;
+        modalCalls.push(payload);
+      },
+      hide: () => {
+        reminderModalVisible = false;
+      }
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  try {
+    controller.username = "ResumeGuest";
+    controller.screenFlow = "menu";
+    controller.onlineReconnectReminder = {
+      username: "ResumeGuest",
+      roomCode: "ABC123",
+      expiresAt: "2026-03-20T12:01:00.000Z"
+    };
+
+    controller.updateOnlineReconnectReminderModal();
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Reconnect to Online Match");
+    assert.match(modalCalls[0].bodyHtml, /Room Code:<\/strong> ABC123/);
+    assert.match(modalCalls[0].bodyHtml, /Time Remaining:<\/strong> 01:00/);
+    assert.match(modalCalls[0].bodyHtml, /You have 60 seconds to return before the room expires as no contest\./);
+  } finally {
+    Date.now = previousDateNow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController reconnect reminder reuses authoritative room expiry when available", () => {
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+  controller.username = "ResumeGuest";
+
+  controller.maybeCaptureOnlineReconnectReminder(
+    {
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        matchComplete: false,
+        host: { username: "ResumeHost" },
+        guest: { username: "ResumeGuest" },
+        disconnectState: {
+          expiresAt: "2026-03-20T12:01:17.000Z"
+        }
+      }
+    },
+    {
+      connectionStatus: "disconnected",
+      room: null
+    }
+  );
+
+  assert.deepEqual(controller.onlineReconnectReminder, {
+    username: "ResumeGuest",
+    roomCode: "ABC123",
+    expiresAt: "2026-03-20T12:01:17.000Z"
+  });
+});
+
+test("ui: appController online room identity payload reads nested cosmetics.equipped values", async () => {
+  const previousWindow = global.window;
+  const createRoomCalls = [];
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => ({
+          username: "LocalUser",
+          equippedCosmetics: {
+            avatar: "default_avatar"
+          },
+          cosmetics: {
+            equipped: {
+              avatar: "avatar_fourfold_lord",
+              background: "bg_elemental_throne",
+              cardBack: "cardback_elemental_nexus",
+              badge: "badge_arena_legend",
+              title: "title_war_master",
+              elementCardVariant: {
+                fire: "fire_variant_phoenix",
+                water: "water_variant_crystal",
+                earth: "earth_variant_titan",
+                wind: "wind_variant_storm_eye"
+              }
+            }
+          }
+        })
+      },
+      multiplayer: {
+        createRoom: async (payload) => {
+          createRoomCalls.push(payload);
+          return {
+            connectionStatus: "connected",
+            socketId: "host-1",
+            room: null,
+            latestRoundResult: null,
+            lastError: null,
+            statusMessage: "created"
+          };
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => {
+        controller.__lastOnlineContext = context;
+      }
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  try {
+    controller.username = "LocalUser";
+    controller.profile = { username: "LocalUser" };
+    controller.onlinePlayState = null;
+    controller.renderOnlinePlayScreen();
+    await controller.__lastOnlineContext.actions.createRoom();
+
+    assert.equal(createRoomCalls.length, 1);
+    assert.deepEqual(createRoomCalls[0], {
+      username: "LocalUser",
+      equippedCosmetics: {
+        avatar: "avatar_fourfold_lord",
+        background: "bg_elemental_throne",
+        cardBack: "cardback_elemental_nexus",
+        badge: "badge_arena_legend",
+        title: "title_war_master",
+        elementCardVariant: {
+          fire: "fire_variant_phoenix",
+          water: "water_variant_crystal",
+          earth: "earth_variant_titan",
+          wind: "wind_variant_storm_eye"
+        }
+      }
+    });
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController clears reconnect reminder after resume and after expiry", () => {
+  const previousDocument = global.document;
+  const previousDateNow = Date.now;
+  let reminderModalVisible = true;
+  let hideCalls = 0;
+
+  global.document = {
+    querySelector: (selector) => {
+      if (selector === "[data-online-reconnect-reminder='true']") {
+        return reminderModalVisible ? {} : null;
+      }
+
+      if (selector === ".modal-overlay") {
+        return reminderModalVisible ? {} : null;
+      }
+
+      return null;
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {
+        hideCalls += 1;
+        reminderModalVisible = false;
+      }
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  try {
+    controller.username = "ResumeGuest";
+    controller.screenFlow = "profile";
+    Date.now = () => Date.parse("2026-03-20T12:00:00.000Z");
+    controller.onlineReconnectReminder = {
+      username: "ResumeGuest",
+      roomCode: "ABC123",
+      expiresAt: "2026-03-20T12:01:00.000Z"
+    };
+
+    controller.clearOnlineReconnectReminderFromState({
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { username: "ResumeHost" },
+        guest: { username: "ResumeGuest" }
+      },
+      lastError: null
+    });
+
+    assert.equal(controller.onlineReconnectReminder, null);
+    assert.equal(hideCalls, 1);
+
+    reminderModalVisible = true;
+    controller.onlineReconnectReminder = {
+      username: "ResumeGuest",
+      roomCode: "ABC123",
+      expiresAt: "2026-03-20T12:00:10.000Z"
+    };
+    Date.now = () => Date.parse("2026-03-20T12:00:11.000Z");
+
+    controller.clearOnlineReconnectReminderFromState({
+      room: null,
+      lastError: { code: "ROOM_EXPIRED" }
+    });
+
+    assert.equal(controller.onlineReconnectReminder, null);
+    assert.equal(hideCalls, 2);
+  } finally {
+    Date.now = previousDateNow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: online play challenge visibility stays in the existing screen without adding a popup", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    onlineChallengeSummary: {
+      daily: {
+        msUntilReset: 5400000,
+        challenges: [
+          {
+            id: "daily_win_1_match",
+            name: "Win 1 Match",
+            progress: 1,
+            goal: 1,
+            completed: true
+          }
+        ]
+      },
+      weekly: {
+        msUntilReset: 176400000,
+        challenges: []
+      }
+    },
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Match complete in room ABC123. Ready up for rematch.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 5,
+        guestScore: 3,
+        roundNumber: 9,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+        guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Online Play/);
+  assert.match(html, /Match Complete/);
+  assert.match(html, /Daily Progress/);
+  assert.doesNotMatch(html, /modal/i);
+});
+
+test("ui: appController online challenge summary uses signed-in settled identity and survives host migration", async () => {
+  const shown = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screen, context) => {
+        shown.push(context);
+      }
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  const previousWindow = global.window;
+  controller.username = "SettledGuestUser";
+  controller.profile = {
+    equippedCosmetics: {
+      background: "default_background"
+    }
+  };
+  controller.onlinePlayState = controller.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "waiting",
+      host: { socketId: "guest-1", username: "SettledGuestUser" },
+      guest: null,
+      hostScore: 5,
+      guestScore: 3,
+      roundNumber: 9,
+      lastOutcomeType: "resolved",
+      matchComplete: true,
+      winner: "host",
+      winReason: "hand_exhaustion",
+      rewardSettlement: {
+        granted: true,
+        grantedAt: "2026-03-20T12:00:00.000Z",
+        summary: {
+          granted: true,
+          winner: "host",
+          settledHostUsername: "SettledHostUser",
+          settledGuestUsername: "SettledGuestUser",
+          hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+          guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+        }
+      },
+      rematch: { hostReady: false, guestReady: false },
+      hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+      guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+      warPot: { host: [], guest: [] },
+      warActive: false,
+      warDepth: 0,
+      warRounds: [],
+      roundHistory: []
+    }
+  });
+
+  global.window = {
+    elemintz: {
+      state: {
+        getDailyChallenges: async (username) => ({
+          daily: {
+            msUntilReset: 5400000,
+            challenges: [
+              {
+                id: "daily_play_5_matches",
+                name: `Daily for ${username}`,
+                progress: 1,
+                goal: 5,
+                completed: false
+              }
+            ]
+          },
+          weekly: {
+            msUntilReset: 176400000,
+            challenges: [
+              {
+                id: "weekly_play_15_matches",
+                name: `Weekly for ${username}`,
+                progress: 1,
+                goal: 15,
+                completed: false
+              }
+            ]
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    await controller.refreshOnlinePlayChallengeSummary(controller.onlinePlayState);
+    controller.renderOnlinePlayScreen();
+  } finally {
+    global.window = previousWindow;
+  }
+
+  const latest = shown.at(-1);
+  assert.equal(latest.username, "SettledGuestUser");
+  assert.equal(latest.onlineChallengeSummary.daily.challenges[0].name, "Daily for SettledGuestUser");
+  assert.equal(latest.onlineChallengeSummary.weekly.challenges[0].name, "Weekly for SettledGuestUser");
+});
+
+test("ui: appController refreshes local settled online win progression immediately after settlement", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const updatedProfile = {
+    username: "OnlineWinner",
+    playerLevel: 3,
+    playerXP: 48,
+    tokens: 225,
+    chests: { basic: 1 },
+    achievements: { first_flame: { count: 1 } },
+    dailyChallenges: { daily: { progress: { matchesPlayed: 1 } } },
+    weeklyChallenges: { weekly: { progress: { matchesPlayed: 1 } } },
+    modeStats: { online_pvp: { wins: 1, losses: 0 } }
+  };
+  const challengeStatus = {
+    daily: { msUntilReset: 1000, challenges: [] },
+    weekly: { msUntilReset: 2000, challenges: [] },
+    dailyLogin: null
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => {
+          assert.equal(username, "OnlineWinner");
+          return updatedProfile;
+        },
+        getDailyChallenges: async (username) => {
+          assert.equal(username, "OnlineWinner");
+          return challengeStatus;
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "OnlineWinner";
+    controller.profile = {
+      username: "OnlineWinner",
+      playerLevel: 1,
+      playerXP: 0,
+      tokens: 200,
+      chests: { basic: 0 },
+      achievements: {}
+    };
+    await controller.refreshLocalProfileAfterOnlineSettlement({
+      room: {
+        roomCode: "ABC123",
+        matchComplete: true,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            settledHostUsername: "OnlineWinner",
+            settledGuestUsername: "OtherUser"
+          }
+        }
+      }
+    });
+    controller.renderOnlinePlayScreen();
+
+    assert.equal(controller.profile.tokens, 225);
+    assert.equal(controller.profile.playerXP, 48);
+    assert.equal(controller.profile.playerLevel, 3);
+    assert.equal(controller.profile.chests.basic, 1);
+    assert.equal(controller.profile.achievements.first_flame.count, 1);
+    assert.equal(controller.dailyChallenges.daily, challengeStatus.daily);
+    assert.equal(controller.dailyChallenges.weekly, challengeStatus.weekly);
+    assert.equal(shown.at(-1).backgroundImage, getArenaBackground("default_background"));
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController refreshes local settled online loss progression immediately after settlement", async () => {
+  const previousWindow = global.window;
+  const updatedProfile = {
+    username: "OnlineLoser",
+    playerLevel: 2,
+    playerXP: 15,
+    tokens: 205,
+    chests: { basic: 0 },
+    achievements: {},
+    dailyChallenges: { daily: { progress: { matchesPlayed: 1 } } },
+    weeklyChallenges: { weekly: { progress: { matchesPlayed: 1 } } }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => {
+          assert.equal(username, "OnlineLoser");
+          return updatedProfile;
+        },
+        getDailyChallenges: async () => ({
+          daily: { msUntilReset: 1000, challenges: [] },
+          weekly: { msUntilReset: 2000, challenges: [] },
+          dailyLogin: null
+        })
+      }
+    }
+  };
+
+  const controller = createRendererController();
+
+  try {
+    controller.username = "OnlineLoser";
+    controller.profile = { username: "OnlineLoser", tokens: 200, playerXP: 0, playerLevel: 1, chests: { basic: 0 }, achievements: {} };
+    await controller.refreshLocalProfileAfterOnlineSettlement({
+      room: {
+        roomCode: "ABC123",
+        matchComplete: true,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:01:00.000Z",
+          summary: {
+            settledHostUsername: "WinnerUser",
+            settledGuestUsername: "OnlineLoser"
+          }
+        }
+      }
+    });
+
+    assert.equal(controller.profile.tokens, 205);
+    assert.equal(controller.profile.playerXP, 15);
+    assert.equal(controller.profile.playerLevel, 2);
+    assert.equal(controller.profile.chests.basic, 0);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController refreshes local settled online draw progression immediately after settlement", async () => {
+  const previousWindow = global.window;
+  const updatedProfile = {
+    username: "OnlineDrawer",
+    playerLevel: 2,
+    playerXP: 10,
+    tokens: 210,
+    chests: { basic: 0 },
+    achievements: { stalemate: { count: 1 } }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => {
+          assert.equal(username, "OnlineDrawer");
+          return updatedProfile;
+        },
+        getDailyChallenges: async () => ({
+          daily: { msUntilReset: 1000, challenges: [] },
+          weekly: { msUntilReset: 2000, challenges: [] },
+          dailyLogin: null
+        })
+      }
+    }
+  };
+
+  const controller = createRendererController();
+
+  try {
+    controller.username = "OnlineDrawer";
+    controller.profile = { username: "OnlineDrawer", tokens: 200, playerXP: 0, playerLevel: 1, chests: { basic: 0 }, achievements: {} };
+    await controller.refreshLocalProfileAfterOnlineSettlement({
+      room: {
+        roomCode: "ABC123",
+        matchComplete: true,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:02:00.000Z",
+          summary: {
+            settledHostUsername: "OnlineDrawer",
+            settledGuestUsername: "OtherDrawer"
+          }
+        }
+      }
+    });
+
+    assert.equal(controller.profile.tokens, 210);
+    assert.equal(controller.profile.playerXP, 10);
+    assert.equal(controller.profile.playerLevel, 2);
+    assert.equal(controller.profile.achievements.stalemate.count, 1);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: profile opened immediately after settled online refresh shows persisted values", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const updatedProfile = {
+    username: "ProfileWinner",
+    title: "Initiate",
+    playerLevel: 4,
+    playerXP: 83,
+    tokens: 245,
+    chests: { basic: 2 },
+    achievements: { first_flame: { count: 1 } },
+    wins: 3,
+    losses: 1,
+    warsEntered: 2,
+    warsWon: 1,
+    longestWar: 3,
+    cardsCaptured: 6,
+    gamesPlayed: 4,
+    bestWinStreak: 2,
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 }, online_pvp: { wins: 3, losses: 1 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none", background: "default_background" }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => updatedProfile,
+        getDailyChallenges: async () => ({
+          daily: { msUntilReset: 1000, challenges: [] },
+          weekly: { msUntilReset: 2000, challenges: [] },
+          dailyLogin: null,
+          xp: {}
+        }),
+        getCosmetics: async () => ({
+          equipped: updatedProfile.equippedCosmetics,
+          catalog: { avatar: [], cardBack: [], background: [], elementCardVariant: [], badge: [], title: [] }
+        }),
+        listProfiles: async () => [updatedProfile]
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "ProfileWinner";
+    controller.profile = { username: "ProfileWinner", tokens: 200, playerXP: 0, playerLevel: 1, chests: { basic: 0 }, achievements: {}, equippedCosmetics: { background: "default_background" } };
+    await controller.refreshLocalProfileAfterOnlineSettlement({
+      room: {
+        roomCode: "ABC123",
+        matchComplete: true,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:03:00.000Z",
+          summary: {
+            settledHostUsername: "ProfileWinner",
+            settledGuestUsername: "OtherUser"
+          }
+        }
+      }
+    });
+    await controller.showProfile();
+
+    const profileContext = shown.at(-1);
+    assert.equal(profileContext.profile.tokens, 245);
+    assert.equal(profileContext.profile.playerXP, 83);
+    assert.equal(profileContext.profile.playerLevel, 4);
+    assert.equal(profileContext.profile.chests.basic, 2);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: online settlement refresh stays keyed to the local settled player and does not duplicate on repeats", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  let getProfileCalls = 0;
+  let getDailyChallengeCalls = 0;
+  const updatedProfile = {
+    username: "SettledGuestUser",
+    playerLevel: 2,
+    playerXP: 12,
+    tokens: 205,
+    chests: { basic: 0 },
+    achievements: {}
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => {
+          getProfileCalls += 1;
+          assert.equal(username, "SettledGuestUser");
+          return updatedProfile;
+        },
+        getDailyChallenges: async (username) => {
+          getDailyChallengeCalls += 1;
+          assert.equal(username, "SettledGuestUser");
+          return {
+            daily: { msUntilReset: 1000, challenges: [] },
+            weekly: { msUntilReset: 2000, challenges: [] },
+            dailyLogin: null
+          };
+        }
+      },
+      multiplayer: {
+        onUpdate: (listener) => {
+          global.__onlineListener = listener;
+          return () => {};
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "SettledGuestUser";
+    controller.profile = { username: "SettledGuestUser", tokens: 200, playerXP: 0, playerLevel: 1, chests: { basic: 0 }, achievements: {}, equippedCosmetics: { background: "default_background" } };
+    controller.screenFlow = "onlinePlay";
+    controller.bindOnlinePlayUpdates();
+
+    const settledState = {
+      connectionStatus: "connected",
+      socketId: "guest-2",
+      room: {
+        roomCode: "ABC123",
+        status: "waiting",
+        matchComplete: true,
+        host: { socketId: "host-2", username: "MigratedHost" },
+        guest: null,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:04:00.000Z",
+          summary: {
+            settledHostUsername: "SettledHostUser",
+            settledGuestUsername: "SettledGuestUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        }
+      }
+    };
+
+    global.__onlineListener(settledState);
+    await Promise.resolve();
+    await Promise.resolve();
+    global.__onlineListener(settledState);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(controller.profile.username, "SettledGuestUser");
+    assert.equal(controller.profile.tokens, 205);
+    assert.equal(getProfileCalls, 1);
+    assert.equal(getDailyChallengeCalls, 1);
+
+    global.__onlineListener({
+      ...settledState,
+      room: {
+        ...settledState.room,
+        status: "full",
+        matchComplete: false,
+        rewardSettlement: null,
+        rematch: { hostReady: false, guestReady: false }
+      }
+    });
+    await Promise.resolve();
+
+    assert.equal(controller.profile.tokens, 205);
+    assert.ok(shown.length >= 1);
+  } finally {
+    delete global.__onlineListener;
+    global.window = previousWindow;
+  }
+});
+
+test("ui: online play screen keeps settled host rewards after guest disconnect", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "HostRewardUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "Match complete in room ABC123. Ready up for rematch.",
+      lastError: null,
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        hostResult: "win",
+        guestResult: "lose"
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "waiting",
+        host: { socketId: "host-1", username: "HostRewardUser" },
+        guest: null,
+        hostScore: 5,
+        guestScore: 3,
+        roundNumber: 9,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:00:00.000Z",
+          summary: {
+            granted: true,
+            winner: "host",
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser",
+            hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
+            guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        rematch: { hostReady: false, guestReady: false },
+        hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+        guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Winner:<\/strong> You Win/);
+  assert.match(html, /You Gained:<\/strong> \+25 Tokens, \+20 XP, \+1 Basic Chest/);
+});
+
+test("ui: online play screen renders no effect and war result labels", () => {
+  const noEffectHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "No Effect Room ABC123",
+      lastError: null,
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "wind",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect"
       },
       room: {
         roomCode: "ABC123",
@@ -3878,13 +6199,102 @@ test("ui: online play screen renders round result from the local player perspect
     actions: {}
   });
 
-  assert.match(html, /Round Result/);
-  assert.match(html, /Host Move:<\/strong> Fire/);
-  assert.match(html, /Guest Move:<\/strong> Water/);
-  assert.match(html, /Result:<\/strong> You Win/);
+  const warHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "WAR Room ABC123",
+      lastError: null,
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 0,
+        roundNumber: 2,
+        lastOutcomeType: "war",
+        warActive: true,
+        warDepth: 1,
+        warRounds: [
+          {
+            round: 1,
+            hostMove: "fire",
+            guestMove: "fire",
+            outcomeType: "war"
+          }
+        ],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(noEffectHtml, /Host Move:<\/strong> Fire/);
+  assert.match(noEffectHtml, /Guest Move:<\/strong> Wind/);
+  assert.match(noEffectHtml, /Result:<\/strong> No Effect/);
+  assert.match(warHtml, /Host Move:<\/strong> Fire/);
+  assert.match(warHtml, /Guest Move:<\/strong> Fire/);
+  assert.match(warHtml, /Result:<\/strong> WAR Continues/);
+  assert.match(warHtml, /WAR Status/);
+  assert.match(warHtml, /WAR Active:<\/strong> Yes/);
+  assert.match(warHtml, /WAR Depth:<\/strong> 1/);
+  assert.match(warHtml, /Round 1: Fire vs Fire - WAR/);
 });
 
 test("ui: online play screen still shows move controls for full rooms when moveSync is missing", () => {
+  const hostResolvedIdentity = {
+    slotLabel: "Host",
+    username: "HostUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_crystal_soul"),
+    backgroundImage: getArenaBackground("bg_verdant_shrine"),
+    cardBackImage: getCardBackImage("cardback_arcane_galaxy"),
+    titleLabel: "Apprentice",
+    titleIcon: "assets/titles/title_apprentice.png",
+    badgeImage: getBadgeImage("badge_element_initiate"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_crownfire",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_transparent_crystal",
+      wind: "wind_variant_vortex_spirit"
+    })
+  };
+  const guestResolvedIdentity = {
+    slotLabel: "Guest",
+    username: "GuestUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_storm_oracle"),
+    backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackImage: getCardBackImage("cardback_storm_spiral"),
+    titleLabel: "Element Sovereign",
+    titleIcon: "assets/titles/title_element_sovereign.png",
+    badgeImage: getBadgeImage("badge_element_veteran"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    })
+  };
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "ABC123",
@@ -3897,17 +6307,111 @@ test("ui: online play screen still shows move controls for full rooms when moveS
         roomCode: "ABC123",
         createdAt: "2026-03-19T12:00:00.000Z",
         status: "full",
+        hostResolvedIdentity,
+        guestResolvedIdentity,
         host: { socketId: "host-1" },
-        guest: { socketId: "guest-1" }
+        guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 0,
+        roundNumber: 1,
+        lastOutcomeType: null,
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: []
       }
     },
     actions: {}
   });
 
-  assert.match(html, /Move Sync:<\/strong> 0\/2 submitted\./);
-  assert.match(html, /Host Submitted:<\/strong> No/);
-  assert.match(html, /Guest Submitted:<\/strong> No/);
+  assert.match(html, /Sync:<\/strong> 0\/2 submitted\./);
+  assert.match(html, /Choose your move for the current round\./);
+  assert.match(html, /Round 1 \| Host 0 - Guest 0/);
+  assert.match(html, /Move Sync: 0\/2 submitted\./);
   assert.match(html, /data-move="fire"/);
+  assert.match(html, /title-icon/);
+});
+
+test("ui: online play screen renders war resolved result from player perspective", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "WAR Won Room ABC123",
+      lastError: null,
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "water",
+        guestMove: "fire",
+        outcomeType: "war_resolved",
+        hostScore: 1,
+        guestScore: 0,
+        roundNumber: 3,
+        lastOutcomeType: "war_resolved",
+        warActive: true,
+        warDepth: 1,
+        warRounds: [
+          {
+            round: 1,
+            hostMove: "fire",
+            guestMove: "fire",
+            outcomeType: "war"
+          },
+          {
+            round: 2,
+            hostMove: "water",
+            guestMove: "fire",
+            outcomeType: "war_resolved"
+          }
+        ],
+        hostResult: "win",
+        guestResult: "lose"
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 1,
+        guestScore: 0,
+        roundNumber: 3,
+        lastOutcomeType: "war_resolved",
+        warActive: true,
+        warDepth: 1,
+        warRounds: [
+          {
+            round: 1,
+            hostMove: "fire",
+            guestMove: "fire",
+            outcomeType: "war"
+          },
+          {
+            round: 2,
+            hostMove: "water",
+            guestMove: "fire",
+            outcomeType: "war_resolved"
+          }
+        ],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Result:<\/strong> WAR Won/);
+  assert.match(html, /Round 2: Water vs Fire - WAR RESOLVED/);
 });
 
 test("ui: online play screen bind delegates move button clicks to submitMove", async () => {
@@ -4009,7 +6513,7 @@ test("ui: profile screen shows basic chest count and disables open button when e
   });
 
   assert.match(html, /Basic Chests: <strong>0<\/strong>/);
-  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/chest_basic\.png"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest\.png"/);
   assert.match(html, /id="open-basic-chest-btn"/);
   assert.match(html, /Open Basic Chest/);
   assert.match(html, /disabled aria-disabled="true"/);
@@ -4096,8 +6600,8 @@ test("ui: profile screen swaps to the open chest image when the local visual sta
   });
 
   assert.match(html, /data-basic-chest-image="true"/);
-  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/chest_basic_open\.png"/);
-  assert.doesNotMatch(html, /src="(?:file:.*\/)?assets\/icons\/chest_basic\.png" alt="Basic Chest" data-basic-chest-image="true"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest_open\.png"/);
+  assert.doesNotMatch(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest\.png" alt="Basic Chest" data-basic-chest-image="true"/);
 });
 
 test("ui: profile unlocked achievements render comeback_win badge once earned", () => {
