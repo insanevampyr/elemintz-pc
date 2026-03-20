@@ -257,12 +257,13 @@ test("appController: menu online play action opens the online play screen", asyn
   }
 });
 
-test("appController: online play create and join actions use the multiplayer bridge", async () => {
+test("appController: online play create join and submit-move actions use the multiplayer bridge", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
   const calls = {
     createRoom: 0,
-    joinRoom: []
+    joinRoom: [],
+    submitMove: []
   };
 
   const app = new AppController({
@@ -301,6 +302,10 @@ test("appController: online play create and join actions use the multiplayer bri
             calls.joinRoom.push(roomCode);
             return {};
           },
+          submitMove: async ({ move }) => {
+            calls.submitMove.push(move);
+            return {};
+          },
           disconnect: async () => ({})
         }
       }
@@ -312,10 +317,201 @@ test("appController: online play create and join actions use the multiplayer bri
 
     await shownScreens.at(-1).context.actions.createRoom();
     await shownScreens.at(-1).context.actions.joinRoom("abc123");
+    await shownScreens.at(-1).context.actions.submitMove("fire");
 
     assert.equal(calls.createRoom, 1);
     assert.deepEqual(calls.joinRoom, ["ABC123"]);
+    assert.deepEqual(calls.submitMove, ["fire"]);
     assert.equal(app.onlinePlayJoinCode, "ABC123");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online play join rerenders move controls when a full room state is returned directly", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          onUpdate: () => () => {},
+          getState: async () => ({
+            connectionStatus: "connected",
+            socketId: "host-1",
+            room: null,
+            lastError: null,
+            statusMessage: "Connected. Create a room or join one."
+          }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "host-1",
+            room: null,
+            lastError: null,
+            statusMessage: "Connected. Create a room or join one."
+          }),
+          joinRoom: async () => ({
+            connectionStatus: "connected",
+            socketId: "host-1",
+            lastError: null,
+            statusMessage: "Room ABC123 is full.",
+            room: {
+              roomCode: "ABC123",
+              createdAt: "2026-03-19T12:00:00.000Z",
+              status: "full",
+              host: { socketId: "host-1" },
+              guest: { socketId: "guest-1" }
+            }
+          }),
+          createRoom: async () => ({}),
+          submitMove: async () => ({}),
+          disconnect: async () => ({})
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    await app.showOnlinePlay();
+    await shownScreens.at(-1).context.actions.joinRoom("abc123");
+
+    const onlinePlayContext = shownScreens.at(-1).context;
+    assert.equal(onlinePlayContext.multiplayer.room.status, "full");
+    assert.deepEqual(onlinePlayContext.multiplayer.room.moveSync, {
+      hostSubmitted: false,
+      guestSubmitted: false,
+      submittedCount: 0,
+      bothSubmitted: false,
+      updatedAt: null
+    });
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online play update preserves latest round result for the online play screen", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const updateListeners = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          onUpdate: (listener) => {
+            updateListeners.push(listener);
+            return () => {};
+          },
+          getState: async () => ({
+            connectionStatus: "connected",
+            socketId: "guest-1",
+            room: {
+              roomCode: "ABC123",
+              createdAt: "2026-03-19T12:00:00.000Z",
+              status: "full",
+              host: { socketId: "host-1" },
+              guest: { socketId: "guest-1" },
+              moveSync: {
+                hostSubmitted: true,
+                guestSubmitted: true,
+                submittedCount: 2,
+                bothSubmitted: true,
+                updatedAt: "2026-03-19T12:00:05.000Z"
+              }
+            },
+            latestRoundResult: null,
+            lastError: null,
+            statusMessage: "Both players submitted moves for room ABC123."
+          }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "guest-1",
+            room: {
+              roomCode: "ABC123",
+              createdAt: "2026-03-19T12:00:00.000Z",
+              status: "full",
+              host: { socketId: "host-1" },
+              guest: { socketId: "guest-1" },
+              moveSync: {
+                hostSubmitted: true,
+                guestSubmitted: true,
+                submittedCount: 2,
+                bothSubmitted: true,
+                updatedAt: "2026-03-19T12:00:05.000Z"
+              }
+            },
+            latestRoundResult: null,
+            lastError: null,
+            statusMessage: "Both players submitted moves for room ABC123."
+          }),
+          createRoom: async () => ({}),
+          joinRoom: async () => ({}),
+          submitMove: async () => ({}),
+          disconnect: async () => ({})
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    app.bindOnlinePlayUpdates();
+    await app.showOnlinePlay();
+
+    updateListeners[0]({
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      },
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "water",
+        hostResult: "lose",
+        guestResult: "win"
+      },
+      lastError: null,
+      statusMessage: "You Win Room ABC123"
+    });
+
+    const onlinePlayContext = shownScreens.at(-1).context;
+    assert.deepEqual(onlinePlayContext.multiplayer.latestRoundResult, {
+      roomCode: "ABC123",
+      hostMove: "fire",
+      guestMove: "water",
+      hostResult: "lose",
+      guestResult: "win"
+    });
   } finally {
     globalThis.window = originalWindow;
   }

@@ -524,12 +524,12 @@ export class AppController {
   }
 
   async maybeShowLoadoutUnlockNotice() {
-    if (!this.username || !window.elemintz?.state?.acknowledgeLoadoutUnlocks) {
+    if (!this.username || !globalThis.window?.elemintz?.state?.acknowledgeLoadoutUnlocks) {
       return;
     }
 
     try {
-      const result = await window.elemintz.state.acknowledgeLoadoutUnlocks(this.username);
+      const result = await globalThis.window.elemintz.state.acknowledgeLoadoutUnlocks(this.username);
       if (!result) {
         return;
       }
@@ -617,17 +617,36 @@ export class AppController {
   }
 
   normalizeOnlinePlayState(state) {
+    const normalizedRoom = state?.room
+      ? {
+          ...state.room,
+          moveSync:
+            state.room.moveSync ??
+            (state.room.status === "full"
+              ? {
+                  hostSubmitted: false,
+                  guestSubmitted: false,
+                  submittedCount: 0,
+                  bothSubmitted: false,
+                  updatedAt: null
+                }
+              : null)
+        }
+      : null;
+
     const fallback = {
       connectionStatus: "disconnected",
       socketId: null,
       room: null,
+      latestRoundResult: null,
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
 
     return {
       ...fallback,
-      ...(state ?? {})
+      ...(state ?? {}),
+      room: normalizedRoom
     };
   }
 
@@ -665,7 +684,8 @@ export class AppController {
             return;
           }
 
-          await window.elemintz.multiplayer.createRoom();
+          this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.createRoom());
+          this.renderOnlinePlayScreen();
         },
         joinRoom: async (roomCode) => {
           if (!window.elemintz?.multiplayer?.joinRoom) {
@@ -674,7 +694,21 @@ export class AppController {
 
           this.onlinePlayJoinCode = String(roomCode ?? "").trim().toUpperCase();
           this.renderOnlinePlayScreen();
-          await window.elemintz.multiplayer.joinRoom({ roomCode: this.onlinePlayJoinCode });
+          this.onlinePlayState = this.normalizeOnlinePlayState(
+            await window.elemintz.multiplayer.joinRoom({ roomCode: this.onlinePlayJoinCode })
+          );
+          this.renderOnlinePlayScreen();
+        },
+        submitMove: async (move) => {
+          if (!window.elemintz?.multiplayer?.submitMove) {
+            return;
+          }
+
+          console.info("[OnlinePlay][Renderer] AppController submitMove entered", {
+            move
+          });
+          this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.submitMove({ move }));
+          this.renderOnlinePlayScreen();
         },
         back: async () => {
           if (window.elemintz?.multiplayer?.disconnect) {
@@ -1201,7 +1235,8 @@ export class AppController {
       return;
     }
 
-    await window.elemintz.multiplayer.connect();
+    this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.connect());
+    this.renderOnlinePlayScreen();
   }
 
   showLocalSetup() {

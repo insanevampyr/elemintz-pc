@@ -9,7 +9,20 @@ function cloneRoom(room) {
         createdAt: room.createdAt,
         host: room.host ? { ...room.host } : null,
         guest: room.guest ? { ...room.guest } : null,
-        status: room.status
+        status: room.status,
+        moveSync: room.moveSync ? { ...room.moveSync } : null
+      }
+    : null;
+}
+
+function cloneRoundResult(roundResult) {
+  return roundResult
+    ? {
+        roomCode: roundResult.roomCode,
+        hostMove: roundResult.hostMove,
+        guestMove: roundResult.guestMove,
+        hostResult: roundResult.hostResult,
+        guestResult: roundResult.guestResult
       }
     : null;
 }
@@ -20,6 +33,7 @@ function cloneState(state) {
     connectionStatus: state.connectionStatus,
     socketId: state.socketId,
     room: cloneRoom(state.room),
+    latestRoundResult: cloneRoundResult(state.latestRoundResult),
     lastError: state.lastError ? { ...state.lastError } : null,
     statusMessage: state.statusMessage
   };
@@ -43,6 +57,7 @@ export class MultiplayerClient {
       connectionStatus: "disconnected",
       socketId: null,
       room: null,
+      latestRoundResult: null,
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
@@ -100,6 +115,7 @@ export class MultiplayerClient {
         connectionStatus: "disconnected",
         socketId: null,
         room: null,
+        latestRoundResult: null,
         lastError: {
           code: "CONNECTION_FAILED",
           message: String(error?.message ?? "Unable to connect to multiplayer server.")
@@ -117,6 +133,7 @@ export class MultiplayerClient {
         connectionStatus: "disconnected",
         socketId: null,
         room: null,
+        latestRoundResult: null,
         statusMessage: reason === "io client disconnect" ? "Disconnected." : "Connection closed."
       });
     };
@@ -124,6 +141,7 @@ export class MultiplayerClient {
     const onRoomCreated = (room) => {
       this.updateState({
         room: cloneRoom(room),
+        latestRoundResult: null,
         lastError: null,
         statusMessage: `Room ${room.roomCode} created. Waiting for another player.`
       });
@@ -132,6 +150,7 @@ export class MultiplayerClient {
     const onRoomJoined = (room) => {
       this.updateState({
         room: cloneRoom(room),
+        latestRoundResult: null,
         lastError: null,
         statusMessage: `Joined room ${room.roomCode}.`
       });
@@ -140,11 +159,55 @@ export class MultiplayerClient {
     const onRoomUpdate = (room) => {
       this.updateState({
         room: cloneRoom(room),
+        latestRoundResult: room?.status === "full" ? this.state.latestRoundResult : null,
         lastError: null,
         statusMessage:
           room?.status === "full"
             ? `Room ${room.roomCode} is full.`
             : `Room ${room?.roomCode ?? ""} is waiting for another player.`.trim()
+      });
+    };
+
+    const onRoomMoveSync = (room) => {
+      const submittedCount = Number(room?.moveSync?.submittedCount ?? 0);
+      const statusMessage =
+        submittedCount >= 2
+          ? `Both players submitted moves for room ${room.roomCode}.`
+          : `${submittedCount}/2 move submission${submittedCount === 1 ? "" : "s"} received for room ${room.roomCode}.`;
+
+      this.updateState({
+        room: cloneRoom(room),
+        lastError: null,
+        statusMessage
+      });
+    };
+
+    const onRoomRoundResult = (roundResult) => {
+      const myRole =
+        this.state.room?.host?.socketId === this.state.socketId
+          ? "host"
+          : this.state.room?.guest?.socketId === this.state.socketId
+            ? "guest"
+            : null;
+      const perspectiveResult =
+        myRole === "host"
+          ? roundResult?.hostResult
+          : myRole === "guest"
+            ? roundResult?.guestResult
+            : null;
+      const outcomeLabel =
+        perspectiveResult === "win"
+          ? "You Win"
+          : perspectiveResult === "lose"
+            ? "You Lose"
+            : perspectiveResult === "draw"
+              ? "Draw"
+              : "Round result received.";
+
+      this.updateState({
+        latestRoundResult: cloneRoundResult(roundResult),
+        lastError: null,
+        statusMessage: `${outcomeLabel} Room ${roundResult?.roomCode ?? ""}`.trim()
       });
     };
 
@@ -164,6 +227,8 @@ export class MultiplayerClient {
     socket.on("room:created", onRoomCreated);
     socket.on("room:joined", onRoomJoined);
     socket.on("room:update", onRoomUpdate);
+    socket.on("room:moveSync", onRoomMoveSync);
+    socket.on("room:roundResult", onRoomRoundResult);
     socket.on("room:error", onRoomError);
 
     this.boundSocketListeners = {
@@ -173,6 +238,8 @@ export class MultiplayerClient {
       onRoomCreated,
       onRoomJoined,
       onRoomUpdate,
+      onRoomMoveSync,
+      onRoomRoundResult,
       onRoomError
     };
   }
@@ -188,6 +255,8 @@ export class MultiplayerClient {
     socket.off("room:created", this.boundSocketListeners.onRoomCreated);
     socket.off("room:joined", this.boundSocketListeners.onRoomJoined);
     socket.off("room:update", this.boundSocketListeners.onRoomUpdate);
+    socket.off("room:moveSync", this.boundSocketListeners.onRoomMoveSync);
+    socket.off("room:roundResult", this.boundSocketListeners.onRoomRoundResult);
     socket.off("room:error", this.boundSocketListeners.onRoomError);
     this.boundSocketListeners = null;
   }
@@ -259,11 +328,27 @@ export class MultiplayerClient {
         resolve(this.getState());
       };
 
-      const handleSuccess = () => finish();
-      const handleError = () => finish();
+      const handleSuccess = () => {
+        this.logger.info?.("[OnlinePlay][MainClient] room action success", {
+          eventName,
+          successEvent
+        });
+        finish();
+      };
+      const handleError = (error) => {
+        this.logger.info?.("[OnlinePlay][MainClient] room action error", {
+          eventName,
+          errorCode: error?.code ?? null
+        });
+        finish();
+      };
 
       socket.once(successEvent, handleSuccess);
       socket.once("room:error", handleError);
+      this.logger.info?.("[OnlinePlay][MainClient] socket emit", {
+        eventName,
+        payload
+      });
       socket.emit(eventName, payload);
     });
   }
@@ -274,6 +359,13 @@ export class MultiplayerClient {
 
   async joinRoom({ roomCode, serverUrl } = {}) {
     return this.runRoomAction("room:join", { roomCode }, "room:joined", { serverUrl });
+  }
+
+  async submitMove({ move, serverUrl } = {}) {
+    this.logger.info?.("[OnlinePlay][MainClient] submitMove entered", {
+      move
+    });
+    return this.runRoomAction("room:submitMove", { move }, "room:moveSync", { serverUrl });
   }
 
   async disconnect({ preserveServerUrl = true, silent = false } = {}) {
@@ -289,6 +381,7 @@ export class MultiplayerClient {
       connectionStatus: "disconnected",
       socketId: null,
       room: null,
+      latestRoundResult: null,
       lastError: null,
       serverUrl: preserveServerUrl ? this.state.serverUrl : this.defaultServerUrl,
       statusMessage: silent ? this.state.statusMessage : "Disconnected."

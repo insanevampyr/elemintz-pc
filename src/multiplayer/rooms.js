@@ -34,13 +34,83 @@ function buildPlayer(socket) {
   };
 }
 
+function createEmptyMoveState() {
+  return {
+    hostMove: null,
+    guestMove: null,
+    updatedAt: null
+  };
+}
+
+function createEmptyRoundResult() {
+  return null;
+}
+
+function cloneMoveState(room) {
+  const hostSubmitted = room.moves.hostMove !== null;
+  const guestSubmitted = room.moves.guestMove !== null;
+  const submittedCount = Number(hostSubmitted) + Number(guestSubmitted);
+
+  return {
+    hostSubmitted,
+    guestSubmitted,
+    submittedCount,
+    bothSubmitted: hostSubmitted && guestSubmitted,
+    updatedAt: room.moves.updatedAt
+  };
+}
+
+function resetMoveState(room) {
+  room.moves = createEmptyMoveState();
+  room.latestRoundResult = createEmptyRoundResult();
+}
+
+function determineOutcome(hostMove, guestMove) {
+  if (hostMove === guestMove) {
+    return {
+      hostResult: "draw",
+      guestResult: "draw"
+    };
+  }
+
+  const hostWins =
+    (hostMove === "fire" && guestMove === "earth") ||
+    (hostMove === "earth" && guestMove === "wind") ||
+    (hostMove === "wind" && guestMove === "water") ||
+    (hostMove === "water" && guestMove === "fire");
+
+  return hostWins
+    ? {
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    : {
+        hostResult: "lose",
+        guestResult: "win"
+      };
+}
+
+function buildRoundResult(room) {
+  if (!room.moves.hostMove || !room.moves.guestMove) {
+    return null;
+  }
+
+  return {
+    roomCode: room.roomCode,
+    hostMove: room.moves.hostMove,
+    guestMove: room.moves.guestMove,
+    ...determineOutcome(room.moves.hostMove, room.moves.guestMove)
+  };
+}
+
 function cloneRoom(room) {
   return {
     roomCode: room.roomCode,
     createdAt: room.createdAt,
     host: room.host ? { ...room.host } : null,
     guest: room.guest ? { ...room.guest } : null,
-    status: room.status
+    status: room.status,
+    moveSync: cloneMoveState(room)
   };
 }
 
@@ -82,7 +152,9 @@ export function createRoomStore({ random = Math.random } = {}) {
         createdAt: new Date().toISOString(),
         host: buildPlayer(socket),
         guest: null,
-        status: "waiting"
+        status: "waiting",
+        moves: createEmptyMoveState(),
+        latestRoundResult: createEmptyRoundResult()
       };
 
       rooms.set(roomCode, room);
@@ -130,6 +202,7 @@ export function createRoomStore({ random = Math.random } = {}) {
 
       room.guest = buildPlayer(socket);
       room.status = "full";
+      resetMoveState(room);
       socketToRoom.set(socket.id, roomCode);
 
       return {
@@ -155,6 +228,7 @@ export function createRoomStore({ random = Math.random } = {}) {
           room.host = room.guest;
           room.guest = null;
           room.status = "waiting";
+          resetMoveState(room);
           return {
             removedRoomCode: null,
             room: cloneRoom(room)
@@ -171,6 +245,7 @@ export function createRoomStore({ random = Math.random } = {}) {
       if (room.guest?.socketId === socketId) {
         room.guest = null;
         room.status = "waiting";
+        resetMoveState(room);
       }
 
       if (!room.host && !room.guest) {
@@ -190,6 +265,81 @@ export function createRoomStore({ random = Math.random } = {}) {
     getRoom(roomCode) {
       const room = rooms.get(sanitizeRoomCode(roomCode));
       return room ? cloneRoom(room) : null;
+    },
+
+    submitMove(socketId, moveInput) {
+      const room = getRoomBySocket(socketId);
+      if (!room) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_NOT_FOUND",
+            message: "Room code not found."
+          }
+        };
+      }
+
+      if (room.status !== "full" || !room.host || !room.guest) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_NOT_READY",
+            message: "Both players must be connected before submitting moves."
+          }
+        };
+      }
+
+      const move = String(moveInput ?? "").trim().toLowerCase();
+      if (!move) {
+        return {
+          ok: false,
+          error: {
+            code: "MOVE_INVALID",
+            message: "Move selection is required."
+          }
+        };
+      }
+
+      const moveKey =
+        room.host?.socketId === socketId
+          ? "hostMove"
+          : room.guest?.socketId === socketId
+            ? "guestMove"
+            : null;
+
+      if (!moveKey) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_PLAYER_NOT_FOUND",
+            message: "This socket is not assigned to a room player slot."
+          }
+        };
+      }
+
+      if (room.moves[moveKey] !== null) {
+        return {
+          ok: false,
+          error: {
+            code: "MOVE_ALREADY_SUBMITTED",
+            message: "This player already submitted a move."
+          }
+        };
+      }
+
+      room.moves[moveKey] = move;
+      room.moves.updatedAt = new Date().toISOString();
+      room.latestRoundResult = buildRoundResult(room);
+
+      return {
+        ok: true,
+        room: cloneRoom(room),
+        roundResult: room.latestRoundResult
+      };
+    },
+
+    getRoomCodeForSocket(socketId) {
+      return socketToRoom.get(socketId) ?? null;
     }
   };
 }

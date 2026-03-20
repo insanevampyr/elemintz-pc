@@ -3807,6 +3807,169 @@ test("ui: online play screen renders room flow status and room details", () => {
   assert.match(html, /Role:<\/strong> Host/);
 });
 
+test("ui: online play screen renders move sync status and submit controls for full rooms", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "1/2 move submission received for room ABC123.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: false,
+          submittedCount: 1,
+          bothSubmitted: false,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Move Sync:<\/strong> 1\/2 submitted\./);
+  assert.match(html, /Host Submitted:<\/strong> Yes/);
+  assert.match(html, /Guest Submitted:<\/strong> No/);
+  assert.match(html, /Submit Move/);
+  assert.match(html, /data-move="fire"/);
+  assert.match(html, /data-move="water"/);
+  assert.match(html, /data-move="earth"/);
+  assert.match(html, /data-move="wind"/);
+});
+
+test("ui: online play screen renders round result from the local player perspective", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "You Win Room ABC123",
+      lastError: null,
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "water",
+        hostResult: "lose",
+        guestResult: "win"
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Round Result/);
+  assert.match(html, /Host Move:<\/strong> Fire/);
+  assert.match(html, /Guest Move:<\/strong> Water/);
+  assert.match(html, /Result:<\/strong> You Win/);
+});
+
+test("ui: online play screen still shows move controls for full rooms when moveSync is missing", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "Room ABC123 is full.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Move Sync:<\/strong> 0\/2 submitted\./);
+  assert.match(html, /Host Submitted:<\/strong> No/);
+  assert.match(html, /Guest Submitted:<\/strong> No/);
+  assert.match(html, /data-move="fire"/);
+});
+
+test("ui: online play screen bind delegates move button clicks to submitMove", async () => {
+  const previousDocument = global.document;
+  const calls = [];
+  let moveClickHandler = null;
+
+  const moveActions = {
+    addEventListener: (_type, handler) => {
+      moveClickHandler = handler;
+    }
+  };
+
+  global.document = {
+    getElementById: (id) => {
+      if (id === "online-create-room-btn" || id === "online-play-back-btn") {
+        return { addEventListener: () => {} };
+      }
+
+      if (id === "online-move-actions") {
+        return moveActions;
+      }
+
+      if (id === "online-join-room-form") {
+        return { addEventListener: () => {} };
+      }
+
+      return null;
+    }
+  };
+
+  try {
+    onlinePlayScreen.bind({
+      actions: {
+        createRoom: async () => {},
+        back: async () => {},
+        joinRoom: async () => {},
+        submitMove: async (move) => {
+          calls.push(move);
+        }
+      }
+    });
+
+    await moveClickHandler({
+      target: {
+        nodeName: "#text",
+        parentNode: {
+          classList: { contains: (value) => value === "online-move-btn" },
+          hasAttribute: () => false,
+          getAttribute: () => "fire",
+          parentNode: null
+        }
+      },
+      composedPath: () => []
+    });
+
+    assert.deepEqual(calls, ["fire"]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: profile screen shows basic chest count and disables open button when empty", () => {
   const html = profileScreen.render({
     profile: {

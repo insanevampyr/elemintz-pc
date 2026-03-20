@@ -42,7 +42,7 @@ test("multiplayer foundation: health endpoint responds for deployment checks", a
     assert.deepEqual(payload, {
       ok: true,
       service: "elemintz-multiplayer",
-      phase: 2,
+      phase: 5,
       transport: "socket.io"
     });
     assert.ok(logEntries.some((entry) => entry[0] === "[Multiplayer] server listening"));
@@ -68,6 +68,13 @@ test("multiplayer rooms: room creation returns a short waiting room", async () =
     assert.equal(room.status, "waiting");
     assert.equal(room.host.socketId, host.id);
     assert.equal(room.guest, null);
+    assert.deepEqual(room.moveSync, {
+      hostSubmitted: false,
+      guestSubmitted: false,
+      submittedCount: 0,
+      bothSubmitted: false,
+      updatedAt: null
+    });
   } finally {
     host?.disconnect();
     await foundation.stop();
@@ -101,8 +108,85 @@ test("multiplayer rooms: room join succeeds and notifies both players", async ()
     assert.equal(joinedRoom.roomCode, createdRoom.roomCode);
     assert.equal(joinedRoom.host.socketId, host.id);
     assert.equal(joinedRoom.guest.socketId, guest.id);
+    assert.deepEqual(joinedRoom.moveSync, {
+      hostSubmitted: false,
+      guestSubmitted: false,
+      submittedCount: 0,
+      bothSubmitted: false,
+      updatedAt: null
+    });
     assert.deepEqual(hostUpdate, joinedRoom);
     assert.deepEqual(guestUpdate, joinedRoom);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+  }
+});
+
+test("multiplayer rooms: move submissions sync and resolve one round after host and guest both submit", async () => {
+  const foundation = createMultiplayerFoundation({ port: 0, logger: { info: () => {} } });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create");
+    const room = await createdPromise;
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostJoinUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", { roomCode: room.roomCode });
+    await joinedPromise;
+    await hostJoinUpdatePromise;
+
+    const hostMoveSyncPromise = waitForEvent(host, "room:moveSync");
+    const guestMoveSyncPromise = waitForEvent(guest, "room:moveSync");
+    host.emit("room:submitMove", { move: "fire" });
+
+    const hostMoveSync = await hostMoveSyncPromise;
+    const guestMoveSync = await guestMoveSyncPromise;
+
+    assert.deepEqual(hostMoveSync.moveSync, {
+      hostSubmitted: true,
+      guestSubmitted: false,
+      submittedCount: 1,
+      bothSubmitted: false,
+      updatedAt: hostMoveSync.moveSync.updatedAt
+    });
+    assert.deepEqual(guestMoveSync, hostMoveSync);
+
+    const hostBothSyncPromise = waitForEvent(host, "room:moveSync");
+    const guestBothSyncPromise = waitForEvent(guest, "room:moveSync");
+    const hostRoundResultPromise = waitForEvent(host, "room:roundResult");
+    const guestRoundResultPromise = waitForEvent(guest, "room:roundResult");
+    guest.emit("room:submitMove", { move: "water" });
+
+    const hostBothSync = await hostBothSyncPromise;
+    const guestBothSync = await guestBothSyncPromise;
+    const hostRoundResult = await hostRoundResultPromise;
+    const guestRoundResult = await guestRoundResultPromise;
+
+    assert.deepEqual(hostBothSync.moveSync, {
+      hostSubmitted: true,
+      guestSubmitted: true,
+      submittedCount: 2,
+      bothSubmitted: true,
+      updatedAt: hostBothSync.moveSync.updatedAt
+    });
+    assert.deepEqual(guestBothSync, hostBothSync);
+    assert.deepEqual(hostRoundResult, {
+      roomCode: room.roomCode,
+      hostMove: "fire",
+      guestMove: "water",
+      hostResult: "lose",
+      guestResult: "win"
+    });
+    assert.deepEqual(guestRoundResult, hostRoundResult);
   } finally {
     host?.disconnect();
     guest?.disconnect();
