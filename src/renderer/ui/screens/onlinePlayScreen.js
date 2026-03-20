@@ -183,17 +183,32 @@ function sumHandCount(hand = null) {
   return ELEMENT_ORDER.reduce((total, element) => total + Math.max(0, Number(hand?.[element] ?? 0)), 0);
 }
 
-function renderOnlineVariantPreviewGrid(identity, key) {
+function renderWaitingPreviewCards(identity, key) {
   if (!identity?.variantImages) {
     return "";
   }
 
   return `
-    <div class="grid two-col online-player-variant-grid">
-      <img class="online-player-variant-preview" src="${identity.variantImages.fire}" alt="${escapeHtml(identity.username)} fire variant" data-online-player-variant="${escapeHtml(key)}:fire" />
-      <img class="online-player-variant-preview" src="${identity.variantImages.water}" alt="${escapeHtml(identity.username)} water variant" data-online-player-variant="${escapeHtml(key)}:water" />
-      <img class="online-player-variant-preview" src="${identity.variantImages.earth}" alt="${escapeHtml(identity.username)} earth variant" data-online-player-variant="${escapeHtml(key)}:earth" />
-      <img class="online-player-variant-preview" src="${identity.variantImages.wind}" alt="${escapeHtml(identity.username)} wind variant" data-online-player-variant="${escapeHtml(key)}:wind" />
+    <div class="online-waiting-preview-grid">
+      ${ELEMENT_ORDER.map((element) => `
+        <article class="online-waiting-preview-card" data-online-player-variant="${escapeHtml(key)}:${element}">
+          <img
+            class="online-waiting-preview-art"
+            src="${identity.variantImages[element]}"
+            alt="${escapeHtml(identity.username)} ${escapeHtml(formatElement(element))} preview"
+          />
+          <p class="online-waiting-preview-label">${escapeHtml(formatElement(element))}</p>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderWaitingOpponentPlaceholder() {
+  return `
+    <div class="online-waiting-placeholder" data-online-waiting-placeholder="guest">
+      <p class="online-waiting-placeholder-title">Waiting for Opponent</p>
+      <p class="online-waiting-placeholder-copy">This player slot will fill when someone joins the room.</p>
     </div>
   `;
 }
@@ -324,21 +339,14 @@ function renderWaitingBoardPreview(hostIdentity, roomCode, backgroundImage) {
           <div class="online-play-identity-strip">
             <img class="online-player-card-back-chip" src="${hostIdentity.cardBackImage}" alt="${escapeHtml(hostIdentity.username)} card back" data-online-player-card-back="host-waiting" />
           </div>
-          ${renderOnlineVariantPreviewGrid(hostIdentity, "host")}
+          ${renderWaitingPreviewCards(hostIdentity, "host")}
         </div>
       </article>
 
       <article class="panel online-play-player-panel" data-online-player-card="guest" style="background-image: url('${waitingOpponent.backgroundImage}')">
         <div class="online-play-player-panel-overlay">
           ${renderPlayerHeader(toPlayerDisplay(waitingOpponent), "Guest", "")}
-          <div class="online-play-identity-strip">
-            <img class="online-player-card-back-chip" src="${waitingOpponent.cardBackImage}" alt="Waiting opponent card back" />
-          </div>
-          <div class="hand-zone hand-zone-opponent">
-            <div class="hand-summary-grid hand-summary-grid-opponent" id="right-hand">
-              ${renderHiddenHandSummary(0, waitingOpponent.cardBackImage)}
-            </div>
-          </div>
+          ${renderWaitingOpponentPlaceholder()}
         </div>
       </article>
 

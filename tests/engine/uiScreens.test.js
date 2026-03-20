@@ -3974,6 +3974,17 @@ test("ui: online play waiting host state shows the host's equipped cosmetics cle
   assert.match(html, /Share room code ABC123 to start the online match\./);
   assert.match(html, /data-online-player-card-back="host-waiting"/);
   assert.match(html, /<span>Apprentice<\/span>/);
+  assert.match(html, /class="online-waiting-preview-grid"/);
+  assert.match(html, /class="online-waiting-preview-card"/);
+  assert.match(html, /Fire<\/p>/);
+  assert.match(html, /Water<\/p>/);
+  assert.match(html, /Earth<\/p>/);
+  assert.match(html, /Wind<\/p>/);
+  assert.match(html, /Waiting for Opponent/);
+  assert.match(html, /This player slot will fill when someone joins the room\./);
+  assert.match(html, /data-online-waiting-placeholder="guest"/);
+  assert.doesNotMatch(html, /hidden-hand-summary/);
+  assert.doesNotMatch(html, /x0/);
   assert.match(html, new RegExp(getAvatarImage("avatar_crystal_soul").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(getArenaBackground("bg_verdant_shrine").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(getCardBackImage("cardback_arcane_galaxy").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
