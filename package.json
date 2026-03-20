@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "elemintz-pc",
   "version": "0.1.0",
   "description": "EleMintz desktop card game",
@@ -7,9 +7,14 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
+    "multiplayer:start": "node src/multiplayer/server.js",
     "test": "node --test"
   },
   "devDependencies": {
     "electron": "^31.0.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
   }
 }
