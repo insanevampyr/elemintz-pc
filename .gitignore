@@ -2,6 +2,9 @@ node_modules/
 dist/
 out/
 *.log
+.env
+Thumbs.db
+.DS_Store
 EleMintz_PC_Codex_Build_Plan.zip
 docx_extract/
 OLD GPT data/
