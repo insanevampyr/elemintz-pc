@@ -1,5 +1,24 @@
 const ROOM_CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const ROOM_CODE_DIGITS = "23456789";
+const INITIAL_HAND_COUNTS = Object.freeze({
+  fire: 2,
+  water: 2,
+  earth: 2,
+  wind: 2
+});
+const DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
+  avatar: "default_avatar",
+  background: "default_background",
+  cardBack: "default_card_back",
+  elementCardVariant: Object.freeze({
+    fire: "default_fire_card",
+    water: "default_water_card",
+    earth: "default_earth_card",
+    wind: "default_wind_card"
+  }),
+  title: "Initiate",
+  badge: "none"
+});
 
 function randomChar(source, random) {
   const index = Math.floor(random() * source.length);
@@ -27,10 +46,258 @@ function sanitizeRoomCode(value) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
-function buildPlayer(socket) {
+function normalizeUsername(username) {
+  const normalized = String(username ?? "").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeEquippedCosmetics(equippedCosmetics) {
+  const variants = equippedCosmetics?.elementCardVariant;
+
+  return {
+    avatar: String(equippedCosmetics?.avatar ?? DEFAULT_EQUIPPED_COSMETICS.avatar),
+    background: String(equippedCosmetics?.background ?? DEFAULT_EQUIPPED_COSMETICS.background),
+    cardBack: String(equippedCosmetics?.cardBack ?? DEFAULT_EQUIPPED_COSMETICS.cardBack),
+    elementCardVariant: {
+      fire: String(variants?.fire ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.fire),
+      water: String(variants?.water ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.water),
+      earth: String(variants?.earth ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.earth),
+      wind: String(variants?.wind ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.wind)
+    },
+    title: String(equippedCosmetics?.title ?? DEFAULT_EQUIPPED_COSMETICS.title),
+    badge: String(equippedCosmetics?.badge ?? DEFAULT_EQUIPPED_COSMETICS.badge)
+  };
+}
+
+// Runtime room processing only supports the four elemental cards. Reuse this
+// helper anywhere we need to contain malformed live room data without changing
+// valid state that is already safe.
+function isValidElement(value) {
+  return Object.hasOwn(INITIAL_HAND_COUNTS, value);
+}
+
+// Match/round guard helpers should coerce malformed counters to safe,
+// non-negative integers without touching valid numbers that are already safe.
+function safeRuntimeCount(value, fallback = 0) {
+  // Treat nullish/blank values as malformed input so callers can preserve their
+  // intended safe default instead of accidentally coercing null -> 0.
+  if (value == null || value === "") {
+    return fallback;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.floor(numeric));
+}
+
+// Room hands are consumed by move legality checks and round resolution. Repair
+// only missing/invalid element counters so gameplay code never reads malformed
+// hand data.
+export function guardRuntimeHandState(hand, logger = console) {
+  const nextHand = {};
+  let repaired = false;
+
+  for (const element of Object.keys(INITIAL_HAND_COUNTS)) {
+    const currentValue = hand?.[element];
+    const nextValue = safeRuntimeCount(currentValue, INITIAL_HAND_COUNTS[element]);
+    nextHand[element] = nextValue;
+
+    if (!hand || typeof hand !== "object" || Array.isArray(hand) || nextValue !== currentValue) {
+      repaired = true;
+    }
+  }
+
+  if (repaired) {
+    logger?.warn?.("[RuntimeGuard] repaired malformed hand state");
+  }
+
+  return {
+    value: repaired ? nextHand : hand,
+    repaired
+  };
+}
+
+// WAR state accumulates cards between rounds, so repair only the invalid parts
+// of the live WAR container rather than wiping the whole room.
+export function guardRuntimeWarState(warState, logger = console) {
+  const nextWarPotHost = Array.isArray(warState?.warPot?.host)
+    ? warState.warPot.host.filter((card) => isValidElement(card))
+    : [];
+  const nextWarPotGuest = Array.isArray(warState?.warPot?.guest)
+    ? warState.warPot.guest.filter((card) => isValidElement(card))
+    : [];
+  const nextWarRounds = Array.isArray(warState?.warRounds)
+    ? warState.warRounds
+        .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+        .map((entry) => ({ ...entry }))
+    : [];
+  const nextWarState = {
+    warActive: Boolean(warState?.warActive),
+    warDepth: safeRuntimeCount(warState?.warDepth, 0),
+    warRounds: nextWarRounds,
+    warPot: {
+      host: nextWarPotHost,
+      guest: nextWarPotGuest
+    }
+  };
+
+  const repaired =
+    !warState ||
+    typeof warState !== "object" ||
+    Array.isArray(warState) ||
+    nextWarState.warActive !== warState?.warActive ||
+    nextWarState.warDepth !== warState?.warDepth ||
+    nextWarState.warRounds.length !== (Array.isArray(warState?.warRounds) ? warState.warRounds.length : 0) ||
+    nextWarState.warPot.host.length !== (Array.isArray(warState?.warPot?.host) ? warState.warPot.host.length : 0) ||
+    nextWarState.warPot.guest.length !== (Array.isArray(warState?.warPot?.guest) ? warState.warPot.guest.length : 0);
+
+  if (repaired) {
+    logger?.warn?.("[RuntimeGuard] repaired malformed war state");
+  }
+
+  return {
+    value: repaired ? nextWarState : warState,
+    repaired
+  };
+}
+
+// Round payloads feed existing outcome/WAR resolution. Rebuild only malformed
+// round payloads from the authoritative room move state so valid rounds stay
+// untouched.
+export function guardRuntimeRoundPayload(room, roundPayload, logger = console) {
+  const hostMove = isValidElement(roundPayload?.hostMove)
+    ? roundPayload.hostMove
+    : isValidElement(room?.moves?.hostMove)
+      ? room.moves.hostMove
+      : null;
+  const guestMove = isValidElement(roundPayload?.guestMove)
+    ? roundPayload.guestMove
+    : isValidElement(room?.moves?.guestMove)
+      ? room.moves.guestMove
+      : null;
+
+  if (!hostMove || !guestMove) {
+    if (roundPayload) {
+      logger?.warn?.("[RuntimeGuard] repaired malformed round payload");
+    }
+    return {
+      value: null,
+      repaired: Boolean(roundPayload)
+    };
+  }
+
+  const resolvedRoundNumber = safeRuntimeCount(roundPayload?.round, safeRuntimeCount(room?.roundNumber, 1));
+  const safeOutcome = determineOutcome(hostMove, guestMove);
+  let safeOutcomeType = String(roundPayload?.outcomeType ?? "").trim();
+
+  if (!["resolved", "war", "war_resolved", "no_effect"].includes(safeOutcomeType)) {
+    safeOutcomeType = room?.warActive
+      ? safeOutcome.hostResult === "win" || safeOutcome.guestResult === "win"
+        ? "war_resolved"
+        : safeOutcome.hostResult === "war"
+          ? "war"
+          : "no_effect"
+      : safeOutcome.hostResult === "war"
+        ? "war"
+        : safeOutcome.hostResult === "no_effect"
+          ? "no_effect"
+          : "resolved";
+  }
+
+  const nextRoundPayload = {
+    roomCode: room?.roomCode ?? roundPayload?.roomCode ?? null,
+    hostMove,
+    guestMove,
+    round: resolvedRoundNumber,
+    outcomeType: safeOutcomeType,
+    ...safeOutcome
+  };
+
+  const repaired =
+    !roundPayload ||
+    typeof roundPayload !== "object" ||
+    Array.isArray(roundPayload) ||
+    roundPayload.hostMove !== nextRoundPayload.hostMove ||
+    roundPayload.guestMove !== nextRoundPayload.guestMove ||
+    roundPayload.round !== nextRoundPayload.round ||
+    roundPayload.outcomeType !== nextRoundPayload.outcomeType ||
+    roundPayload.hostResult !== nextRoundPayload.hostResult ||
+    roundPayload.guestResult !== nextRoundPayload.guestResult;
+
+  if (repaired) {
+    logger?.warn?.("[RuntimeGuard] repaired malformed round payload");
+  }
+
+  return {
+    value: repaired ? nextRoundPayload : roundPayload,
+    repaired
+  };
+}
+
+// Match result snapshots must remain structurally safe before persistence or
+// emit, but we only repair malformed counters/containers and keep valid data.
+export function guardRuntimeMatchResultPayload(matchResult, logger = console) {
+  if (!matchResult || typeof matchResult !== "object" || Array.isArray(matchResult)) {
+    logger?.warn?.("[RuntimeGuard] repaired malformed match result payload");
+    return {
+      value: null,
+      repaired: true
+    };
+  }
+
+  const safeHostHand = guardRuntimeHandState(matchResult.hostHand, null).value ?? {
+    ...INITIAL_HAND_COUNTS
+  };
+  const safeGuestHand = guardRuntimeHandState(matchResult.guestHand, null).value ?? {
+    ...INITIAL_HAND_COUNTS
+  };
+  const safeWarState = guardRuntimeWarState(
+    {
+      warActive: matchResult.warActive,
+      warDepth: matchResult.warDepth,
+      warRounds: matchResult.warRounds,
+      warPot: matchResult.warPot
+    },
+    null
+  ).value;
+
+  const nextMatchResult = {
+    ...matchResult,
+    round: safeRuntimeCount(matchResult.round, 0),
+    roundNumber: safeRuntimeCount(matchResult.roundNumber, 1),
+    hostScore: safeRuntimeCount(matchResult.hostScore, 0),
+    guestScore: safeRuntimeCount(matchResult.guestScore, 0),
+    hostHand: safeHostHand,
+    guestHand: safeGuestHand,
+    warPot: safeWarState.warPot,
+    warActive: safeWarState.warActive,
+    warDepth: safeWarState.warDepth,
+    warRounds: safeWarState.warRounds
+  };
+
+  const repaired = JSON.stringify(nextMatchResult) !== JSON.stringify(matchResult);
+  if (repaired) {
+    logger?.warn?.("[RuntimeGuard] repaired malformed match result payload");
+  }
+
+  return {
+    value: repaired ? nextMatchResult : matchResult,
+    repaired
+  };
+}
+
+function buildPlayer(socket, payload = {}) {
+  const username = normalizeUsername(payload.username);
   return {
     socketId: socket.id,
-    joinedAt: new Date().toISOString()
+    connected: true,
+    ...(username ? { username } : {}),
+    equippedCosmetics: normalizeEquippedCosmetics(payload.equippedCosmetics),
+    joinedAt: new Date().toISOString(),
+    disconnectedAt: null
   };
 }
 
@@ -44,6 +311,73 @@ function createEmptyMoveState() {
 
 function createEmptyRoundResult() {
   return null;
+}
+
+function createInitialMatchState() {
+  return {
+    hostScore: 0,
+    guestScore: 0,
+    roundNumber: 1,
+    lastOutcomeType: null,
+    roundHistory: [],
+    matchSequence: 1
+  };
+}
+
+function createInitialWarState() {
+  return {
+    warActive: false,
+    warDepth: 0,
+    warRounds: [],
+    warPot: {
+      host: [],
+      guest: []
+    }
+  };
+}
+
+function createInitialMatchCompletionState() {
+  return {
+    matchComplete: false,
+    winner: null,
+    winReason: null,
+    rematch: {
+      hostReady: false,
+      guestReady: false
+    }
+  };
+}
+
+function createInitialRewardSettlementState() {
+  return {
+    rewardSettlement: {
+      granted: false,
+      grantedAt: null,
+      summary: null
+    }
+  };
+}
+
+function createInitialDisconnectState() {
+  return {
+    disconnectState: {
+      active: false,
+      disconnectedRole: null,
+      disconnectedUsername: null,
+      remainingUsername: null,
+      reason: null,
+      expiresAt: null,
+      resumedAt: null
+    },
+    closingAt: null
+  };
+}
+
+function createInitialHandState() {
+  return {
+    hostHand: { ...INITIAL_HAND_COUNTS },
+    guestHand: { ...INITIAL_HAND_COUNTS }
+  };
 }
 
 function cloneMoveState(room) {
@@ -65,11 +399,178 @@ function resetMoveState(room) {
   room.latestRoundResult = createEmptyRoundResult();
 }
 
+function resetHandState(room) {
+  room.hostHand = { ...INITIAL_HAND_COUNTS };
+  room.guestHand = { ...INITIAL_HAND_COUNTS };
+}
+
+function resetWarState(room) {
+  room.warActive = false;
+  room.warDepth = 0;
+  room.warRounds = [];
+  room.warPot = {
+    host: [],
+    guest: []
+  };
+}
+
+function resetRematchState(room) {
+  room.rematch = {
+    hostReady: false,
+    guestReady: false
+  };
+}
+
+function resetMatchState(room) {
+  room.hostScore = 0;
+  room.guestScore = 0;
+  room.roundNumber = 1;
+  room.lastOutcomeType = null;
+  room.roundHistory = [];
+  room.matchSequence = Math.max(1, Number(room.matchSequence ?? 1) + 1);
+  room.matchComplete = false;
+  room.winner = null;
+  room.winReason = null;
+  room.rewardSettlement = {
+    granted: false,
+    grantedAt: null,
+    summary: null
+  };
+  room.disconnectState = {
+    active: false,
+    disconnectedRole: null,
+    disconnectedUsername: null,
+    remainingUsername: null,
+    reason: null,
+    expiresAt: null,
+    resumedAt: null
+  };
+  room.closingAt = null;
+  resetRematchState(room);
+  resetWarState(room);
+  resetHandState(room);
+  resetMoveState(room);
+}
+
+function markPlayerDisconnected(player) {
+  if (!player) {
+    return;
+  }
+
+  player.connected = false;
+  player.disconnectedAt = new Date().toISOString();
+}
+
+function markPlayerConnected(player, socket) {
+  if (!player || !socket) {
+    return;
+  }
+
+  player.socketId = socket.id;
+  player.connected = true;
+  player.disconnectedAt = null;
+}
+
+function clearDisconnectState(room, { resumedAt = null } = {}) {
+  room.disconnectState = {
+    active: false,
+    disconnectedRole: null,
+    disconnectedUsername: null,
+    remainingUsername: null,
+    reason: resumedAt ? "match_resumed" : null,
+    expiresAt: null,
+    resumedAt
+  };
+}
+
+function closeRoom(room, {
+  disconnectedRole = null,
+  disconnectedUsername = null,
+  remainingUsername = null,
+  reason = "room_closing",
+  closingAt = null
+} = {}) {
+  room.status = "closing";
+  room.closingAt = closingAt ?? room.closingAt ?? null;
+  room.disconnectState = {
+    active: true,
+    disconnectedRole,
+    disconnectedUsername,
+    remainingUsername,
+    reason,
+    expiresAt: room.disconnectState?.expiresAt ?? null,
+    resumedAt: room.disconnectState?.resumedAt ?? null
+  };
+  resetMoveState(room);
+  resetRematchState(room);
+}
+
+function pauseRoomForReconnect(room, {
+  disconnectedRole = null,
+  disconnectedUsername = null,
+  remainingUsername = null,
+  expiresAt = null
+} = {}) {
+  room.status = "paused";
+  room.disconnectState = {
+    active: true,
+    disconnectedRole,
+    disconnectedUsername,
+    remainingUsername,
+    reason: "waiting_for_reconnect",
+    expiresAt,
+    resumedAt: null
+  };
+  resetRematchState(room);
+}
+
+function expireRoomAsNoContest(room) {
+  room.status = "expired";
+  room.matchComplete = false;
+  room.winner = null;
+  room.winReason = null;
+  resetRematchState(room);
+  room.disconnectState = {
+    active: true,
+    disconnectedRole: room.disconnectState?.disconnectedRole ?? null,
+    disconnectedUsername: room.disconnectState?.disconnectedUsername ?? null,
+    remainingUsername: room.disconnectState?.remainingUsername ?? null,
+    reason: "disconnect_timeout_expired",
+    expiresAt: room.disconnectState?.expiresAt ?? null,
+    resumedAt: room.disconnectState?.resumedAt ?? null
+  };
+}
+
+function cloneRewardSettlement(room) {
+  if (
+    !room.rewardSettlement?.granted &&
+    !room.rewardSettlement?.grantedAt &&
+    !room.rewardSettlement?.summary
+  ) {
+    return null;
+  }
+
+  return {
+    granted: Boolean(room.rewardSettlement?.granted),
+    grantedAt: room.rewardSettlement?.grantedAt ?? null,
+    summary: room.rewardSettlement?.summary
+      ? {
+          granted: Boolean(room.rewardSettlement.summary.granted),
+          winner: room.rewardSettlement.summary.winner ?? null,
+          settledHostUsername: room.rewardSettlement.summary.settledHostUsername ?? null,
+          settledGuestUsername: room.rewardSettlement.summary.settledGuestUsername ?? null,
+          hostRewards: { ...(room.rewardSettlement.summary.hostRewards ?? {}) },
+          guestRewards: { ...(room.rewardSettlement.summary.guestRewards ?? {}) }
+        }
+      : null
+  };
+}
+
 function determineOutcome(hostMove, guestMove) {
   if (hostMove === guestMove) {
     return {
-      hostResult: "draw",
-      guestResult: "draw"
+      hostResult: "war",
+      guestResult: "war"
     };
   }
 
@@ -79,15 +580,169 @@ function determineOutcome(hostMove, guestMove) {
     (hostMove === "wind" && guestMove === "water") ||
     (hostMove === "water" && guestMove === "fire");
 
+  const guestWins =
+    (guestMove === "fire" && hostMove === "earth") ||
+    (guestMove === "earth" && hostMove === "wind") ||
+    (guestMove === "wind" && hostMove === "water") ||
+    (guestMove === "water" && hostMove === "fire");
+
+  if (!hostWins && !guestWins) {
+    return {
+      hostResult: "no_effect",
+      guestResult: "no_effect"
+    };
+  }
+
   return hostWins
     ? {
         hostResult: "win",
         guestResult: "lose"
       }
-    : {
+    : guestWins
+      ? {
         hostResult: "lose",
         guestResult: "win"
-      };
+        }
+      : {
+          hostResult: "no_effect",
+          guestResult: "no_effect"
+        };
+}
+
+function appendWarRound(room, entry) {
+  room.warRounds.push(entry);
+  while (room.warRounds.length > 10) {
+    room.warRounds.shift();
+  }
+}
+
+function addElementToHand(hand, element, count = 1) {
+  if (!hand || !Object.hasOwn(INITIAL_HAND_COUNTS, element)) {
+    return;
+  }
+
+  hand[element] = Number(hand[element] ?? 0) + count;
+}
+
+export function getTotalCardsInHand(hand) {
+  return Object.values(hand ?? {}).reduce((total, count) => total + Number(count ?? 0), 0);
+}
+
+export function getTotalOwnedCards(hand, committedCards = []) {
+  return getTotalCardsInHand(hand) + (Array.isArray(committedCards) ? committedCards.length : 0);
+}
+
+function appendWarPot(room, hostMove, guestMove) {
+  room.warPot.host.push(hostMove);
+  room.warPot.guest.push(guestMove);
+}
+
+function awardResolvedRoundCards(room, roundResult) {
+  if (roundResult.hostResult === "win") {
+    addElementToHand(room.hostHand, roundResult.hostMove);
+    addElementToHand(room.hostHand, roundResult.guestMove);
+  } else if (roundResult.guestResult === "win") {
+    addElementToHand(room.guestHand, roundResult.guestMove);
+    addElementToHand(room.guestHand, roundResult.hostMove);
+  } else {
+    addElementToHand(room.hostHand, roundResult.hostMove);
+    addElementToHand(room.guestHand, roundResult.guestMove);
+  }
+}
+
+function awardWarPot(room, roundResult) {
+  if (roundResult.hostResult === "win") {
+    for (const card of room.warPot.host) {
+      addElementToHand(room.hostHand, card);
+    }
+    for (const card of room.warPot.guest) {
+      addElementToHand(room.hostHand, card);
+    }
+  } else if (roundResult.guestResult === "win") {
+    for (const card of room.warPot.guest) {
+      addElementToHand(room.guestHand, card);
+    }
+    for (const card of room.warPot.host) {
+      addElementToHand(room.guestHand, card);
+    }
+  }
+
+  room.warPot = {
+    host: [],
+    guest: []
+  };
+}
+
+function completeMatchFromExhaustion(room, winner) {
+  room.matchComplete = true;
+  room.winner = winner;
+  room.winReason = "hand_exhaustion";
+  resetRematchState(room);
+}
+
+function clearMatchCompletion(room) {
+  room.matchComplete = false;
+  room.winner = null;
+  room.winReason = null;
+}
+
+export function updateMatchCompletion(room) {
+  const safeHostHand = guardRuntimeHandState(room.hostHand).value;
+  const safeGuestHand = guardRuntimeHandState(room.guestHand).value;
+  const safeWarState = guardRuntimeWarState({
+    warActive: room.warActive,
+    warDepth: room.warDepth,
+    warRounds: room.warRounds,
+    warPot: room.warPot
+  }).value;
+
+  room.hostHand = safeHostHand;
+  room.guestHand = safeGuestHand;
+  room.warActive = safeWarState.warActive;
+  room.warDepth = safeWarState.warDepth;
+  room.warRounds = safeWarState.warRounds;
+  room.warPot = safeWarState.warPot;
+
+  const hostOwnedCards = getTotalOwnedCards(room.hostHand, room.warPot?.host);
+  const guestOwnedCards = getTotalOwnedCards(room.guestHand, room.warPot?.guest);
+
+  if (hostOwnedCards === 0 && guestOwnedCards === 0) {
+    completeMatchFromExhaustion(room, "draw");
+    return true;
+  }
+
+  if (hostOwnedCards === 0 && guestOwnedCards > 0) {
+    completeMatchFromExhaustion(room, "guest");
+    return true;
+  }
+
+  if (guestOwnedCards === 0 && hostOwnedCards > 0) {
+    completeMatchFromExhaustion(room, "host");
+    return true;
+  }
+
+  if (room.warActive) {
+    const hostLegalMoves = getTotalCardsInHand(room.hostHand);
+    const guestLegalMoves = getTotalCardsInHand(room.guestHand);
+
+    if (hostLegalMoves === 0 && guestLegalMoves === 0) {
+      completeMatchFromExhaustion(room, "draw");
+      return true;
+    }
+
+    if (hostLegalMoves === 0 && guestLegalMoves > 0) {
+      completeMatchFromExhaustion(room, "guest");
+      return true;
+    }
+
+    if (guestLegalMoves === 0 && hostLegalMoves > 0) {
+      completeMatchFromExhaustion(room, "host");
+      return true;
+    }
+  }
+
+  clearMatchCompletion(room);
+  return false;
 }
 
 function buildRoundResult(room) {
@@ -95,21 +750,186 @@ function buildRoundResult(room) {
     return null;
   }
 
+  const resolvedRoundNumber = room.roundNumber;
+  const outcome = determineOutcome(room.moves.hostMove, room.moves.guestMove);
+  let outcomeType = "resolved";
+
+  if (room.warActive) {
+    if (outcome.hostResult === "win" || outcome.guestResult === "win") {
+      outcomeType = "war_resolved";
+    } else if (outcome.hostResult === "war") {
+      outcomeType = "war";
+    } else {
+      outcomeType = "no_effect";
+    }
+  } else if (outcome.hostResult === "war") {
+    outcomeType = "war";
+  } else if (outcome.hostResult === "no_effect") {
+    outcomeType = "no_effect";
+  }
+
   return {
     roomCode: room.roomCode,
     hostMove: room.moves.hostMove,
     guestMove: room.moves.guestMove,
-    ...determineOutcome(room.moves.hostMove, room.moves.guestMove)
+    round: resolvedRoundNumber,
+    outcomeType,
+    ...outcome
   };
 }
 
+function applyRoundToMatchState(room, roundResult) {
+  const safeWarState = guardRuntimeWarState({
+    warActive: room.warActive,
+    warDepth: room.warDepth,
+    warRounds: room.warRounds,
+    warPot: room.warPot
+  }).value;
+  room.warActive = safeWarState.warActive;
+  room.warDepth = safeWarState.warDepth;
+  room.warRounds = safeWarState.warRounds;
+  room.warPot = safeWarState.warPot;
+
+  const guardedRound = guardRuntimeRoundPayload(room, roundResult).value;
+  if (!guardedRound) {
+    return null;
+  }
+
+  const resolvedRoundNumber = room.roundNumber;
+  const outcomeType = guardedRound.outcomeType ?? null;
+
+  if (outcomeType === "war") {
+    appendWarPot(room, guardedRound.hostMove, guardedRound.guestMove);
+    if (!room.warActive) {
+      room.warActive = true;
+      room.warDepth = 1;
+      room.warRounds = [];
+    } else {
+      room.warDepth += 1;
+    }
+
+    appendWarRound(room, {
+      round: resolvedRoundNumber,
+      hostMove: guardedRound.hostMove,
+      guestMove: guardedRound.guestMove,
+      outcomeType
+    });
+  } else if (room.warActive && outcomeType === "no_effect") {
+    appendWarPot(room, guardedRound.hostMove, guardedRound.guestMove);
+    appendWarRound(room, {
+      round: resolvedRoundNumber,
+      hostMove: guardedRound.hostMove,
+      guestMove: guardedRound.guestMove,
+      outcomeType
+    });
+  } else if (room.warActive && outcomeType === "war_resolved") {
+    appendWarPot(room, guardedRound.hostMove, guardedRound.guestMove);
+    appendWarRound(room, {
+      round: resolvedRoundNumber,
+      hostMove: guardedRound.hostMove,
+      guestMove: guardedRound.guestMove,
+      outcomeType
+    });
+  }
+
+  if (outcomeType === "resolved") {
+    awardResolvedRoundCards(room, guardedRound);
+  } else if (outcomeType === "no_effect" && !room.warActive) {
+    awardResolvedRoundCards(room, guardedRound);
+  } else if (outcomeType === "war_resolved") {
+    awardWarPot(room, guardedRound);
+  }
+
+  if (outcomeType === "resolved" || outcomeType === "war_resolved") {
+    if (guardedRound.hostResult === "win") {
+      room.hostScore += 1;
+    }
+
+    if (guardedRound.guestResult === "win") {
+      room.guestScore += 1;
+    }
+  }
+
+  room.lastOutcomeType = outcomeType;
+  room.roundHistory.push({
+    round: resolvedRoundNumber,
+    hostMove: guardedRound.hostMove,
+    guestMove: guardedRound.guestMove,
+    outcomeType,
+    hostResult: guardedRound.hostResult,
+    guestResult: guardedRound.guestResult
+  });
+
+  while (room.roundHistory.length > 10) {
+    room.roundHistory.shift();
+  }
+
+  room.roundNumber = resolvedRoundNumber + 1;
+
+  const safeMatchResult = guardRuntimeMatchResultPayload({
+    ...guardedRound,
+    hostScore: room.hostScore,
+    guestScore: room.guestScore,
+    roundNumber: room.roundNumber,
+    lastOutcomeType: room.lastOutcomeType,
+    matchComplete: room.matchComplete,
+    winner: room.winner,
+    winReason: room.winReason,
+    rematch: { ...room.rematch },
+    hostHand: { ...room.hostHand },
+    guestHand: { ...room.guestHand },
+    warPot: {
+      host: [...room.warPot.host],
+      guest: [...room.warPot.guest]
+    },
+    warActive: room.warActive,
+    warDepth: room.warDepth,
+    warRounds: room.warRounds.map((entry) => ({ ...entry }))
+  }).value;
+
+  return safeMatchResult;
+}
+
 function cloneRoom(room) {
+  const rewardSettlement = cloneRewardSettlement(room);
   return {
     roomCode: room.roomCode,
     createdAt: room.createdAt,
     host: room.host ? { ...room.host } : null,
     guest: room.guest ? { ...room.guest } : null,
     status: room.status,
+    closingAt: room.closingAt ?? null,
+    disconnectState: {
+      active: Boolean(room.disconnectState?.active),
+      disconnectedRole: room.disconnectState?.disconnectedRole ?? null,
+      disconnectedUsername: room.disconnectState?.disconnectedUsername ?? null,
+      remainingUsername: room.disconnectState?.remainingUsername ?? null,
+      reason: room.disconnectState?.reason ?? null,
+      expiresAt: room.disconnectState?.expiresAt ?? null,
+      resumedAt: room.disconnectState?.resumedAt ?? null
+    },
+    hostScore: room.hostScore,
+    guestScore: room.guestScore,
+    roundNumber: room.roundNumber,
+    lastOutcomeType: room.lastOutcomeType,
+    matchComplete: Boolean(room.matchComplete),
+    winner: room.winner ?? null,
+    winReason: room.winReason ?? null,
+    rematch: {
+      hostReady: Boolean(room.rematch?.hostReady),
+      guestReady: Boolean(room.rematch?.guestReady)
+    },
+    ...(rewardSettlement ? { rewardSettlement } : {}),
+    hostHand: { ...room.hostHand },
+    guestHand: { ...room.guestHand },
+    warPot: {
+      host: Array.isArray(room.warPot?.host) ? [...room.warPot.host] : [],
+      guest: Array.isArray(room.warPot?.guest) ? [...room.warPot.guest] : []
+    },
+    warActive: room.warActive,
+    warDepth: room.warDepth,
+    warRounds: room.warRounds.map((entry) => ({ ...entry })),
+    roundHistory: room.roundHistory.map((entry) => ({ ...entry })),
     moveSync: cloneMoveState(room)
   };
 }
@@ -135,7 +955,7 @@ export function createRoomStore({ random = Math.random } = {}) {
   }
 
   return {
-    createRoom(socket) {
+    createRoom(socket, payload = {}) {
       if (getRoomBySocket(socket.id)) {
         return {
           ok: false,
@@ -150,9 +970,15 @@ export function createRoomStore({ random = Math.random } = {}) {
       const room = {
         roomCode,
         createdAt: new Date().toISOString(),
-        host: buildPlayer(socket),
+        host: buildPlayer(socket, payload),
         guest: null,
         status: "waiting",
+        ...createInitialMatchState(),
+        ...createInitialMatchCompletionState(),
+        ...createInitialRewardSettlementState(),
+        ...createInitialDisconnectState(),
+        ...createInitialHandState(),
+        ...createInitialWarState(),
         moves: createEmptyMoveState(),
         latestRoundResult: createEmptyRoundResult()
       };
@@ -166,7 +992,7 @@ export function createRoomStore({ random = Math.random } = {}) {
       };
     },
 
-    joinRoom(socket, roomCodeInput) {
+    joinRoom(socket, roomCodeInput, payload = {}) {
       if (getRoomBySocket(socket.id)) {
         return {
           ok: false,
@@ -190,6 +1016,60 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
+      const username = normalizeUsername(payload.username);
+
+      if (room.status === "paused") {
+        const disconnectedRole = room.disconnectState?.disconnectedRole ?? null;
+        const disconnectedUsername = room.disconnectState?.disconnectedUsername ?? null;
+        const reconnectPlayer =
+          disconnectedRole === "host"
+            ? room.host
+            : disconnectedRole === "guest"
+              ? room.guest
+              : null;
+
+        if (!username || !disconnectedUsername || username !== disconnectedUsername || !reconnectPlayer) {
+          return {
+            ok: false,
+            error: {
+              code: "ROOM_RECONNECT_RESERVED",
+              message: "This room is reserved for the disconnected player to resume."
+            }
+          };
+        }
+
+        markPlayerConnected(reconnectPlayer, socket);
+        room.status = "full";
+        clearDisconnectState(room, { resumedAt: new Date().toISOString() });
+        socketToRoom.set(socket.id, roomCode);
+
+        return {
+          ok: true,
+          room: cloneRoom(room),
+          reconnected: true
+        };
+      }
+
+      if (room.status === "expired") {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_EXPIRED",
+            message: "This room has expired and can no longer be resumed."
+          }
+        };
+      }
+
+      if (room.status === "closing") {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_CLOSING",
+            message: "This room is closing and cannot accept reconnects or new joins."
+          }
+        };
+      }
+
       if (room.guest) {
         return {
           ok: false,
@@ -200,9 +1080,10 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
-      room.guest = buildPlayer(socket);
+      room.guest = buildPlayer(socket, { ...payload, username });
       room.status = "full";
       resetMoveState(room);
+      resetRematchState(room);
       socketToRoom.set(socket.id, roomCode);
 
       return {
@@ -223,11 +1104,100 @@ export function createRoomStore({ random = Math.random } = {}) {
         return { removedRoomCode: roomCode, room: null };
       }
 
+      const activeMatchInProgress =
+        room.status === "full" &&
+        !room.matchComplete &&
+        (
+          (Array.isArray(room.roundHistory) && room.roundHistory.length > 0) ||
+          room.moves?.hostMove !== null ||
+          room.moves?.guestMove !== null ||
+          Number(room.roundNumber ?? 1) > 1
+        );
+
+      const buildPausedResult = (disconnectedRole) => {
+        const disconnectedPlayer = disconnectedRole === "host" ? room.host : room.guest;
+        const remainingPlayer = disconnectedRole === "host" ? room.guest : room.host;
+
+        markPlayerDisconnected(disconnectedPlayer);
+        pauseRoomForReconnect(room, {
+          disconnectedRole,
+          disconnectedUsername: disconnectedPlayer?.username ?? null,
+          remainingUsername: remainingPlayer?.username ?? null,
+        });
+
+        return {
+          removedRoomCode: null,
+          room: cloneRoom(room),
+          shouldScheduleReconnectExpiry: true
+        };
+      };
+
+      const buildExpiredResult = ({
+        disconnectedRole,
+        disconnectedUsername,
+        remainingUsername
+      }) => {
+        expireRoomAsNoContest(room);
+        room.disconnectState = {
+          ...room.disconnectState,
+          disconnectedRole,
+          disconnectedUsername,
+          remainingUsername
+        };
+
+        return {
+          removedRoomCode: null,
+          room: cloneRoom(room),
+          shouldScheduleCleanup: true
+        };
+      };
+
       if (room.host?.socketId === socketId) {
+        if (room.status === "paused") {
+          const guestConnected = Boolean(room.guest?.connected);
+          markPlayerDisconnected(room.host);
+          if (!guestConnected) {
+            return buildExpiredResult({
+              disconnectedRole: room.disconnectState?.disconnectedRole ?? "host",
+              disconnectedUsername: room.disconnectState?.disconnectedUsername ?? room.host?.username ?? null,
+              remainingUsername: null
+            });
+          }
+        }
+
+        if (activeMatchInProgress) {
+          return buildPausedResult("host");
+        }
+
+        if (room.matchComplete) {
+          markPlayerDisconnected(room.host);
+          closeRoom(room, {
+            disconnectedRole: "host",
+            disconnectedUsername: room.host?.username ?? null,
+            remainingUsername: room.guest?.username ?? null,
+            reason: "post_match_disconnect"
+          });
+          return {
+            removedRoomCode: null,
+            room: cloneRoom(room),
+            shouldScheduleCleanup: true
+          };
+        }
+
         if (room.guest) {
           room.host = room.guest;
           room.guest = null;
           room.status = "waiting";
+          room.disconnectState = {
+            active: false,
+            disconnectedRole: null,
+            disconnectedUsername: null,
+            remainingUsername: null,
+            reason: null,
+            expiresAt: null,
+            resumedAt: null
+          };
+          room.closingAt = null;
           resetMoveState(room);
           return {
             removedRoomCode: null,
@@ -243,8 +1213,49 @@ export function createRoomStore({ random = Math.random } = {}) {
       }
 
       if (room.guest?.socketId === socketId) {
+        if (room.status === "paused") {
+          const hostConnected = Boolean(room.host?.connected);
+          markPlayerDisconnected(room.guest);
+          if (!hostConnected) {
+            return buildExpiredResult({
+              disconnectedRole: room.disconnectState?.disconnectedRole ?? "guest",
+              disconnectedUsername: room.disconnectState?.disconnectedUsername ?? room.guest?.username ?? null,
+              remainingUsername: null
+            });
+          }
+        }
+
+        if (activeMatchInProgress) {
+          return buildPausedResult("guest");
+        }
+
+        if (room.matchComplete) {
+          markPlayerDisconnected(room.guest);
+          closeRoom(room, {
+            disconnectedRole: "guest",
+            disconnectedUsername: room.guest?.username ?? null,
+            remainingUsername: room.host?.username ?? null,
+            reason: "post_match_disconnect"
+          });
+          return {
+            removedRoomCode: null,
+            room: cloneRoom(room),
+            shouldScheduleCleanup: true
+          };
+        }
+
         room.guest = null;
         room.status = "waiting";
+        room.disconnectState = {
+          active: false,
+          disconnectedRole: null,
+          disconnectedUsername: null,
+          remainingUsername: null,
+          reason: null,
+          expiresAt: null,
+          resumedAt: null
+        };
+        room.closingAt = null;
         resetMoveState(room);
       }
 
@@ -280,6 +1291,26 @@ export function createRoomStore({ random = Math.random } = {}) {
       }
 
       if (room.status !== "full" || !room.host || !room.guest) {
+        if (room.status === "paused") {
+          return {
+            ok: false,
+            error: {
+              code: "ROOM_PAUSED",
+              message: "Match is paused while waiting for a player to reconnect."
+            }
+          };
+        }
+
+        if (room.status === "expired") {
+          return {
+            ok: false,
+            error: {
+              code: "ROOM_EXPIRED",
+              message: "This room has expired and can no longer be played."
+            }
+          };
+        }
+
         return {
           ok: false,
           error: {
@@ -289,8 +1320,53 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
+      if (!room.host.connected || !room.guest.connected) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_CLOSING",
+            message: "This room is closing and can no longer accept moves."
+          }
+        };
+      }
+
+      if (room.matchComplete) {
+        return {
+          ok: false,
+          error: {
+            code: "MATCH_COMPLETE",
+            message: "Match is complete. Both players must ready a rematch first."
+          }
+        };
+      }
+
+      // Repair the live hand/WAR containers at the move boundary so legality
+      // checks and round resolution never consume malformed runtime state.
+      room.hostHand = guardRuntimeHandState(room.hostHand).value;
+      room.guestHand = guardRuntimeHandState(room.guestHand).value;
+      const safeWarState = guardRuntimeWarState({
+        warActive: room.warActive,
+        warDepth: room.warDepth,
+        warRounds: room.warRounds,
+        warPot: room.warPot
+      }).value;
+      room.warActive = safeWarState.warActive;
+      room.warDepth = safeWarState.warDepth;
+      room.warRounds = safeWarState.warRounds;
+      room.warPot = safeWarState.warPot;
+
       const move = String(moveInput ?? "").trim().toLowerCase();
       if (!move) {
+        return {
+          ok: false,
+          error: {
+            code: "MOVE_INVALID",
+            message: "Move selection is required."
+          }
+        };
+      }
+
+      if (!Object.hasOwn(INITIAL_HAND_COUNTS, move)) {
         return {
           ok: false,
           error: {
@@ -305,6 +1381,12 @@ export function createRoomStore({ random = Math.random } = {}) {
           ? "hostMove"
           : room.guest?.socketId === socketId
             ? "guestMove"
+            : null;
+      const handKey =
+        moveKey === "hostMove"
+          ? "hostHand"
+          : moveKey === "guestMove"
+            ? "guestHand"
             : null;
 
       if (!moveKey) {
@@ -327,9 +1409,34 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
+      if (!handKey || Number(room[handKey]?.[move] ?? 0) <= 0) {
+        return {
+          ok: false,
+          error: {
+            code: "ILLEGAL_MOVE_NOT_IN_HAND",
+            message: "That element is no longer available in this hand."
+          }
+        };
+      }
+
+      room[handKey][move] -= 1;
       room.moves[moveKey] = move;
       room.moves.updatedAt = new Date().toISOString();
-      room.latestRoundResult = buildRoundResult(room);
+      room.latestRoundResult = applyRoundToMatchState(room, buildRoundResult(room));
+      if (room.latestRoundResult) {
+        updateMatchCompletion(room);
+      }
+      if (room.latestRoundResult) {
+        const rewardSettlement = cloneRewardSettlement(room);
+        room.latestRoundResult = {
+          ...room.latestRoundResult,
+          matchComplete: room.matchComplete,
+          winner: room.winner,
+          winReason: room.winReason,
+          rematch: { ...room.rematch },
+          ...(rewardSettlement ? { rewardSettlement } : {})
+        };
+      }
 
       return {
         ok: true,
@@ -338,8 +1445,177 @@ export function createRoomStore({ random = Math.random } = {}) {
       };
     },
 
+    readyRematch(socketId) {
+      const room = getRoomBySocket(socketId);
+      if (!room) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_NOT_FOUND",
+            message: "Room code not found."
+          }
+        };
+      }
+
+      if (!room.matchComplete) {
+        return {
+          ok: false,
+          error: {
+            code: "MATCH_NOT_COMPLETE",
+            message: "Rematch is only available after a match ends."
+          }
+        };
+      }
+
+      if (room.status === "closing") {
+        return {
+          ok: false,
+          error: {
+            code: "REMATCH_UNAVAILABLE",
+            message: "Rematch is unavailable because this room is closing."
+          }
+        };
+      }
+
+      if (room.host?.socketId === socketId) {
+        room.rematch.hostReady = true;
+      } else if (room.guest?.socketId === socketId) {
+        room.rematch.guestReady = true;
+      } else {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_PLAYER_NOT_FOUND",
+            message: "This socket is not assigned to a room player slot."
+          }
+        };
+      }
+
+      const bothReady = room.rematch.hostReady && room.rematch.guestReady;
+      if (bothReady) {
+        resetMatchState(room);
+      }
+
+      return {
+        ok: true,
+        room: cloneRoom(room),
+        rematchStarted: bothReady
+      };
+    },
+
+    resetRound(roomCodeInput, { clearWarState = false } = {}) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return null;
+      }
+
+      resetMoveState(room);
+      if (clearWarState) {
+        resetWarState(room);
+      }
+      updateMatchCompletion(room);
+      return cloneRoom(room);
+    },
+
     getRoomCodeForSocket(socketId) {
       return socketToRoom.get(socketId) ?? null;
+    },
+
+    getCurrentMatchSettlementKey(roomCodeInput) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return null;
+      }
+
+      return `${room.roomCode}:match:${Math.max(1, Number(room.matchSequence ?? 1))}`;
+    },
+
+    setRewardSettlement(roomCodeInput, summary, grantedAt = new Date().toISOString()) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return null;
+      }
+
+      room.rewardSettlement = {
+        granted: Boolean(summary),
+        grantedAt: summary ? grantedAt : null,
+        summary: summary
+          ? {
+              granted: Boolean(summary.granted),
+              winner: summary.winner ?? null,
+              settledHostUsername: summary.settledHostUsername ?? null,
+              settledGuestUsername: summary.settledGuestUsername ?? null,
+              hostRewards: { ...(summary.hostRewards ?? {}) },
+              guestRewards: { ...(summary.guestRewards ?? {}) }
+            }
+          : null
+      };
+
+      if (room.latestRoundResult) {
+        const rewardSettlement = cloneRewardSettlement(room);
+        room.latestRoundResult = {
+          ...room.latestRoundResult,
+          ...(rewardSettlement ? { rewardSettlement } : {})
+        };
+      }
+
+      return cloneRoom(room);
+    },
+
+    setClosingAt(roomCodeInput, closingAt) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return null;
+      }
+
+      room.closingAt = closingAt ?? null;
+      return cloneRoom(room);
+    },
+
+    setDisconnectExpiresAt(roomCodeInput, expiresAt) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return null;
+      }
+
+      room.disconnectState = {
+        ...room.disconnectState,
+        expiresAt: expiresAt ?? null
+      };
+      return cloneRoom(room);
+    },
+
+    expireDisconnectedRoom(roomCodeInput) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room || room.status !== "paused") {
+        return room ? cloneRoom(room) : null;
+      }
+
+      expireRoomAsNoContest(room);
+      return cloneRoom(room);
+    },
+
+    removeRoom(roomCodeInput) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return false;
+      }
+
+      if (room.host?.socketId) {
+        socketToRoom.delete(room.host.socketId);
+      }
+      if (room.guest?.socketId) {
+        socketToRoom.delete(room.guest.socketId);
+      }
+      rooms.delete(roomCode);
+      return true;
     }
   };
 }

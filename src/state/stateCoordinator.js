@@ -26,11 +26,11 @@ import {
   getDailyResetWindow
 } from "./dailyChallengesSystem.js";
 import { applyLevelRewardsForLevelChange, getLevelProgress } from "./levelRewardsSystem.js";
+import { rollBasicChest } from "../shared/basicChestDrop.js";
 
 const DAILY_LOGIN_TOKENS = 5;
 const DAILY_LOGIN_XP = 2;
-const MATCH_WIN_CHEST_CHANCE = 0.1;
-const MATCH_LOSS_CHEST_CHANCE = 0.02;
+const VALID_RUNTIME_MODES = new Set(["pve", "local_pvp", "online_pvp"]);
 
 function profilesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -73,12 +73,140 @@ function profileCommitSnapshot(profile) {
   };
 }
 
+function appendBoundedTimestamp(list, timestamp, limit = 10) {
+  const next = Array.isArray(list) ? [...list, timestamp] : [timestamp];
+  return next.slice(-limit);
+}
+
+// Runtime persistence boundaries should only coerce malformed values enough to
+// protect downstream systems. Valid fields must pass through unchanged.
+function safeRuntimeCount(value, fallback = 0, { min = 0 } = {}) {
+  // Treat nullish/blank runtime counters as malformed so the caller-provided
+  // fallback wins instead of silently coercing null -> 0.
+  if (value == null || value === "") {
+    return fallback;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.floor(numeric));
+}
+
+// Match history drives existing stat/challenge evaluation. Repair only the
+// malformed pieces so valid runtime match data reaches downstream systems
+// unchanged.
+function guardRuntimeMatchStatePayload(matchState) {
+  if (!matchState || typeof matchState !== "object" || Array.isArray(matchState)) {
+    console.warn("[RuntimeGuard] repaired malformed match result payload");
+    return {
+      value: {
+        status: "completed",
+        endReason: null,
+        winner: null,
+        mode: null,
+        round: 0,
+        history: []
+      },
+      repaired: true
+    };
+  }
+
+  const safeHistory = Array.isArray(matchState.history)
+    ? matchState.history
+        .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+        .map((entry) => ({
+          ...entry,
+          warClashes: safeRuntimeCount(entry.warClashes, 0),
+          capturedOpponentCards: safeRuntimeCount(entry.capturedOpponentCards, 0),
+          result: ["p1", "p2", "draw", "none"].includes(entry.result) ? entry.result : "none",
+          p1Card: typeof entry.p1Card === "string" ? entry.p1Card : null,
+          p2Card: typeof entry.p2Card === "string" ? entry.p2Card : null
+        }))
+    : [];
+
+  const nextMatchState = {
+    ...matchState,
+    status: "completed",
+    endReason: matchState.endReason ?? null,
+    winner: ["p1", "p2", "draw"].includes(matchState.winner) ? matchState.winner : null,
+    mode: typeof matchState.mode === "string" ? matchState.mode : null,
+    round: safeRuntimeCount(matchState.round, safeHistory.length),
+    history: safeHistory
+  };
+
+  const repaired = JSON.stringify(nextMatchState) !== JSON.stringify(matchState);
+  if (repaired) {
+    console.warn("[RuntimeGuard] repaired malformed match result payload");
+  }
+
+  return {
+    value: repaired ? nextMatchState : matchState,
+    repaired
+  };
+}
+
+// Stat writes must resolve to a known mode bucket. Repair malformed counters,
+// fall back to the current runtime mode when available, and skip the write if
+// a safe mode still cannot be resolved.
+export function guardRuntimeStatWritePayload({
+  mode,
+  fallbackMode = null,
+  matchStats
+} = {}) {
+  const resolvedMode = VALID_RUNTIME_MODES.has(mode)
+    ? mode
+    : VALID_RUNTIME_MODES.has(fallbackMode)
+      ? fallbackMode
+      : null;
+
+  const nextStats = {
+    gamesPlayed: safeRuntimeCount(matchStats?.gamesPlayed, 1),
+    wins: safeRuntimeCount(matchStats?.wins, 0),
+    losses: safeRuntimeCount(matchStats?.losses, 0),
+    warsEntered: safeRuntimeCount(matchStats?.warsEntered, 0),
+    warsWon: safeRuntimeCount(matchStats?.warsWon, 0),
+    longestWar: safeRuntimeCount(matchStats?.longestWar, 0),
+    cardsCaptured: safeRuntimeCount(matchStats?.cardsCaptured, 0),
+    matchesUsingAllElements: safeRuntimeCount(matchStats?.matchesUsingAllElements, 0),
+    quickWins: safeRuntimeCount(matchStats?.quickWins, 0),
+    timeLimitWins: safeRuntimeCount(matchStats?.timeLimitWins, 0)
+  };
+
+  const repaired =
+    JSON.stringify(nextStats) !== JSON.stringify(matchStats ?? {}) ||
+    mode !== resolvedMode;
+
+  if (resolvedMode && repaired) {
+    console.warn("[RuntimeGuard] repaired malformed stat update payload");
+  }
+
+  return {
+    mode: resolvedMode,
+    matchStats: nextStats,
+    repaired,
+    skipped: resolvedMode === null
+  };
+}
+
 export class StateCoordinator {
   constructor(options = {}) {
     this.profiles = new ProfileSystem(options);
     this.saves = new SaveSystem(options);
     this.settings = new SettingsService(options);
     this.random = typeof options.random === "function" ? options.random : Math.random;
+    this.matchPersistenceQueue = Promise.resolve();
+  }
+
+  runMatchPersistence(task) {
+    const run = this.matchPersistenceQueue.then(task, task);
+    this.matchPersistenceQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   }
 
   buildCosmeticsView(profile) {
@@ -177,163 +305,346 @@ export class StateCoordinator {
   }
 
   async recordMatchResult({ username, matchState, perspective = "p1" }) {
-    if (!username) {
-      throw new Error("username is required to record match results.");
-    }
+    return this.runMatchPersistence(async () => {
+      if (!username) {
+        throw new Error("username is required to record match results.");
+      }
 
-    if (!matchState || matchState.status !== "completed") {
-      throw new Error("matchState must be completed before recording results.");
-    }
+      if (!matchState || matchState.status !== "completed") {
+        throw new Error("matchState must be completed before recording results.");
+      }
 
-    const profileBefore = await this.profiles.ensureProfile(username);
-    const matchStats = deriveMatchStats(matchState, perspective);
-    const mode = matchState.mode ?? "pve";
-    const achievementsDisabledForMatch =
-      mode === "pve" && String(matchState.difficulty ?? "") === "easy";
+      const safeMatchState = guardRuntimeMatchStatePayload(matchState).value;
+      const profileBefore = await this.profiles.ensureProfile(username);
+      const derivedMatchStats = deriveMatchStats(safeMatchState, perspective);
+      const statWrite = guardRuntimeStatWritePayload({
+        mode: safeMatchState.mode,
+        fallbackMode: "pve",
+        matchStats: derivedMatchStats
+      });
+      const matchStats = statWrite.matchStats;
+      const mode = statWrite.mode ?? "pve";
+      const achievementsDisabledForMatch =
+        mode === "pve" && String(safeMatchState.difficulty ?? "") === "easy";
 
-    console.info("[StateCoordinator] recordMatchResult:before", {
-      mode,
-      perspective,
-      ...profileCommitSnapshot(profileBefore)
-    });
+      console.info("[StateCoordinator] recordMatchResult:before", {
+        mode,
+        perspective,
+        ...profileCommitSnapshot(profileBefore)
+      });
 
-    const profileWithStats = await this.profiles.applyMatchStats(username, matchStats, mode);
+      const profileWithStats = statWrite.skipped
+        ? (console.warn("[RuntimeGuard] skipped stat write due to unresolved mode"),
+          profileBefore)
+        : await this.profiles.applyMatchStats(username, matchStats, mode);
 
-    console.info("[StateCoordinator] recordMatchResult:after-stats", {
-      mode,
-      perspective,
-      matchStats,
-      ...profileCommitSnapshot(profileWithStats)
-    });
+      console.info("[StateCoordinator] recordMatchResult:after-stats", {
+        mode,
+        perspective,
+        matchStats,
+        ...profileCommitSnapshot(profileWithStats)
+      });
 
-    const isQuitForfeit = String(matchState.endReason ?? "") === "quit_forfeit";
+      const isQuitForfeit = String(safeMatchState.endReason ?? "") === "quit_forfeit";
 
-    const challengeResult = applyDailyChallengesForMatch({
-      profile: profileWithStats,
-      matchState,
-      perspective,
-      matchStats
-    });
-
-    let workingProfile = challengeResult.profile;
-    const levelRewardResult = applyLevelRewardsForLevelChange(workingProfile, {
-      fromLevel: challengeResult.levelBefore,
-      toLevel: challengeResult.levelAfter
-    });
-    workingProfile = levelRewardResult.profile;
-
-    const didWin = matchState.winner === perspective;
-    const didLose = matchState.winner && matchState.winner !== "draw" && matchState.winner !== perspective;
-    const matchChestChance = didWin
-      ? MATCH_WIN_CHEST_CHANCE
-      : didLose
-        ? MATCH_LOSS_CHEST_CHANCE
-        : 0;
-
-    if (matchChestChance > 0 && this.random() < matchChestChance) {
-      workingProfile = grantChest(workingProfile, { amount: 1 });
-    }
-
-    let unlockEvents = [];
-    let grantedRewards = [];
-
-    if (!isQuitForfeit && !achievementsDisabledForMatch) {
-      const unlockedDefinitions = evaluateAchievements({
-        profileBefore,
-        profileAfter: workingProfile,
-        matchState,
+      const challengeResult = applyDailyChallengesForMatch({
+        profile: profileWithStats,
+        matchState: safeMatchState,
         perspective,
         matchStats
       });
 
-      const withAchievements = applyAchievementUnlocks(workingProfile, unlockedDefinitions);
-      const withCosmetics = applyAchievementCosmeticRewards(
-        withAchievements.profile,
-        withAchievements.unlockEvents
-      );
-      const withTokens = applyAchievementTokenRewards(
-        withCosmetics.profile,
-        withAchievements.unlockEvents
-      );
+      let workingProfile = challengeResult.profile;
+      const levelRewardResult = applyLevelRewardsForLevelChange(workingProfile, {
+        fromLevel: challengeResult.levelBefore,
+        toLevel: challengeResult.levelAfter
+      });
+      workingProfile = levelRewardResult.profile;
 
-      workingProfile = withTokens.profile;
-      unlockEvents = withAchievements.unlockEvents;
-      grantedRewards = withCosmetics.grantedRewards;
-    }
+      const matchOutcome =
+        safeMatchState.winner === perspective
+          ? "win"
+          : safeMatchState.winner === "draw"
+            ? "draw"
+            : safeMatchState.winner
+              ? "loss"
+              : null;
 
-    const shouldPersistProfile = !profilesEqual(workingProfile, profileWithStats);
-    if (shouldPersistProfile) {
-      await this.profiles.updateProfile(username, workingProfile);
-    }
+      if (
+        rollBasicChest(matchOutcome, {
+          mode,
+          difficulty: safeMatchState.difficulty,
+          random: this.random
+        })
+      ) {
+        workingProfile = grantChest(workingProfile, { amount: 1 });
+      }
 
-    const committedProfile = await this.profiles.getProfile(username);
+      let unlockEvents = [];
+      let grantedRewards = [];
 
-    if (!committedProfile) {
-      throw new Error(`Failed to reload committed profile for ${username}.`);
-    }
+      if (!isQuitForfeit && !achievementsDisabledForMatch) {
+        const unlockedDefinitions = evaluateAchievements({
+          profileBefore,
+          profileAfter: workingProfile,
+          matchState: safeMatchState,
+          perspective,
+          matchStats
+        });
 
-    console.info("[StateCoordinator] recordMatchResult:committed", {
-      mode,
-      perspective,
-      shouldPersistProfile,
-      ...profileCommitSnapshot(committedProfile)
+        const withAchievements = applyAchievementUnlocks(workingProfile, unlockedDefinitions);
+        const withCosmetics = applyAchievementCosmeticRewards(
+          withAchievements.profile,
+          withAchievements.unlockEvents
+        );
+        const withTokens = applyAchievementTokenRewards(
+          withCosmetics.profile,
+          withAchievements.unlockEvents
+        );
+
+        workingProfile = withTokens.profile;
+        unlockEvents = withAchievements.unlockEvents;
+        grantedRewards = withCosmetics.grantedRewards;
+      }
+
+      const shouldPersistProfile = !profilesEqual(workingProfile, profileWithStats);
+      if (shouldPersistProfile) {
+        await this.profiles.updateProfile(username, workingProfile);
+      }
+
+      const committedProfile = await this.profiles.getProfile(username);
+
+      if (!committedProfile) {
+        throw new Error(`Failed to reload committed profile for ${username}.`);
+      }
+
+      console.info("[StateCoordinator] recordMatchResult:committed", {
+        mode,
+        perspective,
+        shouldPersistProfile,
+        ...profileCommitSnapshot(committedProfile)
+      });
+
+      const saveEntry = {
+        id: `save-${Date.now()}`,
+        recordedAt: new Date().toISOString(),
+        username,
+        perspective,
+        mode,
+        winner: safeMatchState.winner,
+        rounds: safeMatchState.round,
+        endReason: safeMatchState.endReason ?? null,
+        stats: matchStats,
+        unlockedAchievements: unlockEvents,
+        grantedCosmetics: grantedRewards,
+        dailyRewards: challengeResult.rewards.daily,
+        weeklyRewards: challengeResult.rewards.weekly,
+        tokenDelta: challengeResult.tokenDelta,
+        matchTokenDelta: challengeResult.matchTokenDelta,
+        challengeTokenDelta: challengeResult.challengeTokenDelta,
+        challengeXpDelta: challengeResult.challengeXpDelta,
+        xpDelta: challengeResult.xpDelta,
+        xpBreakdown: challengeResult.xpBreakdown,
+        levelRewards: levelRewardResult.grantedRewards,
+        levelRewardTokenDelta: levelRewardResult.tokenDelta,
+        history: safeMatchState.history
+      };
+
+      await this.saves.appendMatchResult(saveEntry);
+
+      return {
+        profile: committedProfile,
+        cosmetics: {
+          equipped: committedProfile.equippedCosmetics,
+          owned: committedProfile.ownedCosmetics,
+          catalog: getCosmeticCatalogForProfile(committedProfile)
+        },
+        profileAchievements: buildAchievementView(committedProfile),
+        unlockedAchievements: unlockEvents,
+        grantedCosmetics: grantedRewards,
+        dailyChallenges: getDailyChallengesView(committedProfile).view.daily,
+        weeklyChallenges: getDailyChallengesView(committedProfile).view.weekly,
+        xp: getLevelProgress(committedProfile),
+        dailyRewards: challengeResult.rewards.daily,
+        weeklyRewards: challengeResult.rewards.weekly,
+        tokenDelta: challengeResult.tokenDelta,
+        matchTokenDelta: challengeResult.matchTokenDelta,
+        challengeTokenDelta: challengeResult.challengeTokenDelta,
+        challengeXpDelta: challengeResult.challengeXpDelta,
+        xpDelta: challengeResult.xpDelta,
+        xpBreakdown: challengeResult.xpBreakdown,
+        levelBefore: challengeResult.levelBefore,
+        levelAfter: challengeResult.levelAfter,
+        levelRewards: levelRewardResult.grantedRewards,
+        levelRewardTokenDelta: levelRewardResult.tokenDelta,
+        save: saveEntry,
+        stats: matchStats
+      };
     });
+  }
 
-    const saveEntry = {
-      id: `save-${Date.now()}`,
-      recordedAt: new Date().toISOString(),
-      username,
-      perspective,
-      mode,
-      winner: matchState.winner,
-      rounds: matchState.round,
-      endReason: matchState.endReason ?? null,
-      stats: matchStats,
-      unlockedAchievements: unlockEvents,
-      grantedCosmetics: grantedRewards,
-      dailyRewards: challengeResult.rewards.daily,
-      weeklyRewards: challengeResult.rewards.weekly,
-      tokenDelta: challengeResult.tokenDelta,
-      matchTokenDelta: challengeResult.matchTokenDelta,
-      challengeTokenDelta: challengeResult.challengeTokenDelta,
-      challengeXpDelta: challengeResult.challengeXpDelta,
-      xpDelta: challengeResult.xpDelta,
-      xpBreakdown: challengeResult.xpBreakdown,
-      levelRewards: levelRewardResult.grantedRewards,
-      levelRewardTokenDelta: levelRewardResult.tokenDelta,
-      history: matchState.history
-    };
+  async recordOnlineMatchResult({
+    username,
+    matchState,
+    perspective = "p1",
+    settlementKey
+  }) {
+    return this.runMatchPersistence(async () => {
+      if (!username) {
+        throw new Error("username is required to record online match results.");
+      }
 
-    await this.saves.appendMatchResult(saveEntry);
+      if (!matchState || matchState.status !== "completed") {
+        throw new Error("matchState must be completed before recording online results.");
+      }
 
-    return {
-      profile: committedProfile,
-      cosmetics: {
-        equipped: committedProfile.equippedCosmetics,
-        owned: committedProfile.ownedCosmetics,
-        catalog: getCosmeticCatalogForProfile(committedProfile)
-      },
-      profileAchievements: buildAchievementView(committedProfile),
-      unlockedAchievements: unlockEvents,
-      grantedCosmetics: grantedRewards,
-      dailyChallenges: getDailyChallengesView(committedProfile).view.daily,
-      weeklyChallenges: getDailyChallengesView(committedProfile).view.weekly,
-      xp: getLevelProgress(committedProfile),
-      dailyRewards: challengeResult.rewards.daily,
-      weeklyRewards: challengeResult.rewards.weekly,
-      tokenDelta: challengeResult.tokenDelta,
-      matchTokenDelta: challengeResult.matchTokenDelta,
-      challengeTokenDelta: challengeResult.challengeTokenDelta,
-      challengeXpDelta: challengeResult.challengeXpDelta,
-      xpDelta: challengeResult.xpDelta,
-      xpBreakdown: challengeResult.xpBreakdown,
-      levelBefore: challengeResult.levelBefore,
-      levelAfter: challengeResult.levelAfter,
-      levelRewards: levelRewardResult.grantedRewards,
-      levelRewardTokenDelta: levelRewardResult.tokenDelta,
-      save: saveEntry,
-      stats: matchStats
-    };
+      const safeMatchState = guardRuntimeMatchStatePayload(matchState).value;
+      const statWrite = guardRuntimeStatWritePayload({
+        mode: safeMatchState.mode,
+        fallbackMode: "online_pvp",
+        matchStats: deriveMatchStats(safeMatchState, perspective)
+      });
+      const mode = statWrite.mode ?? "online_pvp";
+      const effectiveSettlementKey = String(settlementKey ?? "").trim();
+      const existingSaves = await this.saves.listMatchResults();
+      const duplicateSave = effectiveSettlementKey
+        ? existingSaves.find(
+            (entry) =>
+              entry?.username === username &&
+              entry?.mode === mode &&
+              entry?.settlementKey === effectiveSettlementKey
+          ) ?? null
+        : null;
+
+      if (duplicateSave) {
+        const committedProfile = await this.profiles.ensureProfile(username);
+        return {
+          duplicate: true,
+          profile: committedProfile,
+          save: duplicateSave,
+          stats: duplicateSave.stats ?? statWrite.matchStats
+        };
+      }
+
+      const matchStats = {
+        ...statWrite.matchStats,
+        matchesUsingAllElements: 0,
+        quickWins: 0,
+        timeLimitWins: 0
+      };
+      const profileBefore = await this.profiles.ensureProfile(username);
+      const profileWithStats = statWrite.skipped
+        ? (console.warn("[RuntimeGuard] skipped stat write due to unresolved mode"),
+          profileBefore)
+        : await this.profiles.applyMatchStats(username, matchStats, mode, {
+            resetWinStreakOnDraw: true
+          });
+      const challengeResult = applyDailyChallengesForMatch({
+        profile: profileWithStats,
+        matchState: safeMatchState,
+        perspective,
+        matchStats,
+        options: {
+          includeMatchRewards: false
+        }
+      });
+
+      let workingProfile = challengeResult.profile;
+      const levelRewardResult = applyLevelRewardsForLevelChange(workingProfile, {
+        fromLevel: challengeResult.levelBefore,
+        toLevel: challengeResult.levelAfter
+      });
+      workingProfile = levelRewardResult.profile;
+
+      const isQuitForfeit = String(safeMatchState.endReason ?? "") === "quit_forfeit";
+      let unlockEvents = [];
+      let grantedRewards = [];
+
+      if (!isQuitForfeit) {
+        const unlockedDefinitions = evaluateAchievements({
+          profileBefore,
+          profileAfter: workingProfile,
+          matchState: safeMatchState,
+          perspective,
+          matchStats
+        });
+
+        const withAchievements = applyAchievementUnlocks(workingProfile, unlockedDefinitions);
+        const withCosmetics = applyAchievementCosmeticRewards(
+          withAchievements.profile,
+          withAchievements.unlockEvents
+        );
+        const withTokens = applyAchievementTokenRewards(
+          withCosmetics.profile,
+          withAchievements.unlockEvents
+        );
+
+        workingProfile = withTokens.profile;
+        unlockEvents = withAchievements.unlockEvents;
+        grantedRewards = withCosmetics.grantedRewards;
+      }
+
+      const shouldPersistProfile = !profilesEqual(workingProfile, profileWithStats);
+      if (shouldPersistProfile) {
+        await this.profiles.updateProfile(username, workingProfile);
+      }
+
+      const profile = await this.profiles.getProfile(username);
+      if (!profile) {
+        throw new Error(`Failed to reload committed online profile for ${username}.`);
+      }
+
+      const saveEntry = {
+        id: `save-${Date.now()}`,
+        recordedAt: new Date().toISOString(),
+        username,
+        perspective,
+        mode,
+        settlementKey: effectiveSettlementKey || null,
+        winner: safeMatchState.winner,
+        rounds: safeMatchState.round,
+        endReason: safeMatchState.endReason ?? null,
+        stats: matchStats,
+        unlockedAchievements: unlockEvents,
+        grantedCosmetics: grantedRewards,
+        dailyRewards: challengeResult.rewards.daily,
+        weeklyRewards: challengeResult.rewards.weekly,
+        tokenDelta: challengeResult.tokenDelta,
+        matchTokenDelta: 0,
+        challengeTokenDelta: challengeResult.challengeTokenDelta,
+        challengeXpDelta: challengeResult.challengeXpDelta,
+        xpDelta: challengeResult.xpDelta,
+        xpBreakdown: challengeResult.xpBreakdown,
+        levelRewards: levelRewardResult.grantedRewards,
+        levelRewardTokenDelta: levelRewardResult.tokenDelta,
+        history: safeMatchState.history
+      };
+
+      await this.saves.appendMatchResult(saveEntry);
+
+      return {
+        duplicate: false,
+        profile,
+        save: saveEntry,
+        stats: matchStats,
+        profileAchievements: buildAchievementView(profile),
+        unlockedAchievements: unlockEvents,
+        grantedCosmetics: grantedRewards,
+        dailyChallenges: getDailyChallengesView(profile).view.daily,
+        weeklyChallenges: getDailyChallengesView(profile).view.weekly,
+        dailyRewards: challengeResult.rewards.daily,
+        weeklyRewards: challengeResult.rewards.weekly,
+        tokenDelta: challengeResult.tokenDelta,
+        challengeTokenDelta: challengeResult.challengeTokenDelta,
+        challengeXpDelta: challengeResult.challengeXpDelta,
+        xpDelta: challengeResult.xpDelta,
+        xpBreakdown: challengeResult.xpBreakdown,
+        levelBefore: challengeResult.levelBefore,
+        levelAfter: challengeResult.levelAfter,
+        levelRewards: levelRewardResult.grantedRewards,
+        levelRewardTokenDelta: levelRewardResult.tokenDelta
+      };
+    });
   }
 
   async getAchievements(username) {
@@ -409,6 +720,38 @@ export class StateCoordinator {
       granted: {
         chestType,
         amount
+      }
+    };
+  }
+
+  async grantOnlineMatchRewards({ username, tokens = 0, xp = 0, basicChests = 0 }) {
+    const safeTokens = Math.max(0, Number(tokens ?? 0));
+    const safeXp = Math.max(0, Number(xp ?? 0));
+    const safeBasicChests = Math.max(0, Number(basicChests ?? 0));
+
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      let nextProfile = {
+        ...current,
+        tokens: Math.max(0, Number(current.tokens ?? 0) + safeTokens),
+        playerXP: Math.max(0, Number(current.playerXP ?? 0) + safeXp)
+      };
+
+      if (safeBasicChests > 0) {
+        nextProfile = grantChest(nextProfile, {
+          chestType: "basic",
+          amount: safeBasicChests
+        });
+      }
+
+      return nextProfile;
+    });
+
+    return {
+      profile,
+      rewards: {
+        tokens: safeTokens,
+        xp: safeXp,
+        basicChests: safeBasicChests
       }
     };
   }
@@ -506,5 +849,111 @@ export class StateCoordinator {
       newlyUnlockedSlots: noticeResult?.newlyUnlockedSlots ?? [],
       nextUnlockLevel: noticeResult?.nextUnlockLevel ?? null
     };
+  }
+
+  async recordOnlineLiveMatchDisconnect({ username, occurredAt = new Date().toISOString() }) {
+    if (!username) {
+      return null;
+    }
+
+    return this.profiles.updateProfile(username, (current) => ({
+      ...current,
+      onlineDisconnectTracking: {
+        ...(current.onlineDisconnectTracking ?? {}),
+        totalLiveMatchDisconnects: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalLiveMatchDisconnects ?? 0) + 1
+        ),
+        totalReconnectTimeoutExpirations: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalReconnectTimeoutExpirations ?? 0)
+        ),
+        totalSuccessfulReconnectResumes: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalSuccessfulReconnectResumes ?? 0)
+        ),
+        recentDisconnectTimestamps: appendBoundedTimestamp(
+          current.onlineDisconnectTracking?.recentDisconnectTimestamps,
+          occurredAt
+        ),
+        recentExpirationTimestamps: Array.isArray(
+          current.onlineDisconnectTracking?.recentExpirationTimestamps
+        )
+          ? current.onlineDisconnectTracking.recentExpirationTimestamps
+          : []
+      }
+    }));
+  }
+
+  async recordOnlineReconnectResume({ username }) {
+    if (!username) {
+      return null;
+    }
+
+    return this.profiles.updateProfile(username, (current) => ({
+      ...current,
+      onlineDisconnectTracking: {
+        ...(current.onlineDisconnectTracking ?? {}),
+        totalLiveMatchDisconnects: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalLiveMatchDisconnects ?? 0)
+        ),
+        totalReconnectTimeoutExpirations: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalReconnectTimeoutExpirations ?? 0)
+        ),
+        totalSuccessfulReconnectResumes: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalSuccessfulReconnectResumes ?? 0) + 1
+        ),
+        recentDisconnectTimestamps: Array.isArray(
+          current.onlineDisconnectTracking?.recentDisconnectTimestamps
+        )
+          ? current.onlineDisconnectTracking.recentDisconnectTimestamps
+          : [],
+        recentExpirationTimestamps: Array.isArray(
+          current.onlineDisconnectTracking?.recentExpirationTimestamps
+        )
+          ? current.onlineDisconnectTracking.recentExpirationTimestamps
+          : []
+      }
+    }));
+  }
+
+  async recordOnlineReconnectTimeoutExpiration({
+    username,
+    occurredAt = new Date().toISOString()
+  }) {
+    if (!username) {
+      return null;
+    }
+
+    return this.profiles.updateProfile(username, (current) => ({
+      ...current,
+      onlineDisconnectTracking: {
+        ...(current.onlineDisconnectTracking ?? {}),
+        totalLiveMatchDisconnects: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalLiveMatchDisconnects ?? 0)
+        ),
+        totalReconnectTimeoutExpirations: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalReconnectTimeoutExpirations ?? 0) + 1
+        ),
+        totalSuccessfulReconnectResumes: Math.max(
+          0,
+          Number(current.onlineDisconnectTracking?.totalSuccessfulReconnectResumes ?? 0)
+        ),
+        recentDisconnectTimestamps: Array.isArray(
+          current.onlineDisconnectTracking?.recentDisconnectTimestamps
+        )
+          ? current.onlineDisconnectTracking.recentDisconnectTimestamps
+          : [],
+        recentExpirationTimestamps: appendBoundedTimestamp(
+          current.onlineDisconnectTracking?.recentExpirationTimestamps,
+          occurredAt
+        )
+      }
+    }));
   }
 }
