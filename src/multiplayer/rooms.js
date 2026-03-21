@@ -1070,6 +1070,8 @@ export function applyRoundToMatchState(room, roundResult) {
     awardResolvedRoundCards(room, guardedRound);
   } else if (outcomeType === "war_resolved") {
     awardWarPot(room, guardedRound);
+    // WAR state is transient and should not leak into the next round once the pile resolves.
+    resetWarState(room);
   }
 
   if (outcomeType === "resolved" || outcomeType === "war_resolved") {
