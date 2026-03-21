@@ -40,7 +40,7 @@ function createCompletedMatch({ mode = "pve", winner = "p1" } = {}) {
   };
 }
 
-test("runtime guard: multiplayer health reports phase 20", async () => {
+test("runtime guard: multiplayer health reports phase 21", async () => {
   const foundation = createMultiplayerFoundation({
     port: 0,
     logger: { info: () => {} }
@@ -52,7 +52,7 @@ test("runtime guard: multiplayer health reports phase 20", async () => {
     const payload = await response.json();
 
     assert.equal(response.status, 200);
-    assert.equal(payload.phase, 20);
+    assert.equal(payload.phase, 21);
   } finally {
     await foundation.stop();
   }

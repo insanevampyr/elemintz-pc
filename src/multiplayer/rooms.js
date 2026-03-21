@@ -687,7 +687,7 @@ function cloneRewardSettlement(room) {
   };
 }
 
-function determineOutcome(hostMove, guestMove) {
+export function determineOutcome(hostMove, guestMove) {
   if (hostMove === guestMove) {
     return {
       hostResult: "war",
@@ -943,7 +943,7 @@ export function updateMatchCompletion(room) {
   return false;
 }
 
-function buildRoundResult(room) {
+export function buildRoundResult(room) {
   if (!room.moves.hostMove || !room.moves.guestMove) {
     return null;
   }
