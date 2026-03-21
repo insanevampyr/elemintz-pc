@@ -17,6 +17,7 @@ import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
 import { COSMETIC_CATALOG, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
+import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
@@ -104,6 +105,7 @@ export class AppController {
     this.onlineReconnectReminderDismissedKey = null;
     this.onlineReconnectUiTimerId = null;
     this.storeViewState = this.createDefaultStoreViewState();
+    this.cosmeticsViewState = createDefaultCategoryViewState();
     this.roundPresentation = {
       phase: "idle",
       busy: false,
@@ -211,6 +213,19 @@ export class AppController {
         : new Set(this.storeViewState.rarities ?? this.createDefaultStoreViewState().rarities);
 
     return this.storeViewState;
+  }
+
+  ensureCosmeticsViewState() {
+    if (!this.cosmeticsViewState) {
+      this.cosmeticsViewState = createDefaultCategoryViewState();
+    }
+
+    this.cosmeticsViewState.categories =
+      this.cosmeticsViewState.categories instanceof Set
+        ? this.cosmeticsViewState.categories
+        : new Set(this.cosmeticsViewState.categories ?? createDefaultCategoryViewState().categories);
+
+    return this.cosmeticsViewState;
   }
 
   chooseRandomCatalogItem(type, { excludeIds = [] } = {}) {
@@ -2564,9 +2579,11 @@ export class AppController {
   async showCosmetics() {
     this.screenFlow = "cosmetics";
     const cosmetics = await window.elemintz.state.getCosmetics(this.username);
+    const viewState = this.ensureCosmeticsViewState();
 
     this.screenManager.show("cosmetics", {
       cosmetics,
+      viewState,
       actions: {
         equip: async (type, cosmeticId) => {
           const result = await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });

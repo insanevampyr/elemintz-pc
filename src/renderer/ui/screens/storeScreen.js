@@ -1,22 +1,10 @@
 import { getAssetPath } from "../../utils/dom.js";
-
-const CATEGORY_ORDER = [
-  ["avatar", "Avatars"],
-  ["cardBack", "Card Backs"],
-  ["background", "Backgrounds"],
-  ["elementCardVariant", "Element Card Variants"],
-  ["title", "Titles"],
-  ["badge", "Badges (Achievement Rewards)"]
-];
-const FILTERABLE_CATEGORIES = Object.freeze([
-  ["avatar", "Avatars"],
-  ["background", "Backgrounds"],
-  ["cardBack", "Card Backs"],
-  ["elementCardVariant", "Card Variants"],
-  ["title", "Titles"],
-  ["badge", "Badges"]
-]);
+import { CATEGORY_ORDER as BASE_CATEGORY_ORDER, FILTERABLE_CATEGORIES } from "../shared/cosmeticCategoryShared.js";
 const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
+const CATEGORY_ORDER = BASE_CATEGORY_ORDER.map(([type, label]) => [
+  type,
+  type === "badge" ? "Badges (Achievement Rewards)" : label
+]);
 
 function normalizeFilterText(value) {
   return String(value ?? "").trim().toLowerCase();

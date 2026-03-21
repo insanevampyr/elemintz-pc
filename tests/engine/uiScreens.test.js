@@ -1095,6 +1095,9 @@ test("ui: cosmetics screen shows owned items only", () => {
   assert.match(html, /background-randomize-toggle/);
   assert.match(html, /Cosmetic Loadouts/);
   assert.match(html, /Equip your cosmetics, then save them to a loadout slot/);
+  assert.match(html, /data-cosmetic-category-filter="avatar"/);
+  assert.match(html, /data-cosmetic-category-filter="elementCardVariant"/);
+  assert.match(html, /data-cosmetic-section="avatar"/);
   assert.match(html, />Rename</);
   assert.match(html, />Save to Slot</);
   assert.match(html, />Load</);
@@ -1298,6 +1301,72 @@ test("ui: game screen uses provided variant card images", () => {
   assert.match(html, /class="hidden-hand-summary"/);
   assert.match(html, /Keyboard: \[1\] Fire\s+\[2\] Earth\s+\[3\] Wind\s+\[4\] Water/);
   assert.doesNotMatch(html, /hand-slot-name/);
+});
+
+test("ui: cosmetics screen category filters hide unselected owned sections", () => {
+  const previousDocument = global.document;
+
+  const avatarSection = { hidden: false, style: {}, classList: { toggle() {} }, getAttribute: () => "avatar" };
+  const titleSection = { hidden: false, style: {}, classList: { toggle() {} }, getAttribute: () => "title" };
+  const avatarFilter = {
+    checked: true,
+    getAttribute: (name) => (name === "data-cosmetic-category-filter" ? "avatar" : null),
+    addEventListener(type, handler) {
+      this.handler = handler;
+    }
+  };
+  const titleFilter = {
+    checked: true,
+    getAttribute: (name) => (name === "data-cosmetic-category-filter" ? "title" : null),
+    addEventListener(type, handler) {
+      this.handler = handler;
+    }
+  };
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+  const backButton = { addEventListener() {} };
+
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-cosmetics" ? {} : null),
+    getElementById: (id) =>
+      ({
+        "cosmetics-back-btn": backButton,
+        "cosmetics-empty-state": emptyState
+      })[id] ?? null,
+    querySelectorAll: (selector) => {
+      switch (selector) {
+        case "[data-cosmetic-section]":
+          return [avatarSection, titleSection];
+        case "[data-cosmetic-category-filter]":
+          return [avatarFilter, titleFilter];
+        default:
+          return [];
+      }
+    }
+  };
+
+  try {
+    cosmeticsScreen.bind({
+      viewState: { categories: new Set(["avatar", "title"]) },
+      actions: {
+        back: async () => {},
+        equip: async () => {},
+        toggleBackgroundRandomization: async () => {},
+        saveLoadout: async () => {},
+        applyLoadout: async () => {},
+        renameLoadout: async () => {}
+      }
+    });
+
+    titleFilter.checked = false;
+    titleFilter.handler();
+
+    assert.equal(avatarSection.hidden, false);
+    assert.equal(titleSection.hidden, true);
+    assert.equal(titleSection.style.display, "none");
+    assert.equal(emptyState.hidden, false === true ? false : true);
+  } finally {
+    global.document = previousDocument;
+  }
 });
 
 test("ui: game screen escapes player-controlled names before inserting markup", () => {
