@@ -130,24 +130,235 @@ function migrateProfileSchema(profile) {
   };
 }
 
+// Profile data is loaded from disk before any gameplay/state systems touch it,
+// so validate the broad on-disk shape here and repair only the broken pieces.
+// This keeps malformed sections from leaking deeper while preserving good data.
+function validateAndRepairProfile(profile) {
+  const baseProfile =
+    profile && typeof profile === "object" && !Array.isArray(profile) ? { ...profile } : {};
+  const defaults = createDefaultProfile(normalizeUsername(baseProfile.username));
+  const repairs = [];
+
+  // Start validation with a shallow clone so section-level repairs do not
+  // mutate the raw object that came back from disk.
+  const repairedProfile = {
+    ...baseProfile
+  };
+
+  console.info("[ProfileSystem] validation start", {
+    username: repairedProfile.username ?? null
+  });
+
+  // Keep local helpers inside the validator so the repair rules stay
+  // centralized in one place and do not affect unrelated persistence code.
+  const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  const cloneValue = (value) => JSON.parse(JSON.stringify(value));
+  const logFieldRepair = (field, previousValue, nextValue) => {
+    repairs.push(field);
+    console.info("[ProfileSystem] validation repaired field", {
+      username: repairedProfile.username ?? null,
+      field,
+      previousType: Array.isArray(previousValue) ? "array" : typeof previousValue,
+      nextType: Array.isArray(nextValue) ? "array" : typeof nextValue
+    });
+  };
+  const logSectionRepair = (section, previousValue, nextValue) => {
+    repairs.push(section);
+    console.info("[ProfileSystem] validation repaired section", {
+      username: repairedProfile.username ?? null,
+      section,
+      previousType: Array.isArray(previousValue) ? "array" : typeof previousValue,
+      nextType: Array.isArray(nextValue) ? "array" : typeof nextValue
+    });
+  };
+  const repairNumericField = (field, fallback, { min = 0 } = {}) => {
+    const currentValue = repairedProfile[field];
+    const numeric = Number(currentValue);
+    const nextValue = Number.isFinite(numeric) ? Math.max(min, Math.floor(numeric)) : fallback;
+
+    if (!Number.isFinite(numeric) || nextValue !== currentValue) {
+      repairedProfile[field] = nextValue;
+      logFieldRepair(field, currentValue, nextValue);
+    }
+  };
+  const repairObjectSection = (section, fallbackValue) => {
+    const currentValue = repairedProfile[section];
+    if (!isPlainObject(currentValue)) {
+      const nextValue = cloneValue(fallbackValue);
+      repairedProfile[section] = nextValue;
+      logSectionRepair(section, currentValue, nextValue);
+    }
+  };
+  const repairArraySection = (section, fallbackValue) => {
+    const currentValue = repairedProfile[section];
+    if (!Array.isArray(currentValue)) {
+      const nextValue = cloneValue(fallbackValue);
+      repairedProfile[section] = nextValue;
+      logSectionRepair(section, currentValue, nextValue);
+    }
+  };
+
+  // Repair critical numeric counters individually so one malformed value does
+  // not force a broader profile reset.
+  repairNumericField("tokens", defaults.tokens);
+  repairNumericField("wins", defaults.wins);
+  repairNumericField("losses", defaults.losses);
+  repairNumericField("gamesPlayed", defaults.gamesPlayed);
+  repairNumericField("warsEntered", defaults.warsEntered);
+  repairNumericField("warsWon", defaults.warsWon);
+  repairNumericField("playerXP", defaults.playerXP);
+  repairNumericField("playerLevel", defaults.playerLevel, { min: 1 });
+  repairNumericField("cardsCaptured", defaults.cardsCaptured);
+  repairNumericField("longestWar", defaults.longestWar);
+  repairNumericField("matchesUsingAllElements", defaults.matchesUsingAllElements);
+
+  // Repair top-level object/array sections independently so unrelated valid
+  // progress is preserved even when one subsection is broken.
+  repairObjectSection("achievements", defaults.achievements);
+  repairObjectSection("dailyChallenges", defaults.dailyChallenges);
+  repairObjectSection("modeStats", defaults.modeStats);
+  repairObjectSection("ownedCosmetics", defaults.ownedCosmetics);
+  repairObjectSection("equippedCosmetics", defaults.equippedCosmetics);
+  repairObjectSection("cosmetics", defaults.cosmetics);
+  repairObjectSection("levelRewardsClaimed", defaults.levelRewardsClaimed);
+  repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
+  repairObjectSection(
+    "acknowledgedLoadoutUnlockSlots",
+    defaults.acknowledgedLoadoutUnlockSlots
+  );
+  repairObjectSection("chests", defaults.chests);
+  repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
+  repairArraySection("cosmeticLoadouts", defaults.cosmeticLoadouts);
+
+  // Repair nested structures inside mode stats so downstream stat math always
+  // receives objects for each mode bucket.
+  for (const modeKey of Object.keys(defaults.modeStats)) {
+    const currentModeStats = repairedProfile.modeStats?.[modeKey];
+    if (!isPlainObject(currentModeStats)) {
+      const nextModeStats = cloneValue(defaults.modeStats[modeKey]);
+      repairedProfile.modeStats = {
+        ...repairedProfile.modeStats,
+        [modeKey]: nextModeStats
+      };
+      logSectionRepair(`modeStats.${modeKey}`, currentModeStats, nextModeStats);
+    }
+  }
+
+  // Repair nested cosmetic object shapes so cosmetic normalization can safely
+  // validate IDs without first handling null/wrong-type containers.
+  const previousElementVariants = repairedProfile.equippedCosmetics?.elementCardVariant;
+  if (!isPlainObject(previousElementVariants)) {
+    const nextVariants = cloneValue(defaults.equippedCosmetics.elementCardVariant);
+    repairedProfile.equippedCosmetics = {
+      ...repairedProfile.equippedCosmetics,
+      elementCardVariant: nextVariants
+    };
+    logSectionRepair(
+      "equippedCosmetics.elementCardVariant",
+      previousElementVariants,
+      nextVariants
+    );
+  }
+
+  const previousNestedCosmetics = repairedProfile.cosmetics?.equipped;
+  if (
+    previousNestedCosmetics != null &&
+    !isPlainObject(previousNestedCosmetics)
+  ) {
+    const nextEquippedSnapshot = {
+      avatar: defaults.equippedCosmetics.avatar,
+      cardBack: defaults.equippedCosmetics.cardBack,
+      background: defaults.equippedCosmetics.background,
+      badge: defaults.equippedCosmetics.badge,
+      title: defaults.equippedCosmetics.title,
+      elementCardVariant: cloneValue(defaults.equippedCosmetics.elementCardVariant)
+    };
+    repairedProfile.cosmetics = {
+      ...repairedProfile.cosmetics,
+      equipped: nextEquippedSnapshot
+    };
+    logSectionRepair(
+      "cosmetics.equipped",
+      previousNestedCosmetics,
+      nextEquippedSnapshot
+    );
+  }
+
+  // Repair nested disconnect tracking counters and timestamp arrays so online
+  // moderation/support data remains safe to consume without wiping the section.
+  const disconnectDefaults = defaults.onlineDisconnectTracking;
+  const disconnectTracking = {
+    ...repairedProfile.onlineDisconnectTracking
+  };
+
+  for (const numericField of [
+    "totalLiveMatchDisconnects",
+    "totalReconnectTimeoutExpirations",
+    "totalSuccessfulReconnectResumes"
+  ]) {
+    const currentValue = disconnectTracking[numericField];
+    const numeric = Number(currentValue);
+    const nextValue = Number.isFinite(numeric)
+      ? Math.max(0, Math.floor(numeric))
+      : disconnectDefaults[numericField];
+
+    if (!Number.isFinite(numeric) || nextValue !== currentValue) {
+      disconnectTracking[numericField] = nextValue;
+      logFieldRepair(`onlineDisconnectTracking.${numericField}`, currentValue, nextValue);
+    }
+  }
+
+  for (const arrayField of ["recentDisconnectTimestamps", "recentExpirationTimestamps"]) {
+    const currentValue = disconnectTracking[arrayField];
+    if (!Array.isArray(currentValue)) {
+      const nextValue = cloneValue(disconnectDefaults[arrayField]);
+      disconnectTracking[arrayField] = nextValue;
+      logSectionRepair(`onlineDisconnectTracking.${arrayField}`, currentValue, nextValue);
+    }
+  }
+
+  repairedProfile.onlineDisconnectTracking = disconnectTracking;
+
+  if (repairs.length === 0) {
+    console.info("[ProfileSystem] validation skipped - already valid", {
+      username: repairedProfile.username ?? null
+    });
+  }
+
+  console.info("[ProfileSystem] validation complete", {
+    username: repairedProfile.username ?? null,
+    repairedCount: repairs.length
+  });
+
+  return {
+    profile: repairedProfile,
+    repaired: repairs.length > 0
+  };
+}
+
 function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   // Always migrate first so older records keep their existing data and only
   // receive the minimum schema changes needed before default filling happens.
   const migration = migrateProfileSchema(profile);
   const migratedProfile = migration.profile;
 
+  // Validate the migrated profile before deeper normalizers run so malformed
+  // sections are repaired centrally and valid sections remain untouched.
+  const validation = validateAndRepairProfile(migratedProfile);
+  const validatedProfile = validation.profile;
+
   const normalizedDisconnectTracking = {
-    totalLiveMatchDisconnects: Math.max(0, Number(migratedProfile?.onlineDisconnectTracking?.totalLiveMatchDisconnects ?? 0)),
-    totalReconnectTimeoutExpirations: Math.max(0, Number(migratedProfile?.onlineDisconnectTracking?.totalReconnectTimeoutExpirations ?? 0)),
-    totalSuccessfulReconnectResumes: Math.max(0, Number(migratedProfile?.onlineDisconnectTracking?.totalSuccessfulReconnectResumes ?? 0)),
-    recentDisconnectTimestamps: Array.isArray(migratedProfile?.onlineDisconnectTracking?.recentDisconnectTimestamps)
-      ? migratedProfile.onlineDisconnectTracking.recentDisconnectTimestamps
+    totalLiveMatchDisconnects: Math.max(0, Number(validatedProfile?.onlineDisconnectTracking?.totalLiveMatchDisconnects ?? 0)),
+    totalReconnectTimeoutExpirations: Math.max(0, Number(validatedProfile?.onlineDisconnectTracking?.totalReconnectTimeoutExpirations ?? 0)),
+    totalSuccessfulReconnectResumes: Math.max(0, Number(validatedProfile?.onlineDisconnectTracking?.totalSuccessfulReconnectResumes ?? 0)),
+    recentDisconnectTimestamps: Array.isArray(validatedProfile?.onlineDisconnectTracking?.recentDisconnectTimestamps)
+      ? validatedProfile.onlineDisconnectTracking.recentDisconnectTimestamps
           .map((entry) => String(entry ?? "").trim())
           .filter(Boolean)
           .slice(-10)
       : [],
-    recentExpirationTimestamps: Array.isArray(migratedProfile?.onlineDisconnectTracking?.recentExpirationTimestamps)
-      ? migratedProfile.onlineDisconnectTracking.recentExpirationTimestamps
+    recentExpirationTimestamps: Array.isArray(validatedProfile?.onlineDisconnectTracking?.recentExpirationTimestamps)
+      ? validatedProfile.onlineDisconnectTracking.recentExpirationTimestamps
           .map((entry) => String(entry ?? "").trim())
           .filter(Boolean)
           .slice(-10)
@@ -159,8 +370,8 @@ function normalizeProfile(profile, { applyRetroactive = false } = {}) {
       normalizeProfileChests(
         normalizeProfileStore(
           normalizeProfileCosmetics({
-            ...normalizeProfileModeStats(migratedProfile),
-            achievements: normalizeAchievementProgressMap(migratedProfile?.achievements),
+            ...normalizeProfileModeStats(validatedProfile),
+            achievements: normalizeAchievementProgressMap(validatedProfile?.achievements),
             onlineDisconnectTracking: normalizedDisconnectTracking
           })
         )
