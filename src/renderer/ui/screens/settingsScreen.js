@@ -90,7 +90,7 @@ export const settingsScreen = {
 
             <button type="submit" class="btn btn-primary">Save Settings</button>
           </form>
-          <button id="settings-back-btn" class="btn">Back</button>
+          <button id="settings-back-btn" class="btn screen-back-btn">Back</button>
         </div>
       </section>
     `;

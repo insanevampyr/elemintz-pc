@@ -1,6 +1,10 @@
 import { getArenaBackground, getAvatarImage, getBadgeImage } from "../../utils/assets.js";
 import { getAssetPath } from "../../utils/dom.js";
-import { getUnlockedAchievements } from "../../utils/achievements.js";
+import {
+  ACHIEVEMENT_CATALOG,
+  countUnlockedAchievements,
+  getUnlockedAchievements
+} from "../../utils/achievements.js";
 import { getCosmeticDisplayName } from "../../../state/cosmeticSystem.js";
 
 function resolveImagePath(image) {
@@ -119,23 +123,25 @@ function renderXpProgress(profile) {
 function renderChestPanel(profile, visualState = {}) {
   const basicChestCount = Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
   const chestIcon = getAssetPath(
-    visualState?.basicOpen ? "icons/chest_basic_open.png" : "icons/chest_basic.png"
+    visualState?.basicOpen ? "icons/basic_chest_open.png" : "icons/basic_chest.png"
   );
 
   return `
     <section class="stack-sm chest-panel">
       <h3 class="section-title">Basic Chests</h3>
-      <div class="player-header">
-        <img class="player-avatar" src="${chestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
+      <div class="player-header chest-panel-header">
+        <button
+          id="open-basic-chest-btn"
+          class="chest-open-trigger"
+          type="button"
+          ${basicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+          aria-label="Open Basic Chest"
+        >
+          <img class="player-avatar chest-open-trigger__image" src="${chestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
+        </button>
         <div>
           <p>Basic Chests: <strong>${basicChestCount}</strong></p>
-          <button
-            id="open-basic-chest-btn"
-            class="btn"
-            ${basicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
-          >
-            Open Basic Chest
-          </button>
+          <p class="text-muted chest-open-helper">${basicChestCount > 0 ? "Click chest to open" : "No Basic Chests available"}</p>
         </div>
       </div>
     </section>
@@ -217,6 +223,8 @@ export const profileScreen = {
   render(context) {
     const profile = context.profile;
     const unlockedAchievements = getUnlockedAchievements(profile);
+    const unlockedAchievementCount = countUnlockedAchievements(profile);
+    const totalAchievementCount = ACHIEVEMENT_CATALOG.length;
     const searchResults = context.searchResults ?? [];
     const cosmetics = context.cosmetics;
 
@@ -262,7 +270,7 @@ export const profileScreen = {
             <p>Local PvP W/L: ${profile.modeStats?.local_pvp?.wins ?? 0} / ${profile.modeStats?.local_pvp?.losses ?? 0}</p>
           </div>
 
-          <h3 class="section-title">Achievements</h3>
+          <h3 class="section-title">Achievements (${unlockedAchievementCount}/${totalAchievementCount})</h3>
           <div class="achievement-grid achievement-grid-profile">
             ${
               unlockedAchievements.length > 0
@@ -289,7 +297,7 @@ export const profileScreen = {
           ${renderReadOnlyProfile(context.viewedProfile)}
           ${context.viewedProfile ? '<button id="clear-viewed-profile-btn" class="btn">Close Viewed Profile</button>' : ""}
 
-          <button id="profile-back-btn" class="btn">Back</button>
+          <button id="profile-back-btn" class="btn screen-back-btn">Back</button>
           </div>
         </section>
       </section>

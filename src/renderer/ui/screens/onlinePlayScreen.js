@@ -888,7 +888,7 @@ export const onlinePlayScreen = {
                 `
                 : ""
             }
-            <button id="online-play-back-btn" class="btn">Back</button>
+            <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
           </div>
         </section>
       </section>

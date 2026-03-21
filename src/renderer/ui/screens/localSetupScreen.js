@@ -15,7 +15,7 @@ export const localSetupScreen = {
 
             <button type="submit" class="btn btn-primary">Start Local Match</button>
           </form>
-          <button id="local-setup-back-btn" class="btn">Back to Menu</button>
+          <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;

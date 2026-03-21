@@ -150,7 +150,7 @@ export const cosmeticsScreen = {
             }).join("")}
           </div>
 
-          <button id="cosmetics-back-btn" class="btn">Back to Menu</button>
+          <button id="cosmetics-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;

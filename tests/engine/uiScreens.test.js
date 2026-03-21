@@ -5,6 +5,7 @@ import { achievementsScreen } from "../../src/renderer/ui/screens/achievementsSc
 import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.js";
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
 import { gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
+import { localSetupScreen } from "../../src/renderer/ui/screens/localSetupScreen.js";
 import { menuScreen } from "../../src/renderer/ui/screens/menuScreen.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
 import { profileScreen } from "../../src/renderer/ui/screens/profileScreen.js";
@@ -181,6 +182,136 @@ test("ui: achievements screen renders locked and unlocked states", () => {
   assert.match(html, /Status: Unlocked/);
   assert.match(html, /Status: Locked/);
   assert.match(html, /assets\/badges\/firstFlame\.png/);
+});
+
+test("ui: screen back buttons render with the shared fixed-position class", () => {
+  const achievementsHtml = achievementsScreen.render({ achievements: [] });
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      },
+      preferences: {},
+      loadouts: []
+    }
+  });
+  const dailyHtml = dailyChallengesScreen.render({
+    tokens: 0,
+    daily: { msUntilReset: 0, challenges: [] },
+    weekly: { msUntilReset: 0, challenges: [] }
+  });
+  const localSetupHtml = localSetupScreen.render({ defaultNames: { p1: "", p2: "" } });
+  const settingsHtml = settingsScreen.render({
+    settings: {
+      gameplay: { timerSeconds: 30 },
+      aiDifficulty: "normal",
+      aiOpponentStyle: "default",
+      ui: { reducedMotion: false },
+      audio: { enabled: true }
+    }
+  });
+  const onlineHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    multiplayer: {
+      connectionStatus: "disconnected",
+      statusMessage: "Offline"
+    },
+    actions: {}
+  });
+  const profileHtml = profileScreen.render({
+    profile: {
+      username: "BackButtonUser",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      chests: { basic: 0 },
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    basicChestVisualState: { basicOpen: false },
+    backgroundImage: "assets/EleMintzIcon.png",
+    searchQuery: "",
+    searchResults: [],
+    viewedProfile: null,
+    actions: {}
+  });
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 0,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    }
+  });
+
+  for (const html of [
+    achievementsHtml,
+    cosmeticsHtml,
+    dailyHtml,
+    localSetupHtml,
+    settingsHtml,
+    onlineHtml,
+    profileHtml,
+    storeHtml
+  ]) {
+    assert.match(html, /class="btn screen-back-btn"/);
+  }
 });
 
 test("ui: daily challenges screen renders completed status when hydrated progress already satisfies the goal", () => {
@@ -6526,7 +6657,8 @@ test("ui: profile screen shows basic chest count and disables open button when e
   assert.match(html, /Basic Chests: <strong>0<\/strong>/);
   assert.match(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest\.png"/);
   assert.match(html, /id="open-basic-chest-btn"/);
-  assert.match(html, /Open Basic Chest/);
+  assert.match(html, /class="chest-open-trigger"/);
+  assert.match(html, /No Basic Chests available/);
   assert.match(html, /disabled aria-disabled="true"/);
 });
 
@@ -6569,6 +6701,7 @@ test("ui: profile screen enables open chest button when player has a basic chest
   });
 
   assert.match(html, /Basic Chests: <strong>2<\/strong>/);
+  assert.match(html, /Click chest to open/);
   assert.doesNotMatch(html, /disabled aria-disabled="true"/);
 });
 

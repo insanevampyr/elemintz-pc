@@ -76,7 +76,7 @@ export const dailyChallengesScreen = {
             bucket: weekly,
             includeDays: true
           })}
-          <button id="daily-challenges-back-btn" class="btn">Back to Menu</button>
+          <button id="daily-challenges-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;

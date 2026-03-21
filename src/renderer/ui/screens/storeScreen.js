@@ -212,7 +212,7 @@ export const storeScreen = {
             ).join("")}
           </div>
           <p id="store-empty-state" class="store-empty-state" hidden>No cosmetics match the current search and filters.</p>
-          <button id="store-back-btn" class="btn">Back to Menu</button>
+          <button id="store-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;

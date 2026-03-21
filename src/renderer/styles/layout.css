@@ -123,6 +123,56 @@ body {
   justify-content: flex-end;
 }
 
+.screen-back-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 40;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.chest-panel-header {
+  align-items: center;
+}
+
+.chest-open-trigger {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(155, 203, 237, 0.4);
+  background: linear-gradient(160deg, rgba(15, 34, 55, 0.92), rgba(12, 27, 43, 0.92));
+  border-radius: 14px;
+  padding: 8px;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.22);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.chest-open-trigger:hover,
+.chest-open-trigger:focus-visible {
+  border-color: rgba(255, 214, 140, 0.62);
+  box-shadow: 0 14px 22px rgba(0, 0, 0, 0.28), 0 0 16px rgba(255, 190, 86, 0.18);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.chest-open-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.18);
+}
+
+.chest-open-trigger__image {
+  display: block;
+}
+
+.chest-open-helper {
+  margin: 0;
+}
+
 .achievement-grid {
   display: grid;
   gap: 10px;
@@ -607,6 +657,13 @@ body {
 .screen-profile .arena-board .themed-screen-panel {
   background: linear-gradient(160deg, var(--screen-panel-start), var(--screen-panel-end));
   backdrop-filter: blur(1.5px);
+}
+
+@media (max-width: 640px) {
+  .screen-back-btn {
+    top: 12px;
+    right: 12px;
+  }
 }
 
 .viewed-profile-panel {

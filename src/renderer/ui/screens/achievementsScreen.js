@@ -45,7 +45,7 @@ export const achievementsScreen = {
           <div class="achievement-grid achievement-grid-catalog">
             ${entries.map(renderAchievement).join("")}
           </div>
-          <button id="achievements-back-btn" class="btn">Back to Menu</button>
+          <button id="achievements-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;
