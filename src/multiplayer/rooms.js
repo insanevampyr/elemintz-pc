@@ -46,6 +46,23 @@ function sanitizeRoomCode(value) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
+function getRuntimeEdgeGuards(room) {
+  if (!room || typeof room !== "object" || Array.isArray(room)) {
+    return {};
+  }
+
+  if (!room._runtimeEdgeGuards || typeof room._runtimeEdgeGuards !== "object") {
+    Object.defineProperty(room, "_runtimeEdgeGuards", {
+      value: {},
+      writable: true,
+      enumerable: false,
+      configurable: true
+    });
+  }
+
+  return room._runtimeEdgeGuards;
+}
+
 function normalizeUsername(username) {
   const normalized = String(username ?? "").trim();
   return normalized.length > 0 ? normalized : null;
@@ -168,16 +185,20 @@ export function guardRuntimeWarState(warState, logger = console) {
 // round payloads from the authoritative room move state so valid rounds stay
 // untouched.
 export function guardRuntimeRoundPayload(room, roundPayload, logger = console) {
-  const hostMove = isValidElement(roundPayload?.hostMove)
-    ? roundPayload.hostMove
-    : isValidElement(room?.moves?.hostMove)
-      ? room.moves.hostMove
-      : null;
-  const guestMove = isValidElement(roundPayload?.guestMove)
-    ? roundPayload.guestMove
-    : isValidElement(room?.moves?.guestMove)
-      ? room.moves.guestMove
-      : null;
+  const currentHostMove = isValidElement(room?.moves?.hostMove) ? room.moves.hostMove : null;
+  const currentGuestMove = isValidElement(room?.moves?.guestMove) ? room.moves.guestMove : null;
+  const hostMove =
+    currentHostMove && roundPayload?.hostMove !== currentHostMove
+      ? currentHostMove
+      : isValidElement(roundPayload?.hostMove)
+        ? roundPayload.hostMove
+        : currentHostMove;
+  const guestMove =
+    currentGuestMove && roundPayload?.guestMove !== currentGuestMove
+      ? currentGuestMove
+      : isValidElement(roundPayload?.guestMove)
+        ? roundPayload.guestMove
+        : currentGuestMove;
 
   if (!hostMove || !guestMove) {
     if (roundPayload) {
@@ -189,11 +210,21 @@ export function guardRuntimeRoundPayload(room, roundPayload, logger = console) {
     };
   }
 
-  const resolvedRoundNumber = safeRuntimeCount(roundPayload?.round, safeRuntimeCount(room?.roundNumber, 1));
+  const currentRoundNumber = Math.max(1, safeRuntimeCount(room?.roundNumber, 1));
+  const payloadRoundNumber = safeRuntimeCount(roundPayload?.round, currentRoundNumber);
+  const resolvedRoundNumber =
+    payloadRoundNumber !== currentRoundNumber ? currentRoundNumber : payloadRoundNumber;
   const safeOutcome = determineOutcome(hostMove, guestMove);
+  const payloadMatchesCurrentContext =
+    payloadRoundNumber === currentRoundNumber &&
+    roundPayload?.hostMove === hostMove &&
+    roundPayload?.guestMove === guestMove;
   let safeOutcomeType = String(roundPayload?.outcomeType ?? "").trim();
 
-  if (!["resolved", "war", "war_resolved", "no_effect"].includes(safeOutcomeType)) {
+  if (
+    !payloadMatchesCurrentContext ||
+    !["resolved", "war", "war_resolved", "no_effect"].includes(safeOutcomeType)
+  ) {
     safeOutcomeType = room?.warActive
       ? safeOutcome.hostResult === "win" || safeOutcome.guestResult === "win"
         ? "war_resolved"
@@ -481,8 +512,10 @@ function cloneMoveState(room) {
 }
 
 function resetMoveState(room) {
+  const guards = getRuntimeEdgeGuards(room);
   room.moves = createEmptyMoveState();
   room.latestRoundResult = createEmptyRoundResult();
+  guards.lastAppliedRoundSignature = null;
 }
 
 function resetHandState(room) {
@@ -508,6 +541,7 @@ function resetRematchState(room) {
 }
 
 function resetMatchState(room) {
+  const guards = getRuntimeEdgeGuards(room);
   room.hostScore = 0;
   room.guestScore = 0;
   room.roundNumber = 1;
@@ -536,6 +570,7 @@ function resetMatchState(room) {
   resetWarState(room);
   resetHandState(room);
   resetMoveState(room);
+  guards.lastCompletionSignature = null;
 }
 
 function markPlayerDisconnected(player) {
@@ -695,6 +730,33 @@ function determineOutcome(hostMove, guestMove) {
         };
 }
 
+function buildRoundApplicationSignature(room, roundPayload) {
+  return [
+    room?.roomCode ?? "",
+    safeRuntimeCount(room?.matchSequence, 1),
+    safeRuntimeCount(room?.roundNumber, 1),
+    roundPayload?.hostMove ?? "",
+    roundPayload?.guestMove ?? "",
+    room?.warActive ? "war" : "normal",
+    safeRuntimeCount(room?.warDepth, 0)
+  ].join("|");
+}
+
+function buildCompletionSignature(room) {
+  return [
+    room?.roomCode ?? "",
+    safeRuntimeCount(room?.matchSequence, 1),
+    safeRuntimeCount(room?.roundNumber, 1),
+    room?.winner ?? "",
+    room?.winReason ?? "",
+    safeRuntimeCount(room?.hostScore, 0),
+    safeRuntimeCount(room?.guestScore, 0),
+    getTotalOwnedCards(room?.hostHand, room?.warPot?.host),
+    getTotalOwnedCards(room?.guestHand, room?.warPot?.guest),
+    room?.warActive ? "war" : "normal"
+  ].join("|");
+}
+
 function appendWarRound(room, entry) {
   room.warRounds.push(entry);
   while (room.warRounds.length > 10) {
@@ -773,6 +835,7 @@ function clearMatchCompletion(room) {
 }
 
 export function updateMatchCompletion(room) {
+  const guards = getRuntimeEdgeGuards(room);
   containRuntimeRoomState(room, {
     logMessage: "[RuntimeInvariant] contained malformed post-round state"
   });
@@ -781,17 +844,47 @@ export function updateMatchCompletion(room) {
   const guestOwnedCards = getTotalOwnedCards(room.guestHand, room.warPot?.guest);
 
   if (hostOwnedCards === 0 && guestOwnedCards === 0) {
+    const completionSignature = buildCompletionSignature({
+      ...room,
+      winner: "draw",
+      winReason: "hand_exhaustion"
+    });
+    if (room.matchComplete && guards.lastCompletionSignature === completionSignature) {
+      console.warn("[RuntimeEdgeGuard] skipped duplicate match completion");
+      return true;
+    }
     completeMatchFromExhaustion(room, "draw");
+    guards.lastCompletionSignature = completionSignature;
     return true;
   }
 
   if (hostOwnedCards === 0 && guestOwnedCards > 0) {
+    const completionSignature = buildCompletionSignature({
+      ...room,
+      winner: "guest",
+      winReason: "hand_exhaustion"
+    });
+    if (room.matchComplete && guards.lastCompletionSignature === completionSignature) {
+      console.warn("[RuntimeEdgeGuard] skipped duplicate match completion");
+      return true;
+    }
     completeMatchFromExhaustion(room, "guest");
+    guards.lastCompletionSignature = completionSignature;
     return true;
   }
 
   if (guestOwnedCards === 0 && hostOwnedCards > 0) {
+    const completionSignature = buildCompletionSignature({
+      ...room,
+      winner: "host",
+      winReason: "hand_exhaustion"
+    });
+    if (room.matchComplete && guards.lastCompletionSignature === completionSignature) {
+      console.warn("[RuntimeEdgeGuard] skipped duplicate match completion");
+      return true;
+    }
     completeMatchFromExhaustion(room, "host");
+    guards.lastCompletionSignature = completionSignature;
     return true;
   }
 
@@ -800,21 +893,52 @@ export function updateMatchCompletion(room) {
     const guestLegalMoves = getTotalCardsInHand(room.guestHand);
 
     if (hostLegalMoves === 0 && guestLegalMoves === 0) {
+      const completionSignature = buildCompletionSignature({
+        ...room,
+        winner: "draw",
+        winReason: "hand_exhaustion"
+      });
+      if (room.matchComplete && guards.lastCompletionSignature === completionSignature) {
+        console.warn("[RuntimeEdgeGuard] skipped duplicate match completion");
+        return true;
+      }
       completeMatchFromExhaustion(room, "draw");
+      guards.lastCompletionSignature = completionSignature;
       return true;
     }
 
     if (hostLegalMoves === 0 && guestLegalMoves > 0) {
+      const completionSignature = buildCompletionSignature({
+        ...room,
+        winner: "guest",
+        winReason: "hand_exhaustion"
+      });
+      if (room.matchComplete && guards.lastCompletionSignature === completionSignature) {
+        console.warn("[RuntimeEdgeGuard] skipped duplicate match completion");
+        return true;
+      }
       completeMatchFromExhaustion(room, "guest");
+      guards.lastCompletionSignature = completionSignature;
       return true;
     }
 
     if (guestLegalMoves === 0 && hostLegalMoves > 0) {
+      const completionSignature = buildCompletionSignature({
+        ...room,
+        winner: "host",
+        winReason: "hand_exhaustion"
+      });
+      if (room.matchComplete && guards.lastCompletionSignature === completionSignature) {
+        console.warn("[RuntimeEdgeGuard] skipped duplicate match completion");
+        return true;
+      }
       completeMatchFromExhaustion(room, "host");
+      guards.lastCompletionSignature = completionSignature;
       return true;
     }
   }
 
+  guards.lastCompletionSignature = null;
   clearMatchCompletion(room);
   return false;
 }
@@ -852,14 +976,46 @@ function buildRoundResult(room) {
   };
 }
 
-function applyRoundToMatchState(room, roundResult) {
+export function applyRoundToMatchState(room, roundResult) {
+  const guards = getRuntimeEdgeGuards(room);
   containRuntimeRoomState(room, {
     logMessage: "[RuntimeInvariant] contained malformed pre-round state"
   });
 
+  if (
+    room.latestRoundResult &&
+    room.moves?.hostMove &&
+    room.moves?.guestMove &&
+    room.latestRoundResult.hostMove === room.moves.hostMove &&
+    room.latestRoundResult.guestMove === room.moves.guestMove &&
+    safeRuntimeCount(room.latestRoundResult.round, 0) < safeRuntimeCount(room.roundNumber, 1)
+  ) {
+    console.warn("[RuntimeEdgeGuard] skipped duplicate round application");
+    return room.latestRoundResult;
+  }
+
   const guardedRound = guardRuntimeRoundPayload(room, roundResult).value;
   if (!guardedRound) {
     return null;
+  }
+
+  const stalePayloadDetected =
+    roundResult &&
+    typeof roundResult === "object" &&
+    !Array.isArray(roundResult) &&
+    (
+      safeRuntimeCount(roundResult.round, room.roundNumber) !== room.roundNumber ||
+      roundResult.hostMove !== guardedRound.hostMove ||
+      roundResult.guestMove !== guardedRound.guestMove
+    );
+  if (stalePayloadDetected) {
+    console.warn("[RuntimeEdgeGuard] contained stale runtime payload");
+  }
+
+  const roundSignature = buildRoundApplicationSignature(room, guardedRound);
+  if (guards.lastAppliedRoundSignature === roundSignature) {
+    console.warn("[RuntimeEdgeGuard] skipped duplicate round application");
+    return room.latestRoundResult ?? null;
   }
 
   const resolvedRoundNumber = room.roundNumber;
@@ -966,6 +1122,8 @@ function applyRoundToMatchState(room, roundResult) {
     warDepth: room.warDepth,
     warRounds: room.warRounds.map((entry) => ({ ...entry }))
   }).value;
+
+  guards.lastAppliedRoundSignature = roundSignature;
 
   return safeMatchResult;
 }
@@ -1471,6 +1629,7 @@ export function createRoomStore({ random = Math.random } = {}) {
       }
 
       if (room.moves[moveKey] !== null) {
+        console.warn("[RuntimeEdgeGuard] skipped duplicate move application");
         return {
           ok: false,
           error: {

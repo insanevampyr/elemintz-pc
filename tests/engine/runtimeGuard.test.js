@@ -6,8 +6,10 @@ import path from "node:path";
 
 import { createMultiplayerFoundation } from "../../src/multiplayer/foundation.js";
 import {
+  applyRoundToMatchState,
   containRuntimeMatchSummaryState,
   containRuntimeRoomState,
+  createRoomStore,
   guardRuntimeHandState,
   guardRuntimeMatchResultPayload,
   guardRuntimeRoundPayload,
@@ -342,4 +344,173 @@ test("runtime invariant: valid runtime state remains unchanged", () => {
 
   assert.equal(contained.repaired, false);
   assert.deepEqual(room, before);
+});
+
+test("runtime edge guard: duplicate move application is skipped safely", () => {
+  const store = createRoomStore();
+  const hostSocket = { id: "host-socket" };
+  const guestSocket = { id: "guest-socket" };
+
+  store.createRoom(hostSocket, { username: "Host" });
+  const roomCode = store.getRoomCodeForSocket(hostSocket.id);
+  store.joinRoom(guestSocket, roomCode, { username: "Guest" });
+
+  const firstSubmit = store.submitMove(hostSocket.id, "fire");
+  const duplicateSubmit = store.submitMove(hostSocket.id, "fire");
+  const room = store.getRoom(roomCode);
+
+  assert.equal(firstSubmit.ok, true);
+  assert.equal(duplicateSubmit.ok, false);
+  assert.equal(duplicateSubmit.error.code, "MOVE_ALREADY_SUBMITTED");
+  assert.equal(room.hostHand.fire, 1);
+});
+
+test("runtime edge guard: duplicate round application is skipped safely", () => {
+  const room = {
+    roomCode: "ABC123",
+    matchSequence: 1,
+    hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 2, earth: 1, wind: 2 },
+    warActive: false,
+    warDepth: 0,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    hostScore: 0,
+    guestScore: 0,
+    roundNumber: 1,
+    roundHistory: [],
+    lastOutcomeType: null,
+    matchComplete: false,
+    winner: null,
+    winReason: null,
+    rematch: { hostReady: false, guestReady: false },
+    moves: { hostMove: "fire", guestMove: "earth", updatedAt: "stamp" },
+    latestRoundResult: null
+  };
+
+  const firstRound = applyRoundToMatchState(room, {
+    roomCode: "ABC123",
+    hostMove: "fire",
+    guestMove: "earth",
+    round: 1,
+    outcomeType: "resolved",
+    hostResult: "win",
+    guestResult: "lose"
+  });
+  room.latestRoundResult = firstRound;
+  const scoreAfterFirstRound = { host: room.hostScore, guest: room.guestScore };
+  const handAfterFirstRound = JSON.parse(JSON.stringify(room.hostHand));
+  const secondRound = applyRoundToMatchState(room, {
+    roomCode: "ABC123",
+    hostMove: "fire",
+    guestMove: "earth",
+    round: 1,
+    outcomeType: "resolved",
+    hostResult: "win",
+    guestResult: "lose"
+  });
+
+  assert.deepEqual(secondRound, firstRound);
+  assert.deepEqual(
+    { host: room.hostScore, guest: room.guestScore },
+    scoreAfterFirstRound
+  );
+  assert.deepEqual(room.hostHand, handAfterFirstRound);
+});
+
+test("runtime edge guard: stale round payload is contained and does not overwrite current state", () => {
+  const room = {
+    roomCode: "ABC123",
+    matchSequence: 1,
+    hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 2, earth: 1, wind: 2 },
+    warActive: false,
+    warDepth: 0,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    hostScore: 0,
+    guestScore: 0,
+    roundNumber: 4,
+    roundHistory: [],
+    lastOutcomeType: null,
+    matchComplete: false,
+    winner: null,
+    winReason: null,
+    rematch: { hostReady: false, guestReady: false },
+    moves: { hostMove: "fire", guestMove: "earth", updatedAt: "stamp" },
+    latestRoundResult: null
+  };
+
+  const result = applyRoundToMatchState(room, {
+    roomCode: "ABC123",
+    hostMove: "water",
+    guestMove: "water",
+    round: 1,
+    outcomeType: "war",
+    hostResult: "war",
+    guestResult: "war"
+  });
+
+  assert.equal(result.hostMove, "fire");
+  assert.equal(result.guestMove, "earth");
+  assert.equal(result.round, 4);
+  assert.equal(room.hostScore, 1);
+  assert.equal(room.guestScore, 0);
+});
+
+test("runtime edge guard: duplicate match result recording is skipped safely", async (t) => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  t.after(async () => {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  const first = await state.recordMatchResult({
+    username: "DuplicateLocalResultUser",
+    perspective: "p1",
+    matchState: createCompletedMatch({ mode: "pve", winner: "p1" })
+  });
+  const second = await state.recordMatchResult({
+    username: "DuplicateLocalResultUser",
+    perspective: "p1",
+    matchState: createCompletedMatch({ mode: "pve", winner: "p1" })
+  });
+
+  const profile = await state.profiles.getProfile("DuplicateLocalResultUser");
+  const saves = await state.saves.listMatchResults();
+
+  assert.deepEqual(second, first);
+  assert.equal(profile.modeStats.pve.gamesPlayed, 1);
+  assert.equal(saves.length, 1);
+});
+
+test("runtime edge guard: consumed transient state does not leak into later rounds", () => {
+  const store = createRoomStore();
+  const hostSocket = { id: "host-socket-reset" };
+  const guestSocket = { id: "guest-socket-reset" };
+
+  store.createRoom(hostSocket, { username: "Host" });
+  const roomCode = store.getRoomCodeForSocket(hostSocket.id);
+  store.joinRoom(guestSocket, roomCode, { username: "Guest" });
+
+  const roundOneHost = store.submitMove(hostSocket.id, "fire");
+  const roundOneGuest = store.submitMove(guestSocket.id, "earth");
+  assert.equal(roundOneHost.ok, true);
+  assert.equal(roundOneGuest.ok, true);
+
+  const resetRoom = store.resetRound(roomCode);
+  assert.deepEqual(resetRoom.moveSync, {
+    hostSubmitted: false,
+    guestSubmitted: false,
+    submittedCount: 0,
+    bothSubmitted: false,
+    updatedAt: null
+  });
+
+  const roundTwoHost = store.submitMove(hostSocket.id, "water");
+  const roundTwoGuest = store.submitMove(guestSocket.id, "fire");
+  assert.equal(roundTwoHost.ok, true);
+  assert.equal(roundTwoGuest.ok, true);
+  assert.equal(roundTwoGuest.roundResult.round, 2);
 });
