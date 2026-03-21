@@ -247,7 +247,7 @@ export function createMultiplayerFoundation({
   const roomCleanupTimers = new Map();
   const roomReconnectTimers = new Map();
   logger.info("[OnlinePlay][Server] room:submitMove listener ready", {
-    phase: 21
+    phase: 22
   });
 
   // Phase 18 foundation: private 2-player room lifecycle plus authoritative
@@ -261,7 +261,7 @@ export function createMultiplayerFoundation({
     response.json({
       ok: true,
       service: "elemintz-multiplayer",
-      phase: 21,
+      phase: 22,
       transport: "socket.io"
     });
   });
