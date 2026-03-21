@@ -762,11 +762,13 @@ export const onlinePlayScreen = {
     return `
       <section class="screen screen-online-play">
         <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
-          <div class="panel themed-screen-panel stack-sm">
-            <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
-            <h2 class="view-title">Online Play</h2>
-            ${
-              room
+            <div class="panel themed-screen-panel stack-sm">
+              <div class="screen-topbar">
+                <h2 class="view-title">Online Play</h2>
+                <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
+              </div>
+              ${
+                room
                 ? `
                   <section class="stack-sm">
                     <p><strong>Room Code:</strong> ${roomCode}</p>

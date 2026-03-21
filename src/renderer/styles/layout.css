@@ -123,14 +123,29 @@ body {
   justify-content: flex-end;
 }
 
-.screen-back-btn {
+.screen-topbar {
   position: sticky;
-  top: 12px;
-  display: block;
-  width: fit-content;
-  margin-left: auto;
-  margin-bottom: 12px;
+  top: 0;
   z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -4px 0 16px;
+  padding: 8px 0 10px;
+  background: linear-gradient(180deg, rgba(10, 18, 28, 0.96), rgba(10, 18, 28, 0.82) 70%, rgba(10, 18, 28, 0));
+  backdrop-filter: blur(6px);
+}
+
+.screen-topbar .view-title {
+  margin: 0;
+}
+
+.screen-back-btn {
+  position: static;
+  flex: 0 0 auto;
+  width: fit-content;
+  margin: 0;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
@@ -700,8 +715,15 @@ body {
 
 @media (max-width: 640px) {
   .screen-back-btn {
-    top: 10px;
-    margin-bottom: 10px;
+    width: 100%;
+  }
+
+  .screen-topbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 6px 0 10px;
+    margin-bottom: 14px;
   }
 }
 

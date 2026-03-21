@@ -5,8 +5,10 @@ export const localSetupScreen = {
     return `
       <section class="screen screen-local-setup">
         <div class="panel hero-panel">
-          <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
-          <h2 class="view-title">Local 2-Player Setup</h2>
+          <div class="screen-topbar">
+            <h2 class="view-title">Local 2-Player Setup</h2>
+            <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
+          </div>
           <form id="local-setup-form" class="stack-sm">
             <label for="local-p1-name">Player 1 Name</label>
             <input id="local-p1-name" name="p1Name" type="text" maxlength="24" value="${defaults.p1 ?? ""}" required />

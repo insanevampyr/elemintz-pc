@@ -149,8 +149,10 @@ export const storeScreen = {
     return `
       <section class="screen screen-store">
         <div class="panel">
-          <button id="store-back-btn" class="btn screen-back-btn">Back to Menu</button>
-          <h2 class="view-title">Store</h2>
+          <div class="screen-topbar">
+            <h2 class="view-title">Store</h2>
+            <button id="store-back-btn" class="btn screen-back-btn">Back to Menu</button>
+          </div>
           <p>Tokens: <strong>${store.tokens}</strong></p>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
           <p>Badges are gameplay/achievement rewards and cannot be purchased.</p>

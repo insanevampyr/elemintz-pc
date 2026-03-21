@@ -184,7 +184,7 @@ test("ui: achievements screen renders locked and unlocked states", () => {
   assert.match(html, /assets\/badges\/firstFlame\.png/);
 });
 
-test("ui: screen back buttons render before the title with the shared fixed-position class", () => {
+test("ui: screen back buttons render inside the shared sticky topbar", () => {
   const achievementsHtml = achievementsScreen.render({ achievements: [] });
   const cosmeticsHtml = cosmeticsScreen.render({
     cosmetics: {
@@ -310,8 +310,10 @@ test("ui: screen back buttons render before the title with the shared fixed-posi
     profileHtml,
     storeHtml
   ]) {
+    assert.match(html, /class="screen-topbar"/);
     assert.match(html, /class="btn screen-back-btn"/);
-    assert.ok(html.indexOf('screen-back-btn') < html.indexOf('class="view-title"'));
+    assert.ok(html.indexOf('screen-topbar') < html.indexOf('class="view-title"'));
+    assert.ok(html.indexOf('screen-topbar') < html.indexOf('screen-back-btn'));
   }
 });
 

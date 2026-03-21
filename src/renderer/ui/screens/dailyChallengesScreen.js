@@ -62,8 +62,10 @@ export const dailyChallengesScreen = {
     return `
       <section class="screen screen-daily-challenges">
         <div class="panel">
-          <button id="daily-challenges-back-btn" class="btn screen-back-btn">Back to Menu</button>
-          <h2 class="view-title">Challenges</h2>
+          <div class="screen-topbar">
+            <h2 class="view-title">Challenges</h2>
+            <button id="daily-challenges-back-btn" class="btn screen-back-btn">Back to Menu</button>
+          </div>
           <p>Tokens: <strong>${context.tokens ?? 0}</strong></p>
           ${renderSection({
             title: "Daily Challenges",

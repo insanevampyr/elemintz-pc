@@ -20,8 +20,10 @@ export const settingsScreen = {
     return `
       <section class="screen screen-settings">
         <div class="panel">
-          <button id="settings-back-btn" class="btn screen-back-btn">Back</button>
-          <h2 class="view-title">Settings</h2>
+          <div class="screen-topbar">
+            <h2 class="view-title">Settings</h2>
+            <button id="settings-back-btn" class="btn screen-back-btn">Back</button>
+          </div>
           <form id="settings-form" class="stack-sm">
             <div class="settings-group">
               <label for="timer-seconds">Round Timer (seconds)</label>

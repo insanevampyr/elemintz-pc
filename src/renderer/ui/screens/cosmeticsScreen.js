@@ -122,8 +122,10 @@ export const cosmeticsScreen = {
     return `
       <section class="screen screen-cosmetics">
         <div class="panel">
-          <button id="cosmetics-back-btn" class="btn screen-back-btn">Back to Menu</button>
-          <h2 class="view-title">Cosmetics / Rewards</h2>
+          <div class="screen-topbar">
+            <h2 class="view-title">Cosmetics / Rewards</h2>
+            <button id="cosmetics-back-btn" class="btn screen-back-btn">Back to Menu</button>
+          </div>
           <p>Owned cosmetics only. Purchases happen in Store.</p>
 
           <section class="cosmetic-loadout-section">
