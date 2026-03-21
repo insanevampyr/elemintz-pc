@@ -568,7 +568,7 @@ export const COSMETIC_CATALOG = Object.freeze({
     },
     {
       id: "i_dont_lose_transparent_cardback",
-      name: "Duality of Dominion",
+      name: "I Don't Lose - Transparent",
       image: "card_backs/i_dont_lose_transparent_cardback.png",
       rarity: "Legendary",
       defaultOwned: false,
@@ -577,7 +577,7 @@ export const COSMETIC_CATALOG = Object.freeze({
     },
     {
       id: "i_dont_lose_cardback",
-      name: "Unyielding Dominion",
+      name: "I Don't Lose",
       image: "card_backs/i_dont_lose_cardback.png",
       rarity: "Epic",
       defaultOwned: false,
@@ -597,10 +597,10 @@ export const COSMETIC_CATALOG = Object.freeze({
       id: "wont_take_long_cardback",
       name: "Swift Execution",
       image: "card_backs/wont_take_long_cardback.png",
-      rarity: "Rare",
+      rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: CARD_BACK_RARITY_PRICING.Epic
     },
     {
       id: "outplayed_too_easy_cardback",

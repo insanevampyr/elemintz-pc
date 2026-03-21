@@ -218,11 +218,14 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   });
 
   const html = storeScreen.render({ store, viewState: {} });
+  const swiftExecution = store.catalog.cardBack.find((item) => item.id === "wont_take_long_cardback");
 
-  assert.match(html, /Duality of Dominion/);
+  assert.match(html, /I Don't Lose - Transparent/);
+  assert.match(html, /I Don't Lose/);
   assert.match(html, /Infernal Mockery/);
-  assert.match(html, /Mystic Bloom Radiance/);
-  assert.match(html, /Rarity: Legendary/);
+  assert.ok(swiftExecution);
+  assert.equal(swiftExecution.rarity, "Epic");
+  assert.equal(swiftExecution.price, 500);
   assert.match(html, /Rarity: Epic/);
   assert.ok(
     getCardBackImage("i_dont_lose_transparent_cardback").includes(
