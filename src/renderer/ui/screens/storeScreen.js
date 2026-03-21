@@ -1,5 +1,6 @@
 import { getAssetPath } from "../../utils/dom.js";
 import { CATEGORY_ORDER as BASE_CATEGORY_ORDER, FILTERABLE_CATEGORIES } from "../shared/cosmeticCategoryShared.js";
+import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
 const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
 const CATEGORY_ORDER = BASE_CATEGORY_ORDER.map(([type, label]) => [
   type,
@@ -99,10 +100,14 @@ function renderPreview(type, item) {
   }
 
   const src = getAssetPath(item.image);
+  const framed = isFramedCosmeticType(type);
   return `
-    <div class="cosmetic-preview-wrap ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}">
+    <div
+      class="cosmetic-preview-wrap ${previewTypeClass(type)} ${framed ? "is-framed" : ""}"
+      ${framed ? `data-hover-preview="true" data-preview-type="${type}" data-preview-rarity="${normalizeRarity(item.rarity)}" data-preview-src="${escapeAttribute(src)}" data-preview-name="${escapeAttribute(item.name)}"` : ""}
+    >
       <img
-        class="cosmetic-preview ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}"
+        class="cosmetic-preview ${previewTypeClass(type)} ${framed ? "is-framed" : ""}"
         src="${src}"
         alt="${item.name}"
         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
@@ -234,6 +239,7 @@ export const storeScreen = {
   },
   bind(context) {
     const root = document.querySelector(".screen-store") ?? document;
+    bindCosmeticHoverPreview({ root, documentRef: document });
     const viewState = normalizeViewState(context.viewState);
     if (context.viewState) {
       context.viewState.searchText = viewState.searchText;

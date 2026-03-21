@@ -11,6 +11,7 @@ import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen
 import { profileScreen } from "../../src/renderer/ui/screens/profileScreen.js";
 import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js";
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
+import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
@@ -509,6 +510,97 @@ test("ui: store screen renders token count and buy/equip actions", () => {
   assert.match(html, /data-buy-type="avatar"/);
   assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
   assert.match(html, /Activate Founder Pass/);
+});
+
+test("ui: shop and cosmetics render hover preview hooks only for supported cosmetic art", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 120,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "fire_avatar_f",
+            name: "Fire Avatar",
+            image: "avatars/fireavatarF.png",
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 150,
+            rarity: "Rare",
+            unlockSource: { type: "store" }
+          }
+        ],
+        cardBack: [
+          {
+            id: "default_card_back",
+            name: "Default Card Back",
+            image: "card_backs/default_back.jpg",
+            owned: true,
+            equipped: true,
+            purchasable: false,
+            price: 0,
+            rarity: "Epic",
+            unlockSource: { type: "default" }
+          }
+        ],
+        background: [
+          {
+            id: "default_background",
+            name: "EleMintz Table",
+            image: "backgrounds/default_bg.jpg",
+            owned: true,
+            equipped: true,
+            purchasable: false,
+            price: 0,
+            rarity: "Legendary",
+            unlockSource: { type: "default" }
+          }
+        ],
+        elementCardVariant: [
+          {
+            id: "default_fire_card",
+            name: "Core Fire",
+            image: "cards/fireCard.jpg",
+            owned: true,
+            equipped: true,
+            purchasable: false,
+            price: 0,
+            rarity: "Common",
+            element: "fire",
+            unlockSource: { type: "default" }
+          }
+        ],
+        title: [],
+        badge: []
+      }
+    }
+  });
+
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: {},
+      loadouts: [],
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", image: "avatars/default.png", owned: true, equipped: true, rarity: "Epic" }],
+        cardBack: [{ id: "default_card_back", name: "Default Card Back", image: "card_backs/default_back.jpg", owned: true, equipped: true, rarity: "Rare" }],
+        background: [{ id: "default_background", name: "EleMintz Table", image: "backgrounds/default_bg.jpg", owned: true, equipped: true, rarity: "Common" }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", image: "cards/fireCard.jpg", owned: true, equipped: true, rarity: "Legendary", element: "fire" }],
+        badge: [{ id: "none", name: "No Badge", owned: true, equipped: true, rarity: "Common" }],
+        title: [{ id: "title_initiate", name: "Initiate", owned: true, equipped: true, rarity: "Common" }]
+      }
+    }
+  });
+
+  assert.match(storeHtml, /data-hover-preview="true" data-preview-type="avatar"/);
+  assert.match(storeHtml, /data-hover-preview="true" data-preview-type="cardBack"/);
+  assert.match(storeHtml, /data-hover-preview="true" data-preview-type="elementCardVariant"/);
+  assert.doesNotMatch(storeHtml, /data-preview-type="background"/);
+  assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="avatar"/);
+  assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="cardBack"/);
+  assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="elementCardVariant"/);
+  assert.doesNotMatch(cosmeticsHtml, /data-preview-type="badge"/);
+  assert.doesNotMatch(cosmeticsHtml, /data-preview-type="title"/);
 });
 
 test("ui: store screen renders supporter unlock text for founder deluxe card back", () => {
@@ -1372,6 +1464,119 @@ test("ui: game screen uses provided variant card images", () => {
   assert.match(html, /class="hidden-hand-summary[^"]*"/);
   assert.match(html, /Keyboard: \[1\] Fire\s+\[2\] Earth\s+\[3\] Wind\s+\[4\] Water/);
   assert.doesNotMatch(html, /hand-slot-name/);
+});
+
+test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides cleanly", () => {
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      children,
+      appendChild(child) {
+        children.push(child);
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const listeners = new Map();
+  const blurListeners = new Map();
+  const appended = [];
+  const root = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    contains: () => true
+  };
+
+  const documentRef = {
+    documentElement: { clientWidth: 300, clientHeight: 220 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: {
+      innerWidth: 300,
+      innerHeight: 220,
+      addEventListener(type, handler) {
+        blurListeners.set(type, handler);
+      }
+    }
+  };
+
+  bindCosmeticHoverPreview({ root, documentRef });
+
+  const previewLayer = appended[0];
+  const previewFrame = previewLayer.children[0];
+  const previewImage = previewFrame.children[0];
+  const avatarTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "avatar",
+        "data-preview-rarity": "Epic",
+        "data-preview-src": "file:///avatar.png",
+        "data-preview-name": "Preview Avatar"
+      }[name] ?? null;
+    },
+    closest: () => avatarTarget
+  };
+  const cardBackTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "cardBack",
+        "data-preview-rarity": "Legendary",
+        "data-preview-src": "file:///cardback.png",
+        "data-preview-name": "Preview Card Back"
+      }[name] ?? null;
+    },
+    closest: () => cardBackTarget
+  };
+
+  listeners.get("mouseover")({ target: avatarTarget, clientX: 280, clientY: 210 });
+
+  assert.equal(previewLayer.hidden, false);
+  assert.equal(previewLayer.style.left, "42px");
+  assert.equal(previewLayer.style.top, "12px");
+  assert.equal(previewImage.src, "file:///avatar.png");
+  assert.equal(previewImage.alt, "Preview Avatar");
+  assert.equal(previewFrame.style.width, "220px");
+  assert.equal(previewFrame.style.height, "220px");
+  assert.match(previewFrame.className, /is-avatar/);
+  assert.match(previewFrame.className, /rarity-epic/);
+  assert.equal(previewLayer.classList.contains("is-visible"), true);
+
+  listeners.get("mousemove")({ target: cardBackTarget, clientX: 140, clientY: 150 });
+
+  assert.equal(previewLayer.style.left, "12px");
+  assert.equal(previewLayer.style.top, "12px");
+  assert.equal(previewImage.src, "file:///cardback.png");
+  assert.equal(previewFrame.style.width, "220px");
+  assert.equal(previewFrame.style.height, "294px");
+  assert.match(previewFrame.className, /is-card/);
+  assert.match(previewFrame.className, /rarity-legendary/);
+
+  listeners.get("mousemove")({ target: { closest: () => null }, clientX: 10, clientY: 10 });
+
+  assert.equal(previewLayer.hidden, true);
+  assert.equal(previewLayer.classList.contains("is-visible"), false);
+
+  listeners.get("mouseover")({ target: avatarTarget, clientX: 80, clientY: 80 });
+  blurListeners.get("blur")();
+
+  assert.equal(previewLayer.hidden, true);
+  listeners.get("mouseleave")();
+  assert.equal(previewLayer.hidden, true);
 });
 
 test("ui: cosmetics screen category filters hide unselected owned sections", () => {

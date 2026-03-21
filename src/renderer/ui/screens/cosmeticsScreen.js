@@ -6,6 +6,7 @@ import {
   RARITY_SORT_ORDER,
   normalizeCategoryViewState
 } from "../shared/cosmeticCategoryShared.js";
+import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
 
 function normalizeRarity(rarity) {
   return FILTERABLE_RARITIES.includes(rarity) ? rarity : "Common";
@@ -36,9 +37,14 @@ function preview(type, item) {
     return `<div class="cosmetic-preview missing">No Preview</div>`;
   }
 
+  const src = getAssetPath(item.image);
+  const framed = isFramedCosmeticType(type);
   return `
-    <div class="cosmetic-preview-wrap ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}">
-      <img class="cosmetic-preview ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}" src="${getAssetPath(item.image)}" alt="${item.name}" />
+    <div
+      class="cosmetic-preview-wrap ${previewTypeClass(type)} ${framed ? "is-framed" : ""}"
+      ${framed ? `data-hover-preview="true" data-preview-type="${type}" data-preview-rarity="${normalizeRarity(item.rarity)}" data-preview-src="${escapeAttribute(src)}" data-preview-name="${escapeAttribute(item.name)}"` : ""}
+    >
+      <img class="cosmetic-preview ${previewTypeClass(type)} ${framed ? "is-framed" : ""}" src="${src}" alt="${item.name}" />
     </div>
   `;
 }
@@ -239,6 +245,7 @@ export const cosmeticsScreen = {
   bind(context) {
     const root = document.querySelector(".screen-cosmetics");
     const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+    bindCosmeticHoverPreview({ root: scope, documentRef: document });
     const viewState = normalizeCategoryViewState(context.viewState);
     if (context.viewState) {
       context.viewState.categories = viewState.categories;

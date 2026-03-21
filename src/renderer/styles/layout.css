@@ -335,6 +335,62 @@ body {
   color: #bad0e2;
 }
 
+.cosmetic-hover-preview-layer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 120;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(0, 0, 0) scale(0.97);
+  transition: opacity 110ms ease, transform 110ms ease;
+}
+
+.cosmetic-hover-preview-layer.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.cosmetic-hover-preview-frame {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(11, 28, 42, 0.96);
+  border: 1px solid #4f7593;
+  box-shadow: 0 18px 28px rgba(4, 11, 18, 0.36);
+}
+
+.cosmetic-hover-preview-frame.is-avatar {
+  border-radius: 22px;
+}
+
+.cosmetic-hover-preview-frame.is-card {
+  border-radius: 14px;
+}
+
+.cosmetic-hover-preview-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.cosmetic-hover-preview-frame.rarity-common {
+  box-shadow: inset 0 0 0 1px rgba(146, 159, 174, 0.2), 0 18px 28px rgba(4, 11, 18, 0.36);
+}
+
+.cosmetic-hover-preview-frame.rarity-rare {
+  box-shadow: inset 0 0 0 1px rgba(95, 156, 255, 0.24), 0 18px 28px rgba(4, 11, 18, 0.36);
+}
+
+.cosmetic-hover-preview-frame.rarity-epic {
+  box-shadow: inset 0 0 0 1px rgba(180, 117, 255, 0.26), 0 18px 28px rgba(4, 11, 18, 0.36);
+}
+
+.cosmetic-hover-preview-frame.rarity-legendary {
+  box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.28), 0 18px 28px rgba(4, 11, 18, 0.36);
+}
+
 .cosmetic-rarity-label {
   font-weight: 700;
 }
