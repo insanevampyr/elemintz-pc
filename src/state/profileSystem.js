@@ -24,6 +24,10 @@ import { normalizeProfileStore } from "./storeSystem.js";
 import { normalizeProfileDailyChallenges } from "./dailyChallengesSystem.js";
 import { deriveLevelFromXp, normalizeProfileLevelRewards } from "./levelRewardsSystem.js";
 
+// Bump this constant whenever persisted profile structure needs a new on-disk
+// schema step. The migration pipeline below upgrades older records to match it.
+export const CURRENT_PROFILE_SCHEMA_VERSION = 1;
+
 function normalizeUsername(username) {
   const normalized = String(username ?? "").trim();
   return normalized.length > 0 ? normalized : "Player";
@@ -48,14 +52,116 @@ async function checkDirectoryWritable(dirPath) {
   }
 }
 
+// Treat profiles with no explicit schema version as version 0 so older saves
+// can flow through the migration pipeline without throwing data away.
+function getProfileSchemaVersion(profile) {
+  const value = Number(profile?.schemaVersion);
+  if (!Number.isFinite(value) || value < 1) {
+    return 0;
+  }
+
+  return Math.floor(value);
+}
+
+// Version 0 -> 1 introduces an explicit schema marker only. Every other field
+// is preserved exactly as loaded so later normalizers can backfill missing
+// values without wiping known-good player progress.
+function migrateProfileSchemaV0ToV1(profile) {
+  return {
+    ...profile,
+    schemaVersion: 1
+  };
+}
+
+// Keep profile migration centralized so every disk-loaded record follows the
+// same forward-only upgrade path before the rest of the profile system touches
+// it. This protects future save additions from breaking older profile files.
+function migrateProfileSchema(profile) {
+  const startingVersion = getProfileSchemaVersion(profile);
+
+  if (startingVersion >= CURRENT_PROFILE_SCHEMA_VERSION) {
+    console.info("[ProfileSystem] migration skipped - already current", {
+      username: profile?.username ?? null,
+      schemaVersion: startingVersion
+    });
+    return {
+      profile,
+      migrated: false,
+      startingVersion,
+      endingVersion: startingVersion
+    };
+  }
+
+  console.info("[ProfileSystem] migration start", {
+    username: profile?.username ?? null,
+    fromVersion: startingVersion,
+    toVersion: CURRENT_PROFILE_SCHEMA_VERSION
+  });
+
+  let migratedProfile = { ...profile };
+  let workingVersion = startingVersion;
+
+  while (workingVersion < CURRENT_PROFILE_SCHEMA_VERSION) {
+    switch (workingVersion) {
+      case 0:
+        migratedProfile = migrateProfileSchemaV0ToV1(migratedProfile);
+        workingVersion = 1;
+        console.info("[ProfileSystem] migration applied", {
+          username: profile?.username ?? null,
+          appliedStep: "0->1"
+        });
+        break;
+      default:
+        throw new Error(`Unsupported profile schema migration path: ${workingVersion}`);
+    }
+  }
+
+  console.info("[ProfileSystem] migration complete", {
+    username: profile?.username ?? null,
+    fromVersion: startingVersion,
+    toVersion: workingVersion
+  });
+
+  return {
+    profile: migratedProfile,
+    migrated: true,
+    startingVersion,
+    endingVersion: workingVersion
+  };
+}
+
 function normalizeProfile(profile, { applyRetroactive = false } = {}) {
+  // Always migrate first so older records keep their existing data and only
+  // receive the minimum schema changes needed before default filling happens.
+  const migration = migrateProfileSchema(profile);
+  const migratedProfile = migration.profile;
+
+  const normalizedDisconnectTracking = {
+    totalLiveMatchDisconnects: Math.max(0, Number(migratedProfile?.onlineDisconnectTracking?.totalLiveMatchDisconnects ?? 0)),
+    totalReconnectTimeoutExpirations: Math.max(0, Number(migratedProfile?.onlineDisconnectTracking?.totalReconnectTimeoutExpirations ?? 0)),
+    totalSuccessfulReconnectResumes: Math.max(0, Number(migratedProfile?.onlineDisconnectTracking?.totalSuccessfulReconnectResumes ?? 0)),
+    recentDisconnectTimestamps: Array.isArray(migratedProfile?.onlineDisconnectTracking?.recentDisconnectTimestamps)
+      ? migratedProfile.onlineDisconnectTracking.recentDisconnectTimestamps
+          .map((entry) => String(entry ?? "").trim())
+          .filter(Boolean)
+          .slice(-10)
+      : [],
+    recentExpirationTimestamps: Array.isArray(migratedProfile?.onlineDisconnectTracking?.recentExpirationTimestamps)
+      ? migratedProfile.onlineDisconnectTracking.recentExpirationTimestamps
+          .map((entry) => String(entry ?? "").trim())
+          .filter(Boolean)
+          .slice(-10)
+      : []
+  };
+
   let normalized = normalizeProfileDailyChallenges(
     normalizeProfileLevelRewards(
       normalizeProfileChests(
         normalizeProfileStore(
           normalizeProfileCosmetics({
-            ...normalizeProfileModeStats(profile),
-            achievements: normalizeAchievementProgressMap(profile?.achievements)
+            ...normalizeProfileModeStats(migratedProfile),
+            achievements: normalizeAchievementProgressMap(migratedProfile?.achievements),
+            onlineDisconnectTracking: normalizedDisconnectTracking
           })
         )
       )
@@ -74,6 +180,9 @@ function normalizeProfile(profile, { applyRetroactive = false } = {}) {
 
   return {
     ...normalized,
+    // Persist the current schema marker after migration/default filling so
+    // upgraded records are written back in their latest supported shape.
+    schemaVersion: CURRENT_PROFILE_SCHEMA_VERSION,
     playerLevel: deriveLevelFromXp(normalized.playerXP)
   };
 }
