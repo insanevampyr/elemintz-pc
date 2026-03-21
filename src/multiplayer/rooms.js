@@ -289,6 +289,92 @@ export function guardRuntimeMatchResultPayload(matchResult, logger = console) {
   };
 }
 
+// Existing round/WAR transitions mutate the room in place. Contain malformed
+// containers and counters at those checkpoints so valid runtime state remains
+// untouched while broken sections cannot leak into later transitions.
+export function containRuntimeRoomState(
+  room,
+  {
+    logger = console,
+    logMessage = "[RuntimeInvariant] contained malformed post-round state"
+  } = {}
+) {
+  const safeHostHand = guardRuntimeHandState(room?.hostHand, null).value ?? {
+    ...INITIAL_HAND_COUNTS
+  };
+  const safeGuestHand = guardRuntimeHandState(room?.guestHand, null).value ?? {
+    ...INITIAL_HAND_COUNTS
+  };
+  const safeWarState = guardRuntimeWarState(
+    {
+      warActive: room?.warActive,
+      warDepth: room?.warDepth,
+      warRounds: room?.warRounds,
+      warPot: room?.warPot
+    },
+    null
+  ).value ?? createInitialWarState();
+  const nextMoves = {
+    hostMove: isValidElement(room?.moves?.hostMove) ? room.moves.hostMove : null,
+    guestMove: isValidElement(room?.moves?.guestMove) ? room.moves.guestMove : null
+  };
+  const nextHostScore = safeRuntimeCount(room?.hostScore, 0);
+  const nextGuestScore = safeRuntimeCount(room?.guestScore, 0);
+  const nextRoundNumber = Math.max(1, safeRuntimeCount(room?.roundNumber, 1));
+  const repaired =
+    !room ||
+    typeof room !== "object" ||
+    Array.isArray(room) ||
+    safeHostHand !== room.hostHand ||
+    safeGuestHand !== room.guestHand ||
+    safeWarState.warActive !== room.warActive ||
+    safeWarState.warDepth !== room.warDepth ||
+    safeWarState.warRounds !== room.warRounds ||
+    safeWarState.warPot !== room.warPot ||
+    nextMoves.hostMove !== room?.moves?.hostMove ||
+    nextMoves.guestMove !== room?.moves?.guestMove ||
+    nextHostScore !== room?.hostScore ||
+    nextGuestScore !== room?.guestScore ||
+    nextRoundNumber !== room?.roundNumber;
+
+  if (repaired && room && typeof room === "object" && !Array.isArray(room)) {
+    room.hostHand = safeHostHand;
+    room.guestHand = safeGuestHand;
+    room.warActive = safeWarState.warActive;
+    room.warDepth = safeWarState.warDepth;
+    room.warRounds = safeWarState.warRounds;
+    room.warPot = safeWarState.warPot;
+    room.hostScore = nextHostScore;
+    room.guestScore = nextGuestScore;
+    room.roundNumber = nextRoundNumber;
+    room.moves = {
+      hostMove: nextMoves.hostMove,
+      guestMove: nextMoves.guestMove,
+      updatedAt: room.moves?.updatedAt ?? null
+    };
+  }
+
+  if (repaired) {
+    logger?.warn?.(logMessage);
+  }
+
+  return {
+    value: room,
+    repaired
+  };
+}
+
+// Match summary payloads leave the live round system and feed emit/persistence
+// paths. Contain malformed summary state at that final boundary only.
+export function containRuntimeMatchSummaryState(matchResult, logger = console) {
+  const guarded = guardRuntimeMatchResultPayload(matchResult, null);
+  if (guarded.repaired) {
+    logger?.warn?.("[RuntimeInvariant] contained malformed match summary state");
+  }
+
+  return guarded;
+}
+
 function buildPlayer(socket, payload = {}) {
   const username = normalizeUsername(payload.username);
   return {
@@ -687,21 +773,9 @@ function clearMatchCompletion(room) {
 }
 
 export function updateMatchCompletion(room) {
-  const safeHostHand = guardRuntimeHandState(room.hostHand).value;
-  const safeGuestHand = guardRuntimeHandState(room.guestHand).value;
-  const safeWarState = guardRuntimeWarState({
-    warActive: room.warActive,
-    warDepth: room.warDepth,
-    warRounds: room.warRounds,
-    warPot: room.warPot
-  }).value;
-
-  room.hostHand = safeHostHand;
-  room.guestHand = safeGuestHand;
-  room.warActive = safeWarState.warActive;
-  room.warDepth = safeWarState.warDepth;
-  room.warRounds = safeWarState.warRounds;
-  room.warPot = safeWarState.warPot;
+  containRuntimeRoomState(room, {
+    logMessage: "[RuntimeInvariant] contained malformed post-round state"
+  });
 
   const hostOwnedCards = getTotalOwnedCards(room.hostHand, room.warPot?.host);
   const guestOwnedCards = getTotalOwnedCards(room.guestHand, room.warPot?.guest);
@@ -779,16 +853,9 @@ function buildRoundResult(room) {
 }
 
 function applyRoundToMatchState(room, roundResult) {
-  const safeWarState = guardRuntimeWarState({
-    warActive: room.warActive,
-    warDepth: room.warDepth,
-    warRounds: room.warRounds,
-    warPot: room.warPot
-  }).value;
-  room.warActive = safeWarState.warActive;
-  room.warDepth = safeWarState.warDepth;
-  room.warRounds = safeWarState.warRounds;
-  room.warPot = safeWarState.warPot;
+  containRuntimeRoomState(room, {
+    logMessage: "[RuntimeInvariant] contained malformed pre-round state"
+  });
 
   const guardedRound = guardRuntimeRoundPayload(room, roundResult).value;
   if (!guardedRound) {
@@ -814,6 +881,9 @@ function applyRoundToMatchState(room, roundResult) {
       guestMove: guardedRound.guestMove,
       outcomeType
     });
+    containRuntimeRoomState(room, {
+      logMessage: "[RuntimeInvariant] contained malformed war transition state"
+    });
   } else if (room.warActive && outcomeType === "no_effect") {
     appendWarPot(room, guardedRound.hostMove, guardedRound.guestMove);
     appendWarRound(room, {
@@ -822,6 +892,9 @@ function applyRoundToMatchState(room, roundResult) {
       guestMove: guardedRound.guestMove,
       outcomeType
     });
+    containRuntimeRoomState(room, {
+      logMessage: "[RuntimeInvariant] contained malformed war transition state"
+    });
   } else if (room.warActive && outcomeType === "war_resolved") {
     appendWarPot(room, guardedRound.hostMove, guardedRound.guestMove);
     appendWarRound(room, {
@@ -829,6 +902,9 @@ function applyRoundToMatchState(room, roundResult) {
       hostMove: guardedRound.hostMove,
       guestMove: guardedRound.guestMove,
       outcomeType
+    });
+    containRuntimeRoomState(room, {
+      logMessage: "[RuntimeInvariant] contained malformed war transition state"
     });
   }
 
@@ -860,13 +936,17 @@ function applyRoundToMatchState(room, roundResult) {
     guestResult: guardedRound.guestResult
   });
 
+  containRuntimeRoomState(room, {
+    logMessage: "[RuntimeInvariant] contained malformed post-round state"
+  });
+
   while (room.roundHistory.length > 10) {
     room.roundHistory.shift();
   }
 
   room.roundNumber = resolvedRoundNumber + 1;
 
-  const safeMatchResult = guardRuntimeMatchResultPayload({
+  const safeMatchResult = containRuntimeMatchSummaryState({
     ...guardedRound,
     hostScore: room.hostScore,
     guestScore: room.guestScore,
@@ -1342,18 +1422,9 @@ export function createRoomStore({ random = Math.random } = {}) {
 
       // Repair the live hand/WAR containers at the move boundary so legality
       // checks and round resolution never consume malformed runtime state.
-      room.hostHand = guardRuntimeHandState(room.hostHand).value;
-      room.guestHand = guardRuntimeHandState(room.guestHand).value;
-      const safeWarState = guardRuntimeWarState({
-        warActive: room.warActive,
-        warDepth: room.warDepth,
-        warRounds: room.warRounds,
-        warPot: room.warPot
-      }).value;
-      room.warActive = safeWarState.warActive;
-      room.warDepth = safeWarState.warDepth;
-      room.warRounds = safeWarState.warRounds;
-      room.warPot = safeWarState.warPot;
+      containRuntimeRoomState(room, {
+        logMessage: "[RuntimeInvariant] contained malformed pre-round state"
+      });
 
       const move = String(moveInput ?? "").trim().toLowerCase();
       if (!move) {

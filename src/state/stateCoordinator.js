@@ -148,6 +148,18 @@ function guardRuntimeMatchStatePayload(matchState) {
   };
 }
 
+// Result/stat application is the last runtime boundary before persistence. Keep
+// valid match summaries intact while containing malformed counters/history
+// fragments before they reach stats, challenges, or saves.
+function containRuntimeMatchSummaryState(matchState) {
+  const guarded = guardRuntimeMatchStatePayload(matchState);
+  if (guarded.repaired) {
+    console.warn("[RuntimeInvariant] contained malformed match summary state");
+  }
+
+  return guarded;
+}
+
 // Stat writes must resolve to a known mode bucket. Repair malformed counters,
 // fall back to the current runtime mode when available, and skip the write if
 // a safe mode still cannot be resolved.
@@ -180,7 +192,7 @@ export function guardRuntimeStatWritePayload({
     mode !== resolvedMode;
 
   if (resolvedMode && repaired) {
-    console.warn("[RuntimeGuard] repaired malformed stat update payload");
+    console.warn("[RuntimeInvariant] contained malformed stat delta");
   }
 
   return {
@@ -314,7 +326,7 @@ export class StateCoordinator {
         throw new Error("matchState must be completed before recording results.");
       }
 
-      const safeMatchState = guardRuntimeMatchStatePayload(matchState).value;
+        const safeMatchState = containRuntimeMatchSummaryState(matchState).value;
       const profileBefore = await this.profiles.ensureProfile(username);
       const derivedMatchStats = deriveMatchStats(safeMatchState, perspective);
       const statWrite = guardRuntimeStatWritePayload({
@@ -498,7 +510,7 @@ export class StateCoordinator {
         throw new Error("matchState must be completed before recording online results.");
       }
 
-      const safeMatchState = guardRuntimeMatchStatePayload(matchState).value;
+        const safeMatchState = containRuntimeMatchSummaryState(matchState).value;
       const statWrite = guardRuntimeStatWritePayload({
         mode: safeMatchState.mode,
         fallbackMode: "online_pvp",

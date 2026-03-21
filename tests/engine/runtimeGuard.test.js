@@ -6,6 +6,8 @@ import path from "node:path";
 
 import { createMultiplayerFoundation } from "../../src/multiplayer/foundation.js";
 import {
+  containRuntimeMatchSummaryState,
+  containRuntimeRoomState,
   guardRuntimeHandState,
   guardRuntimeMatchResultPayload,
   guardRuntimeRoundPayload,
@@ -71,6 +73,39 @@ test("runtime guard: malformed hand is repaired before round processing", () => 
   });
 });
 
+test("runtime invariant: malformed pre-round state is contained safely", () => {
+  const room = {
+    hostHand: { fire: "2", water: -2, earth: null, wind: 1 },
+    guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    warActive: false,
+    warDepth: 0,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    hostScore: 0,
+    guestScore: 0,
+    roundNumber: 1,
+    moves: { hostMove: "bogus", guestMove: "earth", updatedAt: "now" }
+  };
+
+  const contained = containRuntimeRoomState(room, {
+    logger: null,
+    logMessage: "[RuntimeInvariant] contained malformed pre-round state"
+  });
+
+  assert.equal(contained.repaired, true);
+  assert.deepEqual(room.hostHand, {
+    fire: 2,
+    water: 0,
+    earth: 2,
+    wind: 1
+  });
+  assert.deepEqual(room.moves, {
+    hostMove: null,
+    guestMove: "earth",
+    updatedAt: "now"
+  });
+});
+
 test("runtime guard: malformed round payload is repaired from live room moves", () => {
   const repaired = guardRuntimeRoundPayload(
     {
@@ -121,6 +156,35 @@ test("runtime guard: malformed war payload is repaired without wiping valid card
   });
 });
 
+test("runtime invariant: malformed war transition state is contained safely", () => {
+  const room = {
+    hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    warActive: "yes",
+    warDepth: -3,
+    warRounds: [{ round: 1 }, null],
+    warPot: { host: ["fire", "bad"], guest: ["water"] },
+    hostScore: 1,
+    guestScore: 1,
+    roundNumber: 3,
+    moves: { hostMove: "fire", guestMove: "water", updatedAt: null }
+  };
+
+  const contained = containRuntimeRoomState(room, {
+    logger: null,
+    logMessage: "[RuntimeInvariant] contained malformed war transition state"
+  });
+
+  assert.equal(contained.repaired, true);
+  assert.deepEqual(room.warPot, {
+    host: ["fire"],
+    guest: ["water"]
+  });
+  assert.equal(room.warActive, true);
+  assert.equal(room.warDepth, 0);
+  assert.deepEqual(room.warRounds, [{ round: 1 }]);
+});
+
 test("runtime guard: malformed match result payload is repaired safely", () => {
   const repaired = guardRuntimeMatchResultPayload({
     round: "3",
@@ -143,6 +207,34 @@ test("runtime guard: malformed match result payload is repaired safely", () => {
   assert.deepEqual(repaired.value.warPot, {
     host: ["fire"],
     guest: ["earth"]
+  });
+});
+
+test("runtime invariant: malformed post-round summary is contained safely", () => {
+  const contained = containRuntimeMatchSummaryState(
+    {
+      round: "3",
+      roundNumber: "4",
+      hostScore: -1,
+      guestScore: null,
+      hostHand: { fire: "1", water: 2, earth: 2, wind: 2 },
+      guestHand: null,
+      warPot: { host: ["fire"], guest: ["earth", "bad"] },
+      warActive: 1,
+      warDepth: "1",
+      warRounds: [{ round: 1 }, "bad"]
+    },
+    null
+  );
+
+  assert.equal(contained.repaired, true);
+  assert.equal(contained.value.hostScore, 0);
+  assert.equal(contained.value.guestScore, 0);
+  assert.deepEqual(contained.value.guestHand, {
+    fire: 2,
+    water: 2,
+    earth: 2,
+    wind: 2
   });
 });
 
@@ -192,4 +284,62 @@ test("runtime guard: unresolved mode safely skips stat write", () => {
     quickWins: 0,
     timeLimitWins: 0
   });
+});
+
+test("runtime invariant: malformed stat delta does not propagate negative values", () => {
+  const guarded = guardRuntimeStatWritePayload({
+    mode: "online_pvp",
+    fallbackMode: "online_pvp",
+    matchStats: {
+      gamesPlayed: "-2",
+      wins: -10,
+      losses: "oops",
+      warsEntered: -1,
+      warsWon: -4,
+      longestWar: -7,
+      cardsCaptured: -9,
+      matchesUsingAllElements: -1,
+      quickWins: -5,
+      timeLimitWins: -6
+    }
+  });
+
+  assert.equal(guarded.skipped, false);
+  assert.equal(guarded.mode, "online_pvp");
+  assert.deepEqual(guarded.matchStats, {
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    matchesUsingAllElements: 0,
+    quickWins: 0,
+    timeLimitWins: 0
+  });
+});
+
+test("runtime invariant: valid runtime state remains unchanged", () => {
+  const room = {
+    hostHand: { fire: 2, water: 1, earth: 2, wind: 1 },
+    guestHand: { fire: 1, water: 2, earth: 2, wind: 1 },
+    warActive: false,
+    warDepth: 0,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    hostScore: 1,
+    guestScore: 2,
+    roundNumber: 4,
+    moves: { hostMove: "fire", guestMove: "water", updatedAt: "stamp" }
+  };
+  const before = JSON.parse(JSON.stringify(room));
+
+  const contained = containRuntimeRoomState(room, {
+    logger: null,
+    logMessage: "[RuntimeInvariant] contained malformed pre-round state"
+  });
+
+  assert.equal(contained.repaired, false);
+  assert.deepEqual(room, before);
 });
