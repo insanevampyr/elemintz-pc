@@ -184,7 +184,7 @@ test("ui: achievements screen renders locked and unlocked states", () => {
   assert.match(html, /assets\/badges\/firstFlame\.png/);
 });
 
-test("ui: screen back buttons render inside the shared sticky topbar", () => {
+test("ui: screen back buttons render inside the shared topbar", () => {
   const achievementsHtml = achievementsScreen.render({ achievements: [] });
   const cosmeticsHtml = cosmeticsScreen.render({
     cosmetics: {
