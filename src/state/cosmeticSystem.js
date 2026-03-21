@@ -374,8 +374,97 @@ export const COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Legendary
-    }
-  ,
+    },
+    {
+      id: "avatar_magma_warlord",
+      name: "Magma Warlord",
+      image: "avatars/avatar_magma_warlord.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_tempest_sage",
+      name: "Tempest Sage",
+      image: "avatars/avatar_tempest_sage.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_voidbound_entity",
+      name: "Voidbound Entity",
+      image: "avatars/avatar_voidbound_entity.png",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_astral_archon",
+      name: "Astral Archon",
+      image: "avatars/avatar_astral_archon.png",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_elemental_puppeteer",
+      name: "Elemental Puppeteer",
+      image: "avatars/avatar_elemental_puppeteer.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_mimic_entity",
+      name: "Mimic Entity",
+      image: "avatars/avatar_mimic_entity.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_stone_colossus",
+      name: "Stone Colossus",
+      image: "avatars/avatar_stone_colossus.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_wind_wraith",
+      name: "Wind Wraith",
+      image: "avatars/avatar_wind_wraith.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_arcane_gambler",
+      name: "Arcane Gambler",
+      image: "avatars/avatar_arcane_gambler.png",
+      rarity: "Common",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_dragonkin_champion",
+      name: "Dragonkin Champion",
+      image: "avatars/avatar_dragonkin_champion.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
     {
       id: "avatar_novice_mage",
       name: "Novice Mage",

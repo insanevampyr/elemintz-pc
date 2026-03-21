@@ -232,6 +232,11 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
       "i_dont_lose_transparent_cardback.png"
     )
   );
+  assert.match(html, /Magma Warlord/);
+  assert.match(html, /Voidbound Entity/);
+  assert.match(html, /Arcane Gambler/);
+  assert.ok(getAvatarImage("avatar_astral_archon").includes("avatar_astral_archon.png"));
+  assert.ok(getAvatarImage("avatar_wind_wraith").includes("avatar_wind_wraith.png"));
 });
 
 test("ui: screen back buttons render inside the shared topbar", () => {
