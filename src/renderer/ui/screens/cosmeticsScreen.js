@@ -7,26 +7,55 @@ import {
   normalizeCategoryViewState
 } from "../shared/cosmeticCategoryShared.js";
 
-function preview(item) {
+function normalizeRarity(rarity) {
+  return FILTERABLE_RARITIES.includes(rarity) ? rarity : "Common";
+}
+
+function rarityClassName(rarity) {
+  return `rarity-${normalizeRarity(rarity).toLowerCase()}`;
+}
+
+function isFramedCosmeticType(type) {
+  return type === "avatar" || type === "cardBack" || type === "elementCardVariant";
+}
+
+function previewTypeClass(type) {
+  if (type === "avatar") {
+    return "is-avatar";
+  }
+
+  if (type === "cardBack" || type === "elementCardVariant") {
+    return "is-card";
+  }
+
+  return "is-default";
+}
+
+function preview(type, item) {
   if (!item.image) {
     return `<div class="cosmetic-preview missing">No Preview</div>`;
   }
 
-  return `<img class="cosmetic-preview" src="${getAssetPath(item.image)}" alt="${item.name}" />`;
+  return `
+    <div class="cosmetic-preview-wrap ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}">
+      <img class="cosmetic-preview ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}" src="${getAssetPath(item.image)}" alt="${item.name}" />
+    </div>
+  `;
 }
 
 function renderItem(type, item) {
+  const framed = isFramedCosmeticType(type);
   const variantHint =
     type === "elementCardVariant" && item.element
       ? `<p>Applies to: ${item.element[0].toUpperCase()}${item.element.slice(1)} cards only</p>`
       : "";
 
   return `
-    <article class="cosmetic-item owned" data-cosmetic-rarity="${item.rarity ?? "Common"}">
-      ${preview(item)}
+    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}">
+      ${preview(type, item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
-        <p>Rarity: ${item.rarity ?? "Common"}</p>
+        <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
         <p>Equipped: ${item.equipped ? "Yes" : "No"}</p>
         ${variantHint}
       </div>

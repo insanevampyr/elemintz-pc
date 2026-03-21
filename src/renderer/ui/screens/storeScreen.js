@@ -69,16 +69,40 @@ function unlockText(item) {
   return "Locked";
 }
 
-function renderPreview(item) {
+function normalizeRarity(rarity) {
+  return FILTERABLE_RARITIES.includes(rarity) ? rarity : "Common";
+}
+
+function rarityClassName(rarity) {
+  return `rarity-${normalizeRarity(rarity).toLowerCase()}`;
+}
+
+function isFramedCosmeticType(type) {
+  return type === "avatar" || type === "cardBack" || type === "elementCardVariant";
+}
+
+function previewTypeClass(type) {
+  if (type === "avatar") {
+    return "is-avatar";
+  }
+
+  if (type === "cardBack" || type === "elementCardVariant") {
+    return "is-card";
+  }
+
+  return "is-default";
+}
+
+function renderPreview(type, item) {
   if (!item.image) {
     return `<div class="cosmetic-preview missing">No Preview</div>`;
   }
 
   const src = getAssetPath(item.image);
   return `
-    <div class="cosmetic-preview-wrap">
+    <div class="cosmetic-preview-wrap ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}">
       <img
-        class="cosmetic-preview"
+        class="cosmetic-preview ${previewTypeClass(type)} ${isFramedCosmeticType(type) ? "is-framed" : ""}"
         src="${src}"
         alt="${item.name}"
         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
@@ -102,6 +126,7 @@ function renderActions(type, item) {
 }
 
 function renderStoreItem(type, item) {
+  const framed = isFramedCosmeticType(type);
   const variantHint =
     type === "elementCardVariant" && item.element
       ? `<p>Applies to: ${item.element[0].toUpperCase()}${item.element.slice(1)} cards only</p>`
@@ -109,17 +134,17 @@ function renderStoreItem(type, item) {
 
   return `
     <article
-      class="cosmetic-item ${item.owned ? "owned" : "locked"}"
+      class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} ${item.owned ? "owned" : "locked"}"
       data-store-item
       data-store-type="${type}"
-      data-store-rarity="${item.rarity ?? "Common"}"
+      data-store-rarity="${normalizeRarity(item.rarity)}"
       data-store-name="${normalizeFilterText(item.name)}"
     >
-      ${renderPreview(item)}
+      ${renderPreview(type, item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
         <p>Status: ${item.owned ? "Owned" : "Not Owned"}</p>
-        <p>Rarity: ${item.rarity ?? "Common"}</p>
+        <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
         <p>Price: ${item.purchasable ? `${item.price} Tokens` : "Not Purchasable"}</p>
         <p>Unlock: ${unlockText(item)}</p>
         ${variantHint}

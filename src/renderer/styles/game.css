@@ -189,7 +189,8 @@ input[type="number"] {
   aspect-ratio: 3 / 4;
   border-radius: 8px;
   background: linear-gradient(145deg, #2c4a66, #1a2d42);
-  background-size: cover;
+  background-size: contain;
+  background-repeat: no-repeat;
   background-position: center;
 }
 
@@ -441,6 +442,22 @@ input[type="number"] {
   padding: 12px 16px;
 }
 
+.hidden-hand-summary.rarity-common {
+  border-color: rgba(146, 159, 174, 0.42);
+}
+
+.hidden-hand-summary.rarity-rare {
+  border-color: rgba(95, 156, 255, 0.46);
+}
+
+.hidden-hand-summary.rarity-epic {
+  border-color: rgba(180, 117, 255, 0.48);
+}
+
+.hidden-hand-summary.rarity-legendary {
+  border-color: rgba(237, 196, 103, 0.5);
+}
+
 .hidden-hand-stack {
   position: relative;
   width: 104px;
@@ -454,9 +471,37 @@ input[type="number"] {
   height: 126px;
   border-radius: 10px;
   border: 1px solid rgba(124, 168, 206, 0.42);
-  background-size: cover;
+  background-size: contain;
+  background-repeat: no-repeat;
   background-position: center;
   box-shadow: 0 10px 18px rgba(0, 0, 0, 0.3);
+}
+
+.hand-slot.rarity-common,
+.played-slot.rarity-common,
+.online-player-card-back-chip.rarity-common {
+  border-color: rgba(146, 159, 174, 0.46);
+}
+
+.hand-slot.rarity-rare,
+.played-slot.rarity-rare,
+.online-player-card-back-chip.rarity-rare {
+  border-color: rgba(95, 156, 255, 0.54);
+  box-shadow: inset 0 0 0 1px rgba(95, 156, 255, 0.12);
+}
+
+.hand-slot.rarity-epic,
+.played-slot.rarity-epic,
+.online-player-card-back-chip.rarity-epic {
+  border-color: rgba(180, 117, 255, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(180, 117, 255, 0.14);
+}
+
+.hand-slot.rarity-legendary,
+.played-slot.rarity-legendary,
+.online-player-card-back-chip.rarity-legendary {
+  border-color: rgba(237, 196, 103, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.16);
 }
 
 .hidden-hand-card-0 {

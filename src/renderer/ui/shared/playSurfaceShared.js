@@ -1,6 +1,15 @@
 import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
 
 export const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
+const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary"]);
+
+export function normalizeCosmeticRarity(rarity) {
+  return SUPPORTED_RARITIES.has(rarity) ? rarity : "Common";
+}
+
+export function rarityClassName(rarity) {
+  return `rarity-${normalizeCosmeticRarity(rarity).toLowerCase()}`;
+}
 
 export function getCardElement(card) {
   if (typeof card === "string") {
@@ -62,6 +71,7 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
   const selectedCardIndex = Number.isInteger(options.selectedCardIndex) ? options.selectedCardIndex : null;
   const phase = options.phase ?? "idle";
   const variantMap = options.variantMap ?? null;
+  const rarityMap = options.rarityMap ?? null;
   const selectableClass = options.selectableClass ?? null;
   const buttonAttributes = options.buttonAttributes ?? null;
   const isDisabled =
@@ -77,6 +87,9 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
     const isAvailable = count > 0;
     const isSelected = isAvailable && selectedCardIndex === firstIndex;
     const classes = ["hand-slot", `hand-slot-${element}`];
+    const rarity = rarityMap?.[element] ?? "Common";
+
+    classes.push(rarityClassName(rarity));
 
     if (selectable && isAvailable) {
       classes.push("is-selectable");
@@ -106,6 +119,7 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
       <button
         type="button"
         class="${classes.join(" ")}"
+        data-cosmetic-rarity="${normalizeCosmeticRarity(rarity)}"
         ${attrs}
         ${isDisabled({ element, count, isAvailable, firstIndex, owner }) ? "disabled" : ""}
       >
@@ -116,19 +130,19 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
   }).join("");
 }
 
-export function renderHiddenHandSummary(count, backImage = ASSET_CATALOG.cards.back) {
+export function renderHiddenHandSummary(count, backImage = ASSET_CATALOG.cards.back, rarity = "Common") {
   const safeCount = Math.max(0, Number(count) || 0);
   const previewCount = Math.min(3, Math.max(1, safeCount));
   const stack = Array.from({ length: previewCount }, (_, index) => `
     <span
-      class="hidden-hand-card hidden-hand-card-${index}"
+      class="hidden-hand-card hidden-hand-card-${index} ${rarityClassName(rarity)}"
       style="background-image: url('${backImage}')"
       aria-hidden="true"
     ></span>
   `).join("");
 
   return `
-    <div class="hidden-hand-summary" aria-label="Hidden opponent hand: ${safeCount} cards">
+    <div class="hidden-hand-summary ${rarityClassName(rarity)}" data-cosmetic-rarity="${normalizeCosmeticRarity(rarity)}" aria-label="Hidden opponent hand: ${safeCount} cards">
       <div class="hidden-hand-stack">
         ${stack}
       </div>

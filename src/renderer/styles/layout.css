@@ -275,10 +275,34 @@ body {
   padding: 8px;
   display: grid;
   gap: 8px;
+  transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
 }
 
 .cosmetic-item.locked {
   opacity: 0.8;
+}
+
+.cosmetic-item-framed:hover,
+.cosmetic-item-framed:focus-within {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 18px rgba(4, 11, 18, 0.26);
+}
+
+.cosmetic-preview-wrap {
+  width: 100%;
+}
+
+.cosmetic-preview-wrap.is-framed {
+  display: grid;
+  place-items: center;
+}
+
+.cosmetic-preview-wrap.is-avatar {
+  height: 120px;
+}
+
+.cosmetic-preview-wrap.is-card {
+  height: 120px;
 }
 
 .cosmetic-preview {
@@ -290,10 +314,97 @@ body {
   background: #173247;
 }
 
+.cosmetic-preview.is-avatar.is-framed {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 18px;
+}
+
+.cosmetic-preview.is-card.is-framed {
+  width: auto;
+  max-width: 100%;
+  height: 120px;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
 .cosmetic-preview.missing {
   display: grid;
   place-items: center;
   color: #bad0e2;
+}
+
+.cosmetic-rarity-label {
+  font-weight: 700;
+}
+
+.rarity-common {
+  border-color: rgba(146, 159, 174, 0.46);
+}
+
+.rarity-rare {
+  border-color: rgba(95, 156, 255, 0.52);
+}
+
+.rarity-epic {
+  border-color: rgba(180, 117, 255, 0.56);
+}
+
+.rarity-legendary {
+  border-color: rgba(237, 196, 103, 0.58);
+}
+
+.cosmetic-rarity-label.rarity-common {
+  color: #b8c0c9;
+}
+
+.cosmetic-rarity-label.rarity-rare {
+  color: #79b6ff;
+}
+
+.cosmetic-rarity-label.rarity-epic {
+  color: #c59aff;
+}
+
+.cosmetic-rarity-label.rarity-legendary {
+  color: #f1cf79;
+}
+
+.cosmetic-item-framed.rarity-common {
+  box-shadow: inset 0 0 0 1px rgba(146, 159, 174, 0.14);
+}
+
+.cosmetic-item-framed.rarity-rare {
+  box-shadow: inset 0 0 0 1px rgba(95, 156, 255, 0.16);
+}
+
+.cosmetic-item-framed.rarity-epic {
+  box-shadow: inset 0 0 0 1px rgba(180, 117, 255, 0.18);
+}
+
+.cosmetic-item-framed.rarity-legendary {
+  box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.18);
+}
+
+.cosmetic-item-framed.rarity-common:hover,
+.cosmetic-item-framed.rarity-common:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(146, 159, 174, 0.26), 0 10px 18px rgba(4, 11, 18, 0.26);
+}
+
+.cosmetic-item-framed.rarity-rare:hover,
+.cosmetic-item-framed.rarity-rare:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(95, 156, 255, 0.3), 0 10px 18px rgba(4, 11, 18, 0.26);
+}
+
+.cosmetic-item-framed.rarity-epic:hover,
+.cosmetic-item-framed.rarity-epic:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(180, 117, 255, 0.34), 0 10px 18px rgba(4, 11, 18, 0.26);
+}
+
+.cosmetic-item-framed.rarity-legendary:hover,
+.cosmetic-item-framed.rarity-legendary:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.34), 0 10px 18px rgba(4, 11, 18, 0.26);
 }
 
 .cosmetic-meta p {
@@ -624,7 +735,7 @@ body {
   height: 96px;
   display: block;
   border-radius: 10px;
-  object-fit: cover;
+  object-fit: contain;
   border: 1px solid rgba(140, 193, 230, 0.45);
   background: #173247;
 }

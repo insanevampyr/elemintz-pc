@@ -226,7 +226,7 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.ok(swiftExecution);
   assert.equal(swiftExecution.rarity, "Epic");
   assert.equal(swiftExecution.price, 500);
-  assert.match(html, /Rarity: Epic/);
+  assert.match(html, /cosmetic-rarity-label[^>]*>Epic<\/span>/);
   assert.ok(
     getCardBackImage("i_dont_lose_transparent_cardback").includes(
       "i_dont_lose_transparent_cardback.png"
@@ -237,10 +237,18 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.match(html, /Arcane Gambler/);
   assert.match(html, /Fairy Prince/);
   assert.match(html, /Fairy Princess/);
+  assert.match(html, /Infernal Rift/);
+  assert.match(html, /Celestial Observatory/);
+  assert.match(html, /Verdant Overgrowth/);
+  assert.match(html, /cosmetic-item-cardBack cosmetic-item-framed rarity-epic/);
+  assert.match(html, /cosmetic-item-avatar cosmetic-item-framed rarity-epic/);
+  assert.match(html, /cosmetic-rarity-label rarity-epic/);
   assert.ok(getAvatarImage("avatar_astral_archon").includes("avatar_astral_archon.png"));
   assert.ok(getAvatarImage("avatar_wind_wraith").includes("avatar_wind_wraith.png"));
   assert.ok(getAvatarImage("avatar_fairy_m").includes("avatar_fairy_m.png"));
   assert.ok(getAvatarImage("avatar_fairy_f").includes("avatar_fairy_f.png"));
+  assert.ok(getArenaBackground("bg_celestial_observatory").includes("bg_celestial_observatory.png"));
+  assert.ok(getArenaBackground("bg_sunken_ruins").includes("bg_sunken_ruins.png"));
 });
 
 test("ui: screen back buttons render inside the shared topbar", () => {
@@ -499,7 +507,7 @@ test("ui: store screen renders token count and buy/equip actions", () => {
 
   assert.match(html, /Tokens: <strong>120<\/strong>/);
   assert.match(html, /data-buy-type="avatar"/);
-  assert.match(html, /Rarity: Common/);
+  assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
   assert.match(html, /Activate Founder Pass/);
 });
 
@@ -1158,7 +1166,9 @@ test("ui: cosmetics screen shows owned items only", () => {
   assert.match(html, /data-cosmetic-category-filter="elementCardVariant"/);
   assert.match(html, /data-cosmetic-rarity-filter="Epic"/);
   assert.match(html, /data-cosmetic-section="avatar"/);
-  assert.match(html, /Rarity: Epic/);
+  assert.match(html, /cosmetic-rarity-label[^>]*>Epic<\/span>/);
+  assert.match(html, /cosmetic-preview is-avatar is-framed/);
+  assert.match(html, /cosmetic-rarity-label rarity-epic/);
   assert.match(html, />Rename</);
   assert.match(html, />Save to Slot</);
   assert.match(html, />Load</);
@@ -1347,10 +1357,10 @@ test("ui: game screen uses provided variant card images", () => {
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
   assert.match(html, /class="hand-zone hand-zone-player"/);
   assert.match(html, /class="hand-summary-grid" id="left-hand"/);
-  assert.match(html, /class="hand-slot hand-slot-fire is-selectable"/);
-  assert.match(html, /class="hand-slot hand-slot-earth is-empty"/);
-  assert.match(html, /class="hand-slot hand-slot-wind is-empty"/);
-  assert.match(html, /class="hand-slot hand-slot-water is-empty"/);
+  assert.match(html, /class="hand-slot hand-slot-fire [^"]*is-selectable/);
+  assert.match(html, /class="hand-slot hand-slot-earth [^"]*is-empty/);
+  assert.match(html, /class="hand-slot hand-slot-wind [^"]*is-empty/);
+  assert.match(html, /class="hand-slot hand-slot-water [^"]*is-empty/);
   assert.match(html, /Fire count x1/);
   assert.match(html, /Earth count x0/);
   assert.match(html, /Wind count x0/);
@@ -1359,7 +1369,7 @@ test("ui: game screen uses provided variant card images", () => {
   assert.ok(html.indexOf("hand-slot-earth") < html.indexOf("hand-slot-wind"));
   assert.ok(html.indexOf("hand-slot-wind") < html.indexOf("hand-slot-water"));
   assert.match(html, /class="hand-slot-count-badge" aria-label="Fire count x1">x1<\/span>/);
-  assert.match(html, /class="hidden-hand-summary"/);
+  assert.match(html, /class="hidden-hand-summary[^"]*"/);
   assert.match(html, /Keyboard: \[1\] Fire\s+\[2\] Earth\s+\[3\] Wind\s+\[4\] Water/);
   assert.doesNotMatch(html, /hand-slot-name/);
 });
@@ -2308,6 +2318,16 @@ test("ui: game screen uses side-specific card back images for hidden hands", () 
       p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
       p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
     },
+    cosmeticIds: {
+      variants: {
+        p1: { fire: "fire_variant_phoenix", water: "water_variant_crystal", earth: "earth_variant_titan", wind: "wind_variant_storm_eye" },
+        p2: { fire: "fire_variant_ember", water: "water_variant_tidal_spirit", earth: "earth_variant_rooted_monolith", wind: "wind_variant_sky_serpent" }
+      },
+      cardBacks: {
+        p1: "cardback_elemental_nexus",
+        p2: "cardback_storm_spiral"
+      }
+    },
     cardBacks: {
       p1: "assets/cards/customP1Back.jpg",
       p2: "assets/cards/customP2Back.jpg"
@@ -2332,6 +2352,8 @@ test("ui: game screen uses side-specific card back images for hidden hands", () 
   });
 
   assert.match(html, /assets\/cards\/customP1Back\.jpg/);
+  assert.match(html, /hidden-hand-summary rarity-legendary/);
+  assert.match(html, /hand-slot[^"]*rarity-rare/);
 });
 
 
@@ -4412,9 +4434,16 @@ test("ui: online play screen renders move sync status and submit controls for fu
     connected: true,
     avatarImage: getAvatarImage("avatar_fourfold_lord"),
     backgroundImage: getArenaBackground("bg_elemental_throne"),
+    cardBackId: "cardback_elemental_nexus",
     cardBackImage: getCardBackImage("cardback_elemental_nexus"),
     titleLabel: "War Master",
     badgeImage: getBadgeImage("badge_arena_legend"),
+    variantSelection: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_crystal",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
     variantImages: getVariantCardImages({
       fire: "fire_variant_phoenix",
       water: "water_variant_crystal",
@@ -4428,9 +4457,16 @@ test("ui: online play screen renders move sync status and submit controls for fu
     connected: true,
     avatarImage: getAvatarImage("avatar_storm_oracle"),
     backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackId: "cardback_storm_spiral",
     cardBackImage: getCardBackImage("cardback_storm_spiral"),
     titleLabel: "Element Sovereign",
     badgeImage: getBadgeImage("badge_element_veteran"),
+    variantSelection: {
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    },
     variantImages: getVariantCardImages({
       fire: "fire_variant_ember",
       water: "water_variant_tidal_spirit",
@@ -4490,7 +4526,7 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /class="player-header"/);
   assert.match(html, /Guest \(4\)/);
   assert.match(html, /Host \(8\)/);
-  assert.match(html, /class="hand-slot hand-slot-fire is-empty"/);
+  assert.match(html, /class="hand-slot hand-slot-fire [^"]*is-empty/);
   assert.match(html, /data-move="water"/);
   assert.match(html, /aria-label="Water count x1"/);
   assert.match(html, /aria-label="Earth count x2"/);
@@ -5361,9 +5397,16 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
     connected: true,
     avatarImage: getAvatarImage("avatar_fourfold_lord"),
     backgroundImage: getArenaBackground("bg_elemental_throne"),
+    cardBackId: "cardback_elemental_nexus",
     cardBackImage: getCardBackImage("cardback_elemental_nexus"),
     titleLabel: "War Master",
     badgeImage: getBadgeImage("badge_arena_legend"),
+    variantSelection: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_crystal",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
     variantImages: getVariantCardImages({
       fire: "fire_variant_phoenix",
       water: "water_variant_crystal",
@@ -5377,9 +5420,16 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
     connected: true,
     avatarImage: getAvatarImage("avatar_storm_oracle"),
     backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackId: "cardback_storm_spiral",
     cardBackImage: getCardBackImage("cardback_storm_spiral"),
     titleLabel: "Element Sovereign",
     badgeImage: getBadgeImage("badge_element_veteran"),
+    variantSelection: {
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    },
     variantImages: getVariantCardImages({
       fire: "fire_variant_ember",
       water: "water_variant_tidal_spirit",
@@ -5450,9 +5500,11 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
   assert.match(html, /<span>War Master<\/span>/);
   assert.match(html, /<span>Element Sovereign<\/span>/);
   assert.match(html, /class="player-avatar"/);
-  assert.match(html, /class="online-player-card-back-chip"/);
+  assert.match(html, /class="online-player-card-back-chip rarity-legendary"/);
   assert.match(html, /class="hand-slot-count-badge"/);
   assert.match(html, /class="featured-badge"/);
+  assert.match(html, /hand-slot[^"]*rarity-legendary/);
+  assert.match(html, /hidden-hand-summary rarity-rare/);
   assert.match(html, new RegExp(getVariantCardImages({ fire: "fire_variant_phoenix" }).fire.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(getCardBackImage("cardback_storm_spiral").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });

@@ -1,7 +1,10 @@
 import { getAvatarImage, getCardBackImage, getVariantCardImages } from "../../utils/assets.js";
+import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
 import { escapeHtml } from "../../utils/dom.js";
 import { formatElement } from "../../utils/index.js";
 import {
+  normalizeCosmeticRarity,
+  rarityClassName,
   renderElementHandSummary,
   renderHiddenHandSummary,
   renderPlayerHeader
@@ -272,14 +275,33 @@ function createWaitingOpponentIdentity(backgroundImage) {
   };
 }
 
+function getVariantRarityMap(selection = null) {
+  return Object.fromEntries(
+    ELEMENT_ORDER.map((element) => [
+      element,
+      normalizeCosmeticRarity(
+        getCosmeticDefinition("elementCardVariant", selection?.[element])?.rarity ?? "Common"
+      )
+    ])
+  );
+}
+
+function getCardBackRarity(cardBackId) {
+  return normalizeCosmeticRarity(getCosmeticDefinition("cardBack", cardBackId)?.rarity ?? "Common");
+}
+
 function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLabel, roomLifecycle) {
+  const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
+  const localCardBackRarity = getCardBackRarity(boardView.localIdentity.cardBackId);
+  const remoteCardBackRarity = getCardBackRarity(boardView.remoteIdentity.cardBackId);
+
   return `
     <section class="grid game-grid online-play-live-grid">
       <article class="panel online-play-player-panel" style="background-image: url('${boardView.localIdentity.backgroundImage}')">
         <div class="online-play-player-panel-overlay">
           ${renderPlayerHeader(toPlayerDisplay(boardView.localIdentity), "Player", `(${boardView.localCount})`)}
           <div class="online-play-identity-strip">
-            <img class="online-player-card-back-chip" src="${boardView.localIdentity.cardBackImage}" alt="${escapeHtml(boardView.localIdentity.username)} card back" />
+            <img class="online-player-card-back-chip ${rarityClassName(localCardBackRarity)}" src="${boardView.localIdentity.cardBackImage}" alt="${escapeHtml(boardView.localIdentity.username)} card back" />
           </div>
           <div class="hand-zone hand-zone-player">
             <div class="hand-summary-grid" id="online-move-actions">
@@ -287,6 +309,7 @@ function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLa
                 selectable: boardView.selectable,
                 selectableClass: "online-move-btn",
                 variantMap: boardView.localVariantMap,
+                rarityMap: localVariantRarities,
                 buttonAttributes: ({ element }) => `data-move="${element}"`,
                 isDisabled: ({ isAvailable }) => !(boardView.selectable && isAvailable && !boardView.ownSubmitted)
               })}
@@ -299,11 +322,11 @@ function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLa
         <div class="online-play-player-panel-overlay">
           ${renderPlayerHeader(toPlayerDisplay(boardView.remoteIdentity), "Opponent", `(${boardView.remoteCount})`)}
           <div class="online-play-identity-strip">
-            <img class="online-player-card-back-chip" src="${boardView.remoteIdentity.cardBackImage}" alt="${escapeHtml(boardView.remoteIdentity.username)} card back" />
+            <img class="online-player-card-back-chip ${rarityClassName(remoteCardBackRarity)}" src="${boardView.remoteIdentity.cardBackImage}" alt="${escapeHtml(boardView.remoteIdentity.username)} card back" />
           </div>
           <div class="hand-zone hand-zone-opponent">
             <div class="hand-summary-grid hand-summary-grid-opponent" id="right-hand">
-              ${renderHiddenHandSummary(boardView.remoteCount, boardView.remoteCardBack)}
+              ${renderHiddenHandSummary(boardView.remoteCount, boardView.remoteCardBack, remoteCardBackRarity)}
             </div>
           </div>
         </div>

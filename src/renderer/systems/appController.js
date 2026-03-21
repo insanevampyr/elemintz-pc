@@ -661,9 +661,11 @@ export class AppController {
       titleIcon: playerDisplay.titleIcon ?? null,
       avatarImage: playerDisplay.avatar,
       backgroundImage: this.getBackgroundFromProfile(profileLike),
+      cardBackId: equippedCosmetics.cardBack,
       cardBackImage: getCardBackImage(equippedCosmetics.cardBack),
       titleLabel: playerDisplay.title,
       badgeImage: playerDisplay.featuredBadge,
+      variantSelection: equippedCosmetics.elementCardVariant,
       variantImages: getVariantCardImages(equippedCosmetics.elementCardVariant)
     };
   }
@@ -2434,6 +2436,16 @@ export class AppController {
       cardImages: {
         p1: getVariantCardImages(p1Variant),
         p2: getVariantCardImages(p2Variant)
+      },
+      cosmeticIds: {
+        variants: {
+          p1: p1Variant,
+          p2: p2Variant
+        },
+        cardBacks: {
+          p1: p1CardBack,
+          p2: p2CardBack
+        }
       },
       cardBacks: {
         p1: getCardBackImage(p1CardBack),

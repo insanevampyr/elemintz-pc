@@ -1,7 +1,10 @@
 import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
+import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
 import {
   ELEMENT_ORDER,
   getCardElement,
+  normalizeCosmeticRarity,
+  rarityClassName,
   renderElementHandSummary,
   renderHiddenHandSummary,
   renderPlayerHeader
@@ -73,7 +76,7 @@ function renderPlayedCard(label, card, options) {
     return `<div class="played-slot"><p class="played-slot-label">${safeLabel}: -</p></div>`;
   }
 
-  const classes = ["played-slot"];
+  const classes = ["played-slot", rarityClassName(options.rarity ?? "Common")];
   if (options.emphasize) {
     classes.push("is-emphasized");
   }
@@ -84,6 +87,21 @@ function renderPlayedCard(label, card, options) {
       <span class="card-art played-art" style="background-image: url('${getCardImage(card, options.variantMap)}')"></span>
     </div>
   `;
+}
+
+function getVariantRarityMap(selection = null) {
+  return Object.fromEntries(
+    ELEMENT_ORDER.map((element) => [
+      element,
+      normalizeCosmeticRarity(
+        getCosmeticDefinition("elementCardVariant", selection?.[element])?.rarity ?? "Common"
+      )
+    ])
+  );
+}
+
+function getCardBackRarity(cardBackId) {
+  return normalizeCosmeticRarity(getCosmeticDefinition("cardBack", cardBackId)?.rarity ?? "Common");
 }
 
 function outcomeClass(vm) {
@@ -145,6 +163,14 @@ function renderHands(vm, context, phase, names) {
   const selectedCardIndex = context.presentation?.selectedCardIndex ?? null;
   const transitionLocked = Boolean(context.presentation?.busy ?? false);
   const canSelect = vm.canSelectCard && !transitionLocked;
+  const variantRarities = {
+    p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
+    p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
+  };
+  const cardBackRarities = {
+    p1: getCardBackRarity(context.cosmeticIds?.cardBacks?.p1),
+    p2: getCardBackRarity(context.cosmeticIds?.cardBacks?.p2)
+  };
 
   if (!hotseat?.enabled) {
       return {
@@ -153,11 +179,12 @@ function renderHands(vm, context, phase, names) {
           selectable: canSelect,
           selectedCardIndex,
           phase,
-          variantMap: context.cardImages?.p1
+          variantMap: context.cardImages?.p1,
+          rarityMap: variantRarities.p1
         }),
         leftHint: true,
         rightTitle: renderPlayerHeader(context.opponentDisplay, "Opponent", `(${vm.opponentHand.length})`),
-        rightCards: renderHiddenHandSummary(vm.opponentHand.length, context.cardBacks?.p2),
+        rightCards: renderHiddenHandSummary(vm.opponentHand.length, context.cardBacks?.p2, cardBackRarities.p2),
         rightHint: false
       };
   }
@@ -165,10 +192,10 @@ function renderHands(vm, context, phase, names) {
   if (transitionLocked) {
     return {
       leftTitle: renderPlayerHeader(context.playerDisplay, names.p1, `(${vm.playerHand.length})`),
-      leftCards: renderHiddenHandSummary(vm.playerHand.length, context.cardBacks?.p1),
+      leftCards: renderHiddenHandSummary(vm.playerHand.length, context.cardBacks?.p1, cardBackRarities.p1),
       leftHint: false,
       rightTitle: renderPlayerHeader(context.opponentDisplay, names.p2, `(${vm.opponentHand.length})`),
-      rightCards: renderHiddenHandSummary(vm.opponentHand.length, context.cardBacks?.p2),
+      rightCards: renderHiddenHandSummary(vm.opponentHand.length, context.cardBacks?.p2, cardBackRarities.p2),
       rightHint: false
     };
   }
@@ -181,11 +208,12 @@ function renderHands(vm, context, phase, names) {
         selectable: canSelect,
           selectedCardIndex,
           phase,
-          variantMap: context.cardImages?.p2
+          variantMap: context.cardImages?.p2,
+          rarityMap: variantRarities.p2
         }),
       leftHint: true,
       rightTitle: renderPlayerHeader(context.playerDisplay, names.p1, `(${vm.playerHand.length})`),
-      rightCards: renderHiddenHandSummary(vm.playerHand.length, context.cardBacks?.p1),
+      rightCards: renderHiddenHandSummary(vm.playerHand.length, context.cardBacks?.p1, cardBackRarities.p1),
       rightHint: false
     };
   }
@@ -196,11 +224,12 @@ function renderHands(vm, context, phase, names) {
       selectable: canSelect,
         selectedCardIndex,
         phase,
-        variantMap: context.cardImages?.p1
+        variantMap: context.cardImages?.p1,
+        rarityMap: variantRarities.p1
       }),
     leftHint: true,
     rightTitle: renderPlayerHeader(context.opponentDisplay, names.p2, `(${vm.opponentHand.length})`),
-    rightCards: renderHiddenHandSummary(vm.opponentHand.length, context.cardBacks?.p2),
+    rightCards: renderHiddenHandSummary(vm.opponentHand.length, context.cardBacks?.p2, cardBackRarities.p2),
     rightHint: false
   };
 }
@@ -216,6 +245,10 @@ export const gameScreen = {
     const warTriggered = vm.roundOutcome?.key === "war_triggered" || Boolean(vm.warActive);
     const emphasizePlayed = phase === "reveal" || phase === "result";
     const hands = renderHands(vm, context, phase, names);
+    const playedVariantRarities = {
+      p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
+      p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
+    };
     const hotseatBusyReveal = vm.mode === "local_pvp" && phase === "reveal" && (context.presentation?.busy ?? false);
     const resultBannerActive = phase === "result" || phase === "reveal";
     const clashWinnerClass =
@@ -277,13 +310,15 @@ export const gameScreen = {
                   faceDown: hotseatBusyReveal,
                   emphasize: emphasizePlayed,
                   variantMap: context.cardImages?.p1,
-                  backImage: context.cardBacks?.p1
+                  backImage: context.cardBacks?.p1,
+                  rarity: playedVariantRarities.p1[getCardElement(vm.lastRound?.p1Card) ?? "fire"]
                 })}
                 ${renderPlayedCard(vm.mode === "local_pvp" ? names.p2 : "Opponent", vm.lastRound?.p2Card, {
                   faceDown: hotseatBusyReveal,
                   emphasize: emphasizePlayed,
                   variantMap: context.cardImages?.p2,
-                  backImage: context.cardBacks?.p2
+                  backImage: context.cardBacks?.p2,
+                  rarity: playedVariantRarities.p2[getCardElement(vm.lastRound?.p2Card) ?? "fire"]
                 })}
               </div>
               <div class="status-meta">
