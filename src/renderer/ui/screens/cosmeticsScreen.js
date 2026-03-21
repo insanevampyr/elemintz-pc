@@ -158,32 +158,34 @@ export const cosmeticsScreen = {
           </section>
 
           <section class="store-toolbar panel cosmetic-browser-toolbar">
-            <fieldset class="store-filter-group">
-              <legend>Categories</legend>
-              <div class="store-filter-options">
-                ${FILTERABLE_CATEGORIES.map(
-                  ([type, label]) => `
-                    <label class="store-filter-option">
-                      <input type="checkbox" data-cosmetic-category-filter="${type}" ${viewState.categories.has(type) ? "checked" : ""} />
-                      <span>${label}</span>
-                    </label>
-                  `
-                ).join("")}
-              </div>
-            </fieldset>
-            <fieldset class="store-filter-group">
-              <legend>Rarity</legend>
-              <div class="store-filter-options">
-                ${FILTERABLE_RARITIES.map(
-                  (rarity) => `
-                    <label class="store-filter-option">
-                      <input type="checkbox" data-cosmetic-rarity-filter="${rarity}" ${viewState.rarities.has(rarity) ? "checked" : ""} />
-                      <span>${rarity}</span>
-                    </label>
-                  `
-                ).join("")}
-              </div>
-            </fieldset>
+            <div class="store-filter-groups">
+              <fieldset class="store-filter-group">
+                <legend>Categories</legend>
+                <div class="store-filter-options">
+                  ${FILTERABLE_CATEGORIES.map(
+                    ([type, label]) => `
+                      <label class="store-filter-option">
+                        <input type="checkbox" data-cosmetic-category-filter="${type}" ${viewState.categories.has(type) ? "checked" : ""} />
+                        <span>${label}</span>
+                      </label>
+                    `
+                  ).join("")}
+                </div>
+              </fieldset>
+              <fieldset class="store-filter-group">
+                <legend>Rarity</legend>
+                <div class="store-filter-options">
+                  ${FILTERABLE_RARITIES.map(
+                    (rarity) => `
+                      <label class="store-filter-option">
+                        <input type="checkbox" data-cosmetic-rarity-filter="${rarity}" ${viewState.rarities.has(rarity) ? "checked" : ""} />
+                        <span>${rarity}</span>
+                      </label>
+                    `
+                  ).join("")}
+                </div>
+              </fieldset>
+            </div>
           </section>
 
           <div class="grid cosmetics-sections">
