@@ -466,6 +466,24 @@ export const COSMETIC_CATALOG = Object.freeze({
       price: AVATAR_RARITY_PRICING.Epic
     },
     {
+      id: "avatar_fairy_m",
+      name: "Fairy Prince",
+      image: "avatars/avatar_fairy_m.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_fairy_f",
+      name: "Fairy Princess",
+      image: "avatars/avatar_fairy_f.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
       id: "avatar_novice_mage",
       name: "Novice Mage",
       image: "avatars/avatar_novice_mage.png",

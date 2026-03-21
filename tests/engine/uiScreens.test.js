@@ -235,8 +235,12 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.match(html, /Magma Warlord/);
   assert.match(html, /Voidbound Entity/);
   assert.match(html, /Arcane Gambler/);
+  assert.match(html, /Fairy Prince/);
+  assert.match(html, /Fairy Princess/);
   assert.ok(getAvatarImage("avatar_astral_archon").includes("avatar_astral_archon.png"));
   assert.ok(getAvatarImage("avatar_wind_wraith").includes("avatar_wind_wraith.png"));
+  assert.ok(getAvatarImage("avatar_fairy_m").includes("avatar_fairy_m.png"));
+  assert.ok(getAvatarImage("avatar_fairy_f").includes("avatar_fairy_f.png"));
 });
 
 test("ui: screen back buttons render inside the shared topbar", () => {
