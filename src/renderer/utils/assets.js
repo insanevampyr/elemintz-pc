@@ -18,7 +18,19 @@ const CARD_BACKS = Object.freeze({
   cardback_lava_core: getAssetPath("card_backs/cardback_lava_core.png"),
   cardback_obsidian_halo: getAssetPath("card_backs/cardback_obsidian_halo.png"),
   cardback_storm_spiral: getAssetPath("card_backs/cardback_storm_spiral.png"),
-  cardback_verdant_relic: getAssetPath("card_backs/cardback_verdant_relic.png")
+  cardback_verdant_relic: getAssetPath("card_backs/cardback_verdant_relic.png"),
+  i_dont_lose_transparent_cardback: getAssetPath("card_backs/i_dont_lose_transparent_cardback.png"),
+  i_dont_lose_cardback: getAssetPath("card_backs/i_dont_lose_cardback.png"),
+  elemental_chest_cardback: getAssetPath("card_backs/elemental_chest_cardback.png"),
+  wont_take_long_cardback: getAssetPath("card_backs/wont_take_long_cardback.png"),
+  outplayed_too_easy_cardback: getAssetPath("card_backs/outplayed_too_easy_cardback.png"),
+  cry_about_it_cardback: getAssetPath("card_backs/cry_about_it_cardback.png"),
+  dreamscape_cardback: getAssetPath("card_backs/dreamscape_cardback.png"),
+  charmed_heart_cardback: getAssetPath("card_backs/charmed_heart_cardback.png"),
+  gothic_heart_cardback: getAssetPath("card_backs/gothic_heart_cardback.png"),
+  mystic_bloom_cardback: getAssetPath("card_backs/mystic_bloom_cardback.png"),
+  your_gonna_lose_2: getAssetPath("card_backs/your_gonna_lose_2.png"),
+  your_gonna_lose: getAssetPath("card_backs/your_gonna_lose.png")
 });
 
 const DEFAULT_ELEMENT_IMAGES = Object.freeze({

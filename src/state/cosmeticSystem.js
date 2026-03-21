@@ -567,6 +567,114 @@ export const COSMETIC_CATALOG = Object.freeze({
       price: CARD_BACK_RARITY_PRICING.Rare
     },
     {
+      id: "i_dont_lose_transparent_cardback",
+      name: "Duality of Dominion",
+      image: "card_backs/i_dont_lose_transparent_cardback.png",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "i_dont_lose_cardback",
+      name: "Unyielding Dominion",
+      image: "card_backs/i_dont_lose_cardback.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "elemental_chest_cardback",
+      name: "Elemental Treasure Core",
+      image: "card_backs/elemental_chest_cardback.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "wont_take_long_cardback",
+      name: "Swift Execution",
+      image: "card_backs/wont_take_long_cardback.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
+    },
+    {
+      id: "outplayed_too_easy_cardback",
+      name: "Too Easy",
+      image: "card_backs/outplayed_too_easy_cardback.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "cry_about_it_cardback",
+      name: "Cry About It",
+      image: "card_backs/cry_about_it_cardback.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "dreamscape_cardback",
+      name: "Dreamscape Reverie",
+      image: "card_backs/dreamscape_cardback.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
+    },
+    {
+      id: "charmed_heart_cardback",
+      name: "Enchanted Heartveil",
+      image: "card_backs/charmed_heart_cardback.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
+    },
+    {
+      id: "gothic_heart_cardback",
+      name: "Gothic Heart Sigil",
+      image: "card_backs/gothic_heart_cardback.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "mystic_bloom_cardback",
+      name: "Mystic Bloom Radiance",
+      image: "card_backs/mystic_bloom_cardback.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "your_gonna_lose_2",
+      name: "Infernal Mockery",
+      image: "card_backs/your_gonna_lose_2.png",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "your_gonna_lose",
+      name: "Flamebound Taunt",
+      image: "card_backs/your_gonna_lose.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
       id: "founder_deluxe_card_back",
       name: "Founder Deluxe Card Back",
       image: "card_backs/founder_deluxe_card_back.png",

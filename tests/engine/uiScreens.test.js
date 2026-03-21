@@ -14,6 +14,7 @@ import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
+import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 
 function createClassList() {
   const values = new Set();
@@ -182,6 +183,52 @@ test("ui: achievements screen renders locked and unlocked states", () => {
   assert.match(html, /Status: Unlocked/);
   assert.match(html, /Status: Locked/);
   assert.match(html, /assets\/badges\/firstFlame\.png/);
+});
+
+test("ui: store screen uses cardback catalog names and rarities for wired shop entries", () => {
+  const store = getStoreViewForProfile({
+    tokens: 2000,
+    supporterPass: false,
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card"
+      ],
+      badge: ["none"],
+      title: ["title_initiate"]
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "title_initiate"
+    }
+  });
+
+  const html = storeScreen.render({ store, viewState: {} });
+
+  assert.match(html, /Duality of Dominion/);
+  assert.match(html, /Infernal Mockery/);
+  assert.match(html, /Mystic Bloom Radiance/);
+  assert.match(html, /Rarity: Legendary/);
+  assert.match(html, /Rarity: Epic/);
+  assert.ok(
+    getCardBackImage("i_dont_lose_transparent_cardback").includes(
+      "i_dont_lose_transparent_cardback.png"
+    )
+  );
 });
 
 test("ui: screen back buttons render inside the shared topbar", () => {
