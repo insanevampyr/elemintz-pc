@@ -220,10 +220,15 @@ export class AppController {
       this.cosmeticsViewState = createDefaultCategoryViewState();
     }
 
+    const defaults = createDefaultCategoryViewState();
     this.cosmeticsViewState.categories =
       this.cosmeticsViewState.categories instanceof Set
         ? this.cosmeticsViewState.categories
-        : new Set(this.cosmeticsViewState.categories ?? createDefaultCategoryViewState().categories);
+        : new Set(this.cosmeticsViewState.categories ?? defaults.categories);
+    this.cosmeticsViewState.rarities =
+      this.cosmeticsViewState.rarities instanceof Set
+        ? this.cosmeticsViewState.rarities
+        : new Set(this.cosmeticsViewState.rarities ?? defaults.rarities);
 
     return this.cosmeticsViewState;
   }

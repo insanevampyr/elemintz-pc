@@ -1077,7 +1077,7 @@ test("ui: cosmetics screen shows owned items only", () => {
       ],
       catalog: {
         avatar: [
-          { id: "default_avatar", name: "Default Avatar", image: "avatars/default.png", owned: true, equipped: true },
+          { id: "default_avatar", name: "Default Avatar", image: "avatars/default.png", owned: true, equipped: true, rarity: "Epic" },
           { id: "fire_avatar_f", name: "Fire Avatar", image: "avatars/fireavatarF.png", owned: false, equipped: false }
         ],
         cardBack: [],
@@ -1097,7 +1097,9 @@ test("ui: cosmetics screen shows owned items only", () => {
   assert.match(html, /Equip your cosmetics, then save them to a loadout slot/);
   assert.match(html, /data-cosmetic-category-filter="avatar"/);
   assert.match(html, /data-cosmetic-category-filter="elementCardVariant"/);
+  assert.match(html, /data-cosmetic-rarity-filter="Epic"/);
   assert.match(html, /data-cosmetic-section="avatar"/);
+  assert.match(html, /Rarity: Epic/);
   assert.match(html, />Rename</);
   assert.match(html, />Save to Slot</);
   assert.match(html, />Load</);
@@ -1306,8 +1308,26 @@ test("ui: game screen uses provided variant card images", () => {
 test("ui: cosmetics screen category filters hide unselected owned sections", () => {
   const previousDocument = global.document;
 
-  const avatarSection = { hidden: false, style: {}, classList: { toggle() {} }, getAttribute: () => "avatar" };
-  const titleSection = { hidden: false, style: {}, classList: { toggle() {} }, getAttribute: () => "title" };
+  const avatarItems = [
+    { hidden: false, style: {}, classList: { toggle() {} }, getAttribute: (name) => (name === "data-cosmetic-rarity" ? "Epic" : null) }
+  ];
+  const titleItems = [
+    { hidden: false, style: {}, classList: { toggle() {} }, getAttribute: (name) => (name === "data-cosmetic-rarity" ? "Common" : null) }
+  ];
+  const avatarSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    getAttribute: () => "avatar",
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? avatarItems : [])
+  };
+  const titleSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    getAttribute: () => "title",
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? titleItems : [])
+  };
   const avatarFilter = {
     checked: true,
     getAttribute: (name) => (name === "data-cosmetic-category-filter" ? "avatar" : null),
@@ -1318,6 +1338,20 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
   const titleFilter = {
     checked: true,
     getAttribute: (name) => (name === "data-cosmetic-category-filter" ? "title" : null),
+    addEventListener(type, handler) {
+      this.handler = handler;
+    }
+  };
+  const commonRarityFilter = {
+    checked: true,
+    getAttribute: (name) => (name === "data-cosmetic-rarity-filter" ? "Common" : null),
+    addEventListener(type, handler) {
+      this.handler = handler;
+    }
+  };
+  const epicRarityFilter = {
+    checked: true,
+    getAttribute: (name) => (name === "data-cosmetic-rarity-filter" ? "Epic" : null),
     addEventListener(type, handler) {
       this.handler = handler;
     }
@@ -1338,6 +1372,8 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
           return [avatarSection, titleSection];
         case "[data-cosmetic-category-filter]":
           return [avatarFilter, titleFilter];
+        case "[data-cosmetic-rarity-filter]":
+          return [commonRarityFilter, epicRarityFilter];
         default:
           return [];
       }
@@ -1346,7 +1382,7 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
 
   try {
     cosmeticsScreen.bind({
-      viewState: { categories: new Set(["avatar", "title"]) },
+      viewState: { categories: new Set(["avatar", "title"]), rarities: new Set(["Common", "Epic"]) },
       actions: {
         back: async () => {},
         equip: async () => {},
@@ -1363,7 +1399,14 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
     assert.equal(avatarSection.hidden, false);
     assert.equal(titleSection.hidden, true);
     assert.equal(titleSection.style.display, "none");
-    assert.equal(emptyState.hidden, false === true ? false : true);
+    assert.equal(emptyState.hidden, true);
+
+    epicRarityFilter.checked = false;
+    epicRarityFilter.handler();
+
+    assert.equal(avatarItems[0].hidden, true);
+    assert.equal(avatarSection.hidden, true);
+    assert.equal(emptyState.hidden, false);
   } finally {
     global.document = previousDocument;
   }

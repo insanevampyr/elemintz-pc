@@ -2,6 +2,8 @@ import { getAssetPath } from "../../utils/dom.js";
 import {
   CATEGORY_ORDER as COSMETIC_SECTIONS,
   FILTERABLE_CATEGORIES,
+  FILTERABLE_RARITIES,
+  RARITY_SORT_ORDER,
   normalizeCategoryViewState
 } from "../shared/cosmeticCategoryShared.js";
 
@@ -20,10 +22,11 @@ function renderItem(type, item) {
       : "";
 
   return `
-    <article class="cosmetic-item owned">
+    <article class="cosmetic-item owned" data-cosmetic-rarity="${item.rarity ?? "Common"}">
       ${preview(item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
+        <p>Rarity: ${item.rarity ?? "Common"}</p>
         <p>Equipped: ${item.equipped ? "Yes" : "No"}</p>
         ${variantHint}
       </div>
@@ -39,6 +42,11 @@ function sortOwnedItems(items) {
     const equippedDelta = Number(Boolean(right?.equipped)) - Number(Boolean(left?.equipped));
     if (equippedDelta !== 0) {
       return equippedDelta;
+    }
+    const leftRarity = RARITY_SORT_ORDER[left?.rarity ?? "Common"] ?? RARITY_SORT_ORDER.Common;
+    const rightRarity = RARITY_SORT_ORDER[right?.rarity ?? "Common"] ?? RARITY_SORT_ORDER.Common;
+    if (leftRarity !== rightRarity) {
+      return leftRarity - rightRarity;
     }
     return String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
   });
@@ -125,6 +133,10 @@ export const cosmeticsScreen = {
     const cosmetics = context.cosmetics;
     const loadouts = Array.isArray(cosmetics.loadouts) ? cosmetics.loadouts : [];
     const viewState = normalizeCategoryViewState(context.viewState);
+    if (context.viewState) {
+      context.viewState.categories = viewState.categories;
+      context.viewState.rarities = viewState.rarities;
+    }
 
     return `
       <section class="screen screen-cosmetics">
@@ -159,6 +171,19 @@ export const cosmeticsScreen = {
                 ).join("")}
               </div>
             </fieldset>
+            <fieldset class="store-filter-group">
+              <legend>Rarity</legend>
+              <div class="store-filter-options">
+                ${FILTERABLE_RARITIES.map(
+                  (rarity) => `
+                    <label class="store-filter-option">
+                      <input type="checkbox" data-cosmetic-rarity-filter="${rarity}" ${viewState.rarities.has(rarity) ? "checked" : ""} />
+                      <span>${rarity}</span>
+                    </label>
+                  `
+                ).join("")}
+              </div>
+            </fieldset>
           </section>
 
           <div class="grid cosmetics-sections">
@@ -186,16 +211,35 @@ export const cosmeticsScreen = {
     const viewState = normalizeCategoryViewState(context.viewState);
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
+      context.viewState.rarities = viewState.rarities;
     }
 
     const applyFilters = () => {
       const sections = Array.from(scope.querySelectorAll("[data-cosmetic-section]"));
       const categoriesEnabled = viewState.categories.size > 0;
+      const raritiesEnabled = viewState.rarities.size > 0;
       let anyVisible = false;
 
       for (const section of sections) {
         const type = section.getAttribute("data-cosmetic-section");
-        const isVisible = categoriesEnabled && viewState.categories.has(type);
+        const items = Array.from(section.querySelectorAll(".cosmetic-item"));
+        const categoryVisible = categoriesEnabled && viewState.categories.has(type);
+        let hasVisibleItem = false;
+
+        for (const item of items) {
+          const rarity = item.getAttribute("data-cosmetic-rarity") ?? "Common";
+          const itemVisible = categoryVisible && raritiesEnabled && viewState.rarities.has(rarity);
+          item.hidden = !itemVisible;
+          item.classList?.toggle("is-filtered-out", !itemVisible);
+          if (item.style) {
+            item.style.display = itemVisible ? "" : "none";
+          }
+          if (itemVisible) {
+            hasVisibleItem = true;
+          }
+        }
+
+        const isVisible = categoryVisible && hasVisibleItem;
         section.hidden = !isVisible;
         section.classList?.toggle("is-filtered-out", !isVisible);
         if (section.style) {
@@ -229,6 +273,18 @@ export const cosmeticsScreen = {
           viewState.categories.add(type);
         } else {
           viewState.categories.delete(type);
+        }
+        applyFilters();
+      });
+    });
+
+    scope.querySelectorAll("[data-cosmetic-rarity-filter]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const rarity = input.getAttribute("data-cosmetic-rarity-filter");
+        if (input.checked) {
+          viewState.rarities.add(rarity);
+        } else {
+          viewState.rarities.delete(rarity);
         }
         applyFilters();
       });
