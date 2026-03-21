@@ -622,13 +622,13 @@ function renderChallengeBucket(title, bucket) {
   const totalMinutes = Math.max(0, Math.floor(resetMs / 60000));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  const rewardsEarned = summary.visibleChallenges.filter((challenge) => challenge?.completed).length;
+  const visibleCompleted = summary.visibleChallenges.filter((challenge) => challenge?.completed).length;
 
   return `
     <section class="stack-sm">
       <h3 class="section-title">${escapeHtml(title)}</h3>
       <p><strong>Completed:</strong> ${escapeHtml(String(summary.completed))}/${escapeHtml(String(summary.total))}</p>
-      <p><strong>Rewards Ready/Claimed:</strong> ${escapeHtml(String(rewardsEarned))}</p>
+      <p><strong>Visible Completed:</strong> ${escapeHtml(String(visibleCompleted))}</p>
       <p><strong>Resets In:</strong> ${escapeHtml(String(hours).padStart(2, "0"))}:${escapeHtml(String(minutes).padStart(2, "0"))}</p>
       ${
         summary.visibleChallenges.length > 0
