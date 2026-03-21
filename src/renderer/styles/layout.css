@@ -41,8 +41,9 @@ body {
 
 .app-main {
   margin-top: 6px;
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
 }
 
 .screen {
