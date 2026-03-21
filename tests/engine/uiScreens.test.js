@@ -317,6 +317,69 @@ test("ui: screen back buttons render inside the shared topbar", () => {
   }
 });
 
+test("ui: profile and online back topbars render outside the themed arena wrapper", () => {
+  const profileHtml = profileScreen.render({
+    profile: {
+      username: "BackButtonUser",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      chests: { basic: 0 },
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    basicChestVisualState: { basicOpen: false },
+    backgroundImage: "assets/EleMintzIcon.png",
+    searchQuery: "",
+    searchResults: [],
+    viewedProfile: null,
+    actions: {}
+  });
+  const onlineHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    multiplayer: {
+      connectionStatus: "disconnected",
+      statusMessage: "Offline"
+    },
+    actions: {}
+  });
+
+  assert.ok(profileHtml.indexOf('class="screen-topbar"') < profileHtml.indexOf('class="arena-board screen-themed-surface"'));
+  assert.ok(onlineHtml.indexOf('class="screen-topbar"') < onlineHtml.indexOf('class="arena-board screen-themed-surface"'));
+});
+
 test("ui: daily challenges screen renders completed status when hydrated progress already satisfies the goal", () => {
   const html = dailyChallengesScreen.render({
     tokens: 200,

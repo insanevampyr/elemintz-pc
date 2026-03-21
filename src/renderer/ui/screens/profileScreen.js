@@ -238,12 +238,12 @@ export const profileScreen = {
 
     return `
       <section class="screen screen-profile">
+        <div class="screen-topbar">
+          <h2 class="view-title">Profile</h2>
+          <button id="profile-back-btn" class="btn screen-back-btn">Back</button>
+        </div>
         <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
           <div class="panel themed-screen-panel">
-          <div class="screen-topbar">
-            <h2 class="view-title">Profile</h2>
-            <button id="profile-back-btn" class="btn screen-back-btn">Back</button>
-          </div>
           <div class="player-header">
             <img class="player-avatar" src="${playerAvatar}" alt="${profile.username}" />
             <div>

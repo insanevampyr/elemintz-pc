@@ -759,14 +759,14 @@ export const onlinePlayScreen = {
       console.info("[OnlinePlay][Renderer] rendering round result block", roundResult);
     }
 
-    return `
-      <section class="screen screen-online-play">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
-            <div class="panel themed-screen-panel stack-sm">
-              <div class="screen-topbar">
-                <h2 class="view-title">Online Play</h2>
-                <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
-              </div>
+      return `
+        <section class="screen screen-online-play">
+          <div class="screen-topbar">
+            <h2 class="view-title">Online Play</h2>
+            <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
+          </div>
+          <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
+              <div class="panel themed-screen-panel stack-sm">
               ${
                 room
                 ? `
