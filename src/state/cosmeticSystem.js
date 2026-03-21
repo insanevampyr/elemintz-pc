@@ -782,6 +782,78 @@ export const COSMETIC_CATALOG = Object.freeze({
       price: CARD_BACK_RARITY_PRICING.Epic
     },
     {
+      id: "cardback_tiny_but_mighty",
+      name: "Tiny But Mighty",
+      image: "card_backs/cardback_tiny_but_mighty.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
+    },
+    {
+      id: "cardback_nature_bites_back",
+      name: "Nature Bites Back",
+      image: "card_backs/cardback_nature_bites_back.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
+    },
+    {
+      id: "cardback_cry_about_it_v2",
+      name: "Cry About It V2",
+      image: "card_backs/cardback_cry_about_it_v2.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "cardback_flame_tyrant",
+      name: "Flame Tyrant",
+      image: "card_backs/cardback_flame_tyrant.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
+    },
+    {
+      id: "cardback_elemental_overlord",
+      name: "Elemental Overlord",
+      image: "card_backs/cardback_elemental_overlord.png",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_sweet_but_deadly",
+      name: "Sweet But Deadly",
+      image: "card_backs/cardback_sweet_but_deadly.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "cardback_too_easy",
+      name: "Too Easy V2",
+      image: "card_backs/cardback_too_easy.png",
+      rarity: "Common",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Common
+    },
+    {
+      id: "cardback_stay_mad",
+      name: "Stay Mad",
+      image: "card_backs/cardback_stay_mad.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
+    },
+    {
       id: "founder_deluxe_card_back",
       name: "Founder Deluxe Card Back",
       image: "card_backs/founder_deluxe_card_back.png",
@@ -971,8 +1043,79 @@ export const COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       price: BACKGROUND_RARITY_PRICING.Legendary
-    }
-  ,
+    },
+    {
+      id: "bg_infernal_rift",
+      name: "Infernal Rift",
+      image: "backgrounds/bg_infernal_rift.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Epic
+    },
+    {
+      id: "bg_aurora_sanctuary",
+      name: "Aurora Sanctuary",
+      image: "backgrounds/bg_aurora_sanctuary.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Rare
+    },
+    {
+      id: "bg_abyssal_gate",
+      name: "Abyssal Gate",
+      image: "backgrounds/bg_abyssal_gate.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Epic
+    },
+    {
+      id: "bg_sunken_ruins",
+      name: "Sunken Ruins",
+      image: "backgrounds/bg_sunken_ruins.png",
+      rarity: "Common",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
+    },
+    {
+      id: "bg_crystal_nexus",
+      name: "Crystal Nexus",
+      image: "backgrounds/bg_crystal_nexus.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Epic
+    },
+    {
+      id: "bg_stormbreaker_summit",
+      name: "Stormbreaker Summit",
+      image: "backgrounds/bg_stormbreaker_summit.png",
+      rarity: "Rare",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Rare
+    },
+    {
+      id: "bg_celestial_observatory",
+      name: "Celestial Observatory",
+      image: "backgrounds/bg_celestial_observatory.png",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Legendary
+    },
+    {
+      id: "bg_verdant_overgrowth",
+      name: "Verdant Overgrowth",
+      image: "backgrounds/bg_verdant_overgrowth.png",
+      rarity: "Common",
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
+    },
     {
       id: "background_ancient_arena",
       name: "Ancient Arena",

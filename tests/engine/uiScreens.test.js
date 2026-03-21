@@ -220,19 +220,47 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
 
   const html = storeScreen.render({ store, viewState: {} });
   const swiftExecution = store.catalog.cardBack.find((item) => item.id === "wont_take_long_cardback");
+  const tinyButMighty = store.catalog.cardBack.find((item) => item.id === "cardback_tiny_but_mighty");
+  const elementalOverlord = store.catalog.cardBack.find((item) => item.id === "cardback_elemental_overlord");
+  const tooEasyV2 = store.catalog.cardBack.find((item) => item.id === "cardback_too_easy");
+  const cryAboutItV2 = store.catalog.cardBack.find((item) => item.id === "cardback_cry_about_it_v2");
 
   assert.match(html, /I Don't Lose - Transparent/);
   assert.match(html, /I Don't Lose/);
   assert.match(html, /Infernal Mockery/);
+  assert.match(html, /Tiny But Mighty/);
+  assert.match(html, /Nature Bites Back/);
+  assert.match(html, /Cry About It V2/);
+  assert.match(html, /Flame Tyrant/);
+  assert.match(html, /Elemental Overlord/);
+  assert.match(html, /Sweet But Deadly/);
+  assert.match(html, /Too Easy V2/);
+  assert.match(html, /Stay Mad/);
   assert.ok(swiftExecution);
+  assert.ok(tinyButMighty);
+  assert.ok(elementalOverlord);
+  assert.ok(tooEasyV2);
+  assert.ok(cryAboutItV2);
   assert.equal(swiftExecution.rarity, "Epic");
   assert.equal(swiftExecution.price, 500);
+  assert.equal(tinyButMighty.rarity, "Rare");
+  assert.equal(tinyButMighty.price, 250);
+  assert.equal(elementalOverlord.rarity, "Legendary");
+  assert.equal(elementalOverlord.price, 800);
+  assert.equal(tooEasyV2.rarity, "Common");
+  assert.equal(tooEasyV2.price, 120);
+  assert.equal(cryAboutItV2.rarity, "Epic");
+  assert.equal(cryAboutItV2.price, 500);
   assert.match(html, /cosmetic-rarity-label[^>]*>Epic<\/span>/);
   assert.ok(
     getCardBackImage("i_dont_lose_transparent_cardback").includes(
       "i_dont_lose_transparent_cardback.png"
     )
   );
+  assert.ok(getCardBackImage("cardback_tiny_but_mighty").includes("cardback_tiny_but_mighty.png"));
+  assert.ok(getCardBackImage("cardback_elemental_overlord").includes("cardback_elemental_overlord.png"));
+  assert.ok(getCardBackImage("cardback_too_easy").includes("cardback_too_easy.png"));
+  assert.ok(getCardBackImage("cardback_stay_mad").includes("cardback_stay_mad.png"));
   assert.match(html, /Magma Warlord/);
   assert.match(html, /Voidbound Entity/);
   assert.match(html, /Arcane Gambler/);

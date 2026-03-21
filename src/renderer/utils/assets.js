@@ -30,7 +30,15 @@ const CARD_BACKS = Object.freeze({
   gothic_heart_cardback: getAssetPath("card_backs/gothic_heart_cardback.png"),
   mystic_bloom_cardback: getAssetPath("card_backs/mystic_bloom_cardback.png"),
   your_gonna_lose_2: getAssetPath("card_backs/your_gonna_lose_2.png"),
-  your_gonna_lose: getAssetPath("card_backs/your_gonna_lose.png")
+  your_gonna_lose: getAssetPath("card_backs/your_gonna_lose.png"),
+  cardback_tiny_but_mighty: getAssetPath("card_backs/cardback_tiny_but_mighty.png"),
+  cardback_nature_bites_back: getAssetPath("card_backs/cardback_nature_bites_back.png"),
+  cardback_cry_about_it_v2: getAssetPath("card_backs/cardback_cry_about_it_v2.png"),
+  cardback_flame_tyrant: getAssetPath("card_backs/cardback_flame_tyrant.png"),
+  cardback_elemental_overlord: getAssetPath("card_backs/cardback_elemental_overlord.png"),
+  cardback_sweet_but_deadly: getAssetPath("card_backs/cardback_sweet_but_deadly.png"),
+  cardback_too_easy: getAssetPath("card_backs/cardback_too_easy.png"),
+  cardback_stay_mad: getAssetPath("card_backs/cardback_stay_mad.png")
 });
 
 const DEFAULT_ELEMENT_IMAGES = Object.freeze({
@@ -223,6 +231,14 @@ export const ASSET_CATALOG = Object.freeze({
     bg_moonlit_basin: getAssetPath("backgrounds/bg_moonlit_basin.png"),
     bg_elemental_throne: getAssetPath("backgrounds/bg_elemental_throne.png"),
     bg_eclipse_hall: getAssetPath("backgrounds/bg_eclipse_hall.png"),
+    bg_infernal_rift: getAssetPath("backgrounds/bg_infernal_rift.png"),
+    bg_aurora_sanctuary: getAssetPath("backgrounds/bg_aurora_sanctuary.png"),
+    bg_abyssal_gate: getAssetPath("backgrounds/bg_abyssal_gate.png"),
+    bg_sunken_ruins: getAssetPath("backgrounds/bg_sunken_ruins.png"),
+    bg_crystal_nexus: getAssetPath("backgrounds/bg_crystal_nexus.png"),
+    bg_stormbreaker_summit: getAssetPath("backgrounds/bg_stormbreaker_summit.png"),
+    bg_celestial_observatory: getAssetPath("backgrounds/bg_celestial_observatory.png"),
+    bg_verdant_overgrowth: getAssetPath("backgrounds/bg_verdant_overgrowth.png"),
     background_ancient_arena: getAssetPath("backgrounds/background_ancient_arena.png"),
     background_storm_citadel: getAssetPath("backgrounds/background_storm_citadel.png"),
     background_sky_temple: getAssetPath("backgrounds/background_sky_temple.png")
