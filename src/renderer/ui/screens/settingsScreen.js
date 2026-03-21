@@ -20,6 +20,7 @@ export const settingsScreen = {
     return `
       <section class="screen screen-settings">
         <div class="panel">
+          <button id="settings-back-btn" class="btn screen-back-btn">Back</button>
           <h2 class="view-title">Settings</h2>
           <form id="settings-form" class="stack-sm">
             <div class="settings-group">
@@ -90,7 +91,6 @@ export const settingsScreen = {
 
             <button type="submit" class="btn btn-primary">Save Settings</button>
           </form>
-          <button id="settings-back-btn" class="btn screen-back-btn">Back</button>
         </div>
       </section>
     `;

@@ -129,18 +129,18 @@ function renderChestPanel(profile, visualState = {}) {
   return `
     <section class="stack-sm chest-panel">
       <h3 class="section-title">Basic Chests</h3>
-      <div class="player-header chest-panel-header">
-        <button
-          id="open-basic-chest-btn"
-          class="chest-open-trigger"
-          type="button"
-          ${basicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
-          aria-label="Open Basic Chest"
-        >
-          <img class="player-avatar chest-open-trigger__image" src="${chestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
-        </button>
-        <div>
-          <p>Basic Chests: <strong>${basicChestCount}</strong></p>
+      <div class="chest-row">
+        <div class="chest-slot">
+          <button
+            id="open-basic-chest-btn"
+            class="chest-open-trigger"
+            type="button"
+            ${basicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            aria-label="Open Basic Chest"
+          >
+            <span class="chest-count-bubble" aria-label="Basic Chest count">${basicChestCount}</span>
+            <img class="player-avatar chest-open-trigger__image" src="${chestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
+          </button>
           <p class="text-muted chest-open-helper">${basicChestCount > 0 ? "Click chest to open" : "No Basic Chests available"}</p>
         </div>
       </div>
@@ -240,6 +240,7 @@ export const profileScreen = {
       <section class="screen screen-profile">
         <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
           <div class="panel themed-screen-panel">
+          <button id="profile-back-btn" class="btn screen-back-btn">Back</button>
           <h2 class="view-title">Profile</h2>
           <div class="player-header">
             <img class="player-avatar" src="${playerAvatar}" alt="${profile.username}" />
@@ -297,7 +298,6 @@ export const profileScreen = {
           ${renderReadOnlyProfile(context.viewedProfile)}
           ${context.viewedProfile ? '<button id="clear-viewed-profile-btn" class="btn">Close Viewed Profile</button>' : ""}
 
-          <button id="profile-back-btn" class="btn screen-back-btn">Back</button>
           </div>
         </section>
       </section>

@@ -184,7 +184,7 @@ test("ui: achievements screen renders locked and unlocked states", () => {
   assert.match(html, /assets\/badges\/firstFlame\.png/);
 });
 
-test("ui: screen back buttons render with the shared fixed-position class", () => {
+test("ui: screen back buttons render before the title with the shared fixed-position class", () => {
   const achievementsHtml = achievementsScreen.render({ achievements: [] });
   const cosmeticsHtml = cosmeticsScreen.render({
     cosmetics: {
@@ -311,6 +311,7 @@ test("ui: screen back buttons render with the shared fixed-position class", () =
     storeHtml
   ]) {
     assert.match(html, /class="btn screen-back-btn"/);
+    assert.ok(html.indexOf('screen-back-btn') < html.indexOf('class="view-title"'));
   }
 });
 
@@ -6616,7 +6617,7 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
   }
 });
 
-test("ui: profile screen shows basic chest count and disables open button when empty", () => {
+test("ui: profile screen uses a chest count bubble and subtle empty helper text when no basic chests are available", () => {
   const html = profileScreen.render({
     profile: {
       username: "ChestlessUser",
@@ -6654,11 +6655,12 @@ test("ui: profile screen shows basic chest count and disables open button when e
     }
   });
 
-  assert.match(html, /Basic Chests: <strong>0<\/strong>/);
   assert.match(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest\.png"/);
   assert.match(html, /id="open-basic-chest-btn"/);
+  assert.match(html, /class="chest-count-bubble"[^>]*>0</);
   assert.match(html, /class="chest-open-trigger"/);
   assert.match(html, /No Basic Chests available/);
+  assert.doesNotMatch(html, /Basic Chests: <strong>/);
   assert.match(html, /disabled aria-disabled="true"/);
 });
 
@@ -6700,8 +6702,9 @@ test("ui: profile screen enables open chest button when player has a basic chest
     }
   });
 
-  assert.match(html, /Basic Chests: <strong>2<\/strong>/);
+  assert.match(html, /class="chest-count-bubble"[^>]*>2</);
   assert.match(html, /Click chest to open/);
+  assert.doesNotMatch(html, /Basic Chests: <strong>/);
   assert.doesNotMatch(html, /disabled aria-disabled="true"/);
 });
 

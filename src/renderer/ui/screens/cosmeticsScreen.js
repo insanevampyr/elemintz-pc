@@ -122,6 +122,7 @@ export const cosmeticsScreen = {
     return `
       <section class="screen screen-cosmetics">
         <div class="panel">
+          <button id="cosmetics-back-btn" class="btn screen-back-btn">Back to Menu</button>
           <h2 class="view-title">Cosmetics / Rewards</h2>
           <p>Owned cosmetics only. Purchases happen in Store.</p>
 
@@ -150,7 +151,6 @@ export const cosmeticsScreen = {
             }).join("")}
           </div>
 
-          <button id="cosmetics-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;

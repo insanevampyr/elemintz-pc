@@ -131,46 +131,82 @@ body {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
-.chest-panel-header {
+.chest-row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 18px;
+  min-height: 132px;
+}
+
+.chest-slot {
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  width: 108px;
 }
 
 .chest-open-trigger {
   appearance: none;
   -webkit-appearance: none;
-  border: 1px solid rgba(155, 203, 237, 0.4);
-  background: linear-gradient(160deg, rgba(15, 34, 55, 0.92), rgba(12, 27, 43, 0.92));
-  border-radius: 14px;
-  padding: 8px;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
   cursor: pointer;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.22);
+  position: relative;
   transition:
     transform 0.16s ease,
-    box-shadow 0.16s ease,
-    border-color 0.16s ease;
+    filter 0.16s ease;
 }
 
 .chest-open-trigger:hover,
 .chest-open-trigger:focus-visible {
-  border-color: rgba(255, 214, 140, 0.62);
-  box-shadow: 0 14px 22px rgba(0, 0, 0, 0.28), 0 0 16px rgba(255, 190, 86, 0.18);
   transform: translateY(-1px);
   outline: none;
+  filter: brightness(1.06);
 }
 
 .chest-open-trigger:disabled {
   cursor: not-allowed;
   opacity: 0.7;
   transform: none;
-  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.18);
+  filter: none;
 }
 
 .chest-open-trigger__image {
   display: block;
+  width: 92px;
+  height: 92px;
+  object-fit: contain;
+}
+
+.chest-count-bubble {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 214, 140, 0.55);
+  background: linear-gradient(180deg, rgba(14, 34, 52, 0.98), rgba(9, 24, 39, 0.98));
+  color: #fef2c6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.3);
 }
 
 .chest-open-helper {
-  margin: 0;
+  margin: 6px 0 0;
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.25;
+  opacity: 0.9;
 }
 
 .achievement-grid {

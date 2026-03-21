@@ -5,6 +5,7 @@ export const localSetupScreen = {
     return `
       <section class="screen screen-local-setup">
         <div class="panel hero-panel">
+          <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
           <h2 class="view-title">Local 2-Player Setup</h2>
           <form id="local-setup-form" class="stack-sm">
             <label for="local-p1-name">Player 1 Name</label>
@@ -15,7 +16,6 @@ export const localSetupScreen = {
 
             <button type="submit" class="btn btn-primary">Start Local Match</button>
           </form>
-          <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;

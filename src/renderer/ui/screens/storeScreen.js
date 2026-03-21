@@ -149,6 +149,7 @@ export const storeScreen = {
     return `
       <section class="screen screen-store">
         <div class="panel">
+          <button id="store-back-btn" class="btn screen-back-btn">Back to Menu</button>
           <h2 class="view-title">Store</h2>
           <p>Tokens: <strong>${store.tokens}</strong></p>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
@@ -212,7 +213,6 @@ export const storeScreen = {
             ).join("")}
           </div>
           <p id="store-empty-state" class="store-empty-state" hidden>No cosmetics match the current search and filters.</p>
-          <button id="store-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;

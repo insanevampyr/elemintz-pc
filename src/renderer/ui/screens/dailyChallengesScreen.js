@@ -62,6 +62,7 @@ export const dailyChallengesScreen = {
     return `
       <section class="screen screen-daily-challenges">
         <div class="panel">
+          <button id="daily-challenges-back-btn" class="btn screen-back-btn">Back to Menu</button>
           <h2 class="view-title">Challenges</h2>
           <p>Tokens: <strong>${context.tokens ?? 0}</strong></p>
           ${renderSection({
@@ -76,7 +77,6 @@ export const dailyChallengesScreen = {
             bucket: weekly,
             includeDays: true
           })}
-          <button id="daily-challenges-back-btn" class="btn screen-back-btn">Back to Menu</button>
         </div>
       </section>
     `;
