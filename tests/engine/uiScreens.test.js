@@ -564,6 +564,51 @@ test("ui: store screen keeps the title left and renders the token balance in rig
   assert.match(html, /Activate Founder Pass/);
 });
 
+test("ui: store screen hides owned cosmetics while keeping unowned listings visible", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 120,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "owned_avatar",
+            name: "Owned Avatar",
+            image: "avatars/owned.png",
+            owned: true,
+            equipped: false,
+            purchasable: true,
+            price: 150,
+            rarity: "Common",
+            unlockSource: { type: "store" }
+          },
+          {
+            id: "shop_avatar",
+            name: "Shop Avatar",
+            image: "avatars/shop.png",
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 300,
+            rarity: "Rare",
+            unlockSource: { type: "store" }
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    }
+  });
+
+  assert.doesNotMatch(html, /Owned Avatar/);
+  assert.doesNotMatch(html, /data-buy-id="owned_avatar"/);
+  assert.match(html, /Shop Avatar/);
+  assert.match(html, /data-buy-id="shop_avatar"/);
+});
+
 test("ui: shop and cosmetics render hover preview hooks only for supported cosmetic art", () => {
   const storeHtml = storeScreen.render({
     store: {
@@ -588,12 +633,12 @@ test("ui: shop and cosmetics render hover preview hooks only for supported cosme
             id: "default_card_back",
             name: "Default Card Back",
             image: "card_backs/default_back.jpg",
-            owned: true,
-            equipped: true,
-            purchasable: false,
-            price: 0,
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 250,
             rarity: "Epic",
-            unlockSource: { type: "default" }
+            unlockSource: { type: "store" }
           }
         ],
         background: [
@@ -614,13 +659,13 @@ test("ui: shop and cosmetics render hover preview hooks only for supported cosme
             id: "default_fire_card",
             name: "Core Fire",
             image: "cards/fireCard.jpg",
-            owned: true,
-            equipped: true,
-            purchasable: false,
-            price: 0,
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 120,
             rarity: "Common",
             element: "fire",
-            unlockSource: { type: "default" }
+            unlockSource: { type: "store" }
           }
         ],
         title: [],
@@ -922,9 +967,11 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 });
 
-test("ui: appController preserves store state and refreshes the sticky banner token balance after a successful purchase", async () => {
+test("ui: appController gates store purchases behind confirmation and refreshes the sticky banner token balance after confirm yes", async () => {
   const previousWindow = global.window;
   const shown = [];
+  const modalCalls = [];
+  const hiddenModals = [];
   const profile = {
     username: "StoreKeeper",
     randomizeBackgroundEachMatch: false,
@@ -955,7 +1002,18 @@ test("ui: appController preserves store state and refreshes the sticky banner to
       tokens: 200,
       supporterPass: false,
       catalog: {
-        avatar: [],
+        avatar: [
+          {
+            id: "fire_avatar_f",
+            name: "Fire Avatar",
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 75,
+            rarity: "Common",
+            unlockSource: { type: "store" }
+          }
+        ],
         cardBack: [],
         background: [],
         elementCardVariant: [],
@@ -989,12 +1047,16 @@ test("ui: appController preserves store state and refreshes the sticky banner to
     }
   ];
   let storeReadCount = 0;
+  let buyCalls = 0;
 
   global.window = {
     elemintz: {
       state: {
         getStore: async () => storeStates[Math.min(storeReadCount++, storeStates.length - 1)],
-        buyStoreItem: async () => ({ profile }),
+        buyStoreItem: async () => {
+          buyCalls += 1;
+          return { profile };
+        },
         equipCosmetic: async () => ({ profile })
       }
     }
@@ -1005,7 +1067,10 @@ test("ui: appController preserves store state and refreshes the sticky banner to
       register: () => {},
       show: (_name, context) => shown.push(context)
     },
-    modalManager: { show: () => {}, hide: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => hiddenModals.push(true)
+    },
     toastManager: { show: () => {} }
   });
 
@@ -1019,8 +1084,28 @@ test("ui: appController preserves store state and refreshes the sticky banner to
     assert.equal(shown[0].store.tokens, 200);
 
     await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
+    await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
+
+    assert.equal(buyCalls, 0);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Confirm Purchase");
+    assert.match(modalCalls[0].body, /Buy this item for 75 tokens\?/);
+
+    await modalCalls[0].actions[1].onClick();
+
+    assert.equal(buyCalls, 0);
+    assert.equal(shown.length, 1);
+    assert.equal(hiddenModals.length, 1);
+
+    await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
+
+    assert.equal(modalCalls.length, 2);
+    assert.equal(modalCalls[1].title, "Confirm Purchase");
+
+    await modalCalls[1].actions[0].onClick();
     const afterBuy = shown.at(-1).viewState;
 
+    assert.equal(buyCalls, 1);
     assert.equal(shown.at(-1).store.tokens, 125);
     assert.equal(afterBuy.searchText, "fire");
     assert.deepEqual([...afterBuy.categories], ["avatar", "background"]);
@@ -1072,7 +1157,18 @@ test("ui: appController keeps the sticky shop banner token balance unchanged whe
     tokens: 200,
     supporterPass: false,
     catalog: {
-      avatar: [],
+      avatar: [
+        {
+          id: "fire_avatar_f",
+          name: "Fire Avatar",
+          owned: false,
+          equipped: false,
+          purchasable: true,
+          price: 150,
+          rarity: "Common",
+          unlockSource: { type: "store" }
+        }
+      ],
       cardBack: [],
       background: [],
       elementCardVariant: [],
@@ -1112,12 +1208,17 @@ test("ui: appController keeps the sticky shop banner token balance unchanged whe
     assert.equal(shown[0].store.tokens, 200);
 
     await shown[0].actions.buy("avatar", "fire_avatar_f");
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Confirm Purchase");
+    assert.match(modalCalls[0].body, /Buy this item for 150 tokens\?/);
+
+    await modalCalls[0].actions[0].onClick();
 
     assert.equal(shown.length, 1);
     assert.equal(shown[0].store.tokens, 200);
-    assert.equal(modalCalls.length, 1);
-    assert.equal(modalCalls[0].title, "Purchase Failed");
-    assert.match(modalCalls[0].body, /Not enough tokens/);
+    assert.equal(modalCalls.length, 2);
+    assert.equal(modalCalls[1].title, "Purchase Failed");
+    assert.match(modalCalls[1].body, /Not enough tokens/);
   } finally {
     global.window = previousWindow;
   }

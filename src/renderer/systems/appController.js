@@ -2749,23 +2749,61 @@ export class AppController {
     this.screenFlow = "store";
     const viewState = this.ensureStoreViewState();
     const store = await window.elemintz.state.getStore(this.username);
+    let purchaseConfirmOpen = false;
+    let purchasePending = false;
 
     this.screenManager.show("store", {
       store,
       viewState,
       actions: {
         buy: async (type, cosmeticId) => {
-          try {
-            const result = await window.elemintz.state.buyStoreItem({ username: this.username, type, cosmeticId });
-            this.profile = result.profile;
-            await this.showStore();
-          } catch (error) {
-            this.modalManager.show({
-              title: "Purchase Failed",
-              body: String(error?.message ?? "Unable to complete purchase."),
-              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-            });
+          if (purchaseConfirmOpen || purchasePending) {
+            return;
           }
+
+          const item = store?.catalog?.[type]?.find((entry) => entry.id === cosmeticId);
+          const price = Number(item?.price ?? 0);
+          purchaseConfirmOpen = true;
+
+          this.modalManager.show({
+            title: "Confirm Purchase",
+            body: `Buy this item for ${price} tokens?`,
+            actions: [
+              {
+                label: "Yes",
+                onClick: async () => {
+                  if (purchasePending) {
+                    return;
+                  }
+
+                  purchaseConfirmOpen = false;
+                  purchasePending = true;
+                  this.modalManager.hide();
+
+                  try {
+                    const result = await window.elemintz.state.buyStoreItem({ username: this.username, type, cosmeticId });
+                    this.profile = result.profile;
+                    await this.showStore();
+                  } catch (error) {
+                    this.modalManager.show({
+                      title: "Purchase Failed",
+                      body: String(error?.message ?? "Unable to complete purchase."),
+                      actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+                    });
+                  } finally {
+                    purchasePending = false;
+                  }
+                }
+              },
+              {
+                label: "No",
+                onClick: () => {
+                  purchaseConfirmOpen = false;
+                  this.modalManager.hide();
+                }
+              }
+            ]
+          });
         },
         equip: async (type, cosmeticId) => {
           const result = await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });

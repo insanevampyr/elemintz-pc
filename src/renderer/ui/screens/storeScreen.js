@@ -163,6 +163,10 @@ function renderStoreItem(type, item) {
   `;
 }
 
+function getRenderableStoreItems(store, type) {
+  return (store?.catalog?.[type] ?? []).filter((item) => !item?.owned);
+}
+
 export const storeScreen = {
   render(context) {
     const store = context.store;
@@ -237,7 +241,7 @@ export const storeScreen = {
                 <section class="cosmetic-section" data-store-section="${type}">
                   <h3 class="section-title">${label}</h3>
                   <div class="cosmetic-grid">
-                    ${(store.catalog[type] ?? []).map((item) => renderStoreItem(type, item)).join("")}
+                    ${getRenderableStoreItems(store, type).map((item) => renderStoreItem(type, item)).join("")}
                   </div>
                 </section>
               `
