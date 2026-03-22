@@ -39,10 +39,12 @@ function resolveImagePath(image) {
 function renderTitleLine(titleText, titleIcon, featuredBadge, options = {}) {
   const icon = resolveImagePath(titleIcon);
   const badge = resolveImagePath(featuredBadge);
+  const titleDefinition = options.titleId ? getCosmeticDefinition("title", options.titleId) : null;
+  const titlePreviewSrc = titleDefinition?.image ? resolveImagePath(titleDefinition.image) : null;
   const titleHoverMetadata = getCosmeticHoverMetadata("title", options.titleId, titleText);
   const titleHoverAttributes = buildHoverPreviewAttributes({
     previewType: "title",
-    previewSrc: icon,
+    previewSrc: titlePreviewSrc,
     previewName: titleHoverMetadata.name ?? titleText,
     previewDescription: titleHoverMetadata.description,
     previewVisualText: titleText,

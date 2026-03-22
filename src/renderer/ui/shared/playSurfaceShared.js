@@ -1,5 +1,6 @@
 import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
-import { getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
+import { getAssetPath } from "../../utils/dom.js";
+import { getCosmeticDefinition, getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
 import { buildHoverPreviewAttributes } from "./cosmeticHoverPreview.js";
 
 export const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
@@ -55,6 +56,8 @@ export function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
   const title = escapeHtml(playerDisplay?.title ?? "Initiate");
   const avatar = playerDisplay?.avatar ?? ASSET_CATALOG.avatars.default_avatar;
   const titleIcon = playerDisplay?.titleIcon ?? null;
+  const titleDefinition = playerDisplay?.titleId ? getCosmeticDefinition("title", playerDisplay.titleId) : null;
+  const titlePreviewSrc = titleDefinition?.image ? getAssetPath(titleDefinition.image) : null;
   const featuredBadge = playerDisplay?.featuredBadge ?? null;
   const avatarHoverMetadata = getCosmeticHoverMetadata(
     "avatar",
@@ -77,7 +80,7 @@ export function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
   });
   const titleHoverAttributes = buildHoverPreviewAttributes({
     previewType: "title",
-    previewSrc: titleIcon,
+    previewSrc: titlePreviewSrc,
     previewName: titleHoverMetadata.name ?? playerDisplay?.title ?? "Initiate",
     previewDescription: titleHoverMetadata.description,
     previewVisualText: playerDisplay?.title ?? "Initiate",

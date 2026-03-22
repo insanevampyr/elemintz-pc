@@ -1531,10 +1531,12 @@ test("ui: profile screen adds hover preview metadata for own and viewed badge an
   assert.match(html, /data-preview-description="Level Reward: Reach Level 10\."/);
   assert.match(html, /data-preview-name="Apprentice"/);
   assert.match(html, /data-preview-description="Level Reward: Reach Level 3\."/);
+  assert.match(html, /data-preview-src="[^"]*title_apprentice\.png"/);
   assert.match(html, /data-preview-name="Arena Challenger"/);
   assert.match(html, /data-preview-description="Level Reward: Reach Level 30\."/);
   assert.match(html, /data-preview-name="Elementalist"/);
   assert.match(html, /data-preview-description="Level Reward: Reach Level 20\."/);
+  assert.match(html, /data-preview-src="[^"]*title_elementalist\.png"/);
 });
 
 test("ui: missing badge and missing title art stay graceful in profile identity hover markup", () => {
@@ -2071,6 +2073,92 @@ test("ui: title and badge hover previews reject truthy label-like src values ins
   assert.equal(previewImage.src, "");
   assert.equal(previewName.textContent, "Element Initiate");
   assert.equal(previewDescription.textContent, "Level Reward: Reach Level 10.");
+});
+
+test("ui: identity hover preview keeps avatars image-only and text-only titles compact", () => {
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      textContent: "",
+      children,
+      appendChild(child) {
+        children.push(child);
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const listeners = new Map();
+  const appended = [];
+  const root = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    contains: () => true
+  };
+  const documentRef = {
+    documentElement: { clientWidth: 800, clientHeight: 600 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
+  };
+
+  bindCosmeticHoverPreview({ root, documentRef });
+
+  const previewLayer = appended[0];
+  const previewFrame = previewLayer.children[0];
+  const previewMeta = previewLayer.children[1];
+  const avatarTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "avatar",
+        "data-preview-rarity": "Epic",
+        "data-preview-src": "assets/avatars/avatar_arcane_gambler.png",
+        "data-preview-name": "Arcane Gambler",
+        "data-preview-description": ""
+      }[name] ?? null;
+    },
+    closest: () => avatarTarget
+  };
+  const titleTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "title",
+        "data-preview-rarity": "Common",
+        "data-preview-src": "",
+        "data-preview-name": "Initiate",
+        "data-preview-description": "Default cosmetic.",
+        "data-preview-visual-text": "Initiate"
+      }[name] ?? null;
+    },
+    closest: () => titleTarget
+  };
+
+  listeners.get("mouseover")({ target: avatarTarget, clientX: 40, clientY: 40 });
+  assert.equal(previewFrame.hidden, false);
+  assert.equal(previewMeta.hidden, true);
+  assert.equal(previewLayer.style.width, "220px");
+  assert.equal(previewLayer.style.height, "220px");
+
+  listeners.get("mousemove")({ target: titleTarget, clientX: 72, clientY: 72 });
+  assert.equal(previewFrame.hidden, true);
+  assert.equal(previewMeta.hidden, false);
+  assert.equal(previewLayer.style.width, "228px");
+  assert.equal(previewLayer.style.height, "86px");
 });
 
 test("ui: title hover preview uses square full-image framing when title art exists", () => {

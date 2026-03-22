@@ -5,8 +5,8 @@ const PREVIEW_DIMENSIONS = Object.freeze({
   avatar: { width: 220, height: 220, mediaWidth: 220, mediaHeight: 220 },
   cardBack: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
   elementCardVariant: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
-  badge: { width: 260, height: 328, mediaWidth: 168, mediaHeight: 168 },
-  title: { width: 228, height: 286, mediaWidth: 188, mediaHeight: 188 }
+  badge: { width: 260, height: 328, mediaWidth: 168, mediaHeight: 168, metaOnlyHeight: 90 },
+  title: { width: 228, height: 286, mediaWidth: 188, mediaHeight: 188, metaOnlyHeight: 86 }
 });
 
 function escapeAttribute(value) {
@@ -190,12 +190,19 @@ function updatePreviewAppearance(preview, target) {
   const useTextVisual = !hasPreviewImage && previewType === "title" && !showMeta;
   const showFrame = hasPreviewImage || useTextVisual || !showMeta;
 
+  const layoutWidth = showMeta ? dimensions.width : dimensions.mediaWidth;
+  const layoutHeight = showMeta
+    ? showFrame
+      ? dimensions.height
+      : dimensions.metaOnlyHeight ?? dimensions.height
+    : dimensions.mediaHeight;
+
   preview.layer.className = `cosmetic-hover-preview-layer ${showMeta ? "has-meta" : ""}`;
   preview.frame.className = `cosmetic-hover-preview-frame ${previewType === "avatar" ? "is-avatar" : previewType === "badge" ? "is-badge" : previewType === "title" ? "is-title" : "is-card"} rarity-${previewRarity}`;
   preview.frame.style.width = `${dimensions.mediaWidth}px`;
   preview.frame.style.height = `${dimensions.mediaHeight}px`;
-  preview.layer.style.width = `${dimensions.width}px`;
-  preview.layer.style.height = `${dimensions.height}px`;
+  preview.layer.style.width = `${layoutWidth}px`;
+  preview.layer.style.height = `${layoutHeight}px`;
   preview.frame.hidden = !showFrame;
   preview.image.src = hasPreviewImage ? previewSrc : "";
   preview.image.alt = previewName;
@@ -207,7 +214,7 @@ function updatePreviewAppearance(preview, target) {
   preview.description.hidden = !(showMeta && previewDescription);
   preview.description.textContent = showMeta ? previewDescription : "";
 
-  return dimensions;
+  return { width: layoutWidth, height: layoutHeight };
 }
 
 export function bindCosmeticHoverPreview({ root, documentRef = globalThis.document } = {}) {
