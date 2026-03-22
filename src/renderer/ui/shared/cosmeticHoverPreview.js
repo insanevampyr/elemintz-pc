@@ -2,10 +2,43 @@ const PREVIEW_SELECTOR = "[data-hover-preview=\"true\"]";
 const PREVIEW_OFFSET = 18;
 const PREVIEW_MARGIN = 12;
 const PREVIEW_DIMENSIONS = Object.freeze({
-  avatar: { width: 220, height: 220 },
-  cardBack: { width: 220, height: 294 },
-  elementCardVariant: { width: 220, height: 294 }
+  avatar: { width: 220, height: 220, mediaWidth: 220, mediaHeight: 220 },
+  cardBack: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
+  elementCardVariant: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
+  badge: { width: 260, height: 328, mediaWidth: 168, mediaHeight: 168 },
+  title: { width: 280, height: 216, mediaWidth: 236, mediaHeight: 88 }
 });
+
+function escapeAttribute(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+export function buildHoverPreviewAttributes({
+  previewType,
+  previewSrc = null,
+  previewName = null,
+  previewDescription = null,
+  previewVisualText = null,
+  previewRarity = "Common"
+} = {}) {
+  if (!previewType) {
+    return "";
+  }
+
+  return [
+    'data-hover-preview="true"',
+    `data-preview-type="${escapeAttribute(previewType)}"`,
+    `data-preview-rarity="${escapeAttribute(previewRarity)}"`,
+    `data-preview-src="${escapeAttribute(previewSrc ?? "")}"`,
+    `data-preview-name="${escapeAttribute(previewName ?? "")}"`,
+    `data-preview-description="${escapeAttribute(previewDescription ?? "")}"`,
+    `data-preview-visual-text="${escapeAttribute(previewVisualText ?? "")}"`
+  ].join(" ");
+}
 
 function findPreviewTarget(startNode, root) {
   if (!startNode || typeof startNode.closest !== "function") {
@@ -69,11 +102,29 @@ function createPreviewElements(documentRef) {
   image.className = "cosmetic-hover-preview-image";
   image.alt = "";
 
+  const textVisual = documentRef.createElement("div");
+  textVisual.className = "cosmetic-hover-preview-text-visual";
+  textVisual.hidden = true;
+
+  const meta = documentRef.createElement("div");
+  meta.className = "cosmetic-hover-preview-meta";
+  meta.hidden = true;
+
+  const name = documentRef.createElement("p");
+  name.className = "cosmetic-hover-preview-name";
+
+  const description = documentRef.createElement("p");
+  description.className = "cosmetic-hover-preview-description";
+
+  meta.appendChild(name);
+  meta.appendChild(description);
   frame.appendChild(image);
+  frame.appendChild(textVisual);
   layer.appendChild(frame);
+  layer.appendChild(meta);
   documentRef.body.appendChild(layer);
 
-  return { layer, frame, image };
+  return { layer, frame, image, textVisual, meta, name, description };
 }
 
 function ensurePreviewElements(documentRef) {
@@ -94,13 +145,28 @@ function updatePreviewAppearance(preview, target) {
   const previewType = target.getAttribute("data-preview-type") ?? "cardBack";
   const previewRarity = String(target.getAttribute("data-preview-rarity") ?? "Common").toLowerCase();
   const previewSrc = target.getAttribute("data-preview-src");
+  const previewName = target.getAttribute("data-preview-name") ?? "";
+  const previewDescription = target.getAttribute("data-preview-description") ?? "";
+  const previewVisualText = target.getAttribute("data-preview-visual-text") ?? previewName;
   const dimensions = PREVIEW_DIMENSIONS[previewType] ?? PREVIEW_DIMENSIONS.cardBack;
+  const showMeta = previewType === "badge" || previewType === "title";
+  const useTextVisual = !previewSrc && previewType === "title";
 
-  preview.frame.className = `cosmetic-hover-preview-frame ${previewType === "avatar" ? "is-avatar" : "is-card"} rarity-${previewRarity}`;
-  preview.frame.style.width = `${dimensions.width}px`;
-  preview.frame.style.height = `${dimensions.height}px`;
+  preview.layer.className = `cosmetic-hover-preview-layer ${showMeta ? "has-meta" : ""}`;
+  preview.frame.className = `cosmetic-hover-preview-frame ${previewType === "avatar" ? "is-avatar" : previewType === "badge" ? "is-badge" : previewType === "title" ? "is-title" : "is-card"} rarity-${previewRarity}`;
+  preview.frame.style.width = `${dimensions.mediaWidth}px`;
+  preview.frame.style.height = `${dimensions.mediaHeight}px`;
+  preview.layer.style.width = `${dimensions.width}px`;
+  preview.layer.style.height = `${dimensions.height}px`;
   preview.image.src = previewSrc ?? "";
-  preview.image.alt = target.getAttribute("data-preview-name") ?? "";
+  preview.image.alt = previewName;
+  preview.image.hidden = !previewSrc || useTextVisual;
+  preview.textVisual.hidden = !useTextVisual;
+  preview.textVisual.textContent = useTextVisual ? previewVisualText : "";
+  preview.meta.hidden = !showMeta;
+  preview.name.textContent = showMeta ? previewName : "";
+  preview.description.hidden = !(showMeta && previewDescription);
+  preview.description.textContent = showMeta ? previewDescription : "";
 
   return dimensions;
 }

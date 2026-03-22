@@ -5,7 +5,14 @@ import {
   countUnlockedAchievements,
   getUnlockedAchievements
 } from "../../utils/achievements.js";
-import { getCosmeticDisplayName } from "../../../state/cosmeticSystem.js";
+import {
+  getCosmeticDisplayName,
+  getCosmeticHoverMetadata
+} from "../../../state/cosmeticSystem.js";
+import {
+  bindCosmeticHoverPreview,
+  buildHoverPreviewAttributes
+} from "../shared/cosmeticHoverPreview.js";
 
 function resolveImagePath(image) {
   if (!image) {
@@ -28,15 +35,35 @@ function resolveImagePath(image) {
   return getAssetPath(value);
 }
 
-function renderTitleLine(titleText, titleIcon, featuredBadge) {
+function renderTitleLine(titleText, titleIcon, featuredBadge, options = {}) {
   const icon = resolveImagePath(titleIcon);
   const badge = resolveImagePath(featuredBadge);
+  const titleHoverMetadata = getCosmeticHoverMetadata("title", options.titleId, titleText);
+  const titleHoverAttributes = buildHoverPreviewAttributes({
+    previewType: "title",
+    previewSrc: icon,
+    previewName: titleHoverMetadata.name ?? titleText,
+    previewDescription: titleHoverMetadata.description,
+    previewVisualText: titleText,
+    previewRarity: titleHoverMetadata.rarity
+  });
+  const badgeHoverMetadata = badge
+    ? getCosmeticHoverMetadata("badge", options.badgeId, "Featured Badge")
+    : null;
+  const badgeHoverAttributes = badgeHoverMetadata
+    ? buildHoverPreviewAttributes({
+        previewType: "badge",
+        previewSrc: badge,
+        previewName: badgeHoverMetadata.name,
+        previewDescription: badgeHoverMetadata.description,
+        previewRarity: badgeHoverMetadata.rarity
+      })
+    : "";
 
   return `
     <p class="player-title">
-      ${icon ? `<img class="title-icon" src="${icon}" alt="${titleText}" />` : ""}
-      <span>${titleText}</span>
-      ${badge ? `<img class="featured-badge" src="${badge}" alt="Featured Badge" />` : ""}
+      <span class="player-title-preview" ${titleHoverAttributes}>${icon ? `<img class="title-icon" src="${icon}" alt="${titleText}" />` : ""}<span>${titleText}</span></span>
+      ${badge ? `<img class="featured-badge" src="${badge}" alt="Featured Badge" ${badgeHoverAttributes} />` : ""}
     </p>
   `;
 }
@@ -147,6 +174,27 @@ function renderChestPanel(profile, visualState = {}) {
     </section>
   `;
 }
+
+function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, titleId, titleIcon, badgeId, badgeSrc }) {
+  const avatarHoverMetadata = getCosmeticHoverMetadata("avatar", avatarId, username);
+  const avatarHoverAttributes = buildHoverPreviewAttributes({
+    previewType: "avatar",
+    previewSrc: avatarSrc,
+    previewName: avatarHoverMetadata.name ?? username,
+    previewRarity: avatarHoverMetadata.rarity
+  });
+
+  return `
+    <div class="player-header">
+      <img class="player-avatar" src="${avatarSrc}" alt="${username}" ${avatarHoverAttributes} />
+      <div>
+        <h3>${username}</h3>
+        ${renderTitleLine(title, titleIcon, badgeSrc, { titleId, badgeId })}
+      </div>
+    </div>
+  `;
+}
+
 function renderReadOnlyProfile(viewedProfile) {
   if (!viewedProfile) {
     return "";
@@ -185,13 +233,16 @@ function renderReadOnlyProfile(viewedProfile) {
     <section class="panel stack-sm viewed-profile-panel" style="background-image: url('${viewedBackground}')">
       <div class="viewed-profile-content">
         <h3 class="section-title">Viewed Profile</h3>
-        <div class="player-header">
-          <img class="player-avatar" src="${avatar}" alt="${viewedProfile.username}" />
-          <div>
-            <h3>${viewedProfile.username}</h3>
-            ${renderTitleLine(title, viewedTitleIcon(viewedProfile), featuredBadge)}
-          </div>
-        </div>
+        ${renderProfileIdentityHeader({
+          username: viewedProfile.username,
+          avatarId: viewedProfile.equippedCosmetics?.avatar,
+          avatarSrc: avatar,
+          title,
+          titleId: viewedProfile.equippedCosmetics?.title,
+          titleIcon: viewedTitleIcon(viewedProfile),
+          badgeId: viewedProfile.equippedCosmetics?.badge ?? "none",
+          badgeSrc: featuredBadge
+        })}
         <div class="grid two-col">
           <p>Level: ${level}</p>
           <p>Total XP: ${xp}</p>
@@ -244,13 +295,16 @@ export const profileScreen = {
         </div>
         <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
           <div class="panel themed-screen-panel">
-          <div class="player-header">
-            <img class="player-avatar" src="${playerAvatar}" alt="${profile.username}" />
-            <div>
-              <h3>${profile.username}</h3>
-              ${renderTitleLine(equippedTitle, profileTitleIcon, getBadgeImage(profile.equippedCosmetics?.badge ?? "none"))}
-            </div>
-          </div>
+          ${renderProfileIdentityHeader({
+            username: profile.username,
+            avatarId: profile.equippedCosmetics?.avatar,
+            avatarSrc: playerAvatar,
+            title: equippedTitle,
+            titleId: profile.equippedCosmetics?.title,
+            titleIcon: profileTitleIcon,
+            badgeId: profile.equippedCosmetics?.badge ?? "none",
+            badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
+          })}
           <p>Tokens: <strong>${profile.tokens ?? 0}</strong></p>
           <p>Founder / Supporter: <strong>${profile.supporterPass ? "Active" : "Not Active"}</strong></p>
           ${renderXpProgress(profile)}
@@ -306,6 +360,11 @@ export const profileScreen = {
     `;
   },
   bind(context) {
+    bindCosmeticHoverPreview({
+      root: (typeof document.querySelector === "function" ? document.querySelector(".screen-profile") : null) ?? document,
+      documentRef: document
+    });
+
     document.getElementById("profile-back-btn").addEventListener("click", context.actions.back);
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {

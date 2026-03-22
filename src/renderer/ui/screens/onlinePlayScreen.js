@@ -9,6 +9,7 @@ import {
   renderHiddenHandSummary,
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
+import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const DEFAULT_ONLINE_EQUIPPED_COSMETICS = Object.freeze({
@@ -255,6 +256,9 @@ function deriveOnlineBoardView(context) {
 function toPlayerDisplay(identity, fallbackName = "Player") {
   return {
     name: identity?.username ?? fallbackName,
+    avatarId: identity?.avatarId ?? DEFAULT_ONLINE_EQUIPPED_COSMETICS.avatar,
+    titleId: identity?.titleId ?? null,
+    badgeId: identity?.badgeId ?? null,
     title: identity?.titleLabel ?? "Initiate",
     titleIcon: identity?.titleIcon ?? null,
     featuredBadge: identity?.badgeImage ?? null,
@@ -265,6 +269,9 @@ function toPlayerDisplay(identity, fallbackName = "Player") {
 function createWaitingOpponentIdentity(backgroundImage) {
   return {
     username: "Waiting...",
+    avatarId: DEFAULT_ONLINE_EQUIPPED_COSMETICS.avatar,
+    titleId: null,
+    badgeId: null,
     titleLabel: "Opponent",
     titleIcon: null,
     badgeImage: null,
@@ -920,6 +927,11 @@ export const onlinePlayScreen = {
     `;
   },
   bind(context) {
+    bindCosmeticHoverPreview({
+      root: (typeof document.querySelector === "function" ? document.querySelector(".screen-online-play") : null) ?? document,
+      documentRef: document
+    });
+
     document.getElementById("online-create-room-btn")?.addEventListener("click", context.actions.createRoom);
     document.getElementById("online-play-back-btn")?.addEventListener("click", context.actions.back);
     document.getElementById("online-ready-rematch-btn")?.addEventListener("click", context.actions.readyRematch);

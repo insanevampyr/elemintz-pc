@@ -1,3 +1,5 @@
+import { ACHIEVEMENT_DEFINITIONS } from "./achievementSystem.js";
+
 const COSMETIC_TYPES = ["avatar", "cardBack", "background", "elementCardVariant", "badge", "title"];
 const ELEMENTS = ["fire", "water", "earth", "wind"];
 export const LOADOUT_UNLOCK_LEVELS = Object.freeze([10, 20, 40, 60]);
@@ -2214,6 +2216,56 @@ export function getCosmeticDisplayName(type, id, fallback = null) {
   }
 
   return fallback ?? id;
+}
+
+function getAchievementRewardDescription(achievementId) {
+  if (!achievementId) {
+    return null;
+  }
+
+  const achievement = ACHIEVEMENT_DEFINITIONS.find((item) => item.id === achievementId);
+  return achievement?.description ?? null;
+}
+
+export function getCosmeticHoverMetadata(type, id, fallbackName = null) {
+  if (!type || !id) {
+    return {
+      name: fallbackName ?? null,
+      description: null,
+      rarity: "Common"
+    };
+  }
+
+  const definition = getCosmeticDefinition(type, id);
+  if (!definition) {
+    return {
+      name: fallbackName ?? id,
+      description: null,
+      rarity: "Common"
+    };
+  }
+
+  const unlockSource = getUnlockSource(type, definition);
+  let description = null;
+
+  if (unlockSource?.type === "achievement reward") {
+    const achievementDescription = getAchievementRewardDescription(unlockSource.achievementId);
+    description = achievementDescription ? `Achievement Reward: ${achievementDescription}` : null;
+  } else if (unlockSource?.type === "level reward" && Number.isFinite(Number(unlockSource.level))) {
+    description = `Level Reward: Reach Level ${Number(unlockSource.level)}.`;
+  } else if (unlockSource?.type === "store") {
+    description = "Store purchase.";
+  } else if (unlockSource?.type === "supporter") {
+    description = "Founder / Supporter reward.";
+  } else if (unlockSource?.type === "default") {
+    description = "Default cosmetic.";
+  }
+
+  return {
+    name: definition.name ?? fallbackName ?? id,
+    description,
+    rarity: normalizeRarity(definition.rarity)
+  };
 }
 
 export function equipCosmetic(profile, type, id) {

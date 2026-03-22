@@ -565,12 +565,16 @@ export class AppController {
 
   buildPlayerDisplay(profile, fallbackName, fallbackTitle = "Initiate") {
     const avatarId = profile?.equippedCosmetics?.avatar ?? profile?.cosmetics?.avatar ?? "default_avatar";
+    const titleId = profile?.equippedCosmetics?.title ?? profile?.title ?? null;
     const title = this.resolveTitleLabel(profile, fallbackTitle);
     const badgeId = profile?.equippedCosmetics?.badge ?? profile?.cosmetics?.badge ?? "none";
     const titleIcon = TITLE_ICON_MAP[title] ? getAssetPath(TITLE_ICON_MAP[title]) : null;
 
     return {
       name: profile?.username ?? fallbackName,
+      avatarId,
+      titleId,
+      badgeId,
       title,
       titleIcon,
       featuredBadge: getBadgeImage(badgeId),
@@ -658,6 +662,9 @@ export class AppController {
       slotLabel,
       username: player?.username ?? slotLabel,
       connected: player?.connected !== false,
+      avatarId: playerDisplay.avatarId ?? equippedCosmetics.avatar,
+      titleId: playerDisplay.titleId ?? equippedCosmetics.title,
+      badgeId: playerDisplay.badgeId ?? equippedCosmetics.badge,
       titleIcon: playerDisplay.titleIcon ?? null,
       avatarImage: playerDisplay.avatar,
       backgroundImage: this.getBackgroundFromProfile(profileLike),
@@ -2413,7 +2420,12 @@ export class AppController {
       ? this.buildPlayerDisplay(p2Profile, names.p2, "Initiate")
       : {
           name: "Elemental AI",
+          avatarId: pveOpponentStyle?.avatarId ?? "default_avatar",
+          titleId: pveOpponentStyle?.titleId ?? null,
+          badgeId: null,
           title: pveOpponentStyle?.titleName ?? "Arena Rival",
+          titleIcon: null,
+          featuredBadge: null,
           avatar: getAvatarImage(pveOpponentStyle?.avatarId ?? "default_avatar")
         };
 

@@ -9,6 +9,7 @@ import {
   renderHiddenHandSummary,
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
+import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
@@ -352,6 +353,11 @@ export const gameScreen = {
     `;
   },
   bind(context) {
+    bindCosmeticHoverPreview({
+      root: (typeof document.querySelector === "function" ? document.querySelector(".screen-game") : null) ?? document,
+      documentRef: document
+    });
+
     detachGameKeyboardHandler?.();
     detachGameKeyboardHandler = null;
 

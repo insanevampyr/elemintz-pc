@@ -1454,14 +1454,110 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.doesNotMatch(html, /Badge:/);
   assert.doesNotMatch(html, /Title:/);
   assert.doesNotMatch(html, /Element Variants:/);
+  assert.match(html, /data-preview-type="avatar"/);
+  assert.match(html, /data-preview-type="title"/);
+  assert.match(html, /data-preview-description="Default cosmetic\."/);
+});
+
+test("ui: profile screen adds hover preview metadata for own and viewed badge and title identity", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "Hero",
+      title: "Apprentice",
+      wins: 2,
+      losses: 1,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 4,
+      gamesPlayed: 3,
+      bestWinStreak: 2,
+      tokens: 200,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 2, losses: 1 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "title_apprentice", badge: "badge_element_initiate" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "badge_element_initiate",
+        title: "title_apprentice"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "badge_element_initiate", name: "Element Initiate", owned: true }],
+        title: [{ id: "title_apprentice", name: "Apprentice", owned: true, image: "assets/titles/title_apprentice.png" }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    viewedProfile: {
+      username: "Rival",
+      title: "Elementalist",
+      wins: 5,
+      losses: 2,
+      warsEntered: 1,
+      warsWon: 1,
+      longestWar: 2,
+      cardsCaptured: 9,
+      gamesPlayed: 7,
+      bestWinStreak: 3,
+      tokens: 150,
+      playerLevel: 20,
+      playerXP: 400,
+      achievements: {},
+      modeStats: { pve: { wins: 2, losses: 0 }, local_pvp: { wins: 3, losses: 2 } },
+      equippedCosmetics: {
+        avatar: "avatar_novice_mage",
+        title: "title_elementalist",
+        badge: "badge_arena_challenger",
+        background: "default_background"
+      },
+      cosmetics: { background: "default_background" }
+    },
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(html, /data-preview-type="badge"/);
+  assert.match(html, /data-preview-name="Element Initiate"/);
+  assert.match(html, /data-preview-description="Level Reward: Reach Level 10\."/);
+  assert.match(html, /data-preview-name="Apprentice"/);
+  assert.match(html, /data-preview-description="Level Reward: Reach Level 3\."/);
+  assert.match(html, /data-preview-name="Arena Challenger"/);
+  assert.match(html, /data-preview-description="Level Reward: Reach Level 30\."/);
+  assert.match(html, /data-preview-name="Elementalist"/);
+  assert.match(html, /data-preview-description="Level Reward: Reach Level 20\."/);
 });
 
 test("ui: game screen uses provided variant card images", () => {
   const html = gameScreen.render({
     reducedMotion: true,
     arenaBackground: "assets/EleMintzIcon.png",
-    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
-    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    playerDisplay: {
+      name: "Hero",
+      avatarId: "default_avatar",
+      titleId: "Initiate",
+      badgeId: "badge_element_initiate",
+      title: "Initiate",
+      titleIcon: null,
+      featuredBadge: getBadgeImage("badge_element_initiate"),
+      avatar: "assets/avatars/default.png"
+    },
+    opponentDisplay: {
+      name: "Elemental AI",
+      avatarId: "default_avatar",
+      titleId: null,
+      badgeId: null,
+      title: "Arena Rival",
+      avatar: "assets/avatars/default.png"
+    },
     hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
     presentation: { phase: "idle", busy: false, selectedCardIndex: null },
     cardImages: {
@@ -1510,6 +1606,9 @@ test("ui: game screen uses provided variant card images", () => {
   assert.match(html, /class="hidden-hand-summary[^"]*"/);
   assert.match(html, /Keyboard: \[1\] Fire\s+\[2\] Earth\s+\[3\] Wind\s+\[4\] Water/);
   assert.doesNotMatch(html, /hand-slot-name/);
+  assert.match(html, /data-preview-type="avatar"/);
+  assert.match(html, /data-preview-type="title"/);
+  assert.match(html, /data-preview-type="badge"/);
 });
 
 test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides cleanly", () => {
@@ -1623,6 +1722,102 @@ test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides c
   assert.equal(previewLayer.hidden, true);
   listeners.get("mouseleave")();
   assert.equal(previewLayer.hidden, true);
+});
+
+test("ui: cosmetic hover preview renders title and badge metadata while keeping avatar image-only", () => {
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      textContent: "",
+      children,
+      appendChild(child) {
+        children.push(child);
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const listeners = new Map();
+  const appended = [];
+  const root = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    contains: () => true
+  };
+  const documentRef = {
+    documentElement: { clientWidth: 800, clientHeight: 600 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
+  };
+
+  bindCosmeticHoverPreview({ root, documentRef });
+
+  const previewLayer = appended[0];
+  const previewFrame = previewLayer.children[0];
+  const previewImage = previewFrame.children[0];
+  const previewTextVisual = previewFrame.children[1];
+  const previewMeta = previewLayer.children[1];
+  const previewName = previewMeta.children[0];
+  const previewDescription = previewMeta.children[1];
+  const titleTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "title",
+        "data-preview-rarity": "Rare",
+        "data-preview-src": "",
+        "data-preview-name": "Apprentice",
+        "data-preview-description": "Level Reward: Reach Level 3.",
+        "data-preview-visual-text": "Apprentice"
+      }[name] ?? null;
+    },
+    closest: () => titleTarget
+  };
+  const badgeTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "badge",
+        "data-preview-rarity": "Epic",
+        "data-preview-src": "file:///badge.png",
+        "data-preview-name": "Arena Challenger",
+        "data-preview-description": "Level Reward: Reach Level 30."
+      }[name] ?? null;
+    },
+    closest: () => badgeTarget
+  };
+
+  listeners.get("mouseover")({ target: titleTarget, clientX: 40, clientY: 40 });
+  assert.equal(previewLayer.hidden, false);
+  assert.equal(previewTextVisual.hidden, false);
+  assert.equal(previewImage.hidden, true);
+  assert.equal(previewMeta.hidden, false);
+  assert.equal(previewName.textContent, "Apprentice");
+  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 3.");
+  assert.match(previewFrame.className, /is-title/);
+
+  listeners.get("mousemove")({ target: badgeTarget, clientX: 60, clientY: 60 });
+  assert.equal(previewTextVisual.hidden, true);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///badge.png");
+  assert.equal(previewName.textContent, "Arena Challenger");
+  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 30.");
+  assert.match(previewFrame.className, /is-badge/);
+  assert.match(previewFrame.className, /rarity-epic/);
 });
 
 test("ui: cosmetics screen category filters hide unselected owned sections", () => {
@@ -5646,6 +5841,9 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
     slotLabel: "Host",
     username: "LocalUser",
     connected: true,
+    avatarId: "avatar_fourfold_lord",
+    titleId: "title_war_master",
+    badgeId: "badge_arena_legend",
     avatarImage: getAvatarImage("avatar_fourfold_lord"),
     backgroundImage: getArenaBackground("bg_elemental_throne"),
     cardBackId: "cardback_elemental_nexus",
@@ -5669,6 +5867,9 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
     slotLabel: "Guest",
     username: "RemoteUser",
     connected: true,
+    avatarId: "avatar_storm_oracle",
+    titleId: "title_element_sovereign",
+    badgeId: "badge_element_veteran",
     avatarImage: getAvatarImage("avatar_storm_oracle"),
     backgroundImage: getArenaBackground("bg_storm_temple"),
     cardBackId: "cardback_storm_spiral",
@@ -5756,6 +5957,11 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
   assert.match(html, /class="featured-badge"/);
   assert.match(html, /hand-slot[^"]*rarity-legendary/);
   assert.match(html, /hidden-hand-summary rarity-rare/);
+  assert.match(html, /data-preview-type="avatar"/);
+  assert.match(html, /data-preview-type="title"/);
+  assert.match(html, /data-preview-type="badge"/);
+  assert.match(html, /data-preview-description="Level Reward: Reach Level 50\."/);
+  assert.match(html, /data-preview-description="Level Reward: Reach Level 60\."/);
   assert.match(html, new RegExp(getVariantCardImages({ fire: "fire_variant_phoenix" }).fire.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(getCardBackImage("cardback_storm_spiral").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });

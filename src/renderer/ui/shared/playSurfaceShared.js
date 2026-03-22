@@ -1,4 +1,6 @@
 import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
+import { getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
+import { buildHoverPreviewAttributes } from "./cosmeticHoverPreview.js";
 
 export const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary"]);
@@ -54,13 +56,50 @@ export function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
   const avatar = playerDisplay?.avatar ?? ASSET_CATALOG.avatars.default_avatar;
   const titleIcon = playerDisplay?.titleIcon ?? null;
   const featuredBadge = playerDisplay?.featuredBadge ?? null;
+  const avatarHoverMetadata = getCosmeticHoverMetadata(
+    "avatar",
+    playerDisplay?.avatarId,
+    playerDisplay?.name ?? fallbackName
+  );
+  const titleHoverMetadata = getCosmeticHoverMetadata(
+    "title",
+    playerDisplay?.titleId,
+    playerDisplay?.title ?? "Initiate"
+  );
+  const badgeHoverMetadata = playerDisplay?.badgeId
+    ? getCosmeticHoverMetadata("badge", playerDisplay.badgeId, "Featured Badge")
+    : null;
+  const avatarHoverAttributes = buildHoverPreviewAttributes({
+    previewType: "avatar",
+    previewSrc: avatar,
+    previewName: avatarHoverMetadata.name ?? playerDisplay?.name ?? fallbackName,
+    previewRarity: avatarHoverMetadata.rarity
+  });
+  const titleHoverAttributes = buildHoverPreviewAttributes({
+    previewType: "title",
+    previewSrc: titleIcon,
+    previewName: titleHoverMetadata.name ?? playerDisplay?.title ?? "Initiate",
+    previewDescription: titleHoverMetadata.description,
+    previewVisualText: playerDisplay?.title ?? "Initiate",
+    previewRarity: titleHoverMetadata.rarity
+  });
+  const badgeHoverAttributes = badgeHoverMetadata
+    ? buildHoverPreviewAttributes({
+        previewType: "badge",
+        previewSrc: featuredBadge,
+        previewName: badgeHoverMetadata.name,
+        previewDescription: badgeHoverMetadata.description,
+        previewRarity: badgeHoverMetadata.rarity
+      })
+    : "";
+  const safeCountLabel = countLabel ? ` ${escapeHtml(countLabel)}` : "";
 
   return `
     <div class="player-header">
-      <img class="player-avatar" src="${avatar}" alt="${name}" />
+      <img class="player-avatar" src="${avatar}" alt="${name}" ${avatarHoverAttributes} />
       <div>
-        <h3>${name} ${countLabel}</h3>
-        <p class="player-title">${titleIcon ? `<img class="title-icon" src="${titleIcon}" alt="${title}" />` : ""}<span>${title}</span>${featuredBadge ? `<img class="featured-badge" src="${featuredBadge}" alt="Featured Badge" />` : ""}</p>
+        <h3>${name}${safeCountLabel}</h3>
+        <p class="player-title"><span class="player-title-preview" ${titleHoverAttributes}>${titleIcon ? `<img class="title-icon" src="${titleIcon}" alt="${title}" />` : ""}<span>${title}</span></span>${featuredBadge ? `<img class="featured-badge" src="${featuredBadge}" alt="Featured Badge" ${badgeHoverAttributes} />` : ""}</p>
       </div>
     </div>
   `;

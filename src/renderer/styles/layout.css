@@ -341,6 +341,9 @@ body {
   top: 0;
   z-index: 120;
   pointer-events: none;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
   opacity: 0;
   transform: translate3d(0, 0, 0) scale(0.97);
   transition: opacity 110ms ease, transform 110ms ease;
@@ -368,11 +371,65 @@ body {
   border-radius: 14px;
 }
 
+.cosmetic-hover-preview-frame.is-badge {
+  border-radius: 18px;
+}
+
+.cosmetic-hover-preview-frame.is-title {
+  border-radius: 18px;
+}
+
 .cosmetic-hover-preview-image {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: contain;
+}
+
+.cosmetic-hover-preview-text-visual {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  box-sizing: border-box;
+  color: #eaf6ff;
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.36);
+}
+
+.cosmetic-hover-preview-meta {
+  width: 100%;
+  box-sizing: border-box;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(9, 23, 35, 0.94);
+  border: 1px solid rgba(102, 147, 181, 0.34);
+  box-shadow: 0 12px 20px rgba(4, 11, 18, 0.22);
+}
+
+.cosmetic-hover-preview-name,
+.cosmetic-hover-preview-description {
+  margin: 0;
+}
+
+.cosmetic-hover-preview-name {
+  color: #eef8ff;
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.cosmetic-hover-preview-description {
+  color: #c7dced;
+  font-size: 0.84rem;
+  line-height: 1.35;
 }
 
 .cosmetic-hover-preview-frame.rarity-common {
@@ -640,6 +697,11 @@ body {
   margin-left: 6px;
   vertical-align: text-bottom;
   border: 1px solid rgba(140, 193, 230, 0.45);
+}
+
+.player-title-preview {
+  display: inline-flex;
+  align-items: center;
 }
 
 .online-player-identity-card {
