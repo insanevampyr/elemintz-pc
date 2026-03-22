@@ -8622,8 +8622,8 @@ test("ui: profile screen uses a chest count bubble and subtle empty helper text 
   assert.match(html, /id="open-basic-chest-btn"/);
   assert.match(html, /class="chest-count-bubble"[^>]*>0</);
   assert.match(html, /class="chest-open-trigger"/);
-  assert.match(html, /No Basic Chests available/);
-  assert.match(html, /No Chests available/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-common" data-basic-chest-label="true">No Basic Chests available<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">No Chests available<\/p>/);
   assert.match(html, /data-epic-chest-image="true"/);
   assert.match(html, /data-legendary-chest-image="true"/);
   assert.doesNotMatch(html, /Basic Chests: <strong>/);
@@ -8645,7 +8645,10 @@ test("ui: profile screen enables open chest button when player has a basic chest
   assert.match(html, /id="open-milestone-chest-btn"/);
   assert.match(html, /data-milestone-chest-image="true"/);
   assert.match(html, /aria-label="Milestone Chest count">3</);
-  assert.match(html, /<p class="text-muted chest-open-helper" data-milestone-chest-label="true">Chest<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-common" data-basic-chest-label="true">Basic Chest<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Chest<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-epic" data-epic-chest-label="true">Epic Chest<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-legendary" data-legendary-chest-label="true">Legendary Chest<\/p>/);
   assert.match(html, /aria-label="Epic Chest count">1</);
   assert.match(html, /aria-label="Legendary Chest count">0</);
   assert.doesNotMatch(html, /Basic Chests: <strong>/);

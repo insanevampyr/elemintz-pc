@@ -188,6 +188,10 @@ function renderChestPanel(profile, visualState = {}) {
   );
   const epicChestIcon = getAssetPath("icons/epic_chest.png");
   const legendaryChestIcon = getAssetPath("icons/legendary_chest.png");
+  const commonLabelClass = "cosmetic-rarity-label rarity-common";
+  const rareLabelClass = "cosmetic-rarity-label rarity-rare";
+  const epicLabelClass = "cosmetic-rarity-label rarity-epic";
+  const legendaryLabelClass = "cosmetic-rarity-label rarity-legendary";
 
   return `
     <section class="stack-sm chest-panel">
@@ -204,7 +208,7 @@ function renderChestPanel(profile, visualState = {}) {
             <span class="chest-count-bubble" aria-label="Basic Chest count">${basicChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${basicChestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper" data-basic-chest-label="true">${basicChestCount > 0 ? "Basic Chest" : "No Basic Chests available"}</p>
+          <p class="text-muted chest-open-helper ${commonLabelClass}" data-basic-chest-label="true">${basicChestCount > 0 ? "Basic Chest" : "No Basic Chests available"}</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="milestone">
           <button
@@ -217,7 +221,7 @@ function renderChestPanel(profile, visualState = {}) {
             <span class="chest-count-bubble" aria-label="Milestone Chest count">${milestoneChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${milestoneChestIcon}" alt="Milestone Chest" data-milestone-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper" data-milestone-chest-label="true">${milestoneChestCount > 0 ? "Chest" : "No Chests available"}</p>
+          <p class="text-muted chest-open-helper ${rareLabelClass}" data-milestone-chest-label="true">${milestoneChestCount > 0 ? "Chest" : "No Chests available"}</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="epic">
           <button
@@ -230,7 +234,7 @@ function renderChestPanel(profile, visualState = {}) {
             <span class="chest-count-bubble" aria-label="Epic Chest count">${epicChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${epicChestIcon}" alt="Epic Chest" data-epic-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper" data-epic-chest-label="true">Epic Chest</p>
+          <p class="text-muted chest-open-helper ${epicLabelClass}" data-epic-chest-label="true">Epic Chest</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="legendary">
           <button
@@ -243,7 +247,7 @@ function renderChestPanel(profile, visualState = {}) {
             <span class="chest-count-bubble" aria-label="Legendary Chest count">${legendaryChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${legendaryChestIcon}" alt="Legendary Chest" data-legendary-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper" data-legendary-chest-label="true">Legendary Chest</p>
+          <p class="text-muted chest-open-helper ${legendaryLabelClass}" data-legendary-chest-label="true">Legendary Chest</p>
         </div>
       </div>
       <p class="text-muted chest-panel-helper">Click a chest image to open it.</p>
