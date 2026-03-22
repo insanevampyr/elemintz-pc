@@ -44,6 +44,28 @@ export function registerMultiplayerIpcHandlers(ipcMain) {
     return client.joinRoom(payload);
   });
 
+  ipcMain.handle("multiplayer:submitMove", async (event, payload) => {
+    subscribers.add(event.sender);
+    console.info("[OnlinePlay][MainIPC] submitMove handler entered", {
+      move: payload?.move ?? null
+    });
+    return client.submitMove({
+      move: payload?.move ?? null
+    });
+  });
+
+  ipcMain.handle("multiplayer:sendTaunt", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.sendTaunt({
+      line: payload?.line ?? null
+    });
+  });
+
+  ipcMain.handle("multiplayer:readyRematch", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.readyRematch(payload);
+  });
+
   ipcMain.handle("multiplayer:disconnect", async (event) => {
     subscribers.add(event.sender);
     return client.disconnect();

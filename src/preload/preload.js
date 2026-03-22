@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("elemintz", {
       });
       return ipcRenderer.invoke("multiplayer:submitMove", payload);
     },
+    sendTaunt: (payload) => ipcRenderer.invoke("multiplayer:sendTaunt", payload),
     readyRematch: (payload) => ipcRenderer.invoke("multiplayer:readyRematch", payload),
     disconnect: () => ipcRenderer.invoke("multiplayer:disconnect"),
     onUpdate: (listener) => subscribeToMultiplayerUpdates(listener)

@@ -4,6 +4,18 @@ import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticHoverMetadata } fro
 import { buildHoverPreviewAttributes, hasRenderablePreviewSource } from "./cosmeticHoverPreview.js";
 
 export const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
+export const MATCH_TAUNT_PRESETS = Object.freeze([
+  "Your move.",
+  "Bold choice.",
+  "Interesting.",
+  "You got lucky.",
+  "Well played.",
+  "This isn't over.",
+  "I saw that coming.",
+  "Let's finish this.",
+  "A risky play.",
+  "Not bad."
+]);
 const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary"]);
 
 export function normalizeCosmeticRarity(rarity) {
@@ -248,5 +260,67 @@ export function renderHiddenHandSummary(count, backImage = ASSET_CATALOG.cards.b
       </div>
       <div class="hidden-hand-count">x${safeCount}</div>
     </div>
+  `;
+}
+
+function getTauntSpeakerClass(message) {
+  const kind = String(message?.kind ?? "").trim().toLowerCase();
+  if (kind === "ai") {
+    return "is-ai";
+  }
+
+  if (kind === "opponent") {
+    return "is-opponent";
+  }
+
+  return "is-player";
+}
+
+export function renderMatchTauntHud({
+  idPrefix = "match",
+  panelOpen = false,
+  messages = [],
+  presetLines = MATCH_TAUNT_PRESETS
+} = {}) {
+  const safeMessages = Array.isArray(messages) ? messages.slice(-4) : [];
+  const safePresetLines = Array.isArray(presetLines) ? presetLines : MATCH_TAUNT_PRESETS;
+
+  return `
+    <aside class="match-taunt-shell ${panelOpen ? "is-open" : ""}" data-match-taunt-shell="${escapeHtml(idPrefix)}">
+      <div class="match-taunt-feed" aria-live="polite" aria-label="Recent taunts">
+        ${safeMessages
+          .map(
+            (message) => `
+              <div class="match-taunt-entry ${getTauntSpeakerClass(message)}">
+                <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
+                <span>${escapeHtml(message?.text ?? "")}</span>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+      <div class="match-taunt-controls">
+        <button id="${escapeHtml(idPrefix)}-taunts-toggle-btn" type="button" class="btn btn-secondary match-taunts-toggle-btn" aria-expanded="${panelOpen ? "true" : "false"}">
+          Taunts
+        </button>
+        ${
+          panelOpen
+            ? `
+              <div id="${escapeHtml(idPrefix)}-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="${escapeHtml(idPrefix)}">
+                ${safePresetLines
+                  .map(
+                    (line, index) => `
+                      <button type="button" class="match-taunt-option" data-taunt-line="${escapeHtml(line)}" data-taunt-index="${String(index)}">
+                        ${escapeHtml(line)}
+                      </button>
+                    `
+                  )
+                  .join("")}
+              </div>
+            `
+            : ""
+        }
+      </div>
+    </aside>
   `;
 }

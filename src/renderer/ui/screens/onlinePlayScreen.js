@@ -7,6 +7,7 @@ import {
   rarityClassName,
   renderElementHandSummary,
   renderHiddenHandSummary,
+  renderMatchTauntHud,
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
@@ -795,6 +796,16 @@ export const onlinePlayScreen = {
             <h2 class="view-title">Online Play</h2>
             <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
           </div>
+          ${
+            room?.status === "full" && !matchComplete
+              ? renderMatchTauntHud({
+                  idPrefix: "online",
+                  panelOpen: Boolean(context.taunts?.panelOpen),
+                  messages: context.taunts?.messages ?? [],
+                  presetLines: context.taunts?.presetLines ?? []
+                })
+              : ""
+          }
           <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
               <div class="panel themed-screen-panel stack-sm">
               ${
@@ -935,6 +946,13 @@ export const onlinePlayScreen = {
     document.getElementById("online-create-room-btn")?.addEventListener("click", context.actions.createRoom);
     document.getElementById("online-play-back-btn")?.addEventListener("click", context.actions.back);
     document.getElementById("online-ready-rematch-btn")?.addEventListener("click", context.actions.readyRematch);
+    document.getElementById("online-taunts-toggle-btn")?.addEventListener("click", context.actions.toggleTauntsPanel);
+    document.querySelectorAll("[data-taunt-line]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const line = button.getAttribute("data-taunt-line") ?? "";
+        await context.actions.sendTaunt(line);
+      });
+    });
 
     const moveActions = document.getElementById("online-move-actions");
     if (moveActions) {

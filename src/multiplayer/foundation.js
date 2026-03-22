@@ -478,7 +478,7 @@ export function createMultiplayerFoundation({
     });
     logger.info("[OnlinePlay][Server] socket listeners attached", {
       socketId: socket.id,
-      listeners: ["room:create", "room:join", "room:submitMove", "room:readyRematch", "disconnect"]
+      listeners: ["room:create", "room:join", "room:submitMove", "room:sendTaunt", "room:readyRematch", "disconnect"]
     });
 
     socket.on("room:create", (payload = {}) => {
@@ -574,6 +574,17 @@ export function createMultiplayerFoundation({
           });
         }
       }
+    });
+
+    socket.on("room:sendTaunt", (payload = {}) => {
+      const result = roomStore.sendTaunt(socket.id, payload.line);
+
+      if (!result.ok) {
+        socket.emit("room:error", result.error);
+        return;
+      }
+
+      io.to(result.room.roomCode).emit("room:update", result.room);
     });
 
     socket.on("room:readyRematch", () => {

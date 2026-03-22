@@ -2178,6 +2178,52 @@ test("ui: game screen uses provided variant card images", () => {
   assert.match(html, /data-preview-type="badge"/);
 });
 
+test("ui: game screen renders taunts feed and open panel without breaking the match layout", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {
+      panelOpen: true,
+      messages: [
+        { speaker: "Hero", text: "Well played.", kind: "player" },
+        { speaker: "Elemental AI", text: "Your move.", kind: "ai" }
+      ],
+      presetLines: ["Your move.", "Well played."]
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /id="game-taunts-toggle-btn"/);
+  assert.match(html, /data-match-taunt-shell="game"/);
+  assert.match(html, /Hero<\/strong>\s*<span>Well played\.<\/span>/);
+  assert.match(html, /Elemental AI<\/strong>\s*<span>Your move\.<\/span>/);
+  assert.match(html, /data-match-taunt-panel="game"/);
+  assert.match(html, /data-taunt-line="Your move\."/);
+  assert.match(html, /data-taunt-line="Well played\."/);
+  assert.match(html, /data-card-owner="active"/);
+});
+
 test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides cleanly", () => {
   function createPreviewNode(tagName) {
     const children = [];
@@ -5084,6 +5130,68 @@ test("ui: appController randomizes enabled cosmetic categories after a completed
   }
 });
 
+test("ui: game screen taunt controls use stable button targets and send immediately", async () => {
+  const previousDocument = global.document;
+  const backButton = createFakeElement();
+  const tauntToggleButton = createFakeElement();
+  const tauntOptionButton = {
+    listeners: new Map(),
+    getAttribute: (name) => (name === "data-taunt-line" ? "Bold choice." : null),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
+  const calls = {
+    toggle: 0,
+    send: []
+  };
+
+  global.document = {
+    getElementById(id) {
+      return {
+        "back-menu-btn": backButton,
+        "game-taunts-toggle-btn": tauntToggleButton
+      }[id] ?? null;
+    },
+    querySelector() {
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-taunt-line]") {
+        return [tauntOptionButton];
+      }
+
+      return [];
+    }
+  };
+
+  try {
+    gameScreen.bind({
+      game: { roundOutcome: { key: "no_effect" }, warActive: false },
+      hotseat: { enabled: false },
+      presentation: { busy: false },
+      actions: {
+        backToMenu: async () => {},
+        playCard: async () => {},
+        toggleTauntsPanel: async () => {
+          calls.toggle += 1;
+        },
+        sendTaunt: async (line) => {
+          calls.send.push(line);
+        }
+      }
+    });
+
+    await tauntToggleButton.listeners.get("click")();
+    await tauntOptionButton.listeners.get("click")();
+
+    assert.equal(calls.toggle, 1);
+    assert.deepEqual(calls.send, ["Bold choice."]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: appController applies post-match cosmetic randomization to both local PvP players through the shared category path", async () => {
   const app = createRendererController();
   const calls = [];
@@ -5140,6 +5248,139 @@ test("ui: appController applies post-match cosmetic randomization to the active 
 
   assert.deepEqual(calls, [{ username: "SoloHero", profile: latestProfile }]);
   assert.equal(app.profile.randomized, true);
+});
+
+test("ui: appController local PvP taunts use the active hotseat speaker", async () => {
+  const app = createRendererController();
+  let showCalls = 0;
+  app.showGame = () => {
+    showCalls += 1;
+  };
+  app.localPlayers = { p1: "Alpha", p2: "Beta" };
+  app.gameController = {
+    getViewModel: () => ({
+      mode: MATCH_MODE.LOCAL_PVP,
+      hotseatTurn: "p2"
+    })
+  };
+
+  await app.sendCurrentMatchTaunt("Bold choice.");
+
+  assert.equal(showCalls, 1);
+  assert.equal(app.matchTaunts.at(-1).speaker, "Beta");
+  assert.equal(app.matchTaunts.at(-1).text, "Bold choice.");
+  assert.equal(app.matchTauntPanelOpen, false);
+});
+
+test("ui: appController PVE AI taunts respect cooldown and avoid consecutive event spam", () => {
+  const app = createRendererController();
+  app.gameController = {
+    getViewModel: () => ({
+      mode: MATCH_MODE.PVE,
+      opponentHand: ["fire", "water"]
+    })
+  };
+  app.showGame = () => {};
+  app.screenFlow = "game";
+  app.opponentDisplayName = "Elemental AI";
+  app.tauntRandom = () => 0;
+  app.getTauntNow = () => 1000;
+
+  assert.equal(app.maybeEmitPveAiTaunt("match_start"), true);
+  assert.equal(app.matchTaunts.length, 1);
+  assert.equal(app.maybeEmitPveAiTaunt("match_start"), false);
+  assert.equal(app.maybeEmitPveAiTaunt("war_start"), false);
+
+  app.getTauntNow = () => 40000;
+  assert.equal(app.maybeEmitPveAiTaunt("war_start"), true);
+  assert.equal(app.matchTaunts.length, 2);
+});
+
+test("ui: appController online taunt action routes through multiplayer state and rerenders the feed", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const sendTauntCalls = [];
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        sendTaunt: async (payload) => {
+          sendTauntCalls.push(payload);
+          return {
+            connectionStatus: "connected",
+            socketId: "host-1",
+            room: {
+              roomCode: "ABC123",
+              status: "full",
+              matchComplete: false,
+              host: { socketId: "host-1", username: "Hero" },
+              guest: { socketId: "guest-1", username: "Rival" },
+              hostHand: { fire: 2, earth: 2, wind: 2, water: 2 },
+              guestHand: { fire: 2, earth: 2, wind: 2, water: 2 },
+              warPot: { host: [], guest: [] },
+              warRounds: [],
+              roundHistory: [],
+              moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+              taunts: [
+                {
+                  id: "taunt-1",
+                  senderRole: "host",
+                  senderName: "Hero",
+                  speaker: "Hero",
+                  text: payload.line,
+                  kind: "player",
+                  sentAt: "2026-03-22T00:00:00.000Z"
+                }
+              ]
+            },
+            latestRoundResult: null,
+            lastError: null,
+            statusMessage: "Room ABC123 is full."
+          };
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "Hero";
+    controller.profile = { username: "Hero", equippedCosmetics: { background: "default_background" } };
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        matchComplete: false,
+        host: { socketId: "host-1", username: "Hero" },
+        guest: { socketId: "guest-1", username: "Rival" },
+        hostHand: { fire: 2, earth: 2, wind: 2, water: 2 },
+        guestHand: { fire: 2, earth: 2, wind: 2, water: 2 },
+        warPot: { host: [], guest: [] },
+        warRounds: [],
+        roundHistory: [],
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        taunts: []
+      }
+    };
+
+    controller.renderOnlinePlayScreen();
+    await shown.at(-1).actions.sendTaunt("Your move.");
+
+    assert.deepEqual(sendTauntCalls, [{ line: "Your move." }]);
+    assert.equal(shown.at(-1).taunts.messages.at(-1).text, "Your move.");
+    assert.equal(shown.at(-1).taunts.messages.at(-1).speaker, "Hero");
+  } finally {
+    global.window = previousWindow;
+  }
 });
 
 test("ui: bind defers local PvP WAR impact during hidden busy transitions", () => {
@@ -8891,6 +9132,45 @@ test("ui: online play screen renders no effect and war result labels", () => {
   assert.match(warHtml, /Round 1: Fire vs Fire - WAR/);
 });
 
+test("ui: online play screen renders taunts feed for active rooms", () => {
+  const html = onlinePlayScreen.render({
+    username: "Hero",
+    backgroundImage: "assets/backgrounds/fireBattleArena.png",
+    taunts: {
+      panelOpen: true,
+      messages: [
+        { speaker: "Hero", text: "Your move.", kind: "player" },
+        { speaker: "Rival", text: "Interesting.", kind: "opponent" }
+      ],
+      presetLines: ["Your move.", "Interesting."]
+    },
+    multiplayer: {
+      connectionStatus: "connected",
+      statusMessage: "Room ABC123 is full.",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        matchComplete: false,
+        host: { socketId: "host-1", username: "Hero" },
+        guest: { socketId: "guest-2", username: "Rival" },
+        hostHand: { fire: 2, earth: 2, wind: 2, water: 2 },
+        guestHand: { fire: 2, earth: 2, wind: 2, water: 2 },
+        warPot: { host: [], guest: [] },
+        warRounds: [],
+        roundHistory: [],
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null },
+        taunts: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /id="online-taunts-toggle-btn"/);
+  assert.match(html, /Hero<\/strong>\s*<span>Your move\.<\/span>/);
+  assert.match(html, /Rival<\/strong>\s*<span>Interesting\.<\/span>/);
+  assert.match(html, /data-match-taunt-panel="online"/);
+});
+
 test("ui: online play screen still shows move controls for full rooms when moveSync is missing", () => {
   const hostResolvedIdentity = {
     slotLabel: "Host",
@@ -9049,6 +9329,15 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
   const previousDocument = global.document;
   const calls = [];
   let moveClickHandler = null;
+  const tauntCalls = [];
+  const tauntToggleButton = createFakeElement();
+  const tauntOptionButton = {
+    listeners: new Map(),
+    getAttribute: (name) => (name === "data-taunt-line" ? "Your move." : null),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
 
   const moveActions = {
     addEventListener: (_type, handler) => {
@@ -9062,6 +9351,10 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
         return { addEventListener: () => {} };
       }
 
+      if (id === "online-taunts-toggle-btn") {
+        return tauntToggleButton;
+      }
+
       if (id === "online-move-actions") {
         return moveActions;
       }
@@ -9071,7 +9364,8 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
       }
 
       return null;
-    }
+    },
+    querySelectorAll: (selector) => (selector === "[data-taunt-line]" ? [tauntOptionButton] : [])
   };
 
   try {
@@ -9080,6 +9374,12 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
         createRoom: async () => {},
         back: async () => {},
         joinRoom: async () => {},
+        toggleTauntsPanel: async () => {
+          tauntCalls.push("toggle");
+        },
+        sendTaunt: async (line) => {
+          tauntCalls.push(line);
+        },
         submitMove: async (move) => {
           calls.push(move);
         }
@@ -9098,8 +9398,11 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
       },
       composedPath: () => []
     });
+    await tauntToggleButton.listeners.get("click")();
+    await tauntOptionButton.listeners.get("click")();
 
     assert.deepEqual(calls, ["fire"]);
+    assert.deepEqual(tauntCalls, ["toggle", "Your move."]);
   } finally {
     global.document = previousDocument;
   }

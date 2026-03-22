@@ -75,7 +75,8 @@ function cloneRoom(room) {
         warDepth: Number(room.warDepth ?? 0),
         warRounds: Array.isArray(room.warRounds) ? room.warRounds.map((entry) => ({ ...entry })) : [],
         roundHistory: Array.isArray(room.roundHistory) ? room.roundHistory.map((entry) => ({ ...entry })) : [],
-        moveSync: room.moveSync ? { ...room.moveSync } : null
+        moveSync: room.moveSync ? { ...room.moveSync } : null,
+        taunts: Array.isArray(room.taunts) ? room.taunts.map((entry) => ({ ...entry })) : []
       }
     : null;
 }
@@ -566,6 +567,10 @@ export class MultiplayerClient {
 
   async readyRematch({ serverUrl } = {}) {
     return this.runRoomAction("room:readyRematch", undefined, "room:update", { serverUrl });
+  }
+
+  async sendTaunt({ line, serverUrl } = {}) {
+    return this.runRoomAction("room:sendTaunt", { line }, "room:update", { serverUrl });
   }
 
   async disconnect({ preserveServerUrl = true, silent = false } = {}) {

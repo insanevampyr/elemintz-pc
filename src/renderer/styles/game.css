@@ -299,9 +299,95 @@ input[type="number"] {
   position: relative;
 }
 
+.screen-online-play {
+  position: relative;
+}
+
 .screen-game .arena-board {
   min-height: calc(100vh - 190px);
   max-height: calc(100vh - 190px);
+}
+
+.match-taunt-shell {
+  position: absolute;
+  top: 84px;
+  right: 18px;
+  z-index: 5;
+  width: min(250px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.match-taunt-feed {
+  display: grid;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.match-taunt-entry {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(7, 17, 28, 0.82);
+  border: 1px solid rgba(126, 170, 208, 0.28);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+  color: #e8f3ff;
+  font-size: 0.83rem;
+  line-height: 1.35;
+}
+
+.match-taunt-entry strong {
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.match-taunt-entry.is-ai {
+  border-color: rgba(255, 194, 107, 0.34);
+}
+
+.match-taunt-entry.is-opponent {
+  border-color: rgba(226, 126, 150, 0.34);
+}
+
+.match-taunt-controls {
+  justify-self: end;
+  display: grid;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.match-taunts-toggle-btn {
+  min-width: 96px;
+  justify-self: end;
+}
+
+.match-taunt-panel {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(125, 171, 211, 0.34);
+  background: rgba(8, 18, 30, 0.96);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.26);
+}
+
+.match-taunt-option {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 152, 189, 0.34);
+  background: rgba(16, 34, 52, 0.92);
+  color: #e6f3ff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.match-taunt-option:hover,
+.match-taunt-option:focus-visible {
+  border-color: rgba(122, 222, 191, 0.72);
+  background: rgba(21, 48, 71, 0.96);
+  transform: translateY(-1px);
 }
 
 .screen-game .panel {

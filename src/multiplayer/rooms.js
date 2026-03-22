@@ -19,6 +19,19 @@ const DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
   title: "Initiate",
   badge: "none"
 });
+const MATCH_TAUNT_PRESETS = Object.freeze([
+  "Your move.",
+  "Bold choice.",
+  "Interesting.",
+  "You got lucky.",
+  "Well played.",
+  "This isn't over.",
+  "I saw that coming.",
+  "Let's finish this.",
+  "A risky play.",
+  "Not bad."
+]);
+const ROOM_TAUNT_HISTORY_LIMIT = 8;
 
 function randomChar(source, random) {
   const index = Math.floor(random() * source.length);
@@ -44,6 +57,11 @@ function sanitizeRoomCode(value) {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
+}
+
+function normalizeTauntLine(value) {
+  const normalized = String(value ?? "").trim();
+  return MATCH_TAUNT_PRESETS.includes(normalized) ? normalized : null;
 }
 
 function getRuntimeEdgeGuards(room) {
@@ -441,6 +459,12 @@ function createInitialMatchState() {
   };
 }
 
+function createInitialTauntState() {
+  return {
+    taunts: []
+  };
+}
+
 function createInitialWarState() {
   return {
     warActive: false,
@@ -566,6 +590,7 @@ function resetMatchState(room) {
     resumedAt: null
   };
   room.closingAt = null;
+  room.taunts = [];
   resetRematchState(room);
   resetWarState(room);
   resetHandState(room);
@@ -1170,7 +1195,8 @@ function cloneRoom(room) {
     warDepth: room.warDepth,
     warRounds: room.warRounds.map((entry) => ({ ...entry })),
     roundHistory: room.roundHistory.map((entry) => ({ ...entry })),
-    moveSync: cloneMoveState(room)
+    moveSync: cloneMoveState(room),
+    taunts: Array.isArray(room.taunts) ? room.taunts.map((entry) => ({ ...entry })) : []
   };
 }
 
@@ -1214,6 +1240,7 @@ export function createRoomStore({ random = Math.random } = {}) {
         guest: null,
         status: "waiting",
         ...createInitialMatchState(),
+        ...createInitialTauntState(),
         ...createInitialMatchCompletionState(),
         ...createInitialRewardSettlementState(),
         ...createInitialDisconnectState(),
@@ -1674,6 +1701,81 @@ export function createRoomStore({ random = Math.random } = {}) {
         ok: true,
         room: cloneRoom(room),
         roundResult: room.latestRoundResult
+      };
+    },
+
+    sendTaunt(socketId, lineInput) {
+      const room = getRoomBySocket(socketId);
+      if (!room) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_NOT_FOUND",
+            message: "Room code not found."
+          }
+        };
+      }
+
+      if (room.status === "expired" || room.status === "closing") {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_UNAVAILABLE",
+            message: "This room is no longer accepting taunts."
+          }
+        };
+      }
+
+      const line = normalizeTauntLine(lineInput);
+      if (!line) {
+        return {
+          ok: false,
+          error: {
+            code: "TAUNT_INVALID",
+            message: "Taunt line is invalid."
+          }
+        };
+      }
+
+      const senderRole =
+        room.host?.socketId === socketId
+          ? "host"
+          : room.guest?.socketId === socketId
+            ? "guest"
+            : null;
+      const sender =
+        senderRole === "host"
+          ? room.host
+          : senderRole === "guest"
+            ? room.guest
+            : null;
+
+      if (!senderRole || !sender) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_PLAYER_NOT_FOUND",
+            message: "This socket is not assigned to a room player slot."
+          }
+        };
+      }
+
+      room.taunts = [
+        ...(Array.isArray(room.taunts) ? room.taunts : []),
+        {
+          id: `taunt-${Date.now()}-${Math.floor(random() * 100000)}`,
+          senderRole,
+          senderName: sender.username ?? (senderRole === "host" ? "Host" : "Guest"),
+          speaker: sender.username ?? (senderRole === "host" ? "Host" : "Guest"),
+          text: line,
+          kind: "player",
+          sentAt: new Date().toISOString()
+        }
+      ].slice(-ROOM_TAUNT_HISTORY_LIMIT);
+
+      return {
+        ok: true,
+        room: cloneRoom(room)
       };
     },
 

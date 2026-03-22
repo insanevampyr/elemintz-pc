@@ -18,6 +18,7 @@ import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
 import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
+import { MATCH_TAUNT_PRESETS } from "../ui/shared/playSurfaceShared.js";
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
@@ -52,6 +53,21 @@ const ONLINE_DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
   }),
   title: "Initiate",
   badge: "none"
+});
+const MATCH_TAUNT_FEED_LIMIT = 4;
+const MATCH_TAUNT_HISTORY_LIMIT = 8;
+const AI_TAUNT_COOLDOWN_MIN_MS = 20000;
+const AI_TAUNT_COOLDOWN_MAX_MS = 30000;
+const AI_TAUNT_CHANCE_MIN = 0.3;
+const AI_TAUNT_CHANCE_MAX = 0.5;
+const PVE_AI_TAUNT_LINES = Object.freeze({
+  match_start: Object.freeze(["Your move.", "Let's finish this.", "I saw that coming."]),
+  player_win: Object.freeze(["Interesting.", "Not bad.", "Bold choice."]),
+  player_loss: Object.freeze(["You got lucky.", "This isn't over.", "A risky play."]),
+  war_start: Object.freeze(["Interesting.", "Bold choice.", "Let's finish this."]),
+  war_resolved: Object.freeze(["Well played.", "Not bad.", "I saw that coming."]),
+  near_victory: Object.freeze(["This isn't over.", "Let's finish this.", "Your move."]),
+  match_end: Object.freeze(["Well played.", "Not bad.", "This isn't over."])
 });
 
 function delay(ms) {
@@ -106,6 +122,13 @@ export class AppController {
     this.onlineReconnectReminder = null;
     this.onlineReconnectReminderDismissedKey = null;
     this.onlineReconnectUiTimerId = null;
+    this.matchTaunts = [];
+    this.matchTauntPanelOpen = false;
+    this.matchTauntSequence = 0;
+    this.aiTauntCooldownUntil = 0;
+    this.aiLastTauntEventKey = null;
+    this.tauntRandom = Math.random;
+    this.opponentDisplayName = "Elemental AI";
     this.storeViewState = this.createDefaultStoreViewState();
     this.cosmeticsViewState = createDefaultCategoryViewState();
     this.roundPresentation = {
@@ -121,6 +144,168 @@ export class AppController {
   resetDailyLoginAutoClaimGuard() {
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
+  }
+
+  getTauntNow() {
+    return Date.now();
+  }
+
+  resetMatchTaunts() {
+    this.matchTaunts = [];
+    this.matchTauntPanelOpen = false;
+    this.matchTauntSequence = 0;
+    this.aiTauntCooldownUntil = 0;
+    this.aiLastTauntEventKey = null;
+  }
+
+  appendMatchTaunt({ speaker, text, kind = "player" }) {
+    const safeSpeaker = String(speaker ?? "").trim();
+    const safeText = String(text ?? "").trim();
+    if (!safeSpeaker || !safeText) {
+      return;
+    }
+
+    this.matchTauntSequence += 1;
+    this.matchTaunts = [
+      ...this.matchTaunts,
+      {
+        id: `taunt-${this.matchTauntSequence}`,
+        speaker: safeSpeaker,
+        text: safeText,
+        kind
+      }
+    ].slice(-MATCH_TAUNT_HISTORY_LIMIT);
+  }
+
+  getRenderableMatchTaunts() {
+    return this.matchTaunts.slice(-MATCH_TAUNT_FEED_LIMIT);
+  }
+
+  getRenderableOnlineTaunts() {
+    const taunts = Array.isArray(this.onlinePlayState?.room?.taunts) ? this.onlinePlayState.room.taunts : [];
+    return taunts.slice(-MATCH_TAUNT_FEED_LIMIT).map((entry) => ({
+      speaker: entry?.speaker ?? entry?.senderName ?? "Player",
+      text: entry?.text ?? "",
+      kind: entry?.kind ?? "player"
+    }));
+  }
+
+  toggleMatchTauntPanel() {
+    this.matchTauntPanelOpen = !this.matchTauntPanelOpen;
+    if (this.screenFlow === "onlinePlay") {
+      this.renderOnlinePlayScreen();
+      return;
+    }
+
+    if (this.screenFlow === "game") {
+      this.showGame();
+    }
+  }
+
+  closeMatchTauntPanel() {
+    this.matchTauntPanelOpen = false;
+  }
+
+  getCurrentGameTauntSpeaker() {
+    const vm = this.gameController?.getViewModel();
+    if (!vm) {
+      return this.username ?? "Player";
+    }
+
+    if (vm.mode === MATCH_MODE.LOCAL_PVP) {
+      const names = this.getLocalNames();
+      return vm.hotseatTurn === "p2" ? names.p2 : names.p1;
+    }
+
+    return this.username ?? this.profile?.username ?? "Player";
+  }
+
+  async sendCurrentMatchTaunt(line) {
+    const safeLine = String(line ?? "").trim();
+    if (!MATCH_TAUNT_PRESETS.includes(safeLine)) {
+      return;
+    }
+
+    this.appendMatchTaunt({
+      speaker: this.getCurrentGameTauntSpeaker(),
+      text: safeLine,
+      kind: "player"
+    });
+    this.closeMatchTauntPanel();
+    this.showGame();
+  }
+
+  randomChanceBetween(min, max) {
+    return min + this.tauntRandom() * (max - min);
+  }
+
+  maybeEmitPveAiTaunt(eventKey) {
+    if (!this.gameController || this.gameController.getViewModel()?.mode !== MATCH_MODE.PVE) {
+      return false;
+    }
+
+    const lines = PVE_AI_TAUNT_LINES[eventKey] ?? [];
+    if (!lines.length) {
+      return false;
+    }
+
+    const now = this.getTauntNow();
+    if (now < this.aiTauntCooldownUntil) {
+      return false;
+    }
+
+    const chance = this.randomChanceBetween(AI_TAUNT_CHANCE_MIN, AI_TAUNT_CHANCE_MAX);
+    if (this.tauntRandom() > chance) {
+      return false;
+    }
+
+    const line = lines[Math.floor(this.tauntRandom() * lines.length)] ?? null;
+    if (!line) {
+      return false;
+    }
+
+    this.appendMatchTaunt({
+      speaker: this.opponentDisplayName ?? "Elemental AI",
+      text: line,
+      kind: "ai"
+    });
+    this.aiLastTauntEventKey = eventKey;
+    this.aiTauntCooldownUntil = now + this.randomChanceBetween(AI_TAUNT_COOLDOWN_MIN_MS, AI_TAUNT_COOLDOWN_MAX_MS);
+
+    if (this.screenFlow === "game") {
+      this.showGame();
+    }
+
+    return true;
+  }
+
+  maybeEmitPveAiTauntForResult(result) {
+    const vm = this.gameController?.getViewModel();
+    if (!vm || vm.mode !== MATCH_MODE.PVE || !result) {
+      return false;
+    }
+
+    if (result.status === "war_continues") {
+      return this.maybeEmitPveAiTaunt("war_start");
+    }
+
+    if (result.status !== "resolved" && result.status !== "round_resolved") {
+      return false;
+    }
+
+    if (result.round?.result === "p2") {
+      if (vm.opponentHand.length <= 2) {
+        return this.maybeEmitPveAiTaunt("near_victory");
+      }
+
+      return this.maybeEmitPveAiTaunt(Number(result.round?.warClashes ?? 0) > 0 ? "war_resolved" : "player_loss");
+    }
+
+    if (result.round?.result === "p1") {
+      return this.maybeEmitPveAiTaunt("player_win");
+    }
+
+    return false;
   }
 
   registerScreens() {
@@ -924,7 +1109,18 @@ export class AppController {
                   bothSubmitted: false,
                   updatedAt: null
                 }
-              : null)
+              : null),
+          taunts: Array.isArray(state.room.taunts)
+            ? state.room.taunts.map((entry) => ({
+                id: entry?.id ?? null,
+                speaker: entry?.speaker ?? entry?.senderName ?? "Player",
+                senderName: entry?.senderName ?? entry?.speaker ?? "Player",
+                senderRole: entry?.senderRole ?? null,
+                text: entry?.text ?? "",
+                kind: entry?.kind ?? "player",
+                sentAt: entry?.sentAt ?? null
+              }))
+            : []
         }
       : null;
 
@@ -1354,6 +1550,11 @@ export class AppController {
       joinCode: this.onlinePlayJoinCode,
       now: Date.now(),
       backgroundImage: this.getBackgroundFromProfile(this.profile),
+      taunts: {
+        panelOpen: this.matchTauntPanelOpen,
+        messages: this.getRenderableOnlineTaunts(),
+        presetLines: MATCH_TAUNT_PRESETS
+      },
       actions: {
         createRoom: async () => {
           if (!window.elemintz?.multiplayer?.createRoom) {
@@ -1412,6 +1613,25 @@ export class AppController {
             });
           }
           this.ensureOnlineReconnectUiTimer();
+          this.renderOnlinePlayScreen();
+        },
+        toggleTauntsPanel: async () => {
+          this.toggleMatchTauntPanel();
+        },
+        sendTaunt: async (line) => {
+          if (!window.elemintz?.multiplayer?.sendTaunt) {
+            return;
+          }
+
+          const safeLine = String(line ?? "").trim();
+          if (!MATCH_TAUNT_PRESETS.includes(safeLine)) {
+            return;
+          }
+
+          this.matchTauntPanelOpen = false;
+          this.onlinePlayState = this.normalizeOnlinePlayState(
+            await window.elemintz.multiplayer.sendTaunt({ line: safeLine })
+          );
           this.renderOnlinePlayScreen();
         },
         readyRematch: async () => {
@@ -1946,6 +2166,7 @@ export class AppController {
     this.clearPassTimer();
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "onlinePlay";
+    this.matchTauntPanelOpen = false;
     await this.syncOnlinePlayState();
     await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
     this.ensureOnlineReconnectUiTimer();
@@ -2050,6 +2271,7 @@ export class AppController {
     this.gameController?.stopMatchClock();
     this.pendingMatchCompletePayload = null;
     this.pveOpponentStyle = mode === MATCH_MODE.PVE ? this.buildPveOpponentStyle() : null;
+    this.resetMatchTaunts();
 
     this.roundPresentation = {
       phase: "idle",
@@ -2107,6 +2329,9 @@ export class AppController {
         }
 
         await this.applyPostMatchCosmeticRandomization(mode, finalPersisted);
+        if (mode === MATCH_MODE.PVE) {
+          this.maybeEmitPveAiTaunt("match_end");
+        }
 
         this.sound.playMatchComplete({ mode, match });
 
@@ -2139,6 +2364,9 @@ export class AppController {
     }
 
     this.showGame();
+    if (mode === MATCH_MODE.PVE) {
+      this.maybeEmitPveAiTaunt("match_start");
+    }
   }
 
   async showPassScreen({
@@ -2374,6 +2602,7 @@ export class AppController {
     this.deferPveOutcomeSound = true;
     this.deferredPveRoundSound = null;
     const result = await this.gameController.playCard(cardIndex);
+    this.maybeEmitPveAiTauntForResult(result);
     const deferredOutcomeRound = this.deferredPveRoundSound;
     this.deferPveOutcomeSound = false;
     this.deferredPveRoundSound = null;
@@ -2553,6 +2782,7 @@ export class AppController {
           titleText: pveOpponentStyle?.titleName ?? "Arena Rival",
           fallbackTitle: "Arena Rival"
         });
+    this.opponentDisplayName = opponentDisplay?.name ?? "Elemental AI";
 
     const p1Variant = p1Profile?.equippedCosmetics?.elementCardVariant ?? null;
     const p1CardBack = p1Profile?.equippedCosmetics?.cardBack ?? "default_card_back";
@@ -2599,9 +2829,20 @@ export class AppController {
         p2Name: names.p2,
         turnLabel: localPvp ? `${vm.hotseatTurn === "p1" ? names.p1 : names.p2} Turn` : "Player Turn"
       },
+      taunts: {
+        panelOpen: this.matchTauntPanelOpen,
+        messages: this.getRenderableMatchTaunts(),
+        presetLines: MATCH_TAUNT_PRESETS
+      },
       actions: {
         playCard: async (nextCardIndex) => this.handleGameCardSelection(nextCardIndex),
-        backToMenu: async () => this.quitCurrentMatch()
+        backToMenu: async () => this.quitCurrentMatch(),
+        toggleTauntsPanel: async () => {
+          this.toggleMatchTauntPanel();
+        },
+        sendTaunt: async (line) => {
+          await this.sendCurrentMatchTaunt(line);
+        }
       }
     });
   }

@@ -5,6 +5,7 @@ import {
   getCardElement,
   normalizeCosmeticRarity,
   rarityClassName,
+  renderMatchTauntHud,
   renderElementHandSummary,
   renderHiddenHandSummary,
   renderPlayerHeader
@@ -285,6 +286,12 @@ export const gameScreen = {
             <button id="back-menu-btn" class="btn">Back to Menu</button>
           </div>
         </header>
+        ${renderMatchTauntHud({
+          idPrefix: "game",
+          panelOpen: Boolean(context.taunts?.panelOpen),
+          messages: context.taunts?.messages ?? [],
+          presetLines: context.taunts?.presetLines ?? []
+        })}
 
         <section class="arena-board" style="background-image: url('${context.arenaBackground}')">
           <section class="grid game-grid">
@@ -362,6 +369,13 @@ export const gameScreen = {
     detachGameKeyboardHandler = null;
 
     document.getElementById("back-menu-btn").addEventListener("click", context.actions.backToMenu);
+    document.getElementById("game-taunts-toggle-btn")?.addEventListener("click", context.actions.toggleTauntsPanel);
+    document.querySelectorAll("[data-taunt-line]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const line = button.getAttribute("data-taunt-line") ?? "";
+        await context.actions.sendTaunt(line);
+      });
+    });
 
     let locked = false;
 
