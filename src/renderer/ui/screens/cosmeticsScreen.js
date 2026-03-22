@@ -6,7 +6,7 @@ import {
   RARITY_SORT_ORDER,
   normalizeCategoryViewState
 } from "../shared/cosmeticCategoryShared.js";
-import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
+import { bindCosmeticHoverPreview, hasRenderablePreviewSource } from "../shared/cosmeticHoverPreview.js";
 
 function normalizeRarity(rarity) {
   return FILTERABLE_RARITIES.includes(rarity) ? rarity : "Common";
@@ -38,6 +38,10 @@ function preview(type, item) {
   }
 
   const src = getAssetPath(item.image);
+  const hasRenderableImage = hasRenderablePreviewSource(src, { previewName: item.name });
+  if (!hasRenderableImage) {
+    return `<div class="cosmetic-preview missing">No Preview</div>`;
+  }
   const framed = isFramedCosmeticType(type);
   return `
     <div

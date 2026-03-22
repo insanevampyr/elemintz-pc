@@ -21,7 +21,7 @@ function normalizePreviewToken(value) {
   return String(value ?? "").trim();
 }
 
-function hasRenderablePreviewSource(value, { previewName = "", previewVisualText = "" } = {}) {
+export function hasRenderablePreviewSource(value, { previewName = "", previewVisualText = "" } = {}) {
   const normalized = normalizePreviewToken(value);
   if (!normalized) {
     return false;

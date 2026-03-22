@@ -1,6 +1,6 @@
 import { getAssetPath } from "../../utils/dom.js";
 import { CATEGORY_ORDER as BASE_CATEGORY_ORDER, FILTERABLE_CATEGORIES } from "../shared/cosmeticCategoryShared.js";
-import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
+import { bindCosmeticHoverPreview, hasRenderablePreviewSource } from "../shared/cosmeticHoverPreview.js";
 const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
 const CATEGORY_ORDER = BASE_CATEGORY_ORDER.map(([type, label]) => [
   type,
@@ -100,6 +100,10 @@ function renderPreview(type, item) {
   }
 
   const src = getAssetPath(item.image);
+  const hasRenderableImage = hasRenderablePreviewSource(src, { previewName: item.name });
+  if (!hasRenderableImage) {
+    return `<div class="cosmetic-preview missing">No Preview</div>`;
+  }
   const framed = isFramedCosmeticType(type);
   return `
     <div

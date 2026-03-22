@@ -1,7 +1,7 @@
 import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
 import { getAssetPath } from "../../utils/dom.js";
-import { getCosmeticDefinition, getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
-import { buildHoverPreviewAttributes } from "./cosmeticHoverPreview.js";
+import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
+import { buildHoverPreviewAttributes, hasRenderablePreviewSource } from "./cosmeticHoverPreview.js";
 
 export const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary"]);
@@ -25,6 +25,30 @@ export function getCardElement(card) {
   }
 
   return null;
+}
+
+function resolveCosmeticDefinitionFromIdentity(type, { id = null, name = null, image = null } = {}) {
+  const definitionById = id ? getCosmeticDefinition(type, id) : null;
+  if (definitionById) {
+    return definitionById;
+  }
+
+  const catalog = Array.isArray(COSMETIC_CATALOG[type]) ? COSMETIC_CATALOG[type] : [];
+  const normalizedName = typeof name === "string" ? name.trim().toLowerCase() : "";
+  const normalizedImage = typeof image === "string" ? image.trim().toLowerCase() : "";
+
+  return (
+    catalog.find((item) => {
+      const itemName = String(item?.name ?? "").trim().toLowerCase();
+      const itemId = String(item?.id ?? "").trim().toLowerCase();
+      const itemImage = item?.image ? getAssetPath(item.image).trim().toLowerCase() : "";
+
+      return (
+        (normalizedName && (itemName === normalizedName || itemId === normalizedName)) ||
+        (normalizedImage && itemImage === normalizedImage)
+      );
+    }) ?? null
+  );
 }
 
 function getElementCounts(cardsOrCounts) {
@@ -55,54 +79,83 @@ export function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
   const name = escapeHtml(playerDisplay?.name ?? fallbackName);
   const title = escapeHtml(playerDisplay?.title ?? "Initiate");
   const avatar = playerDisplay?.avatar ?? ASSET_CATALOG.avatars.default_avatar;
+  const avatarImageSrc = hasRenderablePreviewSource(avatar, { previewName: playerDisplay?.name ?? fallbackName })
+    ? avatar
+    : null;
   const titleIcon = playerDisplay?.titleIcon ?? null;
-  const titleDefinition = playerDisplay?.titleId ? getCosmeticDefinition("title", playerDisplay.titleId) : null;
-  const titlePreviewSrc = titleDefinition?.image ? getAssetPath(titleDefinition.image) : null;
-  const featuredBadge = playerDisplay?.featuredBadge ?? null;
+  const titleDefinition = resolveCosmeticDefinitionFromIdentity("title", {
+    id: playerDisplay?.titleId ?? null,
+    name: playerDisplay?.title ?? null,
+    image: titleIcon
+  });
+  const canonicalTitleImage = titleDefinition?.image ? getAssetPath(titleDefinition.image) : null;
+  const titleDisplaySrc = hasRenderablePreviewSource(titleIcon, {
+    previewName: playerDisplay?.title ?? "Initiate",
+    previewVisualText: playerDisplay?.title ?? "Initiate"
+  })
+    ? titleIcon
+    : hasRenderablePreviewSource(canonicalTitleImage, {
+        previewName: playerDisplay?.title ?? "Initiate",
+        previewVisualText: playerDisplay?.title ?? "Initiate"
+      })
+      ? canonicalTitleImage
+      : null;
+  const titlePreviewSrc = titleDisplaySrc;
+  const featuredBadge = hasRenderablePreviewSource(playerDisplay?.featuredBadge ?? null, {
+    previewName: "Featured Badge"
+  })
+    ? playerDisplay.featuredBadge
+    : null;
   const avatarHoverMetadata = getCosmeticHoverMetadata(
     "avatar",
     playerDisplay?.avatarId,
     playerDisplay?.name ?? fallbackName
   );
+  const resolvedTitleId = titleDefinition?.id ?? playerDisplay?.titleId ?? null;
+  const badgeDefinition = resolveCosmeticDefinitionFromIdentity("badge", {
+    id: playerDisplay?.badgeId ?? null,
+    image: featuredBadge
+  });
+  const resolvedBadgeId = badgeDefinition?.id ?? playerDisplay?.badgeId ?? null;
   const titleHoverMetadata = getCosmeticHoverMetadata(
     "title",
-    playerDisplay?.titleId,
+    resolvedTitleId,
     playerDisplay?.title ?? "Initiate"
   );
-  const badgeHoverMetadata = playerDisplay?.badgeId
-    ? getCosmeticHoverMetadata("badge", playerDisplay.badgeId, "Featured Badge")
+  const badgeHoverMetadata = resolvedBadgeId
+    ? getCosmeticHoverMetadata("badge", resolvedBadgeId, "Featured Badge")
     : null;
   const avatarHoverAttributes = buildHoverPreviewAttributes({
     previewType: "avatar",
-    previewSrc: avatar,
+    previewSrc: avatarImageSrc,
     previewName: avatarHoverMetadata.name ?? playerDisplay?.name ?? fallbackName,
     previewRarity: avatarHoverMetadata.rarity
   });
   const titleHoverAttributes = buildHoverPreviewAttributes({
     previewType: "title",
-    previewSrc: titlePreviewSrc,
+    previewSrc: titleDisplaySrc,
     previewName: titleHoverMetadata.name ?? playerDisplay?.title ?? "Initiate",
     previewDescription: titleHoverMetadata.description,
     previewVisualText: playerDisplay?.title ?? "Initiate",
     previewRarity: titleHoverMetadata.rarity
   });
-  const badgeHoverAttributes = badgeHoverMetadata
+  const badgeHoverAttributes = featuredBadge
     ? buildHoverPreviewAttributes({
         previewType: "badge",
         previewSrc: featuredBadge,
-        previewName: badgeHoverMetadata.name,
-        previewDescription: badgeHoverMetadata.description,
-        previewRarity: badgeHoverMetadata.rarity
+        previewName: badgeHoverMetadata?.name ?? "Featured Badge",
+        previewDescription: badgeHoverMetadata?.description ?? "",
+        previewRarity: badgeHoverMetadata?.rarity ?? "Common"
       })
     : "";
   const safeCountLabel = countLabel ? ` ${escapeHtml(countLabel)}` : "";
 
   return `
     <div class="player-header">
-      <img class="player-avatar" src="${avatar}" alt="${name}" ${avatarHoverAttributes} />
+      ${avatarImageSrc ? `<img class="player-avatar" src="${avatarImageSrc}" alt="${name}" ${avatarHoverAttributes} />` : ""}
       <div>
         <h3>${name}${safeCountLabel}</h3>
-        <p class="player-title"><span class="player-title-preview" ${titleHoverAttributes}>${titleIcon ? `<img class="title-icon" src="${titleIcon}" alt="${title}" />` : ""}<span>${title}</span></span>${featuredBadge ? `<img class="featured-badge" src="${featuredBadge}" alt="Featured Badge" ${badgeHoverAttributes} />` : ""}</p>
+        <p class="player-title"><span class="player-title-preview" ${titleHoverAttributes}>${titleDisplaySrc ? `<img class="title-icon" src="${titleDisplaySrc}" alt="${title}" />` : ""}<span>${title}</span></span>${featuredBadge ? `<img class="featured-badge" src="${featuredBadge}" alt="Featured Badge" ${badgeHoverAttributes} />` : ""}</p>
       </div>
     </div>
   `;

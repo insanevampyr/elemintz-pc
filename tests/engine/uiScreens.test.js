@@ -5391,6 +5391,10 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /aria-label="Water count x1"/);
   assert.match(html, /aria-label="Earth count x2"/);
   assert.match(html, /aria-label="Wind count x1"/);
+  assert.match(html, /data-preview-src="[^"]*title_element_sovereign\.png"/);
+  assert.match(html, /data-preview-src="[^"]*badge_element_veteran\.png"/);
+  assert.match(html, /class="title-icon" src="[^"]*title_element_sovereign\.png"/);
+  assert.match(html, /class="featured-badge" src="[^"]*badge_element_veteran\.png"/);
 });
 
 test("ui: online play screen renders match complete and rematch readiness state", () => {
@@ -6374,6 +6378,8 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
   assert.match(html, /data-preview-type="avatar"/);
   assert.match(html, /data-preview-type="title"/);
   assert.match(html, /data-preview-type="badge"/);
+  assert.match(html, /data-preview-src="[^"]*title_war_master\.png"/);
+  assert.match(html, /data-preview-src="[^"]*title_element_sovereign\.png"/);
   assert.match(html, /data-preview-description="Level Reward: Reach Level 50\."/);
   assert.match(html, /data-preview-description="Level Reward: Reach Level 60\."/);
   assert.match(html, new RegExp(getVariantCardImages({ fire: "fire_variant_phoenix" }).fire.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

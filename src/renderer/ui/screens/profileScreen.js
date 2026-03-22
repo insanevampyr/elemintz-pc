@@ -12,7 +12,8 @@ import {
 } from "../../../state/cosmeticSystem.js";
 import {
   bindCosmeticHoverPreview,
-  buildHoverPreviewAttributes
+  buildHoverPreviewAttributes,
+  hasRenderablePreviewSource
 } from "../shared/cosmeticHoverPreview.js";
 
 function resolveImagePath(image) {
@@ -40,7 +41,24 @@ function renderTitleLine(titleText, titleIcon, featuredBadge, options = {}) {
   const icon = resolveImagePath(titleIcon);
   const badge = resolveImagePath(featuredBadge);
   const titleDefinition = options.titleId ? getCosmeticDefinition("title", options.titleId) : null;
-  const titlePreviewSrc = titleDefinition?.image ? resolveImagePath(titleDefinition.image) : null;
+  const canonicalTitleImage = titleDefinition?.image ? resolveImagePath(titleDefinition.image) : null;
+  const titleDisplaySrc = hasRenderablePreviewSource(icon, {
+    previewName: titleText,
+    previewVisualText: titleText
+  })
+    ? icon
+    : hasRenderablePreviewSource(canonicalTitleImage, {
+        previewName: titleText,
+        previewVisualText: titleText
+      })
+      ? canonicalTitleImage
+      : null;
+  const titlePreviewSrc = titleDisplaySrc;
+  const badgeDisplaySrc = hasRenderablePreviewSource(badge, {
+    previewName: "Featured Badge"
+  })
+    ? badge
+    : null;
   const titleHoverMetadata = getCosmeticHoverMetadata("title", options.titleId, titleText);
   const titleHoverAttributes = buildHoverPreviewAttributes({
     previewType: "title",
@@ -50,23 +68,23 @@ function renderTitleLine(titleText, titleIcon, featuredBadge, options = {}) {
     previewVisualText: titleText,
     previewRarity: titleHoverMetadata.rarity
   });
-  const badgeHoverMetadata = badge
+  const badgeHoverMetadata = badgeDisplaySrc
     ? getCosmeticHoverMetadata("badge", options.badgeId, "Featured Badge")
     : null;
-  const badgeHoverAttributes = badgeHoverMetadata
+  const badgeHoverAttributes = badgeDisplaySrc
     ? buildHoverPreviewAttributes({
         previewType: "badge",
-        previewSrc: badge,
-        previewName: badgeHoverMetadata.name,
-        previewDescription: badgeHoverMetadata.description,
-        previewRarity: badgeHoverMetadata.rarity
+        previewSrc: badgeDisplaySrc,
+        previewName: badgeHoverMetadata?.name ?? "Featured Badge",
+        previewDescription: badgeHoverMetadata?.description ?? "",
+        previewRarity: badgeHoverMetadata?.rarity ?? "Common"
       })
     : "";
 
   return `
     <p class="player-title">
-      <span class="player-title-preview" ${titleHoverAttributes}>${icon ? `<img class="title-icon" src="${icon}" alt="${titleText}" />` : ""}<span>${titleText}</span></span>
-      ${badge ? `<img class="featured-badge" src="${badge}" alt="Featured Badge" ${badgeHoverAttributes} />` : ""}
+      <span class="player-title-preview" ${titleHoverAttributes}>${titleDisplaySrc ? `<img class="title-icon" src="${titleDisplaySrc}" alt="${titleText}" />` : ""}<span>${titleText}</span></span>
+      ${badgeDisplaySrc ? `<img class="featured-badge" src="${badgeDisplaySrc}" alt="Featured Badge" ${badgeHoverAttributes} />` : ""}
     </p>
   `;
 }
@@ -181,17 +199,18 @@ function renderChestPanel(profile, visualState = {}) {
 }
 
 function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, titleId, titleIcon, badgeId, badgeSrc }) {
+  const avatarImageSrc = hasRenderablePreviewSource(avatarSrc, { previewName: username }) ? avatarSrc : null;
   const avatarHoverMetadata = getCosmeticHoverMetadata("avatar", avatarId, username);
   const avatarHoverAttributes = buildHoverPreviewAttributes({
     previewType: "avatar",
-    previewSrc: avatarSrc,
+    previewSrc: avatarImageSrc,
     previewName: avatarHoverMetadata.name ?? username,
     previewRarity: avatarHoverMetadata.rarity
   });
 
   return `
     <div class="player-header">
-      <img class="player-avatar" src="${avatarSrc}" alt="${username}" ${avatarHoverAttributes} />
+      ${avatarImageSrc ? `<img class="player-avatar" src="${avatarImageSrc}" alt="${username}" ${avatarHoverAttributes} />` : ""}
       <div>
         <h3>${username}</h3>
         ${renderTitleLine(title, titleIcon, badgeSrc, { titleId, badgeId })}
@@ -305,7 +324,7 @@ export const profileScreen = {
             avatarId: profile.equippedCosmetics?.avatar,
             avatarSrc: playerAvatar,
             title: equippedTitle,
-            titleId: profile.equippedCosmetics?.title,
+            titleId: profile.equippedCosmetics?.title ?? profile.title,
             titleIcon: profileTitleIcon,
             badgeId: profile.equippedCosmetics?.badge ?? "none",
             badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
