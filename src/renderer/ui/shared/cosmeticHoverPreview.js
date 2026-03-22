@@ -6,7 +6,7 @@ const PREVIEW_DIMENSIONS = Object.freeze({
   cardBack: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
   elementCardVariant: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
   badge: { width: 260, height: 328, mediaWidth: 168, mediaHeight: 168 },
-  title: { width: 264, height: 186, mediaWidth: 248, mediaHeight: 76 }
+  title: { width: 228, height: 286, mediaWidth: 188, mediaHeight: 188 }
 });
 
 function escapeAttribute(value) {

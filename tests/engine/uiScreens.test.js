@@ -1889,6 +1889,79 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
   assert.match(previewFrame.className, /rarity-epic/);
 });
 
+test("ui: title hover preview uses square full-image framing when title art exists", () => {
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      textContent: "",
+      children,
+      appendChild(child) {
+        children.push(child);
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const listeners = new Map();
+  const appended = [];
+  const root = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    contains: () => true
+  };
+  const documentRef = {
+    documentElement: { clientWidth: 900, clientHeight: 700 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: { innerWidth: 900, innerHeight: 700, addEventListener() {} }
+  };
+
+  bindCosmeticHoverPreview({ root, documentRef });
+
+  const previewLayer = appended[0];
+  const previewFrame = previewLayer.children[0];
+  const previewImage = previewFrame.children[0];
+  const titleTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "title",
+        "data-preview-rarity": "Epic",
+        "data-preview-src": "file:///title.png",
+        "data-preview-name": "War Master",
+        "data-preview-description": "Level Reward: Reach Level 50.",
+        "data-preview-visual-text": "War Master"
+      }[name] ?? null;
+    },
+    closest: () => titleTarget
+  };
+
+  listeners.get("mouseover")({ target: titleTarget, clientX: 100, clientY: 100 });
+
+  assert.equal(previewLayer.hidden, false);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///title.png");
+  assert.equal(previewFrame.style.width, "188px");
+  assert.equal(previewFrame.style.height, "188px");
+  assert.equal(previewLayer.style.width, "228px");
+  assert.equal(previewLayer.style.height, "286px");
+  assert.match(previewFrame.className, /is-title/);
+});
+
 test("ui: cosmetics screen category filters hide unselected owned sections", () => {
   const previousDocument = global.document;
 
