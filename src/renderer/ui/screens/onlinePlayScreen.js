@@ -798,12 +798,14 @@ export const onlinePlayScreen = {
           </div>
           ${
             room?.status === "full" && !matchComplete
-              ? renderMatchTauntHud({
-                  idPrefix: "online",
-                  panelOpen: Boolean(context.taunts?.panelOpen),
-                  messages: context.taunts?.messages ?? [],
-                  presetLines: context.taunts?.presetLines ?? []
-                })
+          ? renderMatchTauntHud({
+              idPrefix: "online",
+              panelOpen: Boolean(context.taunts?.panelOpen),
+              messages: context.taunts?.messages ?? [],
+              presetLines: context.taunts?.presetLines ?? [],
+              cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
+              canSend: context.taunts?.canSend ?? true
+            })
               : ""
           }
           <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">

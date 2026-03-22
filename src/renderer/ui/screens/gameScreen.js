@@ -290,7 +290,9 @@ export const gameScreen = {
           idPrefix: "game",
           panelOpen: Boolean(context.taunts?.panelOpen),
           messages: context.taunts?.messages ?? [],
-          presetLines: context.taunts?.presetLines ?? []
+          presetLines: context.taunts?.presetLines ?? [],
+          cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
+          canSend: context.taunts?.canSend ?? true
         })}
 
         <section class="arena-board" style="background-image: url('${context.arenaBackground}')">

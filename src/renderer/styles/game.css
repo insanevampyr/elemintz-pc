@@ -334,6 +334,14 @@ input[type="number"] {
   color: #e8f3ff;
   font-size: 0.83rem;
   line-height: 1.35;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 400ms ease, transform 400ms ease;
+}
+
+.match-taunt-entry.is-fading {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .match-taunt-entry strong {
@@ -359,6 +367,18 @@ input[type="number"] {
 .match-taunts-toggle-btn {
   min-width: 96px;
   justify-self: end;
+}
+
+.match-taunt-cooldown {
+  margin: -2px 2px 0 0;
+  justify-self: end;
+  color: rgba(225, 240, 255, 0.82);
+  font-size: 0.73rem;
+  line-height: 1;
+}
+
+.match-taunt-cooldown[data-taunt-cooldown-state="cooldown"] {
+  color: rgba(255, 214, 143, 0.9);
 }
 
 .match-taunt-panel {
@@ -388,6 +408,12 @@ input[type="number"] {
   border-color: rgba(122, 222, 191, 0.72);
   background: rgba(21, 48, 71, 0.96);
   transform: translateY(-1px);
+}
+
+.match-taunt-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
 }
 
 .screen-game .panel {

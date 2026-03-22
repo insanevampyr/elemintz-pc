@@ -16,6 +16,7 @@ export const MATCH_TAUNT_PRESETS = Object.freeze([
   "A risky play.",
   "Not bad."
 ]);
+export const MATCH_TAUNT_FEED_LIMIT = 4;
 const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary"]);
 
 export function normalizeCosmeticRarity(rarity) {
@@ -280,10 +281,15 @@ export function renderMatchTauntHud({
   idPrefix = "match",
   panelOpen = false,
   messages = [],
-  presetLines = MATCH_TAUNT_PRESETS
+  presetLines = MATCH_TAUNT_PRESETS,
+  cooldownRemainingMs = 0,
+  canSend = true
 } = {}) {
-  const safeMessages = Array.isArray(messages) ? messages.slice(-4) : [];
+  const safeMessages = Array.isArray(messages) ? messages.slice(-MATCH_TAUNT_FEED_LIMIT) : [];
   const safePresetLines = Array.isArray(presetLines) ? presetLines : MATCH_TAUNT_PRESETS;
+  const safeCooldownMs = Math.max(0, Number(cooldownRemainingMs) || 0);
+  const cooldownSeconds = Math.ceil(safeCooldownMs / 1000);
+  const cooldownLabel = safeCooldownMs > 0 ? `${cooldownSeconds}s` : "Ready";
 
   return `
     <aside class="match-taunt-shell ${panelOpen ? "is-open" : ""}" data-match-taunt-shell="${escapeHtml(idPrefix)}">
@@ -291,7 +297,10 @@ export function renderMatchTauntHud({
         ${safeMessages
           .map(
             (message) => `
-              <div class="match-taunt-entry ${getTauntSpeakerClass(message)}">
+              <div
+                class="match-taunt-entry ${getTauntSpeakerClass(message)} ${message?.isFading ? "is-fading" : ""}"
+                data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
+              >
                 <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
                 <span>${escapeHtml(message?.text ?? "")}</span>
               </div>
@@ -303,6 +312,9 @@ export function renderMatchTauntHud({
         <button id="${escapeHtml(idPrefix)}-taunts-toggle-btn" type="button" class="btn btn-secondary match-taunts-toggle-btn" aria-expanded="${panelOpen ? "true" : "false"}">
           Taunts
         </button>
+        <p class="match-taunt-cooldown" data-taunt-cooldown-state="${safeCooldownMs > 0 ? "cooldown" : "ready"}">
+          ${escapeHtml(cooldownLabel)}
+        </p>
         ${
           panelOpen
             ? `
@@ -310,7 +322,13 @@ export function renderMatchTauntHud({
                 ${safePresetLines
                   .map(
                     (line, index) => `
-                      <button type="button" class="match-taunt-option" data-taunt-line="${escapeHtml(line)}" data-taunt-index="${String(index)}">
+                      <button
+                        type="button"
+                        class="match-taunt-option"
+                        data-taunt-line="${escapeHtml(line)}"
+                        data-taunt-index="${String(index)}"
+                        ${canSend ? "" : "disabled"}
+                      >
                         ${escapeHtml(line)}
                       </button>
                     `

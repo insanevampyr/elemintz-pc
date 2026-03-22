@@ -2190,10 +2190,12 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
     taunts: {
       panelOpen: true,
       messages: [
-        { speaker: "Hero", text: "Well played.", kind: "player" },
+        { id: "taunt-1", speaker: "Hero", text: "Well played.", kind: "player", isFading: true },
         { speaker: "Elemental AI", text: "Your move.", kind: "ai" }
       ],
-      presetLines: ["Your move.", "Well played."]
+      presetLines: ["Your move.", "Well played."],
+      cooldownRemainingMs: 6500,
+      canSend: false
     },
     game: {
       roundOutcome: { key: "no_effect", label: "No effect" },
@@ -2216,12 +2218,60 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
 
   assert.match(html, /id="game-taunts-toggle-btn"/);
   assert.match(html, /data-match-taunt-shell="game"/);
+  assert.match(html, /data-taunt-message-id="taunt-1"/);
+  assert.match(html, /match-taunt-entry [^"]*is-fading/);
   assert.match(html, /Hero<\/strong>\s*<span>Well played\.<\/span>/);
   assert.match(html, /Elemental AI<\/strong>\s*<span>Your move\.<\/span>/);
   assert.match(html, /data-match-taunt-panel="game"/);
+  assert.match(html, /data-taunt-cooldown-state="cooldown"/);
+  assert.match(html, />\s*7s\s*</);
   assert.match(html, /data-taunt-line="Your move\."/);
+  assert.match(html, /data-taunt-line="Your move\."[^>]*disabled/);
   assert.match(html, /data-taunt-line="Well played\."/);
   assert.match(html, /data-card-owner="active"/);
+});
+
+test("ui: game taunt feed caps visible messages at four most recent entries", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {
+      panelOpen: false,
+      messages: [
+        { speaker: "One", text: "1", kind: "player" },
+        { speaker: "Two", text: "2", kind: "player" },
+        { speaker: "Three", text: "3", kind: "player" },
+        { speaker: "Four", text: "4", kind: "player" },
+        { speaker: "Five", text: "5", kind: "player" }
+      ]
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.doesNotMatch(html, /One<\/strong>\s*<span>1<\/span>/);
+  assert.match(html, /Two<\/strong>\s*<span>2<\/span>/);
+  assert.match(html, /Five<\/strong>\s*<span>5<\/span>/);
 });
 
 test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides cleanly", () => {
@@ -5272,6 +5322,86 @@ test("ui: appController local PvP taunts use the active hotseat speaker", async 
   assert.equal(app.matchTauntPanelOpen, false);
 });
 
+test("ui: appController taunt messages expire individually after the visible lifetime and fade window", () => {
+  const app = createRendererController();
+  let now = 1000;
+  app.getTauntNow = () => now;
+
+  app.appendMatchTaunt({ speaker: "Hero", text: "Your move.", kind: "player" });
+  now = 21100;
+  assert.equal(app.getRenderableMatchTaunts()[0].isFading, true);
+
+  app.appendMatchTaunt({ speaker: "Hero", text: "Interesting.", kind: "player" });
+  now = 21350;
+  const stillVisible = app.getRenderableMatchTaunts();
+  assert.equal(stillVisible.length, 2);
+  assert.equal(stillVisible[0].text, "Your move.");
+  assert.equal(stillVisible[1].text, "Interesting.");
+
+  now = 21700;
+  app.pruneExpiredLocalMatchTaunts();
+  const remaining = app.getRenderableMatchTaunts();
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].text, "Interesting.");
+});
+
+test("ui: appController PVE player taunts enforce the 12 second cooldown", async () => {
+  const app = createRendererController();
+  let now = 1000;
+  let showCalls = 0;
+  app.username = "Hero";
+  app.profile = { username: "Hero" };
+  app.getTauntNow = () => now;
+  app.screenFlow = "game";
+  app.showGame = () => {
+    showCalls += 1;
+  };
+  app.gameController = {
+    getViewModel: () => ({
+      mode: MATCH_MODE.PVE
+    })
+  };
+
+  await app.sendCurrentMatchTaunt("Bold choice.");
+  assert.equal(app.matchTaunts.length, 1);
+
+  now = 7000;
+  await app.sendCurrentMatchTaunt("Well played.");
+  assert.equal(app.matchTaunts.length, 1);
+  assert.equal(app.getCurrentTauntHudState().canSend, false);
+
+  now = 13050;
+  await app.sendCurrentMatchTaunt("Well played.");
+  assert.equal(app.matchTaunts.length, 2);
+  assert.equal(app.matchTaunts.at(-1).text, "Well played.");
+  assert.equal(showCalls, 3);
+});
+
+test("ui: appController local PvP taunt cooldown applies per active side", async () => {
+  const app = createRendererController();
+  let now = 1000;
+  app.getTauntNow = () => now;
+  app.showGame = () => {};
+  app.localPlayers = { p1: "Alpha", p2: "Beta" };
+  let hotseatTurn = "p1";
+  app.gameController = {
+    getViewModel: () => ({
+      mode: MATCH_MODE.LOCAL_PVP,
+      hotseatTurn
+    })
+  };
+
+  await app.sendCurrentMatchTaunt("Bold choice.");
+  now = 5000;
+  await app.sendCurrentMatchTaunt("Well played.");
+  assert.equal(app.matchTaunts.length, 1);
+
+  hotseatTurn = "p2";
+  await app.sendCurrentMatchTaunt("Interesting.");
+  assert.equal(app.matchTaunts.length, 2);
+  assert.equal(app.matchTaunts.at(-1).speaker, "Beta");
+});
+
 test("ui: appController PVE AI taunts respect cooldown and avoid consecutive event spam", () => {
   const app = createRendererController();
   app.gameController = {
@@ -5300,6 +5430,7 @@ test("ui: appController online taunt action routes through multiplayer state and
   const previousWindow = global.window;
   const shown = [];
   const sendTauntCalls = [];
+  let now = 1000;
   global.window = {
     elemintz: {
       multiplayer: {
@@ -5352,6 +5483,7 @@ test("ui: appController online taunt action routes through multiplayer state and
 
   try {
     controller.username = "Hero";
+    controller.getTauntNow = () => now;
     controller.profile = { username: "Hero", equippedCosmetics: { background: "default_background" } };
     controller.onlinePlayState = {
       connectionStatus: "connected",
@@ -5374,10 +5506,16 @@ test("ui: appController online taunt action routes through multiplayer state and
 
     controller.renderOnlinePlayScreen();
     await shown.at(-1).actions.sendTaunt("Your move.");
-
     assert.deepEqual(sendTauntCalls, [{ line: "Your move." }]);
-    assert.equal(shown.at(-1).taunts.messages.at(-1).text, "Your move.");
+    await shown.at(-1).actions.sendTaunt("Well played.");
+    assert.deepEqual(sendTauntCalls, [{ line: "Your move." }]);
+    now = 13100;
+    await shown.at(-1).actions.sendTaunt("Well played.");
+
+    assert.deepEqual(sendTauntCalls, [{ line: "Your move." }, { line: "Well played." }]);
+    assert.equal(shown.at(-1).taunts.messages.at(-1).text, "Well played.");
     assert.equal(shown.at(-1).taunts.messages.at(-1).speaker, "Hero");
+    assert.equal(shown.at(-1).taunts.canSend, false);
   } finally {
     global.window = previousWindow;
   }

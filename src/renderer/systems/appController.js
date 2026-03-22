@@ -18,7 +18,7 @@ import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
 import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
-import { MATCH_TAUNT_PRESETS } from "../ui/shared/playSurfaceShared.js";
+import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS } from "../ui/shared/playSurfaceShared.js";
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
@@ -54,8 +54,11 @@ const ONLINE_DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
   title: "Initiate",
   badge: "none"
 });
-const MATCH_TAUNT_FEED_LIMIT = 4;
 const MATCH_TAUNT_HISTORY_LIMIT = 8;
+const MATCH_TAUNT_VISIBLE_MS = 20000;
+const MATCH_TAUNT_FADE_MS = 400;
+const MATCH_TAUNT_UI_TICK_MS = 250;
+const PLAYER_TAUNT_COOLDOWN_MS = 12000;
 const AI_TAUNT_COOLDOWN_MIN_MS = 20000;
 const AI_TAUNT_COOLDOWN_MAX_MS = 30000;
 const AI_TAUNT_CHANCE_MIN = 0.3;
@@ -125,6 +128,8 @@ export class AppController {
     this.matchTaunts = [];
     this.matchTauntPanelOpen = false;
     this.matchTauntSequence = 0;
+    this.matchTauntUiTimerId = null;
+    this.playerTauntCooldowns = Object.create(null);
     this.aiTauntCooldownUntil = 0;
     this.aiLastTauntEventKey = null;
     this.tauntRandom = Math.random;
@@ -154,11 +159,14 @@ export class AppController {
     this.matchTaunts = [];
     this.matchTauntPanelOpen = false;
     this.matchTauntSequence = 0;
+    this.playerTauntCooldowns = Object.create(null);
     this.aiTauntCooldownUntil = 0;
     this.aiLastTauntEventKey = null;
+    this.clearMatchTauntUiTimer();
   }
 
   appendMatchTaunt({ speaker, text, kind = "player" }) {
+    const now = this.getTauntNow();
     const safeSpeaker = String(speaker ?? "").trim();
     const safeText = String(text ?? "").trim();
     if (!safeSpeaker || !safeText) {
@@ -172,22 +180,168 @@ export class AppController {
         id: `taunt-${this.matchTauntSequence}`,
         speaker: safeSpeaker,
         text: safeText,
-        kind
+        kind,
+        createdAt: now,
+        fadeAt: now + MATCH_TAUNT_VISIBLE_MS,
+        expiresAt: now + MATCH_TAUNT_VISIBLE_MS + MATCH_TAUNT_FADE_MS
       }
     ].slice(-MATCH_TAUNT_HISTORY_LIMIT);
+    this.ensureMatchTauntUiTimer();
+  }
+
+  clearMatchTauntUiTimer() {
+    if (this.matchTauntUiTimerId) {
+      clearInterval(this.matchTauntUiTimerId);
+      this.matchTauntUiTimerId = null;
+    }
+  }
+
+  getCurrentPlayerTauntCooldownRemaining(senderKey) {
+    const key = String(senderKey ?? "").trim();
+    if (!key) {
+      return 0;
+    }
+
+    return Math.max(0, Number(this.playerTauntCooldowns[key] ?? 0) - this.getTauntNow());
+  }
+
+  isPlayerTauntCoolingDown(senderKey) {
+    return this.getCurrentPlayerTauntCooldownRemaining(senderKey) > 0;
+  }
+
+  startPlayerTauntCooldown(senderKey) {
+    const key = String(senderKey ?? "").trim();
+    if (!key) {
+      return;
+    }
+
+    this.playerTauntCooldowns[key] = this.getTauntNow() + PLAYER_TAUNT_COOLDOWN_MS;
+    this.ensureMatchTauntUiTimer();
+  }
+
+  getCurrentGameTauntSenderKey() {
+    const vm = this.gameController?.getViewModel();
+    if (vm?.mode === MATCH_MODE.LOCAL_PVP) {
+      return vm.hotseatTurn === "p2" ? "local:p2" : "local:p1";
+    }
+
+    return `user:${this.username ?? this.profile?.username ?? "player"}`;
+  }
+
+  getCurrentOnlineTauntSenderKey() {
+    const room = this.onlinePlayState?.room;
+    const socketId = this.onlinePlayState?.socketId ?? null;
+
+    if (room?.host?.socketId && room.host.socketId === socketId) {
+      return "online:host";
+    }
+
+    if (room?.guest?.socketId && room.guest.socketId === socketId) {
+      return "online:guest";
+    }
+
+    return `user:${this.username ?? this.profile?.username ?? "player"}`;
+  }
+
+  buildRenderableTauntMessages(taunts) {
+    const now = this.getTauntNow();
+    return (Array.isArray(taunts) ? taunts : [])
+      .map((entry) => {
+        const fallbackCreatedAt = Date.parse(entry?.sentAt ?? "") || now;
+        const createdAt = Number(entry?.createdAt ?? fallbackCreatedAt);
+        const fadeAt = Number(entry?.fadeAt ?? (createdAt + MATCH_TAUNT_VISIBLE_MS));
+        const expiresAt = Number(entry?.expiresAt ?? (fadeAt + MATCH_TAUNT_FADE_MS));
+        if (!Number.isFinite(expiresAt) || now >= expiresAt) {
+          return null;
+        }
+
+        return {
+          id: entry?.id ?? null,
+          speaker: entry?.speaker ?? entry?.senderName ?? "Player",
+          text: entry?.text ?? "",
+          kind: entry?.kind ?? "player",
+          isFading: now >= fadeAt
+        };
+      })
+      .filter(Boolean)
+      .slice(-MATCH_TAUNT_FEED_LIMIT);
+  }
+
+  pruneExpiredLocalMatchTaunts() {
+    const now = this.getTauntNow();
+    const nextTaunts = this.matchTaunts.filter((entry) => Number(entry?.expiresAt ?? 0) > now);
+    const changed = nextTaunts.length !== this.matchTaunts.length;
+    if (changed) {
+      this.matchTaunts = nextTaunts;
+    }
+    return changed;
+  }
+
+  hasActiveTauntHudState() {
+    const localActive = this.matchTaunts.some((entry) => Number(entry?.expiresAt ?? 0) > this.getTauntNow());
+    const onlineActive = Array.isArray(this.onlinePlayState?.room?.taunts) && this.onlinePlayState.room.taunts.some((entry) => {
+      const createdAt = Date.parse(entry?.sentAt ?? "") || 0;
+      return createdAt + MATCH_TAUNT_VISIBLE_MS + MATCH_TAUNT_FADE_MS > this.getTauntNow();
+    });
+    const hasCooldown = Object.values(this.playerTauntCooldowns).some((value) => Number(value ?? 0) > this.getTauntNow());
+    return localActive || onlineActive || hasCooldown;
+  }
+
+  refreshTauntHudIfNeeded() {
+    const removedExpired = this.pruneExpiredLocalMatchTaunts();
+
+    if (this.screenFlow === "game") {
+      this.showGame();
+    } else if (this.screenFlow === "onlinePlay") {
+      this.renderOnlinePlayScreen();
+    } else if (removedExpired || !this.hasActiveTauntHudState()) {
+      this.clearMatchTauntUiTimer();
+    }
+  }
+
+  ensureMatchTauntUiTimer() {
+    if (this.matchTauntUiTimerId || !this.hasActiveTauntHudState()) {
+      return;
+    }
+
+    this.matchTauntUiTimerId = setInterval(() => {
+      if (!this.hasActiveTauntHudState()) {
+        this.clearMatchTauntUiTimer();
+        return;
+      }
+
+      this.refreshTauntHudIfNeeded();
+    }, MATCH_TAUNT_UI_TICK_MS);
+    this.matchTauntUiTimerId?.unref?.();
   }
 
   getRenderableMatchTaunts() {
-    return this.matchTaunts.slice(-MATCH_TAUNT_FEED_LIMIT);
+    return this.buildRenderableTauntMessages(this.matchTaunts);
   }
 
   getRenderableOnlineTaunts() {
     const taunts = Array.isArray(this.onlinePlayState?.room?.taunts) ? this.onlinePlayState.room.taunts : [];
-    return taunts.slice(-MATCH_TAUNT_FEED_LIMIT).map((entry) => ({
-      speaker: entry?.speaker ?? entry?.senderName ?? "Player",
-      text: entry?.text ?? "",
-      kind: entry?.kind ?? "player"
-    }));
+    return this.buildRenderableTauntMessages(taunts);
+  }
+
+  getCurrentTauntHudState() {
+    if (this.screenFlow === "onlinePlay") {
+      const senderKey = this.getCurrentOnlineTauntSenderKey();
+      const cooldownRemainingMs = this.getCurrentPlayerTauntCooldownRemaining(senderKey);
+      return {
+        senderKey,
+        cooldownRemainingMs,
+        canSend: cooldownRemainingMs <= 0
+      };
+    }
+
+    const senderKey = this.getCurrentGameTauntSenderKey();
+    const cooldownRemainingMs = this.getCurrentPlayerTauntCooldownRemaining(senderKey);
+    return {
+      senderKey,
+      cooldownRemainingMs,
+      canSend: cooldownRemainingMs <= 0
+    };
   }
 
   toggleMatchTauntPanel() {
@@ -226,11 +380,21 @@ export class AppController {
       return;
     }
 
+    const senderKey = this.getCurrentGameTauntSenderKey();
+    if (this.isPlayerTauntCoolingDown(senderKey)) {
+      this.ensureMatchTauntUiTimer();
+      if (this.screenFlow === "game") {
+        this.showGame();
+      }
+      return;
+    }
+
     this.appendMatchTaunt({
       speaker: this.getCurrentGameTauntSpeaker(),
       text: safeLine,
       kind: "player"
     });
+    this.startPlayerTauntCooldown(senderKey);
     this.closeMatchTauntPanel();
     this.showGame();
   }
@@ -638,6 +802,7 @@ export class AppController {
   }
 
   clearTransientUiBeforeScreenTransition({ preserveModal = false } = {}) {
+    this.clearMatchTauntUiTimer();
     if (preserveModal) {
       return false;
     }
@@ -1542,6 +1707,8 @@ export class AppController {
   }
 
   renderOnlinePlayScreen() {
+    this.screenFlow = "onlinePlay";
+    const tauntHud = this.getCurrentTauntHudState();
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
       onlineChallengeSummary: this.onlinePlayChallengeSummary,
@@ -1553,7 +1720,9 @@ export class AppController {
       taunts: {
         panelOpen: this.matchTauntPanelOpen,
         messages: this.getRenderableOnlineTaunts(),
-        presetLines: MATCH_TAUNT_PRESETS
+        presetLines: MATCH_TAUNT_PRESETS,
+        cooldownRemainingMs: tauntHud.cooldownRemainingMs,
+        canSend: tauntHud.canSend
       },
       actions: {
         createRoom: async () => {
@@ -1628,10 +1797,18 @@ export class AppController {
             return;
           }
 
+          const senderKey = this.getCurrentOnlineTauntSenderKey();
+          if (this.isPlayerTauntCoolingDown(senderKey)) {
+            this.ensureMatchTauntUiTimer();
+            this.renderOnlinePlayScreen();
+            return;
+          }
+
           this.matchTauntPanelOpen = false;
           this.onlinePlayState = this.normalizeOnlinePlayState(
             await window.elemintz.multiplayer.sendTaunt({ line: safeLine })
           );
+          this.startPlayerTauntCooldown(senderKey);
           this.renderOnlinePlayScreen();
         },
         readyRematch: async () => {
@@ -1654,6 +1831,7 @@ export class AppController {
         }
       }
     });
+    this.ensureMatchTauntUiTimer();
   }
 
   async claimDailyLoginRewardFor(username, { showToasts = false } = {}) {
@@ -1928,6 +2106,7 @@ export class AppController {
 
   prepareForFinalModal() {
     this.clearPassTimer({ settle: false });
+    this.clearMatchTauntUiTimer();
     this.roundPresentation = {
       phase: "idle",
       busy: false,
@@ -2755,6 +2934,7 @@ export class AppController {
 
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "game";
+    const tauntHud = this.getCurrentTauntHudState();
 
     const localPvp = vm.mode === MATCH_MODE.LOCAL_PVP;
     if (localPvp) {
@@ -2832,7 +3012,9 @@ export class AppController {
       taunts: {
         panelOpen: this.matchTauntPanelOpen,
         messages: this.getRenderableMatchTaunts(),
-        presetLines: MATCH_TAUNT_PRESETS
+        presetLines: MATCH_TAUNT_PRESETS,
+        cooldownRemainingMs: tauntHud.cooldownRemainingMs,
+        canSend: tauntHud.canSend
       },
       actions: {
         playCard: async (nextCardIndex) => this.handleGameCardSelection(nextCardIndex),
@@ -2845,6 +3027,7 @@ export class AppController {
         }
       }
     });
+    this.ensureMatchTauntUiTimer();
   }
 
   async showProfile({ preserveModal = false } = {}) {
