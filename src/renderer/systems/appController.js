@@ -532,68 +532,54 @@ export class AppController {
     return getArenaBackground(this.getBackgroundIdFromProfile(profile));
   }
 
-  chooseOwnedBackgroundForNextMatch(profile) {
-    const ownedBackgrounds = Array.isArray(profile?.ownedCosmetics?.background)
-      ? profile.ownedCosmetics.background.filter(Boolean)
-      : [];
-    const currentBackground = this.getBackgroundIdFromProfile(profile);
-
-    if (ownedBackgrounds.length === 0) {
-      return currentBackground;
-    }
-
-    const nonRepeatingPool =
-      ownedBackgrounds.length > 1
-        ? ownedBackgrounds.filter((backgroundId) => backgroundId !== currentBackground)
-        : ownedBackgrounds;
-    const pool = nonRepeatingPool.length > 0 ? nonRepeatingPool : ownedBackgrounds;
-    const index = Math.floor(Math.random() * pool.length);
-    return pool[index] ?? currentBackground;
+  getEnabledCosmeticRandomizationCategories(profile) {
+    const preferences = profile?.cosmeticRandomizeAfterMatch ?? {};
+    const categories = ["avatar", "title", "badge", "elementCardVariant", "cardBack", "background"];
+    return categories.filter((type) => Boolean(preferences[type] ?? (type === "background" && profile?.randomizeBackgroundEachMatch)));
   }
 
-  async maybeRandomizeBackgroundAfterMatchFor(username, profile) {
-    if (!username || !profile?.randomizeBackgroundEachMatch) {
-      return profile;
-    }
-
-    const nextBackgroundId = this.chooseOwnedBackgroundForNextMatch(profile);
-    const currentBackgroundId = this.getBackgroundIdFromProfile(profile);
-    if (!nextBackgroundId || nextBackgroundId === currentBackgroundId) {
+  async randomizeOwnedCosmeticsFor(username, profile, categories = []) {
+    const uniqueCategories = [...new Set(Array.isArray(categories) ? categories.filter(Boolean) : [])];
+    if (!username || !profile || uniqueCategories.length === 0) {
       return profile;
     }
 
     try {
-      const result = await window.elemintz.state.equipCosmetic({
+      const result = await window.elemintz.state.randomizeOwnedCosmetics({
         username,
-        type: "background",
-        cosmeticId: nextBackgroundId
+        categories: uniqueCategories
       });
       return result?.profile ?? profile;
     } catch (error) {
-      console.error("Failed to randomize owned background after match", {
+      console.error("Failed to randomize owned cosmetics after match", {
         username,
-        nextBackgroundId,
+        categories: uniqueCategories,
         error
       });
       return profile;
     }
   }
 
-  async applyPostMatchBackgroundRandomization(mode, finalPersisted) {
+  async maybeRandomizeCosmeticsAfterMatchFor(username, profile) {
+    const categories = this.getEnabledCosmeticRandomizationCategories(profile);
+    return this.randomizeOwnedCosmeticsFor(username, profile, categories);
+  }
+
+  async applyPostMatchCosmeticRandomization(mode, finalPersisted) {
     if (mode === MATCH_MODE.LOCAL_PVP) {
       const names = this.getLocalNames();
       const p1Profile = finalPersisted?.p1?.profile ?? this.localProfiles?.p1 ?? null;
       const p2Profile = finalPersisted?.p2?.profile ?? this.localProfiles?.p2 ?? null;
 
       this.localProfiles = {
-        p1: await this.maybeRandomizeBackgroundAfterMatchFor(names.p1, p1Profile),
-        p2: await this.maybeRandomizeBackgroundAfterMatchFor(names.p2, p2Profile)
+        p1: await this.maybeRandomizeCosmeticsAfterMatchFor(names.p1, p1Profile),
+        p2: await this.maybeRandomizeCosmeticsAfterMatchFor(names.p2, p2Profile)
       };
       return;
     }
 
     const latestProfile = finalPersisted?.profile ?? this.profile;
-    this.profile = await this.maybeRandomizeBackgroundAfterMatchFor(this.username, latestProfile);
+    this.profile = await this.maybeRandomizeCosmeticsAfterMatchFor(this.username, latestProfile);
   }
 
   resolveTitleLabel(profile, fallbackTitle = "Initiate") {
@@ -1026,7 +1012,9 @@ export class AppController {
     this.onlinePlayProfileRefreshPromise = (async () => {
       const nextProfile = await window.elemintz.state.getProfile(this.username);
       if (nextProfile) {
-        this.profile = nextProfile;
+        this.profile = this.onlinePlayProfileRefreshKey === refreshKey
+          ? await this.maybeRandomizeCosmeticsAfterMatchFor(this.username, nextProfile)
+          : nextProfile;
       }
 
       const providedChallengeStatus =
@@ -2118,7 +2106,7 @@ export class AppController {
           };
         }
 
-        await this.applyPostMatchBackgroundRandomization(mode, finalPersisted);
+        await this.applyPostMatchCosmeticRandomization(mode, finalPersisted);
 
         this.sound.playMatchComplete({ mode, match });
 
@@ -2798,12 +2786,20 @@ export class AppController {
           this.profile = result.profile;
           await this.showCosmetics();
         },
-        toggleBackgroundRandomization: async (enabled) => {
+        updateRandomizationPreferences: async (patch) => {
           const result = await window.elemintz.state.updateCosmeticPreferences({
             username: this.username,
             patch: {
-              randomizeBackgroundEachMatch: Boolean(enabled)
+              randomizeAfterEachMatch: patch
             }
+          });
+          this.profile = result.profile;
+          await this.showCosmetics();
+        },
+        randomizeNow: async (categories) => {
+          const result = await window.elemintz.state.randomizeOwnedCosmetics({
+            username: this.username,
+            categories
           });
           this.profile = result.profile;
           await this.showCosmetics();

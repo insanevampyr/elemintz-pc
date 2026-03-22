@@ -73,6 +73,10 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
     coordinator.updateCosmeticPreferences(payload)
   );
 
+  ipcMain.handle("state:randomizeOwnedCosmetics", async (_event, payload) =>
+    coordinator.randomizeOwnedCosmetics(payload)
+  );
+
   ipcMain.handle("state:saveCosmeticLoadout", async (_event, payload) =>
     coordinator.saveCosmeticLoadout(payload)
   );

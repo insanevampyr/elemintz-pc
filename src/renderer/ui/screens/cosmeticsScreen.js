@@ -8,6 +8,15 @@ import {
 } from "../shared/cosmeticCategoryShared.js";
 import { bindCosmeticHoverPreview, hasRenderablePreviewSource } from "../shared/cosmeticHoverPreview.js";
 
+const RANDOMIZE_AFTER_MATCH_OPTIONS = Object.freeze([
+  ["avatar", "Avatar"],
+  ["title", "Title"],
+  ["badge", "Badge"],
+  ["elementCardVariant", "Card Variant"],
+  ["cardBack", "Card Back"],
+  ["background", "Background"]
+]);
+
 function normalizeRarity(rarity) {
   return FILTERABLE_RARITIES.includes(rarity) ? rarity : "Common";
 }
@@ -91,24 +100,40 @@ function sortOwnedItems(items) {
   });
 }
 
-function renderSectionExtras(type, cosmetics) {
-  if (type !== "background") {
-    return "";
-  }
+function normalizeRandomizePreferences(preferences) {
+  const source = preferences?.randomizeAfterEachMatch ?? {};
+  return {
+    avatar: Boolean(source.avatar),
+    title: Boolean(source.title),
+    badge: Boolean(source.badge),
+    elementCardVariant: Boolean(source.elementCardVariant),
+    cardBack: Boolean(source.cardBack),
+    background: Boolean(source.background ?? preferences?.randomizeBackgroundEachMatch)
+  };
+}
 
-  const enabled = Boolean(cosmetics?.preferences?.randomizeBackgroundEachMatch);
+function renderRandomizePanel(cosmetics) {
+  const preferences = normalizeRandomizePreferences(cosmetics?.preferences);
   return `
-    <label class="cosmetic-preference-toggle">
-      <input
-        type="checkbox"
-        id="background-randomize-toggle"
-        ${enabled ? "checked" : ""}
-      />
-      <span>
-        <strong>Randomize Background Each Match</strong>
-        <small>Owned backgrounds only</small>
-      </span>
-    </label>
+    <section class="panel cosmetic-randomize-panel" data-cosmetic-randomize-panel="true">
+      <div class="cosmetic-randomize-panel-copy">
+        <h3 class="section-title">Randomize After Each Match</h3>
+        <p>Only owned cosmetics are used. Unchecked categories stay equipped as-is.</p>
+      </div>
+      <div class="store-filter-options cosmetic-randomize-options">
+        ${RANDOMIZE_AFTER_MATCH_OPTIONS.map(
+          ([type, label]) => `
+            <label class="store-filter-option cosmetic-randomize-option">
+              <input type="checkbox" data-randomize-after-match="${type}" ${preferences[type] ? "checked" : ""} />
+              <span>${label}</span>
+            </label>
+          `
+        ).join("")}
+      </div>
+      <div class="cosmetic-randomize-actions">
+        <button id="cosmetics-randomize-now-btn" class="btn" type="button">Randomize Now</button>
+      </div>
+    </section>
   `;
 }
 
@@ -227,13 +252,14 @@ export const cosmeticsScreen = {
             </div>
           </section>
 
+          ${renderRandomizePanel(cosmetics)}
+
           <div class="grid cosmetics-sections">
             ${COSMETIC_SECTIONS.map(([type, title]) => {
               const owned = sortOwnedItems((cosmetics.catalog[type] ?? []).filter((item) => item.owned));
               return `
                 <section class="cosmetic-section" data-cosmetic-section="${type}">
                   <h3 class="section-title">${title}</h3>
-                  ${renderSectionExtras(type, cosmetics)}
                   <div class="cosmetic-grid">
                     ${owned.length ? owned.map((item) => renderItem(type, item)).join("") : "<p>No owned items in this category yet.</p>"}
                   </div>
@@ -304,8 +330,21 @@ export const cosmeticsScreen = {
 
     document.getElementById("cosmetics-back-btn").addEventListener("click", context.actions.back);
 
-    document.getElementById("background-randomize-toggle")?.addEventListener("change", async (event) => {
-      await context.actions.toggleBackgroundRandomization(Boolean(event.currentTarget?.checked));
+    scope.querySelectorAll("[data-randomize-after-match]").forEach((input) => {
+      input.addEventListener("change", async () => {
+        const type = input.getAttribute("data-randomize-after-match");
+        await context.actions.updateRandomizationPreferences({
+          [type]: Boolean(input.checked)
+        });
+      });
+    });
+
+    document.getElementById("cosmetics-randomize-now-btn")?.addEventListener("click", async () => {
+      const selectedCategories = Array.from(scope.querySelectorAll("[data-randomize-after-match]"))
+        .filter((input) => input.checked)
+        .map((input) => input.getAttribute("data-randomize-after-match"))
+        .filter(Boolean);
+      await context.actions.randomizeNow(selectedCategories);
     });
 
     scope.querySelectorAll("[data-cosmetic-category-filter]").forEach((input) => {

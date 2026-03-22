@@ -13,8 +13,11 @@ import {
   applyAchievementCosmeticRewards,
   applyCosmeticLoadout,
   getCosmeticCatalogForProfile,
+  getCosmeticDefinition,
   getCosmeticLoadoutsForProfile,
+  normalizeCosmeticRandomizationPreferences,
   renameCosmeticLoadout,
+  RANDOMIZABLE_COSMETIC_TYPES,
   saveCosmeticLoadout
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
@@ -76,6 +79,47 @@ function profileCommitSnapshot(profile) {
 function appendBoundedTimestamp(list, timestamp, limit = 10) {
   const next = Array.isArray(list) ? [...list, timestamp] : [timestamp];
   return next.slice(-limit);
+}
+
+function getOwnedCosmeticIds(profile, type) {
+  return Array.isArray(profile?.ownedCosmetics?.[type]) ? profile.ownedCosmetics[type].filter(Boolean) : [];
+}
+
+function chooseRandomOwnedId(profile, type, currentId) {
+  const ownedIds = getOwnedCosmeticIds(profile, type).filter((id) => getCosmeticDefinition(type, id));
+  if (ownedIds.length === 0) {
+    return currentId ?? null;
+  }
+
+  const pool = ownedIds.length > 1 ? ownedIds.filter((id) => id !== currentId) : ownedIds;
+  const safePool = pool.length > 0 ? pool : ownedIds;
+  const index = Math.floor(Math.random() * safePool.length);
+  return safePool[index] ?? currentId ?? null;
+}
+
+function chooseRandomOwnedVariantIds(profile, currentSelection = null) {
+  const nextSelection = {
+    fire: currentSelection?.fire ?? null,
+    water: currentSelection?.water ?? null,
+    earth: currentSelection?.earth ?? null,
+    wind: currentSelection?.wind ?? null
+  };
+  const ownedIds = getOwnedCosmeticIds(profile, "elementCardVariant");
+
+  for (const element of ["fire", "water", "earth", "wind"]) {
+    const matchingIds = ownedIds.filter((id) => getCosmeticDefinition("elementCardVariant", id)?.element === element);
+    if (matchingIds.length === 0) {
+      continue;
+    }
+
+    const currentId = currentSelection?.[element] ?? null;
+    const pool = matchingIds.length > 1 ? matchingIds.filter((id) => id !== currentId) : matchingIds;
+    const safePool = pool.length > 0 ? pool : matchingIds;
+    const index = Math.floor(Math.random() * safePool.length);
+    nextSelection[element] = safePool[index] ?? currentId;
+  }
+
+  return nextSelection;
 }
 
 // Runtime persistence boundaries should only coerce malformed values enough to
@@ -251,12 +295,17 @@ export class StateCoordinator {
   }
 
   buildCosmeticsView(profile) {
+    const randomizeAfterEachMatch = normalizeCosmeticRandomizationPreferences(
+      profile?.cosmeticRandomizeAfterMatch,
+      { legacyBackgroundEnabled: Boolean(profile?.randomizeBackgroundEachMatch) }
+    );
     return {
       equipped: profile.equippedCosmetics,
       owned: profile.ownedCosmetics,
       catalog: getCosmeticCatalogForProfile(profile),
       preferences: {
-        randomizeBackgroundEachMatch: Boolean(profile.randomizeBackgroundEachMatch)
+        randomizeBackgroundEachMatch: Boolean(randomizeAfterEachMatch.background),
+        randomizeAfterEachMatch
       },
       loadouts: getCosmeticLoadoutsForProfile(profile)
     };
@@ -879,10 +928,74 @@ export class StateCoordinator {
   async updateCosmeticPreferences({ username, patch = {} }) {
     const profile = await this.profiles.updateProfile(username, (current) => ({
       ...current,
+      cosmeticRandomizeAfterMatch: normalizeCosmeticRandomizationPreferences(
+        {
+          ...current?.cosmeticRandomizeAfterMatch,
+          ...(patch.randomizeAfterEachMatch ?? {}),
+          ...(Object.prototype.hasOwnProperty.call(patch, "randomizeBackgroundEachMatch")
+            ? { background: Boolean(patch.randomizeBackgroundEachMatch) }
+            : {})
+        },
+        {
+          legacyBackgroundEnabled: Boolean(
+            patch.randomizeBackgroundEachMatch ?? current.randomizeBackgroundEachMatch
+          )
+        }
+      ),
       randomizeBackgroundEachMatch: Boolean(
-        patch.randomizeBackgroundEachMatch ?? current.randomizeBackgroundEachMatch
+        patch.randomizeAfterEachMatch?.background ??
+          patch.randomizeBackgroundEachMatch ??
+          current?.cosmeticRandomizeAfterMatch?.background ??
+          current.randomizeBackgroundEachMatch
       )
     }));
+
+    return {
+      profile,
+      cosmetics: this.buildCosmeticsView(profile)
+    };
+  }
+
+  async randomizeOwnedCosmetics({ username, categories = [] }) {
+    const requested = Array.isArray(categories) ? categories.filter((type) => RANDOMIZABLE_COSMETIC_TYPES.includes(type)) : [];
+    const uniqueCategories = [...new Set(requested)];
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      if (uniqueCategories.length === 0) {
+        return current;
+      }
+
+      const equipped = {
+        ...current.equippedCosmetics,
+        elementCardVariant: {
+          ...current?.equippedCosmetics?.elementCardVariant
+        }
+      };
+
+      for (const type of uniqueCategories) {
+        if (type === "elementCardVariant") {
+          equipped.elementCardVariant = chooseRandomOwnedVariantIds(current, equipped.elementCardVariant);
+          continue;
+        }
+
+        const nextId = chooseRandomOwnedId(current, type, equipped[type]);
+        if (nextId) {
+          equipped[type] = nextId;
+        }
+      }
+
+      return {
+        ...current,
+        equippedCosmetics: equipped,
+        cosmetics: {
+          ...current.cosmetics,
+          avatar: equipped.avatar,
+          cardBack: equipped.cardBack,
+          background: equipped.background,
+          badge: equipped.badge
+        },
+        title: equipped.title
+      };
+    });
 
     return {
       profile,

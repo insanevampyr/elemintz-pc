@@ -14,6 +14,7 @@ import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js"
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
+import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
@@ -1466,6 +1467,8 @@ test("ui: appController cosmetics actions route loadout save apply and rename th
   const previousWindow = global.window;
   const shown = [];
   const calls = {
+    updatePreferences: [],
+    randomizeNow: [],
     save: [],
     apply: [],
     rename: []
@@ -1515,7 +1518,34 @@ test("ui: appController cosmetics actions route loadout save apply and rename th
       state: {
         getCosmetics: async () => cosmetics,
         equipCosmetic: async () => ({ profile: baseProfile }),
-        updateCosmeticPreferences: async () => ({ profile: baseProfile }),
+        updateCosmeticPreferences: async (payload) => {
+          calls.updatePreferences.push(payload);
+          return {
+            profile: {
+              ...baseProfile,
+              cosmeticRandomizeAfterMatch: {
+                avatar: Boolean(payload.patch?.randomizeAfterEachMatch?.avatar),
+                title: false,
+                badge: false,
+                elementCardVariant: false,
+                cardBack: false,
+                background: false
+              }
+            }
+          };
+        },
+        randomizeOwnedCosmetics: async (payload) => {
+          calls.randomizeNow.push(payload);
+          return {
+            profile: {
+              ...baseProfile,
+              equippedCosmetics: {
+                ...baseProfile.equippedCosmetics,
+                avatar: "fire_avatar_f"
+              }
+            }
+          };
+        },
         saveCosmeticLoadout: async (payload) => {
           calls.save.push(payload);
           return { profile: baseProfile, cosmetics };
@@ -1548,10 +1578,29 @@ test("ui: appController cosmetics actions route loadout save apply and rename th
     app.username = "CosmeticCaptain";
     app.profile = baseProfile;
     await app.showCosmetics();
+    await shown.at(-1).actions.updateRandomizationPreferences({ avatar: true });
+    await shown.at(-1).actions.randomizeNow(["avatar", "background"]);
+    assert.equal(app.profile.equippedCosmetics.avatar, "fire_avatar_f");
     await shown.at(-1).actions.saveLoadout(0);
     await shown.at(-1).actions.applyLoadout(0);
     await shown.at(-1).actions.renameLoadout(0, "Storm Fit");
 
+    assert.deepEqual(calls.updatePreferences, [
+      {
+        username: "CosmeticCaptain",
+        patch: {
+          randomizeAfterEachMatch: {
+            avatar: true
+          }
+        }
+      }
+    ]);
+    assert.deepEqual(calls.randomizeNow, [
+      {
+        username: "CosmeticCaptain",
+        categories: ["avatar", "background"]
+      }
+    ]);
     assert.deepEqual(calls.save, [{ username: "CosmeticCaptain", slotIndex: 0 }]);
     assert.deepEqual(calls.apply, [{ username: "CosmeticCaptain", slotIndex: 0 }]);
     assert.deepEqual(calls.rename, [{ username: "CosmeticCaptain", slotIndex: 0, name: "Storm Fit" }]);
@@ -1667,7 +1716,14 @@ test("ui: cosmetics screen shows owned items only", () => {
   const html = cosmeticsScreen.render({
     cosmetics: {
       preferences: {
-        randomizeBackgroundEachMatch: true
+        randomizeAfterEachMatch: {
+          avatar: true,
+          title: true,
+          badge: false,
+          elementCardVariant: true,
+          cardBack: false,
+          background: true
+        }
       },
       loadouts: [
         {
@@ -1704,9 +1760,17 @@ test("ui: cosmetics screen shows owned items only", () => {
   });
 
   assert.match(html, /Default Avatar/);
-  assert.match(html, /Randomize Background Each Match/);
-  assert.match(html, /Owned backgrounds only/);
-  assert.match(html, /background-randomize-toggle/);
+  assert.match(html, /Randomize After Each Match/);
+  assert.match(html, /data-cosmetic-randomize-panel="true"/);
+  assert.match(html, /data-randomize-after-match="avatar"/);
+  assert.match(html, /data-randomize-after-match="title"/);
+  assert.match(html, /data-randomize-after-match="badge"/);
+  assert.match(html, /data-randomize-after-match="elementCardVariant"/);
+  assert.match(html, /data-randomize-after-match="cardBack"/);
+  assert.match(html, /data-randomize-after-match="background"/);
+  assert.match(html, /id="cosmetics-randomize-now-btn"/);
+  assert.ok(html.indexOf("data-cosmetic-rarity-filter=\"Legendary\"") < html.indexOf("data-cosmetic-randomize-panel=\"true\""));
+  assert.ok(html.indexOf("data-cosmetic-randomize-panel=\"true\"") < html.indexOf("data-cosmetic-section=\"avatar\""));
   assert.match(html, /Cosmetic Loadouts/);
   assert.match(html, /Equip your cosmetics, then save them to a loadout slot/);
   assert.match(html, /data-cosmetic-category-filter="avatar"/);
@@ -1722,19 +1786,37 @@ test("ui: cosmetics screen shows owned items only", () => {
   assert.match(html, /data-loadout-save="0"/);
   assert.match(html, /data-loadout-rename="0"/);
   assert.match(html, /Unlocks at Level 20/);
+  assert.doesNotMatch(html, /Randomize Background Each Match/);
+  assert.doesNotMatch(html, /background-randomize-toggle/);
   assert.doesNotMatch(html, /Fire Avatar/);
   assert.doesNotMatch(html, /data-buy-type=/);
 });
 
-test("ui: cosmetics screen background randomize toggle and loadout controls bind through actions", async () => {
+test("ui: cosmetics screen randomization panel and loadout controls bind through actions", async () => {
   const previousDocument = global.document;
-  const toggles = [];
+  const randomizePreferenceCalls = [];
+  const randomizeNowCalls = [];
   const saveCalls = [];
   const applyCalls = [];
   const renameCalls = [];
   const backButton = { addEventListener: () => {} };
-  const toggle = {
+  const avatarToggle = {
     checked: true,
+    listeners: new Map(),
+    getAttribute: (name) => (name === "data-randomize-after-match" ? "avatar" : null),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
+  const backgroundToggle = {
+    checked: false,
+    listeners: new Map(),
+    getAttribute: (name) => (name === "data-randomize-after-match" ? "background" : null),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
+  const randomizeNowButton = {
     listeners: new Map(),
     addEventListener(type, handler) {
       this.listeners.set(type, handler);
@@ -1768,11 +1850,13 @@ test("ui: cosmetics screen background randomize toggle and loadout controls bind
     getElementById: (id) =>
       ({
         "cosmetics-back-btn": backButton,
-        "background-randomize-toggle": toggle
+        "cosmetics-randomize-now-btn": randomizeNowButton
       })[id] ?? null,
     querySelector: (selector) => (selector === '[data-loadout-name-input="0"]' ? renameInput : null),
     querySelectorAll: (selector) => {
       switch (selector) {
+        case "[data-randomize-after-match]":
+          return [avatarToggle, backgroundToggle];
         case "[data-loadout-save]":
           return [saveButton];
         case "[data-loadout-apply]":
@@ -1790,18 +1874,21 @@ test("ui: cosmetics screen background randomize toggle and loadout controls bind
       actions: {
         back: () => {},
         equip: async () => {},
-        toggleBackgroundRandomization: async (enabled) => toggles.push(enabled),
+        updateRandomizationPreferences: async (patch) => randomizePreferenceCalls.push(patch),
+        randomizeNow: async (categories) => randomizeNowCalls.push(categories),
         saveLoadout: async (slotIndex) => saveCalls.push(slotIndex),
         applyLoadout: async (slotIndex) => applyCalls.push(slotIndex),
         renameLoadout: async (slotIndex, name) => renameCalls.push({ slotIndex, name })
       }
     });
 
-    await toggle.listeners.get("change")({ currentTarget: toggle });
+    await avatarToggle.listeners.get("change")({ currentTarget: avatarToggle });
+    await randomizeNowButton.listeners.get("click")();
     await saveButton.listeners.get("click")();
     await applyButton.listeners.get("click")();
     await renameButton.listeners.get("click")();
-    assert.deepEqual(toggles, [true]);
+    assert.deepEqual(randomizePreferenceCalls, [{ avatar: true }]);
+    assert.deepEqual(randomizeNowCalls, [["avatar"]]);
     assert.deepEqual(saveCalls, [0]);
     assert.deepEqual(applyCalls, [0]);
     assert.deepEqual(renameCalls, [{ slotIndex: 0, name: "Arena Main" }]);
@@ -2815,7 +2902,8 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
       actions: {
         back: async () => {},
         equip: async () => {},
-        toggleBackgroundRandomization: async () => {},
+        updateRandomizationPreferences: async () => {},
+        randomizeNow: async () => {},
         saveLoadout: async () => {},
         applyLoadout: async () => {},
         renameLoadout: async () => {}
@@ -4940,33 +5028,38 @@ test("ui: bind arms WAR impact on the first PvE WAR render", () => {
   }
 });
 
-test("ui: appController randomizes equipped background after a completed match using owned backgrounds only", async () => {
+test("ui: appController randomizes enabled cosmetic categories after a completed match using the shared owned-cosmetics path", async () => {
   const previousWindow = global.window;
-  const originalRandom = Math.random;
-  const equipCalls = [];
+  const randomizeCalls = [];
   const app = createRendererController();
   const profile = {
     username: "Hero",
-    randomizeBackgroundEachMatch: true,
-    equippedCosmetics: {
-      background: "fire_background"
+    cosmeticRandomizeAfterMatch: {
+      avatar: true,
+      title: false,
+      badge: false,
+      elementCardVariant: false,
+      cardBack: false,
+      background: true
     },
-    ownedCosmetics: {
-      background: ["default_background", "fire_background", "water_background"]
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      background: "fire_background"
     }
   };
 
   global.window = {
     elemintz: {
       state: {
-        equipCosmetic: async (payload) => {
-          equipCalls.push(payload);
+        randomizeOwnedCosmetics: async (payload) => {
+          randomizeCalls.push(payload);
           return {
             profile: {
               ...profile,
               equippedCosmetics: {
                 ...profile.equippedCosmetics,
-                background: payload.cosmeticId
+                avatar: "fire_avatar_f",
+                background: "water_background"
               }
             }
           };
@@ -4975,20 +5068,78 @@ test("ui: appController randomizes equipped background after a completed match u
     }
   };
 
-  Math.random = () => 0;
-
   try {
-    const updated = await app.maybeRandomizeBackgroundAfterMatchFor("Hero", profile);
+    const updated = await app.maybeRandomizeCosmeticsAfterMatchFor("Hero", profile);
 
-    assert.equal(equipCalls.length, 1);
-    assert.equal(equipCalls[0].type, "background");
-    assert.notEqual(equipCalls[0].cosmeticId, "fire_background");
-    assert.ok(profile.ownedCosmetics.background.includes(equipCalls[0].cosmeticId));
-    assert.equal(updated.equippedCosmetics.background, equipCalls[0].cosmeticId);
+    assert.deepEqual(randomizeCalls, [
+      {
+        username: "Hero",
+        categories: ["avatar", "background"]
+      }
+    ]);
+    assert.equal(updated.equippedCosmetics.avatar, "fire_avatar_f");
+    assert.equal(updated.equippedCosmetics.background, "water_background");
   } finally {
     global.window = previousWindow;
-    Math.random = originalRandom;
   }
+});
+
+test("ui: appController applies post-match cosmetic randomization to both local PvP players through the shared category path", async () => {
+  const app = createRendererController();
+  const calls = [];
+  app.getLocalNames = () => ({ p1: "Alpha", p2: "Beta" });
+  app.localProfiles = {
+    p1: { username: "Alpha", cosmeticRandomizeAfterMatch: { avatar: true } },
+    p2: { username: "Beta", cosmeticRandomizeAfterMatch: { background: true } }
+  };
+  app.maybeRandomizeCosmeticsAfterMatchFor = async (username, profile) => {
+    calls.push({ username, profile });
+    return {
+      ...profile,
+      randomizedFor: username
+    };
+  };
+
+  await app.applyPostMatchCosmeticRandomization(MATCH_MODE.LOCAL_PVP, {
+    p1: { profile: app.localProfiles.p1 },
+    p2: { profile: app.localProfiles.p2 }
+  });
+
+  assert.deepEqual(calls.map((entry) => entry.username), ["Alpha", "Beta"]);
+  assert.equal(app.localProfiles.p1.randomizedFor, "Alpha");
+  assert.equal(app.localProfiles.p2.randomizedFor, "Beta");
+});
+
+test("ui: appController applies post-match cosmetic randomization to the active PvE profile through the shared category path", async () => {
+  const app = createRendererController();
+  const latestProfile = {
+    username: "SoloHero",
+    cosmeticRandomizeAfterMatch: {
+      avatar: false,
+      title: false,
+      badge: false,
+      elementCardVariant: false,
+      cardBack: false,
+      background: true
+    }
+  };
+  const calls = [];
+  app.username = "SoloHero";
+  app.profile = latestProfile;
+  app.maybeRandomizeCosmeticsAfterMatchFor = async (username, profile) => {
+    calls.push({ username, profile });
+    return {
+      ...profile,
+      randomized: true
+    };
+  };
+
+  await app.applyPostMatchCosmeticRandomization(MATCH_MODE.PVE, {
+    profile: latestProfile
+  });
+
+  assert.deepEqual(calls, [{ username: "SoloHero", profile: latestProfile }]);
+  assert.equal(app.profile.randomized, true);
 });
 
 test("ui: bind defers local PvP WAR impact during hidden busy transitions", () => {
@@ -8169,10 +8320,30 @@ test("ui: appController refreshes local settled online win progression immediate
     tokens: 225,
     chests: { basic: 1 },
     achievements: { first_flame: { count: 1 } },
+    cosmeticRandomizeAfterMatch: {
+      avatar: true,
+      title: false,
+      badge: false,
+      elementCardVariant: false,
+      cardBack: false,
+      background: true
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      background: "default_background"
+    },
     dailyChallenges: { daily: { progress: { matchesPlayed: 1 } } },
     weeklyChallenges: { weekly: { progress: { matchesPlayed: 1 } } },
     modeStats: { online_pvp: { wins: 1, losses: 0 } }
   };
+  const randomizedProfile = {
+    ...updatedProfile,
+    equippedCosmetics: {
+      avatar: "fire_avatar_f",
+      background: "water_background"
+    }
+  };
+  const randomizeCalls = [];
   const challengeStatus = {
     daily: { msUntilReset: 1000, challenges: [] },
     weekly: { msUntilReset: 2000, challenges: [] },
@@ -8185,6 +8356,10 @@ test("ui: appController refreshes local settled online win progression immediate
         getProfile: async (username) => {
           assert.equal(username, "OnlineWinner");
           return updatedProfile;
+        },
+        randomizeOwnedCosmetics: async (payload) => {
+          randomizeCalls.push(payload);
+          return { profile: randomizedProfile };
         },
         getDailyChallenges: async (username) => {
           assert.equal(username, "OnlineWinner");
@@ -8236,7 +8411,14 @@ test("ui: appController refreshes local settled online win progression immediate
     assert.equal(controller.profile.achievements.first_flame.count, 1);
     assert.equal(controller.dailyChallenges.daily, challengeStatus.daily);
     assert.equal(controller.dailyChallenges.weekly, challengeStatus.weekly);
-    assert.equal(shown.at(-1).backgroundImage, getArenaBackground("default_background"));
+    assert.deepEqual(randomizeCalls, [
+      {
+        username: "OnlineWinner",
+        categories: ["avatar", "background"]
+      }
+    ]);
+    assert.equal(controller.profile.equippedCosmetics.avatar, "fire_avatar_f");
+    assert.equal(shown.at(-1).backgroundImage, getArenaBackground("water_background"));
   } finally {
     global.window = previousWindow;
   }
@@ -8517,7 +8699,11 @@ test("ui: online settlement refresh stays keyed to the local settled player and 
     global.__onlineListener(settledState);
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     global.__onlineListener(settledState);
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 

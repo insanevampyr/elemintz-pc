@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("elemintz", {
       ipcRenderer.invoke("state:acknowledgeMilestoneChestReward", payload),
     equipCosmetic: (payload) => ipcRenderer.invoke("state:equipCosmetic", payload),
     updateCosmeticPreferences: (payload) => ipcRenderer.invoke("state:updateCosmeticPreferences", payload),
+    randomizeOwnedCosmetics: (payload) => ipcRenderer.invoke("state:randomizeOwnedCosmetics", payload),
     saveCosmeticLoadout: (payload) => ipcRenderer.invoke("state:saveCosmeticLoadout", payload),
     applyCosmeticLoadout: (payload) => ipcRenderer.invoke("state:applyCosmeticLoadout", payload),
     renameCosmeticLoadout: (payload) => ipcRenderer.invoke("state:renameCosmeticLoadout", payload),

@@ -3,6 +3,14 @@ import { ACHIEVEMENT_DEFINITIONS } from "./achievementSystem.js";
 const COSMETIC_TYPES = ["avatar", "cardBack", "background", "elementCardVariant", "badge", "title"];
 const ELEMENTS = ["fire", "water", "earth", "wind"];
 export const LOADOUT_UNLOCK_LEVELS = Object.freeze([10, 20, 40, 60]);
+export const RANDOMIZABLE_COSMETIC_TYPES = Object.freeze([
+  "avatar",
+  "title",
+  "badge",
+  "elementCardVariant",
+  "cardBack",
+  "background"
+]);
 const RARITY_TIERS = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
 const AVATAR_RARITY_PRICING = Object.freeze({
   Common: 150,
@@ -1958,6 +1966,7 @@ export function createDefaultCosmeticsState() {
 
   return {
     randomizeBackgroundEachMatch: false,
+    cosmeticRandomizeAfterMatch: createDefaultCosmeticRandomizationPreferences(),
     cosmeticLoadouts,
     acknowledgedLoadoutUnlockSlots: {},
     ownedCosmetics: owned,
@@ -1969,6 +1978,31 @@ export function createDefaultCosmeticsState() {
       badge: equipped.badge
     },
     title: equipped.title
+  };
+}
+
+export function createDefaultCosmeticRandomizationPreferences() {
+  return Object.freeze({
+    avatar: false,
+    title: false,
+    badge: false,
+    elementCardVariant: false,
+    cardBack: false,
+    background: false
+  });
+}
+
+export function normalizeCosmeticRandomizationPreferences(value, { legacyBackgroundEnabled = false } = {}) {
+  const defaults = createDefaultCosmeticRandomizationPreferences();
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+  return {
+    avatar: Boolean(source.avatar),
+    title: Boolean(source.title),
+    badge: Boolean(source.badge),
+    elementCardVariant: Boolean(source.elementCardVariant),
+    cardBack: Boolean(source.cardBack),
+    background: Boolean(source.background ?? legacyBackgroundEnabled)
   };
 }
 
@@ -2143,11 +2177,19 @@ export function normalizeProfileCosmetics(profile) {
   ensureDefaultOwned(owned);
   ensureOwnedContainsEquipped(owned, equipped);
 
+  const cosmeticRandomizeAfterMatch = normalizeCosmeticRandomizationPreferences(
+    profile?.cosmeticRandomizeAfterMatch,
+    {
+      legacyBackgroundEnabled: Boolean(
+        profile?.randomizeBackgroundEachMatch ?? defaults.randomizeBackgroundEachMatch
+      )
+    }
+  );
+
   return {
     ...profileWithoutLegacyNoticeField,
-    randomizeBackgroundEachMatch: Boolean(
-      profile?.randomizeBackgroundEachMatch ?? defaults.randomizeBackgroundEachMatch
-    ),
+    randomizeBackgroundEachMatch: Boolean(cosmeticRandomizeAfterMatch.background),
+    cosmeticRandomizeAfterMatch,
     cosmeticLoadouts: normalizeLoadoutSlots(profile?.cosmeticLoadouts ?? defaults.cosmeticLoadouts),
     acknowledgedLoadoutUnlockSlots: normalizeLoadoutNoticeMap(
       profile?.acknowledgedLoadoutUnlockSlots ??

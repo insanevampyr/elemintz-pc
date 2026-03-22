@@ -761,25 +761,102 @@ test("state: online_pvp duplicate settlement stays idempotent while rematch sett
   );
 });
 
-test("state: cosmetic background randomization preference persists through save/load", async () => {
+test("state: cosmetic randomization preferences persist through save/load", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
   const updated = await state.updateCosmeticPreferences({
     username: "BackgroundToggleUser",
     patch: {
-      randomizeBackgroundEachMatch: true
+      randomizeAfterEachMatch: {
+        avatar: true,
+        title: true,
+        background: true
+      }
     }
   });
 
   assert.equal(updated.profile.randomizeBackgroundEachMatch, true);
   assert.equal(updated.cosmetics.preferences.randomizeBackgroundEachMatch, true);
+  assert.equal(updated.profile.cosmeticRandomizeAfterMatch.avatar, true);
+  assert.equal(updated.profile.cosmeticRandomizeAfterMatch.title, true);
+  assert.equal(updated.profile.cosmeticRandomizeAfterMatch.background, true);
+  assert.equal(updated.cosmetics.preferences.randomizeAfterEachMatch.avatar, true);
+  assert.equal(updated.cosmetics.preferences.randomizeAfterEachMatch.title, true);
+  assert.equal(updated.cosmetics.preferences.randomizeAfterEachMatch.background, true);
 
   const reloadedProfile = await state.profiles.getProfile("BackgroundToggleUser");
   const cosmetics = await state.getCosmetics("BackgroundToggleUser");
 
   assert.equal(reloadedProfile.randomizeBackgroundEachMatch, true);
   assert.equal(cosmetics.preferences.randomizeBackgroundEachMatch, true);
+  assert.equal(reloadedProfile.cosmeticRandomizeAfterMatch.avatar, true);
+  assert.equal(reloadedProfile.cosmeticRandomizeAfterMatch.title, true);
+  assert.equal(reloadedProfile.cosmeticRandomizeAfterMatch.background, true);
+  assert.equal(cosmetics.preferences.randomizeAfterEachMatch.avatar, true);
+  assert.equal(cosmetics.preferences.randomizeAfterEachMatch.title, true);
+  assert.equal(cosmetics.preferences.randomizeAfterEachMatch.background, true);
+});
+
+test("state: randomizeOwnedCosmetics uses owned pools only and leaves unchecked categories unchanged", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const originalRandom = Math.random;
+
+  await state.profiles.updateProfile("RandomizerUser", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: ["default_avatar", "fire_avatar_f"],
+      background: ["default_background", "fire_background"],
+      badge: ["none"],
+      title: ["Initiate", "title_apprentice"],
+      cardBack: ["default_card_back", "cardback_frozen_sigil"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card",
+        "fire_variant_ember",
+        "water_variant_crystal"
+      ]
+    },
+    equippedCosmetics: {
+      ...current.equippedCosmetics,
+      avatar: "default_avatar",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  }));
+
+  Math.random = constantRandom(0);
+
+  try {
+    const result = await state.randomizeOwnedCosmetics({
+      username: "RandomizerUser",
+      categories: ["avatar", "background", "elementCardVariant", "badge"]
+    });
+
+    assert.equal(result.profile.equippedCosmetics.avatar, "fire_avatar_f");
+    assert.equal(result.profile.equippedCosmetics.background, "fire_background");
+    assert.equal(result.profile.equippedCosmetics.badge, "none");
+    assert.equal(result.profile.equippedCosmetics.title, "Initiate");
+    assert.equal(result.profile.equippedCosmetics.elementCardVariant.fire, "fire_variant_ember");
+    assert.equal(result.profile.equippedCosmetics.elementCardVariant.water, "water_variant_crystal");
+    assert.equal(result.profile.equippedCosmetics.elementCardVariant.earth, "default_earth_card");
+    assert.equal(result.profile.equippedCosmetics.elementCardVariant.wind, "default_wind_card");
+    assert.equal(result.cosmetics.preferences.randomizeAfterEachMatch.background, false);
+  } finally {
+    Math.random = originalRandom;
+  }
 });
 
 test("state: cosmetic loadouts unlock only at configured levels and start locked below level 10", async () => {
