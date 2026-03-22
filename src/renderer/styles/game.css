@@ -898,6 +898,43 @@ select {
   margin: 16px 0 20px;
 }
 
+.store-topbar {
+  align-items: flex-start;
+}
+
+.store-topbar-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.store-banner-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: 1px solid rgba(126, 172, 210, 0.34);
+  border-radius: 999px;
+  background: rgba(8, 18, 28, 0.88);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  white-space: nowrap;
+}
+
+.store-banner-balance-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(202, 223, 240, 0.86);
+}
+
+.store-banner-balance-value {
+  font-size: 1rem;
+  color: #f7d883;
+}
+
 .store-search-group {
   display: grid;
   gap: 8px;

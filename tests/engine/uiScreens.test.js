@@ -424,7 +424,7 @@ test("ui: screen back buttons render inside the shared topbar", () => {
     profileHtml,
     storeHtml
   ]) {
-    assert.match(html, /class="screen-topbar"/);
+    assert.match(html, /class="screen-topbar(?: [^"]+)?"/);
     assert.match(html, /class="btn screen-back-btn"/);
     assert.ok(html.indexOf('screen-topbar') < html.indexOf('class="view-title"'));
     assert.ok(html.indexOf('screen-topbar') < html.indexOf('screen-back-btn'));
@@ -524,7 +524,7 @@ test("ui: daily challenges screen renders completed status when hydrated progres
   assert.doesNotMatch(html, /In Progress/);
 });
 
-test("ui: store screen renders token count and buy/equip actions", () => {
+test("ui: store screen renders token balance inside the sticky top banner with buy/equip actions", () => {
   const html = storeScreen.render({
     store: {
       tokens: 120,
@@ -552,7 +552,11 @@ test("ui: store screen renders token count and buy/equip actions", () => {
     }
   });
 
-  assert.match(html, /Tokens: <strong>120<\/strong>/);
+  assert.match(
+    html,
+    /<div class="screen-topbar store-topbar">[\s\S]*data-store-banner-balance="true"[\s\S]*id="store-token-balance" class="store-banner-balance-value">120<\/strong>[\s\S]*id="store-back-btn"/
+  );
+  assert.doesNotMatch(html, /<p>Tokens: <strong>/);
   assert.match(html, /data-buy-type="avatar"/);
   assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
   assert.match(html, /Activate Founder Pass/);
@@ -916,7 +920,7 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 });
 
-test("ui: appController preserves store search and filter state through buy and equip rerenders", async () => {
+test("ui: appController preserves store state and refreshes the sticky banner token balance after a successful purchase", async () => {
   const previousWindow = global.window;
   const shown = [];
   const profile = {
@@ -944,24 +948,51 @@ test("ui: appController preserves store search and filter state through buy and 
       title: ["Initiate"]
     }
   };
-  const store = {
-    tokens: 200,
-    supporterPass: false,
-    catalog: {
-      avatar: [],
-      cardBack: [],
-      background: [],
-      elementCardVariant: [],
-      title: [],
-      badge: []
+  const storeStates = [
+    {
+      tokens: 200,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    {
+      tokens: 125,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    {
+      tokens: 125,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
     }
-  };
+  ];
+  let storeReadCount = 0;
 
   global.window = {
     elemintz: {
       state: {
-        getStore: async () => store,
-        buyStoreItem: async () => ({ profile, store }),
+        getStore: async () => storeStates[Math.min(storeReadCount++, storeStates.length - 1)],
+        buyStoreItem: async () => ({ profile }),
         equipCosmetic: async () => ({ profile })
       }
     }
@@ -983,9 +1014,12 @@ test("ui: appController preserves store search and filter state through buy and 
     app.storeViewState.rarities = new Set(["Common", "Rare"]);
 
     await app.showStore();
+    assert.equal(shown[0].store.tokens, 200);
+
     await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
     const afterBuy = shown.at(-1).viewState;
 
+    assert.equal(shown.at(-1).store.tokens, 125);
     assert.equal(afterBuy.searchText, "fire");
     assert.deepEqual([...afterBuy.categories], ["avatar", "background"]);
     assert.deepEqual([...afterBuy.rarities], ["Common", "Rare"]);
@@ -993,9 +1027,95 @@ test("ui: appController preserves store search and filter state through buy and 
     await shown.at(-1).actions.equip("background", "default_background");
     const afterEquip = shown.at(-1).viewState;
 
+    assert.equal(shown.at(-1).store.tokens, 125);
     assert.equal(afterEquip.searchText, "fire");
     assert.deepEqual([...afterEquip.categories], ["avatar", "background"]);
     assert.deepEqual([...afterEquip.rarities], ["Common", "Rare"]);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController keeps the sticky shop banner token balance unchanged when a purchase fails", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const profile = {
+    username: "StoreKeeper",
+    tokens: 200,
+    supporterPass: false,
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "Initiate"
+    },
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      background: ["default_background"],
+      cardBack: ["default_card_back"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  const store = {
+    tokens: 200,
+    supporterPass: false,
+    catalog: {
+      avatar: [],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      title: [],
+      badge: []
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => store,
+        buyStoreItem: async () => {
+          throw new Error("Not enough tokens.");
+        },
+        equipCosmetic: async () => ({ profile })
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "StoreKeeper";
+    await app.showStore();
+    assert.equal(shown.length, 1);
+    assert.equal(shown[0].store.tokens, 200);
+
+    await shown[0].actions.buy("avatar", "fire_avatar_f");
+
+    assert.equal(shown.length, 1);
+    assert.equal(shown[0].store.tokens, 200);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Purchase Failed");
+    assert.match(modalCalls[0].body, /Not enough tokens/);
   } finally {
     global.window = previousWindow;
   }
@@ -2427,6 +2547,75 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
     assert.equal(avatarItems[0].hidden, true);
     assert.equal(avatarSection.hidden, true);
     assert.equal(emptyState.hidden, false);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: store banner controls still bind while the token balance lives in the sticky topbar", async () => {
+  const previousDocument = global.document;
+  const calls = [];
+
+  function createControl() {
+    const listeners = new Map();
+    return {
+      hidden: false,
+      style: {},
+      classList: { toggle() {} },
+      listeners,
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      }
+    };
+  }
+
+  const backButton = createControl();
+  const supporterButton = createControl();
+  const searchInput = createControl();
+  searchInput.value = "";
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+  const root = {
+    querySelectorAll(selector) {
+      switch (selector) {
+        case "[data-buy-type]":
+        case "[data-equip-type]":
+        case "[data-store-item]":
+        case "[data-store-section]":
+        case "[data-store-category-filter]":
+        case "[data-store-rarity-filter]":
+          return [];
+        default:
+          return [];
+      }
+    }
+  };
+
+  global.document = {
+    getElementById: (id) =>
+      ({
+        "store-back-btn": backButton,
+        "activate-supporter-btn": supporterButton,
+        "store-search-input": searchInput,
+        "store-empty-state": emptyState
+      })[id] ?? null,
+    querySelector: (selector) => (selector === ".screen-store" ? root : null),
+    querySelectorAll: root.querySelectorAll
+  };
+
+  try {
+    storeScreen.bind({
+      actions: {
+        back: () => calls.push("back"),
+        activateSupporter: () => calls.push("supporter"),
+        buy: async () => {},
+        equip: async () => {}
+      }
+    });
+
+    await backButton.listeners.get("click")();
+    await supporterButton.listeners.get("click")();
+
+    assert.deepEqual(calls, ["back", "supporter"]);
   } finally {
     global.document = previousDocument;
   }

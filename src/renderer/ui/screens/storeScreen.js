@@ -171,11 +171,16 @@ export const storeScreen = {
     return `
       <section class="screen screen-store">
         <div class="panel">
-          <div class="screen-topbar">
-            <h2 class="view-title">Store</h2>
+          <div class="screen-topbar store-topbar">
+            <div class="store-topbar-heading">
+              <h2 class="view-title">Store</h2>
+              <div class="store-banner-balance" data-store-banner-balance="true" aria-label="Token balance">
+                <span class="store-banner-balance-label">Tokens</span>
+                <strong id="store-token-balance" class="store-banner-balance-value">${store.tokens}</strong>
+              </div>
+            </div>
             <button id="store-back-btn" class="btn screen-back-btn">Back to Menu</button>
           </div>
-          <p>Tokens: <strong>${store.tokens}</strong></p>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
           <p>Badges are gameplay/achievement rewards and cannot be purchased.</p>
           ${
