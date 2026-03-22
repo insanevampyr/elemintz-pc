@@ -16,7 +16,7 @@ import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, ge
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
-import { COSMETIC_CATALOG, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
+import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 
 const FALLBACK_SETTINGS = {
@@ -568,7 +568,13 @@ export class AppController {
     const titleId = profile?.equippedCosmetics?.title ?? profile?.title ?? null;
     const title = this.resolveTitleLabel(profile, fallbackTitle);
     const badgeId = profile?.equippedCosmetics?.badge ?? profile?.cosmetics?.badge ?? "none";
-    const titleIcon = TITLE_ICON_MAP[title] ? getAssetPath(TITLE_ICON_MAP[title]) : null;
+    const titleDefinition = titleId ? getCosmeticDefinition("title", titleId) : null;
+    const titleIcon =
+      titleDefinition?.image
+        ? getAssetPath(titleDefinition.image)
+        : TITLE_ICON_MAP[title]
+          ? getAssetPath(TITLE_ICON_MAP[title])
+          : null;
 
     return {
       name: profile?.username ?? fallbackName,

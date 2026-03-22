@@ -1456,6 +1456,7 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.doesNotMatch(html, /Element Variants:/);
   assert.match(html, /data-preview-type="avatar"/);
   assert.match(html, /data-preview-type="title"/);
+  assert.doesNotMatch(html, /data-preview-type="badge"/);
   assert.match(html, /data-preview-description="Default cosmetic\."/);
 });
 
@@ -1534,6 +1535,74 @@ test("ui: profile screen adds hover preview metadata for own and viewed badge an
   assert.match(html, /data-preview-description="Level Reward: Reach Level 30\."/);
   assert.match(html, /data-preview-name="Elementalist"/);
   assert.match(html, /data-preview-description="Level Reward: Reach Level 20\."/);
+});
+
+test("ui: missing badge and missing title art stay graceful in profile identity hover markup", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "GracefulHero",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", image: null, owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(html, /data-preview-type="title"/);
+  assert.match(html, /data-preview-src=""/);
+  assert.doesNotMatch(html, /data-preview-type="badge"/);
+  assert.doesNotMatch(html, /alt="Featured Badge"/);
+});
+
+test("ui: appController player display prefers canonical title art when available", () => {
+  const controller = createRendererController();
+  const playerDisplay = controller.buildPlayerDisplay(
+    {
+      username: "TitleUser",
+      title: "Apprentice",
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        title: "title_apprentice",
+        badge: "none"
+      }
+    },
+    "TitleUser",
+    "Initiate"
+  );
+
+  assert.match(playerDisplay.titleIcon, /assets\/titles\/title_apprentice\.png/);
 });
 
 test("ui: game screen uses provided variant card images", () => {

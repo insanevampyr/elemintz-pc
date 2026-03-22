@@ -7,6 +7,7 @@ import {
 } from "../../utils/achievements.js";
 import {
   getCosmeticDisplayName,
+  getCosmeticDefinition,
   getCosmeticHoverMetadata
 } from "../../../state/cosmeticSystem.js";
 import {
@@ -94,11 +95,13 @@ function getTitleCatalogIcon(cosmetics, equippedTitleId) {
 }
 
 function viewedTitleIcon(viewedProfile) {
-  const title = getCosmeticDisplayName(
-    "title",
-    viewedProfile?.equippedCosmetics?.title,
-    viewedProfile?.title ?? "Initiate"
-  );
+  const equippedTitleId = viewedProfile?.equippedCosmetics?.title ?? null;
+  const titleDefinition = equippedTitleId ? getCosmeticDefinition("title", equippedTitleId) : null;
+  if (titleDefinition?.image) {
+    return titleDefinition.image;
+  }
+
+  const title = getCosmeticDisplayName("title", equippedTitleId, viewedProfile?.title ?? "Initiate");
   const iconMap = {
     "Flame Vanguard": "badges/firstFlame.png",
     "Arena Founder": "badges/earlyTester.png",
