@@ -3263,6 +3263,257 @@ test("ui: fallback title icons do not create hover preview media for viewed prof
   );
 });
 
+test("ui: diagnostic trace keeps imageless title hover preview sources empty across viewed profile, PVE, PVP, and ONLINE", () => {
+  const viewedProfileHtml = profileScreen.render({
+    profile: {
+      username: "Owner",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", image: null, owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    viewedProfile: {
+      username: "ViewedInitiate",
+      title: "Initiate",
+      wins: 1,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 1,
+      bestWinStreak: 1,
+      tokens: 5,
+      playerLevel: 1,
+      playerXP: 0,
+      achievements: {},
+      modeStats: { pve: { wins: 1, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate",
+        badge: "none",
+        background: "default_background"
+      },
+      cosmetics: { background: "default_background" }
+    },
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(
+    viewedProfileHtml,
+    /data-preview-type="title"[^>]*data-preview-src=""[^>]*data-preview-name="Initiate"/
+  );
+  assert.doesNotMatch(viewedProfileHtml, /title-icon" src="[^"]*Initiate/i);
+
+  const pveHtml = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: {
+      name: "Hero",
+      avatarId: "default_avatar",
+      titleId: "Initiate",
+      badgeId: "none",
+      title: "Initiate",
+      titleIcon: null,
+      featuredBadge: null,
+      avatar: "assets/avatars/default.png"
+    },
+    opponentDisplay: {
+      name: "Elemental AI",
+      avatarId: "default_avatar",
+      titleId: null,
+      badgeId: "none",
+      title: "Arena Rival",
+      titleIcon: null,
+      featuredBadge: null,
+      avatar: "assets/avatars/default.png"
+    },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    cardBacks: { p1: "assets/card_backs/default_back.jpg", p2: "assets/card_backs/default_back.jpg" },
+    cosmeticIds: {
+      variants: { p1: null, p2: null },
+      cardBacks: { p1: "default_card_back", p2: "default_card_back" }
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(
+    pveHtml,
+    /data-preview-type="title"[^>]*data-preview-src=""[^>]*data-preview-name="Initiate"/
+  );
+  assert.match(
+    pveHtml,
+    /data-preview-type="title"[^>]*data-preview-src=""[^>]*data-preview-name="Arena Rival"/
+  );
+
+  const pvpHtml = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: {
+      name: "Player 1",
+      avatarId: "default_avatar",
+      titleId: "Initiate",
+      badgeId: "none",
+      title: "Initiate",
+      titleIcon: null,
+      featuredBadge: null,
+      avatar: "assets/avatars/default.png"
+    },
+    opponentDisplay: {
+      name: "Player 2",
+      avatarId: "default_avatar",
+      titleId: "Initiate",
+      badgeId: "none",
+      title: "Initiate",
+      titleIcon: null,
+      featuredBadge: null,
+      avatar: "assets/avatars/default.png"
+    },
+    hotseat: { enabled: true, turnLabel: "Player 1 Turn", p1Name: "Player 1", p2Name: "Player 2", activePlayer: "p1" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    cardBacks: { p1: "assets/card_backs/default_back.jpg", p2: "assets/card_backs/default_back.jpg" },
+    cosmeticIds: {
+      variants: { p1: null, p2: null },
+      cardBacks: { p1: "default_card_back", p2: "default_card_back" }
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "local_pvp",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  const pvpTitleMatches = pvpHtml.match(/data-preview-type="title"[^>]*data-preview-src=""[^>]*data-preview-name="Initiate"/g) ?? [];
+  assert.equal(pvpTitleMatches.length, 2);
+
+  const onlineHtml = onlinePlayScreen.render({
+    username: "LocalUser",
+    joinCode: "",
+    backgroundImage: "assets/EleMintzIcon.png",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostResolvedIdentity: {
+          slotLabel: "Host",
+          username: "LocalUser",
+          connected: true,
+          avatarId: "default_avatar",
+          titleId: "Initiate",
+          badgeId: "none",
+          titleLabel: "Initiate",
+          titleIcon: null,
+          badgeImage: null,
+          avatarImage: getAvatarImage("default_avatar"),
+          backgroundImage: getArenaBackground("default_background"),
+          cardBackId: "default_card_back",
+          cardBackImage: getCardBackImage("default_card_back"),
+          variantSelection: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+          variantImages: getVariantCardImages({ fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" })
+        },
+        guestResolvedIdentity: {
+          slotLabel: "Guest",
+          username: "RemoteUser",
+          connected: true,
+          avatarId: "default_avatar",
+          titleId: "Initiate",
+          badgeId: "none",
+          titleLabel: "Initiate",
+          titleIcon: null,
+          badgeImage: null,
+          avatarImage: getAvatarImage("default_avatar"),
+          backgroundImage: getArenaBackground("default_background"),
+          cardBackId: "default_card_back",
+          cardBackImage: getCardBackImage("default_card_back"),
+          variantSelection: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+          variantImages: getVariantCardImages({ fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" })
+        },
+        hostHand: { fire: 1, water: 0, earth: 0, wind: 0 },
+        guestHand: { fire: 1, water: 0, earth: 0, wind: 0 },
+        hostScore: 0,
+        guestScore: 0,
+        roundNumber: 1,
+        matchComplete: false,
+        moveSync: { hostSubmitted: false, guestSubmitted: false, submittedCount: 0, bothSubmitted: false, updatedAt: null }
+      }
+    }
+  });
+
+  const onlineTitleMatches = onlineHtml.match(/data-preview-type="title"[^>]*data-preview-src=""[^>]*data-preview-name="Initiate"/g) ?? [];
+  assert.equal(onlineTitleMatches.length, 2);
+});
+
 test("ui: approved achievement title rewards resolve and render their badge-backed title images", () => {
   const html = profileScreen.render({
     profile: {
