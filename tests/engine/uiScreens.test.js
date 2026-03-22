@@ -1872,7 +1872,8 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
 
   listeners.get("mouseover")({ target: titleTarget, clientX: 40, clientY: 40 });
   assert.equal(previewLayer.hidden, false);
-  assert.equal(previewTextVisual.hidden, false);
+  assert.equal(previewFrame.hidden, true);
+  assert.equal(previewTextVisual.hidden, true);
   assert.equal(previewImage.hidden, true);
   assert.equal(previewMeta.hidden, false);
   assert.equal(previewName.textContent, "Apprentice");
@@ -1880,6 +1881,7 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
   assert.match(previewFrame.className, /is-title/);
 
   listeners.get("mousemove")({ target: badgeTarget, clientX: 60, clientY: 60 });
+  assert.equal(previewFrame.hidden, false);
   assert.equal(previewTextVisual.hidden, true);
   assert.equal(previewImage.hidden, false);
   assert.equal(previewImage.src, "file:///badge.png");
@@ -1887,6 +1889,96 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
   assert.equal(previewDescription.textContent, "Level Reward: Reach Level 30.");
   assert.match(previewFrame.className, /is-badge/);
   assert.match(previewFrame.className, /rarity-epic/);
+});
+
+test("ui: title and badge hover previews fall back to text-only meta when image src is unusable", () => {
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      textContent: "",
+      children,
+      appendChild(child) {
+        children.push(child);
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const listeners = new Map();
+  const appended = [];
+  const root = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    contains: () => true
+  };
+  const documentRef = {
+    documentElement: { clientWidth: 800, clientHeight: 600 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
+  };
+
+  bindCosmeticHoverPreview({ root, documentRef });
+
+  const previewLayer = appended[0];
+  const previewFrame = previewLayer.children[0];
+  const previewImage = previewFrame.children[0];
+  const previewMeta = previewLayer.children[1];
+  const previewName = previewMeta.children[0];
+  const previewDescription = previewMeta.children[1];
+  const titleTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "title",
+        "data-preview-rarity": "Common",
+        "data-preview-src": "undefined",
+        "data-preview-name": "Initiate",
+        "data-preview-description": "Default cosmetic.",
+        "data-preview-visual-text": "Initiate"
+      }[name] ?? null;
+    },
+    closest: () => titleTarget
+  };
+  const badgeTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "badge",
+        "data-preview-rarity": "Rare",
+        "data-preview-src": "none",
+        "data-preview-name": "Element Initiate",
+        "data-preview-description": "Level Reward: Reach Level 10."
+      }[name] ?? null;
+    },
+    closest: () => badgeTarget
+  };
+
+  listeners.get("mouseover")({ target: titleTarget, clientX: 40, clientY: 40 });
+  assert.equal(previewLayer.hidden, false);
+  assert.equal(previewFrame.hidden, true);
+  assert.equal(previewImage.hidden, true);
+  assert.equal(previewName.textContent, "Initiate");
+  assert.equal(previewDescription.textContent, "Default cosmetic.");
+
+  listeners.get("mousemove")({ target: badgeTarget, clientX: 70, clientY: 70 });
+  assert.equal(previewFrame.hidden, true);
+  assert.equal(previewImage.hidden, true);
+  assert.equal(previewName.textContent, "Element Initiate");
+  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 10.");
 });
 
 test("ui: title hover preview uses square full-image framing when title art exists", () => {

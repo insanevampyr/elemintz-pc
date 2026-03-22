@@ -17,6 +17,16 @@ function escapeAttribute(value) {
     .replaceAll(">", "&gt;");
 }
 
+function hasUsablePreviewSource(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const lowered = normalized.toLowerCase();
+  return lowered !== "null" && lowered !== "undefined" && lowered !== "none";
+}
+
 export function buildHoverPreviewAttributes({
   previewType,
   previewSrc = null,
@@ -150,7 +160,9 @@ function updatePreviewAppearance(preview, target) {
   const previewVisualText = target.getAttribute("data-preview-visual-text") ?? previewName;
   const dimensions = PREVIEW_DIMENSIONS[previewType] ?? PREVIEW_DIMENSIONS.cardBack;
   const showMeta = previewType === "badge" || previewType === "title";
-  const useTextVisual = !previewSrc && previewType === "title";
+  const hasPreviewImage = hasUsablePreviewSource(previewSrc);
+  const useTextVisual = !hasPreviewImage && previewType === "title" && !showMeta;
+  const showFrame = hasPreviewImage || useTextVisual || !showMeta;
 
   preview.layer.className = `cosmetic-hover-preview-layer ${showMeta ? "has-meta" : ""}`;
   preview.frame.className = `cosmetic-hover-preview-frame ${previewType === "avatar" ? "is-avatar" : previewType === "badge" ? "is-badge" : previewType === "title" ? "is-title" : "is-card"} rarity-${previewRarity}`;
@@ -158,9 +170,10 @@ function updatePreviewAppearance(preview, target) {
   preview.frame.style.height = `${dimensions.mediaHeight}px`;
   preview.layer.style.width = `${dimensions.width}px`;
   preview.layer.style.height = `${dimensions.height}px`;
-  preview.image.src = previewSrc ?? "";
+  preview.frame.hidden = !showFrame;
+  preview.image.src = hasPreviewImage ? previewSrc : "";
   preview.image.alt = previewName;
-  preview.image.hidden = !previewSrc || useTextVisual;
+  preview.image.hidden = !hasPreviewImage || useTextVisual;
   preview.textVisual.hidden = !useTextVisual;
   preview.textVisual.textContent = useTextVisual ? previewVisualText : "";
   preview.meta.hidden = !showMeta;
