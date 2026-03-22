@@ -58,15 +58,16 @@ function getPreviewChallenges(bucket, limit = 3) {
 }
 
 function renderChallengePreview(title, iconText, bucket) {
+  const bucketKey = String(title ?? "").trim().toLowerCase();
   if (!bucket?.challenges?.length) {
     return `
-      <div class="stack-sm menu-challenge-column">
+      <div class="stack-sm menu-challenge-column" data-menu-challenge-bucket="${bucketKey}">
         <div class="stack-xs menu-challenge-header">
           <h4 class="section-title">${title}</h4>
           <p class="muted">${title} - 0/0</p>
         </div>
         <p class="muted">Challenges are loading...</p>
-        <p class="muted menu-challenge-reset">Reset in: ${bucket?.resetLabel ?? "--:--"}</p>
+        <p class="muted menu-challenge-reset" data-menu-reset-label="${bucketKey}">Reset in: ${bucket?.resetLabel ?? "--:--"}</p>
       </div>
     `;
   }
@@ -74,13 +75,13 @@ function renderChallengePreview(title, iconText, bucket) {
   const preview = getPreviewChallenges(bucket, 3);
   const summary = getChallengeSummary(bucket);
   return `
-    <div class="stack-sm menu-challenge-column">
+    <div class="stack-sm menu-challenge-column" data-menu-challenge-bucket="${bucketKey}">
       <div class="stack-xs menu-challenge-header">
         <h4 class="section-title">${title}</h4>
         <p class="muted">${title} - ${summary.completed}/${summary.total}</p>
       </div>
       ${preview.map((item) => renderChallengeLine(item, iconText)).join("")}
-      <p class="muted menu-challenge-reset">Reset in: ${bucket.resetLabel ?? "--:--"}</p>
+      <p class="muted menu-challenge-reset" data-menu-reset-label="${bucketKey}">Reset in: ${bucket.resetLabel ?? "--:--"}</p>
     </div>
   `;
 }
@@ -92,7 +93,7 @@ function renderDailyLoginStatus(status) {
 
   return `
     <div class="menu-daily-login">
-      <p><strong>${status.stateLabel.replace("Next Daily Login Reward", "Daily Login Reward")}</strong></p>
+      <p><strong id="menu-daily-login-status">${status.stateLabel.replace("Next Daily Login Reward", "Daily Login Reward")}</strong></p>
     </div>
   `;
 }

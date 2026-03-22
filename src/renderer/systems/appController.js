@@ -424,6 +424,34 @@ export class AppController {
     });
   }
 
+  updateMenuCountdownDisplay() {
+    if (this.screenFlow !== "menu" || !globalThis.document?.getElementById) {
+      return false;
+    }
+
+    const dailyLoginLabel = globalThis.document.getElementById("menu-daily-login-status");
+    const dailyResetLabel = globalThis.document.querySelector?.('[data-menu-reset-label="daily"]');
+    const weeklyResetLabel = globalThis.document.querySelector?.('[data-menu-reset-label="weekly"]');
+    const dailyLogin = this.formatDailyLoginStatus(this.dailyChallenges?.dailyLogin);
+
+    if (dailyLoginLabel) {
+      dailyLoginLabel.textContent = dailyLogin.stateLabel.replace(
+        "Next Daily Login Reward",
+        "Daily Login Reward"
+      );
+    }
+
+    if (dailyResetLabel) {
+      dailyResetLabel.textContent = `Reset in: ${this.formatDuration(this.dailyChallenges?.daily?.msUntilReset)}`;
+    }
+
+    if (weeklyResetLabel) {
+      weeklyResetLabel.textContent = `Reset in: ${this.formatWeeklyDuration(this.dailyChallenges?.weekly?.msUntilReset)}`;
+    }
+
+    return Boolean(dailyLoginLabel || dailyResetLabel || weeklyResetLabel);
+  }
+
   async refreshDailyChallengesForMenu() {
     if (!this.username || !globalThis.window?.elemintz?.state?.getDailyChallenges) {
       return;
@@ -434,7 +462,7 @@ export class AppController {
       this.dailyChallenges = { daily: result.daily, weekly: result.weekly, dailyLogin: result.dailyLogin };
 
       if (this.screenFlow === "menu") {
-        this.renderMenuScreen();
+        this.updateMenuCountdownDisplay();
       }
 
       this.clearDailyCountdown();
@@ -461,7 +489,7 @@ export class AppController {
         };
 
         if (this.screenFlow === "menu") {
-          this.renderMenuScreen();
+          this.updateMenuCountdownDisplay();
         }
       }, 1000);
       this.dailyResetCountdownId?.unref?.();

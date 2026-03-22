@@ -1337,22 +1337,58 @@ test("ui: appController shows one-time loadout unlock notice with next unlock me
   }
 });
 
-test("diagnostic: menu challenge refresh replaces the entire menu screen while it remains open", async () => {
+test("ui: menu countdown refresh updates labels in place without rerendering or rebinding menu buttons", async () => {
   const previousWindow = global.window;
+  const previousDocument = global.document;
   const previousSetInterval = global.setInterval;
   const previousClearInterval = global.clearInterval;
   const shown = [];
   let intervalHandler = null;
+  let profileOpenCount = 0;
+
+  const dailyLoginLabel = createFakeElement();
+  dailyLoginLabel.textContent = "Daily Login Reward: --:--";
+  const dailyResetLabel = createFakeElement();
+  dailyResetLabel.textContent = "Reset in: --:--";
+  const weeklyResetLabel = createFakeElement();
+  weeklyResetLabel.textContent = "Reset in: --:--";
+  const profileButton = createFakeElement();
+  const elements = {
+    "menu-daily-login-status": dailyLoginLabel,
+    "start-pve-btn": createFakeElement(),
+    "start-local-btn": createFakeElement(),
+    "online-play-btn": createFakeElement(),
+    "profile-btn": profileButton,
+    "achievements-btn": createFakeElement(),
+    "open-daily-challenges-btn": createFakeElement(),
+    "cosmetics-btn": createFakeElement(),
+    "store-btn": createFakeElement(),
+    "settings-btn": createFakeElement(),
+    "logout-btn": createFakeElement()
+  };
 
   global.window = {
     elemintz: {
       state: {
         getDailyChallenges: async () => ({
-          dailyLogin: { eligible: false, msUntilReset: 9000 },
-          daily: { challenges: [], msUntilReset: 9000 },
-          weekly: { challenges: [], msUntilReset: 18000 }
+          dailyLogin: { eligible: false, msUntilReset: 3660000 },
+          daily: { challenges: [], msUntilReset: 3660000 },
+          weekly: { challenges: [], msUntilReset: 3660000 }
         })
       }
+    }
+  };
+
+  global.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelector: (selector) => {
+      if (selector === '[data-menu-reset-label="daily"]') {
+        return dailyResetLabel;
+      }
+      if (selector === '[data-menu-reset-label="weekly"]') {
+        return weeklyResetLabel;
+      }
+      return null;
     }
   };
 
@@ -1375,6 +1411,23 @@ test("diagnostic: menu challenge refresh replaces the entire menu screen while i
   });
 
   try {
+    menuScreen.bind({
+      actions: {
+        startPveGame: () => {},
+        startLocalGame: () => {},
+        openOnlinePlay: async () => {},
+        openProfile: async () => {
+          profileOpenCount += 1;
+        },
+        openAchievements: async () => {},
+        openDailyChallenges: async () => {},
+        openCosmetics: async () => {},
+        openStore: async () => {},
+        openSettings: async () => {},
+        logout: () => {}
+      }
+    });
+
     app.username = "MenuClickUser";
     app.profile = {
       username: "MenuClickUser",
@@ -1385,14 +1438,25 @@ test("diagnostic: menu challenge refresh replaces the entire menu screen while i
     app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
     await Promise.resolve();
 
-    assert.equal(shown.length, 2);
+    assert.equal(shown.length, 1);
     assert.equal(typeof intervalHandler, "function");
+    assert.equal(dailyLoginLabel.textContent, "Daily Login Reward: 01:01");
+    assert.equal(dailyResetLabel.textContent, "Reset in: 01:01");
+    assert.equal(weeklyResetLabel.textContent, "Reset in: 01:01");
 
     intervalHandler();
 
-    assert.equal(shown.length, 3);
+    assert.equal(shown.length, 1);
+    assert.equal(dailyLoginLabel.textContent, "Daily Login Reward: 01:00");
+    assert.equal(dailyResetLabel.textContent, "Reset in: 01:00");
+    assert.equal(weeklyResetLabel.textContent, "Reset in: 01:00");
+    assert.equal(typeof profileButton.listeners.get("click"), "function");
+
+    await profileButton.listeners.get("click")();
+    assert.equal(profileOpenCount, 1);
   } finally {
     global.window = previousWindow;
+    global.document = previousDocument;
     global.setInterval = previousSetInterval;
     global.clearInterval = previousClearInterval;
   }
