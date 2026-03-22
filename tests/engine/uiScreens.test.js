@@ -1946,7 +1946,7 @@ test("ui: title and badge hover previews fall back to text-only meta when image 
       return {
         "data-preview-type": "title",
         "data-preview-rarity": "Common",
-        "data-preview-src": "undefined",
+        "data-preview-src": "Initiate",
         "data-preview-name": "Initiate",
         "data-preview-description": "Default cosmetic.",
         "data-preview-visual-text": "Initiate"
@@ -1959,7 +1959,7 @@ test("ui: title and badge hover previews fall back to text-only meta when image 
       return {
         "data-preview-type": "badge",
         "data-preview-rarity": "Rare",
-        "data-preview-src": "none",
+        "data-preview-src": "Element Initiate",
         "data-preview-name": "Element Initiate",
         "data-preview-description": "Level Reward: Reach Level 10."
       }[name] ?? null;
@@ -1977,6 +1977,98 @@ test("ui: title and badge hover previews fall back to text-only meta when image 
   listeners.get("mousemove")({ target: badgeTarget, clientX: 70, clientY: 70 });
   assert.equal(previewFrame.hidden, true);
   assert.equal(previewImage.hidden, true);
+  assert.equal(previewName.textContent, "Element Initiate");
+  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 10.");
+});
+
+test("ui: title and badge hover previews reject truthy label-like src values instead of rendering broken images", () => {
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      textContent: "",
+      children,
+      appendChild(child) {
+        children.push(child);
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const listeners = new Map();
+  const appended = [];
+  const root = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    contains: () => true
+  };
+  const documentRef = {
+    documentElement: { clientWidth: 800, clientHeight: 600 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
+  };
+
+  bindCosmeticHoverPreview({ root, documentRef });
+
+  const previewLayer = appended[0];
+  const previewFrame = previewLayer.children[0];
+  const previewImage = previewFrame.children[0];
+  const previewMeta = previewLayer.children[1];
+  const previewName = previewMeta.children[0];
+  const previewDescription = previewMeta.children[1];
+  const apprenticeTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "title",
+        "data-preview-rarity": "Rare",
+        "data-preview-src": "Apprentice",
+        "data-preview-name": "Apprentice",
+        "data-preview-description": "Level Reward: Reach Level 3.",
+        "data-preview-visual-text": "Apprentice"
+      }[name] ?? null;
+    },
+    closest: () => apprenticeTarget
+  };
+  const initiateBadgeTarget = {
+    getAttribute(name) {
+      return {
+        "data-preview-type": "badge",
+        "data-preview-rarity": "Common",
+        "data-preview-src": "Element Initiate",
+        "data-preview-name": "Element Initiate",
+        "data-preview-description": "Level Reward: Reach Level 10."
+      }[name] ?? null;
+    },
+    closest: () => initiateBadgeTarget
+  };
+
+  listeners.get("mouseover")({ target: apprenticeTarget, clientX: 48, clientY: 48 });
+  assert.equal(previewLayer.hidden, false);
+  assert.equal(previewFrame.hidden, true);
+  assert.equal(previewImage.hidden, true);
+  assert.equal(previewImage.src, "");
+  assert.equal(previewName.textContent, "Apprentice");
+  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 3.");
+
+  listeners.get("mousemove")({ target: initiateBadgeTarget, clientX: 72, clientY: 72 });
+  assert.equal(previewFrame.hidden, true);
+  assert.equal(previewImage.hidden, true);
+  assert.equal(previewImage.src, "");
   assert.equal(previewName.textContent, "Element Initiate");
   assert.equal(previewDescription.textContent, "Level Reward: Reach Level 10.");
 });

@@ -17,14 +17,37 @@ function escapeAttribute(value) {
     .replaceAll(">", "&gt;");
 }
 
-function hasUsablePreviewSource(value) {
-  const normalized = String(value ?? "").trim();
+function normalizePreviewToken(value) {
+  return String(value ?? "").trim();
+}
+
+function hasRenderablePreviewSource(value, { previewName = "", previewVisualText = "" } = {}) {
+  const normalized = normalizePreviewToken(value);
   if (!normalized) {
     return false;
   }
 
   const lowered = normalized.toLowerCase();
-  return lowered !== "null" && lowered !== "undefined" && lowered !== "none";
+  if (lowered === "null" || lowered === "undefined" || lowered === "none") {
+    return false;
+  }
+
+  const previewNameToken = normalizePreviewToken(previewName).toLowerCase();
+  const previewVisualToken = normalizePreviewToken(previewVisualText).toLowerCase();
+  if (lowered === previewNameToken || lowered === previewVisualToken) {
+    return false;
+  }
+
+  return (
+    lowered.startsWith("file:") ||
+    lowered.startsWith("http://") ||
+    lowered.startsWith("https://") ||
+    lowered.startsWith("data:") ||
+    lowered.startsWith("blob:") ||
+    normalized.includes("/") ||
+    normalized.includes("\\") ||
+    /\.(png|jpe?g|webp|gif|svg)$/i.test(normalized)
+  );
 }
 
 export function buildHoverPreviewAttributes({
@@ -160,7 +183,10 @@ function updatePreviewAppearance(preview, target) {
   const previewVisualText = target.getAttribute("data-preview-visual-text") ?? previewName;
   const dimensions = PREVIEW_DIMENSIONS[previewType] ?? PREVIEW_DIMENSIONS.cardBack;
   const showMeta = previewType === "badge" || previewType === "title";
-  const hasPreviewImage = hasUsablePreviewSource(previewSrc);
+  const hasPreviewImage = hasRenderablePreviewSource(previewSrc, {
+    previewName,
+    previewVisualText
+  });
   const useTextVisual = !hasPreviewImage && previewType === "title" && !showMeta;
   const showFrame = hasPreviewImage || useTextVisual || !showMeta;
 
