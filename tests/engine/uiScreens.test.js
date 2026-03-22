@@ -7622,16 +7622,17 @@ test("ui: appController reconnect reminder reuses authoritative room expiry when
   });
 });
 
-test("diagnostic: screen transitions leave an existing modal overlay untouched", async () => {
+test("ui: screen transitions clear a stale modal overlay before showing the next screen", async () => {
   const previousWindow = global.window;
   const previousDocument = global.document;
   const shown = [];
   let hideCalls = 0;
+  let modalVisible = true;
 
   global.document = {
     querySelector: (selector) => {
       if (selector === ".modal-overlay") {
-        return {};
+        return modalVisible ? {} : null;
       }
       if (selector === "[data-online-reconnect-reminder='true']") {
         return null;
@@ -7654,6 +7655,16 @@ test("diagnostic: screen transitions leave an existing modal overlay untouched",
       show: () => {},
       hide: () => {
         hideCalls += 1;
+        modalVisible = false;
+      },
+      clearStaleOverlay: () => {
+        if (!modalVisible) {
+          return false;
+        }
+
+        hideCalls += 1;
+        modalVisible = false;
+        return true;
       }
     },
     toastManager: {
@@ -7721,6 +7732,75 @@ test("diagnostic: screen transitions leave an existing modal overlay untouched",
       shown.map((entry) => entry.screenId),
       ["menu", "profile", "store"]
     );
+    assert.equal(hideCalls, 1);
+    assert.equal(modalVisible, false);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController preserves an intentional settings modal when the settings screen rerenders", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const shown = [];
+  const modalCalls = [];
+  let hideCalls = 0;
+
+  global.window = {
+    elemintz: {
+      state: {
+        getSettings: async () => ({
+          gameplay: { timerSeconds: 30 },
+          aiDifficulty: "normal",
+          aiOpponentStyle: "default",
+          ui: { reducedMotion: false },
+          audio: { enabled: true }
+        }),
+        updateSettings: async (patch) => ({
+          gameplay: { timerSeconds: patch?.gameplay?.timerSeconds ?? 30 },
+          aiDifficulty: "normal",
+          aiOpponentStyle: "default",
+          ui: { reducedMotion: false },
+          audio: { enabled: true }
+        })
+      }
+    }
+  };
+
+  global.document = {
+    body: {
+      classList: {
+        toggle: () => {}
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (payload) => {
+        modalCalls.push(payload);
+      },
+      hide: () => {
+        hideCalls += 1;
+      },
+      clearStaleOverlay: () => false
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  try {
+    await controller.showSettings();
+    await shown.at(-1).actions.save({ gameplay: { timerSeconds: 45 } });
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Settings Saved");
     assert.equal(hideCalls, 0);
   } finally {
     global.window = previousWindow;

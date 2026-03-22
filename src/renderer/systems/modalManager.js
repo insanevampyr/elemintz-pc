@@ -3,6 +3,10 @@ export class ModalManager {
     this.rootNode = rootNode;
   }
 
+  hasOpenOverlay() {
+    return Boolean(this.rootNode?.querySelector?.(".modal-overlay"));
+  }
+
   show({ title, body, bodyHtml, actions = [] }) {
     const actionButtons = actions
       .map(
@@ -38,5 +42,14 @@ export class ModalManager {
 
   hide() {
     this.rootNode.innerHTML = "";
+  }
+
+  clearStaleOverlay() {
+    if (!this.hasOpenOverlay()) {
+      return false;
+    }
+
+    this.hide();
+    return true;
   }
 }

@@ -452,6 +452,14 @@ export class AppController {
     return Boolean(dailyLoginLabel || dailyResetLabel || weeklyResetLabel);
   }
 
+  clearTransientUiBeforeScreenTransition({ preserveModal = false } = {}) {
+    if (preserveModal) {
+      return false;
+    }
+
+    return Boolean(this.modalManager?.clearStaleOverlay?.());
+  }
+
   async refreshDailyChallengesForMenu() {
     if (!this.username || !globalThis.window?.elemintz?.state?.getDailyChallenges) {
       return;
@@ -1911,6 +1919,7 @@ export class AppController {
 
   showMenu({ autoClaimDailyLogin = true, showDailyLoginToasts = true } = {}) {
     this.clearPassTimer();
+    this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "menu";
     this.localPlayers = null;
     this.localProfiles = null;
@@ -1947,6 +1956,7 @@ export class AppController {
 
   async showOnlinePlay() {
     this.clearPassTimer();
+    this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "onlinePlay";
     await this.syncOnlinePlayState();
     await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
@@ -1964,6 +1974,7 @@ export class AppController {
   }
 
   showLocalSetup() {
+    this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "localSetup";
     this.screenManager.show("localSetup", {
       defaultNames: {
@@ -2525,6 +2536,7 @@ export class AppController {
       return;
     }
 
+    this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "game";
 
     const localPvp = vm.mode === MATCH_MODE.LOCAL_PVP;
@@ -2606,7 +2618,8 @@ export class AppController {
     });
   }
 
-  async showProfile() {
+  async showProfile({ preserveModal = false } = {}) {
+    this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "profile";
     this.profile = await window.elemintz.state.getProfile(this.username);
     const cosmetics = await window.elemintz.state.getCosmetics(this.username);
@@ -2740,6 +2753,7 @@ export class AppController {
   }
 
   async showDailyChallenges() {
+    this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "dailyChallenges";
     const result = await window.elemintz.state.getDailyChallenges(this.username);
     this.dailyChallenges = { daily: result.daily, weekly: result.weekly };
@@ -2756,6 +2770,7 @@ export class AppController {
   }
 
   async showAchievements() {
+    this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "achievements";
     const result = await window.elemintz.state.getAchievements(this.username);
 
@@ -2768,7 +2783,8 @@ export class AppController {
     this.updateOnlineReconnectReminderModal();
   }
 
-  async showCosmetics() {
+  async showCosmetics({ preserveModal = false } = {}) {
+    this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "cosmetics";
     const cosmetics = await window.elemintz.state.getCosmetics(this.username);
     const viewState = this.ensureCosmeticsViewState();
@@ -2865,7 +2881,8 @@ export class AppController {
     this.updateOnlineReconnectReminderModal();
   }
 
-  async showStore() {
+  async showStore({ preserveModal = false } = {}) {
+    this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "store";
     const viewState = this.ensureStoreViewState();
     const store = await window.elemintz.state.getStore(this.username);
@@ -2941,7 +2958,8 @@ export class AppController {
     this.updateOnlineReconnectReminderModal();
   }
 
-  async showSettings() {
+  async showSettings({ preserveModal = false } = {}) {
+    this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "settings";
     this.settings = await window.elemintz.state.getSettings();
     this.applyMotionPreference();
@@ -2958,7 +2976,7 @@ export class AppController {
             body: "Your preferences were updated.",
             actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
           });
-          this.showSettings();
+          this.showSettings({ preserveModal: true });
         },
         back: () => this.showMenu()
       }
