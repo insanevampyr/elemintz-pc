@@ -1686,15 +1686,42 @@ test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides c
   function createPreviewNode(tagName) {
     const children = [];
     const classes = new Set();
+    const attributes = new Map();
     return {
       tagName,
       id: "",
       hidden: false,
       className: "",
       style: {},
+      textContent: "",
+      src: "",
+      alt: "",
       children,
       appendChild(child) {
-        children.push(child);
+        if (!children.includes(child)) {
+          children.push(child);
+        }
+      },
+      removeChild(child) {
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
+      },
+      contains(child) {
+        return children.includes(child);
+      },
+      setAttribute(name, value) {
+        attributes.set(name, String(value));
+      },
+      removeAttribute(name) {
+        attributes.delete(name);
+        if (name === "src") {
+          this.src = "";
+        }
+      },
+      getAttribute(name) {
+        return attributes.get(name) ?? null;
       },
       classList: {
         add: (...tokens) => tokens.forEach((token) => classes.add(token)),
@@ -1795,41 +1822,9 @@ test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides c
   assert.equal(previewLayer.hidden, true);
 });
 
-test("ui: cosmetic hover preview renders title and badge metadata while keeping avatar image-only", () => {
-  function createPreviewNode(tagName) {
-    const children = [];
-    const classes = new Set();
-    return {
-      tagName,
-      id: "",
-      hidden: false,
-      className: "",
-      style: {},
-      textContent: "",
-      children,
-      appendChild(child) {
-        if (!children.includes(child)) {
-          children.push(child);
-        }
-      },
-      removeChild(child) {
-        const index = children.indexOf(child);
-        if (index >= 0) {
-          children.splice(index, 1);
-        }
-      },
-      contains(child) {
-        return children.includes(child);
-      },
-      classList: {
-        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
-        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
-        contains: (token) => classes.has(token)
-      }
-    };
-  }
-
+function createHoverPreviewHarness() {
   const listeners = new Map();
+  const blurListeners = new Map();
   const appended = [];
   const root = {
     addEventListener(type, handler) {
@@ -1838,56 +1833,156 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
     contains: () => true
   };
   const documentRef = {
-    documentElement: { clientWidth: 800, clientHeight: 600 },
+    documentElement: { clientWidth: 900, clientHeight: 700 },
     body: {
       appendChild(node) {
         appended.push(node);
       }
     },
-    createElement: (tagName) => createPreviewNode(tagName),
-    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
+    createElement: (tagName) => ({
+      ...((() => {
+        const children = [];
+        const classes = new Set();
+        const attributes = new Map();
+        return {
+          tagName,
+          id: "",
+          hidden: false,
+          className: "",
+          style: {},
+          textContent: "",
+          src: "",
+          alt: "",
+          children,
+          appendChild(child) {
+            if (!children.includes(child)) {
+              children.push(child);
+            }
+          },
+          removeChild(child) {
+            const index = children.indexOf(child);
+            if (index >= 0) {
+              children.splice(index, 1);
+            }
+          },
+          contains(child) {
+            return children.includes(child);
+          },
+          setAttribute(name, value) {
+            attributes.set(name, String(value));
+          },
+          removeAttribute(name) {
+            attributes.delete(name);
+            if (name === "src") {
+              this.src = "";
+            }
+          },
+          getAttribute(name) {
+            return attributes.get(name) ?? null;
+          },
+          classList: {
+            add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+            remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+            contains: (token) => classes.has(token)
+          }
+        };
+      })())
+    }),
+    defaultView: {
+      innerWidth: 900,
+      innerHeight: 700,
+      addEventListener(type, handler) {
+        blurListeners.set(type, handler);
+      }
+    }
   };
 
   bindCosmeticHoverPreview({ root, documentRef });
 
   const previewLayer = appended[0];
-  const previewFrame = previewLayer.children[0];
+  const previewFrame = previewLayer.children.find((child) => child.className === "cosmetic-hover-preview-frame");
   const previewImage = previewFrame.children[0];
   const previewTextVisual = previewFrame.children[1];
-  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
+  const previewMeta = previewLayer.children.find((child) => child.className === "cosmetic-hover-preview-meta");
   const previewName = previewMeta.children[0];
   const previewDescription = previewMeta.children[1];
-  const titleTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "title",
-        "data-preview-rarity": "Rare",
-        "data-preview-src": "",
-        "data-preview-name": "Apprentice",
-        "data-preview-description": "Level Reward: Reach Level 3.",
-        "data-preview-visual-text": "Apprentice"
-      }[name] ?? null;
-    },
-    closest: () => titleTarget
+
+  return {
+    listeners,
+    blurListeners,
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewTextVisual,
+    previewMeta,
+    previewName,
+    previewDescription
   };
-  const badgeTarget = {
+}
+
+function createHoverTarget(attributes) {
+  const target = {
     getAttribute(name) {
-      return {
-        "data-preview-type": "badge",
-        "data-preview-rarity": "Epic",
-        "data-preview-src": "file:///badge.png",
-        "data-preview-name": "Arena Challenger",
-        "data-preview-description": "Level Reward: Reach Level 30."
-      }[name] ?? null;
+      return attributes[name] ?? null;
     },
-    closest: () => badgeTarget
+    closest: () => target
   };
+  return target;
+}
+
+function assertPreviewHasNoMedia({
+  previewLayer,
+  previewFrame,
+  previewImage,
+  previewMeta,
+  previewName,
+  previewDescription,
+  expectedName,
+  expectedDescription
+}) {
+  assert.equal(previewFrame.hidden, true);
+  assert.equal(previewImage.hidden, true);
+  assert.equal(previewImage.src, "");
+  assert.equal(previewLayer.children.includes(previewFrame), false);
+  assert.equal(previewMeta.hidden, false);
+  assert.equal(previewLayer.children.includes(previewMeta), true);
+  assert.equal(previewName.textContent, expectedName);
+  assert.equal(previewDescription.textContent, expectedDescription);
+}
+
+test("ui: cosmetic hover preview renders title and badge metadata while keeping avatar image-only", () => {
+  const {
+    listeners,
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewTextVisual,
+    previewMeta,
+    previewName,
+    previewDescription
+  } = createHoverPreviewHarness();
+  const titleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Rare",
+    "data-preview-src": "",
+    "data-preview-name": "Apprentice",
+    "data-preview-description": "Level Reward: Reach Level 3.",
+    "data-preview-visual-text": "Apprentice"
+  });
+  const badgeTarget = createHoverTarget({
+    "data-preview-type": "badge",
+    "data-preview-rarity": "Epic",
+    "data-preview-src": "file:///badge.png",
+    "data-preview-name": "Arena Challenger",
+    "data-preview-description": "Level Reward: Reach Level 30."
+  });
 
   listeners.get("mouseover")({ target: titleTarget, clientX: 40, clientY: 40 });
   assert.equal(previewLayer.hidden, false);
   assert.equal(previewFrame.hidden, true);
   assert.equal(previewTextVisual.hidden, true);
   assert.equal(previewImage.hidden, true);
+  assert.equal(previewLayer.children.includes(previewFrame), false);
   assert.equal(previewMeta.hidden, false);
   assert.equal(previewName.textContent, "Apprentice");
   assert.equal(previewDescription.textContent, "Level Reward: Reach Level 3.");
@@ -1898,6 +1993,7 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
   assert.equal(previewTextVisual.hidden, true);
   assert.equal(previewImage.hidden, false);
   assert.equal(previewImage.src, "file:///badge.png");
+  assert.equal(previewLayer.children.includes(previewFrame), true);
   assert.equal(previewLayer.children.includes(previewMeta), true);
   assert.equal(previewName.textContent, "Arena Challenger");
   assert.equal(previewDescription.textContent, "Level Reward: Reach Level 30.");
@@ -1906,292 +2002,112 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
 });
 
 test("ui: title and badge hover previews fall back to text-only meta when image src is unusable", () => {
-  function createPreviewNode(tagName) {
-    const children = [];
-    const classes = new Set();
-    return {
-      tagName,
-      id: "",
-      hidden: false,
-      className: "",
-      style: {},
-      textContent: "",
-      children,
-      appendChild(child) {
-        if (!children.includes(child)) {
-          children.push(child);
-        }
-      },
-      removeChild(child) {
-        const index = children.indexOf(child);
-        if (index >= 0) {
-          children.splice(index, 1);
-        }
-      },
-      contains(child) {
-        return children.includes(child);
-      },
-      classList: {
-        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
-        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
-        contains: (token) => classes.has(token)
-      }
-    };
-  }
-
-  const listeners = new Map();
-  const appended = [];
-  const root = {
-    addEventListener(type, handler) {
-      listeners.set(type, handler);
-    },
-    contains: () => true
-  };
-  const documentRef = {
-    documentElement: { clientWidth: 800, clientHeight: 600 },
-    body: {
-      appendChild(node) {
-        appended.push(node);
-      }
-    },
-    createElement: (tagName) => createPreviewNode(tagName),
-    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
-  };
-
-  bindCosmeticHoverPreview({ root, documentRef });
-
-  const previewLayer = appended[0];
-  const previewFrame = previewLayer.children[0];
-  const previewImage = previewFrame.children[0];
-  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
-  const previewName = previewMeta.children[0];
-  const previewDescription = previewMeta.children[1];
-  const titleTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "title",
-        "data-preview-rarity": "Common",
-        "data-preview-src": "Initiate",
-        "data-preview-name": "Initiate",
-        "data-preview-description": "Default cosmetic.",
-        "data-preview-visual-text": "Initiate"
-      }[name] ?? null;
-    },
-    closest: () => titleTarget
-  };
-  const badgeTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "badge",
-        "data-preview-rarity": "Rare",
-        "data-preview-src": "Element Initiate",
-        "data-preview-name": "Element Initiate",
-        "data-preview-description": "Level Reward: Reach Level 10."
-      }[name] ?? null;
-    },
-    closest: () => badgeTarget
-  };
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const titleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "Initiate",
+    "data-preview-name": "Initiate",
+    "data-preview-description": "Default cosmetic.",
+    "data-preview-visual-text": "Initiate"
+  });
+  const badgeTarget = createHoverTarget({
+    "data-preview-type": "badge",
+    "data-preview-rarity": "Rare",
+    "data-preview-src": "Element Initiate",
+    "data-preview-name": "Element Initiate",
+    "data-preview-description": "Level Reward: Reach Level 10."
+  });
 
   listeners.get("mouseover")({ target: titleTarget, clientX: 40, clientY: 40 });
   assert.equal(previewLayer.hidden, false);
-  assert.equal(previewFrame.hidden, true);
-  assert.equal(previewImage.hidden, true);
-  assert.equal(previewName.textContent, "Initiate");
-  assert.equal(previewDescription.textContent, "Default cosmetic.");
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Initiate",
+    expectedDescription: "Default cosmetic."
+  });
 
   listeners.get("mousemove")({ target: badgeTarget, clientX: 70, clientY: 70 });
-  assert.equal(previewFrame.hidden, true);
-  assert.equal(previewImage.hidden, true);
-  assert.equal(previewName.textContent, "Element Initiate");
-  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 10.");
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Element Initiate",
+    expectedDescription: "Level Reward: Reach Level 10."
+  });
 });
 
 test("ui: title and badge hover previews reject truthy label-like src values instead of rendering broken images", () => {
-  function createPreviewNode(tagName) {
-    const children = [];
-    const classes = new Set();
-    return {
-      tagName,
-      id: "",
-      hidden: false,
-      className: "",
-      style: {},
-      textContent: "",
-      children,
-      appendChild(child) {
-        if (!children.includes(child)) {
-          children.push(child);
-        }
-      },
-      removeChild(child) {
-        const index = children.indexOf(child);
-        if (index >= 0) {
-          children.splice(index, 1);
-        }
-      },
-      contains(child) {
-        return children.includes(child);
-      },
-      classList: {
-        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
-        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
-        contains: (token) => classes.has(token)
-      }
-    };
-  }
-
-  const listeners = new Map();
-  const appended = [];
-  const root = {
-    addEventListener(type, handler) {
-      listeners.set(type, handler);
-    },
-    contains: () => true
-  };
-  const documentRef = {
-    documentElement: { clientWidth: 800, clientHeight: 600 },
-    body: {
-      appendChild(node) {
-        appended.push(node);
-      }
-    },
-    createElement: (tagName) => createPreviewNode(tagName),
-    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
-  };
-
-  bindCosmeticHoverPreview({ root, documentRef });
-
-  const previewLayer = appended[0];
-  const previewFrame = previewLayer.children[0];
-  const previewImage = previewFrame.children[0];
-  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
-  const previewName = previewMeta.children[0];
-  const previewDescription = previewMeta.children[1];
-  const apprenticeTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "title",
-        "data-preview-rarity": "Rare",
-        "data-preview-src": "Apprentice",
-        "data-preview-name": "Apprentice",
-        "data-preview-description": "Level Reward: Reach Level 3.",
-        "data-preview-visual-text": "Apprentice"
-      }[name] ?? null;
-    },
-    closest: () => apprenticeTarget
-  };
-  const initiateBadgeTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "badge",
-        "data-preview-rarity": "Common",
-        "data-preview-src": "Element Initiate",
-        "data-preview-name": "Element Initiate",
-        "data-preview-description": "Level Reward: Reach Level 10."
-      }[name] ?? null;
-    },
-    closest: () => initiateBadgeTarget
-  };
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const apprenticeTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Rare",
+    "data-preview-src": "Apprentice",
+    "data-preview-name": "Apprentice",
+    "data-preview-description": "Level Reward: Reach Level 3.",
+    "data-preview-visual-text": "Apprentice"
+  });
+  const initiateBadgeTarget = createHoverTarget({
+    "data-preview-type": "badge",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "Element Initiate",
+    "data-preview-name": "Element Initiate",
+    "data-preview-description": "Level Reward: Reach Level 10."
+  });
 
   listeners.get("mouseover")({ target: apprenticeTarget, clientX: 48, clientY: 48 });
   assert.equal(previewLayer.hidden, false);
-  assert.equal(previewFrame.hidden, true);
-  assert.equal(previewImage.hidden, true);
-  assert.equal(previewImage.src, "");
-  assert.equal(previewName.textContent, "Apprentice");
-  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 3.");
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Apprentice",
+    expectedDescription: "Level Reward: Reach Level 3."
+  });
 
   listeners.get("mousemove")({ target: initiateBadgeTarget, clientX: 72, clientY: 72 });
-  assert.equal(previewFrame.hidden, true);
-  assert.equal(previewImage.hidden, true);
-  assert.equal(previewImage.src, "");
-  assert.equal(previewName.textContent, "Element Initiate");
-  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 10.");
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Element Initiate",
+    expectedDescription: "Level Reward: Reach Level 10."
+  });
 });
 
 test("ui: identity hover preview keeps avatars image-only and text-only titles compact", () => {
-  function createPreviewNode(tagName) {
-    const children = [];
-    const classes = new Set();
-    return {
-      tagName,
-      id: "",
-      hidden: false,
-      className: "",
-      style: {},
-      textContent: "",
-      children,
-      appendChild(child) {
-        if (!children.includes(child)) {
-          children.push(child);
-        }
-      },
-      removeChild(child) {
-        const index = children.indexOf(child);
-        if (index >= 0) {
-          children.splice(index, 1);
-        }
-      },
-      contains(child) {
-        return children.includes(child);
-      },
-      classList: {
-        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
-        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
-        contains: (token) => classes.has(token)
-      }
-    };
-  }
-
-  const listeners = new Map();
-  const appended = [];
-  const root = {
-    addEventListener(type, handler) {
-      listeners.set(type, handler);
-    },
-    contains: () => true
-  };
-  const documentRef = {
-    documentElement: { clientWidth: 800, clientHeight: 600 },
-    body: {
-      appendChild(node) {
-        appended.push(node);
-      }
-    },
-    createElement: (tagName) => createPreviewNode(tagName),
-    defaultView: { innerWidth: 800, innerHeight: 600, addEventListener() {} }
-  };
-
-  bindCosmeticHoverPreview({ root, documentRef });
-
-  const previewLayer = appended[0];
-  const previewFrame = previewLayer.children[0];
-  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
-  const avatarTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "avatar",
-        "data-preview-rarity": "Epic",
-        "data-preview-src": "assets/avatars/avatar_arcane_gambler.png",
-        "data-preview-name": "Arcane Gambler",
-        "data-preview-description": ""
-      }[name] ?? null;
-    },
-    closest: () => avatarTarget
-  };
-  const titleTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "title",
-        "data-preview-rarity": "Common",
-        "data-preview-src": "",
-        "data-preview-name": "Initiate",
-        "data-preview-description": "Default cosmetic.",
-        "data-preview-visual-text": "Initiate"
-      }[name] ?? null;
-    },
-    closest: () => titleTarget
-  };
+  const { listeners, previewLayer, previewFrame, previewMeta } = createHoverPreviewHarness();
+  const avatarTarget = createHoverTarget({
+    "data-preview-type": "avatar",
+    "data-preview-rarity": "Epic",
+    "data-preview-src": "assets/avatars/avatar_arcane_gambler.png",
+    "data-preview-name": "Arcane Gambler",
+    "data-preview-description": ""
+  });
+  const titleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "",
+    "data-preview-name": "Initiate",
+    "data-preview-description": "Default cosmetic.",
+    "data-preview-visual-text": "Initiate"
+  });
 
   listeners.get("mouseover")({ target: avatarTarget, clientX: 40, clientY: 40 });
   assert.equal(previewFrame.hidden, false);
@@ -2209,65 +2125,15 @@ test("ui: identity hover preview keeps avatars image-only and text-only titles c
 });
 
 test("ui: title hover preview uses square full-image framing when title art exists", () => {
-  function createPreviewNode(tagName) {
-    const children = [];
-    const classes = new Set();
-    return {
-      tagName,
-      id: "",
-      hidden: false,
-      className: "",
-      style: {},
-      textContent: "",
-      children,
-      appendChild(child) {
-        children.push(child);
-      },
-      classList: {
-        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
-        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
-        contains: (token) => classes.has(token)
-      }
-    };
-  }
-
-  const listeners = new Map();
-  const appended = [];
-  const root = {
-    addEventListener(type, handler) {
-      listeners.set(type, handler);
-    },
-    contains: () => true
-  };
-  const documentRef = {
-    documentElement: { clientWidth: 900, clientHeight: 700 },
-    body: {
-      appendChild(node) {
-        appended.push(node);
-      }
-    },
-    createElement: (tagName) => createPreviewNode(tagName),
-    defaultView: { innerWidth: 900, innerHeight: 700, addEventListener() {} }
-  };
-
-  bindCosmeticHoverPreview({ root, documentRef });
-
-  const previewLayer = appended[0];
-  const previewFrame = previewLayer.children[0];
-  const previewImage = previewFrame.children[0];
-  const titleTarget = {
-    getAttribute(name) {
-      return {
-        "data-preview-type": "title",
-        "data-preview-rarity": "Epic",
-        "data-preview-src": "file:///title.png",
-        "data-preview-name": "War Master",
-        "data-preview-description": "Level Reward: Reach Level 50.",
-        "data-preview-visual-text": "War Master"
-      }[name] ?? null;
-    },
-    closest: () => titleTarget
-  };
+  const { listeners, previewLayer, previewFrame, previewImage } = createHoverPreviewHarness();
+  const titleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Epic",
+    "data-preview-src": "file:///title.png",
+    "data-preview-name": "War Master",
+    "data-preview-description": "Level Reward: Reach Level 50.",
+    "data-preview-visual-text": "War Master"
+  });
 
   listeners.get("mouseover")({ target: titleTarget, clientX: 100, clientY: 100 });
 
@@ -2279,6 +2145,184 @@ test("ui: title hover preview uses square full-image framing when title art exis
   assert.equal(previewLayer.style.width, "228px");
   assert.equal(previewLayer.style.height, "286px");
   assert.match(previewFrame.className, /is-title/);
+});
+
+test("ui: viewed profile imageless title hover renders text-only with no media box", () => {
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const viewedProfileTitleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "   ",
+    "data-preview-name": "Initiate",
+    "data-preview-description": "Default cosmetic.",
+    "data-preview-visual-text": "Initiate"
+  });
+
+  listeners.get("mouseover")({ target: viewedProfileTitleTarget, clientX: 80, clientY: 80 });
+
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Initiate",
+    expectedDescription: "Default cosmetic."
+  });
+});
+
+test("ui: shared game surface imageless title hover renders text-only with no media box", () => {
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const pvpTitleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "",
+    "data-preview-name": "Initiate",
+    "data-preview-description": "Default cosmetic.",
+    "data-preview-visual-text": "Initiate"
+  });
+
+  listeners.get("mouseover")({ target: pvpTitleTarget, clientX: 84, clientY: 84 });
+
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Initiate",
+    expectedDescription: "Default cosmetic."
+  });
+});
+
+test("ui: online shared surface imageless title hover renders text-only with no media box", () => {
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const onlineTitleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Rare",
+    "data-preview-src": null,
+    "data-preview-name": "Legacy Founder",
+    "data-preview-description": "Event Reward.",
+    "data-preview-visual-text": "Legacy Founder"
+  });
+
+  listeners.get("mouseover")({ target: onlineTitleTarget, clientX: 88, clientY: 88 });
+
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Legacy Founder",
+    expectedDescription: "Event Reward."
+  });
+});
+
+test("ui: imageless title hover clears stale media after an image-backed hover", () => {
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const imageBackedTitleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Epic",
+    "data-preview-src": "file:///title.png",
+    "data-preview-name": "War Master",
+    "data-preview-description": "Level Reward: Reach Level 50.",
+    "data-preview-visual-text": "War Master"
+  });
+  const imagelessTitleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "",
+    "data-preview-name": "Initiate",
+    "data-preview-description": "Default cosmetic.",
+    "data-preview-visual-text": "Initiate"
+  });
+
+  listeners.get("mouseover")({ target: imageBackedTitleTarget, clientX: 92, clientY: 92 });
+  assert.equal(previewLayer.children.includes(previewFrame), true);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///title.png");
+
+  listeners.get("mousemove")({ target: imagelessTitleTarget, clientX: 96, clientY: 96 });
+
+  assertPreviewHasNoMedia({
+    previewLayer,
+    previewFrame,
+    previewImage,
+    previewMeta,
+    previewName,
+    previewDescription,
+    expectedName: "Initiate",
+    expectedDescription: "Default cosmetic."
+  });
+});
+
+test("ui: image-backed title, badge, avatar, and cardback hovers still render media correctly", () => {
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const titleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Epic",
+    "data-preview-src": "file:///title.png",
+    "data-preview-name": "War Master",
+    "data-preview-description": "Level Reward: Reach Level 50.",
+    "data-preview-visual-text": "War Master"
+  });
+  const badgeTarget = createHoverTarget({
+    "data-preview-type": "badge",
+    "data-preview-rarity": "Rare",
+    "data-preview-src": "file:///badge.png",
+    "data-preview-name": "Element Veteran",
+    "data-preview-description": "Level Reward: Reach Level 40."
+  });
+  const avatarTarget = createHoverTarget({
+    "data-preview-type": "avatar",
+    "data-preview-rarity": "Epic",
+    "data-preview-src": "file:///avatar.png",
+    "data-preview-name": "Arcane Gambler"
+  });
+  const cardBackTarget = createHoverTarget({
+    "data-preview-type": "cardBack",
+    "data-preview-rarity": "Legendary",
+    "data-preview-src": "file:///cardback.png",
+    "data-preview-name": "Void Spiral"
+  });
+
+  listeners.get("mouseover")({ target: titleTarget, clientX: 100, clientY: 100 });
+  assert.equal(previewLayer.children.includes(previewFrame), true);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///title.png");
+  assert.equal(previewMeta.hidden, false);
+  assert.equal(previewName.textContent, "War Master");
+  assert.equal(previewDescription.textContent, "Level Reward: Reach Level 50.");
+
+  listeners.get("mousemove")({ target: badgeTarget, clientX: 104, clientY: 104 });
+  assert.equal(previewLayer.children.includes(previewFrame), true);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///badge.png");
+  assert.equal(previewMeta.hidden, false);
+  assert.equal(previewName.textContent, "Element Veteran");
+
+  listeners.get("mousemove")({ target: avatarTarget, clientX: 108, clientY: 108 });
+  assert.equal(previewLayer.children.includes(previewFrame), true);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///avatar.png");
+  assert.equal(previewMeta.hidden, true);
+  assert.equal(previewLayer.children.includes(previewMeta), false);
+
+  listeners.get("mousemove")({ target: cardBackTarget, clientX: 112, clientY: 112 });
+  assert.equal(previewLayer.children.includes(previewFrame), true);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///cardback.png");
+  assert.equal(previewMeta.hidden, true);
+  assert.equal(previewLayer.children.includes(previewMeta), false);
 });
 
 test("ui: cosmetics screen category filters hide unselected owned sections", () => {

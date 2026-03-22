@@ -211,6 +211,17 @@ function ensurePreviewElements(documentRef) {
   return created;
 }
 
+function clearPreviewImageState(image) {
+  if (!image) {
+    return;
+  }
+
+  image.hidden = true;
+  image.src = "";
+  image.alt = "";
+  image.removeAttribute?.("src");
+}
+
 function updatePreviewAppearance(preview, target) {
   const previewType = target.getAttribute("data-preview-type") ?? "cardBack";
   const previewRarity = String(target.getAttribute("data-preview-rarity") ?? "Common").toLowerCase();
@@ -240,6 +251,12 @@ function updatePreviewAppearance(preview, target) {
     detachPreviewSection(preview.layer, preview.meta);
   }
 
+  if (showFrame) {
+    attachPreviewSection(preview.layer, preview.frame);
+  } else {
+    detachPreviewSection(preview.layer, preview.frame);
+  }
+
   preview.layer.className = `cosmetic-hover-preview-layer ${showMeta ? "has-meta" : ""}`;
   preview.frame.className = `cosmetic-hover-preview-frame ${previewType === "avatar" ? "is-avatar" : previewType === "badge" ? "is-badge" : previewType === "title" ? "is-title" : "is-card"} rarity-${previewRarity}`;
   preview.frame.style.width = `${dimensions.mediaWidth}px`;
@@ -247,9 +264,13 @@ function updatePreviewAppearance(preview, target) {
   preview.layer.style.width = `${layoutWidth}px`;
   preview.layer.style.height = `${layoutHeight}px`;
   preview.frame.hidden = !showFrame;
-  preview.image.src = hasPreviewImage ? previewSrc : "";
-  preview.image.alt = previewName;
-  preview.image.hidden = !hasPreviewImage || useTextVisual;
+  if (hasPreviewImage) {
+    preview.image.src = previewSrc;
+    preview.image.alt = previewName;
+    preview.image.hidden = false;
+  } else {
+    clearPreviewImageState(preview.image);
+  }
   preview.textVisual.hidden = !useTextVisual;
   preview.textVisual.textContent = useTextVisual ? previewVisualText : "";
   preview.meta.hidden = !showMeta;
@@ -274,6 +295,7 @@ export function bindCosmeticHoverPreview({ root, documentRef = globalThis.docume
 
   const hidePreview = () => {
     activeTarget = null;
+    clearPreviewImageState(preview.image);
     preview.layer.hidden = true;
     preview.layer.classList?.remove?.("is-visible");
   };
