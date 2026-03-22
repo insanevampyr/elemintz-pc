@@ -1282,3 +1282,26 @@ select {
   }
 }
 
+.profile-chest-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(92px, 110px));
+  gap: 18px;
+}
+
+.chest-slot-placeholder {
+  min-height: 132px;
+  border-radius: 16px;
+  border: 1px dashed rgba(173, 205, 228, 0.18);
+  background: rgba(12, 25, 38, 0.14);
+}
+
+.chest-panel-helper {
+  margin: 4px 0 0;
+}
+
+@media (max-width: 720px) {
+  .profile-chest-row {
+    grid-template-columns: repeat(2, minmax(92px, 110px));
+  }
+}
+

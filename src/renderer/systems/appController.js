@@ -92,8 +92,10 @@ export class AppController {
     this.deferredPveRoundSound = null;
     this.pveOpponentStyle = null;
     this.profileChestVisualState = {
-      basicOpen: false
+      basicOpen: false,
+      milestoneOpen: false
     };
+    this.profileMilestoneChestNoticeOpen = false;
     this.onlinePlayState = null;
     this.onlinePlayJoinCode = "";
     this.onlinePlayUnsubscribe = null;
@@ -804,6 +806,10 @@ export class AppController {
     return Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
   }
 
+  getMilestoneChestCount(profile) {
+    return Math.max(0, Number(profile?.chests?.milestone ?? 0) || 0);
+  }
+
   emitChestOpenToast(result) {
     if (!result?.rewards) {
       return;
@@ -811,6 +817,54 @@ export class AppController {
 
     this.toastManager.showChestOpenReward?.({
       rewards: result.rewards
+    });
+  }
+
+  async maybeShowMilestoneChestRewardNotice() {
+    if (
+      this.screenFlow !== "profile" ||
+      this.profileMilestoneChestNoticeOpen ||
+      !this.username ||
+      !globalThis.window?.elemintz?.state?.acknowledgeMilestoneChestReward
+    ) {
+      return;
+    }
+
+    const pendingLevel = Math.max(0, Number(this.profile?.pendingMilestoneChestRewardLevel ?? 0) || 0);
+    if (pendingLevel <= 0) {
+      return;
+    }
+
+    this.profileMilestoneChestNoticeOpen = true;
+
+    await new Promise((resolve) => {
+      this.modalManager.show({
+        title: "Level Reward Available",
+        body: `Congrats ${this.username} on level ${pendingLevel}, a FREE Token Reward is now Available`,
+        actions: [
+          {
+            label: "OK",
+            onClick: async () => {
+              this.modalManager.hide();
+              try {
+                const result = await globalThis.window.elemintz.state.acknowledgeMilestoneChestReward({
+                  username: this.username,
+                  level: pendingLevel
+                });
+                this.profile = result?.profile ?? this.profile;
+              } catch (error) {
+                console.error("Failed to acknowledge milestone chest reward", error);
+              } finally {
+                this.profileMilestoneChestNoticeOpen = false;
+                resolve();
+                if (this.screenFlow === "profile") {
+                  await this.showProfile();
+                }
+              }
+            }
+          }
+        ]
+      });
     });
   }
 
@@ -2595,6 +2649,43 @@ export class AppController {
             });
           }
         },
+        openMilestoneChest: async () => {
+          if (this.getMilestoneChestCount(this.profile) <= 0) {
+            return;
+          }
+
+          try {
+            this.profileChestVisualState = {
+              ...this.profileChestVisualState,
+              milestoneOpen: true
+            };
+            await this.showProfile();
+            await delay(400);
+
+            const result = await window.elemintz.state.openChest({
+              username: this.username,
+              chestType: "milestone"
+            });
+            this.profile = result.profile ?? this.profile;
+            this.emitChestOpenToast(result);
+            this.profileChestVisualState = {
+              ...this.profileChestVisualState,
+              milestoneOpen: false
+            };
+            await this.showProfile();
+          } catch (error) {
+            this.profileChestVisualState = {
+              ...this.profileChestVisualState,
+              milestoneOpen: false
+            };
+            await this.showProfile();
+            this.modalManager.show({
+              title: "Chest Unavailable",
+              body: String(error?.message ?? "Unable to open Milestone Chest."),
+              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+            });
+          }
+        },
         equip: async (type, cosmeticId) => {
           const result = await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
           this.profile = result.profile;
@@ -2617,6 +2708,7 @@ export class AppController {
       }
     });
     this.updateOnlineReconnectReminderModal();
+    Promise.resolve().then(() => this.maybeShowMilestoneChestRewardNotice());
   }
 
   async showDailyChallenges() {

@@ -57,6 +57,9 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
   ipcMain.handle("state:openChest", async (_event, payload) =>
     coordinator.openChest(payload)
   );
+  ipcMain.handle("state:acknowledgeMilestoneChestReward", async (_event, payload) =>
+    coordinator.acknowledgeMilestoneChestReward(payload)
+  );
 
   ipcMain.handle("state:getCosmetics", async (_event, username) =>
     coordinator.getCosmetics(username)

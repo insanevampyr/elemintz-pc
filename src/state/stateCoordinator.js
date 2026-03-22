@@ -19,7 +19,7 @@ import {
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
 import { buyStoreItem, getStoreViewForProfile, grantSupporterPass } from "./storeSystem.js";
-import { grantChest, openChest } from "./chestSystem.js";
+import { acknowledgeMilestoneChestReward, grantChest, openChest } from "./chestSystem.js";
 import {
   applyDailyChallengesForMatch,
   getDailyChallengesView,
@@ -844,6 +844,20 @@ export class StateCoordinator {
       consumed: openResult?.consumed ?? 0,
       remaining: openResult?.remaining ?? 0,
       rewards: openResult?.rewards ?? { xp: 0, tokens: 0, cosmetic: null }
+    };
+  }
+
+  async acknowledgeMilestoneChestReward({ username, level = null }) {
+    let noticeResult = null;
+
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      noticeResult = acknowledgeMilestoneChestReward(current, level);
+      return noticeResult;
+    });
+
+    return {
+      profile,
+      pendingMilestoneChestRewardLevel: profile?.pendingMilestoneChestRewardLevel ?? null
     };
   }
 

@@ -17,6 +17,7 @@ import {
 import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { applyLevelRewardsForLevelChange, buildXpBreakdown, deriveLevelFromXp } from "../../src/state/levelRewardsSystem.js";
+import { MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 
@@ -29,12 +30,13 @@ function constantRandom(value) {
   return () => value;
 }
 
-function createRewardHookMatch({ winner = "p1", endReason = null } = {}) {
+function createRewardHookMatch({ winner = "p1", endReason = null, mode = "pve", difficulty = "normal" } = {}) {
   return {
     status: "completed",
     endReason,
     winner,
-    mode: "pve",
+    mode,
+    difficulty,
     round: 3,
     history: [
       { round: 1, result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 1, capturedOpponentCards: 1 },
@@ -271,6 +273,492 @@ test("state: local_pvp results can be persisted for both players", async () => {
   assert.equal(saves.length, 2);
   assert.equal(saves[0].mode, "local_pvp");
   assert.equal(saves[1].mode, "local_pvp");
+});
+
+test("state: online_pvp draw records games played, resets win streak, and avoids duplicate settlement", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("OnlineDrawUser", {
+    winStreak: 4,
+    bestWinStreak: 4
+  });
+
+  const match = {
+    status: "completed",
+    winner: "draw",
+    endReason: "hand_exhaustion",
+    mode: "online_pvp",
+    round: 6,
+    history: [
+      { result: "none", warClashes: 2, capturedOpponentCards: 0 }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: { totalCards: 16 }
+  };
+
+  const first = await state.recordOnlineMatchResult({
+    username: "OnlineDrawUser",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "ROOM123:match:1:OnlineDrawUser"
+  });
+  const second = await state.recordOnlineMatchResult({
+    username: "OnlineDrawUser",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "ROOM123:match:1:OnlineDrawUser"
+  });
+
+  assert.equal(first.duplicate, false);
+  assert.equal(second.duplicate, true);
+
+  const profile = await state.profiles.getProfile("OnlineDrawUser");
+  assert.equal(profile.gamesPlayed, 1);
+  assert.equal(profile.wins, 0);
+  assert.equal(profile.losses, 0);
+  assert.equal(profile.winStreak, 0);
+  assert.equal(profile.bestWinStreak, 4);
+  assert.equal(profile.warsEntered, 1);
+  assert.equal(profile.warsWon, 0);
+  assert.equal(profile.longestWar, 2);
+  assert.equal(profile.cardsCaptured, 0);
+  assert.deepEqual(profile.modeStats.online_pvp, {
+    gamesPlayed: 1,
+    wins: 0,
+    losses: 0,
+    warsEntered: 1,
+    warsWon: 0,
+    longestWar: 2,
+    cardsCaptured: 0,
+    quickWins: 0,
+    timeLimitWins: 0
+  });
+
+  const saves = await state.saves.listMatchResults();
+  assert.equal(
+    saves.filter(
+      (entry) =>
+        entry.mode === "online_pvp" && entry.settlementKey === "ROOM123:match:1:OnlineDrawUser"
+    ).length,
+    1
+  );
+});
+
+test("state: online_pvp rematch can settle the next completed match once and WAR counters persist", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const firstMatch = {
+    status: "completed",
+    winner: "p1",
+    endReason: "hand_exhaustion",
+    mode: "online_pvp",
+    round: 5,
+    history: [
+      { result: "p1", warClashes: 3, capturedOpponentCards: 3 },
+      { result: "p1", warClashes: 0, capturedOpponentCards: 1 }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: { totalCards: 16 }
+  };
+
+  const secondMatch = {
+    status: "completed",
+    winner: "p1",
+    endReason: "hand_exhaustion",
+    mode: "online_pvp",
+    round: 4,
+    history: [
+      { result: "p1", warClashes: 1, capturedOpponentCards: 1 },
+      { result: "p1", warClashes: 0, capturedOpponentCards: 1 }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: { totalCards: 16 }
+  };
+
+  await state.recordOnlineMatchResult({
+    username: "OnlineRematchUser",
+    perspective: "p1",
+    matchState: firstMatch,
+    settlementKey: "ROOMABC:match:1:OnlineRematchUser"
+  });
+  await state.recordOnlineMatchResult({
+    username: "OnlineRematchUser",
+    perspective: "p1",
+    matchState: secondMatch,
+    settlementKey: "ROOMABC:match:2:OnlineRematchUser"
+  });
+
+  const profile = await state.profiles.getProfile("OnlineRematchUser");
+  assert.equal(profile.gamesPlayed, 2);
+  assert.equal(profile.wins, 2);
+  assert.equal(profile.losses, 0);
+  assert.equal(profile.winStreak, 2);
+  assert.equal(profile.bestWinStreak, 2);
+  assert.equal(profile.warsEntered, 2);
+  assert.equal(profile.warsWon, 2);
+  assert.equal(profile.longestWar, 3);
+  assert.equal(profile.cardsCaptured, 6);
+  assert.deepEqual(profile.modeStats.online_pvp, {
+    gamesPlayed: 2,
+    wins: 2,
+    losses: 0,
+    warsEntered: 2,
+    warsWon: 2,
+    longestWar: 3,
+    cardsCaptured: 6,
+    quickWins: 0,
+    timeLimitWins: 0
+  });
+
+  const saves = await state.saves.listMatchResults();
+  assert.equal(
+    saves.filter((entry) => entry.mode === "online_pvp" && entry.username === "OnlineRematchUser").length,
+    2
+  );
+});
+
+test("state: online_pvp reaches shared daily and weekly challenge hooks while also evaluating shared achievements", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const challenges = createDefaultDailyChallenges(Date.now());
+  challenges.daily.progress.matchesWon = 1;
+  challenges.weekly.progress.matchesWon = 19;
+  challenges.weekly.progress.warsWon = 14;
+  challenges.weekly.progress.usedAllElementsInMatch = 9;
+
+  await state.profiles.updateProfile("OnlineChallengeUser", {
+    winStreak: 2,
+    bestWinStreak: 2,
+    dailyChallenges: challenges,
+    achievements: {
+      comeback_win: { count: 4 }
+    }
+  });
+
+  const match = {
+    status: "completed",
+    winner: "p1",
+    endReason: "hand_exhaustion",
+    mode: "online_pvp",
+    round: 6,
+    history: [
+      { result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 1, capturedOpponentCards: 1 },
+      { result: "p1", p1Card: "water", p2Card: "fire", warClashes: 1, capturedOpponentCards: 0 },
+      { result: "p1", p1Card: "earth", p2Card: "wind", warClashes: 5, capturedOpponentCards: 23 },
+      { result: "p1", p1Card: "wind", p2Card: "water", warClashes: 0, capturedOpponentCards: 0 }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: { totalCards: 16 }
+  };
+
+  const result = await state.recordOnlineMatchResult({
+    username: "OnlineChallengeUser",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "ROOMHOOK:match:1:OnlineChallengeUser"
+  });
+
+  const dailyRewardIds = result.dailyRewards.map((item) => item.id);
+  const weeklyRewardIds = result.weeklyRewards.map((item) => item.id);
+  const dailyById = Object.fromEntries(result.dailyChallenges.challenges.map((item) => [item.id, item]));
+  const weeklyById = Object.fromEntries(result.weeklyChallenges.challenges.map((item) => [item.id, item]));
+  const profile = await state.profiles.getProfile("OnlineChallengeUser");
+
+  assert.ok(dailyRewardIds.includes("daily_win_2_matches"));
+  assert.ok(dailyRewardIds.includes("daily_win_1_war"));
+  assert.ok(dailyRewardIds.includes("daily_win_2_wars"));
+  assert.ok(dailyRewardIds.includes("daily_trigger_2_wars_one_match"));
+  assert.ok(dailyRewardIds.includes("daily_capture_16_cards"));
+  assert.ok(dailyRewardIds.includes("daily_capture_24_cards"));
+  assert.ok(dailyRewardIds.includes("daily_use_all_4_elements"));
+  assert.ok(weeklyRewardIds.includes("weekly_win_20_matches"));
+  assert.ok(weeklyRewardIds.includes("weekly_win_15_wars"));
+  assert.ok(weeklyRewardIds.includes("weekly_win_streak_3"));
+  assert.ok(weeklyRewardIds.includes("weekly_use_all_4_elements_10x"));
+  assert.ok(weeklyRewardIds.includes("weekly_longest_war_5"));
+  assert.equal(result.challengeTokenDelta, result.tokenDelta);
+  assert.ok(result.challengeTokenDelta > 0);
+  assert.ok(result.challengeXpDelta > 0);
+  assert.equal(result.save.matchTokenDelta, 0);
+  assert.equal(result.save.challengeTokenDelta, result.challengeTokenDelta);
+  assert.equal(dailyById.daily_play_5_matches.progress, 1);
+  assert.equal(weeklyById.weekly_play_15_matches.progress, 1);
+  assert.equal(profile.achievements.first_flame.count, 1);
+  assert.equal(profile.achievements.flawless_victory.count, 1);
+  assert.equal(profile.achievements.comeback_win.count, 5);
+  assert.equal(profile.achievements.comeback_win_5.count, 1);
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "first_flame"));
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "comeback_win"));
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "comeback_win_5"));
+});
+
+test("state: online_pvp win draw and loss feed the proper shared challenge outcome hooks", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("OnlineWinOutcomeUser", {
+    winStreak: 2,
+    bestWinStreak: 2,
+    dailyChallenges: createDefaultDailyChallenges(Date.now())
+  });
+  await state.profiles.updateProfile("OnlineDrawOutcomeUser", {
+    winStreak: 2,
+    bestWinStreak: 2,
+    dailyChallenges: createDefaultDailyChallenges(Date.now())
+  });
+  await state.profiles.updateProfile("OnlineLossOutcomeUser", {
+    winStreak: 2,
+    bestWinStreak: 2,
+    dailyChallenges: createDefaultDailyChallenges(Date.now())
+  });
+
+  const winResult = await state.recordOnlineMatchResult({
+    username: "OnlineWinOutcomeUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: "hand_exhaustion",
+      mode: "online_pvp",
+      round: 6,
+      history: [
+        { result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 1, capturedOpponentCards: 2 },
+        { result: "p1", p1Card: "water", p2Card: "fire", warClashes: 0, capturedOpponentCards: 1 },
+        { result: "p1", p1Card: "earth", p2Card: "wind", warClashes: 0, capturedOpponentCards: 1 },
+        { result: "p1", p1Card: "wind", p2Card: "water", warClashes: 0, capturedOpponentCards: 1 }
+      ],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    settlementKey: "OUTCOME:win:OnlineWinOutcomeUser"
+  });
+  const drawResult = await state.recordOnlineMatchResult({
+    username: "OnlineDrawOutcomeUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "draw",
+      endReason: "hand_exhaustion",
+      mode: "online_pvp",
+      round: 6,
+      history: [
+        { result: "none", p1Card: "fire", p2Card: "fire", warClashes: 0, capturedOpponentCards: 0 }
+      ],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    settlementKey: "OUTCOME:draw:OnlineDrawOutcomeUser"
+  });
+  const lossResult = await state.recordOnlineMatchResult({
+    username: "OnlineLossOutcomeUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "p2",
+      endReason: "hand_exhaustion",
+      mode: "online_pvp",
+      round: 6,
+      history: [
+        { result: "p2", p1Card: "fire", p2Card: "water", warClashes: 0, capturedOpponentCards: 0 }
+      ],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    settlementKey: "OUTCOME:loss:OnlineLossOutcomeUser"
+  });
+
+  const winDaily = Object.fromEntries(winResult.dailyChallenges.challenges.map((item) => [item.id, item]));
+  const drawDaily = Object.fromEntries(drawResult.dailyChallenges.challenges.map((item) => [item.id, item]));
+  const lossDaily = Object.fromEntries(lossResult.dailyChallenges.challenges.map((item) => [item.id, item]));
+  const winWeekly = Object.fromEntries(winResult.weeklyChallenges.challenges.map((item) => [item.id, item]));
+  const drawWeekly = Object.fromEntries(drawResult.weeklyChallenges.challenges.map((item) => [item.id, item]));
+  const lossWeekly = Object.fromEntries(lossResult.weeklyChallenges.challenges.map((item) => [item.id, item]));
+
+  assert.equal(winDaily.daily_win_1_match.progress, 1);
+  assert.equal(winDaily.daily_play_5_matches.progress, 1);
+  assert.equal(winDaily.daily_win_1_war.progress, 1);
+  assert.equal(winDaily.daily_use_all_4_elements.progress, 1);
+  assert.equal(winWeekly.weekly_win_streak_3.progress, 1);
+
+  assert.equal(drawDaily.daily_win_1_match.progress, 0);
+  assert.equal(drawDaily.daily_play_5_matches.progress, 1);
+  assert.equal(drawWeekly.weekly_win_streak_3.progress, 0);
+  assert.equal((await state.profiles.getProfile("OnlineDrawOutcomeUser")).winStreak, 0);
+
+  assert.equal(lossDaily.daily_win_1_match.progress, 0);
+  assert.equal(lossDaily.daily_play_5_matches.progress, 1);
+  assert.equal(lossWeekly.weekly_win_streak_3.progress, 0);
+  assert.equal((await state.profiles.getProfile("OnlineLossOutcomeUser")).winStreak, 0);
+});
+
+test("state: online_pvp winner loser and draw can unlock valid shared achievements and persist them to the profile", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const winnerResult = await state.recordOnlineMatchResult({
+    username: "OnlineAchievementWinner",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: "hand_exhaustion",
+      mode: "online_pvp",
+      round: 2,
+      history: [
+        { result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 0, capturedCards: 2, capturedOpponentCards: 1 },
+        { result: "p1", p1Card: "water", p2Card: "fire", warClashes: 0, capturedCards: 2, capturedOpponentCards: 1 }
+      ],
+      players: {
+        p1: { hand: ["fire", "water", "earth", "wind"] },
+        p2: { hand: [] }
+      },
+      meta: {
+        totalCards: 4,
+        startedAt: "2026-03-20T00:00:00.000Z",
+        endedAt: "2026-03-20T00:01:40.000Z",
+        durationMs: 100000
+      }
+    },
+    settlementKey: "ACH:winner:1:OnlineAchievementWinner"
+  });
+
+  const loserResult = await state.recordOnlineMatchResult({
+    username: "OnlineAchievementLoser",
+    perspective: "p2",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: "hand_exhaustion",
+      mode: "online_pvp",
+      round: 4,
+      history: [
+        { result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 0, capturedOpponentCards: 1 }
+      ],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: ["fire", "fire", "fire", "fire"] }
+      },
+      meta: {
+        totalCards: 4
+      }
+    },
+    settlementKey: "ACH:loser:1:OnlineAchievementLoser"
+  });
+
+  const drawResult = await state.recordOnlineMatchResult({
+    username: "OnlineAchievementDraw",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "draw",
+      endReason: "hand_exhaustion",
+      mode: "online_pvp",
+      round: 6,
+      history: [
+        { result: "none", p1Card: "fire", p2Card: "fire", warClashes: 5, capturedOpponentCards: 0 }
+      ],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: [] }
+      },
+      meta: {
+        totalCards: 16
+      }
+    },
+    settlementKey: "ACH:draw:1:OnlineAchievementDraw"
+  });
+
+  const winnerProfile = await state.profiles.getProfile("OnlineAchievementWinner");
+  const loserProfile = await state.profiles.getProfile("OnlineAchievementLoser");
+  const drawProfile = await state.profiles.getProfile("OnlineAchievementDraw");
+  const winnerCatalog = await state.getAchievements("OnlineAchievementWinner");
+
+  assert.ok(winnerResult.unlockedAchievements.some((item) => item.id === "first_flame"));
+  assert.ok(winnerResult.unlockedAchievements.some((item) => item.id === "quick_draw"));
+  assert.equal(winnerProfile.achievements.first_flame.count, 1);
+  assert.equal(winnerProfile.achievements.quick_draw.count, 1);
+  assert.ok(winnerCatalog.achievements.some((item) => item.id === "first_flame" && item.unlocked));
+
+  assert.ok(loserResult.unlockedAchievements.some((item) => item.id === "card_hoarder"));
+  assert.equal(loserProfile.achievements.card_hoarder.count, 1);
+
+  assert.ok(drawResult.unlockedAchievements.some((item) => item.id === "longest_war_5"));
+  assert.equal(drawProfile.achievements.longest_war_5.count, 1);
+});
+
+test("state: online_pvp duplicate settlement stays idempotent while rematch settlements can unlock repeatable achievements again", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const quickDrawMatch = {
+    status: "completed",
+    winner: "p1",
+    endReason: "hand_exhaustion",
+    mode: "online_pvp",
+    round: 2,
+    history: [
+      { result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 0, capturedCards: 2, capturedOpponentCards: 1 },
+      { result: "p1", p1Card: "water", p2Card: "fire", warClashes: 0, capturedCards: 2, capturedOpponentCards: 1 }
+    ],
+    players: {
+      p1: { hand: ["fire", "water", "earth", "wind"] },
+      p2: { hand: [] }
+    },
+    meta: {
+      totalCards: 4,
+      startedAt: "2026-03-20T00:00:00.000Z",
+      endedAt: "2026-03-20T00:01:40.000Z",
+      durationMs: 100000
+    }
+  };
+
+  const first = await state.recordOnlineMatchResult({
+    username: "OnlineRepeatableAchievementUser",
+    perspective: "p1",
+    matchState: quickDrawMatch,
+    settlementKey: "REMATCH:1:OnlineRepeatableAchievementUser"
+  });
+  const duplicate = await state.recordOnlineMatchResult({
+    username: "OnlineRepeatableAchievementUser",
+    perspective: "p1",
+    matchState: quickDrawMatch,
+    settlementKey: "REMATCH:1:OnlineRepeatableAchievementUser"
+  });
+  const second = await state.recordOnlineMatchResult({
+    username: "OnlineRepeatableAchievementUser",
+    perspective: "p1",
+    matchState: quickDrawMatch,
+    settlementKey: "REMATCH:2:OnlineRepeatableAchievementUser"
+  });
+
+  const profile = await state.profiles.getProfile("OnlineRepeatableAchievementUser");
+  const saves = await state.saves.listMatchResults();
+
+  assert.equal(first.duplicate, false);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(second.duplicate, false);
+  assert.equal(profile.achievements.quick_draw.count, 2);
+  assert.equal(profile.achievements.quickdraw_master.count, 2);
+  assert.equal(
+    saves.filter(
+      (entry) => entry.mode === "online_pvp" && entry.username === "OnlineRepeatableAchievementUser"
+    ).length,
+    2
+  );
 });
 
 test("state: cosmetic background randomization preference persists through save/load", async () => {
@@ -936,20 +1424,36 @@ test("state: username-specific test token grants are not applied at runtime", as
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
+  await state.profiles.updateProfile("VampyrLee", (current) => ({
+    ...current,
+    chests: {
+      ...(current.chests ?? {}),
+      milestone: 3
+    }
+  }));
   const profile = await state.profiles.ensureProfile("VampyrLee");
   assert.equal(profile.tokens, 200);
   assert.equal(profile.testTokenGrantApplied, false);
+  assert.equal(profile.chests?.milestone ?? 0, 3);
 
   const reloaded = new StateCoordinator({ dataDir });
   const profileAfterRestart = await reloaded.profiles.getProfile("VampyrLee");
   assert.equal(profileAfterRestart.tokens, 200);
   assert.equal(profileAfterRestart.testTokenGrantApplied, false);
+  assert.equal(profileAfterRestart.chests?.milestone ?? 0, 3);
 });
 
 test("state: AliceEvermore token update persists correctly", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
+  await state.profiles.updateProfile("AliceEvermore", (current) => ({
+    ...current,
+    chests: {
+      ...(current.chests ?? {}),
+      milestone: 3
+    }
+  }));
   const before = await state.profiles.ensureProfile("AliceEvermore");
   const updated = await state.profiles.updateProfile("AliceEvermore", {
     ...before,
@@ -963,6 +1467,7 @@ test("state: AliceEvermore token update persists correctly", async () => {
   assert.equal(afterRestart.tokens, updated.tokens);
   assert.equal(afterRestart.wins, before.wins);
   assert.equal(afterRestart.playerXP, before.playerXP);
+  assert.equal(afterRestart.chests?.milestone ?? 0, 3);
 });
 
 test("state: first login of day grants daily login reward once", async () => {
@@ -1234,6 +1739,66 @@ test("state: match loss chest chance can grant one basic chest", async () => {
     username: "LossChestUser",
     perspective: "p1",
     matchState: createRewardHookMatch({ winner: "p2" })
+  });
+
+  assert.equal(result.profile.chests.basic, 1);
+});
+
+test("state: match draw chest chance can grant one basic chest", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.01)
+  });
+
+  const result = await state.recordMatchResult({
+    username: "DrawChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "draw" })
+  });
+
+  assert.equal(result.profile.chests.basic, 1);
+});
+
+test("state: easy PvE disables chest drops for all outcomes", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.0)
+  });
+
+  const winResult = await state.recordMatchResult({
+    username: "EasyChestWinUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "easy" })
+  });
+  const lossResult = await state.recordMatchResult({
+    username: "EasyChestLossUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p2", difficulty: "easy" })
+  });
+  const drawResult = await state.recordMatchResult({
+    username: "EasyChestDrawUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "draw", difficulty: "easy" })
+  });
+
+  assert.equal(winResult.profile.chests.basic, 0);
+  assert.equal(lossResult.profile.chests.basic, 0);
+  assert.equal(drawResult.profile.chests.basic, 0);
+});
+
+test("state: local_pvp draw chest chance can grant one basic chest", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.01)
+  });
+
+  const result = await state.recordMatchResult({
+    username: "LocalDrawChestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "draw", mode: "local_pvp" })
   });
 
   assert.equal(result.profile.chests.basic, 1);
@@ -2162,6 +2727,84 @@ test("level rewards: multi-level gains grant all missed rewards once", async () 
   const second = applyLevelRewardsForLevelChange(granted.profile, { fromLevel: 1, toLevel: 20 });
   assert.equal(second.grantedRewards.length, 0);
   assert.equal(second.tokenDelta, 0);
+});
+
+test("state: level milestone chest grants exactly once at level 5 and does not re-grant on reload", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const thresholds = getXpThresholds();
+
+  const updated = await state.profiles.updateProfile("MilestoneChestUser", (current) => ({
+    ...current,
+    playerXP: thresholds[4],
+    playerLevel: 5
+  }));
+
+  assert.equal(updated.chests?.milestone ?? 0, 1);
+  assert.equal(updated.pendingMilestoneChestRewardLevel, 5);
+  assert.equal(updated.milestoneChestGrantedLevels?.["5"], true);
+
+  const reloaded = new StateCoordinator({ dataDir });
+  const afterReload = await reloaded.profiles.getProfile("MilestoneChestUser");
+
+  assert.equal(afterReload.chests?.milestone ?? 0, 1);
+  assert.equal(afterReload.milestoneChestGrantedLevels?.["5"], true);
+});
+
+test("state: level milestone chest grants again at level 10 and skips non-milestone levels", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const thresholds = getXpThresholds();
+
+  const levelFour = await state.profiles.updateProfile("MilestoneStepUser", (current) => ({
+    ...current,
+    playerXP: thresholds[3],
+    playerLevel: 4
+  }));
+  assert.equal(levelFour.chests?.milestone ?? 0, 0);
+
+  const levelFive = await state.profiles.updateProfile("MilestoneStepUser", (current) => ({
+    ...current,
+    playerXP: thresholds[4],
+    playerLevel: 5
+  }));
+  assert.equal(levelFive.chests?.milestone ?? 0, 1);
+
+  const levelTen = await state.profiles.updateProfile("MilestoneStepUser", (current) => ({
+    ...current,
+    playerXP: thresholds[9],
+    playerLevel: 10
+  }));
+  assert.equal(levelTen.chests?.milestone ?? 0, 2);
+  assert.equal(levelTen.pendingMilestoneChestRewardLevel, 10);
+  assert.equal(levelTen.milestoneChestGrantedLevels?.["5"], true);
+  assert.equal(levelTen.milestoneChestGrantedLevels?.["10"], true);
+});
+
+test("state: opening a milestone chest grants persisted token rewards in the 2 to 100 range", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir, random: constantRandom(0) });
+
+  const granted = await state.grantChest({
+    username: "MilestoneRewardUser",
+    chestType: MILESTONE_CHEST_TYPE,
+    amount: 1
+  });
+  assert.equal(granted.chests?.milestone ?? 0, 1);
+
+  const opened = await state.openChest({
+    username: "MilestoneRewardUser",
+    chestType: MILESTONE_CHEST_TYPE
+  });
+
+  assert.equal(opened.rewards.tokens, 2);
+  assert.equal(opened.rewards.xp, 0);
+  assert.equal(opened.rewards.cosmetic, null);
+  assert.equal(opened.profile.chests?.milestone ?? 0, 0);
+
+  const persisted = await state.profiles.getProfile("MilestoneRewardUser");
+  assert.equal(persisted.tokens, opened.profile.tokens);
+  assert.ok(opened.rewards.tokens >= 2 && opened.rewards.tokens <= 100);
 });
 
 test("level rewards: level cap never exceeds 100", () => {

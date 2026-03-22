@@ -177,14 +177,18 @@ function renderXpProgress(profile) {
 
 function renderChestPanel(profile, visualState = {}) {
   const basicChestCount = Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
-  const chestIcon = getAssetPath(
+  const milestoneChestCount = Math.max(0, Number(profile?.chests?.milestone ?? 0) || 0);
+  const basicChestIcon = getAssetPath(
     visualState?.basicOpen ? "icons/basic_chest_open.png" : "icons/basic_chest.png"
+  );
+  const milestoneChestIcon = getAssetPath(
+    visualState?.milestoneOpen ? "icons/loot_chest_open.png" : "icons/loot_chest.png"
   );
 
   return `
     <section class="stack-sm chest-panel">
-      <h3 class="section-title">Basic Chests</h3>
-      <div class="chest-row">
+      <h3 class="section-title">Reward Chests</h3>
+      <div class="chest-row profile-chest-row" data-profile-chest-row="true">
         <div class="chest-slot">
           <button
             id="open-basic-chest-btn"
@@ -194,11 +198,27 @@ function renderChestPanel(profile, visualState = {}) {
             aria-label="Open Basic Chest"
           >
             <span class="chest-count-bubble" aria-label="Basic Chest count">${basicChestCount}</span>
-            <img class="player-avatar chest-open-trigger__image" src="${chestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
+            <img class="player-avatar chest-open-trigger__image" src="${basicChestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper">${basicChestCount > 0 ? "Click chest to open" : "No Basic Chests available"}</p>
+          <p class="text-muted chest-open-helper" data-basic-chest-label="true">${basicChestCount > 0 ? "Basic Chest" : "No Basic Chests available"}</p>
         </div>
+        <div class="chest-slot">
+          <button
+            id="open-milestone-chest-btn"
+            class="chest-open-trigger"
+            type="button"
+            ${milestoneChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            aria-label="Open Milestone Chest"
+          >
+            <span class="chest-count-bubble" aria-label="Milestone Chest count">${milestoneChestCount}</span>
+            <img class="player-avatar chest-open-trigger__image" src="${milestoneChestIcon}" alt="Milestone Chest" data-milestone-chest-image="true" />
+          </button>
+          <p class="text-muted chest-open-helper" data-milestone-chest-label="true">${milestoneChestCount > 0 ? "Level Reward Chest" : "No Level Reward Chests available"}</p>
+        </div>
+        <div class="chest-slot chest-slot-placeholder" data-profile-chest-slot="reserved"></div>
+        <div class="chest-slot chest-slot-placeholder" data-profile-chest-slot="reserved"></div>
       </div>
+      <p class="text-muted chest-panel-helper">Click a chest image to open it.</p>
     </section>
   `;
 }
@@ -398,6 +418,10 @@ export const profileScreen = {
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {
       openBasicChestButton.addEventListener("click", context.actions.openBasicChest);
+    }
+    const openMilestoneChestButton = document.getElementById("open-milestone-chest-btn");
+    if (openMilestoneChestButton && context.actions.openMilestoneChest) {
+      openMilestoneChestButton.addEventListener("click", context.actions.openMilestoneChest);
     }
 
     const searchForm = document.getElementById("profile-search-form");

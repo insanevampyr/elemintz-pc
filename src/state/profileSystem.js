@@ -14,7 +14,7 @@ import {
   getCosmeticCatalogForProfile,
   normalizeProfileCosmetics
 } from "./cosmeticSystem.js";
-import { normalizeProfileChests } from "./chestSystem.js";
+import { applyLevelMilestoneChestGrants, normalizeProfileChests } from "./chestSystem.js";
 import {
   applyMatchStatsToProfile,
   createDefaultProfile,
@@ -138,6 +138,7 @@ function validateAndRepairProfile(profile) {
     profile && typeof profile === "object" && !Array.isArray(profile) ? { ...profile } : {};
   const defaults = createDefaultProfile(normalizeUsername(baseProfile.username));
   const repairs = [];
+  let mutated = false;
 
   // Start validation with a shallow clone so section-level repairs do not
   // mutate the raw object that came back from disk.
@@ -155,6 +156,7 @@ function validateAndRepairProfile(profile) {
   const cloneValue = (value) => JSON.parse(JSON.stringify(value));
   const logFieldRepair = (field, previousValue, nextValue) => {
     repairs.push(field);
+    mutated = true;
     console.info("[ProfileSystem] validation repaired field", {
       username: repairedProfile.username ?? null,
       field,
@@ -164,6 +166,7 @@ function validateAndRepairProfile(profile) {
   };
   const logSectionRepair = (section, previousValue, nextValue) => {
     repairs.push(section);
+    mutated = true;
     console.info("[ProfileSystem] validation repaired section", {
       username: repairedProfile.username ?? null,
       section,
@@ -320,6 +323,9 @@ function validateAndRepairProfile(profile) {
   repairedProfile.onlineDisconnectTracking = disconnectTracking;
 
   if (repairs.length === 0) {
+    console.info("[ProfileSystem] validation idempotent - no changes applied", {
+      username: repairedProfile.username ?? null
+    });
     console.info("[ProfileSystem] validation skipped - already valid", {
       username: repairedProfile.username ?? null
     });
@@ -332,11 +338,11 @@ function validateAndRepairProfile(profile) {
 
   return {
     profile: repairedProfile,
-    repaired: repairs.length > 0
+    mutated
   };
 }
 
-function normalizeProfile(profile, { applyRetroactive = false } = {}) {
+export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   // Always migrate first so older records keep their existing data and only
   // receive the minimum schema changes needed before default filling happens.
   const migration = migrateProfileSchema(profile);
@@ -345,7 +351,7 @@ function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   // Validate the migrated profile before deeper normalizers run so malformed
   // sections are repaired centrally and valid sections remain untouched.
   const validation = validateAndRepairProfile(migratedProfile);
-  const validatedProfile = validation.profile;
+  const { profile: validatedProfile, mutated } = validation;
 
   const normalizedDisconnectTracking = {
     totalLiveMatchDisconnects: Math.max(0, Number(validatedProfile?.onlineDisconnectTracking?.totalLiveMatchDisconnects ?? 0)),
@@ -389,13 +395,30 @@ function normalizeProfile(profile, { applyRetroactive = false } = {}) {
     }
   }
 
-  return {
+  normalized = applyLevelMilestoneChestGrants({
+    ...normalized,
+    playerLevel: deriveLevelFromXp(normalized.playerXP)
+  });
+
+  const finalNormalizedProfile = {
     ...normalized,
     // Persist the current schema marker after migration/default filling so
     // upgraded records are written back in their latest supported shape.
     schemaVersion: CURRENT_PROFILE_SCHEMA_VERSION,
     playerLevel: deriveLevelFromXp(normalized.playerXP)
   };
+
+  // If validation reported a true no-op, the remaining normalization pipeline
+  // should also behave as a no-op for already-valid data. Warn when that
+  // expectation is violated so future persistence changes do not silently
+  // reintroduce repeated rewrites.
+  if (!mutated && JSON.stringify(finalNormalizedProfile) !== JSON.stringify(validatedProfile)) {
+    console.warn("[ProfileSystem] WARNING: normalization introduced unexpected mutation", {
+      username: validatedProfile?.username ?? null
+    });
+  }
+
+  return finalNormalizedProfile;
 }
 
 function snapshot(profile) {

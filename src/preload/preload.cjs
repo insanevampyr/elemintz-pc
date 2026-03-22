@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("elemintz", {
     buyStoreItem: (payload) => ipcRenderer.invoke("state:buyStoreItem", payload),
     grantSupporterPass: (username) => ipcRenderer.invoke("state:grantSupporterPass", username),
     openChest: (payload) => ipcRenderer.invoke("state:openChest", payload),
+    acknowledgeMilestoneChestReward: (payload) =>
+      ipcRenderer.invoke("state:acknowledgeMilestoneChestReward", payload),
     equipCosmetic: (payload) => ipcRenderer.invoke("state:equipCosmetic", payload),
     updateCosmeticPreferences: (payload) => ipcRenderer.invoke("state:updateCosmeticPreferences", payload),
     saveCosmeticLoadout: (payload) => ipcRenderer.invoke("state:saveCosmeticLoadout", payload),
@@ -43,6 +45,13 @@ contextBridge.exposeInMainWorld("elemintz", {
     connect: (payload) => ipcRenderer.invoke("multiplayer:connect", payload),
     createRoom: (payload) => ipcRenderer.invoke("multiplayer:createRoom", payload),
     joinRoom: (payload) => ipcRenderer.invoke("multiplayer:joinRoom", payload),
+    submitMove: (payload) => {
+      console.info("[OnlinePlay][Preload] submitMove called", {
+        move: payload?.move ?? null
+      });
+      return ipcRenderer.invoke("multiplayer:submitMove", payload);
+    },
+    readyRematch: (payload) => ipcRenderer.invoke("multiplayer:readyRematch", payload),
     disconnect: () => ipcRenderer.invoke("multiplayer:disconnect"),
     onUpdate: (listener) => subscribeToMultiplayerUpdates(listener)
   }

@@ -76,6 +76,66 @@ function createRendererController() {
   });
 }
 
+function createProfileScreenContext(overrides = {}) {
+  return {
+    profile: {
+      username: "ChestUser",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      chests: { basic: 0, milestone: 0 },
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    basicChestVisualState: { basicOpen: false, milestoneOpen: false },
+    titleIcon: null,
+    backgroundImage: "assets/EleMintzIcon.png",
+    searchQuery: "",
+    searchResults: [],
+    viewedProfile: null,
+    actions: {
+      openBasicChest: () => {},
+      openMilestoneChest: () => {},
+      searchProfiles: () => {},
+      viewProfile: () => {},
+      clearViewed: () => {},
+      back: () => {}
+    },
+    ...overrides
+  };
+}
+
 test("ui: settings screen renders PvE AI difficulty and style options with easy warning", () => {
   const html = settingsScreen.render({
     settings: {
@@ -8548,137 +8608,267 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
 });
 
 test("ui: profile screen uses a chest count bubble and subtle empty helper text when no basic chests are available", () => {
-  const html = profileScreen.render({
-    profile: {
-      username: "ChestlessUser",
-      wins: 0,
-      losses: 0,
-      warsEntered: 0,
-      warsWon: 0,
-      longestWar: 0,
-      cardsCaptured: 0,
-      gamesPlayed: 0,
-      bestWinStreak: 0,
-      tokens: 0,
-      supporterPass: false,
-      chests: { basic: 0 },
-      achievements: {},
-      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
-    },
-    cosmetics: {
-      equipped: { avatar: "default_avatar", cardBack: "default_card_back", background: "default_background", elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" }, badge: "none", title: "Initiate" },
-      catalog: { avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }], cardBack: [{ id: "default_card_back", name: "Default", owned: true }], background: [{ id: "default_background", name: "Default", owned: true }], elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }], badge: [{ id: "none", name: "No Badge", owned: true }], title: [{ id: "Initiate", name: "Initiate", owned: true }] }
-    },
-    basicChestVisualState: { basicOpen: false },
-    titleIcon: null,
-    backgroundImage: "assets/EleMintzIcon.png",
-    searchQuery: "",
-    searchResults: [],
-    viewedProfile: null,
-    actions: {
-      openBasicChest: () => {},
-      searchProfiles: () => {},
-      viewProfile: () => {},
-      clearViewed: () => {},
-      back: () => {}
-    }
-  });
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        username: "ChestlessUser",
+        chests: { basic: 0, milestone: 0 }
+      }
+    })
+  );
 
   assert.match(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest\.png"/);
   assert.match(html, /id="open-basic-chest-btn"/);
   assert.match(html, /class="chest-count-bubble"[^>]*>0</);
   assert.match(html, /class="chest-open-trigger"/);
   assert.match(html, /No Basic Chests available/);
+  assert.match(html, /No Level Reward Chests available/);
   assert.doesNotMatch(html, /Basic Chests: <strong>/);
   assert.match(html, /disabled aria-disabled="true"/);
 });
 
 test("ui: profile screen enables open chest button when player has a basic chest", () => {
-  const html = profileScreen.render({
-    profile: {
-      username: "ChestOwner",
-      wins: 0,
-      losses: 0,
-      warsEntered: 0,
-      warsWon: 0,
-      longestWar: 0,
-      cardsCaptured: 0,
-      gamesPlayed: 0,
-      bestWinStreak: 0,
-      tokens: 0,
-      supporterPass: false,
-      chests: { basic: 2 },
-      achievements: {},
-      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
-    },
-    cosmetics: {
-      equipped: { avatar: "default_avatar", cardBack: "default_card_back", background: "default_background", elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" }, badge: "none", title: "Initiate" },
-      catalog: { avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }], cardBack: [{ id: "default_card_back", name: "Default", owned: true }], background: [{ id: "default_background", name: "Default", owned: true }], elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }], badge: [{ id: "none", name: "No Badge", owned: true }], title: [{ id: "Initiate", name: "Initiate", owned: true }] }
-    },
-    basicChestVisualState: { basicOpen: false },
-    titleIcon: null,
-    backgroundImage: "assets/EleMintzIcon.png",
-    searchQuery: "",
-    searchResults: [],
-    viewedProfile: null,
-    actions: {
-      openBasicChest: () => {},
-      searchProfiles: () => {},
-      viewProfile: () => {},
-      clearViewed: () => {},
-      back: () => {}
-    }
-  });
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        username: "ChestOwner",
+        chests: { basic: 2, milestone: 3 }
+      }
+    })
+  );
 
   assert.match(html, /class="chest-count-bubble"[^>]*>2</);
-  assert.match(html, /Click chest to open/);
+  assert.match(html, /id="open-milestone-chest-btn"/);
+  assert.match(html, /data-milestone-chest-image="true"/);
+  assert.match(html, /aria-label="Milestone Chest count">3</);
+  assert.match(html, /<p class="text-muted chest-open-helper" data-milestone-chest-label="true">Level Reward Chest<\/p>/);
+  assert.match(html, /data-profile-chest-slot="reserved"/);
   assert.doesNotMatch(html, /Basic Chests: <strong>/);
   assert.doesNotMatch(html, /disabled aria-disabled="true"/);
 });
 
 test("ui: profile screen swaps to the open chest image when the local visual state is active", () => {
-  const html = profileScreen.render({
-    profile: {
-      username: "ChestOwner",
-      wins: 0,
-      losses: 0,
-      warsEntered: 0,
-      warsWon: 0,
-      longestWar: 0,
-      cardsCaptured: 0,
-      gamesPlayed: 0,
-      bestWinStreak: 0,
-      tokens: 0,
-      supporterPass: false,
-      chests: { basic: 1 },
-      achievements: {},
-      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
-    },
-    cosmetics: {
-      equipped: { avatar: "default_avatar", cardBack: "default_card_back", background: "default_background", elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" }, badge: "none", title: "Initiate" },
-      catalog: { avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }], cardBack: [{ id: "default_card_back", name: "Default", owned: true }], background: [{ id: "default_background", name: "Default", owned: true }], elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }], badge: [{ id: "none", name: "No Badge", owned: true }], title: [{ id: "Initiate", name: "Initiate", owned: true }] }
-    },
-    basicChestVisualState: { basicOpen: true },
-    titleIcon: null,
-    backgroundImage: "assets/EleMintzIcon.png",
-    searchQuery: "",
-    searchResults: [],
-    viewedProfile: null,
-    actions: {
-      openBasicChest: () => {},
-      searchProfiles: () => {},
-      viewProfile: () => {},
-      clearViewed: () => {},
-      back: () => {}
-    }
-  });
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        username: "ChestOwner",
+        chests: { basic: 1, milestone: 1 }
+      },
+      basicChestVisualState: { basicOpen: true, milestoneOpen: true }
+    })
+  );
 
   assert.match(html, /data-basic-chest-image="true"/);
   assert.match(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest_open\.png"/);
   assert.doesNotMatch(html, /src="(?:file:.*\/)?assets\/icons\/basic_chest\.png" alt="Basic Chest" data-basic-chest-image="true"/);
+  assert.match(html, /data-milestone-chest-image="true"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/loot_chest_open\.png"/);
+});
+
+test("ui: profile chest labels stay non-interactive while chest buttons remain clickable", () => {
+  const previousDocument = global.document;
+  const actions = [];
+  const basicButton = { addEventListener: (_type, handler) => actions.push(["basic", handler]) };
+  const milestoneButton = { addEventListener: (_type, handler) => actions.push(["milestone", handler]) };
+  const searchForm = { addEventListener: () => {} };
+
+  global.document = {
+    getElementById: (id) => {
+      if (id === "profile-back-btn") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "open-basic-chest-btn") {
+        return basicButton;
+      }
+      if (id === "open-milestone-chest-btn") {
+        return milestoneButton;
+      }
+      if (id === "profile-search-form") {
+        return searchForm;
+      }
+      if (id === "profile-search-input") {
+        return null;
+      }
+      if (id === "clear-viewed-profile-btn") {
+        return null;
+      }
+      return null;
+    },
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+
+  try {
+    profileScreen.bind(
+      createProfileScreenContext({
+        actions: {
+          openBasicChest: () => "basic",
+          openMilestoneChest: () => "milestone",
+          searchProfiles: () => {},
+          viewProfile: () => {},
+          clearViewed: () => {},
+          back: () => {}
+        }
+      })
+    );
+  } finally {
+    global.document = previousDocument;
+  }
+
+  assert.equal(actions.length, 2);
+  assert.deepEqual(
+    actions.map(([name]) => name),
+    ["basic", "milestone"]
+  );
+});
+
+test("ui: profile chest row keeps milestone chest to the right of the basic chest with two reserved future slots", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        username: "FutureChestUser",
+        chests: { basic: 1, milestone: 3 }
+      }
+    })
+  );
+
+  assert.ok(html.indexOf('id="open-basic-chest-btn"') < html.indexOf('id="open-milestone-chest-btn"'));
+  assert.equal((html.match(/data-profile-chest-slot="reserved"/g) ?? []).length, 2);
+});
+
+test("ui: profile shows the new milestone chest popup with the exact grant message and acknowledges it once", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const acknowledged = [];
+  let liveProfile = {
+    ...createProfileScreenContext().profile,
+    username: "RewardHero",
+    playerLevel: 10,
+    chests: { basic: 0, milestone: 1 },
+    pendingMilestoneChestRewardLevel: 10
+  };
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => liveProfile,
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [liveProfile],
+        acknowledgeMilestoneChestReward: async ({ username, level }) => {
+          acknowledged.push({ username, level });
+          liveProfile = { ...liveProfile, pendingMilestoneChestRewardLevel: null };
+          return { profile: liveProfile };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "RewardHero";
+    await app.showProfile();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].body, "Congrats RewardHero on level 10, a FREE Token Reward is now Available");
+
+    await modalCalls[0].actions[0].onClick();
+    assert.deepEqual(acknowledged, [{ username: "RewardHero", level: 10 }]);
+    assert.equal(shown.at(-1).profile.pendingMilestoneChestRewardLevel, null);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: opening a milestone chest reuses the profile chest open flow and updates tokens immediately", async () => {
+  const previousWindow = global.window;
+  const previousSetTimeout = global.setTimeout;
+  const shown = [];
+  const openCalls = [];
+  const toastCalls = [];
+  let liveProfile = {
+    ...createProfileScreenContext().profile,
+    username: "MilestoneOpener",
+    tokens: 15,
+    chests: { basic: 0, milestone: 1 }
+  };
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: {
+      showChestOpenReward: (payload) => toastCalls.push(payload)
+    }
+  });
+
+  global.setTimeout = (handler) => {
+    handler();
+    return 0;
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => liveProfile,
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [liveProfile],
+        openChest: async ({ username, chestType }) => {
+          openCalls.push({ username, chestType });
+          liveProfile = {
+            ...liveProfile,
+            tokens: 42,
+            chests: { ...liveProfile.chests, milestone: 0 }
+          };
+          return {
+            profile: liveProfile,
+            rewards: {
+              xp: 0,
+              tokens: 27,
+              cosmetic: null
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "MilestoneOpener";
+    await app.showProfile();
+    const openAction = shown.at(-1).actions.openMilestoneChest;
+    await openAction();
+
+    assert.deepEqual(openCalls, [{ username: "MilestoneOpener", chestType: "milestone" }]);
+    assert.equal(toastCalls.length, 1);
+    assert.ok(shown.some((context) => context.basicChestVisualState?.milestoneOpen === true));
+    assert.equal(shown.at(-1).profile.tokens, 42);
+    assert.equal(shown.at(-1).profile.chests.milestone, 0);
+  } finally {
+    global.window = previousWindow;
+    global.setTimeout = previousSetTimeout;
+  }
 });
 
 test("ui: profile unlocked achievements render comeback_win badge once earned", () => {
