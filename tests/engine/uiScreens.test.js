@@ -524,7 +524,7 @@ test("ui: daily challenges screen renders completed status when hydrated progres
   assert.doesNotMatch(html, /In Progress/);
 });
 
-test("ui: store screen renders token balance inside the sticky top banner with buy/equip actions", () => {
+test("ui: store screen keeps the title left and renders the token balance in right-side topbar controls with buy/equip actions", () => {
   const html = storeScreen.render({
     store: {
       tokens: 120,
@@ -554,8 +554,10 @@ test("ui: store screen renders token balance inside the sticky top banner with b
 
   assert.match(
     html,
-    /<div class="screen-topbar store-topbar">[\s\S]*data-store-banner-balance="true"[\s\S]*id="store-token-balance" class="store-banner-balance-value">120<\/strong>[\s\S]*id="store-back-btn"/
+    /<div class="screen-topbar store-topbar">[\s\S]*<div class="store-topbar-heading">[\s\S]*<h2 class="view-title">Store<\/h2>[\s\S]*<div class="store-topbar-controls">[\s\S]*data-store-banner-balance="true"[\s\S]*id="store-token-balance" class="store-banner-balance-value">120<\/strong>[\s\S]*id="store-back-btn"/
   );
+  assert.ok(html.indexOf('class="store-topbar-heading"') < html.indexOf('class="store-topbar-controls"'));
+  assert.ok(html.indexOf('data-store-banner-balance="true"') < html.indexOf('id="store-back-btn"'));
   assert.doesNotMatch(html, /<p>Tokens: <strong>/);
   assert.match(html, /data-buy-type="avatar"/);
   assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
