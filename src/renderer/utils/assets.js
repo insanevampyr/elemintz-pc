@@ -38,7 +38,10 @@ const CARD_BACKS = Object.freeze({
   cardback_elemental_overlord: getAssetPath("card_backs/cardback_elemental_overlord.png"),
   cardback_sweet_but_deadly: getAssetPath("card_backs/cardback_sweet_but_deadly.png"),
   cardback_too_easy: getAssetPath("card_backs/cardback_too_easy.png"),
-  cardback_stay_mad: getAssetPath("card_backs/cardback_stay_mad.png")
+  cardback_stay_mad: getAssetPath("card_backs/cardback_stay_mad.png"),
+  cardback_void_tease: getAssetPath("card_backs/cardback_void_tease.png"),
+  cardback_lucky_you: getAssetPath("card_backs/cardback_lucky_you.png"),
+  cardback_king_energy: getAssetPath("card_backs/cardback_king_energy.png")
 });
 
 const DEFAULT_ELEMENT_IMAGES = Object.freeze({

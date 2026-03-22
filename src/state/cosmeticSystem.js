@@ -854,6 +854,33 @@ export const COSMETIC_CATALOG = Object.freeze({
       price: CARD_BACK_RARITY_PRICING.Rare
     },
     {
+      id: "cardback_void_tease",
+      name: "Void Tease",
+      image: "card_backs/cardback_void_tease.png",
+      rarity: "Epic",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Epic
+    },
+    {
+      id: "cardback_lucky_you",
+      name: "Lucky You",
+      image: "card_backs/cardback_lucky_you.png",
+      rarity: "Common",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Common
+    },
+    {
+      id: "cardback_king_energy",
+      name: "King Energy",
+      image: "card_backs/cardback_king_energy.png",
+      rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
       id: "founder_deluxe_card_back",
       name: "Founder Deluxe Card Back",
       image: "card_backs/founder_deluxe_card_back.png",

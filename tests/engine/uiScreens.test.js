@@ -224,6 +224,9 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   const elementalOverlord = store.catalog.cardBack.find((item) => item.id === "cardback_elemental_overlord");
   const tooEasyV2 = store.catalog.cardBack.find((item) => item.id === "cardback_too_easy");
   const cryAboutItV2 = store.catalog.cardBack.find((item) => item.id === "cardback_cry_about_it_v2");
+  const voidTease = store.catalog.cardBack.find((item) => item.id === "cardback_void_tease");
+  const luckyYou = store.catalog.cardBack.find((item) => item.id === "cardback_lucky_you");
+  const kingEnergy = store.catalog.cardBack.find((item) => item.id === "cardback_king_energy");
 
   assert.match(html, /I Don't Lose - Transparent/);
   assert.match(html, /I Don't Lose/);
@@ -236,11 +239,17 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.match(html, /Sweet But Deadly/);
   assert.match(html, /Too Easy V2/);
   assert.match(html, /Stay Mad/);
+  assert.match(html, /Void Tease/);
+  assert.match(html, /Lucky You/);
+  assert.match(html, /King Energy/);
   assert.ok(swiftExecution);
   assert.ok(tinyButMighty);
   assert.ok(elementalOverlord);
   assert.ok(tooEasyV2);
   assert.ok(cryAboutItV2);
+  assert.ok(voidTease);
+  assert.ok(luckyYou);
+  assert.ok(kingEnergy);
   assert.equal(swiftExecution.rarity, "Epic");
   assert.equal(swiftExecution.price, 500);
   assert.equal(tinyButMighty.rarity, "Rare");
@@ -251,6 +260,12 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.equal(tooEasyV2.price, 120);
   assert.equal(cryAboutItV2.rarity, "Epic");
   assert.equal(cryAboutItV2.price, 500);
+  assert.equal(voidTease.rarity, "Epic");
+  assert.equal(voidTease.price, 500);
+  assert.equal(luckyYou.rarity, "Common");
+  assert.equal(luckyYou.price, 120);
+  assert.equal(kingEnergy.rarity, "Legendary");
+  assert.equal(kingEnergy.price, 800);
   assert.match(html, /cosmetic-rarity-label[^>]*>Epic<\/span>/);
   assert.ok(
     getCardBackImage("i_dont_lose_transparent_cardback").includes(
@@ -261,6 +276,9 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.ok(getCardBackImage("cardback_elemental_overlord").includes("cardback_elemental_overlord.png"));
   assert.ok(getCardBackImage("cardback_too_easy").includes("cardback_too_easy.png"));
   assert.ok(getCardBackImage("cardback_stay_mad").includes("cardback_stay_mad.png"));
+  assert.ok(getCardBackImage("cardback_void_tease").includes("cardback_void_tease.png"));
+  assert.ok(getCardBackImage("cardback_lucky_you").includes("cardback_lucky_you.png"));
+  assert.ok(getCardBackImage("cardback_king_energy").includes("cardback_king_energy.png"));
   assert.match(html, /Magma Warlord/);
   assert.match(html, /Voidbound Entity/);
   assert.match(html, /Arcane Gambler/);
