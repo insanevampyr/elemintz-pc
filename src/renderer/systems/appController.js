@@ -253,18 +253,21 @@ export class AppController {
         avatarId: "default_avatar",
         titleId: null,
         titleName: "Arena Rival",
+        badgeId: "none",
         cardBackId: "default_card_back"
       };
     }
 
     const avatar = this.chooseRandomCatalogItem("avatar", { excludeIds: ["default_avatar"] });
     const title = this.chooseRandomCatalogItem("title", { excludeIds: ["Initiate"] });
+    const badge = this.chooseRandomCatalogItem("badge", { excludeIds: ["none"] });
     const cardBack = this.chooseRandomCatalogItem("cardBack", { excludeIds: ["default_card_back"] });
 
     return {
       avatarId: avatar?.id ?? "default_avatar",
       titleId: title?.id ?? null,
       titleName: getCosmeticDisplayName("title", title?.id, title?.name ?? "Arena Rival"),
+      badgeId: badge?.id ?? "none",
       cardBackId: cardBack?.id ?? "default_card_back"
     };
   }
@@ -563,29 +566,64 @@ export class AppController {
     );
   }
 
-  buildPlayerDisplay(profile, fallbackName, fallbackTitle = "Initiate") {
-    const avatarId = profile?.equippedCosmetics?.avatar ?? profile?.cosmetics?.avatar ?? "default_avatar";
-    const titleId = profile?.equippedCosmetics?.title ?? profile?.title ?? null;
-    const title = this.resolveTitleLabel(profile, fallbackTitle);
-    const badgeId = profile?.equippedCosmetics?.badge ?? profile?.cosmetics?.badge ?? "none";
-    const titleDefinition = titleId ? getCosmeticDefinition("title", titleId) : null;
+  resolveIdentityDisplay({
+    name = null,
+    fallbackName = "Player",
+    avatarId = null,
+    titleId = null,
+    badgeId = null,
+    titleText = null,
+    fallbackTitle = "Initiate"
+  } = {}) {
+    const resolvedAvatarId = getCosmeticDefinition("avatar", avatarId) ? avatarId : "default_avatar";
+    const resolvedTitleId = getCosmeticDefinition("title", titleId) ? titleId : null;
+    const resolvedBadgeId = getCosmeticDefinition("badge", badgeId) ? badgeId : "none";
+    const resolvedTitle = getCosmeticDisplayName("title", resolvedTitleId, titleText ?? fallbackTitle) ?? fallbackTitle;
+    const titleDefinition = resolvedTitleId ? getCosmeticDefinition("title", resolvedTitleId) : null;
     const titleIcon =
       titleDefinition?.image
         ? getAssetPath(titleDefinition.image)
-        : TITLE_ICON_MAP[title]
-          ? getAssetPath(TITLE_ICON_MAP[title])
+        : TITLE_ICON_MAP[resolvedTitle]
+          ? getAssetPath(TITLE_ICON_MAP[resolvedTitle])
           : null;
 
     return {
-      name: profile?.username ?? fallbackName,
+      name: normalizeName(name, fallbackName),
+      avatarId: resolvedAvatarId,
+      titleId: resolvedTitleId,
+      badgeId: resolvedBadgeId,
+      title: resolvedTitle,
+      titleIcon,
+      featuredBadge: getBadgeImage(resolvedBadgeId),
+      avatar: this.resolveAvatarPath(resolvedAvatarId)
+    };
+  }
+
+  buildPlayerDisplay(profile, fallbackName, fallbackTitle = "Initiate") {
+    const avatarId =
+      profile?.equippedCosmetics?.avatar ??
+      profile?.cosmetics?.equipped?.avatar ??
+      profile?.cosmetics?.avatar ??
+      "default_avatar";
+    const titleId =
+      profile?.equippedCosmetics?.title ??
+      profile?.cosmetics?.equipped?.title ??
+      null;
+    const badgeId =
+      profile?.equippedCosmetics?.badge ??
+      profile?.cosmetics?.equipped?.badge ??
+      profile?.cosmetics?.badge ??
+      "none";
+
+    return this.resolveIdentityDisplay({
+      name: profile?.username,
+      fallbackName,
       avatarId,
       titleId,
       badgeId,
-      title,
-      titleIcon,
-      featuredBadge: getBadgeImage(badgeId),
-      avatar: this.resolveAvatarPath(avatarId)
-    };
+      titleText: profile?.title ?? this.resolveTitleLabel(profile, fallbackTitle),
+      fallbackTitle
+    });
   }
 
   getOnlineEquippedCosmeticValue(profile = null, key, fallback) {
@@ -2424,16 +2462,15 @@ export class AppController {
     const playerDisplay = this.buildPlayerDisplay(p1Profile, names.p1, "Initiate");
     const opponentDisplay = localPvp
       ? this.buildPlayerDisplay(p2Profile, names.p2, "Initiate")
-      : {
+      : this.resolveIdentityDisplay({
           name: "Elemental AI",
+          fallbackName: "Elemental AI",
           avatarId: pveOpponentStyle?.avatarId ?? "default_avatar",
           titleId: pveOpponentStyle?.titleId ?? null,
-          badgeId: null,
-          title: pveOpponentStyle?.titleName ?? "Arena Rival",
-          titleIcon: null,
-          featuredBadge: null,
-          avatar: getAvatarImage(pveOpponentStyle?.avatarId ?? "default_avatar")
-        };
+          badgeId: pveOpponentStyle?.badgeId ?? "none",
+          titleText: pveOpponentStyle?.titleName ?? "Arena Rival",
+          fallbackTitle: "Arena Rival"
+        });
 
     const p1Variant = p1Profile?.equippedCosmetics?.elementCardVariant ?? null;
     const p1CardBack = p1Profile?.equippedCosmetics?.cardBack ?? "default_card_back";

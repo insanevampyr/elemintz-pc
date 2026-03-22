@@ -160,6 +160,43 @@ function createPreviewElements(documentRef) {
   return { layer, frame, image, textVisual, meta, name, description };
 }
 
+function attachPreviewSection(parent, child) {
+  if (!parent || !child) {
+    return;
+  }
+
+  if (typeof parent.contains === "function" && parent.contains(child)) {
+    return;
+  }
+
+  if (Array.isArray(parent.children) && !parent.children.includes(child)) {
+    parent.children.push(child);
+    return;
+  }
+
+  parent.appendChild?.(child);
+}
+
+function detachPreviewSection(parent, child) {
+  if (!parent || !child) {
+    return;
+  }
+
+  if (typeof parent.contains === "function" && !parent.contains(child)) {
+    return;
+  }
+
+  if (Array.isArray(parent.children)) {
+    const index = parent.children.indexOf(child);
+    if (index >= 0) {
+      parent.children.splice(index, 1);
+    }
+    return;
+  }
+
+  parent.removeChild?.(child);
+}
+
 function ensurePreviewElements(documentRef) {
   if (documentRef?.__elemintzCosmeticHoverPreview) {
     return documentRef.__elemintzCosmeticHoverPreview;
@@ -196,6 +233,12 @@ function updatePreviewAppearance(preview, target) {
       ? dimensions.height
       : dimensions.metaOnlyHeight ?? dimensions.height
     : dimensions.mediaHeight;
+
+  if (showMeta) {
+    attachPreviewSection(preview.layer, preview.meta);
+  } else {
+    detachPreviewSection(preview.layer, preview.meta);
+  }
 
   preview.layer.className = `cosmetic-hover-preview-layer ${showMeta ? "has-meta" : ""}`;
   preview.frame.className = `cosmetic-hover-preview-frame ${previewType === "avatar" ? "is-avatar" : previewType === "badge" ? "is-badge" : previewType === "title" ? "is-title" : "is-card"} rarity-${previewRarity}`;

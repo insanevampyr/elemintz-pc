@@ -1808,7 +1808,18 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
       textContent: "",
       children,
       appendChild(child) {
-        children.push(child);
+        if (!children.includes(child)) {
+          children.push(child);
+        }
+      },
+      removeChild(child) {
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
+      },
+      contains(child) {
+        return children.includes(child);
       },
       classList: {
         add: (...tokens) => tokens.forEach((token) => classes.add(token)),
@@ -1843,7 +1854,7 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
   const previewFrame = previewLayer.children[0];
   const previewImage = previewFrame.children[0];
   const previewTextVisual = previewFrame.children[1];
-  const previewMeta = previewLayer.children[1];
+  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
   const previewName = previewMeta.children[0];
   const previewDescription = previewMeta.children[1];
   const titleTarget = {
@@ -1887,6 +1898,7 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
   assert.equal(previewTextVisual.hidden, true);
   assert.equal(previewImage.hidden, false);
   assert.equal(previewImage.src, "file:///badge.png");
+  assert.equal(previewLayer.children.includes(previewMeta), true);
   assert.equal(previewName.textContent, "Arena Challenger");
   assert.equal(previewDescription.textContent, "Level Reward: Reach Level 30.");
   assert.match(previewFrame.className, /is-badge/);
@@ -1906,7 +1918,18 @@ test("ui: title and badge hover previews fall back to text-only meta when image 
       textContent: "",
       children,
       appendChild(child) {
-        children.push(child);
+        if (!children.includes(child)) {
+          children.push(child);
+        }
+      },
+      removeChild(child) {
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
+      },
+      contains(child) {
+        return children.includes(child);
       },
       classList: {
         add: (...tokens) => tokens.forEach((token) => classes.add(token)),
@@ -1940,7 +1963,7 @@ test("ui: title and badge hover previews fall back to text-only meta when image 
   const previewLayer = appended[0];
   const previewFrame = previewLayer.children[0];
   const previewImage = previewFrame.children[0];
-  const previewMeta = previewLayer.children[1];
+  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
   const previewName = previewMeta.children[0];
   const previewDescription = previewMeta.children[1];
   const titleTarget = {
@@ -1996,7 +2019,18 @@ test("ui: title and badge hover previews reject truthy label-like src values ins
       textContent: "",
       children,
       appendChild(child) {
-        children.push(child);
+        if (!children.includes(child)) {
+          children.push(child);
+        }
+      },
+      removeChild(child) {
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
+      },
+      contains(child) {
+        return children.includes(child);
       },
       classList: {
         add: (...tokens) => tokens.forEach((token) => classes.add(token)),
@@ -2030,7 +2064,7 @@ test("ui: title and badge hover previews reject truthy label-like src values ins
   const previewLayer = appended[0];
   const previewFrame = previewLayer.children[0];
   const previewImage = previewFrame.children[0];
-  const previewMeta = previewLayer.children[1];
+  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
   const previewName = previewMeta.children[0];
   const previewDescription = previewMeta.children[1];
   const apprenticeTarget = {
@@ -2088,7 +2122,18 @@ test("ui: identity hover preview keeps avatars image-only and text-only titles c
       textContent: "",
       children,
       appendChild(child) {
-        children.push(child);
+        if (!children.includes(child)) {
+          children.push(child);
+        }
+      },
+      removeChild(child) {
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
+      },
+      contains(child) {
+        return children.includes(child);
       },
       classList: {
         add: (...tokens) => tokens.forEach((token) => classes.add(token)),
@@ -2121,7 +2166,7 @@ test("ui: identity hover preview keeps avatars image-only and text-only titles c
 
   const previewLayer = appended[0];
   const previewFrame = previewLayer.children[0];
-  const previewMeta = previewLayer.children[1];
+  const previewMeta = appended[0].children.find((child) => child.className === "cosmetic-hover-preview-meta");
   const avatarTarget = {
     getAttribute(name) {
       return {
@@ -2151,12 +2196,14 @@ test("ui: identity hover preview keeps avatars image-only and text-only titles c
   listeners.get("mouseover")({ target: avatarTarget, clientX: 40, clientY: 40 });
   assert.equal(previewFrame.hidden, false);
   assert.equal(previewMeta.hidden, true);
+  assert.equal(previewLayer.children.includes(previewMeta), false);
   assert.equal(previewLayer.style.width, "220px");
   assert.equal(previewLayer.style.height, "220px");
 
   listeners.get("mousemove")({ target: titleTarget, clientX: 72, clientY: 72 });
   assert.equal(previewFrame.hidden, true);
   assert.equal(previewMeta.hidden, false);
+  assert.equal(previewLayer.children.includes(previewMeta), true);
   assert.equal(previewLayer.style.width, "228px");
   assert.equal(previewLayer.style.height, "86px");
 });
@@ -2466,6 +2513,8 @@ test("ui: appController applies random PvE AI style from the global catalog", ()
   assert.equal(shown.at(-1).context.opponentDisplay.name, "Elemental AI");
   assert.notEqual(shown.at(-1).context.opponentDisplay.title, "Arena Rival");
   assert.doesNotMatch(shown.at(-1).context.opponentDisplay.avatar, /avatars\/default\.png/);
+  assert.notEqual(shown.at(-1).context.opponentDisplay.badgeId, "none");
+  assert.ok(shown.at(-1).context.opponentDisplay.featuredBadge);
   assert.doesNotMatch(shown.at(-1).context.cardBacks.p2, /default_back\.(jpg|png)/);
 });
 
