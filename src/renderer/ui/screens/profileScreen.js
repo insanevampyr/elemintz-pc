@@ -178,18 +178,22 @@ function renderXpProgress(profile) {
 function renderChestPanel(profile, visualState = {}) {
   const basicChestCount = Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
   const milestoneChestCount = Math.max(0, Number(profile?.chests?.milestone ?? 0) || 0);
+  const epicChestCount = Math.max(0, Number(profile?.chests?.epic ?? 0) || 0);
+  const legendaryChestCount = Math.max(0, Number(profile?.chests?.legendary ?? 0) || 0);
   const basicChestIcon = getAssetPath(
     visualState?.basicOpen ? "icons/basic_chest_open.png" : "icons/basic_chest.png"
   );
   const milestoneChestIcon = getAssetPath(
     visualState?.milestoneOpen ? "icons/loot_chest_open.png" : "icons/loot_chest.png"
   );
+  const epicChestIcon = getAssetPath("icons/epic_chest.png");
+  const legendaryChestIcon = getAssetPath("icons/legendary_chest.png");
 
   return `
     <section class="stack-sm chest-panel">
       <h3 class="section-title">Reward Chests</h3>
       <div class="chest-row profile-chest-row" data-profile-chest-row="true">
-        <div class="chest-slot">
+        <div class="chest-slot" data-profile-chest-slot="basic">
           <button
             id="open-basic-chest-btn"
             class="chest-open-trigger"
@@ -202,7 +206,7 @@ function renderChestPanel(profile, visualState = {}) {
           </button>
           <p class="text-muted chest-open-helper" data-basic-chest-label="true">${basicChestCount > 0 ? "Basic Chest" : "No Basic Chests available"}</p>
         </div>
-        <div class="chest-slot">
+        <div class="chest-slot" data-profile-chest-slot="milestone">
           <button
             id="open-milestone-chest-btn"
             class="chest-open-trigger"
@@ -213,10 +217,34 @@ function renderChestPanel(profile, visualState = {}) {
             <span class="chest-count-bubble" aria-label="Milestone Chest count">${milestoneChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${milestoneChestIcon}" alt="Milestone Chest" data-milestone-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper" data-milestone-chest-label="true">${milestoneChestCount > 0 ? "Level Reward Chest" : "No Level Reward Chests available"}</p>
+          <p class="text-muted chest-open-helper" data-milestone-chest-label="true">${milestoneChestCount > 0 ? "Chest" : "No Chests available"}</p>
         </div>
-        <div class="chest-slot chest-slot-placeholder" data-profile-chest-slot="reserved"></div>
-        <div class="chest-slot chest-slot-placeholder" data-profile-chest-slot="reserved"></div>
+        <div class="chest-slot" data-profile-chest-slot="epic">
+          <button
+            class="chest-open-trigger"
+            type="button"
+            disabled
+            aria-disabled="true"
+            aria-label="Epic Chest unavailable"
+          >
+            <span class="chest-count-bubble" aria-label="Epic Chest count">${epicChestCount}</span>
+            <img class="player-avatar chest-open-trigger__image" src="${epicChestIcon}" alt="Epic Chest" data-epic-chest-image="true" />
+          </button>
+          <p class="text-muted chest-open-helper" data-epic-chest-label="true">Epic Chest</p>
+        </div>
+        <div class="chest-slot" data-profile-chest-slot="legendary">
+          <button
+            class="chest-open-trigger"
+            type="button"
+            disabled
+            aria-disabled="true"
+            aria-label="Legendary Chest unavailable"
+          >
+            <span class="chest-count-bubble" aria-label="Legendary Chest count">${legendaryChestCount}</span>
+            <img class="player-avatar chest-open-trigger__image" src="${legendaryChestIcon}" alt="Legendary Chest" data-legendary-chest-image="true" />
+          </button>
+          <p class="text-muted chest-open-helper" data-legendary-chest-label="true">Legendary Chest</p>
+        </div>
       </div>
       <p class="text-muted chest-panel-helper">Click a chest image to open it.</p>
     </section>

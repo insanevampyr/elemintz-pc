@@ -8613,7 +8613,7 @@ test("ui: profile screen uses a chest count bubble and subtle empty helper text 
       profile: {
         ...createProfileScreenContext().profile,
         username: "ChestlessUser",
-        chests: { basic: 0, milestone: 0 }
+        chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
       }
     })
   );
@@ -8623,7 +8623,9 @@ test("ui: profile screen uses a chest count bubble and subtle empty helper text 
   assert.match(html, /class="chest-count-bubble"[^>]*>0</);
   assert.match(html, /class="chest-open-trigger"/);
   assert.match(html, /No Basic Chests available/);
-  assert.match(html, /No Level Reward Chests available/);
+  assert.match(html, /No Chests available/);
+  assert.match(html, /data-epic-chest-image="true"/);
+  assert.match(html, /data-legendary-chest-image="true"/);
   assert.doesNotMatch(html, /Basic Chests: <strong>/);
   assert.match(html, /disabled aria-disabled="true"/);
 });
@@ -8634,7 +8636,7 @@ test("ui: profile screen enables open chest button when player has a basic chest
       profile: {
         ...createProfileScreenContext().profile,
         username: "ChestOwner",
-        chests: { basic: 2, milestone: 3 }
+        chests: { basic: 2, milestone: 3, epic: 1, legendary: 0 }
       }
     })
   );
@@ -8643,10 +8645,12 @@ test("ui: profile screen enables open chest button when player has a basic chest
   assert.match(html, /id="open-milestone-chest-btn"/);
   assert.match(html, /data-milestone-chest-image="true"/);
   assert.match(html, /aria-label="Milestone Chest count">3</);
-  assert.match(html, /<p class="text-muted chest-open-helper" data-milestone-chest-label="true">Level Reward Chest<\/p>/);
-  assert.match(html, /data-profile-chest-slot="reserved"/);
+  assert.match(html, /<p class="text-muted chest-open-helper" data-milestone-chest-label="true">Chest<\/p>/);
+  assert.match(html, /aria-label="Epic Chest count">1</);
+  assert.match(html, /aria-label="Legendary Chest count">0</);
   assert.doesNotMatch(html, /Basic Chests: <strong>/);
-  assert.doesNotMatch(html, /disabled aria-disabled="true"/);
+  assert.doesNotMatch(html, /id="open-basic-chest-btn"[^>]*disabled aria-disabled="true"/);
+  assert.doesNotMatch(html, /id="open-milestone-chest-btn"[^>]*disabled aria-disabled="true"/);
 });
 
 test("ui: profile screen swaps to the open chest image when the local visual state is active", () => {
@@ -8655,7 +8659,7 @@ test("ui: profile screen swaps to the open chest image when the local visual sta
       profile: {
         ...createProfileScreenContext().profile,
         username: "ChestOwner",
-        chests: { basic: 1, milestone: 1 }
+        chests: { basic: 1, milestone: 1, epic: 0, legendary: 0 }
       },
       basicChestVisualState: { basicOpen: true, milestoneOpen: true }
     })
@@ -8731,13 +8735,38 @@ test("ui: profile chest row keeps milestone chest to the right of the basic ches
       profile: {
         ...createProfileScreenContext().profile,
         username: "FutureChestUser",
-        chests: { basic: 1, milestone: 3 }
+        chests: { basic: 1, milestone: 3, epic: 2, legendary: 1 }
       }
     })
   );
 
   assert.ok(html.indexOf('id="open-basic-chest-btn"') < html.indexOf('id="open-milestone-chest-btn"'));
-  assert.equal((html.match(/data-profile-chest-slot="reserved"/g) ?? []).length, 2);
+  assert.ok(html.indexOf('data-profile-chest-slot="milestone"') < html.indexOf('data-profile-chest-slot="epic"'));
+  assert.ok(html.indexOf('data-profile-chest-slot="epic"') < html.indexOf('data-profile-chest-slot="legendary"'));
+  assert.equal((html.match(/data-profile-chest-slot="/g) ?? []).length, 4);
+  assert.match(html, /data-profile-chest-row="true"/);
+  assert.match(html, /Basic Chest/);
+  assert.match(html, /Epic Chest/);
+  assert.match(html, /Legendary Chest/);
+});
+
+test("ui: epic and legendary profile chest entries render as visual-only disabled slots", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        username: "VisualChestUser",
+        chests: { basic: 0, milestone: 0, epic: 4, legendary: 2 }
+      }
+    })
+  );
+
+  assert.match(html, /data-epic-chest-image="true"/);
+  assert.match(html, /data-legendary-chest-image="true"/);
+  assert.match(html, /aria-label="Epic Chest unavailable"/);
+  assert.match(html, /aria-label="Legendary Chest unavailable"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/epic_chest\.png"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/legendary_chest\.png"/);
 });
 
 test("ui: profile shows the new milestone chest popup with the exact grant message and acknowledges it once", async () => {
