@@ -53,7 +53,12 @@ function renderTitleLine(titleText, titleIcon, featuredBadge, options = {}) {
       })
       ? canonicalTitleImage
       : null;
-  const titlePreviewSrc = titleDisplaySrc;
+  const titlePreviewSrc = hasRenderablePreviewSource(canonicalTitleImage, {
+    previewName: titleText,
+    previewVisualText: titleText
+  })
+    ? canonicalTitleImage
+    : null;
   const badgeDisplaySrc = hasRenderablePreviewSource(badge, {
     previewName: "Featured Badge"
   })

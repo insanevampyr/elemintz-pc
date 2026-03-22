@@ -100,7 +100,12 @@ export function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
       })
       ? canonicalTitleImage
       : null;
-  const titlePreviewSrc = titleDisplaySrc;
+  const titlePreviewSrc = hasRenderablePreviewSource(canonicalTitleImage, {
+    previewName: playerDisplay?.title ?? "Initiate",
+    previewVisualText: playerDisplay?.title ?? "Initiate"
+  })
+    ? canonicalTitleImage
+    : null;
   const featuredBadge = hasRenderablePreviewSource(playerDisplay?.featuredBadge ?? null, {
     previewName: "Featured Badge"
   })
@@ -133,7 +138,7 @@ export function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
   });
   const titleHoverAttributes = buildHoverPreviewAttributes({
     previewType: "title",
-    previewSrc: titleDisplaySrc,
+    previewSrc: titlePreviewSrc,
     previewName: titleHoverMetadata.name ?? playerDisplay?.title ?? "Initiate",
     previewDescription: titleHoverMetadata.description,
     previewVisualText: playerDisplay?.title ?? "Initiate",

@@ -3134,6 +3134,135 @@ test("ui: title reward renders icon and text on profile and game headers", () =>
   assert.match(gameHtml, /title-icon/);
 });
 
+test("ui: fallback title icons do not create hover preview media for viewed profile or match identity titles", () => {
+  const viewedProfileHtml = profileScreen.render({
+    profile: {
+      username: "Owner",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", image: null, owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    viewedProfile: {
+      username: "Rival",
+      title: "Arena Founder",
+      wins: 2,
+      losses: 1,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 3,
+      bestWinStreak: 1,
+      tokens: 10,
+      playerLevel: 3,
+      playerXP: 20,
+      achievements: {},
+      modeStats: { pve: { wins: 1, losses: 0 }, local_pvp: { wins: 1, losses: 1 } },
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        title: null,
+        badge: "none",
+        background: "default_background"
+      },
+      cosmetics: { background: "default_background" }
+    },
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(viewedProfileHtml, /title-icon/);
+  assert.match(viewedProfileHtml, /data-preview-type="title"/);
+  assert.match(
+    viewedProfileHtml,
+    /data-preview-type="title"[^>]*data-preview-src=""[^>]*data-preview-name="Arena Founder"/
+  );
+
+  const gameHtml = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: {
+      name: "Host",
+      titleId: null,
+      title: "Legacy Founder",
+      titleIcon: "assets/badges/not_canonical_legacy.png",
+      avatar: "assets/avatars/default.png",
+      featuredBadge: null
+    },
+    opponentDisplay: {
+      name: "Guest",
+      titleId: null,
+      title: "Arena Rival",
+      titleIcon: null,
+      avatar: "assets/avatars/default.png",
+      featuredBadge: null
+    },
+    hotseat: { enabled: true, turnLabel: "Host Turn", p1Name: "Host", p2Name: "Guest", activePlayer: "p1" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    cardBacks: { p1: "assets/card_backs/default_back.jpg", p2: "assets/card_backs/default_back.jpg" },
+    cosmeticIds: {
+      variants: { p1: null, p2: null },
+      cardBacks: { p1: "default_card_back", p2: "default_card_back" }
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "local_pvp",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(gameHtml, /title-icon/);
+  assert.match(
+    gameHtml,
+    /data-preview-type="title"[^>]*data-preview-src=""[^>]*data-preview-name="Legacy Founder"/
+  );
+});
+
 test("ui: approved achievement title rewards resolve and render their badge-backed title images", () => {
   const html = profileScreen.render({
     profile: {
