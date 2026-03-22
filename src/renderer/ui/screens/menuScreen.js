@@ -57,9 +57,9 @@ function getPreviewChallenges(bucket, limit = 3) {
   return [...unfinished, ...completed].slice(0, limit);
 }
 
-function renderChallengePreview(title, iconText, bucket) {
+export function renderMenuChallengePreview(title, iconText, bucket) {
   const bucketKey = String(title ?? "").trim().toLowerCase();
-  if (!bucket?.challenges?.length) {
+  if (!bucket) {
     return `
       <div class="stack-sm menu-challenge-column" data-menu-challenge-bucket="${bucketKey}">
         <div class="stack-xs menu-challenge-header">
@@ -68,6 +68,19 @@ function renderChallengePreview(title, iconText, bucket) {
         </div>
         <p class="muted">Challenges are loading...</p>
         <p class="muted menu-challenge-reset" data-menu-reset-label="${bucketKey}">Reset in: ${bucket?.resetLabel ?? "--:--"}</p>
+      </div>
+    `;
+  }
+
+  if (!bucket.challenges?.length) {
+    return `
+      <div class="stack-sm menu-challenge-column" data-menu-challenge-bucket="${bucketKey}">
+        <div class="stack-xs menu-challenge-header">
+          <h4 class="section-title">${title}</h4>
+          <p class="muted">${title} - 0/0</p>
+        </div>
+        <p class="muted">No ${bucketKey} challenges available right now.</p>
+        <p class="muted menu-challenge-reset" data-menu-reset-label="${bucketKey}">Reset in: ${bucket.resetLabel ?? "--:--"}</p>
       </div>
     `;
   }
@@ -86,7 +99,7 @@ function renderChallengePreview(title, iconText, bucket) {
   `;
 }
 
-function renderDailyLoginStatus(status) {
+export function renderMenuDailyLoginStatus(status) {
   if (!status) {
     return '<p class="muted">Daily Login Reward status unavailable.</p>';
   }
@@ -119,13 +132,19 @@ export const menuScreen = {
                 ${renderMenuTile("logout-btn", "Logout")}
               </div>
               <aside class="panel stack-sm daily-panel">
-                ${renderDailyLoginStatus(context.dailyChallenges?.dailyLogin)}
+                <div data-menu-daily-login-panel="true">
+                  ${renderMenuDailyLoginStatus(context.dailyChallenges?.dailyLogin)}
+                </div>
                 <div class="menu-challenges-heading">
                   <h3 class="section-title">Challenges</h3>
                 </div>
                 <div class="grid two-col menu-challenge-columns">
-                  ${renderChallengePreview("Daily", "\u2B50", context.dailyChallenges?.daily)}
-                  ${renderChallengePreview("Weekly", "\uD83C\uDFC6", context.dailyChallenges?.weekly)}
+                  <div data-menu-challenge-preview="daily">
+                    ${renderMenuChallengePreview("Daily", "\u2B50", context.dailyChallenges?.daily)}
+                  </div>
+                  <div data-menu-challenge-preview="weekly">
+                    ${renderMenuChallengePreview("Weekly", "\uD83C\uDFC6", context.dailyChallenges?.weekly)}
+                  </div>
                 </div>
                 <div class="menu-challenge-actions">
                   <button id="open-daily-challenges-btn" class="btn">View All</button>

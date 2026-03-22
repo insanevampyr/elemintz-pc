@@ -12,6 +12,7 @@ import {
   settingsScreen,
   storeScreen
 } from "../ui/screens/index.js";
+import { renderMenuChallengePreview, renderMenuDailyLoginStatus } from "../ui/screens/menuScreen.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../utils/assets.js";
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
@@ -801,6 +802,43 @@ export class AppController {
     return Boolean(dailyLoginLabel || dailyResetLabel || weeklyResetLabel);
   }
 
+  updateMenuChallengePreviewDisplay() {
+    if (this.screenFlow !== "menu" || !globalThis.document?.querySelector) {
+      return false;
+    }
+
+    const dailyLoginPanel = globalThis.document.querySelector('[data-menu-daily-login-panel="true"]');
+    const dailyPreview = globalThis.document.querySelector('[data-menu-challenge-preview="daily"]');
+    const weeklyPreview = globalThis.document.querySelector('[data-menu-challenge-preview="weekly"]');
+    const dailyLogin = this.formatDailyLoginStatus(this.dailyChallenges?.dailyLogin);
+
+    if (dailyLoginPanel) {
+      dailyLoginPanel.innerHTML = renderMenuDailyLoginStatus(dailyLogin);
+    }
+
+    if (dailyPreview) {
+      dailyPreview.innerHTML = renderMenuChallengePreview("Daily", "\u2B50", {
+        ...this.dailyChallenges?.daily,
+        resetLabel: this.formatDuration(this.dailyChallenges?.daily?.msUntilReset)
+      });
+    }
+
+    if (weeklyPreview) {
+      weeklyPreview.innerHTML = renderMenuChallengePreview("Weekly", "\uD83C\uDFC6", {
+        ...this.dailyChallenges?.weekly,
+        resetLabel: this.formatWeeklyDuration(this.dailyChallenges?.weekly?.msUntilReset)
+      });
+    }
+
+    return Boolean(dailyLoginPanel || dailyPreview || weeklyPreview);
+  }
+
+  hasActiveQuitConfirmationModal() {
+    const modalTitle = globalThis.document?.querySelector?.(".modal-overlay .modal h3");
+    const title = String(modalTitle?.textContent ?? "").trim();
+    return title === "Request Quit" || title === "Leave Match";
+  }
+
   clearTransientUiBeforeScreenTransition({ preserveModal = false } = {}) {
     this.clearMatchTauntUiTimer();
     if (preserveModal) {
@@ -820,6 +858,7 @@ export class AppController {
       this.dailyChallenges = { daily: result.daily, weekly: result.weekly, dailyLogin: result.dailyLogin };
 
       if (this.screenFlow === "menu") {
+        this.updateMenuChallengePreviewDisplay();
         this.updateMenuCountdownDisplay();
       }
 
@@ -2932,7 +2971,9 @@ export class AppController {
       return;
     }
 
-    this.clearTransientUiBeforeScreenTransition();
+    this.clearTransientUiBeforeScreenTransition({
+      preserveModal: this.hasActiveQuitConfirmationModal()
+    });
     this.screenFlow = "game";
     const tauntHud = this.getCurrentTauntHudState();
 

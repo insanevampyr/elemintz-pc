@@ -53,6 +53,7 @@ function createFakeElement() {
   return {
     offsetWidth: 1,
     hidden: true,
+    innerHTML: "",
     textContent: "",
     listeners,
     classList,
@@ -1353,6 +1354,12 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
   dailyResetLabel.textContent = "Reset in: --:--";
   const weeklyResetLabel = createFakeElement();
   weeklyResetLabel.textContent = "Reset in: --:--";
+  const dailyLoginPanel = createFakeElement();
+  dailyLoginPanel.innerHTML = '<p class="muted">Daily Login Reward status unavailable.</p>';
+  const dailyPreviewPanel = createFakeElement();
+  dailyPreviewPanel.innerHTML = '<p class="muted">Challenges are loading...</p>';
+  const weeklyPreviewPanel = createFakeElement();
+  weeklyPreviewPanel.innerHTML = '<p class="muted">Challenges are loading...</p>';
   const profileButton = createFakeElement();
   const elements = {
     "menu-daily-login-status": dailyLoginLabel,
@@ -1383,6 +1390,15 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
   global.document = {
     getElementById: (id) => elements[id] ?? null,
     querySelector: (selector) => {
+      if (selector === '[data-menu-daily-login-panel="true"]') {
+        return dailyLoginPanel;
+      }
+      if (selector === '[data-menu-challenge-preview="daily"]') {
+        return dailyPreviewPanel;
+      }
+      if (selector === '[data-menu-challenge-preview="weekly"]') {
+        return weeklyPreviewPanel;
+      }
       if (selector === '[data-menu-reset-label="daily"]') {
         return dailyResetLabel;
       }
@@ -1444,6 +1460,11 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     assert.equal(dailyLoginLabel.textContent, "Daily Login Reward: 01:01");
     assert.equal(dailyResetLabel.textContent, "Reset in: 01:01");
     assert.equal(weeklyResetLabel.textContent, "Reset in: 01:01");
+    assert.match(dailyLoginPanel.innerHTML, /menu-daily-login/);
+    assert.doesNotMatch(dailyPreviewPanel.innerHTML, /Challenges are loading/);
+    assert.doesNotMatch(weeklyPreviewPanel.innerHTML, /Challenges are loading/);
+    assert.match(dailyPreviewPanel.innerHTML, /No daily challenges available right now\./);
+    assert.match(weeklyPreviewPanel.innerHTML, /No weekly challenges available right now\./);
 
     intervalHandler();
 
@@ -8266,6 +8287,95 @@ test("ui: screen transitions clear a stale modal overlay before showing the next
     assert.equal(modalVisible, false);
   } finally {
     global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: game HUD refresh preserves an active quit confirmation modal", () => {
+  const previousDocument = global.document;
+  const shown = [];
+  let clearCalls = 0;
+
+  global.document = {
+    querySelector: (selector) => {
+      if (selector === ".modal-overlay .modal h3") {
+        return { textContent: "Leave Match" };
+      }
+      return null;
+    },
+    body: {
+      classList: {
+        toggle: () => {}
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {},
+      clearStaleOverlay: () => {
+        clearCalls += 1;
+        return true;
+      }
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.username = "QuitTester";
+  controller.profile = {
+    username: "QuitTester",
+    title: "Initiate",
+    cosmetics: { background: "default_background" },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      background: "default_background",
+      cardBack: "default_card_back",
+      badge: "none",
+      title: "Initiate"
+    }
+  };
+  controller.settings = {
+    gameplay: { timerSeconds: 30 },
+    aiDifficulty: "normal",
+    aiOpponentStyle: "default",
+    ui: { reducedMotion: false },
+    audio: { enabled: true }
+  };
+  controller.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.PVE,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 18,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+
+  try {
+    controller.showGame();
+    controller.showGame();
+
+    assert.equal(shown.length, 2);
+    assert.equal(clearCalls, 0);
+    assert.equal(shown.at(-1).screenId, "game");
+  } finally {
     global.document = previousDocument;
   }
 });
