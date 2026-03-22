@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { achievementsScreen } from "../../src/renderer/ui/screens/achievementsScreen.js";
 import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.js";
@@ -8623,9 +8624,10 @@ test("ui: profile screen uses a chest count bubble and subtle empty helper text 
   assert.match(html, /class="chest-count-bubble"[^>]*>0</);
   assert.match(html, /class="chest-open-trigger"/);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-common" data-basic-chest-label="true">No Basic Chests available<\/p>/);
-  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">No Chests available<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Rare Chest<\/p>/);
   assert.match(html, /data-epic-chest-image="true"/);
   assert.match(html, /data-legendary-chest-image="true"/);
+  assert.doesNotMatch(html, /No Chests available/);
   assert.doesNotMatch(html, /Basic Chests: <strong>/);
   assert.match(html, /disabled aria-disabled="true"/);
 });
@@ -8646,7 +8648,7 @@ test("ui: profile screen enables open chest button when player has a basic chest
   assert.match(html, /data-milestone-chest-image="true"/);
   assert.match(html, /aria-label="Milestone Chest count">3</);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-common" data-basic-chest-label="true">Basic Chest<\/p>/);
-  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Chest<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Rare Chest<\/p>/);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-epic" data-epic-chest-label="true">Epic Chest<\/p>/);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-legendary" data-legendary-chest-label="true">Legendary Chest<\/p>/);
   assert.match(html, /aria-label="Epic Chest count">1</);
@@ -8749,8 +8751,20 @@ test("ui: profile chest row keeps milestone chest to the right of the basic ches
   assert.equal((html.match(/data-profile-chest-slot="/g) ?? []).length, 4);
   assert.match(html, /data-profile-chest-row="true"/);
   assert.match(html, /Basic Chest/);
+  assert.match(html, /Rare Chest/);
   assert.match(html, /Epic Chest/);
   assert.match(html, /Legendary Chest/);
+});
+
+test("ui: profile reward chest panel adds subtle spacing above the section", () => {
+  const css = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\game.css",
+    "utf8"
+  );
+  const html = profileScreen.render(createProfileScreenContext());
+
+  assert.match(css, /\.profile-chest-panel\s*\{\s*margin-top:\s*16px;\s*\}/);
+  assert.match(html, /class="stack-sm chest-panel profile-chest-panel"/);
 });
 
 test("ui: epic and legendary profile chest entries render as visual-only disabled slots", () => {

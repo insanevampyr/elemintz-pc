@@ -194,7 +194,7 @@ function renderChestPanel(profile, visualState = {}) {
   const legendaryLabelClass = "cosmetic-rarity-label rarity-legendary";
 
   return `
-    <section class="stack-sm chest-panel">
+    <section class="stack-sm chest-panel profile-chest-panel">
       <h3 class="section-title">Reward Chests</h3>
       <div class="chest-row profile-chest-row" data-profile-chest-row="true">
         <div class="chest-slot" data-profile-chest-slot="basic">
@@ -221,7 +221,7 @@ function renderChestPanel(profile, visualState = {}) {
             <span class="chest-count-bubble" aria-label="Milestone Chest count">${milestoneChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${milestoneChestIcon}" alt="Milestone Chest" data-milestone-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper ${rareLabelClass}" data-milestone-chest-label="true">${milestoneChestCount > 0 ? "Chest" : "No Chests available"}</p>
+          <p class="text-muted chest-open-helper ${rareLabelClass}" data-milestone-chest-label="true">Rare Chest</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="epic">
           <button
