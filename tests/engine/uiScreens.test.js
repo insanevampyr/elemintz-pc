@@ -1337,6 +1337,67 @@ test("ui: appController shows one-time loadout unlock notice with next unlock me
   }
 });
 
+test("diagnostic: menu challenge refresh replaces the entire menu screen while it remains open", async () => {
+  const previousWindow = global.window;
+  const previousSetInterval = global.setInterval;
+  const previousClearInterval = global.clearInterval;
+  const shown = [];
+  let intervalHandler = null;
+
+  global.window = {
+    elemintz: {
+      state: {
+        getDailyChallenges: async () => ({
+          dailyLogin: { eligible: false, msUntilReset: 9000 },
+          daily: { challenges: [], msUntilReset: 9000 },
+          weekly: { challenges: [], msUntilReset: 18000 }
+        })
+      }
+    }
+  };
+
+  global.setInterval = (handler) => {
+    intervalHandler = handler;
+    return { unref() {} };
+  };
+  global.clearInterval = () => {};
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screen, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "MenuClickUser";
+    app.profile = {
+      username: "MenuClickUser",
+      cosmetics: { background: "default_background" },
+      equippedCosmetics: { background: "default_background" }
+    };
+
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+
+    assert.equal(shown.length, 2);
+    assert.equal(typeof intervalHandler, "function");
+
+    intervalHandler();
+
+    assert.equal(shown.length, 3);
+  } finally {
+    global.window = previousWindow;
+    global.setInterval = previousSetInterval;
+    global.clearInterval = previousClearInterval;
+  }
+});
+
 test("ui: appController cosmetics actions route loadout save apply and rename through state", async () => {
   const previousWindow = global.window;
   const shown = [];
@@ -7495,6 +7556,112 @@ test("ui: appController reconnect reminder reuses authoritative room expiry when
     roomCode: "ABC123",
     expiresAt: "2026-03-20T12:01:17.000Z"
   });
+});
+
+test("diagnostic: screen transitions leave an existing modal overlay untouched", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const shown = [];
+  let hideCalls = 0;
+
+  global.document = {
+    querySelector: (selector) => {
+      if (selector === ".modal-overlay") {
+        return {};
+      }
+      if (selector === "[data-online-reconnect-reminder='true']") {
+        return null;
+      }
+      return null;
+    },
+    body: {
+      classList: {
+        toggle: () => {}
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {
+        hideCalls += 1;
+      }
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  controller.username = "OverlayUser";
+  controller.profile = {
+    username: "OverlayUser",
+    tokens: 100,
+    playerXP: 0,
+    cosmetics: { background: "default_background" },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => controller.profile,
+        getCosmetics: async () => ({
+          equipped: controller.profile.equippedCosmetics,
+          catalog: {
+            avatar: [],
+            cardBack: [],
+            background: [],
+            elementCardVariant: [],
+            badge: [],
+            title: []
+          }
+        }),
+        listProfiles: async () => [],
+        getStore: async () => ({
+          tokens: 100,
+          catalog: {
+            avatar: [],
+            title: [],
+            badge: [],
+            cardBack: [],
+            elementCardVariant: []
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    controller.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await controller.showProfile();
+    await controller.showStore();
+
+    assert.deepEqual(
+      shown.map((entry) => entry.screenId),
+      ["menu", "profile", "store"]
+    );
+    assert.equal(hideCalls, 0);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
 });
 
 test("ui: appController online room identity payload reads nested cosmetics.equipped values", async () => {
