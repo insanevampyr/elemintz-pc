@@ -6,7 +6,12 @@ import {
   RARITY_SORT_ORDER,
   normalizeCategoryViewState
 } from "../shared/cosmeticCategoryShared.js";
-import { bindCosmeticHoverPreview, hasRenderablePreviewSource } from "../shared/cosmeticHoverPreview.js";
+import {
+  bindCosmeticHoverPreview,
+  buildHoverPreviewAttributes,
+  hasRenderablePreviewSource
+} from "../shared/cosmeticHoverPreview.js";
+import { getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
 
 const RANDOMIZE_AFTER_MATCH_OPTIONS = Object.freeze([
   ["avatar", "Avatar"],
@@ -25,8 +30,12 @@ function rarityClassName(rarity) {
   return `rarity-${normalizeRarity(rarity).toLowerCase()}`;
 }
 
-function isFramedCosmeticType(type) {
-  return type === "avatar" || type === "cardBack" || type === "elementCardVariant";
+function usesRarityFrame(type) {
+  return Boolean(type);
+}
+
+function supportsHoverPreview(type, hasRenderableImage) {
+  return hasRenderableImage || type === "title" || type === "badge";
 }
 
 function previewTypeClass(type) {
@@ -38,32 +47,65 @@ function previewTypeClass(type) {
     return "is-card";
   }
 
+  if (type === "background") {
+    return "is-background";
+  }
+
+  if (type === "badge") {
+    return "is-badge";
+  }
+
+  if (type === "title") {
+    return "is-title";
+  }
+
   return "is-default";
 }
 
 function preview(type, item) {
   if (!item.image) {
-    return `<div class="cosmetic-preview missing">No Preview</div>`;
+    if (type !== "title" && type !== "badge") {
+      return `<div class="cosmetic-preview missing">No Preview</div>`;
+    }
   }
 
-  const src = getAssetPath(item.image);
+  const src = item.image ? getAssetPath(item.image) : null;
   const hasRenderableImage = hasRenderablePreviewSource(src, { previewName: item.name });
   if (!hasRenderableImage) {
-    return `<div class="cosmetic-preview missing">No Preview</div>`;
+    if (type !== "title" && type !== "badge") {
+      return `<div class="cosmetic-preview missing">No Preview</div>`;
+    }
   }
-  const framed = isFramedCosmeticType(type);
+  const hoverMetadata = getCosmeticHoverMetadata(type, item.id, item.name);
+  const hoverAttributes = supportsHoverPreview(type, hasRenderableImage)
+    ? buildHoverPreviewAttributes({
+        previewType: type,
+        previewSrc: hasRenderableImage ? src : null,
+        previewName: item.name,
+        previewDescription: hoverMetadata.description,
+        previewVisualText: item.name,
+        previewRarity: normalizeRarity(item.rarity)
+      })
+    : "";
+  const framed = usesRarityFrame(type);
   return `
     <div
       class="cosmetic-preview-wrap ${previewTypeClass(type)} ${framed ? "is-framed" : ""}"
-      ${framed ? `data-hover-preview="true" data-preview-type="${type}" data-preview-rarity="${normalizeRarity(item.rarity)}" data-preview-src="${escapeAttribute(src)}" data-preview-name="${escapeAttribute(item.name)}"` : ""}
+      ${hoverAttributes}
     >
-      <img class="cosmetic-preview ${previewTypeClass(type)} ${framed ? "is-framed" : ""}" src="${src}" alt="${item.name}" />
+      <img
+        class="cosmetic-preview ${previewTypeClass(type)} ${framed ? "is-framed" : ""}"
+        src="${hasRenderableImage ? src : ""}"
+        alt="${item.name}"
+        ${hasRenderableImage ? "" : 'style="display:none;"'}
+      />
+      <div class="cosmetic-preview missing" style="display:none;">No Preview</div>
     </div>
   `;
 }
 
 function renderItem(type, item) {
-  const framed = isFramedCosmeticType(type);
+  const framed = usesRarityFrame(type);
   const variantHint =
     type === "elementCardVariant" && item.element
       ? `<p>Applies to: ${item.element[0].toUpperCase()}${item.element.slice(1)} cards only</p>`

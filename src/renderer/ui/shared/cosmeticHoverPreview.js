@@ -5,9 +5,14 @@ const PREVIEW_DIMENSIONS = Object.freeze({
   avatar: { width: 220, height: 220, mediaWidth: 220, mediaHeight: 220 },
   cardBack: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
   elementCardVariant: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
+  background: { width: 340, height: 192, mediaWidth: 340, mediaHeight: 192 },
   badge: { width: 260, height: 328, mediaWidth: 168, mediaHeight: 168, metaOnlyHeight: 90 },
   title: { width: 228, height: 286, mediaWidth: 188, mediaHeight: 188, metaOnlyHeight: 86 }
 });
+
+function getPreviewDimensions(previewType) {
+  return PREVIEW_DIMENSIONS[previewType] ?? PREVIEW_DIMENSIONS.cardBack;
+}
 
 function escapeAttribute(value) {
   return String(value ?? "")
@@ -229,7 +234,7 @@ function updatePreviewAppearance(preview, target) {
   const previewName = target.getAttribute("data-preview-name") ?? "";
   const previewDescription = target.getAttribute("data-preview-description") ?? "";
   const previewVisualText = target.getAttribute("data-preview-visual-text") ?? previewName;
-  const dimensions = PREVIEW_DIMENSIONS[previewType] ?? PREVIEW_DIMENSIONS.cardBack;
+  const dimensions = getPreviewDimensions(previewType);
   const showMeta = previewType === "badge" || previewType === "title";
   const hasPreviewImage = hasRenderablePreviewSource(previewSrc, {
     previewName,
@@ -258,7 +263,17 @@ function updatePreviewAppearance(preview, target) {
   }
 
   preview.layer.className = `cosmetic-hover-preview-layer ${showMeta ? "has-meta" : ""}`;
-  preview.frame.className = `cosmetic-hover-preview-frame ${previewType === "avatar" ? "is-avatar" : previewType === "badge" ? "is-badge" : previewType === "title" ? "is-title" : "is-card"} rarity-${previewRarity}`;
+  preview.frame.className = `cosmetic-hover-preview-frame ${
+    previewType === "avatar"
+      ? "is-avatar"
+      : previewType === "badge"
+        ? "is-badge"
+        : previewType === "title"
+          ? "is-title"
+          : previewType === "background"
+            ? "is-background"
+            : "is-card"
+  } rarity-${previewRarity}`;
   preview.frame.style.width = `${dimensions.mediaWidth}px`;
   preview.frame.style.height = `${dimensions.mediaHeight}px`;
   preview.layer.style.width = `${layoutWidth}px`;
@@ -278,7 +293,7 @@ function updatePreviewAppearance(preview, target) {
   preview.description.hidden = !(showMeta && previewDescription);
   preview.description.textContent = showMeta ? previewDescription : "";
 
-  return { width: layoutWidth, height: layoutHeight };
+  return { width: layoutWidth, height: layoutHeight, mediaWidth: dimensions.mediaWidth, mediaHeight: dimensions.mediaHeight };
 }
 
 export function bindCosmeticHoverPreview({ root, documentRef = globalThis.document } = {}) {
@@ -342,11 +357,11 @@ export function bindCosmeticHoverPreview({ root, documentRef = globalThis.docume
       return;
     }
 
-    const dimensions = PREVIEW_DIMENSIONS[target.getAttribute("data-preview-type")] ?? PREVIEW_DIMENSIONS.cardBack;
+    const dimensions = getPreviewDimensions(target.getAttribute("data-preview-type"));
     const position = clampPreviewPosition(
       Number(event?.clientX ?? 0),
       Number(event?.clientY ?? 0),
-      dimensions,
+      { width: dimensions.width, height: dimensions.height },
       documentRef
     );
     preview.layer.style.left = `${position.left}px`;

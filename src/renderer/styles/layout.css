@@ -282,8 +282,8 @@ body {
   opacity: 0.8;
 }
 
-.cosmetic-item-framed:hover,
-.cosmetic-item-framed:focus-within {
+.cosmetic-item:hover,
+.cosmetic-item:focus-within {
   transform: translateY(-3px);
   box-shadow: 0 10px 18px rgba(4, 11, 18, 0.26);
 }
@@ -303,6 +303,14 @@ body {
 
 .cosmetic-preview-wrap.is-card {
   height: 120px;
+}
+
+.cosmetic-preview-wrap.is-background,
+.cosmetic-preview-wrap.is-badge,
+.cosmetic-preview-wrap.is-title {
+  height: 120px;
+  display: grid;
+  place-items: center;
 }
 
 .cosmetic-preview {
@@ -327,6 +335,13 @@ body {
   height: 120px;
   object-fit: contain;
   border-radius: 10px;
+}
+
+.cosmetic-preview.is-background,
+.cosmetic-preview.is-badge,
+.cosmetic-preview.is-title {
+  object-fit: contain;
+  object-position: center center;
 }
 
 .cosmetic-preview.missing {
@@ -371,6 +386,10 @@ body {
   border-radius: 14px;
 }
 
+.cosmetic-hover-preview-frame.is-background {
+  border-radius: 14px;
+}
+
 .cosmetic-hover-preview-frame.is-badge {
   border-radius: 18px;
 }
@@ -393,6 +412,7 @@ body {
   height: 100%;
   display: block;
   object-fit: contain;
+  object-position: center center;
 }
 
 .cosmetic-hover-preview-text-visual {
@@ -493,39 +513,39 @@ body {
   color: #f1cf79;
 }
 
-.cosmetic-item-framed.rarity-common {
+.cosmetic-item.rarity-common {
   box-shadow: inset 0 0 0 1px rgba(146, 159, 174, 0.14);
 }
 
-.cosmetic-item-framed.rarity-rare {
+.cosmetic-item.rarity-rare {
   box-shadow: inset 0 0 0 1px rgba(95, 156, 255, 0.16);
 }
 
-.cosmetic-item-framed.rarity-epic {
+.cosmetic-item.rarity-epic {
   box-shadow: inset 0 0 0 1px rgba(180, 117, 255, 0.18);
 }
 
-.cosmetic-item-framed.rarity-legendary {
+.cosmetic-item.rarity-legendary {
   box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.18);
 }
 
-.cosmetic-item-framed.rarity-common:hover,
-.cosmetic-item-framed.rarity-common:focus-within {
+.cosmetic-item.rarity-common:hover,
+.cosmetic-item.rarity-common:focus-within {
   box-shadow: inset 0 0 0 1px rgba(146, 159, 174, 0.26), 0 10px 18px rgba(4, 11, 18, 0.26);
 }
 
-.cosmetic-item-framed.rarity-rare:hover,
-.cosmetic-item-framed.rarity-rare:focus-within {
+.cosmetic-item.rarity-rare:hover,
+.cosmetic-item.rarity-rare:focus-within {
   box-shadow: inset 0 0 0 1px rgba(95, 156, 255, 0.3), 0 10px 18px rgba(4, 11, 18, 0.26);
 }
 
-.cosmetic-item-framed.rarity-epic:hover,
-.cosmetic-item-framed.rarity-epic:focus-within {
+.cosmetic-item.rarity-epic:hover,
+.cosmetic-item.rarity-epic:focus-within {
   box-shadow: inset 0 0 0 1px rgba(180, 117, 255, 0.34), 0 10px 18px rgba(4, 11, 18, 0.26);
 }
 
-.cosmetic-item-framed.rarity-legendary:hover,
-.cosmetic-item-framed.rarity-legendary:focus-within {
+.cosmetic-item.rarity-legendary:hover,
+.cosmetic-item.rarity-legendary:focus-within {
   box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.34), 0 10px 18px rgba(4, 11, 18, 0.26);
 }
 

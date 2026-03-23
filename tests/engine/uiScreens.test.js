@@ -672,7 +672,7 @@ test("ui: store screen hides owned cosmetics while keeping unowned listings visi
   assert.match(html, /data-buy-id="shop_avatar"/);
 });
 
-test("ui: shop and cosmetics render hover preview hooks only for supported cosmetic art", () => {
+test("ui: shop and cosmetics render hover preview hooks and rarity classes for cosmetic art categories", () => {
   const storeHtml = storeScreen.render({
     store: {
       tokens: 120,
@@ -709,12 +709,12 @@ test("ui: shop and cosmetics render hover preview hooks only for supported cosme
             id: "default_background",
             name: "EleMintz Table",
             image: "backgrounds/default_bg.jpg",
-            owned: true,
-            equipped: true,
-            purchasable: false,
-            price: 0,
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 350,
             rarity: "Legendary",
-            unlockSource: { type: "default" }
+            unlockSource: { type: "store" }
           }
         ],
         elementCardVariant: [
@@ -754,13 +754,18 @@ test("ui: shop and cosmetics render hover preview hooks only for supported cosme
 
   assert.match(storeHtml, /data-hover-preview="true" data-preview-type="avatar"/);
   assert.match(storeHtml, /data-hover-preview="true" data-preview-type="cardBack"/);
+  assert.match(storeHtml, /data-hover-preview="true" data-preview-type="background"/);
   assert.match(storeHtml, /data-hover-preview="true" data-preview-type="elementCardVariant"/);
-  assert.doesNotMatch(storeHtml, /data-preview-type="background"/);
+  assert.match(storeHtml, /class="cosmetic-item cosmetic-item-background cosmetic-item-framed rarity-legendary locked"/);
+  assert.match(storeHtml, /cosmetic-rarity-label rarity-legendary/);
   assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="avatar"/);
   assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="cardBack"/);
+  assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="background"/);
   assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="elementCardVariant"/);
-  assert.doesNotMatch(cosmeticsHtml, /data-preview-type="badge"/);
-  assert.doesNotMatch(cosmeticsHtml, /data-preview-type="title"/);
+  assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="badge"/);
+  assert.match(cosmeticsHtml, /data-hover-preview="true" data-preview-type="title"/);
+  assert.match(cosmeticsHtml, /class="cosmetic-item cosmetic-item-badge cosmetic-item-framed rarity-common owned"/);
+  assert.match(cosmeticsHtml, /class="cosmetic-item cosmetic-item-title cosmetic-item-framed rarity-common owned"/);
 });
 
 test("ui: store screen renders supporter unlock text for founder deluxe card back", () => {
@@ -2758,6 +2763,28 @@ test("ui: title hover preview uses square full-image framing when title art exis
   assert.equal(previewLayer.style.width, "228px");
   assert.equal(previewLayer.style.height, "286px");
   assert.match(previewFrame.className, /is-title/);
+});
+
+test("ui: background hover preview uses a landscape contain frame with no portrait clipping", () => {
+  const { listeners, previewLayer, previewFrame, previewImage } = createHoverPreviewHarness();
+  const backgroundTarget = createHoverTarget({
+    "data-preview-type": "background",
+    "data-preview-rarity": "Legendary",
+    "data-preview-src": "file:///background.png",
+    "data-preview-name": "Sky Temple"
+  });
+
+  listeners.get("mouseover")({ target: backgroundTarget, clientX: 100, clientY: 100 });
+
+  assert.equal(previewLayer.hidden, false);
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewImage.src, "file:///background.png");
+  assert.equal(previewFrame.style.width, "340px");
+  assert.equal(previewFrame.style.height, "192px");
+  assert.equal(previewLayer.style.width, "340px");
+  assert.equal(previewLayer.style.height, "192px");
+  assert.match(previewFrame.className, /is-background/);
+  assert.match(previewFrame.className, /rarity-legendary/);
 });
 
 test("ui: viewed profile imageless title hover renders text-only with no media box", () => {
