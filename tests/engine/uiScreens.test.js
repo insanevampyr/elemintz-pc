@@ -2543,6 +2543,9 @@ function createHoverTarget(attributes) {
     getAttribute(name) {
       return attributes[name] ?? null;
     },
+    querySelector() {
+      return null;
+    },
     closest: () => target
   };
   return target;
@@ -2953,6 +2956,31 @@ test("ui: portrait backgrounds use aspect-aware hover sizing instead of a forced
   assert.equal(previewFrame.style.height, "240px");
   assert.equal(previewLayer.style.width, "160px");
   assert.equal(previewLayer.style.height, "240px");
+});
+
+test("ui: legacy profile and match title hover targets use their portrait image dimensions in the large preview", () => {
+  const { listeners, previewFrame, previewLayer } = createHoverPreviewHarness();
+  const portraitTitleImage = {
+    naturalWidth: 1024,
+    naturalHeight: 1536
+  };
+  const titleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "file:///badges/firstFlame.png",
+    "data-preview-name": "Flame Vanguard",
+    "data-preview-description": "Win your first match.",
+    "data-preview-visual-text": "Flame Vanguard"
+  });
+  titleTarget.querySelector = (selector) => (selector === ".cosmetic-preview" || selector === "img" ? portraitTitleImage : null);
+
+  listeners.get("mouseover")({ target: titleTarget, clientX: 100, clientY: 100 });
+
+  assert.equal(previewFrame.style.width, "125px");
+  assert.equal(previewFrame.style.height, "188px");
+  assert.equal(previewLayer.style.width, "228px");
+  assert.equal(previewLayer.style.height, "286px");
+  assert.match(previewFrame.className, /is-title/);
 });
 
 test("ui: square backgrounds use aspect-aware hover sizing instead of a forced landscape box", () => {

@@ -42,7 +42,12 @@ function readPreviewSourceDimensions(target) {
     return { width: attrWidth, height: attrHeight };
   }
 
-  const image = target.querySelector?.(".cosmetic-preview");
+  const targetTagName = typeof target.tagName === "string" ? target.tagName.toLowerCase() : "";
+  const image =
+    (targetTagName === "img" ? target : null) ??
+    target.querySelector?.(".cosmetic-preview") ??
+    target.querySelector?.("img") ??
+    null;
   const naturalWidth = parsePreviewDimensionValue(image?.naturalWidth);
   const naturalHeight = parsePreviewDimensionValue(image?.naturalHeight);
   if (naturalWidth && naturalHeight) {
