@@ -362,7 +362,7 @@ export class GameController {
       }
     }
 
-    this.onMatchComplete({
+    await this.onMatchComplete({
       match: this.match,
       persisted
     });

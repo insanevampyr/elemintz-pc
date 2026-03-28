@@ -64,6 +64,70 @@ test("gameController: AI selection is independent from player's current card", a
   }
 });
 
+test("gameController: completed PvE rounds wait for async match-complete handling before the trailing update", async () => {
+  const originalWindow = globalThis.window;
+  let releaseMatchComplete;
+  let matchCompleteFinished = false;
+  const updates = [];
+
+  const controller = new GameController({
+    username: "PveLossRaceUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {
+      updates.push({
+        isResolvingRound: controller.isResolvingRound,
+        matchCompleteFinished
+      });
+    },
+    onMatchComplete: async () => {
+      await new Promise((resolve) => {
+        releaseMatchComplete = resolve;
+      });
+      matchCompleteFinished = true;
+    }
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.match = createMinimalMatch(MATCH_MODE.PVE);
+    controller.finalizeRound = async () => {
+      controller.match.status = "completed";
+      controller.match.winner = "p2";
+      await controller.finalizeCompletedMatch();
+      return {
+        status: "resolved",
+        round: {
+          result: "p2",
+          p1Card: "fire",
+          p2Card: "earth",
+          capturedOpponentCards: 1
+        }
+      };
+    };
+
+    const pendingPlay = controller.playCard(0);
+    await Promise.resolve();
+
+    assert.equal(typeof releaseMatchComplete, "function");
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].isResolvingRound, true);
+    assert.equal(updates[0].matchCompleteFinished, false);
+
+    releaseMatchComplete();
+    await pendingPlay;
+
+    assert.equal(matchCompleteFinished, true);
+    assert.equal(updates.at(-1).isResolvingRound, false);
+    assert.equal(updates.at(-1).matchCompleteFinished, true);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("gameController: local hotseat uses two pass states and resolves only on confirmation", async () => {
   const originalWindow = globalThis.window;
 
