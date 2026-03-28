@@ -307,9 +307,11 @@ export function bindCosmeticHoverPreview({ root, documentRef = globalThis.docume
   }
 
   let activeTarget = null;
+  let activeDimensions = null;
 
   const hidePreview = () => {
     activeTarget = null;
+    activeDimensions = null;
     clearPreviewImageState(preview.image);
     preview.layer.hidden = true;
     preview.layer.classList?.remove?.("is-visible");
@@ -322,11 +324,11 @@ export function bindCosmeticHoverPreview({ root, documentRef = globalThis.docume
     }
 
     activeTarget = target;
-    const dimensions = updatePreviewAppearance(preview, target);
+    activeDimensions = updatePreviewAppearance(preview, target);
     const position = clampPreviewPosition(
       Number(event?.clientX ?? 0),
       Number(event?.clientY ?? 0),
-      dimensions,
+      activeDimensions,
       documentRef
     );
 
@@ -357,11 +359,14 @@ export function bindCosmeticHoverPreview({ root, documentRef = globalThis.docume
       return;
     }
 
-    const dimensions = getPreviewDimensions(target.getAttribute("data-preview-type"));
+    const dimensions =
+      target === activeTarget && activeDimensions
+        ? activeDimensions
+        : getPreviewDimensions(target.getAttribute("data-preview-type"));
     const position = clampPreviewPosition(
       Number(event?.clientX ?? 0),
       Number(event?.clientY ?? 0),
-      { width: dimensions.width, height: dimensions.height },
+      dimensions,
       documentRef
     );
     preview.layer.style.left = `${position.left}px`;

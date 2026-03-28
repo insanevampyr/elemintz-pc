@@ -358,7 +358,7 @@ body {
   pointer-events: none;
   display: grid;
   gap: 10px;
-  justify-items: start;
+  justify-items: center;
   opacity: 0;
   transform: translate3d(0, 0, 0) scale(0.97);
   transition: opacity 110ms ease, transform 110ms ease;

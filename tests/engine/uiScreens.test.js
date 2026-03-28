@@ -2765,6 +2765,97 @@ test("ui: title hover preview uses square full-image framing when title art exis
   assert.match(previewFrame.className, /is-title/);
 });
 
+test("ui: meta-only title hover keeps using its compact rendered size while the cursor moves", () => {
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    const attributes = new Map();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      textContent: "",
+      src: "",
+      alt: "",
+      children,
+      appendChild(child) {
+        if (!children.includes(child)) {
+          children.push(child);
+        }
+      },
+      removeChild(child) {
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
+      },
+      contains(child) {
+        return children.includes(child);
+      },
+      setAttribute(name, value) {
+        attributes.set(name, String(value));
+      },
+      removeAttribute(name) {
+        attributes.delete(name);
+        if (name === "src") {
+          this.src = "";
+        }
+      },
+      getAttribute(name) {
+        return attributes.get(name) ?? null;
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const listeners = new Map();
+  const appended = [];
+  const root = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    contains: () => true
+  };
+  const documentRef = {
+    documentElement: { clientWidth: 320, clientHeight: 160 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: {
+      innerWidth: 320,
+      innerHeight: 160,
+      addEventListener() {}
+    }
+  };
+
+  bindCosmeticHoverPreview({ root, documentRef });
+
+  const previewLayer = appended[0];
+  const titleTarget = createHoverTarget({
+    "data-preview-type": "title",
+    "data-preview-rarity": "Common",
+    "data-preview-src": "",
+    "data-preview-name": "Initiate",
+    "data-preview-description": "Default cosmetic.",
+    "data-preview-visual-text": "Initiate"
+  });
+
+  listeners.get("mouseover")({ target: titleTarget, clientX: 40, clientY: 40 });
+  listeners.get("mousemove")({ target: titleTarget, clientX: 40, clientY: 120 });
+
+  assert.equal(previewLayer.style.height, "86px");
+  assert.equal(previewLayer.style.top, "62px");
+});
+
 test("ui: background hover preview uses a landscape contain frame with no portrait clipping", () => {
   const { listeners, previewLayer, previewFrame, previewImage } = createHoverPreviewHarness();
   const backgroundTarget = createHoverTarget({
@@ -2785,6 +2876,15 @@ test("ui: background hover preview uses a landscape contain frame with no portra
   assert.equal(previewLayer.style.height, "192px");
   assert.match(previewFrame.className, /is-background/);
   assert.match(previewFrame.className, /rarity-legendary/);
+});
+
+test("ui: hover preview layer keeps centered alignment for mixed-width frame and meta layouts", () => {
+  const css = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\layout.css",
+    "utf8"
+  );
+
+  assert.match(css, /\.cosmetic-hover-preview-layer\s*\{[^}]*justify-items:\s*center;/);
 });
 
 test("ui: viewed profile imageless title hover renders text-only with no media box", () => {
