@@ -32,6 +32,8 @@ const MATCH_TAUNT_PRESETS = Object.freeze([
   "Not bad."
 ]);
 const ROOM_TAUNT_HISTORY_LIMIT = 8;
+const MAX_USERNAME_LENGTH = 32;
+const MAX_COSMETIC_ID_LENGTH = 128;
 
 function randomChar(source, random) {
   const index = Math.floor(random() * source.length);
@@ -82,25 +84,47 @@ function getRuntimeEdgeGuards(room) {
 }
 
 function normalizeUsername(username) {
-  const normalized = String(username ?? "").trim();
+  const normalized = String(username ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_USERNAME_LENGTH);
   return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeCosmeticId(value, fallback) {
+  const normalized = String(value ?? fallback ?? "")
+    .trim()
+    .slice(0, MAX_COSMETIC_ID_LENGTH);
+  return normalized.length > 0 ? normalized : String(fallback ?? "");
 }
 
 function normalizeEquippedCosmetics(equippedCosmetics) {
   const variants = equippedCosmetics?.elementCardVariant;
 
   return {
-    avatar: String(equippedCosmetics?.avatar ?? DEFAULT_EQUIPPED_COSMETICS.avatar),
-    background: String(equippedCosmetics?.background ?? DEFAULT_EQUIPPED_COSMETICS.background),
-    cardBack: String(equippedCosmetics?.cardBack ?? DEFAULT_EQUIPPED_COSMETICS.cardBack),
+    avatar: normalizeCosmeticId(equippedCosmetics?.avatar, DEFAULT_EQUIPPED_COSMETICS.avatar),
+    background: normalizeCosmeticId(
+      equippedCosmetics?.background,
+      DEFAULT_EQUIPPED_COSMETICS.background
+    ),
+    cardBack: normalizeCosmeticId(
+      equippedCosmetics?.cardBack,
+      DEFAULT_EQUIPPED_COSMETICS.cardBack
+    ),
     elementCardVariant: {
-      fire: String(variants?.fire ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.fire),
-      water: String(variants?.water ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.water),
-      earth: String(variants?.earth ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.earth),
-      wind: String(variants?.wind ?? DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.wind)
+      fire: normalizeCosmeticId(variants?.fire, DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.fire),
+      water: normalizeCosmeticId(
+        variants?.water,
+        DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.water
+      ),
+      earth: normalizeCosmeticId(
+        variants?.earth,
+        DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.earth
+      ),
+      wind: normalizeCosmeticId(variants?.wind, DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.wind)
     },
-    title: String(equippedCosmetics?.title ?? DEFAULT_EQUIPPED_COSMETICS.title),
-    badge: String(equippedCosmetics?.badge ?? DEFAULT_EQUIPPED_COSMETICS.badge)
+    title: normalizeCosmeticId(equippedCosmetics?.title, DEFAULT_EQUIPPED_COSMETICS.title),
+    badge: normalizeCosmeticId(equippedCosmetics?.badge, DEFAULT_EQUIPPED_COSMETICS.badge)
   };
 }
 
@@ -1337,17 +1361,27 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
-      if (room.guest) {
-        return {
-          ok: false,
-          error: {
+        if (room.guest) {
+          return {
+            ok: false,
+            error: {
             code: "ROOM_FULL",
             message: "Room is already full."
           }
-        };
-      }
+          };
+        }
 
-      room.guest = buildPlayer(socket, { ...payload, username });
+        if (username && room.host?.username && username === room.host.username) {
+          return {
+            ok: false,
+            error: {
+              code: "ROOM_USERNAME_IN_USE",
+              message: "This username is already active in the room."
+            }
+          };
+        }
+
+        room.guest = buildPlayer(socket, { ...payload, username });
       room.status = "full";
       resetMoveState(room);
       resetRematchState(room);

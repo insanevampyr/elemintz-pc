@@ -422,6 +422,35 @@ test("multiplayer rooms: room join succeeds and notifies both players", async ()
   }
 });
 
+test("multiplayer rooms: duplicate room usernames are rejected before a second seat is assigned", async () => {
+  const foundation = createMultiplayerFoundation({ port: 0, logger: { info: () => {} } });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", { username: "DuplicateName" });
+    const room = await createdPromise;
+
+    const errorPromise = waitForEvent(guest, "room:error");
+    guest.emit("room:join", { roomCode: room.roomCode, username: "DuplicateName" });
+
+    assert.deepEqual(await errorPromise, {
+      code: "ROOM_USERNAME_IN_USE",
+      message: "This username is already active in the room."
+    });
+    assert.equal(foundation.roomStore.getRoom(room.roomCode)?.guest, null);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+  }
+});
+
 test("multiplayer rooms: move submissions sync, resolve one round, and reset for the next round", async () => {
   const foundation = createMultiplayerFoundation({
     port: 0,
@@ -1883,6 +1912,32 @@ test("multiplayer rewards: loser chest uses the lower chance roll", () => {
       settledGuestUsername: null,
       hostRewards: { tokens: 5, xp: 5, basicChests: 1 },
       guestRewards: { tokens: 25, xp: 20, basicChests: 0 }
+    }
+  );
+});
+
+test("multiplayer rewards: duplicate settled usernames disable reward persistence identities", () => {
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        roomCode: "AAA222",
+        matchComplete: true,
+        winner: "host",
+        host: { username: "SameAccount" },
+        guest: { username: "SameAccount" }
+      },
+      {
+        random: () => 0.99,
+        logger: { info: () => {}, warn: () => {} }
+      }
+    ),
+    {
+      granted: true,
+      winner: "host",
+      settledHostUsername: null,
+      settledGuestUsername: null,
+      hostRewards: { tokens: 25, xp: 20, basicChests: 0 },
+      guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
     }
   );
 });

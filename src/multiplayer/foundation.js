@@ -10,6 +10,40 @@ const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
 const ROOM_CLEANUP_DELAY_MS = 30000;
 const ROOM_RECONNECT_TIMEOUT_MS = 60000;
+const MAX_SETTLED_USERNAME_LENGTH = 32;
+
+function normalizeSettledUsername(username) {
+  const normalized = String(username ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_SETTLED_USERNAME_LENGTH);
+  return normalized.length > 0 ? normalized : null;
+}
+
+function buildSettledIdentity(room, logger = console) {
+  const settledHostUsername = normalizeSettledUsername(room?.host?.username);
+  const settledGuestUsername = normalizeSettledUsername(room?.guest?.username);
+
+  if (
+    settledHostUsername &&
+    settledGuestUsername &&
+    settledHostUsername === settledGuestUsername
+  ) {
+    logger?.warn?.("[OnlinePlay][Authority] duplicate room usernames cannot settle rewards", {
+      username: settledHostUsername,
+      roomCode: room?.roomCode ?? null
+    });
+    return {
+      settledHostUsername: null,
+      settledGuestUsername: null
+    };
+  }
+
+  return {
+    settledHostUsername,
+    settledGuestUsername
+  };
+}
 
 function rollChestDrop({ random, outcome, role, logger }) {
   const chance = getBasicChestDropChance(outcome, { mode: "online" });
@@ -28,10 +62,7 @@ function buildRewardSummary(room, { random = Math.random, logger = console } = {
     return null;
   }
 
-  const settledIdentity = {
-    settledHostUsername: room.host?.username ?? null,
-    settledGuestUsername: room.guest?.username ?? null
-  };
+  const settledIdentity = buildSettledIdentity(room, logger);
 
   if (room.winner === "draw") {
     const hostChest = rollChestDrop({
