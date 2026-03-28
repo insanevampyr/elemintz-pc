@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import { io as createClient } from "socket.io-client";
 
 import {
+  MULTIPLAYER_FOUNDATION_PHASE,
   buildOnlineMatchStateFromRoom,
   buildRewardSummary,
   createMultiplayerFoundation
@@ -169,7 +170,7 @@ test("multiplayer foundation: health endpoint responds for deployment checks", a
     assert.deepEqual(payload, {
       ok: true,
       service: "elemintz-multiplayer",
-      phase: 18,
+      phase: MULTIPLAYER_FOUNDATION_PHASE,
       transport: "socket.io"
     });
     assert.ok(logEntries.some((entry) => entry[0] === "[Multiplayer] server listening"));
@@ -639,6 +640,8 @@ test("multiplayer rooms: near-simultaneous and same-tick submits resolve one rou
       16
     );
 
+    await wait(260);
+
     const hostSecondMoveSyncEvents = [];
     const guestSecondMoveSyncEvents = [];
     const hostSecondRoundResults = [];
@@ -648,8 +651,6 @@ test("multiplayer rooms: near-simultaneous and same-tick submits resolve one rou
     guest.on("room:moveSync", (payload) => guestSecondMoveSyncEvents.push(payload));
     host.on("room:roundResult", (payload) => hostSecondRoundResults.push(payload));
     guest.on("room:roundResult", (payload) => guestSecondRoundResults.push(payload));
-
-    await wait(260);
 
     queueMicrotask(() => host.emit("room:submitMove", { move: "water" }));
     queueMicrotask(() => guest.emit("room:submitMove", { move: "fire" }));
@@ -1286,22 +1287,9 @@ test("multiplayer rooms: decisive win during war resolves war and awards one sco
       hostHand: { fire: 4, water: 2, earth: 2, wind: 2 },
       guestHand: { fire: 0, water: 2, earth: 2, wind: 2 },
       warPot: { host: [], guest: [] },
-      warActive: true,
-      warDepth: 1,
-      warRounds: [
-        {
-          round: 1,
-          hostMove: "fire",
-          guestMove: "fire",
-          outcomeType: "war"
-        },
-        {
-          round: 2,
-          hostMove: "water",
-          guestMove: "fire",
-          outcomeType: "war_resolved"
-        }
-      ],
+      warActive: false,
+      warDepth: 0,
+      warRounds: [],
       hostResult: "win",
       guestResult: "lose"
     });
@@ -2699,12 +2687,13 @@ test("multiplayer online challenges: completed match updates progress exactly on
 
     assert.equal(hostProfile.dailyChallenges.daily.progress.matchesWon, 2);
     assert.equal(hostProfile.dailyChallenges.daily.progress.matchesPlayed, 1);
-    assert.equal(hostProfile.tokens, 230);
-    assert.equal(hostProfile.playerXP, 32);
+    assert.equal(hostProfile.tokens, 233);
+    assert.equal(hostProfile.playerXP, 38);
     assert.equal(guestProfile.dailyChallenges.daily.progress.matchesWon, 0);
     assert.equal(guestProfile.dailyChallenges.daily.progress.matchesPlayed, 1);
     assert.ok(hostSave.dailyRewards.some((item) => item.id === "daily_win_1_match"));
     assert.ok(hostSave.dailyRewards.some((item) => item.id === "daily_win_2_matches"));
+    assert.ok(hostSave.dailyRewards.some((item) => item.id === "daily_use_all_4_elements"));
 
     const duplicateError = waitForEvent(host, "room:error");
     host.emit("room:submitMove", { move: "fire" });

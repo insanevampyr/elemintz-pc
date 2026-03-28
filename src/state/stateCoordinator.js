@@ -164,7 +164,10 @@ function guardRuntimeMatchStatePayload(matchState) {
         .map((entry) => ({
           ...entry,
           warClashes: safeRuntimeCount(entry.warClashes, 0),
-          capturedOpponentCards: safeRuntimeCount(entry.capturedOpponentCards, 0),
+          capturedOpponentCards:
+            entry?.capturedOpponentCards == null
+              ? entry?.capturedOpponentCards ?? undefined
+              : safeRuntimeCount(entry.capturedOpponentCards, 0),
           result: ["p1", "p2", "draw", "none"].includes(entry.result) ? entry.result : "none",
           p1Card: typeof entry.p1Card === "string" ? entry.p1Card : null,
           p2Card: typeof entry.p2Card === "string" ? entry.p2Card : null
@@ -202,34 +205,6 @@ function containRuntimeMatchSummaryState(matchState) {
   }
 
   return guarded;
-}
-
-function buildRuntimeResultSignature({ username, perspective = "p1", matchState, modeOverride = null }) {
-  const history = Array.isArray(matchState?.history)
-    ? matchState.history
-        .map(
-          (entry) =>
-            [
-              safeRuntimeCount(entry?.round, 0),
-              entry?.result ?? "",
-              entry?.p1Card ?? "",
-              entry?.p2Card ?? "",
-              safeRuntimeCount(entry?.warClashes, 0),
-              safeRuntimeCount(entry?.capturedOpponentCards, 0)
-            ].join(":")
-        )
-        .join("|")
-    : "";
-
-  return [
-    username ?? "",
-    perspective,
-    modeOverride ?? matchState?.mode ?? "",
-    matchState?.winner ?? "",
-    matchState?.endReason ?? "",
-    safeRuntimeCount(matchState?.round, 0),
-    history
-  ].join("#");
 }
 
 // Stat writes must resolve to a known mode bucket. Repair malformed counters,
@@ -282,7 +257,6 @@ export class StateCoordinator {
     this.settings = new SettingsService(options);
     this.random = typeof options.random === "function" ? options.random : Math.random;
     this.matchPersistenceQueue = Promise.resolve();
-    this.runtimeResultGuardCache = new Map();
   }
 
   runMatchPersistence(task) {
@@ -405,16 +379,6 @@ export class StateCoordinator {
       }
 
       const safeMatchState = containRuntimeMatchSummaryState(matchState).value;
-      const runtimeSignature = buildRuntimeResultSignature({
-        username,
-        perspective,
-        matchState: safeMatchState
-      });
-      const cachedResult = this.runtimeResultGuardCache.get(runtimeSignature);
-      if (cachedResult) {
-        console.warn("[RuntimeEdgeGuard] skipped duplicate stat/result application");
-        return cachedResult;
-      }
       const profileBefore = await this.profiles.ensureProfile(username);
       const derivedMatchStats = deriveMatchStats(safeMatchState, perspective);
       const statWrite = guardRuntimeStatWritePayload({
@@ -552,7 +516,7 @@ export class StateCoordinator {
 
       await this.saves.appendMatchResult(saveEntry);
 
-      const result = {
+      return {
         profile: committedProfile,
         cosmetics: {
           equipped: committedProfile.equippedCosmetics,
@@ -580,8 +544,6 @@ export class StateCoordinator {
         save: saveEntry,
         stats: matchStats
       };
-      this.runtimeResultGuardCache.set(runtimeSignature, result);
-      return result;
     });
   }
 
@@ -601,17 +563,6 @@ export class StateCoordinator {
       }
 
       const safeMatchState = containRuntimeMatchSummaryState(matchState).value;
-      const runtimeSignature = buildRuntimeResultSignature({
-        username,
-        perspective,
-        matchState: safeMatchState,
-        modeOverride: "online_pvp"
-      });
-      const cachedResult = this.runtimeResultGuardCache.get(runtimeSignature);
-      if (cachedResult) {
-        console.warn("[RuntimeEdgeGuard] skipped duplicate stat/result application");
-        return cachedResult;
-      }
       const statWrite = guardRuntimeStatWritePayload({
         mode: safeMatchState.mode,
         fallbackMode: "online_pvp",
@@ -742,7 +693,7 @@ export class StateCoordinator {
 
       await this.saves.appendMatchResult(saveEntry);
 
-      const result = {
+      return {
         duplicate: false,
         profile,
         save: saveEntry,
@@ -764,8 +715,6 @@ export class StateCoordinator {
         levelRewards: levelRewardResult.grantedRewards,
         levelRewardTokenDelta: levelRewardResult.tokenDelta
       };
-      this.runtimeResultGuardCache.set(runtimeSignature, result);
-      return result;
     });
   }
 

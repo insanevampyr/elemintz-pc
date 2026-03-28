@@ -227,7 +227,9 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
   repairObjectSection(
     "acknowledgedLoadoutUnlockSlots",
-    defaults.acknowledgedLoadoutUnlockSlots
+    isPlainObject(repairedProfile.loadoutUnlockNoticesSeen)
+      ? repairedProfile.loadoutUnlockNoticesSeen
+      : defaults.acknowledgedLoadoutUnlockSlots
   );
   repairObjectSection("chests", defaults.chests);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
@@ -250,7 +252,10 @@ function validateAndRepairProfile(profile) {
   // Repair nested cosmetic object shapes so cosmetic normalization can safely
   // validate IDs without first handling null/wrong-type containers.
   const previousElementVariants = repairedProfile.equippedCosmetics?.elementCardVariant;
-  if (!isPlainObject(previousElementVariants)) {
+  if (
+    !isPlainObject(previousElementVariants) &&
+    typeof previousElementVariants !== "string"
+  ) {
     const nextVariants = cloneValue(defaults.equippedCosmetics.elementCardVariant);
     repairedProfile.equippedCosmetics = {
       ...repairedProfile.equippedCosmetics,
@@ -610,11 +615,11 @@ export class ProfileSystem {
     });
   }
 
-  async applyMatchStats(username, matchStats, mode = "pve") {
+  async applyMatchStats(username, matchStats, mode = "pve", options = {}) {
     await this.ensureProfile(username);
 
     return this.updateProfile(username, (current) =>
-      applyMatchStatsToProfile(current, matchStats, mode)
+      applyMatchStatsToProfile(current, matchStats, mode, options)
     );
   }
 

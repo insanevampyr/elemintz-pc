@@ -458,7 +458,7 @@ test("runtime edge guard: stale round payload is contained and does not overwrit
   assert.equal(room.guestScore, 0);
 });
 
-test("runtime edge guard: duplicate match result recording is skipped safely", async (t) => {
+test("runtime edge guard: duplicate online settlement is skipped safely", async (t) => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
@@ -466,22 +466,26 @@ test("runtime edge guard: duplicate match result recording is skipped safely", a
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
-  const first = await state.recordMatchResult({
+  const first = await state.recordOnlineMatchResult({
     username: "DuplicateLocalResultUser",
     perspective: "p1",
-    matchState: createCompletedMatch({ mode: "pve", winner: "p1" })
+    settlementKey: "room-abc:round-2",
+    matchState: createCompletedMatch({ mode: "online_pvp", winner: "p1" })
   });
-  const second = await state.recordMatchResult({
+  const second = await state.recordOnlineMatchResult({
     username: "DuplicateLocalResultUser",
     perspective: "p1",
-    matchState: createCompletedMatch({ mode: "pve", winner: "p1" })
+    settlementKey: "room-abc:round-2",
+    matchState: createCompletedMatch({ mode: "online_pvp", winner: "p1" })
   });
 
   const profile = await state.profiles.getProfile("DuplicateLocalResultUser");
   const saves = await state.saves.listMatchResults();
 
-  assert.deepEqual(second, first);
-  assert.equal(profile.modeStats.pve.gamesPlayed, 1);
+  assert.equal(first.duplicate, false);
+  assert.equal(second.duplicate, true);
+  assert.equal(second.save?.settlementKey, "room-abc:round-2");
+  assert.equal(profile.modeStats.online_pvp.gamesPlayed, 1);
   assert.equal(saves.length, 1);
 });
 

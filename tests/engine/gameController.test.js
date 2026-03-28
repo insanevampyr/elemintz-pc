@@ -326,8 +326,25 @@ test("appController: online play create join submit-move and ready-rematch actio
     await shownScreens.at(-1).context.actions.submitMove("fire");
     await shownScreens.at(-1).context.actions.readyRematch();
 
-    assert.deepEqual(calls.createRoom, [{ username: "SignedInUser" }]);
-    assert.deepEqual(calls.joinRoom, [{ roomCode: "ABC123", username: "SignedInUser" }]);
+    const expectedIdentityPayload = {
+      username: "SignedInUser",
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        title: "Initiate",
+        badge: "none"
+      }
+    };
+
+    assert.deepEqual(calls.createRoom, [expectedIdentityPayload]);
+    assert.deepEqual(calls.joinRoom, [{ roomCode: "ABC123", ...expectedIdentityPayload }]);
     assert.deepEqual(calls.submitMove, ["fire"]);
     assert.equal(calls.readyRematch, 1);
     assert.equal(app.onlinePlayJoinCode, "ABC123");

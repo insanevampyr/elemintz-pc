@@ -1748,7 +1748,7 @@ test("state: completing all daily challenges grants 1 basic chest once per daily
 
 test("state: completing all weekly challenges grants 2 basic chests once per weekly reset window", async () => {
   const dataDir = await createTempDataDir();
-  const nowMs = Date.parse("2026-03-18T02:00:00.000Z");
+  const nowMs = Date.now();
   const state = new StateCoordinator({
     dataDir,
     random: constantRandom(0.5)

@@ -11,6 +11,7 @@ const ROUND_RESET_DELAY_MS = 1700;
 const ROOM_CLEANUP_DELAY_MS = 30000;
 const ROOM_RECONNECT_TIMEOUT_MS = 60000;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
+export const MULTIPLAYER_FOUNDATION_PHASE = 22;
 
 function normalizeSettledUsername(username) {
   const normalized = String(username ?? "")
@@ -278,7 +279,7 @@ export function createMultiplayerFoundation({
   const roomCleanupTimers = new Map();
   const roomReconnectTimers = new Map();
   logger.info("[OnlinePlay][Server] room:submitMove listener ready", {
-    phase: 22
+    phase: MULTIPLAYER_FOUNDATION_PHASE
   });
 
   // Phase 18 foundation: private 2-player room lifecycle plus authoritative
@@ -292,7 +293,7 @@ export function createMultiplayerFoundation({
     response.json({
       ok: true,
       service: "elemintz-multiplayer",
-      phase: 22,
+      phase: MULTIPLAYER_FOUNDATION_PHASE,
       transport: "socket.io"
     });
   });
