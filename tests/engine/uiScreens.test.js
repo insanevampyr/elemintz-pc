@@ -2423,7 +2423,7 @@ test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides c
   assert.equal(previewLayer.style.top, "12px");
   assert.equal(previewImage.src, "file:///cardback.png");
   assert.equal(previewFrame.style.width, "220px");
-  assert.equal(previewFrame.style.height, "294px");
+  assert.equal(previewFrame.style.height, "330px");
   assert.match(previewFrame.className, /is-card/);
   assert.match(previewFrame.className, /rarity-legendary/);
 
@@ -2765,6 +2765,65 @@ test("ui: title hover preview uses square full-image framing when title art exis
   assert.match(previewFrame.className, /is-title/);
 });
 
+test("ui: legacy badge-backed titles such as Flame Vanguard render with title fallback visuals instead of portrait badge art", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 0,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: [
+          {
+            id: "Flame Vanguard",
+            name: "Flame Vanguard",
+            image: "badges/firstFlame.png",
+            owned: false,
+            equipped: false,
+            purchasable: false,
+            price: 0,
+            rarity: "Common",
+            unlockSource: { type: "level reward", level: 3 }
+          }
+        ]
+      }
+    }
+  });
+
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: {},
+      loadouts: [],
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: [
+          {
+            id: "Flame Vanguard",
+            name: "Flame Vanguard",
+            image: "badges/firstFlame.png",
+            owned: true,
+            equipped: true,
+            rarity: "Common"
+          }
+        ]
+      }
+    }
+  });
+
+  assert.match(storeHtml, /data-preview-type="title"[^>]*data-preview-src=""/);
+  assert.match(storeHtml, /is-title-fallback[^>]*>Flame Vanguard</);
+  assert.doesNotMatch(storeHtml, /src="[^"]*badges\/firstFlame\.png"[^>]*alt="Flame Vanguard"/);
+  assert.match(cosmeticsHtml, /data-preview-type="title"[^>]*data-preview-src=""/);
+  assert.match(cosmeticsHtml, /is-title-fallback[^>]*>Flame Vanguard</);
+});
+
 test("ui: meta-only title hover keeps using its compact rendered size while the cursor moves", () => {
   function createPreviewNode(tagName) {
     const children = [];
@@ -2871,11 +2930,49 @@ test("ui: background hover preview uses a landscape contain frame with no portra
   assert.equal(previewImage.hidden, false);
   assert.equal(previewImage.src, "file:///background.png");
   assert.equal(previewFrame.style.width, "340px");
-  assert.equal(previewFrame.style.height, "192px");
+  assert.equal(previewFrame.style.height, "240px");
   assert.equal(previewLayer.style.width, "340px");
-  assert.equal(previewLayer.style.height, "192px");
+  assert.equal(previewLayer.style.height, "240px");
   assert.match(previewFrame.className, /is-background/);
   assert.match(previewFrame.className, /rarity-legendary/);
+});
+
+test("ui: portrait backgrounds use aspect-aware hover sizing instead of a forced landscape box", () => {
+  const { listeners, previewFrame, previewLayer } = createHoverPreviewHarness();
+  const backgroundTarget = createHoverTarget({
+    "data-preview-type": "background",
+    "data-preview-rarity": "Epic",
+    "data-preview-src": "file:///portrait-background.png",
+    "data-preview-name": "Celestial Observatory",
+    "data-preview-width": "1024",
+    "data-preview-height": "1536"
+  });
+
+  listeners.get("mouseover")({ target: backgroundTarget, clientX: 100, clientY: 100 });
+
+  assert.equal(previewFrame.style.width, "160px");
+  assert.equal(previewFrame.style.height, "240px");
+  assert.equal(previewLayer.style.width, "160px");
+  assert.equal(previewLayer.style.height, "240px");
+});
+
+test("ui: square backgrounds use aspect-aware hover sizing instead of a forced landscape box", () => {
+  const { listeners, previewFrame, previewLayer } = createHoverPreviewHarness();
+  const backgroundTarget = createHoverTarget({
+    "data-preview-type": "background",
+    "data-preview-rarity": "Rare",
+    "data-preview-src": "file:///square-background.png",
+    "data-preview-name": "Crystal Nexus",
+    "data-preview-width": "1024",
+    "data-preview-height": "1024"
+  });
+
+  listeners.get("mouseover")({ target: backgroundTarget, clientX: 100, clientY: 100 });
+
+  assert.equal(previewFrame.style.width, "240px");
+  assert.equal(previewFrame.style.height, "240px");
+  assert.equal(previewLayer.style.width, "240px");
+  assert.equal(previewLayer.style.height, "240px");
 });
 
 test("ui: hover preview layer keeps centered alignment for mixed-width frame and meta layouts", () => {

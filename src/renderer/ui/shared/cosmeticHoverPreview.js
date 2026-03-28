@@ -3,15 +3,71 @@ const PREVIEW_OFFSET = 18;
 const PREVIEW_MARGIN = 12;
 const PREVIEW_DIMENSIONS = Object.freeze({
   avatar: { width: 220, height: 220, mediaWidth: 220, mediaHeight: 220 },
-  cardBack: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
-  elementCardVariant: { width: 220, height: 294, mediaWidth: 220, mediaHeight: 294 },
-  background: { width: 340, height: 192, mediaWidth: 340, mediaHeight: 192 },
+  cardBack: { width: 220, height: 330, mediaWidth: 220, mediaHeight: 330 },
+  elementCardVariant: { width: 220, height: 330, mediaWidth: 220, mediaHeight: 330 },
+  background: { width: 340, height: 240, mediaWidth: 340, mediaHeight: 240 },
   badge: { width: 260, height: 328, mediaWidth: 168, mediaHeight: 168, metaOnlyHeight: 90 },
   title: { width: 228, height: 286, mediaWidth: 188, mediaHeight: 188, metaOnlyHeight: 86 }
 });
 
 function getPreviewDimensions(previewType) {
   return PREVIEW_DIMENSIONS[previewType] ?? PREVIEW_DIMENSIONS.cardBack;
+}
+
+function parsePreviewDimensionValue(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function fitPreviewDimensions(maxWidth, maxHeight, sourceWidth, sourceHeight) {
+  if (!(maxWidth > 0 && maxHeight > 0 && sourceWidth > 0 && sourceHeight > 0)) {
+    return null;
+  }
+
+  const ratio = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+  return {
+    width: Math.max(1, Math.round(sourceWidth * ratio)),
+    height: Math.max(1, Math.round(sourceHeight * ratio))
+  };
+}
+
+function readPreviewSourceDimensions(target) {
+  if (!target) {
+    return null;
+  }
+
+  const attrWidth = parsePreviewDimensionValue(target.getAttribute?.("data-preview-width"));
+  const attrHeight = parsePreviewDimensionValue(target.getAttribute?.("data-preview-height"));
+  if (attrWidth && attrHeight) {
+    return { width: attrWidth, height: attrHeight };
+  }
+
+  const image = target.querySelector?.(".cosmetic-preview");
+  const naturalWidth = parsePreviewDimensionValue(image?.naturalWidth);
+  const naturalHeight = parsePreviewDimensionValue(image?.naturalHeight);
+  if (naturalWidth && naturalHeight) {
+    return { width: naturalWidth, height: naturalHeight };
+  }
+
+  return null;
+}
+
+function resolveMediaDimensions(previewType, baseDimensions, sourceDimensions) {
+  if (!sourceDimensions) {
+    return {
+      width: baseDimensions.mediaWidth,
+      height: baseDimensions.mediaHeight
+    };
+  }
+
+  const fitted = fitPreviewDimensions(
+    baseDimensions.mediaWidth,
+    baseDimensions.mediaHeight,
+    sourceDimensions.width,
+    sourceDimensions.height
+  );
+
+  return fitted ?? { width: baseDimensions.mediaWidth, height: baseDimensions.mediaHeight };
 }
 
 function escapeAttribute(value) {
@@ -235,6 +291,7 @@ function updatePreviewAppearance(preview, target) {
   const previewDescription = target.getAttribute("data-preview-description") ?? "";
   const previewVisualText = target.getAttribute("data-preview-visual-text") ?? previewName;
   const dimensions = getPreviewDimensions(previewType);
+  const mediaDimensions = resolveMediaDimensions(previewType, dimensions, readPreviewSourceDimensions(target));
   const showMeta = previewType === "badge" || previewType === "title";
   const hasPreviewImage = hasRenderablePreviewSource(previewSrc, {
     previewName,
@@ -243,12 +300,12 @@ function updatePreviewAppearance(preview, target) {
   const useTextVisual = !hasPreviewImage && previewType === "title" && !showMeta;
   const showFrame = hasPreviewImage || useTextVisual || !showMeta;
 
-  const layoutWidth = showMeta ? dimensions.width : dimensions.mediaWidth;
+  const layoutWidth = showMeta ? dimensions.width : mediaDimensions.width;
   const layoutHeight = showMeta
     ? showFrame
       ? dimensions.height
       : dimensions.metaOnlyHeight ?? dimensions.height
-    : dimensions.mediaHeight;
+    : mediaDimensions.height;
 
   if (showMeta) {
     attachPreviewSection(preview.layer, preview.meta);
@@ -274,8 +331,8 @@ function updatePreviewAppearance(preview, target) {
             ? "is-background"
             : "is-card"
   } rarity-${previewRarity}`;
-  preview.frame.style.width = `${dimensions.mediaWidth}px`;
-  preview.frame.style.height = `${dimensions.mediaHeight}px`;
+  preview.frame.style.width = `${mediaDimensions.width}px`;
+  preview.frame.style.height = `${mediaDimensions.height}px`;
   preview.layer.style.width = `${layoutWidth}px`;
   preview.layer.style.height = `${layoutHeight}px`;
   preview.frame.hidden = !showFrame;
@@ -293,7 +350,7 @@ function updatePreviewAppearance(preview, target) {
   preview.description.hidden = !(showMeta && previewDescription);
   preview.description.textContent = showMeta ? previewDescription : "";
 
-  return { width: layoutWidth, height: layoutHeight, mediaWidth: dimensions.mediaWidth, mediaHeight: dimensions.mediaHeight };
+  return { width: layoutWidth, height: layoutHeight, mediaWidth: mediaDimensions.width, mediaHeight: mediaDimensions.height };
 }
 
 export function bindCosmeticHoverPreview({ root, documentRef = globalThis.document } = {}) {

@@ -91,6 +91,10 @@ function supportsHoverPreview(type, hasRenderableImage) {
   return hasRenderableImage || type === "title" || type === "badge";
 }
 
+function usesTitleImagePreview(src) {
+  return Boolean(src) && !String(src).replaceAll("\\", "/").toLowerCase().includes("/badges/");
+}
+
 function previewTypeClass(type) {
   if (type === "avatar") {
     return "is-avatar";
@@ -123,7 +127,8 @@ function renderPreview(type, item) {
   }
 
   const src = item.image ? getAssetPath(item.image) : null;
-  const hasRenderableImage = hasRenderablePreviewSource(src, { previewName: item.name });
+  const renderableImage = hasRenderablePreviewSource(src, { previewName: item.name });
+  const hasRenderableImage = renderableImage && (type !== "title" || usesTitleImagePreview(src));
   if (!hasRenderableImage) {
     if (type !== "title" && type !== "badge") {
       return `<div class="cosmetic-preview missing">No Preview</div>`;
@@ -146,13 +151,18 @@ function renderPreview(type, item) {
       class="cosmetic-preview-wrap ${previewTypeClass(type)} ${framed ? "is-framed" : ""}"
       ${hoverAttributes}
     >
-      <img
+      ${
+        hasRenderableImage
+          ? `<img
         class="cosmetic-preview ${previewTypeClass(type)} ${framed ? "is-framed" : ""}"
-        src="${hasRenderableImage ? src : ""}"
+        src="${src}"
         alt="${item.name}"
         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-        ${hasRenderableImage ? "" : 'style="display:none;"'}
-      />
+      />`
+          : type === "title"
+            ? `<div class="cosmetic-preview cosmetic-preview-text-visual cosmetic-preview is-title-fallback ${framed ? "is-framed" : ""}">${item.name}</div>`
+            : ""
+      }
       <div class="cosmetic-preview missing" style="display:none;">No Preview</div>
     </div>
   `;
