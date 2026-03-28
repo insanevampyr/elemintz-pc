@@ -191,12 +191,42 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
         return {
           authority: "server",
           source: "multiplayer",
+          username,
           profile: {
             username,
-            tokens: 250,
             playerXP: 20,
             playerLevel: 2,
-            equippedCosmetics: {}
+            equippedCosmetics: {
+              avatar: "default_avatar"
+            }
+          },
+          cosmetics: {
+            equipped: {
+              avatar: "default_avatar",
+              background: "storm_background"
+            },
+            owned: {
+              background: ["storm_background"]
+            }
+          },
+          stats: {
+            summary: {
+              wins: 7,
+              losses: 3,
+              gamesPlayed: 10,
+              warsEntered: 2,
+              warsWon: 1,
+              cardsCaptured: 14
+            },
+            modes: {
+              online: {
+                wins: 7,
+                losses: 3
+              }
+            }
+          },
+          currency: {
+            tokens: 250
           },
           progression: {
             xp: {
@@ -224,7 +254,11 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
     assert.deepEqual(authorityCalls, ["AuthorityUser"]);
     assert.equal(response.ok, true);
     assert.equal(response.profile.authority, "server");
+    assert.equal(response.profile.username, "AuthorityUser");
     assert.equal(response.profile.profile.username, "AuthorityUser");
+    assert.equal(response.profile.currency.tokens, 250);
+    assert.equal(response.profile.cosmetics.equipped.background, "storm_background");
+    assert.equal(response.profile.stats.summary.wins, 7);
     assert.equal(response.profile.progression.xp.playerLevel, 2);
   } finally {
     client?.disconnect();

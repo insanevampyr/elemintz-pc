@@ -1069,10 +1069,61 @@ export class AppController {
     };
   }
 
+  buildProfileFromServerSnapshot(serverProfile) {
+    const cosmetics = serverProfile?.cosmetics ?? null;
+    const stats = serverProfile?.stats ?? null;
+    const currency = serverProfile?.currency ?? null;
+    const baseProfile =
+      serverProfile?.profile && typeof serverProfile.profile === "object"
+        ? serverProfile.profile
+        : {};
+    const hasDomainData =
+      Boolean(serverProfile?.username) ||
+      Object.keys(baseProfile).length > 0 ||
+      Boolean(cosmetics) ||
+      Boolean(stats) ||
+      Boolean(currency);
+    if (!hasDomainData) {
+      return null;
+    }
+
+    const nextUsername = String(serverProfile?.username ?? baseProfile?.username ?? "").trim() || null;
+    return {
+      ...baseProfile,
+      ...(nextUsername ? { username: nextUsername } : {}),
+      ...(cosmetics
+        ? {
+            equippedCosmetics: cosmetics.equipped ?? baseProfile?.equippedCosmetics ?? null,
+            ownedCosmetics: cosmetics.owned ?? baseProfile?.ownedCosmetics ?? null,
+            cosmeticLoadouts: cosmetics.loadouts ?? baseProfile?.cosmeticLoadouts ?? null,
+            cosmeticRandomizeAfterMatch:
+              cosmetics.preferences ?? baseProfile?.cosmeticRandomizeAfterMatch ?? null
+          }
+        : {}),
+      ...(stats
+        ? {
+            wins: stats.summary?.wins ?? baseProfile?.wins ?? 0,
+            losses: stats.summary?.losses ?? baseProfile?.losses ?? 0,
+            gamesPlayed: stats.summary?.gamesPlayed ?? baseProfile?.gamesPlayed ?? 0,
+            warsEntered: stats.summary?.warsEntered ?? baseProfile?.warsEntered ?? 0,
+            warsWon: stats.summary?.warsWon ?? baseProfile?.warsWon ?? 0,
+            cardsCaptured: stats.summary?.cardsCaptured ?? baseProfile?.cardsCaptured ?? 0,
+            modeStats: stats.modes ?? baseProfile?.modeStats ?? null
+          }
+        : {}),
+      ...(currency
+        ? {
+            tokens: Number(currency.tokens ?? baseProfile?.tokens ?? 0)
+          }
+        : {})
+    };
+  }
+
   applyServerProfileSnapshot(serverProfile) {
-    const nextProfile = serverProfile?.profile ?? null;
+    const nextProfile = this.buildProfileFromServerSnapshot(serverProfile);
     if (nextProfile) {
       this.profile = nextProfile;
+      this.username = nextProfile.username ?? this.username;
     }
 
     const progression = serverProfile?.progression ?? null;
@@ -1132,7 +1183,7 @@ export class AppController {
     });
 
     return {
-      username: this.username,
+      username: latestProfile?.username ?? this.username,
       equippedCosmetics: this.buildOnlineEquippedCosmetics(latestProfile)
     };
   }
@@ -1482,7 +1533,9 @@ export class AppController {
         window.elemintz?.multiplayer?.getProfile
           ? await window.elemintz.multiplayer.getProfile({ username: this.username })
           : null;
-      const nextProfile = serverProfile?.profile ?? (
+      const nextProfile = serverProfile
+        ? this.buildProfileFromServerSnapshot(serverProfile)
+        : (
         window.elemintz?.state?.getProfile
           ? await window.elemintz.state.getProfile(this.username)
           : null
@@ -1491,6 +1544,7 @@ export class AppController {
         this.profile = this.onlinePlayProfileRefreshKey === refreshKey
           ? await this.maybeRandomizeCosmeticsAfterMatchFor(this.username, nextProfile)
           : nextProfile;
+        this.username = this.profile?.username ?? this.username;
       }
 
       const providedChallengeStatus =
@@ -1844,7 +1898,7 @@ export class AppController {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
       onlineChallengeSummary: this.onlinePlayChallengeSummary,
       profile: this.profile,
-      username: this.username,
+      username: this.profile?.username ?? this.username,
       joinCode: this.onlinePlayJoinCode,
       now: Date.now(),
       backgroundImage: this.getBackgroundFromProfile(this.profile),

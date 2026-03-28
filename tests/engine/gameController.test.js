@@ -5,6 +5,11 @@ import { GameController, MATCH_MODE } from "../../src/renderer/systems/gameContr
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
 
+function canonicalizeUsername(username) {
+  const value = String(username ?? "").trim();
+  return value.endsWith("-Canonical") ? value : `${value}-Canonical`;
+}
+
 function createMinimalMatch(mode = "pve") {
   return {
     id: "match-test",
@@ -360,6 +365,49 @@ test("appController: online play create join submit-move and ready-rematch actio
             lastError: null,
             statusMessage: "Connected. Create a room or join one."
           }),
+          getProfile: async ({ username }) => ({
+            username: canonicalizeUsername(username),
+            profile: {
+              username: canonicalizeUsername(username),
+              playerXP: 12,
+              playerLevel: 2
+            },
+            cosmetics: {
+              equipped: {
+                avatar: "avatar_arcane_gambler",
+                cardBack: "default_card_back",
+                background: "bg_crystal_nexus",
+                elementCardVariant: {
+                  fire: "default_fire_card",
+                  water: "default_water_card",
+                  earth: "default_earth_card",
+                  wind: "default_wind_card"
+                },
+                title: "Flame Vanguard",
+                badge: "first_flame"
+              },
+              owned: {}
+            },
+            stats: {
+              summary: {
+                wins: 9,
+                losses: 4,
+                gamesPlayed: 13,
+                warsEntered: 2,
+                warsWon: 1,
+                cardsCaptured: 18
+              },
+              modes: {}
+            },
+            currency: {
+              tokens: 415
+            },
+            progression: {
+              dailyChallenges: { challenges: [], msUntilReset: 3600000 },
+              weeklyChallenges: { challenges: [], msUntilReset: 7200000 },
+              dailyLogin: { eligible: false, msUntilReset: 3600000 }
+            }
+          }),
           createRoom: async (payload) => {
             calls.createRoom.push(payload);
             return {};
@@ -391,19 +439,19 @@ test("appController: online play create join submit-move and ready-rematch actio
     await shownScreens.at(-1).context.actions.readyRematch();
 
     const expectedIdentityPayload = {
-      username: "SignedInUser",
+      username: "SignedInUser-Canonical",
       equippedCosmetics: {
-        avatar: "default_avatar",
+        avatar: "avatar_arcane_gambler",
         cardBack: "default_card_back",
-        background: "default_background",
+        background: "bg_crystal_nexus",
         elementCardVariant: {
           fire: "default_fire_card",
           water: "default_water_card",
           earth: "default_earth_card",
           wind: "default_wind_card"
         },
-        title: "Initiate",
-        badge: "none"
+        title: "Flame Vanguard",
+        badge: "first_flame"
       }
     };
 
@@ -412,6 +460,10 @@ test("appController: online play create join submit-move and ready-rematch actio
     assert.deepEqual(calls.submitMove, ["fire"]);
     assert.equal(calls.readyRematch, 1);
     assert.equal(app.onlinePlayJoinCode, "ABC123");
+    assert.equal(app.username, "SignedInUser-Canonical");
+    assert.equal(app.profile.tokens, 415);
+    assert.equal(app.profile.wins, 9);
+    assert.equal(app.profile.equippedCosmetics.background, "bg_crystal_nexus");
   } finally {
     globalThis.window = originalWindow;
   }
@@ -1333,12 +1385,29 @@ test("appController: login prefers the multiplayer profile snapshot when the ses
           getProfile: async ({ username }) => {
             calls.multiplayerGetProfile += 1;
             return {
+              username: canonicalizeUsername(username),
               profile: {
-                username,
-                tokens: 245,
+                username: canonicalizeUsername(username),
                 playerXP: 18,
-                playerLevel: 1,
-                equippedCosmetics: { background: "wind_background" }
+                playerLevel: 1
+              },
+              cosmetics: {
+                equipped: { background: "wind_background", avatar: "default_avatar" },
+                owned: { background: ["wind_background"] }
+              },
+              stats: {
+                summary: {
+                  wins: 4,
+                  losses: 1,
+                  gamesPlayed: 5,
+                  warsEntered: 0,
+                  warsWon: 0,
+                  cardsCaptured: 3
+                },
+                modes: {}
+              },
+              currency: {
+                tokens: 245
               },
               progression: {
                 dailyChallenges: { challenges: [], msUntilReset: 3600000 },
@@ -1356,7 +1425,10 @@ test("appController: login prefers the multiplayer profile snapshot when the ses
 
     assert.equal(calls.ensureProfile, 0);
     assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(app.username, "ConnectedUser-Canonical");
     assert.equal(app.profile.tokens, 245);
+    assert.equal(app.profile.wins, 4);
+    assert.equal(app.profile.equippedCosmetics.background, "wind_background");
     assert.equal(app.profile.playerXP, 18);
     assert.equal(app.dailyChallenges.daily.msUntilReset, 3600000);
   } finally {
@@ -1471,12 +1543,41 @@ test("appController: showOnlinePlay refreshes the active profile from the multip
           getProfile: async ({ username }) => {
             calls.multiplayerGetProfile += 1;
             return {
+              username: canonicalizeUsername(username),
               profile: {
-                username,
-                tokens: 310,
+                username: canonicalizeUsername(username),
                 playerXP: 44,
-                playerLevel: 3,
-                equippedCosmetics: {}
+                playerLevel: 3
+              },
+              cosmetics: {
+                equipped: {
+                  avatar: "default_avatar",
+                  background: "bg_celestial_observatory",
+                  cardBack: "default_card_back",
+                  elementCardVariant: {
+                    fire: "default_fire_card",
+                    water: "default_water_card",
+                    earth: "default_earth_card",
+                    wind: "default_wind_card"
+                  },
+                  title: "Initiate",
+                  badge: "none"
+                },
+                owned: {}
+              },
+              stats: {
+                summary: {
+                  wins: 12,
+                  losses: 5,
+                  gamesPlayed: 17,
+                  warsEntered: 3,
+                  warsWon: 2,
+                  cardsCaptured: 28
+                },
+                modes: {}
+              },
+              currency: {
+                tokens: 310
               },
               progression: {
                 dailyChallenges: { challenges: [], msUntilReset: 3600000 },
@@ -1493,9 +1594,13 @@ test("appController: showOnlinePlay refreshes the active profile from the multip
 
     assert.equal(calls.multiplayerGetProfile, 1);
     assert.equal(calls.localGetProfile, 1);
+    assert.equal(app.username, "OnlineUser-Canonical");
     assert.equal(app.profile.tokens, 310);
+    assert.equal(app.profile.wins, 12);
+    assert.equal(app.profile.equippedCosmetics.background, "bg_celestial_observatory");
     assert.equal(app.profile.playerLevel, 3);
     assert.equal(shownScreens.at(-1).name, "onlinePlay");
+    assert.equal(shownScreens.at(-1).context.username, "OnlineUser-Canonical");
   } finally {
     globalThis.window = originalWindow;
   }

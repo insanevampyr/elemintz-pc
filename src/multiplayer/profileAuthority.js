@@ -19,16 +19,53 @@ function summarizeMatchOutcome(result, perspective) {
   return "loss";
 }
 
+function buildSnapshotCosmetics(profile) {
+  return {
+    equipped: profile?.equippedCosmetics ?? null,
+    owned: profile?.ownedCosmetics ?? null,
+    loadouts: profile?.cosmeticLoadouts ?? null,
+    preferences: profile?.cosmeticRandomizeAfterMatch ?? null
+  };
+}
+
+function buildSnapshotStats(profile) {
+  return {
+    summary: {
+      wins: Number(profile?.wins ?? 0),
+      losses: Number(profile?.losses ?? 0),
+      gamesPlayed: Number(profile?.gamesPlayed ?? 0),
+      warsEntered: Number(profile?.warsEntered ?? 0),
+      warsWon: Number(profile?.warsWon ?? 0),
+      cardsCaptured: Number(profile?.cardsCaptured ?? 0)
+    },
+    modes: profile?.modeStats ?? null
+  };
+}
+
 function buildProfileSnapshot({ profile, challenges }) {
+  const cosmetics = buildSnapshotCosmetics(profile);
+  const stats = buildSnapshotStats(profile);
+  const currency = {
+    tokens: Number(profile?.tokens ?? 0)
+  };
+
   return {
     authority: "server",
     source: "multiplayer",
-    profile,
-    cosmetics: {
-      equipped: profile?.equippedCosmetics ?? null,
-      owned: profile?.ownedCosmetics ?? null
+    username: profile?.username ?? null,
+    profile: {
+      ...profile,
+      username: profile?.username ?? null,
+      tokens: currency.tokens,
+      equippedCosmetics: cosmetics.equipped,
+      ownedCosmetics: cosmetics.owned,
+      cosmeticLoadouts: cosmetics.loadouts,
+      cosmeticRandomizeAfterMatch: cosmetics.preferences,
+      modeStats: stats.modes
     },
-    stats: profile?.modeStats ?? null,
+    cosmetics,
+    stats,
+    currency,
     progression: {
       xp: getLevelProgress(profile),
       dailyChallenges: challenges?.daily ?? null,
