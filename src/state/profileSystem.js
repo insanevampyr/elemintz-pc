@@ -449,6 +449,73 @@ export class ProfileSystem {
     this.mutationQueue = Promise.resolve();
   }
 
+  cacheProfile(profile) {
+    if (!profile?.username) {
+      return;
+    }
+
+    const nextProfiles = [...this.inMemoryProfiles];
+    const index = nextProfiles.findIndex((entry) => entry?.username === profile.username);
+    if (index === -1) {
+      nextProfiles.push(profile);
+    } else {
+      nextProfiles[index] = profile;
+    }
+    this.inMemoryProfiles = nextProfiles;
+  }
+
+  async readProfilesArray({ repairMalformedRoot = true } = {}) {
+    const profiles = await this.store.read([]);
+    if (Array.isArray(profiles)) {
+      return profiles;
+    }
+
+    if (repairMalformedRoot) {
+      await this.store.write([]);
+    }
+    this.inMemoryProfiles = [];
+    return [];
+  }
+
+  findProfileIndex(profiles, username) {
+    const normalized = normalizeUsername(username);
+    return profiles.findIndex((profile) => normalizeUsername(profile?.username) === normalized);
+  }
+
+  async loadNormalizedProfileByUsername(username, { applyRetroactive = true } = {}) {
+    const normalized = normalizeUsername(username);
+    const profiles = await this.readProfilesArray();
+    const index = this.findProfileIndex(profiles, normalized);
+    if (index === -1) {
+      return {
+        profiles,
+        index: -1,
+        profile: null
+      };
+    }
+
+    const current = profiles[index];
+    const repaired = normalizeProfile(current, { applyRetroactive });
+    if (JSON.stringify(repaired) !== JSON.stringify(current)) {
+      const nextProfiles = [...profiles];
+      nextProfiles[index] = repaired;
+      await this.store.write(nextProfiles);
+      this.cacheProfile(repaired);
+      return {
+        profiles: nextProfiles,
+        index,
+        profile: repaired
+      };
+    }
+
+    this.cacheProfile(repaired);
+    return {
+      profiles,
+      index,
+      profile: repaired
+    };
+  }
+
   runMutation(task) {
     const run = this.mutationQueue.then(task, task);
     this.mutationQueue = run.then(
@@ -487,8 +554,21 @@ export class ProfileSystem {
 
   async getProfile(username) {
     const normalized = normalizeUsername(username);
-    const profiles = await this.listProfiles();
-    return profiles.find((profile) => profile.username === normalized) ?? null;
+    try {
+      const result = await this.loadNormalizedProfileByUsername(normalized, {
+        applyRetroactive: true
+      });
+      return result.profile ?? null;
+    } catch (error) {
+      console.error("[ProfileSystem] getProfile failed", {
+        username: normalized,
+        message: error?.message,
+        code: error?.code,
+        stack: error?.stack,
+        filePath: this.store.filePath
+      });
+      return this.inMemoryProfiles.find((profile) => profile.username === normalized) ?? null;
+    }
   }
 
   async ensureProfile(username, seed = {}) {
@@ -509,8 +589,9 @@ export class ProfileSystem {
       });
 
       try {
-        const profiles = await this.listProfiles();
-        const existing = profiles.find((profile) => profile.username === normalized);
+        const { profiles, profile: existing } = await this.loadNormalizedProfileByUsername(normalized, {
+          applyRetroactive: true
+        });
 
         if (existing) {
           console.info("[ProfileSystem] ensureProfile existing profile returned", {
@@ -572,13 +653,13 @@ export class ProfileSystem {
   async updateProfile(username, updater) {
     return this.runMutation(async () => {
       const normalized = normalizeUsername(username);
-      const profiles = await this.listProfiles();
-      const index = profiles.findIndex((profile) => profile.username === normalized);
+      const profiles = await this.readProfilesArray();
+      const index = this.findProfileIndex(profiles, normalized);
 
       const nextProfiles = [...profiles];
       const current = index === -1
         ? normalizeProfile(createDefaultProfile(normalized))
-        : profiles[index];
+        : normalizeProfile(profiles[index]);
 
       const next = normalizeProfile(
         typeof updater === "function" ? updater(current) : { ...current, ...updater }
@@ -597,15 +678,11 @@ export class ProfileSystem {
       });
 
       await this.store.write(nextProfiles);
-      this.inMemoryProfiles = nextProfiles;
+      this.cacheProfile(next);
 
-      const reloadedProfiles = await this.store.read([]);
-      const normalizedReloaded = Array.isArray(reloadedProfiles)
-        ? reloadedProfiles.map((profile) => normalizeProfile(profile))
-        : [];
-      this.inMemoryProfiles = normalizedReloaded;
-
-      const reloaded = normalizedReloaded.find((profile) => profile.username === normalized) ?? null;
+      const reloaded = (await this.loadNormalizedProfileByUsername(normalized, {
+        applyRetroactive: false
+      })).profile;
       console.info("[ProfileSystem] updateProfile reloaded", {
         reloaded: snapshot(reloaded),
         filePath: this.store.filePath

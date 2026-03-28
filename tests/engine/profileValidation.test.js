@@ -169,6 +169,58 @@ test("profile validation: already valid profiles are not destructively rewritten
   assert.equal(after, before);
 });
 
+test("profile validation: ensureProfile repairs only the requested stored profile while listProfiles remains the full sweep", async (t) => {
+  const dataDir = await createTempDataDir();
+  const filePath = path.join(dataDir, "profiles.json");
+
+  t.after(async () => {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  await fs.writeFile(
+    filePath,
+    JSON.stringify(
+      [
+        {
+          username: "TargetUser",
+          tokens: "450",
+          achievements: [],
+          chests: null
+        },
+        {
+          username: "OtherUser",
+          tokens: "275",
+          achievements: [],
+          chests: null
+        }
+      ],
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const profiles = new ProfileSystem({ dataDir });
+  const target = await profiles.ensureProfile("TargetUser");
+  const afterEnsure = JSON.parse(await fs.readFile(filePath, "utf8"));
+
+  assert.equal(target.tokens, 450);
+  assert.equal(afterEnsure[0].schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
+  assert.equal(typeof afterEnsure[0].achievements, "object");
+  assert.equal(Array.isArray(afterEnsure[0].achievements), false);
+  assert.equal(afterEnsure[1].schemaVersion, undefined);
+  assert.equal(Array.isArray(afterEnsure[1].achievements), true);
+  assert.equal(afterEnsure[1].chests, null);
+
+  await profiles.listProfiles();
+  const afterList = JSON.parse(await fs.readFile(filePath, "utf8"));
+
+  assert.equal(afterList[1].schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
+  assert.equal(typeof afterList[1].achievements, "object");
+  assert.equal(Array.isArray(afterList[1].achievements), false);
+  assert.equal(typeof afterList[1].chests, "object");
+});
+
 test("profile validation: normalizeProfile is idempotent after the first repair", () => {
   const corruptedProfile = {
     username: "IdempotentRepairUser",

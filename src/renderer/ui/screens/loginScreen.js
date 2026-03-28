@@ -6,19 +6,25 @@ export const loginScreen = {
           <h2 class="view-title">EleMintz Login</h2>
           <p>Sign in with your EleMintz account for online play, or continue offline with a local profile name.</p>
           <form id="login-form" class="stack-md">
-            <label for="username-input">Username</label>
-            <input id="username-input" name="username" type="text" minlength="2" maxlength="24" />
-            <label for="email-input">Email</label>
-            <input id="email-input" name="email" type="email" maxlength="160" autocomplete="email" />
-            <label for="password-input">Password</label>
-            <input
-              id="password-input"
-              name="password"
-              type="password"
-              minlength="8"
-              maxlength="128"
-              autocomplete="current-password"
-            />
+            <div class="login-form-field">
+              <label for="username-input">Username</label>
+              <input id="username-input" name="username" type="text" minlength="2" maxlength="24" />
+            </div>
+            <div class="login-form-field">
+              <label for="email-input">Email</label>
+              <input id="email-input" name="email" type="email" maxlength="160" autocomplete="email" />
+            </div>
+            <div class="login-form-field">
+              <label for="password-input">Password</label>
+              <input
+                id="password-input"
+                name="password"
+                type="password"
+                minlength="8"
+                maxlength="128"
+                autocomplete="current-password"
+              />
+            </div>
             <div class="button-row">
               <button id="login-btn" type="submit" data-auth-submit="login" class="btn btn-primary">Sign In</button>
               <button id="register-btn" type="submit" data-auth-submit="register" class="btn btn-secondary">Create Account</button>

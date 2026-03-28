@@ -3371,11 +3371,11 @@ export class AppController {
         ...(challengeStatus?.xp ?? {})
       };
     }
-    const allProfiles = await window.elemintz.state.listProfiles();
-
     const query = this.profileSearchQuery.trim().toLowerCase();
     const searchResults = query
-      ? allProfiles.filter((item) => item.username.toLowerCase().includes(query)).slice(0, 8)
+      ? (await window.elemintz.state.listProfiles())
+          .filter((item) => item.username.toLowerCase().includes(query))
+          .slice(0, 8)
       : [];
 
     const viewedProfile = this.viewedProfileUsername
