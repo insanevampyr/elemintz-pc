@@ -38,10 +38,6 @@ function supportsHoverPreview(type, hasRenderableImage) {
   return hasRenderableImage || type === "title" || type === "badge";
 }
 
-function usesTitleImagePreview(src) {
-  return Boolean(src) && !String(src).replaceAll("\\", "/").toLowerCase().includes("/badges/");
-}
-
 function previewTypeClass(type) {
   if (type === "avatar") {
     return "is-avatar";
@@ -74,8 +70,7 @@ function preview(type, item) {
   }
 
   const src = item.image ? getAssetPath(item.image) : null;
-  const renderableImage = hasRenderablePreviewSource(src, { previewName: item.name });
-  const hasRenderableImage = renderableImage && (type !== "title" || usesTitleImagePreview(src));
+  const hasRenderableImage = hasRenderablePreviewSource(src, { previewName: item.name });
   if (!hasRenderableImage) {
     if (type !== "title" && type !== "badge") {
       return `<div class="cosmetic-preview missing">No Preview</div>`;

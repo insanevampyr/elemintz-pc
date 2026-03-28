@@ -2765,7 +2765,7 @@ test("ui: title hover preview uses square full-image framing when title art exis
   assert.match(previewFrame.className, /is-title/);
 });
 
-test("ui: legacy badge-backed titles such as Flame Vanguard render with title fallback visuals instead of portrait badge art", () => {
+test("ui: legacy badge-backed titles such as Flame Vanguard still render their title image in store and cosmetics", () => {
   const storeHtml = storeScreen.render({
     store: {
       tokens: 0,
@@ -2817,11 +2817,10 @@ test("ui: legacy badge-backed titles such as Flame Vanguard render with title fa
     }
   });
 
-  assert.match(storeHtml, /data-preview-type="title"[^>]*data-preview-src=""/);
-  assert.match(storeHtml, /is-title-fallback[^>]*>Flame Vanguard</);
-  assert.doesNotMatch(storeHtml, /src="[^"]*badges\/firstFlame\.png"[^>]*alt="Flame Vanguard"/);
-  assert.match(cosmeticsHtml, /data-preview-type="title"[^>]*data-preview-src=""/);
-  assert.match(cosmeticsHtml, /is-title-fallback[^>]*>Flame Vanguard</);
+  assert.match(storeHtml, /data-preview-type="title"[^>]*data-preview-src="[^"]*badges\/firstFlame\.png"/);
+  assert.match(storeHtml, /src="[^"]*badges\/firstFlame\.png"[^>]*alt="Flame Vanguard"/);
+  assert.match(cosmeticsHtml, /data-preview-type="title"[^>]*data-preview-src="[^"]*badges\/firstFlame\.png"/);
+  assert.match(cosmeticsHtml, /src="[^"]*badges\/firstFlame\.png"[^>]*alt="Flame Vanguard"/);
 });
 
 test("ui: meta-only title hover keeps using its compact rendered size while the cursor moves", () => {
