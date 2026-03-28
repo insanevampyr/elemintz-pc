@@ -1620,6 +1620,172 @@ test("appController: login prefers the multiplayer profile snapshot when the ses
   }
 });
 
+test("appController: account login uses the multiplayer auth path and hydrates the active profile from the server snapshot", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    multiplayerLogin: [],
+    multiplayerGetState: 0,
+    multiplayerGetProfile: 0,
+    ensureProfile: 0,
+    claimDailyLoginReward: 0,
+    getDailyChallenges: 0
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          ensureProfile: async () => {
+            calls.ensureProfile += 1;
+            return { username: "LocalFallbackUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+          },
+          claimDailyLoginReward: async (username) => {
+            calls.claimDailyLoginReward += 1;
+            return {
+              granted: false,
+              profile: { username, tokens: 260, playerXP: 24, playerLevel: 2, equippedCosmetics: {} },
+              dailyLoginStatus: {
+                eligible: false,
+                loginDayKey: "2026-03-28T00:00:00.000Z",
+                lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
+                msUntilReset: 3600000
+              }
+            };
+          },
+          getDailyChallenges: async () => {
+            calls.getDailyChallenges += 1;
+            return {
+              dailyLogin: { eligible: false, msUntilReset: 3600000 },
+              daily: { msUntilReset: 3600000, challenges: [] },
+              weekly: { msUntilReset: 7200000, challenges: [] }
+            };
+          }
+        },
+        multiplayer: {
+          login: async (payload) => {
+            calls.multiplayerLogin.push(payload);
+            return {
+              ok: true,
+              account: {
+                accountId: "account-1",
+                email: payload.email,
+                username: "AccountUser"
+              },
+              session: {
+                token: "session-token-1",
+                sessionId: "session-id-1",
+                username: "AccountUser",
+                profileKey: "AccountUser",
+                accountId: "account-1",
+                authenticated: true
+              }
+            };
+          },
+          getState: async () => {
+            calls.multiplayerGetState += 1;
+            return {
+              connectionStatus: "connected",
+              socketId: "socket-1",
+              session: {
+                active: true,
+                username: "AccountUser",
+                sessionId: "session-id-1",
+                accountId: "account-1",
+                profileKey: "AccountUser",
+                authenticated: true
+              },
+              room: null,
+              lastError: null,
+              statusMessage: "Signed in."
+            };
+          },
+          getProfile: async () => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              authority: "server",
+              source: "multiplayer",
+              username: "AccountUser",
+              profile: {
+                username: "AccountUser",
+                tokens: 260,
+                playerXP: 24,
+                playerLevel: 2,
+                equippedCosmetics: {}
+              },
+              cosmetics: {
+                equipped: {},
+                owned: {}
+              },
+              stats: {
+                summary: {
+                  wins: 5,
+                  losses: 2,
+                  gamesPlayed: 7,
+                  warsEntered: 1,
+                  warsWon: 1,
+                  cardsCaptured: 9
+                },
+                modes: {
+                  online: {
+                    wins: 5,
+                    losses: 2
+                  }
+                }
+              },
+              currency: {
+                tokens: 260
+              },
+              progression: {
+                xp: {
+                  playerXP: 24,
+                  playerLevel: 2
+                },
+                dailyChallenges: { challenges: [] },
+                weeklyChallenges: { challenges: [] },
+                dailyLogin: { eligible: false, msUntilReset: 3600000 }
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.showLogin();
+    await shownScreens.at(-1).context.actions.login({
+      mode: "login",
+      email: "player@example.com",
+      password: "password123"
+    });
+
+    assert.deepEqual(calls.multiplayerLogin, [
+      {
+        username: "",
+        email: "player@example.com",
+        password: "password123"
+      }
+    ]);
+    assert.equal(calls.multiplayerGetState, 1);
+    assert.equal(calls.multiplayerGetProfile, 2);
+    assert.equal(calls.ensureProfile, 0);
+    assert.equal(calls.claimDailyLoginReward, 1);
+    assert.equal(calls.getDailyChallenges, 0);
+    assert.equal(app.username, "AccountUser");
+    assert.equal(app.profile.tokens, 260);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: duplicate daily login auto-claim requests are deduped within one login cycle", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];

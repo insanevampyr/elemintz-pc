@@ -725,7 +725,28 @@ export class AppController {
     const reward = await this.dailyLoginAutoClaimPromise;
 
     if (reward?.profile) {
-      this.profile = reward.profile;
+      if (this.hasMultiplayerProfileAccess() && this.profile) {
+        this.profile = {
+          ...reward.profile,
+          username: this.profile.username ?? reward.profile.username ?? this.username,
+          wins: this.profile.wins ?? reward.profile.wins ?? 0,
+          losses: this.profile.losses ?? reward.profile.losses ?? 0,
+          gamesPlayed: this.profile.gamesPlayed ?? reward.profile.gamesPlayed ?? 0,
+          warsEntered: this.profile.warsEntered ?? reward.profile.warsEntered ?? 0,
+          warsWon: this.profile.warsWon ?? reward.profile.warsWon ?? 0,
+          cardsCaptured: this.profile.cardsCaptured ?? reward.profile.cardsCaptured ?? 0,
+          modeStats: this.profile.modeStats ?? reward.profile.modeStats ?? null,
+          equippedCosmetics: this.profile.equippedCosmetics ?? reward.profile.equippedCosmetics ?? null,
+          ownedCosmetics: this.profile.ownedCosmetics ?? reward.profile.ownedCosmetics ?? null,
+          cosmeticLoadouts: this.profile.cosmeticLoadouts ?? reward.profile.cosmeticLoadouts ?? null,
+          cosmeticRandomizeAfterMatch:
+            this.profile.cosmeticRandomizeAfterMatch ??
+            reward.profile.cosmeticRandomizeAfterMatch ??
+            null
+        };
+      } else {
+        this.profile = reward.profile;
+      }
     }
 
     return reward;
@@ -760,8 +781,12 @@ export class AppController {
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
         openSettings: async () => this.showSettings(),
-        logout: () => {
+        logout: async () => {
           this.resetDailyLoginAutoClaimGuard();
+          await window.elemintz?.multiplayer?.logout?.();
+          this.onlinePlayState = this.normalizeOnlinePlayState(
+            await window.elemintz?.multiplayer?.getState?.()
+          );
           this.username = null;
           this.profile = null;
           this.dailyChallenges = null;
@@ -2522,18 +2547,55 @@ export class AppController {
     this.screenFlow = "login";
     this.screenManager.show("login", {
       actions: {
-        login: async (username) => {
+        login: async (request) => {
           try {
             this.resetDailyLoginAutoClaimGuard();
-            this.username = username;
+            const loginRequest =
+              typeof request === "string"
+                ? { mode: "offline", username: request }
+                : { ...(request ?? {}) };
+            const mode = String(loginRequest.mode ?? "offline").trim() || "offline";
+            const username = String(loginRequest.username ?? "").trim();
+            const email = String(loginRequest.email ?? "").trim();
+            const password = String(loginRequest.password ?? "");
+
+            if (mode === "login" || mode === "register") {
+              const authAction =
+                mode === "register"
+                  ? window.elemintz?.multiplayer?.register
+                  : window.elemintz?.multiplayer?.login;
+              if (typeof authAction !== "function") {
+                throw new Error("Online account authentication is unavailable.");
+              }
+
+              const authResult = await authAction({
+                username,
+                email,
+                password
+              });
+              if (!authResult?.ok) {
+                throw new Error(authResult?.error?.message ?? "Unable to authenticate this account.");
+              }
+
+              this.onlinePlayState = this.normalizeOnlinePlayState(
+                await window.elemintz?.multiplayer?.getState?.()
+              );
+              this.username =
+                authResult?.session?.username ??
+                authResult?.account?.username ??
+                username;
+            } else {
+              this.username = username;
+            }
+
             await this.loadPreferredProfileForOnlineSession({
-              username,
+              username: this.username,
               onlineState: this.onlinePlayState,
               allowEnsureLocal: true
             });
             await this.ensureDailyLoginAutoClaim({
               showToasts: true,
-              requestKey: `login:${username}`
+              requestKey: `login:${this.username}`
             });
             this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: true });
           } catch (err) {

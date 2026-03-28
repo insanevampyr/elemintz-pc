@@ -34,6 +34,16 @@ export function registerMultiplayerIpcHandlers(ipcMain) {
     return client.connect(payload);
   });
 
+  ipcMain.handle("multiplayer:register", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.register(payload);
+  });
+
+  ipcMain.handle("multiplayer:login", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.login(payload);
+  });
+
   ipcMain.handle("multiplayer:createRoom", async (event, payload) => {
     subscribers.add(event.sender);
     return client.createRoom(payload);
@@ -109,5 +119,10 @@ export function registerMultiplayerIpcHandlers(ipcMain) {
   ipcMain.handle("multiplayer:disconnect", async (event) => {
     subscribers.add(event.sender);
     return client.disconnect();
+  });
+
+  ipcMain.handle("multiplayer:logout", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.logout(payload);
   });
 }

@@ -275,7 +275,8 @@ export function createMultiplayerFoundation({
   roomReconnectTimeoutMs = ROOM_RECONNECT_TIMEOUT_MS,
   disconnectTracker = null,
   rewardPersister = null,
-  profileAuthority = null
+  profileAuthority = null,
+  accountStore = null
 } = {}) {
   const app = express();
   const httpServer = http.createServer(app);
@@ -375,6 +376,16 @@ export function createMultiplayerFoundation({
     roomReconnectTimers.delete(roomCode);
   }
 
+  function buildAccountError(error, fallbackCode = "AUTH_FAILED") {
+    return {
+      ok: false,
+      error: {
+        code: String(error?.code ?? fallbackCode),
+        message: String(error?.message ?? "Unable to complete this authentication request.")
+      }
+    };
+  }
+
   function scheduleReconnectExpiry(roomCode) {
     if (!roomCode) {
       return null;
@@ -471,6 +482,18 @@ export function createMultiplayerFoundation({
     } catch {
       return requestedUsername;
     }
+  }
+
+  function buildResolvedAccountSession(socket, account) {
+    return sessionStore.issueSession({
+      username: account?.username,
+      profileKey: account?.profileKey ?? account?.username,
+      accountId: account?.accountId ?? null,
+      email: account?.email ?? null,
+      authenticated: true,
+      replaceDisconnected: true,
+      socketId: socket.id
+    });
   }
 
   async function ensureSocketSession(socket, payload = {}, { allowBootstrap = false } = {}) {
@@ -682,6 +705,74 @@ export function createMultiplayerFoundation({
       });
     });
 
+    socket.on("auth:register", async (payload = {}, respond = () => {}) => {
+      if (
+        typeof accountStore?.register !== "function" ||
+        typeof profileAuthority?.getProfile !== "function"
+      ) {
+        respond(buildAccountError({
+          code: "AUTH_UNAVAILABLE",
+          message: "Account registration is not available on this server."
+        }));
+        return;
+      }
+
+      try {
+        const resolvedUsername =
+          (await resolveBootstrapUsername(payload?.username)) ??
+          normalizeSettledUsername(payload?.username);
+        const account = await accountStore.register({
+          email: payload?.email,
+          password: payload?.password,
+          username: resolvedUsername,
+          profileKey: resolvedUsername
+        });
+        const sessionResult = buildResolvedAccountSession(socket, account);
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        respond({
+          ok: true,
+          account,
+          session: sessionStore.toPublicSession(sessionResult.session)
+        });
+      } catch (error) {
+        respond(buildAccountError(error, "ACCOUNT_REGISTER_FAILED"));
+      }
+    });
+
+    socket.on("auth:login", async (payload = {}, respond = () => {}) => {
+      if (typeof accountStore?.login !== "function") {
+        respond(buildAccountError({
+          code: "AUTH_UNAVAILABLE",
+          message: "Account login is not available on this server."
+        }));
+        return;
+      }
+
+      try {
+        const account = await accountStore.login({
+          email: payload?.email,
+          password: payload?.password
+        });
+        const sessionResult = buildResolvedAccountSession(socket, account);
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        respond({
+          ok: true,
+          account,
+          session: sessionStore.toPublicSession(sessionResult.session)
+        });
+      } catch (error) {
+        respond(buildAccountError(error, "ACCOUNT_LOGIN_FAILED"));
+      }
+    });
+
     socket.on("session:resume", (payload = {}, respond = () => {}) => {
       const result = sessionStore.resumeSession({
         token: payload?.sessionToken,
@@ -696,6 +787,17 @@ export function createMultiplayerFoundation({
         ok: true,
         session: sessionStore.toPublicSession(result.session)
       });
+    });
+
+    socket.on("session:logout", (_payload = {}, respond = () => {}) => {
+      const existingSession = sessionStore.getSessionBySocket(socket.id);
+      if (!existingSession) {
+        respond({ ok: true });
+        return;
+      }
+
+      sessionStore.destroySession(existingSession.token);
+      respond({ ok: true });
     });
 
     socket.on("room:submitMove", async (payload = {}) => {
@@ -802,7 +904,9 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const snapshot = await profileAuthority.getProfile(sessionResult.session?.username);
+        const snapshot = await profileAuthority.getProfile(
+          sessionResult.session?.profileKey ?? sessionResult.session?.username
+        );
         logRoomEvent(logger, "Profile snapshot served", {
           username: sessionResult.session?.username ?? null,
           socketId: socket.id,
@@ -842,7 +946,9 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const cosmetics = await profileAuthority.getCosmetics(sessionResult.session?.username);
+        const cosmetics = await profileAuthority.getCosmetics(
+          sessionResult.session?.profileKey ?? sessionResult.session?.username
+        );
         respond({
           ok: true,
           cosmetics
@@ -879,7 +985,7 @@ export function createMultiplayerFoundation({
       try {
         const result = await profileAuthority.equipCosmetic({
           ...payload,
-          username: sessionResult.session?.username
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
         });
         respond({
           ok: true,
@@ -917,7 +1023,7 @@ export function createMultiplayerFoundation({
       try {
         const result = await profileAuthority.updateCosmeticPreferences({
           ...payload,
-          username: sessionResult.session?.username
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
         });
         respond({
           ok: true,
@@ -955,7 +1061,7 @@ export function createMultiplayerFoundation({
       try {
         const result = await profileAuthority.randomizeOwnedCosmetics({
           ...payload,
-          username: sessionResult.session?.username
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
         });
         respond({
           ok: true,
@@ -993,7 +1099,7 @@ export function createMultiplayerFoundation({
       try {
         const result = await profileAuthority.saveCosmeticLoadout({
           ...payload,
-          username: sessionResult.session?.username
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
         });
         respond({
           ok: true,
@@ -1031,7 +1137,7 @@ export function createMultiplayerFoundation({
       try {
         const result = await profileAuthority.applyCosmeticLoadout({
           ...payload,
-          username: sessionResult.session?.username
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
         });
         respond({
           ok: true,
@@ -1069,7 +1175,7 @@ export function createMultiplayerFoundation({
       try {
         const result = await profileAuthority.renameCosmeticLoadout({
           ...payload,
-          username: sessionResult.session?.username
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
         });
         respond({
           ok: true,

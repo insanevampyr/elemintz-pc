@@ -1,6 +1,7 @@
 import { buildOnlineMatchStateFromRoom, createMultiplayerFoundation } from "./foundation.js";
 import { StateCoordinator } from "../state/stateCoordinator.js";
 import { MultiplayerProfileAuthority } from "./profileAuthority.js";
+import { MultiplayerAccountStore } from "./accountStore.js";
 import os from "node:os";
 import path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
@@ -29,6 +30,10 @@ const stateCoordinator = new StateCoordinator({
 });
 const profileAuthority = new MultiplayerProfileAuthority({
   coordinator: stateCoordinator,
+  logger: console
+});
+const accountStore = new MultiplayerAccountStore({
+  dataDir: resolveStandaloneDataDir(),
   logger: console
 });
 
@@ -88,7 +93,12 @@ async function disconnectTracker({ type, username, occurredAt }) {
   }
 }
 
-const server = createMultiplayerFoundation({ rewardPersister, disconnectTracker, profileAuthority });
+const server = createMultiplayerFoundation({
+  rewardPersister,
+  disconnectTracker,
+  profileAuthority,
+  accountStore
+});
 let shuttingDown = false;
 
 async function shutdown(signal) {

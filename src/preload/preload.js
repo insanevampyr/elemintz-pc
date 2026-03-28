@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld("elemintz", {
     applyCosmeticLoadout: (payload) => ipcRenderer.invoke("multiplayer:applyCosmeticLoadout", payload),
     renameCosmeticLoadout: (payload) => ipcRenderer.invoke("multiplayer:renameCosmeticLoadout", payload),
     connect: (payload) => ipcRenderer.invoke("multiplayer:connect", payload),
+    register: (payload) => ipcRenderer.invoke("multiplayer:register", payload),
+    login: (payload) => ipcRenderer.invoke("multiplayer:login", payload),
     createRoom: (payload) => ipcRenderer.invoke("multiplayer:createRoom", payload),
     joinRoom: (payload) => ipcRenderer.invoke("multiplayer:joinRoom", payload),
     submitMove: (payload) => {
@@ -63,6 +65,7 @@ contextBridge.exposeInMainWorld("elemintz", {
     sendTaunt: (payload) => ipcRenderer.invoke("multiplayer:sendTaunt", payload),
     readyRematch: (payload) => ipcRenderer.invoke("multiplayer:readyRematch", payload),
     disconnect: () => ipcRenderer.invoke("multiplayer:disconnect"),
+    logout: (payload) => ipcRenderer.invoke("multiplayer:logout", payload),
     onUpdate: (listener) => subscribeToMultiplayerUpdates(listener)
   }
 });

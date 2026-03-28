@@ -28,6 +28,9 @@ function toPublicSession(session) {
     token: session.token,
     sessionId: session.sessionId,
     username: session.username,
+    profileKey: session.profileKey ?? session.username,
+    accountId: session.accountId ?? null,
+    authenticated: Boolean(session.authenticated),
     issuedAt: session.issuedAt,
     resumedAt: session.resumedAt ?? null,
     lastSeenAt: session.lastSeenAt ?? null
@@ -106,7 +109,15 @@ export function createSessionStore({
     tokenBySocketId.set(socketId, session.token);
   }
 
-  function issueSession({ username, socketId }) {
+  function issueSession({
+    username,
+    socketId,
+    accountId = null,
+    email = null,
+    profileKey = null,
+    authenticated = false,
+    replaceDisconnected = false
+  }) {
     const safeUsername = normalizeUsername(username);
     if (!safeUsername) {
       return {
@@ -116,6 +127,19 @@ export function createSessionStore({
           message: "A valid username is required to start an online session."
         }
       };
+    }
+
+    const existingSocketToken = tokenBySocketId.get(socketId);
+    if (existingSocketToken) {
+      const existingSocketSession = sessionsByToken.get(existingSocketToken);
+      if (existingSocketSession?.username === safeUsername) {
+        return {
+          ok: true,
+          session: toPublicSession(existingSocketSession)
+        };
+      }
+
+      destroySession(existingSocketToken);
     }
 
     const existingToken = tokenByUsername.get(safeUsername);
@@ -139,13 +163,17 @@ export function createSessionStore({
       }
 
       if (existingSession && !existingSession.connected) {
-        return {
-          ok: false,
-          error: {
-            code: "SESSION_RESUME_REQUIRED",
-            message: "This disconnected online session must be resumed with its server token."
-          }
-        };
+        if (replaceDisconnected) {
+          destroySession(existingToken);
+        } else {
+          return {
+            ok: false,
+            error: {
+              code: "SESSION_RESUME_REQUIRED",
+              message: "This disconnected online session must be resumed with its server token."
+            }
+          };
+        }
       }
     }
 
@@ -154,6 +182,10 @@ export function createSessionStore({
       token: buildSessionToken(),
       sessionId: buildSessionId(),
       username: safeUsername,
+      profileKey: normalizeUsername(profileKey) ?? safeUsername,
+      accountId: String(accountId ?? "").trim() || null,
+      email: String(email ?? "").trim().toLowerCase() || null,
+      authenticated: Boolean(authenticated),
       socketId: null,
       connected: false,
       issuedAt,
@@ -185,6 +217,11 @@ export function createSessionStore({
           message: "A valid session token is required to resume this online session."
         }
       };
+    }
+
+    const existingSocketToken = tokenBySocketId.get(socketId);
+    if (existingSocketToken && existingSocketToken !== safeToken) {
+      destroySession(existingSocketToken);
     }
 
     const session = sessionsByToken.get(safeToken);

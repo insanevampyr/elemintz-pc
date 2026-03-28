@@ -140,12 +140,18 @@ function cloneState(state) {
       ? {
           active: Boolean(state.session.active),
           username: state.session.username ?? null,
-          sessionId: state.session.sessionId ?? null
+          sessionId: state.session.sessionId ?? null,
+          accountId: state.session.accountId ?? null,
+          profileKey: state.session.profileKey ?? null,
+          authenticated: Boolean(state.session.authenticated)
         }
       : {
           active: false,
           username: null,
-          sessionId: null
+          sessionId: null,
+          accountId: null,
+          profileKey: null,
+          authenticated: false
         },
     room: cloneRoom(state.room),
     latestRoundResult: cloneRoundResult(state.latestRoundResult),
@@ -174,7 +180,10 @@ export class MultiplayerClient {
       session: {
         active: false,
         username: null,
-        sessionId: null
+        sessionId: null,
+        accountId: null,
+        profileKey: null,
+        authenticated: false
       },
       room: null,
       latestRoundResult: null,
@@ -219,12 +228,18 @@ export class MultiplayerClient {
       ? {
           active: true,
           username: session.username ?? null,
-          sessionId: session.sessionId ?? null
+          sessionId: session.sessionId ?? null,
+          accountId: session.accountId ?? null,
+          profileKey: session.profileKey ?? session.username ?? null,
+          authenticated: Boolean(session.authenticated)
         }
       : {
           active: false,
           username: null,
-          sessionId: null
+          sessionId: null,
+          accountId: null,
+          profileKey: null,
+          authenticated: false
         };
 
     this.sessionToken = session?.token ?? null;
@@ -242,9 +257,50 @@ export class MultiplayerClient {
       session: {
         active: false,
         username: null,
-        sessionId: null
+        sessionId: null,
+        accountId: null,
+        profileKey: null,
+        authenticated: false
       }
     });
+  }
+
+  async authenticate(eventName, payload, { serverUrl } = {}) {
+    const connected = await this.ensureConnected({ serverUrl });
+    if (!connected || !this.socket) {
+      return {
+        ok: false,
+        error: {
+          code: "CONNECTION_FAILED",
+          message: "Unable to connect to multiplayer server."
+        }
+      };
+    }
+
+    const response = await this.emitRequest(eventName, payload, { serverUrl });
+    if (response?.ok && response.session) {
+      this.applySession(response.session);
+      this.updateState({
+        lastError: null,
+        statusMessage:
+          eventName === "auth:register"
+            ? "Account created. Online session active."
+            : "Signed in. Online session active."
+      });
+      return response;
+    }
+
+    this.updateState({
+      lastError: response?.error ? { ...response.error } : null,
+      statusMessage: response?.error?.message ?? this.state.statusMessage
+    });
+    return response ?? {
+      ok: false,
+      error: {
+        code: "AUTH_FAILED",
+        message: "Unable to complete this authentication request."
+      }
+    };
   }
 
   async emitRequest(eventName, payload = {}, { serverUrl } = {}) {
@@ -291,7 +347,10 @@ export class MultiplayerClient {
       return {
         token: this.sessionToken,
         sessionId: this.state.session?.sessionId ?? null,
-        username: this.state.session?.username ?? null
+        username: this.state.session?.username ?? null,
+        profileKey: this.state.session?.profileKey ?? null,
+        accountId: this.state.session?.accountId ?? null,
+        authenticated: Boolean(this.state.session?.authenticated)
       };
     }
 
@@ -363,7 +422,10 @@ export class MultiplayerClient {
         session: {
           active: false,
           username: this.state.session?.username ?? null,
-          sessionId: this.state.session?.sessionId ?? null
+          sessionId: this.state.session?.sessionId ?? null,
+          accountId: this.state.session?.accountId ?? null,
+          profileKey: this.state.session?.profileKey ?? null,
+          authenticated: Boolean(this.state.session?.authenticated)
         },
         room: null,
         latestRoundResult: null,
@@ -387,7 +449,10 @@ export class MultiplayerClient {
         session: {
           active: false,
           username: this.state.session?.username ?? null,
-          sessionId: this.state.session?.sessionId ?? null
+          sessionId: this.state.session?.sessionId ?? null,
+          accountId: this.state.session?.accountId ?? null,
+          profileKey: this.state.session?.profileKey ?? null,
+          authenticated: Boolean(this.state.session?.authenticated)
         },
         room: null,
         latestRoundResult: null,
@@ -668,6 +733,22 @@ export class MultiplayerClient {
     );
   }
 
+  async register({ email, password, username, serverUrl } = {}) {
+    return this.authenticate(
+      "auth:register",
+      { email, password, username },
+      { serverUrl }
+    );
+  }
+
+  async login({ email, password, serverUrl } = {}) {
+    return this.authenticate(
+      "auth:login",
+      { email, password },
+      { serverUrl }
+    );
+  }
+
   async joinRoom({ roomCode, serverUrl, username, equippedCosmetics } = {}) {
     return this.runRoomAction(
       "room:join",
@@ -865,7 +946,10 @@ export class MultiplayerClient {
       session: {
         active: false,
         username: this.state.session?.username ?? null,
-        sessionId: this.state.session?.sessionId ?? null
+        sessionId: this.state.session?.sessionId ?? null,
+        accountId: this.state.session?.accountId ?? null,
+        profileKey: this.state.session?.profileKey ?? null,
+        authenticated: Boolean(this.state.session?.authenticated)
       },
       room: null,
       latestRoundResult: null,
@@ -874,6 +958,20 @@ export class MultiplayerClient {
       statusMessage: silent ? this.state.statusMessage : "Disconnected."
     });
 
+    return this.getState();
+  }
+
+  async logout({ serverUrl } = {}) {
+    if (this.socket?.connected) {
+      await this.emitRequest("session:logout", {}, { serverUrl });
+    }
+
+    await this.disconnect({ preserveServerUrl: true, silent: true });
+    this.clearSession();
+    this.updateState({
+      lastError: null,
+      statusMessage: "Signed out."
+    });
     return this.getState();
   }
 }

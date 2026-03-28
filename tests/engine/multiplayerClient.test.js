@@ -49,6 +49,7 @@ class FakeSocket {
     this.listeners = new Map();
     this.sentEvents = [];
     this.sessionUsername = null;
+    this.sessionAuthenticated = false;
     queueMicrotask(() => {
       this.serverEmit("connect");
     });
@@ -82,12 +83,42 @@ class FakeSocket {
     if (eventName === "session:bootstrap") {
       queueMicrotask(() => {
         this.sessionUsername = payload?.username ?? null;
+        this.sessionAuthenticated = false;
         ack?.({
           ok: true,
           session: {
             token: "session-token-1",
             sessionId: "session-id-1",
-            username: this.sessionUsername
+            username: this.sessionUsername,
+            profileKey: this.sessionUsername,
+            accountId: null,
+            authenticated: false
+          }
+        });
+      });
+    }
+
+    if (eventName === "auth:register" || eventName === "auth:login") {
+      queueMicrotask(() => {
+        this.sessionUsername = payload?.username ?? "RegisteredUser";
+        this.sessionAuthenticated = true;
+        ack?.({
+          ok: true,
+          account: {
+            accountId: "account-id-1",
+            email: payload?.email ?? "player@example.com",
+            username: this.sessionUsername,
+            profileKey: this.sessionUsername,
+            createdAt: "2026-03-28T12:00:00.000Z",
+            updatedAt: "2026-03-28T12:00:00.000Z"
+          },
+          session: {
+            token: "session-token-1",
+            sessionId: "session-id-1",
+            username: this.sessionUsername,
+            profileKey: this.sessionUsername,
+            accountId: "account-id-1",
+            authenticated: true
           }
         });
       });
@@ -100,9 +131,20 @@ class FakeSocket {
           session: {
             token: payload?.sessionToken ?? "session-token-1",
             sessionId: "session-id-1",
-            username: "VampyrLee"
+            username: "VampyrLee",
+            profileKey: "VampyrLee",
+            accountId: this.sessionAuthenticated ? "account-id-1" : null,
+            authenticated: this.sessionAuthenticated
           }
         });
+      });
+    }
+
+    if (eventName === "session:logout") {
+      queueMicrotask(() => {
+        this.sessionUsername = null;
+        this.sessionAuthenticated = false;
+        ack?.({ ok: true });
       });
     }
 
@@ -313,4 +355,68 @@ test("multiplayer client: server profile requests return authoritative snapshots
   assert.equal(snapshot?.authority, "server");
   assert.equal(snapshot?.profile?.username, "ServerOwnedUser");
   assert.equal(snapshot?.progression?.xp?.playerXP, 18);
+});
+
+test("multiplayer client: authenticated login reuses the server-issued session for later room actions", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const loginResult = await client.login({
+    email: "player@example.com",
+    password: "password123"
+  });
+
+  assert.equal(loginResult?.ok, true);
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "auth:login",
+    payload: {
+      email: "player@example.com",
+      password: "password123"
+    }
+  });
+  assert.equal(client.getState().session?.authenticated, true);
+  assert.equal(client.getState().session?.accountId, "account-id-1");
+
+  const equippedCosmetics = createEquippedCosmetics();
+  await client.createRoom({
+    equippedCosmetics
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "room:create",
+    payload: {
+      equippedCosmetics
+    }
+  });
+});
+
+test("multiplayer client: logout clears the stored session identity", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  await client.login({
+    email: "player@example.com",
+    password: "password123"
+  });
+  await client.logout();
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "session:logout",
+    payload: {}
+  });
+  assert.equal(client.getState().session?.active, false);
+  assert.equal(client.getState().session?.accountId, null);
+  assert.equal(client.getState().session?.authenticated, false);
 });

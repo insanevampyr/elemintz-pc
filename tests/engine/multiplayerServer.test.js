@@ -12,6 +12,7 @@ import {
   buildRewardSummary,
   createMultiplayerFoundation
 } from "../../src/multiplayer/foundation.js";
+import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
@@ -275,6 +276,163 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
   } finally {
     client?.disconnect();
     await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: auth register persists a hashed account record and issues an authenticated session", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: {
+      getProfile: async (username) => ({
+        username,
+        profile: { username }
+      })
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const response = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: "founder@example.com",
+          password: "password123",
+          username: "FounderUser"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(response?.ok, true);
+    assert.equal(response?.account?.email, "founder@example.com");
+    assert.equal(response?.account?.username, "FounderUser");
+    assert.equal(response?.session?.authenticated, true);
+    assert.equal(typeof response?.session?.accountId, "string");
+    assert.equal(response?.session?.profileKey, "FounderUser");
+
+    const accountsPath = path.join(dataDir, "accounts.json");
+    const stored = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    assert.equal(stored.accounts.length, 1);
+    assert.equal(stored.accounts[0].email, "founder@example.com");
+    assert.equal(stored.accounts[0].passwordHash === "password123", false);
+    assert.equal(stored.accounts[0].passwordHash.startsWith("scrypt$"), true);
+
+    const duplicateEmail = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: "founder@example.com",
+          password: "password123",
+          username: "FounderUserTwo"
+        },
+        resolve
+      );
+    });
+    assert.deepEqual(duplicateEmail, {
+      ok: false,
+      error: {
+        code: "ACCOUNT_EMAIL_IN_USE",
+        message: "This email is already registered."
+      }
+    });
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: auth login rejects bad credentials and binds profile reads to the authenticated account session", async () => {
+  const dataDir = await createTempDataDir();
+  const authorityCalls = [];
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  await accountStore.register({
+    email: "player@example.com",
+    password: "password123",
+    username: "AccountBoundUser"
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: {
+      getProfile: async (username) => {
+        authorityCalls.push(username);
+        return {
+          username,
+          profile: { username, equippedCosmetics: {} },
+          progression: {
+            xp: { playerXP: 0, playerLevel: 1 },
+            dailyChallenges: { challenges: [] },
+            weeklyChallenges: { challenges: [] },
+            dailyLogin: { eligible: false }
+          }
+        };
+      }
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const invalidLogin = await new Promise((resolve) => {
+      client.emit(
+        "auth:login",
+        {
+          email: "player@example.com",
+          password: "wrong-password"
+        },
+        resolve
+      );
+    });
+    assert.deepEqual(invalidLogin, {
+      ok: false,
+      error: {
+        code: "ACCOUNT_LOGIN_FAILED",
+        message: "Invalid email or password."
+      }
+    });
+
+    const validLogin = await new Promise((resolve) => {
+      client.emit(
+        "auth:login",
+        {
+          email: "player@example.com",
+          password: "password123"
+        },
+        resolve
+      );
+    });
+    assert.equal(validLogin?.ok, true);
+    assert.equal(validLogin?.session?.authenticated, true);
+    assert.equal(validLogin?.session?.username, "AccountBoundUser");
+
+    const profileResponse = await new Promise((resolve) => {
+      client.emit("profile:get", {}, resolve);
+    });
+    assert.equal(profileResponse?.ok, true);
+    assert.equal(profileResponse?.profile?.profile?.username, "AccountBoundUser");
+    assert.deepEqual(authorityCalls, ["AccountBoundUser"]);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
 
