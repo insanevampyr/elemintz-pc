@@ -180,6 +180,58 @@ test("multiplayer foundation: health endpoint responds for deployment checks", a
   }
 });
 
+test("multiplayer foundation: profile:get returns the server-authoritative profile snapshot", async () => {
+  const authorityCalls = [];
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: {
+      getProfile: async (username) => {
+        authorityCalls.push(username);
+        return {
+          authority: "server",
+          source: "multiplayer",
+          profile: {
+            username,
+            tokens: 250,
+            playerXP: 20,
+            playerLevel: 2,
+            equippedCosmetics: {}
+          },
+          progression: {
+            xp: {
+              playerXP: 20,
+              playerLevel: 2
+            },
+            dailyChallenges: { challenges: [] },
+            weeklyChallenges: { challenges: [] },
+            dailyLogin: { eligible: false }
+          }
+        };
+      }
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const response = await new Promise((resolve) => {
+      client.emit("profile:get", { username: "AuthorityUser" }, resolve);
+    });
+
+    assert.deepEqual(authorityCalls, ["AuthorityUser"]);
+    assert.equal(response.ok, true);
+    assert.equal(response.profile.authority, "server");
+    assert.equal(response.profile.profile.username, "AuthorityUser");
+    assert.equal(response.profile.progression.xp.playerLevel, 2);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+  }
+});
+
 test("multiplayer rooms: preset taunts broadcast through the existing room update flow", async () => {
   const foundation = createMultiplayerFoundation({
     port: 0,

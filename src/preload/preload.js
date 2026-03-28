@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld("elemintz", {
   },
   multiplayer: {
     getState: () => ipcRenderer.invoke("multiplayer:getState"),
+    getProfile: (payload) => ipcRenderer.invoke("multiplayer:getProfile", payload),
     connect: (payload) => ipcRenderer.invoke("multiplayer:connect", payload),
     createRoom: (payload) => ipcRenderer.invoke("multiplayer:createRoom", payload),
     joinRoom: (payload) => ipcRenderer.invoke("multiplayer:joinRoom", payload),

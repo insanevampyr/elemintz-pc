@@ -1376,11 +1376,27 @@ export class AppController {
       return this.onlinePlayChallengeSummary;
     }
 
-    if (!window.elemintz?.state?.getDailyChallenges || !this.username) {
+    if (!this.username) {
       return null;
     }
 
-    const result = await window.elemintz.state.getDailyChallenges(this.username);
+    const serverProfile =
+      window.elemintz?.multiplayer?.getProfile
+        ? await window.elemintz.multiplayer.getProfile({ username: this.username })
+        : null;
+    const result = serverProfile
+      ? {
+          daily: serverProfile.progression?.dailyChallenges ?? null,
+          weekly: serverProfile.progression?.weeklyChallenges ?? null
+        }
+      : window.elemintz?.state?.getDailyChallenges
+        ? await window.elemintz.state.getDailyChallenges(this.username)
+        : null;
+
+    if (!result) {
+      return null;
+    }
+
     this.onlinePlayChallengeSummary = {
       daily: result?.daily ?? null,
       weekly: result?.weekly ?? null
@@ -1404,13 +1420,21 @@ export class AppController {
       return this.profile;
     }
 
-    if (!window.elemintz?.state?.getProfile || !this.username) {
+    if (!this.username) {
       return this.profile;
     }
 
     this.onlinePlayProfileRefreshKey = refreshKey;
     this.onlinePlayProfileRefreshPromise = (async () => {
-      const nextProfile = await window.elemintz.state.getProfile(this.username);
+      const serverProfile =
+        window.elemintz?.multiplayer?.getProfile
+          ? await window.elemintz.multiplayer.getProfile({ username: this.username })
+          : null;
+      const nextProfile = serverProfile?.profile ?? (
+        window.elemintz?.state?.getProfile
+          ? await window.elemintz.state.getProfile(this.username)
+          : null
+      );
       if (nextProfile) {
         this.profile = this.onlinePlayProfileRefreshKey === refreshKey
           ? await this.maybeRandomizeCosmeticsAfterMatchFor(this.username, nextProfile)
@@ -1422,9 +1446,20 @@ export class AppController {
           ? options.challengeStatus
           : null;
 
-      if (providedChallengeStatus || window.elemintz?.state?.getDailyChallenges) {
+      const serverChallengeStatus = serverProfile
+        ? {
+            daily: serverProfile.progression?.dailyChallenges ?? null,
+            weekly: serverProfile.progression?.weeklyChallenges ?? null,
+            dailyLogin: serverProfile.progression?.dailyLogin ?? null,
+            xp: serverProfile.progression?.xp ?? null
+          }
+        : null;
+
+      if (providedChallengeStatus || serverChallengeStatus || window.elemintz?.state?.getDailyChallenges) {
         const challengeStatus =
-          providedChallengeStatus ?? await window.elemintz.state.getDailyChallenges(this.username);
+          providedChallengeStatus
+            ?? serverChallengeStatus
+            ?? await window.elemintz.state.getDailyChallenges(this.username);
         this.dailyChallenges = {
           daily: challengeStatus?.daily ?? null,
           weekly: challengeStatus?.weekly ?? null,

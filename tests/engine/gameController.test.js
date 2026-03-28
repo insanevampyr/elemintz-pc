@@ -353,6 +353,94 @@ test("appController: online play create join submit-move and ready-rematch actio
   }
 });
 
+test("appController: online settlement refresh prefers the multiplayer-authoritative profile snapshot", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetProfile: 0,
+    localGetDailyChallenges: 0
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async ({ username }) => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              authority: "server",
+              source: "multiplayer",
+              profile: {
+                username,
+                tokens: 245,
+                playerXP: 18,
+                playerLevel: 1,
+                equippedCosmetics: {}
+              },
+              progression: {
+                xp: {
+                  playerXP: 18,
+                  playerLevel: 1
+                },
+                dailyChallenges: { challenges: [], msUntilReset: 3600000 },
+                weeklyChallenges: { challenges: [], msUntilReset: 7200000 },
+                dailyLogin: { eligible: false, msUntilReset: 3600000 }
+              }
+            };
+          }
+        },
+        state: {
+          getProfile: async () => {
+            calls.localGetProfile += 1;
+            return null;
+          },
+          getDailyChallenges: async () => {
+            calls.localGetDailyChallenges += 1;
+            return null;
+          }
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", tokens: 200, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+
+    const settledState = {
+      room: {
+        roomCode: "ABC123",
+        matchComplete: true,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-28T18:00:00.000Z",
+          summary: {
+            settledHostUsername: "SignedInUser",
+            settledGuestUsername: "OtherPlayer"
+          }
+        }
+      }
+    };
+
+    await app.refreshLocalProfileAfterOnlineSettlement(settledState);
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetProfile, 0);
+    assert.equal(calls.localGetDailyChallenges, 0);
+    assert.equal(app.profile.tokens, 245);
+    assert.equal(app.profile.playerXP, 18);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online play join rerenders move controls when a full room state is returned directly", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];

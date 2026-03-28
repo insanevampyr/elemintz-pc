@@ -44,6 +44,11 @@ export function registerMultiplayerIpcHandlers(ipcMain) {
     return client.joinRoom(payload);
   });
 
+  ipcMain.handle("multiplayer:getProfile", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getProfile(payload);
+  });
+
   ipcMain.handle("multiplayer:submitMove", async (event, payload) => {
     subscribers.add(event.sender);
     console.info("[OnlinePlay][MainIPC] submitMove handler entered", {

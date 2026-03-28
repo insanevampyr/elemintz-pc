@@ -264,7 +264,8 @@ export function createMultiplayerFoundation({
   roomCleanupDelayMs = ROOM_CLEANUP_DELAY_MS,
   roomReconnectTimeoutMs = ROOM_RECONNECT_TIMEOUT_MS,
   disconnectTracker = null,
-  rewardPersister = null
+  rewardPersister = null,
+  profileAuthority = null
 } = {}) {
   const app = express();
   const httpServer = http.createServer(app);
@@ -510,7 +511,7 @@ export function createMultiplayerFoundation({
     });
     logger.info("[OnlinePlay][Server] socket listeners attached", {
       socketId: socket.id,
-      listeners: ["room:create", "room:join", "room:submitMove", "room:sendTaunt", "room:readyRematch", "disconnect"]
+      listeners: ["room:create", "room:join", "room:submitMove", "room:sendTaunt", "room:readyRematch", "profile:get", "disconnect"]
     });
 
     socket.on("room:create", (payload = {}) => {
@@ -629,6 +630,35 @@ export function createMultiplayerFoundation({
 
       clearRoundReset(result.room.roomCode);
       io.to(result.room.roomCode).emit("room:update", result.room);
+    });
+
+    socket.on("profile:get", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.getProfile !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const snapshot = await profileAuthority.getProfile(payload?.username);
+        respond({
+          ok: true,
+          profile: snapshot
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_READ_FAILED",
+            message: String(error?.message ?? "Unable to read authoritative profile.")
+          }
+        });
+      }
     });
 
     socket.on("disconnect", (reason) => {

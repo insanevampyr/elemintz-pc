@@ -75,7 +75,7 @@ class FakeSocket {
     return this;
   }
 
-  emit(eventName, payload) {
+  emit(eventName, payload, ack) {
     this.sentEvents.push({ eventName, payload });
 
     if (eventName === "room:create") {
@@ -125,6 +125,35 @@ class FakeSocket {
             }
           })
         );
+      });
+    }
+
+    if (eventName === "profile:get") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          profile: {
+            authority: "server",
+            source: "multiplayer",
+            profile: {
+              username: payload?.username ?? null,
+              tokens: 225,
+              playerXP: 18,
+              playerLevel: 1,
+              equippedCosmetics: createEquippedCosmetics(),
+              ownedCosmetics: {}
+            },
+            progression: {
+              xp: {
+                playerXP: 18,
+                playerLevel: 1
+              },
+              dailyChallenges: { challenges: [] },
+              weeklyChallenges: { challenges: [] },
+              dailyLogin: { eligible: false }
+            }
+          }
+        });
       });
     }
 
@@ -214,4 +243,29 @@ test("multiplayer client: room join emits equipped cosmetics in the socket paylo
   });
 
   assert.deepEqual(client.getState().room?.guest?.equippedCosmetics, equippedCosmetics);
+});
+
+test("multiplayer client: server profile requests return authoritative snapshots", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const snapshot = await client.getProfile({
+    username: "ServerOwnedUser"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:get",
+    payload: {
+      username: "ServerOwnedUser"
+    }
+  });
+  assert.equal(snapshot?.authority, "server");
+  assert.equal(snapshot?.profile?.username, "ServerOwnedUser");
+  assert.equal(snapshot?.progression?.xp?.playerXP, 18);
 });

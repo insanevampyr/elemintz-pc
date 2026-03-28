@@ -1,5 +1,6 @@
 import { buildOnlineMatchStateFromRoom, createMultiplayerFoundation } from "./foundation.js";
 import { StateCoordinator } from "../state/stateCoordinator.js";
+import { MultiplayerProfileAuthority } from "./profileAuthority.js";
 import os from "node:os";
 import path from "node:path";
 
@@ -21,6 +22,10 @@ function resolveStandaloneDataDir() {
 const stateCoordinator = new StateCoordinator({
   dataDir: resolveStandaloneDataDir()
 });
+const profileAuthority = new MultiplayerProfileAuthority({
+  coordinator: stateCoordinator,
+  logger: console
+});
 
 async function rewardPersister({ room, summary, settlementKey }) {
   const hostUsername = summary?.settledHostUsername ?? null;
@@ -28,36 +33,30 @@ async function rewardPersister({ room, summary, settlementKey }) {
   const onlineMatchState = buildOnlineMatchStateFromRoom(room);
 
   if (hostUsername) {
-    await stateCoordinator.recordOnlineMatchResult({
+    await profileAuthority.applyMatchResult({
       username: hostUsername,
       perspective: "p1",
-      matchState: onlineMatchState,
-      settlementKey: settlementKey ? `${settlementKey}:${hostUsername}` : null
+      result: onlineMatchState,
+      settlementKey: settlementKey ? `${settlementKey}:${hostUsername}` : null,
+      rewards: summary.hostRewards
     });
     console.info("[OnlinePlay][Rewards] persisting host rewards", {
       username: hostUsername,
       rewards: summary.hostRewards
     });
-    await stateCoordinator.grantOnlineMatchRewards({
-      username: hostUsername,
-      ...summary.hostRewards
-    });
   }
 
   if (guestUsername) {
-    await stateCoordinator.recordOnlineMatchResult({
+    await profileAuthority.applyMatchResult({
       username: guestUsername,
       perspective: "p2",
-      matchState: onlineMatchState,
-      settlementKey: settlementKey ? `${settlementKey}:${guestUsername}` : null
+      result: onlineMatchState,
+      settlementKey: settlementKey ? `${settlementKey}:${guestUsername}` : null,
+      rewards: summary.guestRewards
     });
     console.info("[OnlinePlay][Rewards] persisting guest rewards", {
       username: guestUsername,
       rewards: summary.guestRewards
-    });
-    await stateCoordinator.grantOnlineMatchRewards({
-      username: guestUsername,
-      ...summary.guestRewards
     });
   }
 }
@@ -82,7 +81,7 @@ async function disconnectTracker({ type, username, occurredAt }) {
   }
 }
 
-const server = createMultiplayerFoundation({ rewardPersister, disconnectTracker });
+const server = createMultiplayerFoundation({ rewardPersister, disconnectTracker, profileAuthority });
 let shuttingDown = false;
 
 async function shutdown(signal) {

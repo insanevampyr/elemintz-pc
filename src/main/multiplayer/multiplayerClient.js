@@ -478,6 +478,40 @@ export class MultiplayerClient {
     });
   }
 
+  async runServerRequest(eventName, payload, options = {}) {
+    const connected = await this.ensureConnected(options);
+    if (!connected || !this.socket) {
+      return null;
+    }
+
+    const socket = this.socket;
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        resolve(null);
+      }, 5000);
+
+      this.logger.info?.("[OnlinePlay][MainClient] socket request", {
+        eventName,
+        payload
+      });
+      socket.emit(eventName, payload, (response) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timer);
+        resolve(response ?? null);
+      });
+    });
+  }
+
   async createRoom({ serverUrl, username, equippedCosmetics } = {}) {
     return this.runRoomAction(
       "room:create",
@@ -571,6 +605,15 @@ export class MultiplayerClient {
 
   async sendTaunt({ line, serverUrl } = {}) {
     return this.runRoomAction("room:sendTaunt", { line }, "room:update", { serverUrl });
+  }
+
+  async getProfile({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("profile:get", { username }, { serverUrl });
+    if (!response?.ok) {
+      return null;
+    }
+
+    return response.profile ?? null;
   }
 
   async disconnect({ preserveServerUrl = true, silent = false } = {}) {
