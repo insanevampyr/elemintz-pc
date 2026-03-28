@@ -6,6 +6,11 @@ function normalizeAuthorityUsername(username) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function normalizeAuthorityAccountId(accountId) {
+  const normalized = String(accountId ?? "").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function summarizeMatchOutcome(result, perspective) {
   const winner = String(result?.winner ?? "").trim();
   if (!winner || winner === "draw") {
@@ -98,6 +103,64 @@ export class MultiplayerProfileAuthority {
     }
 
     return buildProfileSnapshot({ profile, challenges });
+  }
+
+  async assertProfileClaimAvailable(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative profile claim checks.");
+    }
+
+    const existingProfile = await this.coordinator.profiles.getProfile(safeUsername);
+    const existingLinkedAccountId = normalizeAuthorityAccountId(existingProfile?.linkedAccountId);
+    if (existingLinkedAccountId) {
+      const error = new Error(`Profile ${safeUsername} is already linked to another account.`);
+      error.code = "PROFILE_ALREADY_CLAIMED";
+      throw error;
+    }
+
+    return existingProfile;
+  }
+
+  async linkProfileToAccount({ username, accountId }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    const safeAccountId = normalizeAuthorityAccountId(accountId);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative profile linking.");
+    }
+    if (!safeAccountId) {
+      throw new Error("accountId is required for server-authoritative profile linking.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] linkProfileToAccount -> ${safeUsername} (${safeAccountId})`);
+
+    const existingProfile = await this.coordinator.profiles.getProfile(safeUsername);
+    const existingLinkedAccountId = normalizeAuthorityAccountId(existingProfile?.linkedAccountId);
+    if (existingLinkedAccountId && existingLinkedAccountId !== safeAccountId) {
+      const error = new Error(`Profile ${safeUsername} is already linked to another account.`);
+      error.code = "PROFILE_ALREADY_CLAIMED";
+      throw error;
+    }
+
+    if (!existingProfile) {
+      await this.coordinator.profiles.ensureProfile(safeUsername, {
+        linkedAccountId: safeAccountId
+      });
+      this.logger.info?.(`[ProfileAuthority] linkProfileToAccount <- ${safeUsername} (created)`);
+      return this.getProfile(safeUsername);
+    }
+
+    if (existingLinkedAccountId === safeAccountId) {
+      this.logger.info?.(`[ProfileAuthority] linkProfileToAccount <- ${safeUsername} (already-linked)`);
+      return this.getProfile(safeUsername);
+    }
+
+    await this.coordinator.profiles.updateProfile(safeUsername, (current) => ({
+      ...current,
+      linkedAccountId: safeAccountId
+    }));
+    this.logger.info?.(`[ProfileAuthority] linkProfileToAccount <- ${safeUsername} (linked)`);
+    return this.getProfile(safeUsername);
   }
 
   async updateProfile(username, changes) {

@@ -120,6 +120,7 @@ export function normalizeProfileModeStats(profile) {
 export function createDefaultProfile(username) {
   return {
     username,
+    linkedAccountId: null,
     title: "Initiate",
     wins: 0,
     losses: 0,

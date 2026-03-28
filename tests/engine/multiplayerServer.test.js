@@ -13,6 +13,7 @@ import {
   createMultiplayerFoundation
 } from "../../src/multiplayer/foundation.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
+import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
@@ -285,11 +286,23 @@ test("multiplayer foundation: auth register persists a hashed account record and
     dataDir,
     logger: { info: () => {} }
   });
+  let linkedAccount = null;
   const foundation = createMultiplayerFoundation({
     port: 0,
     logger: { info: () => {} },
     accountStore,
     profileAuthority: {
+      assertProfileClaimAvailable: async () => null,
+      linkProfileToAccount: async ({ username, accountId }) => {
+        linkedAccount = { username, accountId };
+        return {
+          username,
+          profile: {
+            username,
+            linkedAccountId: accountId
+          }
+        };
+      },
       getProfile: async (username) => ({
         username,
         profile: { username }
@@ -320,6 +333,10 @@ test("multiplayer foundation: auth register persists a hashed account record and
     assert.equal(response?.session?.authenticated, true);
     assert.equal(typeof response?.session?.accountId, "string");
     assert.equal(response?.session?.profileKey, "FounderUser");
+    assert.deepEqual(linkedAccount, {
+      username: "FounderUser",
+      accountId: response?.account?.accountId
+    });
 
     const accountsPath = path.join(dataDir, "accounts.json");
     const stored = JSON.parse(await fs.readFile(accountsPath, "utf8"));
@@ -346,6 +363,120 @@ test("multiplayer foundation: auth register persists a hashed account record and
         message: "This email is already registered."
       }
     });
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: auth register links an existing username profile instead of duplicating it", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  await coordinator.profiles.ensureProfile("LegacyUser");
+  await coordinator.profiles.updateProfile("LegacyUser", (current) => ({
+    ...current,
+    wins: 9,
+    playerXP: 42,
+    tokens: 333
+  }));
+
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    }),
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const response = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: "legacy@example.com",
+          password: "password123",
+          username: "LegacyUser"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(response?.ok, true);
+    assert.equal(response?.account?.username, "LegacyUser");
+
+    const linkedProfile = await coordinator.profiles.getProfile("LegacyUser");
+    assert.equal(linkedProfile?.wins, 9);
+    assert.equal(linkedProfile?.playerXP, 42);
+    assert.equal(linkedProfile?.tokens, 333);
+    assert.equal(linkedProfile?.linkedAccountId, response?.account?.accountId);
+
+    const profiles = await coordinator.profiles.listProfiles();
+    assert.equal(profiles.filter((profile) => profile.username === "LegacyUser").length, 1);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: auth register rejects claiming a profile already linked to another account", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  await coordinator.profiles.ensureProfile("ClaimedUser", {
+    linkedAccountId: "existing-account-id"
+  });
+
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const response = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: "claimed@example.com",
+          password: "password123",
+          username: "ClaimedUser"
+        },
+        resolve
+      );
+    });
+
+    assert.deepEqual(response, {
+      ok: false,
+      error: {
+        code: "PROFILE_ALREADY_CLAIMED",
+        message: "Profile ClaimedUser is already linked to another account."
+      }
+    });
+
+    const accounts = await accountStore.readState();
+    assert.equal(accounts.accounts.length, 0);
   } finally {
     client?.disconnect();
     await foundation.stop();

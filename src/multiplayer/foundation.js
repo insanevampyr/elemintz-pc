@@ -708,7 +708,8 @@ export function createMultiplayerFoundation({
     socket.on("auth:register", async (payload = {}, respond = () => {}) => {
       if (
         typeof accountStore?.register !== "function" ||
-        typeof profileAuthority?.getProfile !== "function"
+        typeof profileAuthority?.assertProfileClaimAvailable !== "function" ||
+        typeof profileAuthority?.linkProfileToAccount !== "function"
       ) {
         respond(buildAccountError({
           code: "AUTH_UNAVAILABLE",
@@ -721,11 +722,16 @@ export function createMultiplayerFoundation({
         const resolvedUsername =
           (await resolveBootstrapUsername(payload?.username)) ??
           normalizeSettledUsername(payload?.username);
+        await profileAuthority.assertProfileClaimAvailable(resolvedUsername);
         const account = await accountStore.register({
           email: payload?.email,
           password: payload?.password,
           username: resolvedUsername,
           profileKey: resolvedUsername
+        });
+        await profileAuthority.linkProfileToAccount({
+          username: account.username,
+          accountId: account.accountId
         });
         const sessionResult = buildResolvedAccountSession(socket, account);
         if (!sessionResult?.ok) {
