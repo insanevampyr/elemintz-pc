@@ -4,6 +4,7 @@ import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 
 import { createRoomStore } from "./rooms.js";
+import { createSessionStore } from "./sessionStore.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
 
 const DEFAULT_PORT = 3001;
@@ -279,6 +280,7 @@ export function createMultiplayerFoundation({
   const app = express();
   const httpServer = http.createServer(app);
   const roomStore = createRoomStore({ random });
+  const sessionStore = createSessionStore({ logger, gracePeriodMs: roomReconnectTimeoutMs });
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: "*",
@@ -443,6 +445,68 @@ export function createMultiplayerFoundation({
     return closingAt;
   }
 
+  function buildSessionError(error, fallbackCode = "SESSION_REQUIRED") {
+    return {
+      ok: false,
+      error: {
+        code: error?.code ?? fallbackCode,
+        message: error?.message ?? "A valid online session is required."
+      }
+    };
+  }
+
+  async function resolveBootstrapUsername(username) {
+    const requestedUsername = normalizeSettledUsername(username);
+    if (!requestedUsername) {
+      return null;
+    }
+
+    if (typeof profileAuthority?.getProfile !== "function") {
+      return requestedUsername;
+    }
+
+    try {
+      const snapshot = await profileAuthority.getProfile(requestedUsername);
+      return normalizeSettledUsername(snapshot?.username ?? snapshot?.profile?.username ?? requestedUsername);
+    } catch {
+      return requestedUsername;
+    }
+  }
+
+  async function ensureSocketSession(socket, payload = {}, { allowBootstrap = false } = {}) {
+    const existingSession = sessionStore.getSessionBySocket(socket.id);
+    if (existingSession) {
+      return {
+        ok: true,
+        session: existingSession
+      };
+    }
+
+    const sessionToken = String(payload?.sessionToken ?? "").trim();
+    if (sessionToken) {
+      return sessionStore.resumeSession({
+        token: sessionToken,
+        socketId: socket.id
+      });
+    }
+
+    if (!allowBootstrap) {
+      return buildSessionError({
+        code: "SESSION_REQUIRED",
+        message: "A server-issued online session is required for this action."
+      });
+    }
+
+    const resolvedUsername =
+      (await resolveBootstrapUsername(payload?.username)) ??
+      `Guest-${String(socket.id ?? "socket").slice(0, 8)}`;
+
+    return sessionStore.issueSession({
+      username: resolvedUsername,
+      socketId: socket.id
+    });
+  }
+
   async function settleCompletedMatchRewards(room) {
     if (!room?.matchComplete) {
       return room;
@@ -518,63 +582,120 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("room:create", (payload = {}) => {
-      const result = roomStore.createRoom(socket, payload);
+      void (async () => {
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          socket.emit("room:error", sessionResult.error);
+          return;
+        }
 
-      if (!result.ok) {
-        socket.emit("room:error", result.error);
-        return;
-      }
+        const result = roomStore.createRoom(socket, payload, sessionResult.session);
 
-      socket.join(result.room.roomCode);
-      socket.emit("room:created", result.room);
-      logRoomEvent(logger, "Room created", {
-        roomCode: result.room.roomCode,
-        username: result.room.host?.username ?? null,
-        createdAt: result.room.createdAt ?? null
-      });
+        if (!result.ok) {
+          socket.emit("room:error", result.error);
+          return;
+        }
+
+        socket.join(result.room.roomCode);
+        socket.emit("room:created", result.room);
+        logRoomEvent(logger, "Room created", {
+          roomCode: result.room.roomCode,
+          username: result.room.host?.username ?? null,
+          createdAt: result.room.createdAt ?? null,
+          sessionId: sessionResult.session?.sessionId ?? null
+        });
+      })();
     });
 
     socket.on("room:join", (payload = {}) => {
-      const result = roomStore.joinRoom(socket, payload.roomCode, payload);
+      void (async () => {
+        const targetRoom = roomStore.getRoom(payload?.roomCode ?? null);
+        const sessionResult = await ensureSocketSession(socket, payload, {
+          allowBootstrap: targetRoom?.status !== "paused"
+        });
+        if (!sessionResult?.ok) {
+          if (targetRoom?.status === "paused" && sessionResult?.error?.code === "SESSION_REQUIRED") {
+            socket.emit("room:error", {
+              code: "ROOM_RECONNECT_RESERVED",
+              message: "This room is reserved for the disconnected player to resume."
+            });
+            return;
+          }
 
-      if (!result.ok) {
-        socket.emit("room:error", result.error);
+          socket.emit("room:error", sessionResult.error);
+          return;
+        }
+
+        const result = roomStore.joinRoom(socket, payload.roomCode, payload, sessionResult.session);
+
+        if (!result.ok) {
+          socket.emit("room:error", result.error);
+          return;
+        }
+
+        socket.join(result.room.roomCode);
+        clearReconnectExpiry(result.room.roomCode);
+        clearRoomCleanup(result.room.roomCode);
+        if (result.reconnected && typeof disconnectTracker === "function") {
+          void disconnectTracker({
+            type: "reconnect_resume",
+            username: sessionResult.session?.username ?? null,
+            roomCode: result.room.roomCode,
+            occurredAt: result.room?.disconnectState?.resumedAt ?? new Date().toISOString()
+          });
+        }
+        if (result.reconnected && result.room?.moveSync?.bothSubmitted && !result.room.matchComplete) {
+          scheduleRoundReset(result.room.roomCode, {
+            clearWarState: result.room.lastOutcomeType === "war_resolved"
+          });
+        }
+        socket.emit("room:joined", result.room);
+        io.to(result.room.roomCode).emit("room:update", result.room);
+        logRoomEvent(logger, result.reconnected ? "Player rejoined room" : "Player joined room", {
+          roomCode: result.room.roomCode,
+          username: sessionResult.session?.username ?? result.room.guest?.username ?? null,
+          hostUsername: result.room.host?.username ?? null,
+          guestUsername: result.room.guest?.username ?? null,
+          status: result.room.status,
+          sessionId: sessionResult.session?.sessionId ?? null
+        });
+        if (result.room.status === "full" && Array.isArray(result.room.roundHistory) && result.room.roundHistory.length === 0) {
+          logMatchEvent(logger, "Start", {
+            roomCode: result.room.roomCode,
+            hostUsername: result.room.host?.username ?? null,
+            guestUsername: result.room.guest?.username ?? null
+          });
+        }
+      })();
+    });
+
+    socket.on("session:bootstrap", async (payload = {}, respond = () => {}) => {
+      const result = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!result?.ok) {
+        respond(result);
         return;
       }
 
-      socket.join(result.room.roomCode);
-      clearReconnectExpiry(result.room.roomCode);
-      clearRoomCleanup(result.room.roomCode);
-      if (result.reconnected && typeof disconnectTracker === "function") {
-        void disconnectTracker({
-          type: "reconnect_resume",
-          username: String(payload?.username ?? "").trim() || null,
-          roomCode: result.room.roomCode,
-          occurredAt: result.room?.disconnectState?.resumedAt ?? new Date().toISOString()
-        });
-      }
-      if (result.reconnected && result.room?.moveSync?.bothSubmitted && !result.room.matchComplete) {
-        scheduleRoundReset(result.room.roomCode, {
-          clearWarState: result.room.lastOutcomeType === "war_resolved"
-        });
-      }
-      socket.emit("room:joined", result.room);
-      io.to(result.room.roomCode).emit("room:update", result.room);
-      const joinedUsername = String(payload?.username ?? "").trim();
-      logRoomEvent(logger, result.reconnected ? "Player rejoined room" : "Player joined room", {
-        roomCode: result.room.roomCode,
-        username: joinedUsername || result.room.guest?.username || null,
-        hostUsername: result.room.host?.username ?? null,
-        guestUsername: result.room.guest?.username ?? null,
-        status: result.room.status
+      respond({
+        ok: true,
+        session: sessionStore.toPublicSession(result.session)
       });
-      if (result.room.status === "full" && Array.isArray(result.room.roundHistory) && result.room.roundHistory.length === 0) {
-        logMatchEvent(logger, "Start", {
-          roomCode: result.room.roomCode,
-          hostUsername: result.room.host?.username ?? null,
-          guestUsername: result.room.guest?.username ?? null
-        });
+    });
+
+    socket.on("session:resume", (payload = {}, respond = () => {}) => {
+      const result = sessionStore.resumeSession({
+        token: payload?.sessionToken,
+        socketId: socket.id
+      });
+      if (!result?.ok) {
+        respond(result);
+        return;
       }
+
+      respond({
+        ok: true,
+        session: sessionStore.toPublicSession(result.session)
+      });
     });
 
     socket.on("room:submitMove", async (payload = {}) => {
@@ -663,6 +784,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:get", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.getProfile !== "function") {
         respond({
           ok: false,
@@ -675,10 +802,11 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const snapshot = await profileAuthority.getProfile(payload?.username);
+        const snapshot = await profileAuthority.getProfile(sessionResult.session?.username);
         logRoomEvent(logger, "Profile snapshot served", {
-          username: payload?.username ?? null,
-          socketId: socket.id
+          username: sessionResult.session?.username ?? null,
+          socketId: socket.id,
+          sessionId: sessionResult.session?.sessionId ?? null
         });
         respond({
           ok: true,
@@ -696,6 +824,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:getCosmetics", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.getCosmetics !== "function") {
         respond({
           ok: false,
@@ -708,7 +842,7 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const cosmetics = await profileAuthority.getCosmetics(payload?.username);
+        const cosmetics = await profileAuthority.getCosmetics(sessionResult.session?.username);
         respond({
           ok: true,
           cosmetics
@@ -725,6 +859,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:equipCosmetic", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.equipCosmetic !== "function") {
         respond({
           ok: false,
@@ -737,7 +877,10 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const result = await profileAuthority.equipCosmetic(payload);
+        const result = await profileAuthority.equipCosmetic({
+          ...payload,
+          username: sessionResult.session?.username
+        });
         respond({
           ok: true,
           result
@@ -754,6 +897,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:updateCosmeticPreferences", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.updateCosmeticPreferences !== "function") {
         respond({
           ok: false,
@@ -766,7 +915,10 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const result = await profileAuthority.updateCosmeticPreferences(payload);
+        const result = await profileAuthority.updateCosmeticPreferences({
+          ...payload,
+          username: sessionResult.session?.username
+        });
         respond({
           ok: true,
           result
@@ -783,6 +935,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:randomizeOwnedCosmetics", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.randomizeOwnedCosmetics !== "function") {
         respond({
           ok: false,
@@ -795,7 +953,10 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const result = await profileAuthority.randomizeOwnedCosmetics(payload);
+        const result = await profileAuthority.randomizeOwnedCosmetics({
+          ...payload,
+          username: sessionResult.session?.username
+        });
         respond({
           ok: true,
           result
@@ -812,6 +973,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:saveCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.saveCosmeticLoadout !== "function") {
         respond({
           ok: false,
@@ -824,7 +991,10 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const result = await profileAuthority.saveCosmeticLoadout(payload);
+        const result = await profileAuthority.saveCosmeticLoadout({
+          ...payload,
+          username: sessionResult.session?.username
+        });
         respond({
           ok: true,
           result
@@ -841,6 +1011,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:applyCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.applyCosmeticLoadout !== "function") {
         respond({
           ok: false,
@@ -853,7 +1029,10 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const result = await profileAuthority.applyCosmeticLoadout(payload);
+        const result = await profileAuthority.applyCosmeticLoadout({
+          ...payload,
+          username: sessionResult.session?.username
+        });
         respond({
           ok: true,
           result
@@ -870,6 +1049,12 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:renameCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
       if (typeof profileAuthority?.renameCosmeticLoadout !== "function") {
         respond({
           ok: false,
@@ -882,7 +1067,10 @@ export function createMultiplayerFoundation({
       }
 
       try {
-        const result = await profileAuthority.renameCosmeticLoadout(payload);
+        const result = await profileAuthority.renameCosmeticLoadout({
+          ...payload,
+          username: sessionResult.session?.username
+        });
         respond({
           ok: true,
           result
@@ -899,6 +1087,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("disconnect", (reason) => {
+      sessionStore.disconnectSocket(socket.id);
       const roomResult = roomStore.removeSocket(socket.id);
       clearRoundReset(roomResult.removedRoomCode ?? roomResult.room?.roomCode ?? null);
       void (async () => {

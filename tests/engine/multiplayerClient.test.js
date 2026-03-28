@@ -48,6 +48,7 @@ class FakeSocket {
     this.conn = { transport: { name: "websocket" } };
     this.listeners = new Map();
     this.sentEvents = [];
+    this.sessionUsername = null;
     queueMicrotask(() => {
       this.serverEmit("connect");
     });
@@ -78,6 +79,33 @@ class FakeSocket {
   emit(eventName, payload, ack) {
     this.sentEvents.push({ eventName, payload });
 
+    if (eventName === "session:bootstrap") {
+      queueMicrotask(() => {
+        this.sessionUsername = payload?.username ?? null;
+        ack?.({
+          ok: true,
+          session: {
+            token: "session-token-1",
+            sessionId: "session-id-1",
+            username: this.sessionUsername
+          }
+        });
+      });
+    }
+
+    if (eventName === "session:resume") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          session: {
+            token: payload?.sessionToken ?? "session-token-1",
+            sessionId: "session-id-1",
+            username: "VampyrLee"
+          }
+        });
+      });
+    }
+
     if (eventName === "room:create") {
       queueMicrotask(() => {
         this.serverEmit(
@@ -86,7 +114,7 @@ class FakeSocket {
             roomCode: "ABC123",
             host: {
               socketId: this.id,
-              username: payload?.username ?? null,
+              username: this.sessionUsername ?? payload?.username ?? null,
               equippedCosmetics: payload?.equippedCosmetics ?? null
             }
           })
@@ -120,7 +148,7 @@ class FakeSocket {
             },
             guest: {
               socketId: this.id,
-              username: payload?.username ?? null,
+              username: this.sessionUsername ?? payload?.username ?? null,
               equippedCosmetics: payload?.equippedCosmetics ?? null
             }
           })
@@ -136,7 +164,7 @@ class FakeSocket {
             authority: "server",
             source: "multiplayer",
             profile: {
-              username: payload?.username ?? null,
+              username: this.sessionUsername ?? payload?.username ?? null,
               tokens: 225,
               playerXP: 18,
               playerLevel: 1,
@@ -205,10 +233,16 @@ test("multiplayer client: room create emits equipped cosmetics in the socket pay
     equippedCosmetics
   });
 
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "VampyrLee"
+    }
+  });
+
   assert.deepEqual(lastSocket.sentEvents.at(-1), {
     eventName: "room:create",
     payload: {
-      username: "VampyrLee",
       equippedCosmetics
     }
   });
@@ -233,11 +267,17 @@ test("multiplayer client: room join emits equipped cosmetics in the socket paylo
     equippedCosmetics
   });
 
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "VampyrLee"
+    }
+  });
+
   assert.deepEqual(lastSocket.sentEvents.at(-1), {
     eventName: "room:join",
     payload: {
       roomCode: "abc123",
-      username: "VampyrLee",
       equippedCosmetics
     }
   });
@@ -259,11 +299,16 @@ test("multiplayer client: server profile requests return authoritative snapshots
     username: "ServerOwnedUser"
   });
 
-  assert.deepEqual(lastSocket.sentEvents.at(-1), {
-    eventName: "profile:get",
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
     payload: {
       username: "ServerOwnedUser"
     }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:get",
+    payload: {}
   });
   assert.equal(snapshot?.authority, "server");
   assert.equal(snapshot?.profile?.username, "ServerOwnedUser");

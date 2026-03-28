@@ -136,6 +136,17 @@ function cloneState(state) {
     serverUrl: state.serverUrl,
     connectionStatus: state.connectionStatus,
     socketId: state.socketId,
+    session: state.session
+      ? {
+          active: Boolean(state.session.active),
+          username: state.session.username ?? null,
+          sessionId: state.session.sessionId ?? null
+        }
+      : {
+          active: false,
+          username: null,
+          sessionId: null
+        },
     room: cloneRoom(state.room),
     latestRoundResult: cloneRoundResult(state.latestRoundResult),
     lastError: state.lastError ? { ...state.lastError } : null,
@@ -160,11 +171,18 @@ export class MultiplayerClient {
       serverUrl: defaultServerUrl,
       connectionStatus: "disconnected",
       socketId: null,
+      session: {
+        active: false,
+        username: null,
+        sessionId: null
+      },
       room: null,
       latestRoundResult: null,
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
+    this.sessionToken = null;
+    this.sessionBoundSocketId = null;
   }
 
   subscribe(listener) {
@@ -196,6 +214,129 @@ export class MultiplayerClient {
     return normalized.length > 0 ? normalized : this.defaultServerUrl;
   }
 
+  applySession(session) {
+    const safeSession = session
+      ? {
+          active: true,
+          username: session.username ?? null,
+          sessionId: session.sessionId ?? null
+        }
+      : {
+          active: false,
+          username: null,
+          sessionId: null
+        };
+
+    this.sessionToken = session?.token ?? null;
+    this.sessionBoundSocketId = this.state.socketId ?? null;
+    this.updateState({
+      session: safeSession
+    });
+    return safeSession;
+  }
+
+  clearSession() {
+    this.sessionToken = null;
+    this.sessionBoundSocketId = null;
+    this.updateState({
+      session: {
+        active: false,
+        username: null,
+        sessionId: null
+      }
+    });
+  }
+
+  async emitRequest(eventName, payload = {}, { serverUrl } = {}) {
+    const connected = await this.ensureConnected({ serverUrl });
+    if (!connected || !this.socket) {
+      return null;
+    }
+
+    const socket = this.socket;
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        resolve(null);
+      }, 5000);
+
+      this.logger.info?.("[OnlinePlay][MainClient] socket request", {
+        eventName,
+        payload
+      });
+      socket.emit(eventName, payload, (response) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timer);
+        resolve(response ?? null);
+      });
+    });
+  }
+
+  async ensureSession({ username, serverUrl } = {}) {
+    const connected = await this.ensureConnected({ serverUrl });
+    if (!connected || !this.socket) {
+      return null;
+    }
+
+    if (this.sessionToken && this.sessionBoundSocketId === this.state.socketId) {
+      return {
+        token: this.sessionToken,
+        sessionId: this.state.session?.sessionId ?? null,
+        username: this.state.session?.username ?? null
+      };
+    }
+
+    if (this.sessionToken) {
+      const resumeResponse = await this.emitRequest(
+        "session:resume",
+        { sessionToken: this.sessionToken },
+        { serverUrl }
+      );
+      if (resumeResponse?.ok && resumeResponse.session) {
+        this.applySession(resumeResponse.session);
+        return resumeResponse.session;
+      }
+
+      this.clearSession();
+      if (!username) {
+        this.updateState({
+          lastError: resumeResponse?.error ? { ...resumeResponse.error } : null,
+          statusMessage: resumeResponse?.error?.message ?? this.state.statusMessage
+        });
+        return null;
+      }
+    }
+
+    if (!username) {
+      return null;
+    }
+
+    const bootstrapResponse = await this.emitRequest(
+      "session:bootstrap",
+      { username },
+      { serverUrl }
+    );
+    if (bootstrapResponse?.ok && bootstrapResponse.session) {
+      this.applySession(bootstrapResponse.session);
+      return bootstrapResponse.session;
+    }
+
+    this.updateState({
+      lastError: bootstrapResponse?.error ? { ...bootstrapResponse.error } : null,
+      statusMessage: bootstrapResponse?.error?.message ?? this.state.statusMessage
+    });
+    return null;
+  }
+
   bindSocket(socket) {
     const onConnect = () => {
       this.logger.info("[Multiplayer][Electron] connected", {
@@ -208,6 +349,7 @@ export class MultiplayerClient {
         lastError: null,
         statusMessage: "Connected. Create a room or join one."
       });
+      this.sessionBoundSocketId = null;
     };
 
     const onConnectError = (error) => {
@@ -218,6 +360,11 @@ export class MultiplayerClient {
       this.updateState({
         connectionStatus: "disconnected",
         socketId: null,
+        session: {
+          active: false,
+          username: this.state.session?.username ?? null,
+          sessionId: this.state.session?.sessionId ?? null
+        },
         room: null,
         latestRoundResult: null,
         lastError: {
@@ -226,6 +373,7 @@ export class MultiplayerClient {
         },
         statusMessage: "Connection failed."
       });
+      this.sessionBoundSocketId = null;
     };
 
     const onDisconnect = (reason) => {
@@ -236,10 +384,16 @@ export class MultiplayerClient {
       this.updateState({
         connectionStatus: "disconnected",
         socketId: null,
+        session: {
+          active: false,
+          username: this.state.session?.username ?? null,
+          sessionId: this.state.session?.sessionId ?? null
+        },
         room: null,
         latestRoundResult: null,
         statusMessage: reason === "io client disconnect" ? "Disconnected." : "Connection closed."
       });
+      this.sessionBoundSocketId = null;
     };
 
     const onRoomCreated = (room) => {
@@ -440,12 +594,24 @@ export class MultiplayerClient {
   }
 
   async runRoomAction(eventName, payload, successEvent, options = {}) {
+    const username = String(payload?.username ?? "").trim() || null;
     const connected = await this.ensureConnected(options);
     if (!connected || !this.socket) {
       return this.getState();
     }
 
+    const session = await this.ensureSession({
+      username,
+      serverUrl: options?.serverUrl
+    });
+    if (!session) {
+      return this.getState();
+    }
+
     const socket = this.socket;
+    const sanitizedPayload = { ...payload };
+    delete sanitizedPayload.username;
+    delete sanitizedPayload.sessionToken;
     return new Promise((resolve) => {
       const finish = () => {
         socket.off(successEvent, handleSuccess);
@@ -472,44 +638,25 @@ export class MultiplayerClient {
       socket.once("room:error", handleError);
       this.logger.info?.("[OnlinePlay][MainClient] socket emit", {
         eventName,
-        payload
+        payload: sanitizedPayload
       });
-      socket.emit(eventName, payload);
+      socket.emit(eventName, sanitizedPayload);
     });
   }
 
   async runServerRequest(eventName, payload, options = {}) {
-    const connected = await this.ensureConnected(options);
-    if (!connected || !this.socket) {
+    const username = String(payload?.username ?? "").trim() || null;
+    const session = await this.ensureSession({
+      username,
+      serverUrl: options?.serverUrl
+    });
+    if (!session) {
       return null;
     }
-
-    const socket = this.socket;
-    return new Promise((resolve) => {
-      let settled = false;
-      const timer = setTimeout(() => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        resolve(null);
-      }, 5000);
-
-      this.logger.info?.("[OnlinePlay][MainClient] socket request", {
-        eventName,
-        payload
-      });
-      socket.emit(eventName, payload, (response) => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        clearTimeout(timer);
-        resolve(response ?? null);
-      });
-    });
+    const sanitizedPayload = { ...payload };
+    delete sanitizedPayload.username;
+    delete sanitizedPayload.sessionToken;
+    return this.emitRequest(eventName, sanitizedPayload, options);
   }
 
   async createRoom({ serverUrl, username, equippedCosmetics } = {}) {
@@ -715,6 +862,11 @@ export class MultiplayerClient {
     this.updateState({
       connectionStatus: "disconnected",
       socketId: null,
+      session: {
+        active: false,
+        username: this.state.session?.username ?? null,
+        sessionId: this.state.session?.sessionId ?? null
+      },
       room: null,
       latestRoundResult: null,
       lastError: null,

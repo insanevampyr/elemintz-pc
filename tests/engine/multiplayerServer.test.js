@@ -53,6 +53,18 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function bootstrapSession(socket, username) {
+  return new Promise((resolve) => {
+    socket.emit("session:bootstrap", { username }, resolve);
+  });
+}
+
+async function resumeSession(socket, sessionToken) {
+  return new Promise((resolve) => {
+    socket.emit("session:resume", { sessionToken }, resolve);
+  });
+}
+
 async function createFullRoom(host, guest) {
   const createdPromise = waitForEvent(host, "room:created");
   host.emit("room:create");
@@ -251,7 +263,7 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
       client.emit("profile:get", { username: "AuthorityUser" }, resolve);
     });
 
-    assert.deepEqual(authorityCalls, ["AuthorityUser"]);
+    assert.deepEqual(authorityCalls, ["AuthorityUser", "AuthorityUser"]);
     assert.equal(response.ok, true);
     assert.equal(response.profile.authority, "server");
     assert.equal(response.profile.username, "AuthorityUser");
@@ -317,11 +329,14 @@ test("multiplayer rooms: synced equipped cosmetics persist through room snapshot
   let host = null;
   let guest = null;
   let reconnectClient = null;
+  let guestSession = null;
 
   try {
     const port = await foundation.start();
     host = await connectClient(port);
     guest = await connectClient(port);
+    guestSession = await bootstrapSession(guest, "CosmeticGuest");
+    assert.equal(guestSession?.ok, true);
 
     const createdPromise = waitForEvent(host, "room:created");
     host.emit("room:create", {
@@ -391,8 +406,10 @@ test("multiplayer rooms: synced equipped cosmetics persist through room snapshot
     assert.equal(pausedRoom.guest.equippedCosmetics.background, "bg_storm_temple");
 
     reconnectClient = await connectClient(port);
+    const resumedGuestSession = await resumeSession(reconnectClient, guestSession.session.token);
+    assert.equal(resumedGuestSession?.ok, true);
     const reconnectJoined = waitForEvent(reconnectClient, "room:joined");
-    reconnectClient.emit("room:join", { roomCode: createdRoom.roomCode, username: "CosmeticGuest" });
+    reconnectClient.emit("room:join", { roomCode: createdRoom.roomCode });
     const resumedRoom = await reconnectJoined;
 
     assert.equal(resumedRoom.host.equippedCosmetics.avatar, "avatar_fourfold_lord");
@@ -527,8 +544,8 @@ test("multiplayer rooms: duplicate room usernames are rejected before a second s
     guest.emit("room:join", { roomCode: room.roomCode, username: "DuplicateName" });
 
     assert.deepEqual(await errorPromise, {
-      code: "ROOM_USERNAME_IN_USE",
-      message: "This username is already active in the room."
+      code: "SESSION_USERNAME_ACTIVE",
+      message: "This username already has an active online session."
     });
     assert.equal(foundation.roomStore.getRoom(room.roomCode)?.guest, null);
   } finally {
@@ -2328,11 +2345,14 @@ test("multiplayer disconnect hardening: active-match disconnect pauses room, pre
   let guest = null;
   let reconnectClient = null;
   let unauthorizedClient = null;
+  let guestSession = null;
 
   try {
     const port = await foundation.start();
     host = await connectClient(port);
     guest = await connectClient(port);
+    guestSession = await bootstrapSession(guest, "ResumeGuest");
+    assert.equal(guestSession?.ok, true);
 
     const createdPromise = waitForEvent(host, "room:created");
     host.emit("room:create", { username: "ResumeHost" });
@@ -2389,9 +2409,11 @@ test("multiplayer disconnect hardening: active-match disconnect pauses room, pre
     });
 
     reconnectClient = await connectClient(port);
+    const resumedGuestSession = await resumeSession(reconnectClient, guestSession.session.token);
+    assert.equal(resumedGuestSession?.ok, true);
     const reconnectJoined = waitForEvent(reconnectClient, "room:joined");
     const hostResumedUpdate = waitForEvent(host, "room:update");
-    reconnectClient.emit("room:join", { roomCode: room.roomCode, username: "ResumeGuest" });
+    reconnectClient.emit("room:join", { roomCode: room.roomCode });
     const rejoinedRoom = await reconnectJoined;
     const resumedRoom = await hostResumedUpdate;
 
@@ -2442,11 +2464,14 @@ test("multiplayer disconnect hardening: reconnect preserves war state and both-s
   let host = null;
   let guest = null;
   let reconnectClient = null;
+  let guestSession = null;
 
   try {
     const port = await foundation.start();
     host = await connectClient(port);
     guest = await connectClient(port);
+    guestSession = await bootstrapSession(guest, "WarGuest");
+    assert.equal(guestSession?.ok, true);
 
     const createdPromise = waitForEvent(host, "room:created");
     host.emit("room:create", { username: "WarHost" });
@@ -2504,8 +2529,10 @@ test("multiplayer disconnect hardening: reconnect preserves war state and both-s
 
     reconnectClient.disconnect();
     reconnectClient = await connectClient(port);
+    const resumedGuestSession = await resumeSession(reconnectClient, guestSession.session.token);
+    assert.equal(resumedGuestSession?.ok, true);
     const joinedRoomPromise = waitForEvent(reconnectClient, "room:joined");
-    reconnectClient.emit("room:join", { roomCode: room.roomCode, username: "WarGuest" });
+    reconnectClient.emit("room:join", { roomCode: room.roomCode });
     const joinedRoom = await joinedRoomPromise;
     const resumedRoom = await hostResumedUpdate;
 

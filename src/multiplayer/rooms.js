@@ -448,12 +448,14 @@ export function containRuntimeMatchSummaryState(matchResult, logger = console) {
   return guarded;
 }
 
-function buildPlayer(socket, payload = {}) {
-  const username = normalizeUsername(payload.username);
+function buildPlayer(socket, payload = {}, identity = null) {
+  const username = normalizeUsername(identity?.username ?? payload.username);
+  const sessionId = String(identity?.sessionId ?? "").trim() || null;
   return {
     socketId: socket.id,
     connected: true,
     ...(username ? { username } : {}),
+    ...(sessionId ? { sessionId } : {}),
     equippedCosmetics: normalizeEquippedCosmetics(payload.equippedCosmetics),
     joinedAt: new Date().toISOString(),
     disconnectedAt: null
@@ -529,7 +531,9 @@ function createInitialDisconnectState() {
       active: false,
       disconnectedRole: null,
       disconnectedUsername: null,
+      disconnectedSessionId: null,
       remainingUsername: null,
+      remainingSessionId: null,
       reason: null,
       expiresAt: null,
       resumedAt: null
@@ -646,7 +650,9 @@ function clearDisconnectState(room, { resumedAt = null } = {}) {
     active: false,
     disconnectedRole: null,
     disconnectedUsername: null,
+    disconnectedSessionId: null,
     remainingUsername: null,
+    remainingSessionId: null,
     reason: resumedAt ? "match_resumed" : null,
     expiresAt: null,
     resumedAt
@@ -656,7 +662,9 @@ function clearDisconnectState(room, { resumedAt = null } = {}) {
 function closeRoom(room, {
   disconnectedRole = null,
   disconnectedUsername = null,
+  disconnectedSessionId = null,
   remainingUsername = null,
+  remainingSessionId = null,
   reason = "room_closing",
   closingAt = null
 } = {}) {
@@ -666,7 +674,9 @@ function closeRoom(room, {
     active: true,
     disconnectedRole,
     disconnectedUsername,
+    disconnectedSessionId,
     remainingUsername,
+    remainingSessionId,
     reason,
     expiresAt: room.disconnectState?.expiresAt ?? null,
     resumedAt: room.disconnectState?.resumedAt ?? null
@@ -678,7 +688,9 @@ function closeRoom(room, {
 function pauseRoomForReconnect(room, {
   disconnectedRole = null,
   disconnectedUsername = null,
+  disconnectedSessionId = null,
   remainingUsername = null,
+  remainingSessionId = null,
   expiresAt = null
 } = {}) {
   room.status = "paused";
@@ -686,7 +698,9 @@ function pauseRoomForReconnect(room, {
     active: true,
     disconnectedRole,
     disconnectedUsername,
+    disconnectedSessionId,
     remainingUsername,
+    remainingSessionId,
     reason: "waiting_for_reconnect",
     expiresAt,
     resumedAt: null
@@ -704,7 +718,9 @@ function expireRoomAsNoContest(room) {
     active: true,
     disconnectedRole: room.disconnectState?.disconnectedRole ?? null,
     disconnectedUsername: room.disconnectState?.disconnectedUsername ?? null,
+    disconnectedSessionId: room.disconnectState?.disconnectedSessionId ?? null,
     remainingUsername: room.disconnectState?.remainingUsername ?? null,
+    remainingSessionId: room.disconnectState?.remainingSessionId ?? null,
     reason: "disconnect_timeout_expired",
     expiresAt: room.disconnectState?.expiresAt ?? null,
     resumedAt: room.disconnectState?.resumedAt ?? null
@@ -1192,7 +1208,9 @@ function cloneRoom(room) {
       active: Boolean(room.disconnectState?.active),
       disconnectedRole: room.disconnectState?.disconnectedRole ?? null,
       disconnectedUsername: room.disconnectState?.disconnectedUsername ?? null,
+      disconnectedSessionId: room.disconnectState?.disconnectedSessionId ?? null,
       remainingUsername: room.disconnectState?.remainingUsername ?? null,
+      remainingSessionId: room.disconnectState?.remainingSessionId ?? null,
       reason: room.disconnectState?.reason ?? null,
       expiresAt: room.disconnectState?.expiresAt ?? null,
       resumedAt: room.disconnectState?.resumedAt ?? null
@@ -1245,7 +1263,7 @@ export function createRoomStore({ random = Math.random } = {}) {
   }
 
   return {
-    createRoom(socket, payload = {}) {
+    createRoom(socket, payload = {}, identity = null) {
       if (getRoomBySocket(socket.id)) {
         return {
           ok: false,
@@ -1260,7 +1278,7 @@ export function createRoomStore({ random = Math.random } = {}) {
       const room = {
         roomCode,
         createdAt: new Date().toISOString(),
-        host: buildPlayer(socket, payload),
+        host: buildPlayer(socket, payload, identity),
         guest: null,
         status: "waiting",
         ...createInitialMatchState(),
@@ -1283,7 +1301,7 @@ export function createRoomStore({ random = Math.random } = {}) {
       };
     },
 
-    joinRoom(socket, roomCodeInput, payload = {}) {
+    joinRoom(socket, roomCodeInput, payload = {}, identity = null) {
       if (getRoomBySocket(socket.id)) {
         return {
           ok: false,
@@ -1307,11 +1325,12 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
-      const username = normalizeUsername(payload.username);
+      const username = normalizeUsername(identity?.username ?? payload.username);
+      const sessionId = String(identity?.sessionId ?? "").trim() || null;
 
       if (room.status === "paused") {
         const disconnectedRole = room.disconnectState?.disconnectedRole ?? null;
-        const disconnectedUsername = room.disconnectState?.disconnectedUsername ?? null;
+        const disconnectedSessionId = room.disconnectState?.disconnectedSessionId ?? null;
         const reconnectPlayer =
           disconnectedRole === "host"
             ? room.host
@@ -1319,7 +1338,7 @@ export function createRoomStore({ random = Math.random } = {}) {
               ? room.guest
               : null;
 
-        if (!username || !disconnectedUsername || username !== disconnectedUsername || !reconnectPlayer) {
+        if (!sessionId || !disconnectedSessionId || sessionId !== disconnectedSessionId || !reconnectPlayer) {
           return {
             ok: false,
             error: {
@@ -1381,7 +1400,7 @@ export function createRoomStore({ random = Math.random } = {}) {
           };
         }
 
-        room.guest = buildPlayer(socket, { ...payload, username });
+        room.guest = buildPlayer(socket, { ...payload, username }, identity);
       room.status = "full";
       resetMoveState(room);
       resetRematchState(room);
@@ -1423,7 +1442,9 @@ export function createRoomStore({ random = Math.random } = {}) {
         pauseRoomForReconnect(room, {
           disconnectedRole,
           disconnectedUsername: disconnectedPlayer?.username ?? null,
+          disconnectedSessionId: disconnectedPlayer?.sessionId ?? null,
           remainingUsername: remainingPlayer?.username ?? null,
+          remainingSessionId: remainingPlayer?.sessionId ?? null,
         });
 
         return {
@@ -1436,14 +1457,18 @@ export function createRoomStore({ random = Math.random } = {}) {
       const buildExpiredResult = ({
         disconnectedRole,
         disconnectedUsername,
-        remainingUsername
+        disconnectedSessionId,
+        remainingUsername,
+        remainingSessionId
       }) => {
         expireRoomAsNoContest(room);
         room.disconnectState = {
           ...room.disconnectState,
           disconnectedRole,
           disconnectedUsername,
-          remainingUsername
+          disconnectedSessionId,
+          remainingUsername,
+          remainingSessionId
         };
 
         return {
@@ -1461,6 +1486,7 @@ export function createRoomStore({ random = Math.random } = {}) {
             return buildExpiredResult({
               disconnectedRole: room.disconnectState?.disconnectedRole ?? "host",
               disconnectedUsername: room.disconnectState?.disconnectedUsername ?? room.host?.username ?? null,
+              disconnectedSessionId: room.disconnectState?.disconnectedSessionId ?? room.host?.sessionId ?? null,
               remainingUsername: null
             });
           }
@@ -1475,7 +1501,9 @@ export function createRoomStore({ random = Math.random } = {}) {
           closeRoom(room, {
             disconnectedRole: "host",
             disconnectedUsername: room.host?.username ?? null,
+            disconnectedSessionId: room.host?.sessionId ?? null,
             remainingUsername: room.guest?.username ?? null,
+            remainingSessionId: room.guest?.sessionId ?? null,
             reason: "post_match_disconnect"
           });
           return {
@@ -1493,7 +1521,9 @@ export function createRoomStore({ random = Math.random } = {}) {
             active: false,
             disconnectedRole: null,
             disconnectedUsername: null,
+            disconnectedSessionId: null,
             remainingUsername: null,
+            remainingSessionId: null,
             reason: null,
             expiresAt: null,
             resumedAt: null
@@ -1521,6 +1551,7 @@ export function createRoomStore({ random = Math.random } = {}) {
             return buildExpiredResult({
               disconnectedRole: room.disconnectState?.disconnectedRole ?? "guest",
               disconnectedUsername: room.disconnectState?.disconnectedUsername ?? room.guest?.username ?? null,
+              disconnectedSessionId: room.disconnectState?.disconnectedSessionId ?? room.guest?.sessionId ?? null,
               remainingUsername: null
             });
           }
@@ -1535,7 +1566,9 @@ export function createRoomStore({ random = Math.random } = {}) {
           closeRoom(room, {
             disconnectedRole: "guest",
             disconnectedUsername: room.guest?.username ?? null,
+            disconnectedSessionId: room.guest?.sessionId ?? null,
             remainingUsername: room.host?.username ?? null,
+            remainingSessionId: room.host?.sessionId ?? null,
             reason: "post_match_disconnect"
           });
           return {
@@ -1551,7 +1584,9 @@ export function createRoomStore({ random = Math.random } = {}) {
           active: false,
           disconnectedRole: null,
           disconnectedUsername: null,
+          disconnectedSessionId: null,
           remainingUsername: null,
+          remainingSessionId: null,
           reason: null,
           expiresAt: null,
           resumedAt: null
