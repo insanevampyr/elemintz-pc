@@ -8,10 +8,12 @@
   "scripts": {
     "start": "electron .",
     "multiplayer:start": "node src/multiplayer/server.js",
+    "multiplayer:dev": "nodemon --watch src/multiplayer --ext js --exec node src/multiplayer/server.js",
     "test": "node --test"
   },
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "nodemon": "^3.1.14"
   },
   "dependencies": {
     "express": "^5.2.1",

@@ -44,7 +44,8 @@ function safeNonNegativeInt(value, fallback = 0) {
 export function createDefaultModeStats() {
   return {
     pve: emptyModeStats(),
-    local_pvp: emptyModeStats()
+    local_pvp: emptyModeStats(),
+    online_pvp: emptyModeStats()
   };
 }
 
@@ -52,6 +53,7 @@ export function normalizeProfileModeStats(profile) {
   const existing = profile.modeStats ?? {};
   const pve = existing.pve ?? {};
   const localPvp = existing.local_pvp ?? {};
+  const onlinePvp = existing.online_pvp ?? {};
 
   return {
     ...profile,
@@ -99,6 +101,17 @@ export function normalizeProfileModeStats(profile) {
         cardsCaptured: safeNonNegativeInt(localPvp.cardsCaptured),
         quickWins: safeNonNegativeInt(localPvp.quickWins),
         timeLimitWins: safeNonNegativeInt(localPvp.timeLimitWins)
+      },
+      online_pvp: {
+        gamesPlayed: safeNonNegativeInt(onlinePvp.gamesPlayed),
+        wins: safeNonNegativeInt(onlinePvp.wins),
+        losses: safeNonNegativeInt(onlinePvp.losses),
+        warsEntered: safeNonNegativeInt(onlinePvp.warsEntered),
+        warsWon: safeNonNegativeInt(onlinePvp.warsWon),
+        longestWar: safeNonNegativeInt(onlinePvp.longestWar),
+        cardsCaptured: safeNonNegativeInt(onlinePvp.cardsCaptured),
+        quickWins: safeNonNegativeInt(onlinePvp.quickWins),
+        timeLimitWins: safeNonNegativeInt(onlinePvp.timeLimitWins)
       }
     }
   };
@@ -129,12 +142,19 @@ export function createDefaultProfile(username) {
     ...createDefaultEconomyState(),
     ...createDefaultChestState(),
     dailyChallenges: createDefaultDailyChallenges(),
+    onlineDisconnectTracking: {
+      totalLiveMatchDisconnects: 0,
+      totalReconnectTimeoutExpirations: 0,
+      totalSuccessfulReconnectResumes: 0,
+      recentDisconnectTimestamps: [],
+      recentExpirationTimestamps: []
+    },
     achievementCatalogVersion: ACHIEVEMENT_DEFINITIONS.length,
     levelRewardsClaimed: {}
   };
 }
 
-export function applyMatchStatsToProfile(profile, matchStats, mode = "pve") {
+export function applyMatchStatsToProfile(profile, matchStats, mode = "pve", options = {}) {
   const winsDelta = matchStats.wins ?? 0;
   const lossesDelta = matchStats.losses ?? 0;
 
@@ -142,16 +162,20 @@ export function applyMatchStatsToProfile(profile, matchStats, mode = "pve") {
 
   const currentWinStreak = normalized.winStreak ?? 0;
   const currentBestWinStreak = normalized.bestWinStreak ?? 0;
-  const nextWinStreak = lossesDelta > 0 ? 0 : currentWinStreak + winsDelta;
+  const gamesPlayedDelta = matchStats.gamesPlayed ?? 1;
+  const isDraw = winsDelta === 0 && lossesDelta === 0 && gamesPlayedDelta > 0;
+  const nextWinStreak =
+    lossesDelta > 0 || (options.resetWinStreakOnDraw && isDraw) ? 0 : currentWinStreak + winsDelta;
 
-  const modeKey = mode === "local_pvp" ? "local_pvp" : "pve";
+  const modeKey =
+    mode === "local_pvp" ? "local_pvp" : mode === "online_pvp" ? "online_pvp" : "pve";
   const currentMode = normalized.modeStats[modeKey];
 
   return {
     ...normalized,
     wins: normalized.wins + winsDelta,
     losses: normalized.losses + lossesDelta,
-    gamesPlayed: normalized.gamesPlayed + (matchStats.gamesPlayed ?? 1),
+    gamesPlayed: normalized.gamesPlayed + gamesPlayedDelta,
     timeLimitWins: normalized.timeLimitWins + (matchStats.timeLimitWins ?? 0),
     quickWins: normalized.quickWins + (matchStats.quickWins ?? 0),
     winStreak: nextWinStreak,
@@ -165,7 +189,7 @@ export function applyMatchStatsToProfile(profile, matchStats, mode = "pve") {
     modeStats: {
       ...normalized.modeStats,
       [modeKey]: {
-        gamesPlayed: currentMode.gamesPlayed + (matchStats.gamesPlayed ?? 1),
+        gamesPlayed: currentMode.gamesPlayed + gamesPlayedDelta,
         wins: currentMode.wins + winsDelta,
         losses: currentMode.losses + lossesDelta,
         warsEntered: currentMode.warsEntered + (matchStats.warsEntered ?? 0),

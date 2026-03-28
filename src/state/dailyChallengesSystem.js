@@ -629,11 +629,13 @@ export function applyDailyChallengesForMatch({
   matchState,
   perspective,
   matchStats,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  options = {}
 }) {
   const ensured = ensureChallengeState(profile, nowMs);
   const isCompleted = matchState?.status === "completed";
   const isQuit = String(matchState?.endReason ?? "") === "quit_forfeit";
+  const includeMatchRewards = options.includeMatchRewards !== false;
 
   let dailyState = ensured.challenges.daily;
   let weeklyState = ensured.challenges.weekly;
@@ -684,12 +686,14 @@ export function applyDailyChallengesForMatch({
     (sum, item) => sum + Math.max(0, Number(item.rewardXp ?? 0)),
     0
   );
-  const matchTokenDelta = getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw });
+  const matchTokenDelta = includeMatchRewards
+    ? getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw })
+    : 0;
   const tokenDelta = matchTokenDelta + challengeTokenDelta;
 
   const previousXp = Math.max(0, Number(profile.playerXP ?? 0));
   const matchXpBreakdown = buildXpBreakdown({
-    isCompleted,
+    isCompleted: includeMatchRewards ? isCompleted : false,
     isQuit,
     didWin,
     warsWon: Number(matchStats?.warsWon ?? 0)

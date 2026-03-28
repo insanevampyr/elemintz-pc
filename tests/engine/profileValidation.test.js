@@ -3,7 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { ProfileSystem, CURRENT_PROFILE_SCHEMA_VERSION } from "../../src/state/profileSystem.js";
+import {
+  ProfileSystem,
+  CURRENT_PROFILE_SCHEMA_VERSION,
+  normalizeProfile
+} from "../../src/state/profileSystem.js";
 
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-profile-validation-"));
@@ -163,4 +167,101 @@ test("profile validation: already valid profiles are not destructively rewritten
 
   assert.equal(loaded.schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
   assert.equal(after, before);
+});
+
+test("profile validation: normalizeProfile is idempotent after the first repair", () => {
+  const corruptedProfile = {
+    username: "IdempotentRepairUser",
+    tokens: "450",
+    achievements: [],
+    chests: null,
+    cosmeticLoadouts: {},
+    onlineDisconnectTracking: "bad-data"
+  };
+
+  const firstPass = normalizeProfile(corruptedProfile);
+  const secondPass = normalizeProfile(firstPass);
+
+  assert.deepEqual(secondPass, firstPass);
+});
+
+test("profile validation: valid profile stays stable and emits no repair logs", () => {
+  const validProfile = normalizeProfile({
+    username: "StableValidUser"
+  });
+
+  const infoLogs = [];
+  const warnLogs = [];
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+
+  console.info = (...args) => infoLogs.push(args);
+  console.warn = (...args) => warnLogs.push(args);
+
+  try {
+    const normalized = normalizeProfile(validProfile);
+    assert.deepEqual(normalized, validProfile);
+  } finally {
+    console.info = originalInfo;
+    console.warn = originalWarn;
+  }
+
+  assert.equal(
+    infoLogs.some((entry) => entry[0] === "[ProfileSystem] validation repaired field"),
+    false
+  );
+  assert.equal(
+    infoLogs.some((entry) => entry[0] === "[ProfileSystem] validation repaired section"),
+    false
+  );
+  assert.equal(
+    infoLogs.some(
+      (entry) => entry[0] === "[ProfileSystem] validation idempotent - no changes applied"
+    ),
+    true
+  );
+  assert.equal(
+    warnLogs.some(
+      (entry) => entry[0] === "[ProfileSystem] WARNING: normalization introduced unexpected mutation"
+    ),
+    false
+  );
+});
+
+test("profile validation: corrupted profile repairs only on first normalize pass", () => {
+  const corruptedProfile = {
+    username: "RepairOnceUser",
+    tokens: "450",
+    achievements: [],
+    onlineDisconnectTracking: "bad-data"
+  };
+
+  const infoLogs = [];
+  const originalInfo = console.info;
+  console.info = (...args) => infoLogs.push(args);
+
+  let firstPass;
+  let secondPass;
+
+  try {
+    firstPass = normalizeProfile(corruptedProfile);
+    secondPass = normalizeProfile(firstPass);
+  } finally {
+    console.info = originalInfo;
+  }
+
+  assert.deepEqual(secondPass, firstPass);
+
+  const repairedFieldLogs = infoLogs.filter(
+    (entry) => entry[0] === "[ProfileSystem] validation repaired field"
+  );
+  const repairedSectionLogs = infoLogs.filter(
+    (entry) => entry[0] === "[ProfileSystem] validation repaired section"
+  );
+  const idempotentLogs = infoLogs.filter(
+    (entry) => entry[0] === "[ProfileSystem] validation idempotent - no changes applied"
+  );
+
+  assert.equal(repairedFieldLogs.length > 0 || repairedSectionLogs.length > 0, true);
+  assert.equal(idempotentLogs.length >= 1, true);
 });
