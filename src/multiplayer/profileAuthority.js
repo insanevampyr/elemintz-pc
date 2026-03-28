@@ -6,6 +6,19 @@ function normalizeAuthorityUsername(username) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function summarizeMatchOutcome(result, perspective) {
+  const winner = String(result?.winner ?? "").trim();
+  if (!winner || winner === "draw") {
+    return "draw";
+  }
+
+  if (winner === perspective) {
+    return "win";
+  }
+
+  return "loss";
+}
+
 function buildProfileSnapshot({ profile, challenges }) {
   return {
     authority: "server",
@@ -37,6 +50,8 @@ export class MultiplayerProfileAuthority {
       throw new Error("username is required for server-authoritative profile access.");
     }
 
+    this.logger.info?.(`[ProfileAuthority] getProfile -> ${safeUsername} (server)`);
+
     await this.coordinator.profiles.ensureProfile(safeUsername);
     const challenges = await this.coordinator.getDailyChallenges(safeUsername);
     const profile = await this.coordinator.profiles.getProfile(safeUsername);
@@ -54,6 +69,8 @@ export class MultiplayerProfileAuthority {
       throw new Error("username is required for server-authoritative profile updates.");
     }
 
+    this.logger.info?.(`[ProfileAuthority] updateProfile -> ${safeUsername} (server)`);
+
     await this.coordinator.profiles.updateProfile(safeUsername, (current) =>
       typeof changes === "function"
         ? changes(current)
@@ -63,9 +80,7 @@ export class MultiplayerProfileAuthority {
           }
     );
 
-    this.logger.info?.("[OnlinePlay][Authority] server profile updated", {
-      username: safeUsername
-    });
+    this.logger.info?.(`[ProfileAuthority] updateProfile <- ${safeUsername} (success)`);
 
     return this.getProfile(safeUsername);
   }
@@ -82,6 +97,9 @@ export class MultiplayerProfileAuthority {
       throw new Error("username is required for server-authoritative match application.");
     }
 
+    const outcome = summarizeMatchOutcome(result, perspective);
+    this.logger.info?.(`[ProfileAuthority] applyMatchResult -> ${safeUsername} (${outcome})`);
+
     const matchResult = await this.coordinator.recordOnlineMatchResult({
       username: safeUsername,
       perspective,
@@ -96,6 +114,10 @@ export class MultiplayerProfileAuthority {
         ...rewards
       });
     }
+
+    this.logger.info?.(
+      `[ProfileAuthority] applyMatchResult <- ${safeUsername} (${matchResult?.duplicate ? "duplicate" : "success"})`
+    );
 
     return {
       duplicate: Boolean(matchResult?.duplicate),

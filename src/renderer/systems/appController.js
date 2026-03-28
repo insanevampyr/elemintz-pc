@@ -1069,15 +1069,67 @@ export class AppController {
     };
   }
 
-  async buildOnlineRoomIdentityPayload() {
-    let latestProfile = this.profile;
+  applyServerProfileSnapshot(serverProfile) {
+    const nextProfile = serverProfile?.profile ?? null;
+    if (nextProfile) {
+      this.profile = nextProfile;
+    }
 
-    if (this.username && window.elemintz?.state?.getProfile) {
-      latestProfile = await window.elemintz.state.getProfile(this.username);
-      if (latestProfile) {
-        this.profile = latestProfile;
+    const progression = serverProfile?.progression ?? null;
+    if (progression) {
+      this.dailyChallenges = {
+        daily: progression.dailyChallenges ?? this.dailyChallenges?.daily ?? null,
+        weekly: progression.weeklyChallenges ?? this.dailyChallenges?.weekly ?? null,
+        dailyLogin: progression.dailyLogin ?? this.dailyChallenges?.dailyLogin ?? null
+      };
+      if (this.profile && progression.xp) {
+        this.profile = {
+          ...this.profile,
+          ...progression.xp
+        };
       }
     }
+
+    return this.profile;
+  }
+
+  async loadPreferredProfileForOnlineSession({
+    username = this.username,
+    onlineState = this.onlinePlayState,
+    allowEnsureLocal = false
+  } = {}) {
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      return this.profile;
+    }
+
+    const onlineConnected = String(onlineState?.connectionStatus ?? "").toLowerCase() === "connected";
+    if (onlineConnected && window.elemintz?.multiplayer?.getProfile) {
+      const serverProfile = await window.elemintz.multiplayer.getProfile({ username: safeUsername });
+      const nextProfile = this.applyServerProfileSnapshot(serverProfile);
+      if (nextProfile) {
+        return nextProfile;
+      }
+    }
+
+    if (allowEnsureLocal && window.elemintz?.state?.ensureProfile) {
+      this.profile = await window.elemintz.state.ensureProfile(safeUsername);
+      return this.profile;
+    }
+
+    if (window.elemintz?.state?.getProfile) {
+      this.profile = await window.elemintz.state.getProfile(safeUsername);
+    }
+
+    return this.profile;
+  }
+
+  async buildOnlineRoomIdentityPayload() {
+    const latestProfile = await this.loadPreferredProfileForOnlineSession({
+      username: this.username,
+      onlineState: this.onlinePlayState,
+      allowEnsureLocal: false
+    });
 
     return {
       username: this.username,
@@ -1689,6 +1741,11 @@ export class AppController {
     this.screenFlow = "onlinePlay";
     this.onlinePlayJoinCode = reminder.roomCode;
     this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.connect());
+    await this.loadPreferredProfileForOnlineSession({
+      username: this.username,
+      onlineState: this.onlinePlayState,
+      allowEnsureLocal: false
+    });
     this.renderOnlinePlayScreen();
     this.onlinePlayState = this.normalizeOnlinePlayState(
       await window.elemintz.multiplayer.joinRoom({
@@ -2358,7 +2415,11 @@ export class AppController {
           try {
             this.resetDailyLoginAutoClaimGuard();
             this.username = username;
-            this.profile = await window.elemintz.state.ensureProfile(username);
+            await this.loadPreferredProfileForOnlineSession({
+              username,
+              onlineState: this.onlinePlayState,
+              allowEnsureLocal: true
+            });
             await this.ensureDailyLoginAutoClaim({
               showToasts: true,
               requestKey: `login:${username}`
@@ -2421,6 +2482,11 @@ export class AppController {
     this.screenFlow = "onlinePlay";
     this.matchTauntPanelOpen = false;
     await this.syncOnlinePlayState();
+    await this.loadPreferredProfileForOnlineSession({
+      username: this.username,
+      onlineState: this.onlinePlayState,
+      allowEnsureLocal: false
+    });
     await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
     this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();
@@ -2430,6 +2496,11 @@ export class AppController {
     }
 
     this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.connect());
+    await this.loadPreferredProfileForOnlineSession({
+      username: this.username,
+      onlineState: this.onlinePlayState,
+      allowEnsureLocal: false
+    });
     await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
     this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();

@@ -1299,6 +1299,71 @@ test("appController: eligible login auto-claims daily login reward and requests 
   }
 });
 
+test("appController: login prefers the multiplayer profile snapshot when the session is already online-connected", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    ensureProfile: 0,
+    multiplayerGetProfile: 0
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.onlinePlayState = app.normalizeOnlinePlayState({
+    connectionStatus: "connected"
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          ensureProfile: async (username) => {
+            calls.ensureProfile += 1;
+            return { username, tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+          }
+        },
+        multiplayer: {
+          getProfile: async ({ username }) => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              profile: {
+                username,
+                tokens: 245,
+                playerXP: 18,
+                playerLevel: 1,
+                equippedCosmetics: { background: "wind_background" }
+              },
+              progression: {
+                dailyChallenges: { challenges: [], msUntilReset: 3600000 },
+                weeklyChallenges: { challenges: [], msUntilReset: 7200000 },
+                dailyLogin: { eligible: false, msUntilReset: 3600000 }
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.showLogin();
+    await shownScreens.at(-1).context.actions.login("ConnectedUser");
+
+    assert.equal(calls.ensureProfile, 0);
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(app.profile.tokens, 245);
+    assert.equal(app.profile.playerXP, 18);
+    assert.equal(app.dailyChallenges.daily.msUntilReset, 3600000);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: duplicate daily login auto-claim requests are deduped within one login cycle", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
@@ -1353,6 +1418,135 @@ test("appController: duplicate daily login auto-claim requests are deduped withi
     await app.ensureDailyLoginAutoClaim({ showToasts: true, requestKey: "login:GuardUser" });
 
     assert.equal(calls.claimDailyLoginReward, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: showOnlinePlay refreshes the active profile from the multiplayer snapshot after connect", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetProfile: 0
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "OnlineUser";
+  app.profile = { username: "OnlineUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => {
+            calls.localGetProfile += 1;
+            return { username: "OnlineUser", tokens: 110, playerXP: 2, playerLevel: 1, equippedCosmetics: {} };
+          }
+        },
+        multiplayer: {
+          onUpdate: () => () => {},
+          getState: async () => ({
+            connectionStatus: "disconnected",
+            socketId: null,
+            room: null,
+            lastError: null,
+            statusMessage: "Offline."
+          }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "socket-1",
+            room: null,
+            lastError: null,
+            statusMessage: "Connected. Create a room or join one."
+          }),
+          getProfile: async ({ username }) => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              profile: {
+                username,
+                tokens: 310,
+                playerXP: 44,
+                playerLevel: 3,
+                equippedCosmetics: {}
+              },
+              progression: {
+                dailyChallenges: { challenges: [], msUntilReset: 3600000 },
+                weeklyChallenges: { challenges: [], msUntilReset: 7200000 },
+                dailyLogin: { eligible: false, msUntilReset: 3600000 }
+              }
+            };
+          }
+        }
+      }
+    };
+
+    await app.showOnlinePlay();
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetProfile, 1);
+    assert.equal(app.profile.tokens, 310);
+    assert.equal(app.profile.playerLevel, 3);
+    assert.equal(shownScreens.at(-1).name, "onlinePlay");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online profile load keeps local fallback when multiplayer snapshot is unavailable", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetProfile: 0
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "FallbackUser";
+  app.onlinePlayState = {
+    connectionStatus: "connected"
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async (username) => {
+            calls.localGetProfile += 1;
+            return { username, tokens: 150, playerXP: 5, playerLevel: 1, equippedCosmetics: {} };
+          }
+        },
+        multiplayer: {
+          getProfile: async () => {
+            calls.multiplayerGetProfile += 1;
+            return null;
+          }
+        }
+      }
+    };
+
+    const result = await app.loadPreferredProfileForOnlineSession({
+      username: "FallbackUser",
+      onlineState: app.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetProfile, 1);
+    assert.equal(result.tokens, 150);
+    assert.equal(app.profile.tokens, 150);
   } finally {
     globalThis.window = originalWindow;
   }

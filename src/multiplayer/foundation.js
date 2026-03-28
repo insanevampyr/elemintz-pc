@@ -12,6 +12,15 @@ const ROOM_CLEANUP_DELAY_MS = 30000;
 const ROOM_RECONNECT_TIMEOUT_MS = 60000;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
 export const MULTIPLAYER_FOUNDATION_PHASE = 22;
+const DEVELOPMENT_PHASE_LABEL = "Online-Only Conversion — Phase 2B";
+
+function logRoomEvent(logger, message, details = {}) {
+  logger.info("[Multiplayer] " + message, details);
+}
+
+function logMatchEvent(logger, message, details = {}) {
+  logger.info("[Match] " + message, details);
+}
 
 function normalizeSettledUsername(username) {
   const normalized = String(username ?? "")
@@ -279,9 +288,6 @@ export function createMultiplayerFoundation({
   const roomResetTimers = new Map();
   const roomCleanupTimers = new Map();
   const roomReconnectTimers = new Map();
-  logger.info("[OnlinePlay][Server] room:submitMove listener ready", {
-    phase: MULTIPLAYER_FOUNDATION_PHASE
-  });
 
   // Phase 18 foundation: private 2-player room lifecycle plus authoritative
   // move submission sync, round resolution, repeat-round reset, WAR chain
@@ -443,14 +449,14 @@ export function createMultiplayerFoundation({
     }
 
     if (room?.rewardSettlement?.granted) {
-      logger.info("[OnlinePlay][Rewards] settlement skipped already granted", {
+      logMatchEvent(logger, "Settlement skipped", {
         roomCode: room.roomCode,
         winner: room.winner
       });
       return room;
     }
 
-    logger.info("[OnlinePlay][Rewards] settlement start", {
+    logMatchEvent(logger, "Settlement start", {
       roomCode: room.roomCode,
       winner: room.winner,
       hostUsername: room.host?.username ?? null,
@@ -469,12 +475,12 @@ export function createMultiplayerFoundation({
       return room;
     }
 
-    logger.info("[OnlinePlay][Rewards] host reward package", {
+    logMatchEvent(logger, "Host reward package", {
       roomCode: room.roomCode,
       username: room.host?.username ?? null,
       rewards: summary.hostRewards
     });
-    logger.info("[OnlinePlay][Rewards] guest reward package", {
+    logMatchEvent(logger, "Guest reward package", {
       roomCode: room.roomCode,
       username: room.guest?.username ?? null,
       rewards: summary.guestRewards
@@ -488,7 +494,7 @@ export function createMultiplayerFoundation({
           settlementKey: roomStore.getCurrentMatchSettlementKey(room.roomCode)
         });
       }
-      logger.info("[OnlinePlay][Rewards] persistence success", {
+      logMatchEvent(logger, "Settlement persisted", {
         roomCode: room.roomCode,
         winner: summary.winner
       });
@@ -505,13 +511,10 @@ export function createMultiplayerFoundation({
   }
 
   io.on("connection", (socket) => {
-    logger.info("[Multiplayer] client connected", {
+    logRoomEvent(logger, "Client connected", {
       socketId: socket.id,
-      transport: socket.conn.transport.name
-    });
-    logger.info("[OnlinePlay][Server] socket listeners attached", {
-      socketId: socket.id,
-      listeners: ["room:create", "room:join", "room:submitMove", "room:sendTaunt", "room:readyRematch", "profile:get", "disconnect"]
+      transport: socket.conn.transport.name,
+      phase: DEVELOPMENT_PHASE_LABEL
     });
 
     socket.on("room:create", (payload = {}) => {
@@ -524,6 +527,11 @@ export function createMultiplayerFoundation({
 
       socket.join(result.room.roomCode);
       socket.emit("room:created", result.room);
+      logRoomEvent(logger, "Room created", {
+        roomCode: result.room.roomCode,
+        username: result.room.host?.username ?? null,
+        createdAt: result.room.createdAt ?? null
+      });
     });
 
     socket.on("room:join", (payload = {}) => {
@@ -552,6 +560,21 @@ export function createMultiplayerFoundation({
       }
       socket.emit("room:joined", result.room);
       io.to(result.room.roomCode).emit("room:update", result.room);
+      const joinedUsername = String(payload?.username ?? "").trim();
+      logRoomEvent(logger, result.reconnected ? "Player rejoined room" : "Player joined room", {
+        roomCode: result.room.roomCode,
+        username: joinedUsername || result.room.guest?.username || null,
+        hostUsername: result.room.host?.username ?? null,
+        guestUsername: result.room.guest?.username ?? null,
+        status: result.room.status
+      });
+      if (result.room.status === "full" && Array.isArray(result.room.roundHistory) && result.room.roundHistory.length === 0) {
+        logMatchEvent(logger, "Start", {
+          roomCode: result.room.roomCode,
+          hostUsername: result.room.host?.username ?? null,
+          guestUsername: result.room.guest?.username ?? null
+        });
+      }
     });
 
     socket.on("room:submitMove", async (payload = {}) => {
@@ -584,6 +607,13 @@ export function createMultiplayerFoundation({
       if (result.room?.matchComplete) {
         const settledRoom = await settleCompletedMatchRewards(result.room);
         result.room = settledRoom;
+        logMatchEvent(logger, "End", {
+          roomCode: settledRoom.roomCode,
+          winner: settledRoom.winner ?? "draw",
+          hostUsername: settledRoom.host?.username ?? null,
+          guestUsername: settledRoom.guest?.username ?? null,
+          winReason: settledRoom.winReason ?? null
+        });
         if (result.roundResult) {
           result.roundResult = {
             ...result.roundResult,
@@ -646,6 +676,10 @@ export function createMultiplayerFoundation({
 
       try {
         const snapshot = await profileAuthority.getProfile(payload?.username);
+        logRoomEvent(logger, "Profile snapshot served", {
+          username: payload?.username ?? null,
+          socketId: socket.id
+        });
         respond({
           ok: true,
           profile: snapshot
@@ -700,10 +734,23 @@ export function createMultiplayerFoundation({
           io.to(nextRoom.roomCode).emit("room:update", nextRoom);
         }
 
-        logger.info("[Multiplayer] client disconnected", {
+        logRoomEvent(logger, "Client disconnected", {
           socketId: socket.id,
-          reason
+          reason,
+          roomCode: nextRoom?.roomCode ?? roomResult.removedRoomCode ?? null,
+          username:
+            nextRoom?.disconnectState?.disconnectedUsername ??
+            nextRoom?.host?.username ??
+            nextRoom?.guest?.username ??
+            null
         });
+        if (nextRoom?.disconnectState?.disconnectedUsername) {
+          logRoomEvent(logger, "Player left room", {
+            roomCode: nextRoom.roomCode,
+            username: nextRoom.disconnectState.disconnectedUsername,
+            status: nextRoom.status
+          });
+        }
       })();
     });
   });
@@ -723,10 +770,6 @@ export function createMultiplayerFoundation({
           listeningPort = httpServer.address()?.port ?? port;
           resolve();
         });
-      });
-
-      logger.info("[Multiplayer] server listening", {
-        port: listeningPort
       });
 
       return listeningPort;

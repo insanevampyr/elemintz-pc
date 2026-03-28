@@ -173,7 +173,7 @@ test("multiplayer foundation: health endpoint responds for deployment checks", a
       phase: MULTIPLAYER_FOUNDATION_PHASE,
       transport: "socket.io"
     });
-    assert.ok(logEntries.some((entry) => entry[0] === "[Multiplayer] server listening"));
+    assert.equal(logEntries.length, 0);
     assert.equal(typeof foundation.io.on, "function");
   } finally {
     await foundation.stop();

@@ -3,6 +3,11 @@ import { StateCoordinator } from "../state/stateCoordinator.js";
 import { MultiplayerProfileAuthority } from "./profileAuthority.js";
 import os from "node:os";
 import path from "node:path";
+import packageJson from "../../package.json" with { type: "json" };
+
+const SERVER_NAME = "EleMintz Server";
+const PHASE_LABEL = "Online-Only Conversion — Phase 2B";
+const ENVIRONMENT_LABEL = process.env.NODE_ENV === "production" ? "Production" : "Development";
 
 function resolveStandaloneDataDir() {
   if (process.env.ELEMINTZ_DATA_DIR) {
@@ -40,7 +45,8 @@ async function rewardPersister({ room, summary, settlementKey }) {
       settlementKey: settlementKey ? `${settlementKey}:${hostUsername}` : null,
       rewards: summary.hostRewards
     });
-    console.info("[OnlinePlay][Rewards] persisting host rewards", {
+    console.info("[Match] Host rewards persisted", {
+      roomCode: room?.roomCode ?? null,
       username: hostUsername,
       rewards: summary.hostRewards
     });
@@ -54,7 +60,8 @@ async function rewardPersister({ room, summary, settlementKey }) {
       settlementKey: settlementKey ? `${settlementKey}:${guestUsername}` : null,
       rewards: summary.guestRewards
     });
-    console.info("[OnlinePlay][Rewards] persisting guest rewards", {
+    console.info("[Match] Guest rewards persisted", {
+      roomCode: room?.roomCode ?? null,
       username: guestUsername,
       rewards: summary.guestRewards
     });
@@ -103,13 +110,22 @@ async function shutdown(signal) {
   }
 }
 
-server.start().catch((error) => {
-  console.error("[Multiplayer] failed to start", {
-    message: error?.message,
-    stack: error?.stack
+server.start()
+  .then((listeningPort) => {
+    console.info(`[${SERVER_NAME}] Started`);
+    console.info(`[${SERVER_NAME}] Version: ${packageJson.version}`);
+    console.info(`[${SERVER_NAME}] Port: ${listeningPort}`);
+    console.info(`[${SERVER_NAME}] Mode: ${ENVIRONMENT_LABEL}`);
+    console.info(`[${SERVER_NAME}] Systems: Multiplayer ✔ | Profile Authority ✔`);
+    console.info(`[${SERVER_NAME}] Phase: ${PHASE_LABEL}`);
+  })
+  .catch((error) => {
+    console.error(`[${SERVER_NAME}] Failed to start`, {
+      message: error?.message,
+      stack: error?.stack
+    });
+    process.exitCode = 1;
   });
-  process.exitCode = 1;
-});
 
 process.on("SIGINT", () => {
   shutdown("SIGINT").finally(() => process.exit(0));
