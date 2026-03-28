@@ -93,7 +93,7 @@ function createWindow() {
 app.whenReady().then(() => {
   const dataDir = path.join(app.getPath("userData"), "elemintz-data");
   registerStateIpcHandlers(ipcMain, { dataDir });
-  registerMultiplayerIpcHandlers(ipcMain);
+  registerMultiplayerIpcHandlers(ipcMain, { dataDir });
 
   console.info("[Startup] Electron userData", {
     userData: app.getPath("userData"),

@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld("elemintz", {
   },
   multiplayer: {
     getState: () => ipcRenderer.invoke("multiplayer:getState"),
+    restoreSession: (payload) => ipcRenderer.invoke("multiplayer:restoreSession", payload),
     getProfile: (payload) => ipcRenderer.invoke("multiplayer:getProfile", payload),
     getCosmetics: (payload) => ipcRenderer.invoke("multiplayer:getCosmetics", payload),
     equipCosmetic: (payload) => ipcRenderer.invoke("multiplayer:equipCosmetic", payload),

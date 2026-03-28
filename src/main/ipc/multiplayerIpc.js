@@ -1,7 +1,7 @@
 import { MultiplayerClient } from "../multiplayer/multiplayerClient.js";
 
-export function registerMultiplayerIpcHandlers(ipcMain) {
-  const client = new MultiplayerClient();
+export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
+  const client = new MultiplayerClient(options);
   const subscribers = new Set();
 
   const broadcast = (state) => {
@@ -27,6 +27,11 @@ export function registerMultiplayerIpcHandlers(ipcMain) {
   ipcMain.handle("multiplayer:getState", async (event) => {
     subscribers.add(event.sender);
     return client.getState();
+  });
+
+  ipcMain.handle("multiplayer:restoreSession", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.restoreSession(payload);
   });
 
   ipcMain.handle("multiplayer:connect", async (event, payload) => {

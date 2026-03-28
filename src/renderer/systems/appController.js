@@ -2524,6 +2524,10 @@ export class AppController {
         this.bindOnlinePlayUpdates();
         this.settings = await window.elemintz.state.getSettings();
         await this.syncOnlinePlayState();
+        const restoreResult = await window.elemintz?.multiplayer?.restoreSession?.();
+        if (restoreResult?.state) {
+          this.onlinePlayState = this.normalizeOnlinePlayState(restoreResult.state);
+        }
       } catch (error) {
         console.error("AppController init failed while loading settings", error);
         this.settings = FALLBACK_SETTINGS;
@@ -2536,6 +2540,23 @@ export class AppController {
 
       this.applyMotionPreference();
       this.applySoundPreference();
+      if (
+        this.onlinePlayState?.session?.authenticated &&
+        String(this.onlinePlayState?.session?.username ?? "").trim()
+      ) {
+        this.username = String(this.onlinePlayState.session.username).trim();
+        await this.loadPreferredProfileForOnlineSession({
+          username: this.username,
+          onlineState: this.onlinePlayState,
+          allowEnsureLocal: false
+        });
+        await this.ensureDailyLoginAutoClaim({
+          showToasts: true,
+          requestKey: `restore:${this.username}`
+        });
+        this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: true });
+        return;
+      }
       this.showLogin();
     })();
 

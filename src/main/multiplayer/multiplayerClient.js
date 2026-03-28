@@ -1,6 +1,9 @@
 import { io as createSocket } from "socket.io-client";
+import { JsonStore } from "../../state/storage/jsonStore.js";
 
 export const DEFAULT_MULTIPLAYER_SERVER_URL = "http://127.0.0.1:3001";
+const MULTIPLAYER_SESSION_SCHEMA_VERSION = 1;
+const MULTIPLAYER_SESSION_FILENAME = "multiplayer-session.json";
 
 function clonePlayer(player) {
   return player
@@ -160,19 +163,58 @@ function cloneState(state) {
   };
 }
 
+function buildEmptyPersistedSessionState() {
+  return {
+    schemaVersion: MULTIPLAYER_SESSION_SCHEMA_VERSION,
+    session: null
+  };
+}
+
+function createPersistedSessionRecord({
+  token,
+  serverUrl,
+  username,
+  sessionId,
+  accountId,
+  profileKey,
+  authenticated
+} = {}) {
+  if (!token || !authenticated) {
+    return null;
+  }
+
+  return {
+    token: String(token),
+    serverUrl: String(serverUrl ?? DEFAULT_MULTIPLAYER_SERVER_URL),
+    username: username ?? null,
+    sessionId: sessionId ?? null,
+    accountId: accountId ?? null,
+    profileKey: profileKey ?? username ?? null,
+    authenticated: true,
+    persistedAt: new Date().toISOString()
+  };
+}
+
 export class MultiplayerClient {
   constructor({
     socketFactory = createSocket,
     logger = console,
-    defaultServerUrl = DEFAULT_MULTIPLAYER_SERVER_URL
+    defaultServerUrl = DEFAULT_MULTIPLAYER_SERVER_URL,
+    dataDir,
+    persistSession = true
   } = {}) {
     this.socketFactory = socketFactory;
     this.logger = logger;
     this.defaultServerUrl = defaultServerUrl;
+    this.persistSession = persistSession;
     this.socket = null;
     this.connectPromise = null;
     this.boundSocketListeners = null;
     this.subscribers = new Set();
+    this.sessionStore =
+      persistSession
+        ? new JsonStore(MULTIPLAYER_SESSION_FILENAME, { dataDir })
+        : null;
     this.state = {
       serverUrl: defaultServerUrl,
       connectionStatus: "disconnected",
@@ -192,6 +234,45 @@ export class MultiplayerClient {
     };
     this.sessionToken = null;
     this.sessionBoundSocketId = null;
+  }
+
+  async readPersistedSessionRecord() {
+    if (!this.sessionStore) {
+      return null;
+    }
+
+    const stored = await this.sessionStore.read(buildEmptyPersistedSessionState());
+    return stored?.session && typeof stored.session === "object" ? stored.session : null;
+  }
+
+  async writePersistedSessionRecord(session = null) {
+    if (!this.sessionStore) {
+      return null;
+    }
+
+    const persisted = createPersistedSessionRecord({
+      token: session?.token ?? this.sessionToken,
+      serverUrl: this.state.serverUrl,
+      username: session?.username ?? this.state.session?.username,
+      sessionId: session?.sessionId ?? this.state.session?.sessionId,
+      accountId: session?.accountId ?? this.state.session?.accountId,
+      profileKey: session?.profileKey ?? this.state.session?.profileKey,
+      authenticated: session?.authenticated ?? this.state.session?.authenticated
+    });
+
+    await this.sessionStore.write({
+      schemaVersion: MULTIPLAYER_SESSION_SCHEMA_VERSION,
+      session: persisted
+    });
+    return persisted;
+  }
+
+  async clearPersistedSessionRecord() {
+    if (!this.sessionStore) {
+      return;
+    }
+
+    await this.sessionStore.write(buildEmptyPersistedSessionState());
   }
 
   subscribe(listener) {
@@ -265,6 +346,76 @@ export class MultiplayerClient {
     });
   }
 
+  async restoreSession({ serverUrl } = {}) {
+    const persisted = await this.readPersistedSessionRecord();
+    if (!persisted?.token || !persisted?.authenticated) {
+      return {
+        ok: true,
+        restored: false,
+        state: this.getState()
+      };
+    }
+
+    const nextServerUrl = this.normalizeServerUrl(serverUrl ?? persisted.serverUrl);
+    this.sessionToken = persisted.token;
+    this.sessionBoundSocketId = null;
+    this.updateState({
+      serverUrl: nextServerUrl,
+      lastError: null,
+      statusMessage: `Restoring online session for ${persisted.username ?? "player"}...`
+    });
+
+    const connected = await this.ensureConnected({ serverUrl: nextServerUrl });
+    if (!connected || !this.socket) {
+      return {
+        ok: false,
+        restored: false,
+        transient: true,
+        state: this.getState(),
+        error: this.state.lastError
+      };
+    }
+
+    const resumeResponse = await this.emitRequest(
+      "session:resume",
+      { sessionToken: persisted.token },
+      { serverUrl: nextServerUrl }
+    );
+
+    if (resumeResponse?.ok && resumeResponse.session?.authenticated) {
+      const restoredSession = {
+        ...resumeResponse.session,
+        token: resumeResponse.session?.token ?? persisted.token
+      };
+      this.applySession(restoredSession);
+      await this.writePersistedSessionRecord(restoredSession);
+      this.updateState({
+        lastError: null,
+        statusMessage: "Signed in. Session restored."
+      });
+      return {
+        ok: true,
+        restored: true,
+        state: this.getState()
+      };
+    }
+
+    this.clearSession();
+    await this.clearPersistedSessionRecord();
+    await this.disconnect({ preserveServerUrl: true, silent: true });
+    this.updateState({
+      lastError: resumeResponse?.error ? { ...resumeResponse.error } : null,
+      statusMessage: resumeResponse?.error?.message ?? "Saved session expired. Please sign in again."
+    });
+    return {
+      ok: false,
+      restored: false,
+      invalid: true,
+      state: this.getState(),
+      error: resumeResponse?.error ?? null
+    };
+  }
+
   async authenticate(eventName, payload, { serverUrl } = {}) {
     const connected = await this.ensureConnected({ serverUrl });
     if (!connected || !this.socket) {
@@ -280,6 +431,7 @@ export class MultiplayerClient {
     const response = await this.emitRequest(eventName, payload, { serverUrl });
     if (response?.ok && response.session) {
       this.applySession(response.session);
+      await this.writePersistedSessionRecord(response.session);
       this.updateState({
         lastError: null,
         statusMessage:
@@ -362,10 +514,14 @@ export class MultiplayerClient {
       );
       if (resumeResponse?.ok && resumeResponse.session) {
         this.applySession(resumeResponse.session);
+        if (resumeResponse.session?.authenticated) {
+          await this.writePersistedSessionRecord(resumeResponse.session);
+        }
         return resumeResponse.session;
       }
 
       this.clearSession();
+      await this.clearPersistedSessionRecord();
       if (!username) {
         this.updateState({
           lastError: resumeResponse?.error ? { ...resumeResponse.error } : null,
@@ -968,6 +1124,7 @@ export class MultiplayerClient {
 
     await this.disconnect({ preserveServerUrl: true, silent: true });
     this.clearSession();
+    await this.clearPersistedSessionRecord();
     this.updateState({
       lastError: null,
       statusMessage: "Signed out."

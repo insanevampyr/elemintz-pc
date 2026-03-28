@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { MultiplayerClient } from "../../src/main/multiplayer/multiplayerClient.js";
 
@@ -243,6 +246,30 @@ class FakeSocket {
   }
 }
 
+class InvalidResumeSocket extends FakeSocket {
+  emit(eventName, payload, ack) {
+    if (eventName === "session:resume") {
+      this.sentEvents.push({ eventName, payload });
+      queueMicrotask(() => {
+        ack?.({
+          ok: false,
+          error: {
+            code: "SESSION_NOT_FOUND",
+            message: "Stored session is no longer valid."
+          }
+        });
+      });
+      return true;
+    }
+
+    return super.emit(eventName, payload, ack);
+  }
+}
+
+async function createTempDataDir() {
+  return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-mp-client-"));
+}
+
 function createEquippedCosmetics() {
   return {
     avatar: "avatar_crystal_soul",
@@ -359,64 +386,167 @@ test("multiplayer client: server profile requests return authoritative snapshots
 
 test("multiplayer client: authenticated login reuses the server-issued session for later room actions", async () => {
   let lastSocket = null;
+  const dataDir = await createTempDataDir();
   const client = new MultiplayerClient({
     socketFactory: () => {
       lastSocket = new FakeSocket();
       return lastSocket;
     },
-    logger: { info: () => {}, error: () => {} }
+    logger: { info: () => {}, error: () => {} },
+    dataDir
   });
 
-  const loginResult = await client.login({
-    email: "player@example.com",
-    password: "password123"
-  });
-
-  assert.equal(loginResult?.ok, true);
-  assert.deepEqual(lastSocket.sentEvents.at(0), {
-    eventName: "auth:login",
-    payload: {
+  try {
+    const loginResult = await client.login({
       email: "player@example.com",
       password: "password123"
-    }
-  });
-  assert.equal(client.getState().session?.authenticated, true);
-  assert.equal(client.getState().session?.accountId, "account-id-1");
+    });
 
-  const equippedCosmetics = createEquippedCosmetics();
-  await client.createRoom({
-    equippedCosmetics
-  });
+    assert.equal(loginResult?.ok, true);
+    assert.deepEqual(lastSocket.sentEvents.at(0), {
+      eventName: "auth:login",
+      payload: {
+        email: "player@example.com",
+        password: "password123"
+      }
+    });
+    assert.equal(client.getState().session?.authenticated, true);
+    assert.equal(client.getState().session?.accountId, "account-id-1");
 
-  assert.deepEqual(lastSocket.sentEvents.at(-1), {
-    eventName: "room:create",
-    payload: {
+    const equippedCosmetics = createEquippedCosmetics();
+    await client.createRoom({
       equippedCosmetics
-    }
-  });
+    });
+
+    assert.deepEqual(lastSocket.sentEvents.at(-1), {
+      eventName: "room:create",
+      payload: {
+        equippedCosmetics
+      }
+    });
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
 });
 
 test("multiplayer client: logout clears the stored session identity", async () => {
   let lastSocket = null;
+  const dataDir = await createTempDataDir();
   const client = new MultiplayerClient({
     socketFactory: () => {
       lastSocket = new FakeSocket();
       return lastSocket;
     },
-    logger: { info: () => {}, error: () => {} }
+    logger: { info: () => {}, error: () => {} },
+    dataDir
   });
 
-  await client.login({
-    email: "player@example.com",
-    password: "password123"
-  });
-  await client.logout();
+  try {
+    await client.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+    await client.logout();
 
-  assert.deepEqual(lastSocket.sentEvents.at(-1), {
-    eventName: "session:logout",
-    payload: {}
-  });
-  assert.equal(client.getState().session?.active, false);
-  assert.equal(client.getState().session?.accountId, null);
-  assert.equal(client.getState().session?.authenticated, false);
+    assert.deepEqual(lastSocket.sentEvents.at(-1), {
+      eventName: "session:logout",
+      payload: {}
+    });
+    assert.equal(client.getState().session?.active, false);
+    assert.equal(client.getState().session?.accountId, null);
+    assert.equal(client.getState().session?.authenticated, false);
+
+    const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
+    assert.equal(persisted.session, null);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: authenticated session restores from persisted storage on app restart", async () => {
+  const dataDir = await createTempDataDir();
+  let firstSocket = null;
+  let secondSocket = null;
+
+  try {
+    const firstClient = new MultiplayerClient({
+      socketFactory: () => {
+        firstSocket = new FakeSocket();
+        return firstSocket;
+      },
+      logger: { info: () => {}, error: () => {} },
+      dataDir
+    });
+
+    await firstClient.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+
+    const secondClient = new MultiplayerClient({
+      socketFactory: () => {
+        secondSocket = new FakeSocket();
+        secondSocket.sessionAuthenticated = true;
+        secondSocket.sessionUsername = "RegisteredUser";
+        return secondSocket;
+      },
+      logger: { info: () => {}, error: () => {} },
+      dataDir
+    });
+
+    const restoreResult = await secondClient.restoreSession();
+
+    assert.equal(restoreResult?.ok, true);
+    assert.equal(restoreResult?.restored, true);
+    assert.deepEqual(secondSocket.sentEvents.at(0), {
+      eventName: "session:resume",
+      payload: {
+        sessionToken: "session-token-1"
+      }
+    });
+    assert.equal(secondClient.getState().session?.authenticated, true);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: invalid persisted session is cleared during restore", async () => {
+  const dataDir = await createTempDataDir();
+
+  try {
+    await fs.writeFile(
+      path.join(dataDir, "multiplayer-session.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        session: {
+          token: "stale-token",
+          serverUrl: "http://127.0.0.1:3001",
+          username: "StaleUser",
+          sessionId: "stale-session-id",
+          accountId: "stale-account-id",
+          profileKey: "StaleUser",
+          authenticated: true,
+          persistedAt: "2026-03-28T15:00:00.000Z"
+        }
+      }),
+      "utf8"
+    );
+
+    const client = new MultiplayerClient({
+      socketFactory: () => new InvalidResumeSocket(),
+      logger: { info: () => {}, error: () => {} },
+      dataDir
+    });
+
+    const restoreResult = await client.restoreSession();
+
+    assert.equal(restoreResult?.ok, false);
+    assert.equal(restoreResult?.invalid, true);
+    assert.equal(client.getState().session?.authenticated, false);
+
+    const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
+    assert.equal(persisted.session, null);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
 });
