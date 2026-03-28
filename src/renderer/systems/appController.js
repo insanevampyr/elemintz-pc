@@ -849,12 +849,26 @@ export class AppController {
   }
 
   async refreshDailyChallengesForMenu() {
-    if (!this.username || !globalThis.window?.elemintz?.state?.getDailyChallenges) {
+    if (!this.username) {
       return;
     }
 
     try {
-      const result = await globalThis.window.elemintz.state.getDailyChallenges(this.username);
+      const serverProfile = this.hasMultiplayerProfileAccess()
+        ? await globalThis.window.elemintz.multiplayer.getProfile({ username: this.username })
+        : null;
+      const result = serverProfile
+        ? {
+            daily: serverProfile.progression?.dailyChallenges ?? null,
+            weekly: serverProfile.progression?.weeklyChallenges ?? null,
+            dailyLogin: serverProfile.progression?.dailyLogin ?? null
+          }
+        : globalThis.window?.elemintz?.state?.getDailyChallenges
+          ? await globalThis.window.elemintz.state.getDailyChallenges(this.username)
+          : null;
+      if (!result) {
+        return;
+      }
       this.dailyChallenges = { daily: result.daily, weekly: result.weekly, dailyLogin: result.dailyLogin };
 
       if (this.screenFlow === "menu") {
@@ -934,6 +948,15 @@ export class AppController {
     }
 
     try {
+      if (this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.randomizeOwnedCosmetics) {
+        const result = await window.elemintz.multiplayer.randomizeOwnedCosmetics({
+          username,
+          categories: uniqueCategories
+        });
+        const nextProfile = result?.snapshot ? this.buildProfileFromServerSnapshot(result.snapshot) : result?.profile ?? null;
+        return nextProfile ?? profile;
+      }
+
       const result = await window.elemintz.state.randomizeOwnedCosmetics({
         username,
         categories: uniqueCategories
@@ -1047,6 +1070,14 @@ export class AppController {
       fallback;
   }
 
+  isConnectedOnlineProfileFlow(onlineState = this.onlinePlayState) {
+    return String(onlineState?.connectionStatus ?? "").toLowerCase() === "connected";
+  }
+
+  hasMultiplayerProfileAccess(onlineState = this.onlinePlayState) {
+    return this.isConnectedOnlineProfileFlow(onlineState) && Boolean(window.elemintz?.multiplayer?.getProfile);
+  }
+
   buildOnlineEquippedCosmetics(profile = null) {
     const equippedVariants =
       profile?.equippedCosmetics?.elementCardVariant ??
@@ -1116,6 +1147,32 @@ export class AppController {
             tokens: Number(currency.tokens ?? baseProfile?.tokens ?? 0)
           }
         : {})
+    };
+  }
+
+  mergeServerOwnedProfileDomains(localProfile, serverProfile) {
+    const serverProfileView = this.buildProfileFromServerSnapshot(serverProfile);
+    if (!serverProfileView) {
+      return localProfile;
+    }
+
+    return {
+      ...(localProfile ?? {}),
+      ...serverProfileView,
+      username: serverProfileView.username ?? localProfile?.username ?? null,
+      tokens: serverProfileView.tokens ?? localProfile?.tokens ?? 0,
+      wins: serverProfileView.wins ?? localProfile?.wins ?? 0,
+      losses: serverProfileView.losses ?? localProfile?.losses ?? 0,
+      gamesPlayed: serverProfileView.gamesPlayed ?? localProfile?.gamesPlayed ?? 0,
+      warsEntered: serverProfileView.warsEntered ?? localProfile?.warsEntered ?? 0,
+      warsWon: serverProfileView.warsWon ?? localProfile?.warsWon ?? 0,
+      cardsCaptured: serverProfileView.cardsCaptured ?? localProfile?.cardsCaptured ?? 0,
+      modeStats: serverProfileView.modeStats ?? localProfile?.modeStats ?? null,
+      equippedCosmetics: serverProfileView.equippedCosmetics ?? localProfile?.equippedCosmetics ?? null,
+      ownedCosmetics: serverProfileView.ownedCosmetics ?? localProfile?.ownedCosmetics ?? null,
+      cosmeticLoadouts: serverProfileView.cosmeticLoadouts ?? localProfile?.cosmeticLoadouts ?? null,
+      cosmeticRandomizeAfterMatch:
+        serverProfileView.cosmeticRandomizeAfterMatch ?? localProfile?.cosmeticRandomizeAfterMatch ?? null
     };
   }
 
@@ -3234,13 +3291,22 @@ export class AppController {
   async showProfile({ preserveModal = false } = {}) {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "profile";
-    this.profile = await window.elemintz.state.getProfile(this.username);
-    const cosmetics = await window.elemintz.state.getCosmetics(this.username);
-    if (window.elemintz.state.getDailyChallenges) {
-      const challengeStatus = await window.elemintz.state.getDailyChallenges(this.username);
+    const serverProfile = this.hasMultiplayerProfileAccess()
+      ? await window.elemintz.multiplayer.getProfile({ username: this.username })
+      : null;
+    const localProfile = await window.elemintz.state.getProfile(this.username);
+    this.profile = this.mergeServerOwnedProfileDomains(localProfile, serverProfile);
+    const cosmetics =
+      this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+        ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
+        : await window.elemintz.state.getCosmetics(this.username);
+    if (serverProfile?.progression?.xp || window.elemintz.state.getDailyChallenges) {
+      const challengeStatus = serverProfile
+        ? { xp: serverProfile.progression?.xp ?? null }
+        : await window.elemintz.state.getDailyChallenges(this.username);
       this.profile = {
         ...this.profile,
-        ...(challengeStatus.xp ?? {})
+        ...(challengeStatus?.xp ?? {})
       };
     }
     const allProfiles = await window.elemintz.state.listProfiles();
@@ -3341,8 +3407,13 @@ export class AppController {
           }
         },
         equip: async (type, cosmeticId) => {
-          const result = await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
-          this.profile = result.profile;
+          const result =
+            this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.equipCosmetic
+              ? await window.elemintz.multiplayer.equipCosmetic({ username: this.username, type, cosmeticId })
+              : await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
+          this.profile = result?.snapshot
+            ? this.buildProfileFromServerSnapshot(result.snapshot)
+            : result.profile;
           await this.showProfile();
         },
         searchProfiles: async (queryValue) => {
@@ -3368,7 +3439,16 @@ export class AppController {
   async showDailyChallenges() {
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "dailyChallenges";
-    const result = await window.elemintz.state.getDailyChallenges(this.username);
+    const serverProfile = this.hasMultiplayerProfileAccess()
+      ? await window.elemintz.multiplayer.getProfile({ username: this.username })
+      : null;
+    const result = serverProfile
+      ? {
+          daily: serverProfile.progression?.dailyChallenges ?? null,
+          weekly: serverProfile.progression?.weeklyChallenges ?? null,
+          tokens: serverProfile.currency?.tokens ?? serverProfile.profile?.tokens ?? this.profile?.tokens ?? 0
+        }
+      : await window.elemintz.state.getDailyChallenges(this.username);
     this.dailyChallenges = { daily: result.daily, weekly: result.weekly };
 
     this.screenManager.show("dailyChallenges", {
@@ -3399,7 +3479,10 @@ export class AppController {
   async showCosmetics({ preserveModal = false } = {}) {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "cosmetics";
-    const cosmetics = await window.elemintz.state.getCosmetics(this.username);
+    const cosmetics =
+      this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+        ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
+        : await window.elemintz.state.getCosmetics(this.username);
     const viewState = this.ensureCosmeticsViewState();
 
     this.screenManager.show("cosmetics", {
@@ -3407,36 +3490,67 @@ export class AppController {
       viewState,
       actions: {
         equip: async (type, cosmeticId) => {
-          const result = await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
-          this.profile = result.profile;
+          const result =
+            this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.equipCosmetic
+              ? await window.elemintz.multiplayer.equipCosmetic({ username: this.username, type, cosmeticId })
+              : await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
+          this.profile = result?.snapshot
+            ? this.buildProfileFromServerSnapshot(result.snapshot)
+            : result.profile;
           await this.showCosmetics();
         },
         updateRandomizationPreferences: async (patch) => {
-          const result = await window.elemintz.state.updateCosmeticPreferences({
-            username: this.username,
-            patch: {
-              randomizeAfterEachMatch: patch
-            }
-          });
-          this.profile = result.profile;
+          const result =
+            this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.updateCosmeticPreferences
+              ? await window.elemintz.multiplayer.updateCosmeticPreferences({
+                  username: this.username,
+                  patch: {
+                    randomizeAfterEachMatch: patch
+                  }
+                })
+              : await window.elemintz.state.updateCosmeticPreferences({
+                  username: this.username,
+                  patch: {
+                    randomizeAfterEachMatch: patch
+                  }
+                });
+          this.profile = result?.snapshot
+            ? this.buildProfileFromServerSnapshot(result.snapshot)
+            : result.profile;
           await this.showCosmetics();
         },
         randomizeNow: async (categories) => {
-          const result = await window.elemintz.state.randomizeOwnedCosmetics({
-            username: this.username,
-            categories
-          });
-          this.profile = result.profile;
+          const result =
+            this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.randomizeOwnedCosmetics
+              ? await window.elemintz.multiplayer.randomizeOwnedCosmetics({
+                  username: this.username,
+                  categories
+                })
+              : await window.elemintz.state.randomizeOwnedCosmetics({
+                  username: this.username,
+                  categories
+                });
+          this.profile = result?.snapshot
+            ? this.buildProfileFromServerSnapshot(result.snapshot)
+            : result.profile;
           await this.showCosmetics();
         },
         saveLoadout: async (slotIndex) => {
           const slot = cosmetics.loadouts?.[slotIndex] ?? null;
           const runSave = async () => {
-            const result = await window.elemintz.state.saveCosmeticLoadout({
-              username: this.username,
-              slotIndex
-            });
-            this.profile = result.profile;
+            const result =
+              this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.saveCosmeticLoadout
+                ? await window.elemintz.multiplayer.saveCosmeticLoadout({
+                    username: this.username,
+                    slotIndex
+                  })
+                : await window.elemintz.state.saveCosmeticLoadout({
+                    username: this.username,
+                    slotIndex
+                  });
+            this.profile = result?.snapshot
+              ? this.buildProfileFromServerSnapshot(result.snapshot)
+              : result.profile;
             await this.showCosmetics();
           };
 
@@ -3465,11 +3579,19 @@ export class AppController {
         },
         applyLoadout: async (slotIndex) => {
           try {
-            const result = await window.elemintz.state.applyCosmeticLoadout({
-              username: this.username,
-              slotIndex
-            });
-            this.profile = result.profile;
+            const result =
+              this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.applyCosmeticLoadout
+                ? await window.elemintz.multiplayer.applyCosmeticLoadout({
+                    username: this.username,
+                    slotIndex
+                  })
+                : await window.elemintz.state.applyCosmeticLoadout({
+                    username: this.username,
+                    slotIndex
+                  });
+            this.profile = result?.snapshot
+              ? this.buildProfileFromServerSnapshot(result.snapshot)
+              : result.profile;
             await this.showCosmetics();
           } catch (error) {
             this.modalManager.show({
@@ -3481,12 +3603,21 @@ export class AppController {
         },
         renameLoadout: async (slotIndex, name) => {
           try {
-            const result = await window.elemintz.state.renameCosmeticLoadout({
-              username: this.username,
-              slotIndex,
-              name
-            });
-            this.profile = result.profile;
+            const result =
+              this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.renameCosmeticLoadout
+                ? await window.elemintz.multiplayer.renameCosmeticLoadout({
+                    username: this.username,
+                    slotIndex,
+                    name
+                  })
+                : await window.elemintz.state.renameCosmeticLoadout({
+                    username: this.username,
+                    slotIndex,
+                    name
+                  });
+            this.profile = result?.snapshot
+              ? this.buildProfileFromServerSnapshot(result.snapshot)
+              : result.profile;
             await this.showCosmetics();
           } catch (error) {
             this.modalManager.show({

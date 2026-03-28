@@ -616,6 +616,93 @@ export class MultiplayerClient {
     return response.profile ?? null;
   }
 
+  async getCosmetics({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("profile:getCosmetics", { username }, { serverUrl });
+    if (!response?.ok) {
+      return null;
+    }
+
+    return response.cosmetics ?? null;
+  }
+
+  async equipCosmetic({ username, type, cosmeticId, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:equipCosmetic",
+      { username, type, cosmeticId },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to equip cosmetic.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async updateCosmeticPreferences({ username, patch, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:updateCosmeticPreferences",
+      { username, patch },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to update cosmetic preferences.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async randomizeOwnedCosmetics({ username, categories, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:randomizeOwnedCosmetics",
+      { username, categories },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to randomize cosmetics.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async saveCosmeticLoadout({ username, slotIndex, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:saveCosmeticLoadout",
+      { username, slotIndex },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to save cosmetic loadout.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async applyCosmeticLoadout({ username, slotIndex, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:applyCosmeticLoadout",
+      { username, slotIndex },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to apply cosmetic loadout.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async renameCosmeticLoadout({ username, slotIndex, name, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:renameCosmeticLoadout",
+      { username, slotIndex, name },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to rename cosmetic loadout.");
+    }
+
+    return response.result ?? null;
+  }
+
   async disconnect({ preserveServerUrl = true, silent = false } = {}) {
     if (this.socket) {
       const socket = this.socket;

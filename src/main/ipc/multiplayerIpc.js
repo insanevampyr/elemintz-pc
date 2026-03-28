@@ -49,6 +49,41 @@ export function registerMultiplayerIpcHandlers(ipcMain) {
     return client.getProfile(payload);
   });
 
+  ipcMain.handle("multiplayer:getCosmetics", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getCosmetics(payload);
+  });
+
+  ipcMain.handle("multiplayer:equipCosmetic", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.equipCosmetic(payload);
+  });
+
+  ipcMain.handle("multiplayer:updateCosmeticPreferences", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.updateCosmeticPreferences(payload);
+  });
+
+  ipcMain.handle("multiplayer:randomizeOwnedCosmetics", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.randomizeOwnedCosmetics(payload);
+  });
+
+  ipcMain.handle("multiplayer:saveCosmeticLoadout", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.saveCosmeticLoadout(payload);
+  });
+
+  ipcMain.handle("multiplayer:applyCosmeticLoadout", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.applyCosmeticLoadout(payload);
+  });
+
+  ipcMain.handle("multiplayer:renameCosmeticLoadout", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.renameCosmeticLoadout(payload);
+  });
+
   ipcMain.handle("multiplayer:submitMove", async (event, payload) => {
     subscribers.add(event.sender);
     console.info("[OnlinePlay][MainIPC] submitMove handler entered", {

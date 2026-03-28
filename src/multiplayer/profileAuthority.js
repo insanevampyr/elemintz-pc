@@ -163,4 +163,118 @@ export class MultiplayerProfileAuthority {
       snapshot: await this.getProfile(safeUsername)
     };
   }
+
+  async getCosmetics(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative cosmetics access.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] getCosmetics -> ${safeUsername} (server)`);
+    return this.coordinator.getCosmetics(safeUsername);
+  }
+
+  async equipCosmetic({ username, type, cosmeticId }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative cosmetic equip.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] equipCosmetic -> ${safeUsername} (${type ?? "unknown"})`);
+    const result = await this.coordinator.equipCosmetic({
+      username: safeUsername,
+      type,
+      cosmeticId
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async updateCosmeticPreferences({ username, patch }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative cosmetic preferences.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] updateCosmeticPreferences -> ${safeUsername} (server)`);
+    const result = await this.coordinator.updateCosmeticPreferences({
+      username: safeUsername,
+      patch
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async randomizeOwnedCosmetics({ username, categories }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative cosmetic randomization.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] randomizeOwnedCosmetics -> ${safeUsername} (server)`);
+    const result = await this.coordinator.randomizeOwnedCosmetics({
+      username: safeUsername,
+      categories
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async saveCosmeticLoadout({ username, slotIndex }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative loadout saves.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] saveCosmeticLoadout -> ${safeUsername} (slot ${slotIndex ?? "?"})`);
+    const result = await this.coordinator.saveCosmeticLoadout({
+      username: safeUsername,
+      slotIndex
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async applyCosmeticLoadout({ username, slotIndex }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative loadout apply.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] applyCosmeticLoadout -> ${safeUsername} (slot ${slotIndex ?? "?"})`);
+    const result = await this.coordinator.applyCosmeticLoadout({
+      username: safeUsername,
+      slotIndex
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async renameCosmeticLoadout({ username, slotIndex, name }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative loadout rename.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] renameCosmeticLoadout -> ${safeUsername} (slot ${slotIndex ?? "?"})`);
+    const result = await this.coordinator.renameCosmeticLoadout({
+      username: safeUsername,
+      slotIndex,
+      name
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
 }

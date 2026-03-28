@@ -44,6 +44,13 @@ contextBridge.exposeInMainWorld("elemintz", {
   multiplayer: {
     getState: () => ipcRenderer.invoke("multiplayer:getState"),
     getProfile: (payload) => ipcRenderer.invoke("multiplayer:getProfile", payload),
+    getCosmetics: (payload) => ipcRenderer.invoke("multiplayer:getCosmetics", payload),
+    equipCosmetic: (payload) => ipcRenderer.invoke("multiplayer:equipCosmetic", payload),
+    updateCosmeticPreferences: (payload) => ipcRenderer.invoke("multiplayer:updateCosmeticPreferences", payload),
+    randomizeOwnedCosmetics: (payload) => ipcRenderer.invoke("multiplayer:randomizeOwnedCosmetics", payload),
+    saveCosmeticLoadout: (payload) => ipcRenderer.invoke("multiplayer:saveCosmeticLoadout", payload),
+    applyCosmeticLoadout: (payload) => ipcRenderer.invoke("multiplayer:applyCosmeticLoadout", payload),
+    renameCosmeticLoadout: (payload) => ipcRenderer.invoke("multiplayer:renameCosmeticLoadout", payload),
     connect: (payload) => ipcRenderer.invoke("multiplayer:connect", payload),
     createRoom: (payload) => ipcRenderer.invoke("multiplayer:createRoom", payload),
     joinRoom: (payload) => ipcRenderer.invoke("multiplayer:joinRoom", payload),

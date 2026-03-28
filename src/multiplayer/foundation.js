@@ -695,6 +695,209 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("profile:getCosmetics", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.getCosmetics !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const cosmetics = await profileAuthority.getCosmetics(payload?.username);
+        respond({
+          ok: true,
+          cosmetics
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COSMETICS_READ_FAILED",
+            message: String(error?.message ?? "Unable to read authoritative cosmetics.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:equipCosmetic", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.equipCosmetic !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.equipCosmetic(payload);
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COSMETIC_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to update authoritative cosmetics.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:updateCosmeticPreferences", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.updateCosmeticPreferences !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.updateCosmeticPreferences(payload);
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COSMETIC_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to update authoritative cosmetic preferences.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:randomizeOwnedCosmetics", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.randomizeOwnedCosmetics !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.randomizeOwnedCosmetics(payload);
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COSMETIC_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to randomize authoritative cosmetics.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:saveCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.saveCosmeticLoadout !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.saveCosmeticLoadout(payload);
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COSMETIC_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to save authoritative loadout.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:applyCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.applyCosmeticLoadout !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.applyCosmeticLoadout(payload);
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COSMETIC_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to apply authoritative loadout.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:renameCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      if (typeof profileAuthority?.renameCosmeticLoadout !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.renameCosmeticLoadout(payload);
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COSMETIC_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to rename authoritative loadout.")
+          }
+        });
+      }
+    });
+
     socket.on("disconnect", (reason) => {
       const roomResult = roomStore.removeSocket(socket.id);
       clearRoundReset(roomResult.removedRoomCode ?? roomResult.room?.roomCode ?? null);

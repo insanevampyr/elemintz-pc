@@ -557,6 +557,190 @@ test("appController: online settlement refresh prefers the multiplayer-authorita
   }
 });
 
+test("appController: online menu challenge refresh prefers the multiplayer profile snapshot", async () => {
+  const originalWindow = globalThis.window;
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetDailyChallenges: 0
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async ({ username }) => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              username,
+              profile: { username, tokens: 200, equippedCosmetics: {} },
+              progression: {
+                dailyChallenges: { challenges: [{ id: "daily" }], msUntilReset: 3600000 },
+                weeklyChallenges: { challenges: [{ id: "weekly" }], msUntilReset: 7200000 },
+                dailyLogin: { eligible: false, msUntilReset: 1800000 }
+              }
+            };
+          }
+        },
+        state: {
+          getDailyChallenges: async () => {
+            calls.localGetDailyChallenges += 1;
+            return null;
+          }
+        }
+      }
+    };
+
+    app.username = "MenuOnlineUser";
+    app.onlinePlayState = { connectionStatus: "connected" };
+    await app.refreshDailyChallengesForMenu();
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetDailyChallenges, 0);
+    assert.equal(app.dailyChallenges.daily.challenges[0].id, "daily");
+    assert.equal(app.dailyChallenges.weekly.challenges[0].id, "weekly");
+    assert.equal(app.dailyChallenges.dailyLogin.msUntilReset, 1800000);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online daily challenges screen prefers the multiplayer profile snapshot", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetDailyChallenges: 0
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async ({ username }) => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              username,
+              profile: { username, tokens: 415, equippedCosmetics: {} },
+              currency: { tokens: 415 },
+              progression: {
+                dailyChallenges: { challenges: [{ id: "daily-online" }], msUntilReset: 3600000 },
+                weeklyChallenges: { challenges: [{ id: "weekly-online" }], msUntilReset: 7200000 }
+              }
+            };
+          }
+        },
+        state: {
+          getDailyChallenges: async () => {
+            calls.localGetDailyChallenges += 1;
+            return null;
+          }
+        }
+      }
+    };
+
+    app.username = "DailyOnlineUser";
+    app.onlinePlayState = { connectionStatus: "connected" };
+    await app.showDailyChallenges();
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetDailyChallenges, 0);
+    assert.equal(shownScreens.at(-1).name, "dailyChallenges");
+    assert.equal(shownScreens.at(-1).context.tokens, 415);
+    assert.equal(shownScreens.at(-1).context.daily.challenges[0].id, "daily-online");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online cosmetic randomization after settlement uses multiplayer authority instead of local state", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    multiplayerRandomizeOwnedCosmetics: 0,
+    localRandomizeOwnedCosmetics: 0
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({
+            username: "OnlineRandomUser",
+            profile: {
+              username: "OnlineRandomUser",
+              cosmeticRandomizeAfterMatch: { avatar: true }
+            }
+          }),
+          randomizeOwnedCosmetics: async () => {
+            calls.multiplayerRandomizeOwnedCosmetics += 1;
+            return {
+              profile: {
+                username: "OnlineRandomUser",
+                equippedCosmetics: {
+                  avatar: "avatar_arcane_gambler"
+                }
+              },
+              snapshot: {
+                username: "OnlineRandomUser",
+                profile: {
+                  username: "OnlineRandomUser",
+                  equippedCosmetics: {
+                    avatar: "avatar_arcane_gambler"
+                  }
+                },
+                cosmetics: {
+                  equipped: {
+                    avatar: "avatar_arcane_gambler"
+                  }
+                }
+              }
+            };
+          }
+        },
+        state: {
+          randomizeOwnedCosmetics: async () => {
+            calls.localRandomizeOwnedCosmetics += 1;
+            return null;
+          }
+        }
+      }
+    };
+
+    app.username = "OnlineRandomUser";
+    app.onlinePlayState = { connectionStatus: "connected" };
+    const result = await app.randomizeOwnedCosmeticsFor("OnlineRandomUser", {
+      username: "OnlineRandomUser",
+      cosmeticRandomizeAfterMatch: { avatar: true }
+    }, ["avatar"]);
+
+    assert.equal(calls.multiplayerRandomizeOwnedCosmetics, 1);
+    assert.equal(calls.localRandomizeOwnedCosmetics, 0);
+    assert.equal(result.equippedCosmetics.avatar, "avatar_arcane_gambler");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online play join rerenders move controls when a full room state is returned directly", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
@@ -1424,7 +1608,7 @@ test("appController: login prefers the multiplayer profile snapshot when the ses
     await shownScreens.at(-1).context.actions.login("ConnectedUser");
 
     assert.equal(calls.ensureProfile, 0);
-    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.multiplayerGetProfile, 2);
     assert.equal(app.username, "ConnectedUser-Canonical");
     assert.equal(app.profile.tokens, 245);
     assert.equal(app.profile.wins, 4);
