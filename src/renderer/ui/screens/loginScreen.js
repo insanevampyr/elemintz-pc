@@ -1,18 +1,47 @@
+function escapeAttribute(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 export const loginScreen = {
-  render() {
+  render(context = {}) {
+    const defaults = context.defaults ?? {};
+    const selectedMode = context.mode === "register" ? "register" : "login";
+    const errorMessage = String(context.errorMessage ?? "").trim();
+    const statusMessage = String(context.statusMessage ?? "").trim();
     return `
       <section class="screen screen-login">
         <div class="panel hero-panel">
           <h2 class="view-title">EleMintz Login</h2>
-          <p>Sign in with your EleMintz account for online play, or continue offline with a local profile name.</p>
+          <p>Sign in with your EleMintz account to access EleMintz gameplay and profile progression.</p>
+          ${statusMessage ? `<p class="auth-status-message" role="status">${statusMessage}</p>` : ""}
+          ${errorMessage ? `<p class="auth-inline-error" role="alert">${errorMessage}</p>` : ""}
           <form id="login-form" class="stack-md">
             <div class="login-form-field">
               <label for="username-input">Username</label>
-              <input id="username-input" name="username" type="text" minlength="2" maxlength="24" />
+              <input
+                id="username-input"
+                name="username"
+                type="text"
+                minlength="2"
+                maxlength="24"
+                value="${escapeAttribute(defaults.username ?? "")}"
+                autocomplete="username"
+              />
             </div>
             <div class="login-form-field">
               <label for="email-input">Email</label>
-              <input id="email-input" name="email" type="email" maxlength="160" autocomplete="email" />
+              <input
+                id="email-input"
+                name="email"
+                type="email"
+                maxlength="160"
+                value="${escapeAttribute(defaults.email ?? "")}"
+                autocomplete="email"
+              />
             </div>
             <div class="login-form-field">
               <label for="password-input">Password</label>
@@ -26,9 +55,18 @@ export const loginScreen = {
               />
             </div>
             <div class="button-row">
-              <button id="login-btn" type="submit" data-auth-submit="login" class="btn btn-primary">Sign In</button>
-              <button id="register-btn" type="submit" data-auth-submit="register" class="btn btn-secondary">Create Account</button>
-              <button id="offline-btn" type="button" class="btn">Continue Offline</button>
+              <button
+                id="login-btn"
+                type="submit"
+                data-auth-submit="login"
+                class="btn ${selectedMode === "login" ? "btn-primary" : "btn-secondary"}"
+              >Sign In</button>
+              <button
+                id="register-btn"
+                type="submit"
+                data-auth-submit="register"
+                class="btn ${selectedMode === "register" ? "btn-primary" : "btn-secondary"}"
+              >Create Account</button>
             </div>
           </form>
         </div>
@@ -40,11 +78,10 @@ export const loginScreen = {
     const usernameInput = document.getElementById("username-input");
     const emailInput = document.getElementById("email-input");
     const passwordInput = document.getElementById("password-input");
-    const offlineButton = document.getElementById("offline-btn");
     const submitButtons = [...document.querySelectorAll("[data-auth-submit]")];
-    let submitMode = "login";
+    let submitMode = context.mode === "register" ? "register" : "login";
 
-    if (!form || !usernameInput || !emailInput || !passwordInput || !offlineButton) {
+    if (!form || !usernameInput || !emailInput || !passwordInput) {
       console.error("Login screen failed to bind form/input.");
       return;
     }
@@ -84,18 +121,6 @@ export const loginScreen = {
         username,
         email,
         password
-      });
-    });
-
-    offlineButton.addEventListener("click", async () => {
-      const username = String(usernameInput.value ?? "").trim();
-      if (username.length < 2) {
-        return;
-      }
-
-      await context.actions.login({
-        mode: "offline",
-        username
       });
     });
   }

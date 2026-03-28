@@ -1377,7 +1377,8 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     "cosmetics-btn": createFakeElement(),
     "store-btn": createFakeElement(),
     "settings-btn": createFakeElement(),
-    "logout-btn": createFakeElement()
+    "logout-btn": createFakeElement(),
+    "switch-account-btn": createFakeElement()
   };
 
   global.window = {
@@ -1446,7 +1447,8 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
         openCosmetics: async () => {},
         openStore: async () => {},
         openSettings: async () => {},
-        logout: () => {}
+        logout: () => {},
+        switchAccount: () => {}
       }
     });
 

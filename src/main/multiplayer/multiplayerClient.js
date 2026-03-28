@@ -4,6 +4,14 @@ import { JsonStore } from "../../state/storage/jsonStore.js";
 export const DEFAULT_MULTIPLAYER_SERVER_URL = "http://127.0.0.1:3001";
 const MULTIPLAYER_SESSION_SCHEMA_VERSION = 1;
 const MULTIPLAYER_SESSION_FILENAME = "multiplayer-session.json";
+const AUTHENTICATED_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
+const INVALID_SESSION_ERROR_CODES = new Set([
+  "SESSION_NOT_FOUND",
+  "SESSION_TOKEN_REQUIRED",
+  "SESSION_INVALID",
+  "SESSION_EXPIRED",
+  "AUTH_REQUIRED"
+]);
 
 function clonePlayer(player) {
   return player
@@ -195,6 +203,15 @@ function createPersistedSessionRecord({
   };
 }
 
+function isExpiredPersistedSessionRecord(session) {
+  const persistedAtMs = Date.parse(session?.persistedAt ?? "");
+  if (!Number.isFinite(persistedAtMs)) {
+    return false;
+  }
+
+  return Date.now() - persistedAtMs > AUTHENTICATED_SESSION_MAX_AGE_MS;
+}
+
 export class MultiplayerClient {
   constructor({
     socketFactory = createSocket,
@@ -346,6 +363,28 @@ export class MultiplayerClient {
     });
   }
 
+  async invalidateSession({
+    error = null,
+    statusMessage = null,
+    preserveServerUrl = true,
+    disconnect = true
+  } = {}) {
+    this.clearSession();
+    await this.clearPersistedSessionRecord();
+    if (disconnect) {
+      await this.disconnect({ preserveServerUrl, silent: true });
+    }
+    this.updateState({
+      lastError: error ? { ...error } : null,
+      statusMessage: statusMessage ?? error?.message ?? "Session expired. Please sign in again."
+    });
+  }
+
+  isInvalidSessionError(error) {
+    const code = String(error?.code ?? "").trim().toUpperCase();
+    return INVALID_SESSION_ERROR_CODES.has(code);
+  }
+
   async restoreSession({ serverUrl } = {}) {
     const persisted = await this.readPersistedSessionRecord();
     if (!persisted?.token || !persisted?.authenticated) {
@@ -353,6 +392,25 @@ export class MultiplayerClient {
         ok: true,
         restored: false,
         state: this.getState()
+      };
+    }
+
+    if (isExpiredPersistedSessionRecord(persisted)) {
+      const error = {
+        code: "SESSION_EXPIRED",
+        message: "Saved session expired. Please sign in again."
+      };
+      await this.invalidateSession({
+        error,
+        statusMessage: error.message,
+        disconnect: false
+      });
+      return {
+        ok: false,
+        restored: false,
+        invalid: true,
+        state: this.getState(),
+        error
       };
     }
 
@@ -400,11 +458,8 @@ export class MultiplayerClient {
       };
     }
 
-    this.clearSession();
-    await this.clearPersistedSessionRecord();
-    await this.disconnect({ preserveServerUrl: true, silent: true });
-    this.updateState({
-      lastError: resumeResponse?.error ? { ...resumeResponse.error } : null,
+    await this.invalidateSession({
+      error: resumeResponse?.error ?? null,
       statusMessage: resumeResponse?.error?.message ?? "Saved session expired. Please sign in again."
     });
     return {
@@ -453,6 +508,135 @@ export class MultiplayerClient {
         message: "Unable to complete this authentication request."
       }
     };
+  }
+
+  async connectIsolatedSocket({ serverUrl } = {}) {
+    const nextServerUrl = this.normalizeServerUrl(serverUrl);
+    const socket = this.socketFactory(nextServerUrl, {
+      transports: ["websocket"],
+      reconnection: false,
+      autoConnect: true
+    });
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (result) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        socket.off("connect", handleConnect);
+        socket.off("connect_error", handleError);
+        resolve(result);
+      };
+      const handleConnect = () => finish({ ok: true, socket });
+      const handleError = (error) =>
+        finish({
+          ok: false,
+          error: {
+            code: "CONNECTION_FAILED",
+            message: String(error?.message ?? "Unable to connect to multiplayer server.")
+          }
+        });
+
+      socket.once("connect", handleConnect);
+      socket.once("connect_error", handleError);
+    });
+  }
+
+  async emitIsolatedRequest(socket, eventName, payload = {}) {
+    if (!socket) {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        resolve(null);
+      }, 5000);
+
+      socket.emit(eventName, payload, (response) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timer);
+        const safeResponse = response ?? null;
+        if (this.isInvalidSessionError(safeResponse?.error) && this.state.session?.authenticated) {
+          this.clearSession();
+          this.updateState({
+            lastError: safeResponse.error ? { ...safeResponse.error } : null,
+            statusMessage: safeResponse.error?.message ?? "Session expired. Please sign in again."
+          });
+          void this.invalidateSession({
+            error: safeResponse.error,
+            statusMessage: safeResponse.error?.message ?? "Session expired. Please sign in again."
+          });
+        }
+        resolve(safeResponse);
+      });
+    });
+  }
+
+  async authenticateHotseatIdentity({ mode = "login", email, password, username, serverUrl } = {}) {
+    const authMode = String(mode ?? "login").trim().toLowerCase() === "register" ? "register" : "login";
+    const eventName = authMode === "register" ? "auth:register" : "auth:login";
+    const authPayload =
+      authMode === "register"
+        ? { email, password, username }
+        : { email, password };
+    const connection = await this.connectIsolatedSocket({ serverUrl });
+    if (!connection?.ok || !connection.socket) {
+      return {
+        ok: false,
+        error: connection?.error ?? {
+          code: "CONNECTION_FAILED",
+          message: "Unable to connect to multiplayer server."
+        }
+      };
+    }
+
+    const socket = connection.socket;
+    try {
+      const authResponse = await this.emitIsolatedRequest(socket, eventName, authPayload);
+      if (!authResponse?.ok || !authResponse?.session) {
+        return authResponse ?? {
+          ok: false,
+          error: {
+            code: "AUTH_FAILED",
+            message: "Unable to authenticate this account."
+          }
+        };
+      }
+
+      const profileResponse = await this.emitIsolatedRequest(socket, "profile:get", {});
+      if (!profileResponse?.ok || !profileResponse?.profile) {
+        return {
+          ok: false,
+          error: profileResponse?.error ?? {
+            code: "PROFILE_READ_FAILED",
+            message: "Unable to load the authenticated player profile."
+          }
+        };
+      }
+
+      await this.emitIsolatedRequest(socket, "session:logout", {});
+      return {
+        ok: true,
+        account: authResponse.account ?? null,
+        session: authResponse.session ?? null,
+        profile: profileResponse.profile
+      };
+    } finally {
+      socket.disconnect();
+    }
   }
 
   async emitRequest(eventName, payload = {}, { serverUrl } = {}) {
@@ -520,13 +704,11 @@ export class MultiplayerClient {
         return resumeResponse.session;
       }
 
-      this.clearSession();
-      await this.clearPersistedSessionRecord();
+      await this.invalidateSession({
+        error: resumeResponse?.error ?? null,
+        statusMessage: resumeResponse?.error?.message ?? this.state.statusMessage
+      });
       if (!username) {
-        this.updateState({
-          lastError: resumeResponse?.error ? { ...resumeResponse.error } : null,
-          statusMessage: resumeResponse?.error?.message ?? this.state.statusMessage
-        });
         return null;
       }
     }
@@ -877,7 +1059,16 @@ export class MultiplayerClient {
     const sanitizedPayload = { ...payload };
     delete sanitizedPayload.username;
     delete sanitizedPayload.sessionToken;
-    return this.emitRequest(eventName, sanitizedPayload, options);
+    const response = await this.emitRequest(eventName, sanitizedPayload, options);
+    if (this.isInvalidSessionError(response?.error) && (this.state.session?.authenticated || this.sessionToken)) {
+      await this.invalidateSession({
+        error: response.error,
+        statusMessage: response.error?.message ?? "Session expired. Please sign in again."
+      });
+      return null;
+    }
+
+    return response;
   }
 
   async createRoom({ serverUrl, username, equippedCosmetics } = {}) {

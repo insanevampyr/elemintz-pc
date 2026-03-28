@@ -49,6 +49,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.login(payload);
   });
 
+  ipcMain.handle("multiplayer:authenticateHotseatIdentity", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.authenticateHotseatIdentity(payload);
+  });
+
   ipcMain.handle("multiplayer:createRoom", async (event, payload) => {
     subscribers.add(event.sender);
     return client.createRoom(payload);

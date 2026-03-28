@@ -119,6 +119,9 @@ export const menuScreen = {
           <div class="panel themed-screen-panel">
             <h2 class="view-title">Main Menu</h2>
             <p>Signed in as <strong>${context.username}</strong></p>
+            <div class="inline-actions auth-session-actions">
+              <button id="switch-account-btn" class="btn btn-secondary" type="button">Switch Account</button>
+            </div>
             <div class="grid two-col">
               <div class="grid two-col menu-action-grid">
                 ${renderMenuTile("start-pve-btn", "Play vs AI")}
@@ -168,6 +171,7 @@ export const menuScreen = {
     document.getElementById("cosmetics-btn").addEventListener("click", context.actions.openCosmetics);
     document.getElementById("store-btn").addEventListener("click", context.actions.openStore);
     document.getElementById("settings-btn").addEventListener("click", context.actions.openSettings);
+    document.getElementById("switch-account-btn").addEventListener("click", context.actions.switchAccount);
     document.getElementById("logout-btn").addEventListener("click", context.actions.logout);
   }
 };

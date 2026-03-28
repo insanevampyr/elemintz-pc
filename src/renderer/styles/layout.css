@@ -95,6 +95,34 @@ body {
   margin: 0;
 }
 
+.auth-form-field {
+  margin-top: 0;
+}
+
+.auth-status-message,
+.auth-inline-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  line-height: 1.35;
+}
+
+.auth-status-message {
+  color: #dceeff;
+  background: rgba(18, 49, 73, 0.82);
+  border: 1px solid rgba(126, 179, 220, 0.35);
+}
+
+.auth-inline-error {
+  color: #ffd7d7;
+  background: rgba(88, 22, 22, 0.82);
+  border: 1px solid rgba(232, 126, 126, 0.4);
+}
+
+.auth-session-actions {
+  margin: -2px 0 10px;
+}
+
 .view-title {
   margin-top: 0;
   color: var(--title-core);

@@ -781,21 +781,51 @@ export class AppController {
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
         openSettings: async () => this.showSettings(),
-        logout: async () => {
-          this.resetDailyLoginAutoClaimGuard();
-          await window.elemintz?.multiplayer?.logout?.();
-          this.onlinePlayState = this.normalizeOnlinePlayState(
-            await window.elemintz?.multiplayer?.getState?.()
-          );
-          this.username = null;
-          this.profile = null;
-          this.dailyChallenges = null;
-          this.gameController?.stopTimer();
-          this.gameController?.stopMatchClock();
-          this.clearDailyCountdown();
-          this.showLogin();
-        }
+        switchAccount: async () => this.logoutToLogin({ noticeMessage: "Signed out. Sign in with another account." }),
+        logout: async () => this.logoutToLogin({ noticeMessage: "Signed out." })
       }
+    });
+  }
+
+  clearAuthenticatedExperienceState() {
+    this.username = null;
+    this.profile = null;
+    this.dailyChallenges = null;
+    this.localPlayers = null;
+    this.localProfiles = null;
+    this.onlinePlayChallengeSummary = null;
+    this.onlinePlayChallengeSummaryKey = null;
+    this.onlinePlayProfileRefreshKey = null;
+    this.onlinePlayProfileRefreshPromise = null;
+    this.onlinePlayJoinCode = "";
+    this.onlineReconnectReminder = null;
+    this.onlineReconnectReminderDismissedKey = null;
+    this.pendingMatchCompletePayload = null;
+    this.resetDailyLoginAutoClaimGuard();
+    this.gameController?.stopTimer();
+    this.gameController?.stopMatchClock();
+    this.clearDailyCountdown();
+    this.clearOnlineReconnectUiTimer();
+    this.clearPassTimer();
+  }
+
+  async logoutToLogin({ noticeMessage = "Signed out." } = {}) {
+    this.resetDailyLoginAutoClaimGuard();
+    await window.elemintz?.multiplayer?.logout?.();
+    this.onlinePlayState = this.normalizeOnlinePlayState(
+      await window.elemintz?.multiplayer?.getState?.()
+    );
+    this.clearAuthenticatedExperienceState();
+    this.showLogin({ statusMessage: noticeMessage });
+  }
+
+  async forceReturnToLoginForInvalidSession(message) {
+    this.onlinePlayState = this.normalizeOnlinePlayState(
+      await window.elemintz?.multiplayer?.getState?.()
+    );
+    this.clearAuthenticatedExperienceState();
+    this.showLogin({
+      errorMessage: String(message ?? "").trim() || "Session expired. Please sign in again."
     });
   }
 
@@ -1224,6 +1254,110 @@ export class AppController {
     }
 
     return this.profile;
+  }
+
+  async fetchAuthenticatedHotseatProfile({ mode = "login", username = "", email = "", password = "" } = {}) {
+    const authMode = String(mode ?? "login").trim().toLowerCase() === "register" ? "register" : "login";
+    const request =
+      authMode === "register"
+        ? { mode: authMode, username, email, password }
+        : { mode: authMode, email, password };
+    const result = await window.elemintz?.multiplayer?.authenticateHotseatIdentity?.(request);
+    if (!result?.ok) {
+      throw new Error(result?.error?.message ?? "Unable to authenticate this player.");
+    }
+
+    const profile = this.buildProfileFromServerSnapshot(result.profile);
+    if (!profile?.username) {
+      throw new Error("Authenticated player profile could not be loaded.");
+    }
+
+    return {
+      account: result.account ?? null,
+      session: result.session ?? null,
+      profile,
+      snapshot: result.profile ?? null
+    };
+  }
+
+  async resolveLocalHotseatPlayerOne(setup = {}) {
+    if (this.onlinePlayState?.session?.authenticated && String(this.username ?? "").trim()) {
+      const snapshot =
+        (await window.elemintz?.multiplayer?.getProfile?.({ username: this.username })) ?? null;
+      const profile = this.buildProfileFromServerSnapshot(snapshot);
+      if (!profile?.username) {
+        throw new Error("Unable to load the signed-in Player 1 profile.");
+      }
+
+      this.profile = profile;
+      this.username = profile.username;
+      return {
+        accountId: this.onlinePlayState?.session?.accountId ?? null,
+        profile
+      };
+    }
+
+    const authAction =
+      String(setup?.mode ?? "login").trim().toLowerCase() === "register"
+        ? window.elemintz?.multiplayer?.register
+        : window.elemintz?.multiplayer?.login;
+    if (typeof authAction !== "function") {
+      throw new Error("Player 1 account authentication is unavailable.");
+    }
+
+    const authResult = await authAction({
+      username: setup?.username,
+      email: setup?.email,
+      password: setup?.password
+    });
+    if (!authResult?.ok) {
+      throw new Error(authResult?.error?.message ?? "Unable to authenticate Player 1.");
+    }
+
+    this.onlinePlayState = this.normalizeOnlinePlayState(
+      await window.elemintz?.multiplayer?.getState?.()
+    );
+    this.username =
+      authResult?.session?.username ??
+      authResult?.account?.username ??
+      String(setup?.username ?? "").trim();
+
+    await this.loadPreferredProfileForOnlineSession({
+      username: this.username,
+      onlineState: this.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    if (!this.profile?.username) {
+      throw new Error("Unable to load the authenticated Player 1 profile.");
+    }
+
+    return {
+      accountId: authResult?.session?.accountId ?? authResult?.account?.accountId ?? null,
+      profile: this.profile
+    };
+  }
+
+  async resolveLocalHotseatPlayers(setup = {}) {
+    const playerOne = await this.resolveLocalHotseatPlayerOne(setup?.p1 ?? {});
+    const playerTwo = await this.fetchAuthenticatedHotseatProfile(setup?.p2 ?? {});
+
+    if (!playerOne?.profile?.username || !playerTwo?.profile?.username) {
+      throw new Error("Both hotseat players must have valid authenticated profiles.");
+    }
+
+    if (
+      String(playerOne.accountId ?? "").trim() &&
+      String(playerTwo.account?.accountId ?? "").trim() &&
+      playerOne.accountId === playerTwo.account.accountId
+    ) {
+      throw new Error("Player 1 and Player 2 must use different EleMintz accounts.");
+    }
+
+    return {
+      p1: playerOne.profile,
+      p2: playerTwo.profile
+    };
   }
 
   async loadPreferredProfileForOnlineSession({
@@ -1941,6 +2075,18 @@ export class AppController {
       const previousState = this.onlinePlayState;
       const nextState = this.normalizeOnlinePlayState(state);
       this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+      const lostAuthenticatedSession =
+        Boolean(previousState?.session?.authenticated) &&
+        !Boolean(this.onlinePlayState?.session?.authenticated);
+      const sessionErrorCode = String(this.onlinePlayState?.lastError?.code ?? "").trim().toUpperCase();
+      const invalidatedSession =
+        ["SESSION_NOT_FOUND", "SESSION_TOKEN_REQUIRED", "SESSION_INVALID", "SESSION_EXPIRED", "AUTH_REQUIRED"].includes(sessionErrorCode);
+      if (lostAuthenticatedSession && invalidatedSession && this.screenFlow !== "login") {
+        void this.forceReturnToLoginForInvalidSession(
+          this.onlinePlayState?.lastError?.message ?? "Session expired. Please sign in again."
+        );
+        return;
+      }
       this.maybeCaptureOnlineReconnectReminder(previousState, this.onlinePlayState);
       this.clearOnlineReconnectReminderFromState(this.onlinePlayState);
       this.ensureOnlineReconnectUiTimer();
@@ -2516,6 +2662,7 @@ export class AppController {
 
     console.info("[Renderer] AppController.init() entered");
     this.initPromise = (async () => {
+      let restoreResult = null;
       try {
         if (!window.elemintz?.state) {
           throw new Error("Preload API unavailable: window.elemintz.state is undefined");
@@ -2524,7 +2671,7 @@ export class AppController {
         this.bindOnlinePlayUpdates();
         this.settings = await window.elemintz.state.getSettings();
         await this.syncOnlinePlayState();
-        const restoreResult = await window.elemintz?.multiplayer?.restoreSession?.();
+        restoreResult = await window.elemintz?.multiplayer?.restoreSession?.();
         if (restoreResult?.state) {
           this.onlinePlayState = this.normalizeOnlinePlayState(restoreResult.state);
         }
@@ -2557,27 +2704,40 @@ export class AppController {
         this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: true });
         return;
       }
-      this.showLogin();
+      const restoreFailureMessage =
+        restoreResult?.invalid
+          ? (restoreResult?.error?.message ?? "Saved session expired. Please sign in again.")
+          : "";
+      this.showLogin({
+        ...(restoreFailureMessage ? { statusMessage: restoreFailureMessage } : {})
+      });
     })();
 
     return this.initPromise;
   }
 
-  showLogin() {
+  showLogin({ errorMessage = "", statusMessage = "", defaults = {}, mode = "login" } = {}) {
     this.clearPassTimer();
     this.screenFlow = "login";
     this.screenManager.show("login", {
+      errorMessage,
+      statusMessage,
+      defaults,
+      mode,
       actions: {
         login: async (request) => {
+          let username = "";
+          let email = "";
+          let mode = "login";
           try {
             this.resetDailyLoginAutoClaimGuard();
             const loginRequest =
               typeof request === "string"
-                ? { mode: "offline", username: request }
+                ? { mode: "", username: request }
                 : { ...(request ?? {}) };
-            const mode = String(loginRequest.mode ?? "offline").trim() || "offline";
-            const username = String(loginRequest.username ?? "").trim();
-            const email = String(loginRequest.email ?? "").trim();
+            mode = String(loginRequest.mode ?? "").trim();
+            username = String(loginRequest.username ?? "").trim();
+            email = String(loginRequest.email ?? "").trim();
             const password = String(loginRequest.password ?? "");
 
             if (mode === "login" || mode === "register") {
@@ -2606,14 +2766,17 @@ export class AppController {
                 authResult?.account?.username ??
                 username;
             } else {
-              this.username = username;
+              throw new Error("Authenticated account login is required.");
             }
 
-            await this.loadPreferredProfileForOnlineSession({
+            const profile = await this.loadPreferredProfileForOnlineSession({
               username: this.username,
               onlineState: this.onlinePlayState,
-              allowEnsureLocal: true
+              allowEnsureLocal: false
             });
+            if (!profile?.username) {
+              throw new Error("Unable to load the authenticated profile snapshot.");
+            }
             await this.ensureDailyLoginAutoClaim({
               showToasts: true,
               requestKey: `login:${this.username}`
@@ -2622,10 +2785,13 @@ export class AppController {
           } catch (err) {
             console.error("LOGIN ERROR:", err);
             console.error("STACK:", err?.stack);
-            this.modalManager.show({
-              title: "Login Failed",
-              body: "Unable to load profile. Check console for details and try again.",
-              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+            this.showLogin({
+              errorMessage: String(err?.message ?? "Unable to load profile. Check console for details and try again."),
+              defaults: {
+                username,
+                email
+              },
+              mode: mode === "register" ? "register" : "login"
             });
           }
         }
@@ -2700,34 +2866,49 @@ export class AppController {
     this.renderOnlinePlayScreen();
   }
 
-  showLocalSetup() {
+  showLocalSetup({ errorMessage = "", setupDefaults = null } = {}) {
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "localSetup";
+    const playerOneDefaults = setupDefaults?.p1 ?? null;
+    const playerTwoDefaults = setupDefaults?.p2 ?? null;
     this.screenManager.show("localSetup", {
-      defaultNames: {
-        p1: this.username,
-        p2: ""
+      errorMessage,
+      player1: {
+        authenticated: Boolean(this.onlinePlayState?.session?.authenticated && String(this.username ?? "").trim()),
+        username: this.username,
+        defaults: {
+          username: playerOneDefaults?.username ?? this.username ?? "",
+          email: playerOneDefaults?.email ?? ""
+        },
+        mode: playerOneDefaults?.mode ?? "login"
+      },
+      player2: {
+        defaults: {
+          username: playerTwoDefaults?.username ?? "",
+          email: playerTwoDefaults?.email ?? ""
+        },
+        mode: playerTwoDefaults?.mode ?? "login"
       },
       actions: {
-        start: async (p1Name, p2Name) => {
-          const normalizedP1 = normalizeName(p1Name, "Player 1");
-          const normalizedP2 = normalizeName(p2Name, "Player 2");
+        start: async (setup) => {
+          try {
+            const resolvedPlayers = await this.resolveLocalHotseatPlayers(setup);
+            this.localPlayers = {
+              p1: resolvedPlayers.p1.username,
+              p2: resolvedPlayers.p2.username
+            };
+            this.localProfiles = {
+              p1: resolvedPlayers.p1,
+              p2: resolvedPlayers.p2
+            };
 
-          this.localPlayers = { p1: normalizedP1, p2: normalizedP2 };
-          const [p1Profile, p2Profile] = await Promise.all([
-            window.elemintz.state.ensureProfile(normalizedP1),
-            window.elemintz.state.ensureProfile(normalizedP2)
-          ]);
-          const [p1Reward, p2Reward] = await Promise.all([
-            this.claimDailyLoginRewardFor(normalizedP1, { showToasts: false }),
-            this.claimDailyLoginRewardFor(normalizedP2, { showToasts: false })
-          ]);
-          this.localProfiles = {
-            p1: p1Reward?.profile ?? p1Profile,
-            p2: p2Reward?.profile ?? p2Profile
-          };
-
-          this.startGame(MATCH_MODE.LOCAL_PVP);
+            this.startGame(MATCH_MODE.LOCAL_PVP);
+          } catch (error) {
+            this.showLocalSetup({
+              errorMessage: String(error?.message ?? "Both players must authenticate before starting Local 2-Player."),
+              setupDefaults: setup
+            });
+          }
         },
         back: () => this.showMenu()
       }

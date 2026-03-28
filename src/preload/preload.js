@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld("elemintz", {
     connect: (payload) => ipcRenderer.invoke("multiplayer:connect", payload),
     register: (payload) => ipcRenderer.invoke("multiplayer:register", payload),
     login: (payload) => ipcRenderer.invoke("multiplayer:login", payload),
+    authenticateHotseatIdentity: (payload) => ipcRenderer.invoke("multiplayer:authenticateHotseatIdentity", payload),
     createRoom: (payload) => ipcRenderer.invoke("multiplayer:createRoom", payload),
     joinRoom: (payload) => ipcRenderer.invoke("multiplayer:joinRoom", payload),
     submitMove: (payload) => {
