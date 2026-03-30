@@ -4,6 +4,8 @@ import { normalizeProfileStore } from "./storeSystem.js";
 
 export const DEFAULT_CHEST_TYPE = "basic";
 export const MILESTONE_CHEST_TYPE = "milestone";
+export const EPIC_CHEST_TYPE = "epic";
+export const LEGENDARY_CHEST_TYPE = "legendary";
 export const BASIC_CHEST_XP_REWARD = 5;
 export const BASIC_CHEST_TOKEN_REWARD = 10;
 export const BASIC_CHEST_XP_CHANCE = 0.5;
@@ -11,14 +13,46 @@ export const BASIC_CHEST_TOKEN_CHANCE = 0.45;
 export const MILESTONE_CHEST_MIN_TOKENS = 2;
 export const MILESTONE_CHEST_MAX_TOKENS = 100;
 export const MILESTONE_CHEST_LEVEL_INTERVAL = 5;
+export const LEGENDARY_CHEST_LEVEL_INTERVAL = 25;
+
+const CHEST_LABELS = Object.freeze({
+  [DEFAULT_CHEST_TYPE]: "Basic Chest",
+  [MILESTONE_CHEST_TYPE]: "Milestone Chest",
+  [EPIC_CHEST_TYPE]: "Epic Chest",
+  [LEGENDARY_CHEST_TYPE]: "Legendary Chest"
+});
+
+const EPIC_GUARANTEED_TOKENS = Object.freeze({ min: 40, max: 100 });
+const EPIC_GUARANTEED_XP = Object.freeze({ min: 20, max: 50 });
+const EPIC_BONUS_TOKENS = Object.freeze({ min: 20, max: 60 });
+const LEGENDARY_GUARANTEED_TOKENS = Object.freeze({ min: 100, max: 250 });
+const LEGENDARY_GUARANTEED_XP = Object.freeze({ min: 50, max: 120 });
+const LEGENDARY_BONUS_TOKENS = Object.freeze({ min: 75, max: 150 });
+
+const EPIC_COSMETIC_CHANCE = 0.25;
+const LEGENDARY_COSMETIC_CHANCE = 0.6;
+
+const EPIC_RARITY_ROLLS = Object.freeze([
+  { rarity: "Common", threshold: 0.7 },
+  { rarity: "Rare", threshold: 1 }
+]);
+
+const LEGENDARY_RARITY_ROLLS = Object.freeze([
+  { rarity: "Common", threshold: 0.6 },
+  { rarity: "Rare", threshold: 0.9 },
+  { rarity: "Epic", threshold: 1 }
+]);
 
 export function createDefaultChestState() {
   return {
     chests: {
       [DEFAULT_CHEST_TYPE]: 0,
-      [MILESTONE_CHEST_TYPE]: 0
+      [MILESTONE_CHEST_TYPE]: 0,
+      [EPIC_CHEST_TYPE]: 0,
+      [LEGENDARY_CHEST_TYPE]: 0
     },
     milestoneChestGrantedLevels: {},
+    legendaryChestGrantedLevels: {},
     pendingMilestoneChestRewardLevel: null
   };
 }
@@ -68,9 +102,14 @@ function drawRandomInt(min, max, random) {
   return safeMin + Math.floor(random() * (safeMax - safeMin + 1));
 }
 
-function buildChestCosmeticPool(profile) {
+function buildChestCosmeticPool(profile, { rarities = ["Common"] } = {}) {
   const normalized = normalizeProfileCosmetics(profile);
   const pool = [];
+  const allowedRarities = new Set(
+    Array.isArray(rarities)
+      ? rarities.map((rarity) => String(rarity ?? "").trim()).filter(Boolean)
+      : ["Common"]
+  );
 
   for (const [type, items] of Object.entries(COSMETIC_CATALOG)) {
     const owned = new Set(normalized.ownedCosmetics?.[type] ?? []);
@@ -80,7 +119,7 @@ function buildChestCosmeticPool(profile) {
         !item?.purchasable ||
         item.defaultOwned ||
         item.supporterOnly ||
-        item.rarity !== "Common" ||
+        !allowedRarities.has(String(item.rarity ?? "").trim()) ||
         owned.has(item.id)
       ) {
         continue;
@@ -89,7 +128,8 @@ function buildChestCosmeticPool(profile) {
       pool.push({
         type,
         id: item.id,
-        name: item.name
+        name: item.name,
+        rarity: item.rarity
       });
     }
   }
@@ -97,9 +137,166 @@ function buildChestCosmeticPool(profile) {
   return pool;
 }
 
+function addTokens(profile, amount) {
+  const nextAmount = Math.max(0, Number(amount ?? 0) || 0);
+  return {
+    ...profile,
+    tokens: Math.max(0, Number(profile.tokens ?? 0)) + nextAmount
+  };
+}
+
+function addXp(profile, amount) {
+  const nextAmount = Math.max(0, Number(amount ?? 0) || 0);
+  return {
+    ...profile,
+    playerXP: Math.max(0, Number(profile.playerXP ?? 0)) + nextAmount
+  };
+}
+
+function addOwnedCosmetic(profile, cosmetic) {
+  if (!cosmetic?.type || !cosmetic?.id) {
+    return profile;
+  }
+
+  return normalizeProfileStore({
+    ...profile,
+    ownedCosmetics: {
+      ...profile.ownedCosmetics,
+      [cosmetic.type]: [...(profile.ownedCosmetics?.[cosmetic.type] ?? []), cosmetic.id]
+    }
+  });
+}
+
+function chooseChestCosmetic(profile, { rarities, random }) {
+  const pool = buildChestCosmeticPool(profile, { rarities });
+  if (pool.length <= 0) {
+    return null;
+  }
+
+  return pool[drawRandomInt(0, pool.length - 1, random)] ?? null;
+}
+
+function chooseWeightedRarity(roll, weightedRarities) {
+  const safeRoll = Math.max(0, Math.min(1, Number(roll ?? 0) || 0));
+  for (const entry of weightedRarities) {
+    if (safeRoll < entry.threshold) {
+      return entry.rarity;
+    }
+  }
+
+  return weightedRarities.at(-1)?.rarity ?? "Common";
+}
+
+function openBasicChest(profile, random) {
+  let nextProfile = profile;
+  let xpReward = 0;
+  let tokenReward = 0;
+  let cosmetic = null;
+
+  const roll = random();
+
+  if (roll < BASIC_CHEST_XP_CHANCE) {
+    xpReward = BASIC_CHEST_XP_REWARD;
+    nextProfile = addXp(nextProfile, xpReward);
+  } else if (roll < BASIC_CHEST_XP_CHANCE + BASIC_CHEST_TOKEN_CHANCE) {
+    tokenReward = BASIC_CHEST_TOKEN_REWARD;
+    nextProfile = addTokens(nextProfile, tokenReward);
+  } else {
+    const selected = chooseChestCosmetic(nextProfile, {
+      rarities: ["Common"],
+      random
+    });
+    if (selected) {
+      nextProfile = addOwnedCosmetic(nextProfile, selected);
+      cosmetic = selected;
+    } else {
+      tokenReward = BASIC_CHEST_TOKEN_REWARD;
+      nextProfile = addTokens(nextProfile, tokenReward);
+    }
+  }
+
+  return {
+    profile: nextProfile,
+    rewards: {
+      xp: xpReward,
+      tokens: tokenReward,
+      cosmetic
+    }
+  };
+}
+
+function openMilestoneChest(profile, random) {
+  const tokenReward = drawRandomInt(MILESTONE_CHEST_MIN_TOKENS, MILESTONE_CHEST_MAX_TOKENS, random);
+  return {
+    profile: addTokens(profile, tokenReward),
+    rewards: {
+      xp: 0,
+      tokens: tokenReward,
+      cosmetic: null
+    }
+  };
+}
+
+function openTieredCosmeticChest(
+  profile,
+  {
+    random,
+    guaranteedTokens,
+    guaranteedXp,
+    cosmeticChance,
+    weightedRarities,
+    fallbackTokenRange
+  }
+) {
+  let nextProfile = profile;
+  const guaranteedTokenReward = drawRandomInt(guaranteedTokens.min, guaranteedTokens.max, random);
+  const guaranteedXpReward = drawRandomInt(guaranteedXp.min, guaranteedXp.max, random);
+  let bonusTokenReward = 0;
+  let cosmetic = null;
+
+  nextProfile = addTokens(nextProfile, guaranteedTokenReward);
+  nextProfile = addXp(nextProfile, guaranteedXpReward);
+
+  const cosmeticRoll = random();
+  if (cosmeticRoll < cosmeticChance) {
+    const rarityRoll = random();
+    const rarity = chooseWeightedRarity(rarityRoll, weightedRarities);
+    const selected = chooseChestCosmetic(nextProfile, {
+      rarities: [rarity],
+      random
+    });
+
+    if (selected) {
+      nextProfile = addOwnedCosmetic(nextProfile, selected);
+      cosmetic = selected;
+    } else {
+      bonusTokenReward = drawRandomInt(fallbackTokenRange.min, fallbackTokenRange.max, random);
+      nextProfile = addTokens(nextProfile, bonusTokenReward);
+    }
+  } else {
+    bonusTokenReward = drawRandomInt(fallbackTokenRange.min, fallbackTokenRange.max, random);
+    nextProfile = addTokens(nextProfile, bonusTokenReward);
+  }
+
+  return {
+    profile: nextProfile,
+    rewards: {
+      xp: guaranteedXpReward,
+      tokens: guaranteedTokenReward + bonusTokenReward,
+      cosmetic
+    }
+  };
+}
+
+export function getChestLabel(chestType) {
+  return CHEST_LABELS[normalizeChestType(chestType)] ?? "Reward Chest";
+}
+
 export function normalizeProfileChests(profile) {
   const source = profile ?? {};
   const defaults = createDefaultChestState();
+  const milestoneGrantedLevels = normalizeGrantedLevels(source.milestoneChestGrantedLevels);
+  const legendaryChestGrantedLevels = normalizeGrantedLevels(source.legendaryChestGrantedLevels);
   const rawChests =
     source.chests && typeof source.chests === "object" && !Array.isArray(source.chests)
       ? source.chests
@@ -113,10 +310,11 @@ export function normalizeProfileChests(profile) {
         Object.entries(rawChests).map(([type, count]) => [String(type), safeChestCount(count)])
       )
     },
-    milestoneChestGrantedLevels: normalizeGrantedLevels(source.milestoneChestGrantedLevels),
+    milestoneChestGrantedLevels: milestoneGrantedLevels,
+    legendaryChestGrantedLevels,
     pendingMilestoneChestRewardLevel: normalizePendingMilestoneLevel(
       source.pendingMilestoneChestRewardLevel,
-      normalizeGrantedLevels(source.milestoneChestGrantedLevels)
+      milestoneGrantedLevels
     )
   };
 }
@@ -130,7 +328,11 @@ export function applyLevelMilestoneChestGrants(profile) {
   const grantedLevels = {
     ...normalized.milestoneChestGrantedLevels
   };
+  const legendaryChestGrantedLevels = {
+    ...normalized.legendaryChestGrantedLevels
+  };
   const newlyGrantedLevels = [];
+  const newlyGrantedLegendaryLevels = [];
 
   for (let level = MILESTONE_CHEST_LEVEL_INTERVAL; level <= playerLevel; level += MILESTONE_CHEST_LEVEL_INTERVAL) {
     if (grantedLevels[String(level)]) {
@@ -141,7 +343,20 @@ export function applyLevelMilestoneChestGrants(profile) {
     newlyGrantedLevels.push(level);
   }
 
-  if (newlyGrantedLevels.length === 0) {
+  for (
+    let level = LEGENDARY_CHEST_LEVEL_INTERVAL;
+    level <= playerLevel;
+    level += LEGENDARY_CHEST_LEVEL_INTERVAL
+  ) {
+    if (legendaryChestGrantedLevels[String(level)]) {
+      continue;
+    }
+
+    legendaryChestGrantedLevels[String(level)] = true;
+    newlyGrantedLegendaryLevels.push(level);
+  }
+
+  if (newlyGrantedLevels.length === 0 && newlyGrantedLegendaryLevels.length === 0) {
     return normalized;
   }
 
@@ -150,9 +365,12 @@ export function applyLevelMilestoneChestGrants(profile) {
     chests: {
       ...normalized.chests,
       [MILESTONE_CHEST_TYPE]:
-        safeChestCount(normalized.chests?.[MILESTONE_CHEST_TYPE]) + newlyGrantedLevels.length
+        safeChestCount(normalized.chests?.[MILESTONE_CHEST_TYPE]) + newlyGrantedLevels.length,
+      [LEGENDARY_CHEST_TYPE]:
+        safeChestCount(normalized.chests?.[LEGENDARY_CHEST_TYPE]) + newlyGrantedLegendaryLevels.length
     },
     milestoneChestGrantedLevels: grantedLevels,
+    legendaryChestGrantedLevels,
     pendingMilestoneChestRewardLevel: newlyGrantedLevels.at(-1) ?? normalized.pendingMilestoneChestRewardLevel
   });
 }
@@ -186,6 +404,32 @@ export function grantChest(profile, { chestType = DEFAULT_CHEST_TYPE, amount = 1
   });
 }
 
+export function applyWinStreakChestGrants(
+  profile,
+  { previousWinStreak = 0, nextWinStreak = 0 } = {}
+) {
+  const normalized = normalizeProfileChests(profile);
+  const prior = Math.max(0, Math.floor(Number(previousWinStreak) || 0));
+  const next = Math.max(0, Math.floor(Number(nextWinStreak) || 0));
+  let nextProfile = normalized;
+  const granted = [];
+
+  if (next === 3 && prior < 3) {
+    nextProfile = grantChest(nextProfile, { chestType: EPIC_CHEST_TYPE, amount: 1 });
+    granted.push({ chestType: EPIC_CHEST_TYPE, amount: 1 });
+  }
+
+  if (next === 6 && prior < 6) {
+    nextProfile = grantChest(nextProfile, { chestType: LEGENDARY_CHEST_TYPE, amount: 1 });
+    granted.push({ chestType: LEGENDARY_CHEST_TYPE, amount: 1 });
+  }
+
+  return {
+    profile: nextProfile,
+    granted
+  };
+}
+
 export function openChest(
   profile,
   { chestType = DEFAULT_CHEST_TYPE, random = Math.random } = {}
@@ -197,67 +441,46 @@ export function openChest(
   if (available < 1) {
     throw new Error(`No '${nextChestType}' chests available.`);
   }
-
-  let xpReward = 0;
-  let tokenReward = 0;
-  let cosmetic = null;
-
-  if (nextChestType === MILESTONE_CHEST_TYPE) {
-    tokenReward = drawRandomInt(MILESTONE_CHEST_MIN_TOKENS, MILESTONE_CHEST_MAX_TOKENS, random);
-  } else {
-    const roll = random();
-
-    if (roll < BASIC_CHEST_XP_CHANCE) {
-      xpReward = BASIC_CHEST_XP_REWARD;
-    } else if (roll < BASIC_CHEST_XP_CHANCE + BASIC_CHEST_TOKEN_CHANCE) {
-      tokenReward = BASIC_CHEST_TOKEN_REWARD;
-    }
-  }
-
-  let nextProfile = normalizeProfileChests({
+  const consumedProfile = normalizeProfileChests({
     ...normalized,
-    playerXP: Math.max(0, Number(normalized.playerXP ?? 0)) + xpReward,
-    tokens: Math.max(0, Number(normalized.tokens ?? 0)) + tokenReward,
     chests: {
       ...normalized.chests,
       [nextChestType]: available - 1
     }
   });
 
-  const cosmeticPool = buildChestCosmeticPool(nextProfile);
-
-  if (nextChestType === DEFAULT_CHEST_TYPE && xpReward === 0 && tokenReward === 0) {
-    if (cosmeticPool.length > 0) {
-      const selected = cosmeticPool[drawRandomInt(0, cosmeticPool.length - 1, random)];
-      nextProfile = normalizeProfileChests(
-        normalizeProfileStore({
-          ...nextProfile,
-          ownedCosmetics: {
-            ...nextProfile.ownedCosmetics,
-            [selected.type]: [...(nextProfile.ownedCosmetics?.[selected.type] ?? []), selected.id]
-          }
-        })
-      );
-
-      cosmetic = selected;
-    } else {
-      tokenReward = BASIC_CHEST_TOKEN_REWARD;
-      nextProfile = normalizeProfileChests({
-        ...nextProfile,
-        tokens: Math.max(0, Number(nextProfile.tokens ?? 0)) + tokenReward
-      });
-    }
+  let openResult = null;
+  if (nextChestType === MILESTONE_CHEST_TYPE) {
+    openResult = openMilestoneChest(consumedProfile, random);
+  } else if (nextChestType === EPIC_CHEST_TYPE) {
+    openResult = openTieredCosmeticChest(consumedProfile, {
+      random,
+      guaranteedTokens: EPIC_GUARANTEED_TOKENS,
+      guaranteedXp: EPIC_GUARANTEED_XP,
+      cosmeticChance: EPIC_COSMETIC_CHANCE,
+      weightedRarities: EPIC_RARITY_ROLLS,
+      fallbackTokenRange: EPIC_BONUS_TOKENS
+    });
+  } else if (nextChestType === LEGENDARY_CHEST_TYPE) {
+    openResult = openTieredCosmeticChest(consumedProfile, {
+      random,
+      guaranteedTokens: LEGENDARY_GUARANTEED_TOKENS,
+      guaranteedXp: LEGENDARY_GUARANTEED_XP,
+      cosmeticChance: LEGENDARY_COSMETIC_CHANCE,
+      weightedRarities: LEGENDARY_RARITY_ROLLS,
+      fallbackTokenRange: LEGENDARY_BONUS_TOKENS
+    });
+  } else {
+    openResult = openBasicChest(consumedProfile, random);
   }
+
+  const nextProfile = normalizeProfileChests(openResult.profile);
 
   return {
     profile: nextProfile,
     chestType: nextChestType,
     consumed: 1,
     remaining: safeChestCount(nextProfile.chests?.[nextChestType]),
-    rewards: {
-      xp: xpReward,
-      tokens: tokenReward,
-      cosmetic
-    }
+    rewards: openResult.rewards
   };
 }
