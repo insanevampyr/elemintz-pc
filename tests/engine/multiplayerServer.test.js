@@ -918,6 +918,80 @@ test("multiplayer foundation: mixed chest open sequence stays stable across lege
   }
 });
 
+test("multiplayer foundation: repeated epic chest opens stay stable after fresh session level progression", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+  const normalizationWarnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    normalizationWarnings.push(args.map((entry) => String(entry)).join(" "));
+  };
+
+  try {
+    const xpThresholds = getXpThresholds();
+    await coordinator.profiles.updateProfile("EpicRepeatUser", (current) => ({
+      ...current,
+      playerLevel: 24,
+      playerXP: xpThresholds[24] - 40,
+      chests: {
+        ...(current?.chests ?? {}),
+        epic: 3
+      }
+    }));
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "EpicRepeatUser");
+    assert.equal(session?.ok, true);
+
+    const results = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const opened = await new Promise((resolve) => {
+        client.emit("profile:openChest", { chestType: "epic" }, resolve);
+      });
+      results.push(opened);
+    }
+
+    const profileAfterOpens = await coordinator.profiles.getProfile("EpicRepeatUser");
+
+    assert.deepEqual(
+      results.map((entry) => entry?.ok),
+      [true, true, true]
+    );
+    assert.deepEqual(
+      results.map((entry) => entry?.result?.chestType),
+      ["epic", "epic", "epic"]
+    );
+    assert.equal(profileAfterOpens?.chests?.epic, 0);
+    assert.ok((profileAfterOpens?.playerLevel ?? 0) >= 25);
+    assert.ok((profileAfterOpens?.legendaryChestGrantedLevels?.["25"] ?? false) === true);
+    assert.equal(
+      normalizationWarnings.some((entry) =>
+        entry.includes("normalization introduced unexpected mutation")
+      ),
+      false
+    );
+  } finally {
+    console.warn = originalWarn;
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: server-authoritative store purchase rejects insufficient tokens and invalid items safely", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
