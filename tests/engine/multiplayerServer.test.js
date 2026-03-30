@@ -18,6 +18,7 @@ import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
+import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
 
 function connectClient(port) {
   return new Promise((resolve, reject) => {
@@ -762,6 +763,130 @@ test("multiplayer foundation: server-authoritative legendary chest opening decre
     assert.equal(profileAfterOpen?.chests?.legendary, 0);
     assert.equal(profileAfterOpen?.tokens, 300);
     assert.equal(profileAfterOpen?.playerXP, 50);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: repeated legendary chest opens stay stable when the first open crosses level 25", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const xpThresholds = getXpThresholds();
+    await coordinator.profiles.updateProfile("LegendaryRepeatUser", (current) => ({
+      ...current,
+      playerLevel: 24,
+      playerXP: xpThresholds[24] - 10,
+      chests: {
+        ...(current?.chests ?? {}),
+        legendary: 3
+      }
+    }));
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "LegendaryRepeatUser");
+    assert.equal(session?.ok, true);
+
+    const results = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const opened = await new Promise((resolve) => {
+        client.emit("profile:openChest", { chestType: "legendary" }, resolve);
+      });
+      results.push(opened);
+    }
+
+    const profileAfterOpens = await coordinator.profiles.getProfile("LegendaryRepeatUser");
+
+    assert.deepEqual(
+      results.map((entry) => entry?.ok),
+      [true, true, true]
+    );
+    assert.deepEqual(
+      results.map((entry) => entry?.result?.remaining),
+      [2, 2, 1]
+    );
+    assert.equal(profileAfterOpens?.chests?.legendary, 1);
+    assert.ok((profileAfterOpens?.legendaryChestGrantedLevels?.["25"] ?? false) === true);
+    assert.ok((profileAfterOpens?.playerLevel ?? 0) >= 25);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: mixed chest open sequence stays stable across legendary, epic, and basic opens", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("MixedChestUser", (current) => ({
+      ...current,
+      chests: {
+        ...(current?.chests ?? {}),
+        basic: 1,
+        epic: 1,
+        legendary: 3
+      }
+    }));
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "MixedChestUser");
+    assert.equal(session?.ok, true);
+
+    const sequence = ["legendary", "epic", "legendary", "basic", "legendary"];
+    const results = [];
+    for (const chestType of sequence) {
+      const opened = await new Promise((resolve) => {
+        client.emit("profile:openChest", { chestType }, resolve);
+      });
+      results.push({ chestType, opened });
+    }
+
+    const profileAfterSequence = await coordinator.profiles.getProfile("MixedChestUser");
+
+    assert.deepEqual(
+      results.map(({ opened }) => opened?.ok),
+      [true, true, true, true, true]
+    );
+    assert.deepEqual(
+      results.map(({ chestType, opened }) => [chestType, opened?.result?.chestType]),
+      sequence.map((chestType) => [chestType, chestType])
+    );
+    assert.equal(profileAfterSequence?.chests?.legendary, 0);
+    assert.equal(profileAfterSequence?.chests?.epic, 0);
+    assert.equal(profileAfterSequence?.chests?.basic, 0);
   } finally {
     client?.disconnect();
     await foundation.stop();
