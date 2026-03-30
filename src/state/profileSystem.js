@@ -215,6 +215,16 @@ function validateAndRepairProfile(profile) {
   repairNumericField("longestWar", defaults.longestWar);
   repairNumericField("matchesUsingAllElements", defaults.matchesUsingAllElements);
 
+  const derivedPlayerLevel = Math.max(
+    1,
+    Math.floor(Number(deriveLevelFromXp(repairedProfile.playerXP)) || defaults.playerLevel)
+  );
+  if (repairedProfile.playerLevel !== derivedPlayerLevel) {
+    const previousValue = repairedProfile.playerLevel;
+    repairedProfile.playerLevel = derivedPlayerLevel;
+    logFieldRepair("playerLevel", previousValue, derivedPlayerLevel);
+  }
+
   // Repair top-level object/array sections independently so unrelated valid
   // progress is preserved even when one subsection is broken.
   repairObjectSection("achievements", defaults.achievements);
@@ -225,6 +235,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("cosmetics", defaults.cosmetics);
   repairObjectSection("levelRewardsClaimed", defaults.levelRewardsClaimed);
   repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
+  repairObjectSection("onlineRewardSettlements", defaults.onlineRewardSettlements);
   repairObjectSection(
     "acknowledgedLoadoutUnlockSlots",
     isPlainObject(repairedProfile.loadoutUnlockNoticesSeen)
@@ -232,8 +243,38 @@ function validateAndRepairProfile(profile) {
       : defaults.acknowledgedLoadoutUnlockSlots
   );
   repairObjectSection("chests", defaults.chests);
+  repairObjectSection("milestoneChestGrantedLevels", defaults.milestoneChestGrantedLevels);
+  repairObjectSection("legendaryChestGrantedLevels", defaults.legendaryChestGrantedLevels);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
   repairArraySection("cosmeticLoadouts", defaults.cosmeticLoadouts);
+
+  const pendingMilestoneChestRewardLevel = Number(repairedProfile.pendingMilestoneChestRewardLevel);
+  if (
+    repairedProfile.pendingMilestoneChestRewardLevel != null &&
+    (!Number.isFinite(pendingMilestoneChestRewardLevel) || pendingMilestoneChestRewardLevel < 1)
+  ) {
+    const previousValue = repairedProfile.pendingMilestoneChestRewardLevel;
+    const nextValue = defaults.pendingMilestoneChestRewardLevel;
+    repairedProfile.pendingMilestoneChestRewardLevel = nextValue;
+    logFieldRepair("pendingMilestoneChestRewardLevel", previousValue, nextValue);
+  }
+
+  const totalOwnedCosmetics = Object.values(repairedProfile.ownedCosmetics ?? {}).reduce(
+    (total, values) => total + (Array.isArray(values) ? values.length : 0),
+    0
+  );
+  if (repairedProfile.cosmeticUnlockTracking?.TOTAL_COSMETICS_OWNED !== totalOwnedCosmetics) {
+    const previousValue = repairedProfile.cosmeticUnlockTracking?.TOTAL_COSMETICS_OWNED;
+    repairedProfile.cosmeticUnlockTracking = {
+      ...repairedProfile.cosmeticUnlockTracking,
+      TOTAL_COSMETICS_OWNED: totalOwnedCosmetics
+    };
+    logFieldRepair(
+      "cosmeticUnlockTracking.TOTAL_COSMETICS_OWNED",
+      previousValue,
+      totalOwnedCosmetics
+    );
+  }
 
   // Repair nested structures inside mode stats so downstream stat math always
   // receives objects for each mode bucket.
@@ -375,6 +416,14 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
           .slice(-10)
       : []
   };
+  const normalizedOnlineRewardSettlements = {
+    appliedSettlementKeys: Array.isArray(validatedProfile?.onlineRewardSettlements?.appliedSettlementKeys)
+      ? validatedProfile.onlineRewardSettlements.appliedSettlementKeys
+          .map((entry) => String(entry ?? "").trim())
+          .filter(Boolean)
+          .slice(-50)
+      : []
+  };
 
   let normalized = normalizeProfileDailyChallenges(
     normalizeProfileLevelRewards(
@@ -383,7 +432,8 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
           normalizeProfileCosmetics({
             ...normalizeProfileModeStats(validatedProfile),
             achievements: normalizeAchievementProgressMap(validatedProfile?.achievements),
-            onlineDisconnectTracking: normalizedDisconnectTracking
+            onlineDisconnectTracking: normalizedDisconnectTracking,
+            onlineRewardSettlements: normalizedOnlineRewardSettlements
           })
         )
       )
@@ -400,10 +450,13 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
     }
   }
 
-  normalized = applyLevelMilestoneChestGrants({
+  const preMilestoneGrantProfile = {
     ...normalized,
     playerLevel: deriveLevelFromXp(normalized.playerXP)
-  });
+  };
+  normalized = applyLevelMilestoneChestGrants(preMilestoneGrantProfile);
+  const milestoneGrantMutated =
+    JSON.stringify(normalized) !== JSON.stringify(preMilestoneGrantProfile);
 
   const finalNormalizedProfile = {
     ...normalized,
@@ -417,7 +470,12 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   // should also behave as a no-op for already-valid data. Warn when that
   // expectation is violated so future persistence changes do not silently
   // reintroduce repeated rewrites.
-  if (!mutated && JSON.stringify(finalNormalizedProfile) !== JSON.stringify(validatedProfile)) {
+  if (
+    !mutated &&
+    !migration.migrated &&
+    !milestoneGrantMutated &&
+    JSON.stringify(finalNormalizedProfile) !== JSON.stringify(validatedProfile)
+  ) {
     console.warn("[ProfileSystem] WARNING: normalization introduced unexpected mutation", {
       username: validatedProfile?.username ?? null
     });
