@@ -9,9 +9,11 @@ import { io as createClient } from "socket.io-client";
 import {
   MULTIPLAYER_FOUNDATION_PHASE,
   buildOnlineMatchStateFromRoom,
+  buildRewardDecision,
   buildRewardSummary,
   createMultiplayerFoundation
 } from "../../src/multiplayer/foundation.js";
+import { createTimestampedLogger } from "../../src/multiplayer/logger.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
@@ -115,21 +117,26 @@ const OPENING_WIN_SEQUENCE = [
 ];
 
 function createOnlinePersistencePersister(coordinator) {
-  return async ({ room, summary, settlementKey }) => {
+  return async ({ room, summary, decision, settlementKey }) => {
     const matchState = buildOnlineMatchStateFromRoom(room);
-    const hostUsername = summary?.settledHostUsername ?? null;
-    const guestUsername = summary?.settledGuestUsername ?? null;
+    const rewardDecision = decision ?? room?.rewardSettlement?.decision ?? null;
+    const hostUsername =
+      rewardDecision?.participants?.hostUsername ?? summary?.settledHostUsername ?? null;
+    const guestUsername =
+      rewardDecision?.participants?.guestUsername ?? summary?.settledGuestUsername ?? null;
 
     if (hostUsername) {
       await coordinator.recordOnlineMatchResult({
         username: hostUsername,
         perspective: "p1",
         matchState,
-        settlementKey: settlementKey ? `${settlementKey}:${hostUsername}` : null
+        settlementKey
       });
-      await coordinator.grantOnlineMatchRewards({
+      await coordinator.applyOnlineRewardSettlementDecision({
         username: hostUsername,
-        ...summary.hostRewards
+        settlementKey,
+        rewardDecision,
+        participantRole: "host"
       });
     }
 
@@ -138,11 +145,13 @@ function createOnlinePersistencePersister(coordinator) {
         username: guestUsername,
         perspective: "p2",
         matchState,
-        settlementKey: settlementKey ? `${settlementKey}:${guestUsername}` : null
+        settlementKey
       });
-      await coordinator.grantOnlineMatchRewards({
+      await coordinator.applyOnlineRewardSettlementDecision({
         username: guestUsername,
-        ...summary.guestRewards
+        settlementKey,
+        rewardDecision,
+        participantRole: "guest"
       });
     }
   };
@@ -192,6 +201,27 @@ test("multiplayer foundation: health endpoint responds for deployment checks", a
   } finally {
     await foundation.stop();
   }
+});
+
+test("multiplayer logging: timestamped logger prefixes server log messages", () => {
+  const entries = [];
+  const logger = createTimestampedLogger(
+    {
+      info: (...args) => entries.push(args)
+    },
+    {
+      clock: () => new Date("2026-03-29T14:32:10")
+    }
+  );
+
+  logger.info("[Match] Host rewards persisted", { roomCode: "ABC123" });
+
+  assert.equal(entries.length, 1);
+  assert.equal(
+    entries[0][0],
+    "[2026-03-29 14:32:10] [EleMintz Server] [Match] Host rewards persisted"
+  );
+  assert.deepEqual(entries[0][1], { roomCode: "ABC123" });
 });
 
 test("multiplayer foundation: profile:get returns the server-authoritative profile snapshot", async () => {
@@ -277,6 +307,629 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
   } finally {
     client?.disconnect();
     await foundation.stop();
+  }
+});
+
+test("multiplayer profile authority: authenticated online profiles load normalized authoritative cosmetic snapshots", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const authority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+
+  try {
+    await coordinator.profiles.store.write([
+      {
+        username: "CosmeticAuthorityUser",
+        ownedCosmetics: {
+          avatar: ["default_avatar", "fireavatarF"],
+          cardBack: ["default_card_back"],
+          background: ["backgrounds/fireBattleArena.png"],
+          elementCardVariant: ["arcane_fire_card"],
+          badge: [],
+          title: []
+        },
+        equippedCosmetics: {
+          avatar: "fireavatarF",
+          cardBack: "default_card_back",
+          background: "backgrounds/fireBattleArena.png",
+          elementCardVariant: "arcane_element_cards",
+          badge: "default_badge",
+          title: "Initiate"
+        },
+        cosmeticLoadouts: null,
+        cosmeticRandomizeAfterMatch: {
+          background: true
+        }
+      }
+    ]);
+
+    const snapshot = await authority.getProfile("CosmeticAuthorityUser");
+
+    assert.equal(snapshot.authority, "server");
+    assert.equal(snapshot.cosmetics.authority, "server");
+    assert.equal(snapshot.cosmetics.source, "profileAuthority");
+    assert.deepEqual(Object.keys(snapshot.cosmetics.snapshot.owned), [
+      "avatar",
+      "cardBack",
+      "background",
+      "elementCardVariant",
+      "badge",
+      "title"
+    ]);
+    assert.deepEqual(Object.keys(snapshot.cosmetics.snapshot.equipped), [
+      "avatar",
+      "cardBack",
+      "background",
+      "elementCardVariant",
+      "badge",
+      "title"
+    ]);
+    assert.equal(snapshot.cosmetics.snapshot.equipped.background, "fire_background");
+    assert.equal(snapshot.cosmetics.snapshot.equipped.elementCardVariant.fire, "arcane_fire_card");
+    assert.ok(snapshot.cosmetics.snapshot.owned.avatar.includes("fireavatarF"));
+    assert.equal(Array.isArray(snapshot.cosmetics.snapshot.loadouts), true);
+    assert.equal(snapshot.cosmetics.snapshot.preferences.background, true);
+    assert.equal(snapshot.profile.equippedCosmetics.background, snapshot.cosmetics.snapshot.equipped.background);
+    assert.equal(snapshot.profile.ownedCosmetics.avatar.includes("fireavatarF"), true);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: malformed non-function ack payload does not crash profile authority handlers", async () => {
+  const authorityCalls = [];
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: {
+      getProfile: async (username) => {
+        authorityCalls.push(username);
+        return {
+          authority: "server",
+          username,
+          profile: {
+            username
+          }
+        };
+      }
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const bootstrapResponse = await new Promise((resolve) => {
+      client.emit("session:bootstrap", { username: "AckSafetyUser" }, resolve);
+    });
+    assert.equal(bootstrapResponse?.ok, true);
+
+    client.emit("profile:get", {}, "not-a-function");
+    await wait(25);
+
+    const validResponse = await new Promise((resolve) => {
+      client.emit("profile:get", {}, resolve);
+    });
+
+    assert.equal(validResponse?.ok, true);
+    assert.equal(validResponse?.profile?.profile?.username, "AckSafetyUser");
+    assert.deepEqual(authorityCalls, ["AckSafetyUser", "AckSafetyUser", "AckSafetyUser"]);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: profile:getCosmetics returns the server-authoritative cosmetic snapshot for online accounts", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.store.write([
+      {
+        username: "ServerCosmeticsUser",
+        ownedCosmetics: {
+          avatar: ["default_avatar", "avatar_storm_oracle"],
+          cardBack: ["default_card_back"],
+          background: ["fire_background"],
+          elementCardVariant: ["default_fire_card"],
+          badge: ["default_badge"],
+          title: ["title_initiate", "title_element_sovereign"]
+        },
+        equippedCosmetics: {
+          avatar: "avatar_storm_oracle",
+          cardBack: "default_card_back",
+          background: "fire_background",
+          elementCardVariant: {
+            fire: "default_fire_card",
+            water: "default_water_card",
+            earth: "default_earth_card",
+            wind: "default_wind_card"
+          },
+          badge: "default_badge",
+          title: "title_element_sovereign"
+        }
+      }
+    ]);
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "ServerCosmeticsUser");
+    assert.equal(session?.ok, true);
+
+    const response = await new Promise((resolve) => {
+      client.emit("profile:getCosmetics", {}, resolve);
+    });
+
+    assert.equal(response?.ok, true);
+    assert.equal(response?.cosmetics?.authority, "server");
+    assert.equal(response?.cosmetics?.source, "stateCoordinator");
+    assert.equal(response?.cosmetics?.snapshot?.equipped?.avatar, "avatar_storm_oracle");
+    assert.equal(response?.cosmetics?.equipped?.avatar, "avatar_storm_oracle");
+    assert.equal(response?.cosmetics?.snapshot?.owned?.title.includes("title_element_sovereign"), true);
+    assert.equal(Array.isArray(response?.cosmetics?.snapshot?.loadouts), true);
+    assert.equal(Array.isArray(response?.cosmetics?.catalog?.avatar), true);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: server-authoritative online cosmetic equip accepts owned cosmetics and rejects invalid values", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("EquipAuthorityUser", (current) => ({
+      ...current,
+      ownedCosmetics: {
+        ...current.ownedCosmetics,
+        avatar: [...current.ownedCosmetics.avatar, "avatar_storm_oracle"]
+      }
+    }));
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "EquipAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const ownedEquip = await new Promise((resolve) => {
+      client.emit(
+        "profile:equipCosmetic",
+        { type: "avatar", cosmeticId: "avatar_storm_oracle" },
+        resolve
+      );
+    });
+    assert.equal(ownedEquip?.ok, true);
+    assert.equal(ownedEquip?.result?.snapshot?.cosmetics?.snapshot?.equipped?.avatar, "avatar_storm_oracle");
+
+    const unownedEquip = await new Promise((resolve) => {
+      client.emit(
+        "profile:equipCosmetic",
+        { type: "avatar", cosmeticId: "avatar_fourfold_lord" },
+        resolve
+      );
+    });
+    assert.equal(unownedEquip?.ok, false);
+    assert.equal(unownedEquip?.error?.code, "PROFILE_COSMETIC_WRITE_FAILED");
+
+    const invalidTypeEquip = await new Promise((resolve) => {
+      client.emit(
+        "profile:equipCosmetic",
+        { type: "not_a_category", cosmeticId: "avatar_storm_oracle" },
+        resolve
+      );
+    });
+    assert.equal(invalidTypeEquip?.ok, false);
+    assert.equal(invalidTypeEquip?.error?.code, "PROFILE_COSMETIC_WRITE_FAILED");
+
+    const cosmeticsAfterFailures = await new Promise((resolve) => {
+      client.emit("profile:getCosmetics", {}, resolve);
+    });
+    assert.equal(cosmeticsAfterFailures?.ok, true);
+    assert.equal(cosmeticsAfterFailures?.cosmetics?.snapshot?.equipped?.avatar, "avatar_storm_oracle");
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: server-authoritative store purchase deducts tokens and rejects duplicate rebuys", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const beforeProfile = await coordinator.profiles.ensureProfile("StoreAuthorityUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "StoreAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const firstPurchase = await new Promise((resolve) => {
+      client.emit(
+        "profile:buyStoreItem",
+        { type: "avatar", cosmeticId: "fireavatarF" },
+        resolve
+      );
+    });
+    const profileAfterFirst = await coordinator.profiles.getProfile("StoreAuthorityUser");
+
+    const secondPurchase = await new Promise((resolve) => {
+      client.emit(
+        "profile:buyStoreItem",
+        { type: "avatar", cosmeticId: "fireavatarF" },
+        resolve
+      );
+    });
+    const profileAfterSecond = await coordinator.profiles.getProfile("StoreAuthorityUser");
+
+    assert.equal(firstPurchase?.ok, true);
+    assert.equal(firstPurchase?.result?.purchase?.status, "purchased");
+    assert.equal(
+      profileAfterFirst?.tokens,
+      (beforeProfile?.tokens ?? 0) - Number(firstPurchase?.result?.purchase?.price ?? 0)
+    );
+    assert.ok(profileAfterFirst?.ownedCosmetics?.avatar?.includes("fireavatarF"));
+    assert.equal(secondPurchase?.ok, true);
+    assert.equal(secondPurchase?.result?.purchase?.status, "already-owned");
+    assert.equal(profileAfterSecond?.tokens, profileAfterFirst?.tokens);
+    assert.equal(
+      profileAfterSecond?.ownedCosmetics?.avatar?.filter((item) => item === "fireavatarF").length,
+      1
+    );
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: server-authoritative daily login claim grants once and rejects duplicate same-window claims", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const beforeProfile = await coordinator.profiles.ensureProfile("DailyAuthorityUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "DailyAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const firstClaim = await new Promise((resolve) => {
+      client.emit("profile:claimDailyLoginReward", {}, resolve);
+    });
+    const profileAfterFirst = await coordinator.profiles.getProfile("DailyAuthorityUser");
+
+    const secondClaim = await new Promise((resolve) => {
+      client.emit("profile:claimDailyLoginReward", {}, resolve);
+    });
+    const profileAfterSecond = await coordinator.profiles.getProfile("DailyAuthorityUser");
+
+    assert.equal(firstClaim?.ok, true);
+    assert.equal(firstClaim?.result?.granted, true);
+    assert.equal(firstClaim?.result?.snapshot?.progression?.dailyLogin?.eligible, false);
+    assert.equal(profileAfterFirst?.tokens, (beforeProfile?.tokens ?? 0) + 5);
+    assert.equal(profileAfterFirst?.playerXP, (beforeProfile?.playerXP ?? 0) + 2);
+
+    assert.equal(secondClaim?.ok, true);
+    assert.equal(secondClaim?.result?.granted, false);
+    assert.equal(profileAfterSecond?.tokens, profileAfterFirst?.tokens);
+    assert.equal(profileAfterSecond?.playerXP, profileAfterFirst?.playerXP);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: server-authoritative chest opening decrements inventory and persists rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.grantChest({
+      username: "ChestAuthorityUser",
+      chestType: "epic",
+      amount: 1
+    });
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "ChestAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const opened = await new Promise((resolve) => {
+      client.emit("profile:openChest", { chestType: "epic" }, resolve);
+    });
+    const profileAfterOpen = await coordinator.profiles.getProfile("ChestAuthorityUser");
+
+    assert.equal(opened?.ok, true);
+    assert.equal(opened?.result?.chestType, "epic");
+    assert.equal(opened?.result?.consumed, 1);
+    assert.equal(opened?.result?.remaining, 0);
+    assert.equal(opened?.result?.rewards?.tokens, 40);
+    assert.equal(opened?.result?.rewards?.xp, 20);
+    assert.ok(opened?.result?.rewards?.cosmetic);
+    assert.equal(profileAfterOpen?.chests?.epic, 0);
+    assert.equal(profileAfterOpen?.tokens, 240);
+    assert.equal(profileAfterOpen?.playerXP, 20);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: server-authoritative legendary chest opening decrements inventory and persists rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.grantChest({
+      username: "LegendaryChestAuthorityUser",
+      chestType: "legendary",
+      amount: 1
+    });
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "LegendaryChestAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const opened = await new Promise((resolve) => {
+      client.emit("profile:openChest", { chestType: "legendary" }, resolve);
+    });
+    const profileAfterOpen = await coordinator.profiles.getProfile("LegendaryChestAuthorityUser");
+
+    assert.equal(opened?.ok, true);
+    assert.equal(opened?.result?.chestType, "legendary");
+    assert.equal(opened?.result?.consumed, 1);
+    assert.equal(opened?.result?.remaining, 0);
+    assert.equal(opened?.result?.rewards?.tokens, 100);
+    assert.equal(opened?.result?.rewards?.xp, 50);
+    assert.ok(opened?.result?.rewards?.cosmetic);
+    assert.equal(profileAfterOpen?.chests?.legendary, 0);
+    assert.equal(profileAfterOpen?.tokens, 300);
+    assert.equal(profileAfterOpen?.playerXP, 50);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: server-authoritative store purchase rejects insufficient tokens and invalid items safely", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("StoreRejectUser", (current) => ({
+      ...current,
+      tokens: 0
+    }));
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "StoreRejectUser");
+    assert.equal(session?.ok, true);
+
+    const insufficientPurchase = await new Promise((resolve) => {
+      client.emit(
+        "profile:buyStoreItem",
+        { type: "avatar", cosmeticId: "fireavatarF" },
+        resolve
+      );
+    });
+    const invalidPurchase = await new Promise((resolve) => {
+      client.emit(
+        "profile:buyStoreItem",
+        { type: "not_a_category", cosmeticId: "missing_item" },
+        resolve
+      );
+    });
+    const profileAfterFailures = await coordinator.profiles.getProfile("StoreRejectUser");
+
+    assert.equal(insufficientPurchase?.ok, false);
+    assert.equal(insufficientPurchase?.error?.code, "PROFILE_STORE_WRITE_FAILED");
+    assert.equal(invalidPurchase?.ok, false);
+    assert.equal(invalidPurchase?.error?.code, "PROFILE_STORE_WRITE_FAILED");
+    assert.equal(profileAfterFailures?.tokens, 0);
+    assert.ok(!profileAfterFailures?.ownedCosmetics?.avatar?.includes("fireavatarF"));
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: room create and join sanitize spoofed online cosmetics to the server-authoritative profile snapshot", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  await coordinator.profiles.updateProfile("AuthorityHost", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: [...current.ownedCosmetics.avatar, "avatar_storm_oracle"],
+      background: [...current.ownedCosmetics.background, "fire_background"],
+      cardBack: [...current.ownedCosmetics.cardBack, "cardback_storm_spiral"],
+      title: [...current.ownedCosmetics.title, "title_element_sovereign"],
+      badge: [...current.ownedCosmetics.badge, "badge_element_veteran"]
+    },
+    equippedCosmetics: {
+      ...current.equippedCosmetics,
+      avatar: "avatar_storm_oracle",
+      background: "fire_background",
+      cardBack: "cardback_storm_spiral",
+      title: "title_element_sovereign",
+      badge: "badge_element_veteran"
+    }
+  }));
+  await coordinator.profiles.updateProfile("AuthorityGuest", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: [...current.ownedCosmetics.avatar, "avatar_fourfold_lord"],
+      background: [...current.ownedCosmetics.background, "celestial_void_background"],
+      cardBack: [...current.ownedCosmetics.cardBack, "cardback_elemental_nexus"],
+      title: [...current.ownedCosmetics.title, "title_war_master"],
+      badge: [...current.ownedCosmetics.badge, "badge_arena_legend"]
+    },
+    equippedCosmetics: {
+      ...current.equippedCosmetics,
+      avatar: "avatar_fourfold_lord",
+      background: "celestial_void_background",
+      cardBack: "cardback_elemental_nexus",
+      title: "title_war_master",
+      badge: "badge_arena_legend"
+    }
+  }));
+
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    assert.equal((await bootstrapSession(host, "AuthorityHost"))?.ok, true);
+    assert.equal((await bootstrapSession(guest, "AuthorityGuest"))?.ok, true);
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", {
+      equippedCosmetics: {
+        avatar: "spoofed_avatar",
+        background: "spoofed_background",
+        cardBack: "spoofed_cardback",
+        elementCardVariant: {
+          fire: "spoofed_fire_variant"
+        },
+        title: "spoofed_title",
+        badge: "spoofed_badge"
+      }
+    });
+    const createdRoom = await createdPromise;
+
+    assert.equal(createdRoom.host.equippedCosmetics.avatar, "avatar_storm_oracle");
+    assert.equal(createdRoom.host.equippedCosmetics.background, "fire_background");
+    assert.equal(createdRoom.host.equippedCosmetics.cardBack, "cardback_storm_spiral");
+    assert.equal(createdRoom.host.equippedCosmetics.title, "title_element_sovereign");
+    assert.equal(createdRoom.host.equippedCosmetics.badge, "badge_element_veteran");
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", {
+      roomCode: createdRoom.roomCode,
+      equippedCosmetics: {
+        avatar: "spoofed_guest_avatar",
+        background: "spoofed_guest_background",
+        cardBack: "spoofed_guest_cardback",
+        title: "spoofed_guest_title",
+        badge: "spoofed_guest_badge"
+      }
+    });
+    const joinedRoom = await joinedPromise;
+    await hostUpdatePromise;
+
+    assert.equal(joinedRoom.guest.equippedCosmetics.avatar, "avatar_fourfold_lord");
+    assert.equal(joinedRoom.guest.equippedCosmetics.background, "celestial_void_background");
+    assert.equal(joinedRoom.guest.equippedCosmetics.cardBack, "cardback_elemental_nexus");
+    assert.equal(joinedRoom.guest.equippedCosmetics.title, "title_war_master");
+    assert.equal(joinedRoom.guest.equippedCosmetics.badge, "badge_arena_legend");
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
 
@@ -751,6 +1404,45 @@ test("multiplayer rooms: room creation returns a short waiting room", async () =
       bothSubmitted: false,
       updatedAt: null
     });
+    assert.deepEqual(room.serverMatchState, {
+      roomCode: room.roomCode,
+      matchId: `${room.roomCode}:match:1`,
+      players: {
+        host: {
+          socketId: host.id,
+          sessionId: room.host.sessionId ?? null,
+          username: room.host.username ?? null
+        },
+        guest: null
+      },
+      activeStep: {
+        id: `${room.roomCode}:match:1:round:1:step:round:warDepth:0`,
+        round: 1,
+        type: "round",
+        warDepth: 0,
+        status: "collecting"
+      },
+      currentRound: 1,
+      playerHands: {
+        host: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guest: { fire: 2, water: 2, earth: 2, wind: 2 }
+      },
+      warState: {
+        active: false,
+        depth: 0
+      },
+      pendingActions: {
+        host: null,
+        guest: null
+      },
+      matchStatus: "waiting",
+      lastResolvedOutcome: null,
+      turnState: {
+        waitingOn: ["host", "guest"],
+        lockedIn: [],
+        resolutionReady: false
+      }
+    });
   } finally {
     host?.disconnect();
     await foundation.stop();
@@ -773,12 +1465,17 @@ test("multiplayer rooms: room join succeeds and notifies both players", async ()
 
     const hostUpdatePromise = waitForEvent(host, "room:update");
     const guestJoinedPromise = waitForEvent(guest, "room:joined");
-    const guestUpdatePromise = waitForEvent(guest, "room:update");
+    let guestReceivedRedundantUpdate = false;
+    const handleGuestUpdate = () => {
+      guestReceivedRedundantUpdate = true;
+    };
+    guest.on("room:update", handleGuestUpdate);
     guest.emit("room:join", { roomCode: createdRoom.roomCode.toLowerCase() });
 
     const joinedRoom = await guestJoinedPromise;
     const hostUpdate = await hostUpdatePromise;
-    const guestUpdate = await guestUpdatePromise;
+    await wait(50);
+    guest.off("room:update", handleGuestUpdate);
 
     assert.equal(joinedRoom.status, "full");
     assert.equal(joinedRoom.roomCode, createdRoom.roomCode);
@@ -807,7 +1504,7 @@ test("multiplayer rooms: room join succeeds and notifies both players", async ()
       updatedAt: null
     });
     assert.deepEqual(hostUpdate, joinedRoom);
-    assert.deepEqual(guestUpdate, joinedRoom);
+    assert.equal(guestReceivedRedundantUpdate, false);
   } finally {
     host?.disconnect();
     guest?.disconnect();
@@ -885,18 +1582,68 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
     assert.deepEqual(hostMoveSync.hostHand, { fire: 1, water: 2, earth: 2, wind: 2 });
     assert.deepEqual(hostMoveSync.guestHand, { fire: 2, water: 2, earth: 2, wind: 2 });
     assert.deepEqual(hostMoveSync.warPot, { host: [], guest: [] });
+    assert.deepEqual(hostMoveSync.serverMatchState, {
+      roomCode: room.roomCode,
+      matchId: `${room.roomCode}:match:1`,
+      players: {
+        host: {
+          socketId: host.id,
+          sessionId: hostMoveSync.host.sessionId ?? null,
+          username: hostMoveSync.host.username ?? null
+        },
+        guest: {
+          socketId: guest.id,
+          sessionId: hostMoveSync.guest.sessionId ?? null,
+          username: hostMoveSync.guest.username ?? null
+        }
+      },
+      activeStep: {
+        id: `${room.roomCode}:match:1:round:1:step:round:warDepth:0`,
+        round: 1,
+        type: "round",
+        warDepth: 0,
+        status: "collecting"
+      },
+      currentRound: 1,
+      playerHands: {
+        host: { fire: 1, water: 2, earth: 2, wind: 2 },
+        guest: { fire: 2, water: 2, earth: 2, wind: 2 }
+      },
+      warState: {
+        active: false,
+        depth: 0
+      },
+      pendingActions: {
+        host: {
+          selectedCard: "fire",
+          submittedAt: hostMoveSync.moveSync.updatedAt
+        },
+        guest: null
+      },
+      matchStatus: "active",
+      lastResolvedOutcome: null,
+      turnState: {
+        waitingOn: ["guest"],
+        lockedIn: ["host"],
+        resolutionReady: false
+      }
+    });
     assert.deepEqual(guestMoveSync, hostMoveSync);
 
     const hostLaterSyncsPromise = waitForEvents(host, "room:moveSync", 2);
     const guestLaterSyncsPromise = waitForEvents(guest, "room:moveSync", 2);
     const hostRoundResultPromise = waitForEvent(host, "room:roundResult");
     const guestRoundResultPromise = waitForEvent(guest, "room:roundResult");
+    const hostServerRoundResultPromise = waitForEvent(host, "room:serverRoundResult");
+    const guestServerRoundResultPromise = waitForEvent(guest, "room:serverRoundResult");
     guest.emit("room:submitMove", { move: "water" });
 
     const [hostBothSync, hostResetSync] = await hostLaterSyncsPromise;
     const [guestBothSync, guestResetSync] = await guestLaterSyncsPromise;
     const hostRoundResult = await hostRoundResultPromise;
     const guestRoundResult = await guestRoundResultPromise;
+    const hostServerRoundResult = await hostServerRoundResultPromise;
+    const guestServerRoundResult = await guestServerRoundResultPromise;
 
     assert.deepEqual(hostBothSync.moveSync, {
       hostSubmitted: true,
@@ -940,6 +1687,31 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
       guestResult: "win"
     });
     assert.deepEqual(guestRoundResult, hostRoundResult);
+    assert.deepEqual(guestServerRoundResult, hostServerRoundResult);
+    assert.equal(hostServerRoundResult.roomCode, room.roomCode);
+    assert.equal(hostServerRoundResult.matchId, `${room.roomCode}:match:1`);
+    assert.equal(hostServerRoundResult.stepId, `${room.roomCode}:match:1:round:1:step:round:warDepth:0`);
+    assert.deepEqual(hostServerRoundResult.submittedCards, {
+      host: "fire",
+      guest: "water"
+    });
+    assert.equal(hostServerRoundResult.authoritativeOutcomeType, "win");
+    assert.equal(hostServerRoundResult.authoritativeWinner, "guest");
+    assert.equal(hostServerRoundResult.matchSnapshot.currentRound, 2);
+    assert.equal(hostServerRoundResult.matchSnapshot.activeStep.id, `${room.roomCode}:match:1:round:2:step:round:warDepth:0`);
+    assert.deepEqual(hostServerRoundResult.matchSnapshot.lastResolvedOutcome, {
+      stepId: `${room.roomCode}:match:1:round:1:step:round:warDepth:0`,
+      resolvedAt: hostServerRoundResult.matchSnapshot.lastResolvedOutcome.resolvedAt,
+      round: 1,
+      type: "win",
+      winner: "guest",
+      hostMove: "fire",
+      guestMove: "water"
+    });
+    assert.deepEqual(hostServerRoundResult.animation, {
+      clearWarStateAfterDelay: false,
+      matchComplete: false
+    });
     assert.deepEqual(hostResetSync.moveSync, {
       hostSubmitted: false,
       guestSubmitted: false,
@@ -1130,8 +1902,8 @@ test("multiplayer rooms: rapid repeat submits count only one move per player bef
       message: "This player already submitted a move."
     });
     assert.deepEqual(guestErrors[0], {
-      code: "MOVE_ALREADY_SUBMITTED",
-      message: "This player already submitted a move."
+      code: "MOVE_STEP_RESOLVED",
+      message: "This resolution step already completed on the server."
     });
     assert.equal(hostRoundResults.length, 1);
     assert.equal(guestRoundResults.length, 1);
@@ -1193,9 +1965,11 @@ test("multiplayer rooms: unmatched move pairs resolve to no_effect for both play
     host.emit("room:submitMove", { move: "fire" });
     await hostFirstSyncPromise;
     await guestFirstSyncPromise;
+    const serverRoundResultPromise = waitForEvent(host, "room:serverRoundResult");
     guest.emit("room:submitMove", { move: "wind" });
 
     const roundResult = await roundResultPromise;
+    const serverRoundResult = await serverRoundResultPromise;
     assert.deepEqual(roundResult, {
       roomCode: room.roomCode,
       hostMove: "fire",
@@ -1222,6 +1996,10 @@ test("multiplayer rooms: unmatched move pairs resolve to no_effect for both play
       hostResult: "no_effect",
       guestResult: "no_effect"
     });
+    assert.equal(serverRoundResult.authoritativeOutcomeType, "no_effect");
+    assert.equal(serverRoundResult.authoritativeWinner, null);
+    assert.equal(serverRoundResult.matchSnapshot.lastResolvedOutcome.type, "no_effect");
+    assert.equal(serverRoundResult.matchSnapshot.lastResolvedOutcome.winner, null);
   } finally {
     host?.disconnect();
     guest?.disconnect();
@@ -1255,9 +2033,11 @@ test("multiplayer rooms: same move pairs resolve to war for both players", async
     host.emit("room:submitMove", { move: "fire" });
     await hostFirstSyncPromise;
     await guestFirstSyncPromise;
+    const serverRoundResultPromise = waitForEvent(host, "room:serverRoundResult");
     guest.emit("room:submitMove", { move: "fire" });
 
     const roundResult = await roundResultPromise;
+    const serverRoundResult = await serverRoundResultPromise;
     assert.deepEqual(roundResult, {
       roomCode: room.roomCode,
       hostMove: "fire",
@@ -1291,6 +2071,10 @@ test("multiplayer rooms: same move pairs resolve to war for both players", async
       hostResult: "war",
       guestResult: "war"
     });
+    assert.equal(serverRoundResult.authoritativeOutcomeType, "war_start");
+    assert.equal(serverRoundResult.authoritativeWinner, null);
+    assert.equal(serverRoundResult.matchSnapshot.lastResolvedOutcome.type, "war_start");
+    assert.equal(serverRoundResult.matchSnapshot.activeStep.type, "war");
   } finally {
     host?.disconnect();
     guest?.disconnect();
@@ -1393,7 +2177,9 @@ test("multiplayer rooms: match state scores and round history persist across mul
         guestMove: "earth",
         outcomeType: "resolved",
         hostResult: "win",
-        guestResult: "lose"
+        guestResult: "lose",
+        capturedCards: 2,
+        capturedOpponentCards: 1
       },
       {
         round: 2,
@@ -1401,7 +2187,9 @@ test("multiplayer rooms: match state scores and round history persist across mul
         guestMove: "wind",
         outcomeType: "no_effect",
         hostResult: "no_effect",
-        guestResult: "no_effect"
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
       }
     ]);
   } finally {
@@ -1409,6 +2197,73 @@ test("multiplayer rooms: match state scores and round history persist across mul
     guest?.disconnect();
     await foundation.stop();
   }
+});
+
+test("multiplayer foundation: online completed history uses stored per-card capture values", () => {
+  const matchState = buildOnlineMatchStateFromRoom({
+    winner: "host",
+    winReason: "hand_exhaustion",
+    roundNumber: 4,
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 3,
+        hostMove: "earth",
+        guestMove: "wind",
+        outcomeType: "war_resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 6,
+        capturedOpponentCards: 3
+      }
+    ]
+  });
+
+  assert.deepEqual(matchState.history, [
+    {
+      result: "none",
+      warClashes: 0,
+      capturedCards: 0,
+      capturedOpponentCards: 0,
+      p1Card: "fire",
+      p2Card: "fire"
+    },
+    {
+      result: "none",
+      warClashes: 0,
+      capturedCards: 0,
+      capturedOpponentCards: 0,
+      p1Card: "water",
+      p2Card: "water"
+    },
+    {
+      result: "p1",
+      warClashes: 3,
+      capturedCards: 6,
+      capturedOpponentCards: 3,
+      p1Card: "earth",
+      p2Card: "wind"
+    }
+  ]);
 });
 
 test("multiplayer rooms: repeated same-card rounds increase war depth", async () => {
@@ -1457,6 +2312,7 @@ test("multiplayer rooms: repeated same-card rounds increase war depth", async ()
 
     const hostWarSyncsTwo = waitForEvents(host, "room:moveSync", 2);
     const guestWarSyncsTwo = waitForEvents(guest, "room:moveSync", 2);
+    const repeatedWarServerResultPromise = waitForEvent(host, "room:serverRoundResult");
     const repeatedWarResult = await Promise.all([
       waitForEvent(host, "room:roundResult"),
       (async () => {
@@ -1464,6 +2320,7 @@ test("multiplayer rooms: repeated same-card rounds increase war depth", async ()
         return waitForEvent(guest, "room:roundResult");
       })()
     ]);
+    const repeatedWarServerResult = await repeatedWarServerResultPromise;
     await hostWarSyncsTwo;
     await guestWarSyncsTwo;
 
@@ -1506,6 +2363,9 @@ test("multiplayer rooms: repeated same-card rounds increase war depth", async ()
       hostResult: "war",
       guestResult: "war"
     });
+    assert.equal(repeatedWarServerResult.authoritativeOutcomeType, "war_continue");
+    assert.equal(repeatedWarServerResult.matchSnapshot.lastResolvedOutcome.type, "war_continue");
+    assert.equal(repeatedWarServerResult.matchSnapshot.warState.depth, 2);
   } finally {
     host?.disconnect();
     guest?.disconnect();
@@ -1654,8 +2514,10 @@ test("multiplayer rooms: decisive win during war resolves war and awards one sco
     laterSyncs = waitForEvents(host, "room:moveSync", 2);
     laterGuestSyncs = waitForEvents(guest, "room:moveSync", 2);
     const warResolved = waitForEvent(host, "room:roundResult");
+    const serverRoundResultPromise = waitForEvent(host, "room:serverRoundResult");
     guest.emit("room:submitMove", { move: "fire" });
     const result = await warResolved;
+    const serverRoundResult = await serverRoundResultPromise;
     const [, resetSync] = await laterSyncs;
     await laterGuestSyncs;
 
@@ -1685,6 +2547,10 @@ test("multiplayer rooms: decisive win during war resolves war and awards one sco
       hostResult: "win",
       guestResult: "lose"
     });
+    assert.equal(serverRoundResult.authoritativeOutcomeType, "war_resolved");
+    assert.equal(serverRoundResult.authoritativeWinner, "host");
+    assert.equal(serverRoundResult.matchSnapshot.lastResolvedOutcome.type, "war_resolved");
+    assert.equal(serverRoundResult.matchSnapshot.warState.active, false);
     assert.equal(resetSync.hostScore, 1);
     assert.equal(resetSync.guestScore, 0);
     assert.equal(resetSync.warActive, false);
@@ -1822,6 +2688,55 @@ test("multiplayer rooms: illegal move is rejected when the player has no copies 
       code: "ILLEGAL_MOVE_NOT_IN_HAND",
       message: "That element is no longer available in this hand."
     });
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+  }
+});
+
+test("multiplayer rooms: stale submit after server resolution is rejected safely", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 1000
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const room = await createFullRoom(host, guest);
+
+    const hostFirstSync = waitForEvent(host, "room:moveSync");
+    const guestFirstSync = waitForEvent(guest, "room:moveSync");
+    host.emit("room:submitMove", { move: "fire" });
+    await hostFirstSync;
+    await guestFirstSync;
+
+    const hostLaterSyncs = waitForEvents(host, "room:moveSync", 1);
+    const guestLaterSyncs = waitForEvents(guest, "room:moveSync", 1);
+    const hostRoundResult = waitForEvent(host, "room:roundResult");
+    guest.emit("room:submitMove", { move: "water" });
+    await hostRoundResult;
+    await hostLaterSyncs;
+    await guestLaterSyncs;
+
+    const staleMoveError = waitForEvent(host, "room:error");
+    host.emit("room:submitMove", { move: "earth" });
+
+    assert.deepEqual(await staleMoveError, {
+      code: "MOVE_STEP_RESOLVED",
+      message: "This resolution step already completed on the server."
+    });
+
+    const roomAfterStaleSubmit = foundation.roomStore.getRoom(room.roomCode);
+    assert.equal(roomAfterStaleSubmit.roundNumber, 2);
+    assert.equal(roomAfterStaleSubmit.serverMatchState.lastResolvedOutcome.type, "win");
+    assert.equal(roomAfterStaleSubmit.serverMatchState.activeStep.id, `${room.roomCode}:match:1:round:2:step:round:warDepth:0`);
   } finally {
     host?.disconnect();
     guest?.disconnect();
@@ -2110,18 +3025,22 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const settleCalls = [];
-  const rewardPersister = async ({ room, summary }) => {
-    settleCalls.push({ roomCode: room.roomCode, winner: summary.winner });
-    if (room.host?.username) {
-      await coordinator.grantOnlineMatchRewards({
-        username: room.host.username,
-        ...summary.hostRewards
+  const rewardPersister = async (payload) => {
+    settleCalls.push({ roomCode: payload.room.roomCode, winner: payload.summary.winner });
+    if (payload.decision?.participants?.hostUsername) {
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.hostUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "host"
       });
     }
-    if (room.guest?.username) {
-      await coordinator.grantOnlineMatchRewards({
-        username: room.guest.username,
-        ...summary.guestRewards
+    if (payload.decision?.participants?.guestUsername) {
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.guestUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "guest"
       });
     }
   };
@@ -2165,6 +3084,22 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
     assert.deepEqual(finalRound.rewardSettlement, {
       granted: true,
       grantedAt: finalRound.rewardSettlement.grantedAt,
+      settlementKey: `${room.roomCode}:match:1`,
+      decision: {
+        matchId: `${room.roomCode}:match:1`,
+        roomCode: room.roomCode,
+        winner: "host",
+        isDraw: false,
+        rewards: {
+          host: { tokens: 25, xp: 20, basicChests: 1 },
+          guest: { tokens: 5, xp: 5, basicChests: 0 }
+        },
+        participants: {
+          hostUsername: "HostRewardUser",
+          guestUsername: "GuestRewardUser"
+        },
+        decidedAt: finalRound.rewardSettlement.grantedAt
+      },
       summary: {
         granted: true,
         winner: "host",
@@ -2181,9 +3116,15 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
     assert.equal(hostProfile.tokens, 225);
     assert.equal(hostProfile.playerXP, 20);
     assert.equal(hostProfile.chests.basic, 1);
+    assert.deepEqual(hostProfile.onlineRewardSettlements?.appliedSettlementKeys, [
+      `${room.roomCode}:match:1`
+    ]);
     assert.equal(guestProfile.tokens, 205);
     assert.equal(guestProfile.playerXP, 5);
     assert.equal(guestProfile.chests.basic, 0);
+    assert.deepEqual(guestProfile.onlineRewardSettlements?.appliedSettlementKeys, [
+      `${room.roomCode}:match:1`
+    ]);
 
     const duplicateError = waitForEvent(host, "room:error");
     host.emit("room:submitMove", { move: "fire" });
@@ -2192,6 +3133,127 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
       message: "Match is complete. Both players must ready a rematch first."
     });
     assert.equal(settleCalls.length, 1);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer rewards: draw completion emits a server reward decision payload once", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const settleCalls = [];
+  const rewardPersister = async (payload) => {
+    settleCalls.push({
+      roomCode: payload.room.roomCode,
+      settlementKey: payload.settlementKey,
+      winner: payload.summary.winner
+    });
+    if (payload.decision?.participants?.hostUsername) {
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.hostUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "host"
+      });
+    }
+    if (payload.decision?.participants?.guestUsername) {
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.guestUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "guest"
+      });
+    }
+  };
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 20,
+    rewardPersister,
+    random: () => 0.5
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", { username: "DrawRewardHost" });
+    const room = await createdPromise;
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostJoinUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", { roomCode: room.roomCode, username: "DrawRewardGuest" });
+    await joinedPromise;
+    await hostJoinUpdatePromise;
+
+    const drawSequence = [
+      ["fire", "fire"],
+      ["water", "water"],
+      ["earth", "earth"],
+      ["wind", "wind"],
+      ["fire", "fire"],
+      ["water", "water"],
+      ["earth", "earth"],
+      ["wind", "wind"]
+    ];
+
+    let finalRound = null;
+    for (let index = 0; index < drawSequence.length; index += 1) {
+      const [hostMove, guestMove] = drawSequence[index];
+      const round = await submitRoundPair(
+        host,
+        guest,
+        hostMove,
+        guestMove,
+        index === drawSequence.length - 1 ? 1 : 2
+      );
+      finalRound = round.hostRoundResult;
+    }
+
+    assert.equal(finalRound.matchComplete, true);
+    assert.equal(finalRound.winner, "draw");
+    assert.equal(finalRound.rewardSettlement.settlementKey, `${room.roomCode}:match:1`);
+    assert.deepEqual(finalRound.rewardSettlement.decision, {
+      matchId: `${room.roomCode}:match:1`,
+      roomCode: room.roomCode,
+      winner: "draw",
+      isDraw: true,
+      rewards: {
+        host: { tokens: 10, xp: 10, basicChests: 0 },
+        guest: { tokens: 10, xp: 10, basicChests: 0 }
+      },
+      participants: {
+        hostUsername: "DrawRewardHost",
+        guestUsername: "DrawRewardGuest"
+      },
+      decidedAt: finalRound.rewardSettlement.grantedAt
+    });
+    assert.equal(settleCalls.length, 1);
+    assert.deepEqual(settleCalls[0], {
+      roomCode: room.roomCode,
+      settlementKey: `${room.roomCode}:match:1`,
+      winner: "draw"
+    });
+
+    const hostProfile = await coordinator.profiles.getProfile("DrawRewardHost");
+    const guestProfile = await coordinator.profiles.getProfile("DrawRewardGuest");
+    assert.equal(hostProfile.tokens, 210);
+    assert.equal(hostProfile.playerXP, 10);
+    assert.equal(guestProfile.tokens, 210);
+    assert.equal(guestProfile.playerXP, 10);
+    assert.deepEqual(hostProfile.onlineRewardSettlements?.appliedSettlementKeys, [
+      `${room.roomCode}:match:1`
+    ]);
+    assert.deepEqual(guestProfile.onlineRewardSettlements?.appliedSettlementKeys, [
+      `${room.roomCode}:match:1`
+    ]);
   } finally {
     host?.disconnect();
     guest?.disconnect();
@@ -2322,22 +3384,185 @@ test("multiplayer rewards: duplicate settled usernames disable reward persistenc
   );
 });
 
+test("multiplayer rewards: reward decision payload is derived from authoritative server completion state", () => {
+  const decision = buildRewardDecision(
+    {
+      roomCode: "AAA111",
+      matchSequence: 3,
+      matchComplete: true,
+      winner: "guest",
+      serverMatchState: {
+        matchId: "AAA111:match:3"
+      }
+    },
+    {
+      granted: true,
+      winner: "guest",
+      settledHostUsername: "HostDecisionUser",
+      settledGuestUsername: "GuestDecisionUser",
+      hostRewards: { tokens: 5, xp: 5, basicChests: 0 },
+      guestRewards: { tokens: 25, xp: 20, basicChests: 1 }
+    },
+    {
+      settlementKey: "AAA111:match:3",
+      decidedAt: "2026-03-29T18:00:00.000Z"
+    }
+  );
+
+  assert.deepEqual(decision, {
+    matchId: "AAA111:match:3",
+    roomCode: "AAA111",
+    winner: "guest",
+    isDraw: false,
+    settlementKey: "AAA111:match:3",
+    rewards: {
+      host: { tokens: 5, xp: 5, basicChests: 0 },
+      guest: { tokens: 25, xp: 20, basicChests: 1 }
+    },
+    participants: {
+      hostUsername: "HostDecisionUser",
+      guestUsername: "GuestDecisionUser"
+    },
+    decidedAt: "2026-03-29T18:00:00.000Z"
+  });
+});
+
+test("multiplayer rewards: settlementKey prevents duplicate persisted reward grants", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+
+  try {
+    await coordinator.profiles.ensureProfile("DuplicateRewardUser");
+
+    const firstGrant = await coordinator.applyOnlineRewardSettlementDecision({
+      username: "DuplicateRewardUser",
+      settlementKey: "ROOM99:match:1",
+      rewardDecision: {
+        participants: {
+          hostUsername: "DuplicateRewardUser",
+          guestUsername: "OtherUser"
+        },
+        rewards: {
+          host: { tokens: 25, xp: 20, basicChests: 1 },
+          guest: { tokens: 5, xp: 5, basicChests: 0 }
+        }
+      },
+      participantRole: "host"
+    });
+
+    const secondGrant = await coordinator.applyOnlineRewardSettlementDecision({
+      username: "DuplicateRewardUser",
+      settlementKey: "ROOM99:match:1",
+      rewardDecision: {
+        participants: {
+          hostUsername: "DuplicateRewardUser",
+          guestUsername: "OtherUser"
+        },
+        rewards: {
+          host: { tokens: 25, xp: 20, basicChests: 1 },
+          guest: { tokens: 5, xp: 5, basicChests: 0 }
+        }
+      },
+      participantRole: "host"
+    });
+
+    const profile = await coordinator.profiles.getProfile("DuplicateRewardUser");
+    assert.equal(firstGrant.duplicate, false);
+    assert.equal(secondGrant.duplicate, true);
+    assert.equal(profile.tokens, 225);
+    assert.equal(profile.playerXP, 20);
+    assert.equal(profile.chests.basic, 1);
+    assert.deepEqual(profile.onlineRewardSettlements?.appliedSettlementKeys, ["ROOM99:match:1"]);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer rewards: reward application retry after a persistence failure does not double-grant", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const originalUpdateProfile = coordinator.profiles.updateProfile.bind(coordinator.profiles);
+  let shouldFailOnce = true;
+
+  try {
+    await coordinator.profiles.ensureProfile("RetryRewardUser");
+
+    coordinator.profiles.updateProfile = async (...args) => {
+      if (shouldFailOnce) {
+        shouldFailOnce = false;
+        throw new Error("Simulated reward persistence failure");
+      }
+      return originalUpdateProfile(...args);
+    };
+
+    await assert.rejects(() =>
+      coordinator.applyOnlineRewardSettlementDecision({
+        username: "RetryRewardUser",
+        settlementKey: "ROOM100:match:1",
+        rewardDecision: {
+          participants: {
+            hostUsername: "RetryRewardUser",
+            guestUsername: "RetryOtherUser"
+          },
+          rewards: {
+            host: { tokens: 25, xp: 20, basicChests: 1 },
+            guest: { tokens: 5, xp: 5, basicChests: 0 }
+          }
+        },
+        participantRole: "host"
+      })
+    );
+
+    coordinator.profiles.updateProfile = originalUpdateProfile;
+
+    const retryGrant = await coordinator.applyOnlineRewardSettlementDecision({
+      username: "RetryRewardUser",
+      settlementKey: "ROOM100:match:1",
+      rewardDecision: {
+        participants: {
+          hostUsername: "RetryRewardUser",
+          guestUsername: "RetryOtherUser"
+        },
+        rewards: {
+          host: { tokens: 25, xp: 20, basicChests: 1 },
+          guest: { tokens: 5, xp: 5, basicChests: 0 }
+        }
+      },
+      participantRole: "host"
+    });
+
+    const profile = await coordinator.profiles.getProfile("RetryRewardUser");
+    assert.equal(retryGrant.duplicate, false);
+    assert.equal(profile.tokens, 225);
+    assert.equal(profile.playerXP, 20);
+    assert.equal(profile.chests.basic, 1);
+    assert.deepEqual(profile.onlineRewardSettlements?.appliedSettlementKeys, ["ROOM100:match:1"]);
+  } finally {
+    coordinator.profiles.updateProfile = originalUpdateProfile;
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer rewards: rematch reset clears prior reward settlement and allows a new grant", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const settleCalls = [];
-  const rewardPersister = async ({ room, summary }) => {
-    settleCalls.push({ roomCode: room.roomCode, winner: summary.winner });
-    if (room.host?.username) {
-      await coordinator.grantOnlineMatchRewards({
-        username: room.host.username,
-        ...summary.hostRewards
+  const rewardPersister = async (payload) => {
+    settleCalls.push({ roomCode: payload.room.roomCode, winner: payload.summary.winner });
+    if (payload.decision?.participants?.hostUsername) {
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.hostUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "host"
       });
     }
-    if (room.guest?.username) {
-      await coordinator.grantOnlineMatchRewards({
-        username: room.guest.username,
-        ...summary.guestRewards
+    if (payload.decision?.participants?.guestUsername) {
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.guestUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "guest"
       });
     }
   };
@@ -2715,6 +3940,10 @@ test("multiplayer disconnect hardening: active-match disconnect pauses room, pre
     assert.deepEqual(rejoinedRoom.hostHand, pausedRoom.hostHand);
     assert.deepEqual(rejoinedRoom.guestHand, pausedRoom.guestHand);
     assert.deepEqual(rejoinedRoom.moveSync, pausedRoom.moveSync);
+    assert.equal(rejoinedRoom.serverMatchState?.matchId, `${room.roomCode}:match:1`);
+    assert.equal(rejoinedRoom.serverMatchState?.activeStep?.id, `${room.roomCode}:match:1:round:1:step:round:warDepth:0`);
+    assert.equal(rejoinedRoom.serverMatchState?.pendingActions?.host?.selectedCard, "fire");
+    assert.equal(rejoinedRoom.serverMatchState?.pendingActions?.guest, null);
     assert.equal(resumedRoom.disconnectState.reason, "match_resumed");
 
     const resumedProfile = await coordinator.profiles.ensureProfile("ResumeGuest");
@@ -2723,6 +3952,13 @@ test("multiplayer disconnect hardening: active-match disconnect pauses room, pre
     assert.equal(resumedProfile.onlineDisconnectTracking.totalReconnectTimeoutExpirations, 0);
     assert.equal(resumedProfile.onlineDisconnectTracking.recentDisconnectTimestamps.length, 1);
     assert.equal(resumedProfile.onlineDisconnectTracking.recentExpirationTimestamps.length, 0);
+
+    await wait(170);
+    const roomAfterReconnectTimeoutWindow = foundation.roomStore.getRoom(room.roomCode);
+    const profileAfterReconnectTimeoutWindow = await coordinator.profiles.ensureProfile("ResumeGuest");
+    assert.equal(roomAfterReconnectTimeoutWindow?.status, "full");
+    assert.equal(roomAfterReconnectTimeoutWindow?.disconnectState?.reason, "match_resumed");
+    assert.equal(profileAfterReconnectTimeoutWindow.onlineDisconnectTracking.totalReconnectTimeoutExpirations, 0);
 
     const saves = await coordinator.saves.listMatchResults();
     const hostProfile = await coordinator.profiles.getProfile("ResumeHost");
@@ -2849,6 +4085,71 @@ test("multiplayer disconnect hardening: reconnect preserves war state and both-s
     host?.disconnect();
     guest?.disconnect();
     reconnectClient?.disconnect();
+    await foundation.stop();
+  }
+});
+
+test("multiplayer disconnect hardening: duplicate reconnect resume is rejected after the slot is already reclaimed", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 1000,
+    roomReconnectTimeoutMs: 120
+  });
+  let host = null;
+  let guest = null;
+  let reconnectClient = null;
+  let duplicateReconnectClient = null;
+  let guestSession = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+    guestSession = await bootstrapSession(guest, "DuplicateResumeGuest");
+    assert.equal(guestSession?.ok, true);
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", { username: "DuplicateResumeHost" });
+    const room = await createdPromise;
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostJoinUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", { roomCode: room.roomCode, username: "DuplicateResumeGuest" });
+    await joinedPromise;
+    await hostJoinUpdatePromise;
+
+    const hostFirstSync = waitForEvent(host, "room:moveSync");
+    const guestFirstSync = waitForEvent(guest, "room:moveSync");
+    host.emit("room:submitMove", { move: "fire" });
+    await hostFirstSync;
+    await guestFirstSync;
+
+    const hostPausedUpdate = waitForEvent(host, "room:update");
+    guest.disconnect();
+    await hostPausedUpdate;
+
+    reconnectClient = await connectClient(port);
+    const resumedGuestSession = await resumeSession(reconnectClient, guestSession.session.token);
+    assert.equal(resumedGuestSession?.ok, true);
+    const reconnectJoined = waitForEvent(reconnectClient, "room:joined");
+    reconnectClient.emit("room:join", { roomCode: room.roomCode });
+    const resumedRoom = await reconnectJoined;
+    assert.equal(resumedRoom.status, "full");
+    assert.equal(resumedRoom.guest.connected, true);
+
+    duplicateReconnectClient = await connectClient(port);
+    const duplicateResume = await resumeSession(duplicateReconnectClient, guestSession.session.token);
+    assert.equal(duplicateResume?.ok, false);
+    assert.deepEqual(duplicateResume?.error, {
+      code: "SESSION_ALREADY_ACTIVE",
+      message: "This online session is already active on another connection."
+    });
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    reconnectClient?.disconnect();
+    duplicateReconnectClient?.disconnect();
     await foundation.stop();
   }
 });
@@ -3024,6 +4325,99 @@ test("multiplayer disconnect hardening: post-match disconnect preserves settleme
   }
 });
 
+test("multiplayer disconnect hardening: post-match reconnect shows final authoritative state without reopening settlement", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 20,
+    roomCleanupDelayMs: 200,
+    rewardPersister: createOnlinePersistencePersister(coordinator),
+    disconnectTracker: createOnlineDisconnectTracker(coordinator),
+    random: () => 0.05
+  });
+  let host = null;
+  let guest = null;
+  let reconnectHost = null;
+  let hostSession = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+    hostSession = await bootstrapSession(host, "ReconnectCompletedHost");
+    assert.equal(hostSession?.ok, true);
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", { username: "ReconnectCompletedHost" });
+    const room = await createdPromise;
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostJoinUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", { roomCode: room.roomCode, username: "ReconnectCompletedGuest" });
+    await joinedPromise;
+    await hostJoinUpdatePromise;
+
+    const exhaustionSequence = [
+      ...OPENING_WIN_SEQUENCE,
+      ["earth", "wind"],
+      ["wind", "water"],
+      ["water", "fire"]
+    ];
+
+    for (let index = 0; index < exhaustionSequence.length; index += 1) {
+      const [hostMove, guestMove] = exhaustionSequence[index];
+      await submitRoundPair(host, guest, hostMove, guestMove, index === exhaustionSequence.length - 1 ? 1 : 2);
+    }
+
+    const savesBeforeDisconnect = await coordinator.saves.listMatchResults();
+    const guestClosingUpdate = waitForEvent(guest, "room:update");
+    host.disconnect();
+    const closingRoom = await guestClosingUpdate;
+    assert.equal(closingRoom.status, "closing");
+    assert.equal(closingRoom.matchComplete, true);
+    assert.ok(closingRoom.rewardSettlement?.decision);
+
+    reconnectHost = await connectClient(port);
+    const resumedHostSession = await resumeSession(reconnectHost, hostSession.session.token);
+    assert.equal(resumedHostSession?.ok, true);
+    const reconnectJoined = waitForEvent(reconnectHost, "room:joined");
+    reconnectHost.emit("room:join", { roomCode: room.roomCode });
+    const resumedRoom = await reconnectJoined;
+    const savesAfterReconnect = await coordinator.saves.listMatchResults();
+
+    assert.equal(resumedRoom.status, "closing");
+    assert.equal(resumedRoom.matchComplete, true);
+    assert.equal(resumedRoom.winner, "host");
+    assert.equal(resumedRoom.winReason, "hand_exhaustion");
+    assert.equal(resumedRoom.disconnectState.active, false);
+    assert.equal(resumedRoom.disconnectState.reason, "match_resumed");
+    assert.ok(resumedRoom.rewardSettlement?.decision);
+    assert.equal(resumedRoom.rewardSettlement.decision.matchId, `${room.roomCode}:match:1`);
+    assert.equal(savesAfterReconnect.filter((entry) => entry.mode === "online_pvp").length, savesBeforeDisconnect.filter((entry) => entry.mode === "online_pvp").length);
+
+    await wait(260);
+    const roomAfterReconnectCleanupWindow = foundation.roomStore.getRoom(room.roomCode);
+    assert.equal(roomAfterReconnectCleanupWindow?.status, "closing");
+    assert.equal(roomAfterReconnectCleanupWindow?.disconnectState?.reason, "match_resumed");
+
+    const rematchError = waitForEvent(reconnectHost, "room:error");
+    reconnectHost.emit("room:readyRematch");
+    assert.deepEqual(await rematchError, {
+      code: "REMATCH_UNAVAILABLE",
+      message: "Rematch is unavailable because this room is closing."
+    });
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    reconnectHost?.disconnect();
+    await foundation.stop();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer online challenges: completed match updates progress exactly once and persists challenge rewards", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
@@ -3104,6 +4498,118 @@ test("multiplayer online challenges: completed match updates progress exactly on
     const hostProfileAfterDuplicate = await coordinator.profiles.getProfile("ChallengeRewardHost");
     assert.equal(hostProfileAfterDuplicate.dailyChallenges.daily.progress.matchesWon, 2);
     assert.equal(hostProfileAfterDuplicate.dailyChallenges.daily.progress.matchesPlayed, 1);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer hardening: concurrent completion retry paths do not persist settlement twice", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const settleCalls = [];
+  const rewardPersister = async (payload) => {
+    settleCalls.push(payload.settlementKey);
+    await wait(80);
+    const matchState = buildOnlineMatchStateFromRoom(payload.room);
+
+    if (payload.decision?.participants?.hostUsername) {
+      await coordinator.recordOnlineMatchResult({
+        username: payload.decision.participants.hostUsername,
+        perspective: "p1",
+        matchState,
+        settlementKey: payload.settlementKey
+      });
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.hostUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "host"
+      });
+    }
+
+    if (payload.decision?.participants?.guestUsername) {
+      await coordinator.recordOnlineMatchResult({
+        username: payload.decision.participants.guestUsername,
+        perspective: "p2",
+        matchState,
+        settlementKey: payload.settlementKey
+      });
+      await coordinator.applyOnlineRewardSettlementDecision({
+        username: payload.decision.participants.guestUsername,
+        settlementKey: payload.settlementKey,
+        rewardDecision: payload.decision,
+        participantRole: "guest"
+      });
+    }
+  };
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 20,
+    roomCleanupDelayMs: 200,
+    rewardPersister,
+    random: () => 0.05
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", { username: "ConcurrentSettleHost" });
+    const room = await createdPromise;
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostJoinUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", { roomCode: room.roomCode, username: "ConcurrentSettleGuest" });
+    await joinedPromise;
+    await hostJoinUpdatePromise;
+
+    const exhaustionSequence = [
+      ...OPENING_WIN_SEQUENCE,
+      ["earth", "wind"],
+      ["wind", "water"],
+      ["water", "fire"]
+    ];
+
+    for (let index = 0; index < exhaustionSequence.length - 1; index += 1) {
+      const [hostMove, guestMove] = exhaustionSequence[index];
+      await submitRoundPair(host, guest, hostMove, guestMove, 2);
+    }
+
+    const [finalHostMove, finalGuestMove] = exhaustionSequence[exhaustionSequence.length - 1];
+    const hostFirstSync = waitForEvent(host, "room:moveSync");
+    const guestFirstSync = waitForEvent(guest, "room:moveSync");
+    host.emit("room:submitMove", { move: finalHostMove });
+    await hostFirstSync;
+    await guestFirstSync;
+
+    const guestRoundResult = waitForEvent(guest, "room:roundResult");
+    const guestClosingUpdate = waitForEvent(guest, "room:update");
+    guest.emit("room:submitMove", { move: finalGuestMove });
+    host.disconnect();
+
+    const finalRound = await guestRoundResult;
+    const closingRoom = await guestClosingUpdate;
+    await wait(140);
+
+    const saves = await coordinator.saves.listMatchResults();
+    const hostProfile = await coordinator.profiles.getProfile("ConcurrentSettleHost");
+    const guestProfile = await coordinator.profiles.getProfile("ConcurrentSettleGuest");
+
+    assert.equal(finalRound.matchComplete, true);
+    assert.equal(closingRoom.status, "closing");
+    assert.equal(settleCalls.length, 1);
+    assert.deepEqual(settleCalls, [`${room.roomCode}:match:1`]);
+    assert.deepEqual(hostProfile.onlineRewardSettlements?.appliedSettlementKeys, [`${room.roomCode}:match:1`]);
+    assert.deepEqual(guestProfile.onlineRewardSettlements?.appliedSettlementKeys, [`${room.roomCode}:match:1`]);
+    assert.equal(saves.filter((entry) => entry.mode === "online_pvp").length, 2);
   } finally {
     host?.disconnect();
     guest?.disconnect();

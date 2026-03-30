@@ -1,10 +1,6 @@
 import { getArenaBackground, getAvatarImage, getBadgeImage } from "../../utils/assets.js";
 import { getAssetPath } from "../../utils/dom.js";
-import {
-  ACHIEVEMENT_CATALOG,
-  countUnlockedAchievements,
-  getUnlockedAchievements
-} from "../../utils/achievements.js";
+import { buildAchievementCatalog } from "../../../state/achievementSystem.js";
 import {
   getCosmeticDisplayName,
   getCosmeticDefinition,
@@ -186,8 +182,12 @@ function renderChestPanel(profile, visualState = {}) {
   const milestoneChestIcon = getAssetPath(
     visualState?.milestoneOpen ? "icons/loot_chest_open.png" : "icons/loot_chest.png"
   );
-  const epicChestIcon = getAssetPath("icons/epic_chest.png");
-  const legendaryChestIcon = getAssetPath("icons/legendary_chest.png");
+  const epicChestIcon = getAssetPath(
+    visualState?.epicOpen ? "icons/epic_chest_open.png" : "icons/epic_chest.png"
+  );
+  const legendaryChestIcon = getAssetPath(
+    visualState?.legendaryOpen ? "icons/legendary_chest_open.png" : "icons/legendary_chest.png"
+  );
   const commonLabelClass = "cosmetic-rarity-label rarity-common";
   const rareLabelClass = "cosmetic-rarity-label rarity-rare";
   const epicLabelClass = "cosmetic-rarity-label rarity-epic";
@@ -221,15 +221,15 @@ function renderChestPanel(profile, visualState = {}) {
             <span class="chest-count-bubble" aria-label="Milestone Chest count">${milestoneChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${milestoneChestIcon}" alt="Milestone Chest" data-milestone-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper ${rareLabelClass}" data-milestone-chest-label="true">Rare Chest</p>
+          <p class="text-muted chest-open-helper ${rareLabelClass}" data-milestone-chest-label="true">Milestone Chest</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="epic">
           <button
+            id="open-epic-chest-btn"
             class="chest-open-trigger"
             type="button"
-            disabled
-            aria-disabled="true"
-            aria-label="Epic Chest unavailable"
+            ${epicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            aria-label="Open Epic Chest"
           >
             <span class="chest-count-bubble" aria-label="Epic Chest count">${epicChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${epicChestIcon}" alt="Epic Chest" data-epic-chest-image="true" />
@@ -238,11 +238,11 @@ function renderChestPanel(profile, visualState = {}) {
         </div>
         <div class="chest-slot" data-profile-chest-slot="legendary">
           <button
+            id="open-legendary-chest-btn"
             class="chest-open-trigger"
             type="button"
-            disabled
-            aria-disabled="true"
-            aria-label="Legendary Chest unavailable"
+            ${legendaryChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            aria-label="Open Legendary Chest"
           >
             <span class="chest-count-bubble" aria-label="Legendary Chest count">${legendaryChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${legendaryChestIcon}" alt="Legendary Chest" data-legendary-chest-image="true" />
@@ -281,8 +281,9 @@ function renderReadOnlyProfile(viewedProfile) {
     return "";
   }
 
+  const achievementCatalog = buildAchievementCatalog(viewedProfile);
+  const unlockedAchievements = achievementCatalog.filter((item) => item.unlocked);
   const avatar = getAvatarImage(viewedProfile.equippedCosmetics?.avatar);
-  const unlockedAchievements = getUnlockedAchievements(viewedProfile);
   const title = getCosmeticDisplayName(
     "title",
     viewedProfile.equippedCosmetics?.title,
@@ -354,9 +355,12 @@ function renderReadOnlyProfile(viewedProfile) {
 export const profileScreen = {
   render(context) {
     const profile = context.profile;
-    const unlockedAchievements = getUnlockedAchievements(profile);
-    const unlockedAchievementCount = countUnlockedAchievements(profile);
-    const totalAchievementCount = ACHIEVEMENT_CATALOG.length;
+    const achievementCatalog = Array.isArray(context.achievementCatalog)
+      ? context.achievementCatalog
+      : buildAchievementCatalog(profile);
+    const unlockedAchievements = achievementCatalog.filter((item) => item.unlocked);
+    const unlockedAchievementCount = unlockedAchievements.length;
+    const totalAchievementCount = achievementCatalog.length;
     const searchResults = context.searchResults ?? [];
     const cosmetics = context.cosmetics;
 
@@ -454,6 +458,14 @@ export const profileScreen = {
     const openMilestoneChestButton = document.getElementById("open-milestone-chest-btn");
     if (openMilestoneChestButton && context.actions.openMilestoneChest) {
       openMilestoneChestButton.addEventListener("click", context.actions.openMilestoneChest);
+    }
+    const openEpicChestButton = document.getElementById("open-epic-chest-btn");
+    if (openEpicChestButton && context.actions.openEpicChest) {
+      openEpicChestButton.addEventListener("click", context.actions.openEpicChest);
+    }
+    const openLegendaryChestButton = document.getElementById("open-legendary-chest-btn");
+    if (openLegendaryChestButton && context.actions.openLegendaryChest) {
+      openLegendaryChestButton.addEventListener("click", context.actions.openLegendaryChest);
     }
 
     const searchForm = document.getElementById("profile-search-form");

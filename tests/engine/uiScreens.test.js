@@ -93,7 +93,7 @@ function createProfileScreenContext(overrides = {}) {
       bestWinStreak: 0,
       tokens: 0,
       supporterPass: false,
-      chests: { basic: 0, milestone: 0 },
+      chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 },
       achievements: {},
       modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
       equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
@@ -121,7 +121,12 @@ function createProfileScreenContext(overrides = {}) {
         title: [{ id: "Initiate", name: "Initiate", owned: true }]
       }
     },
-    basicChestVisualState: { basicOpen: false, milestoneOpen: false },
+    basicChestVisualState: {
+      basicOpen: false,
+      milestoneOpen: false,
+      epicOpen: false,
+      legendaryOpen: false
+    },
     titleIcon: null,
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
@@ -130,6 +135,8 @@ function createProfileScreenContext(overrides = {}) {
     actions: {
       openBasicChest: () => {},
       openMilestoneChest: () => {},
+      openEpicChest: () => {},
+      openLegendaryChest: () => {},
       searchProfiles: () => {},
       viewProfile: () => {},
       clearViewed: () => {},
@@ -8633,6 +8640,96 @@ test("ui: game HUD refresh preserves an active quit confirmation modal", () => {
   }
 });
 
+test("ui: game HUD refresh preserves an active match-complete modal for local PvE", () => {
+  const previousDocument = global.document;
+  const shown = [];
+  let clearCalls = 0;
+
+  global.document = {
+    querySelector: (selector) => {
+      if (selector === ".modal-overlay .modal h3") {
+        return { textContent: "Match Complete" };
+      }
+      return null;
+    },
+    body: {
+      classList: {
+        toggle: () => {}
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {},
+      clearStaleOverlay: () => {
+        clearCalls += 1;
+        return true;
+      }
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.username = "PveCloser";
+  controller.profile = {
+    username: "PveCloser",
+    title: "Initiate",
+    cosmetics: { background: "default_background" },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      background: "default_background",
+      cardBack: "default_card_back",
+      badge: "none",
+      title: "Initiate"
+    }
+  };
+  controller.settings = {
+    gameplay: { timerSeconds: 30 },
+    aiDifficulty: "normal",
+    aiOpponentStyle: "default",
+    ui: { reducedMotion: false },
+    audio: { enabled: true }
+  };
+  controller.gameController = {
+    stopTimer: () => {},
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "completed",
+      mode: MATCH_MODE.PVE,
+      roundOutcome: { key: "resolved", label: "Victory" },
+      roundResult: "Victory.",
+      round: 8,
+      timerSeconds: 0,
+      totalMatchSeconds: 300,
+      canSelectCard: false,
+      playerHand: [],
+      opponentHand: [],
+      pileCount: 0,
+      totalWarClashes: 1,
+      warPileCards: [],
+      captured: { p1: 8, p2: 0 },
+      lastRound: null
+    })
+  };
+  controller.screenFlow = "game";
+
+  try {
+    controller.handleGameUpdate();
+
+    assert.equal(shown.length, 1);
+    assert.equal(shown.at(-1).screenId, "game");
+    assert.equal(clearCalls, 0);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: appController preserves an intentional settings modal when the settings screen rerenders", async () => {
   const previousWindow = global.window;
   const previousDocument = global.document;
@@ -9983,6 +10080,8 @@ test("ui: profile chest labels stay non-interactive while chest buttons remain c
   const actions = [];
   const basicButton = { addEventListener: (_type, handler) => actions.push(["basic", handler]) };
   const milestoneButton = { addEventListener: (_type, handler) => actions.push(["milestone", handler]) };
+  const epicButton = { addEventListener: (_type, handler) => actions.push(["epic", handler]) };
+  const legendaryButton = { addEventListener: (_type, handler) => actions.push(["legendary", handler]) };
   const searchForm = { addEventListener: () => {} };
 
   global.document = {
@@ -9995,6 +10094,12 @@ test("ui: profile chest labels stay non-interactive while chest buttons remain c
       }
       if (id === "open-milestone-chest-btn") {
         return milestoneButton;
+      }
+      if (id === "open-epic-chest-btn") {
+        return epicButton;
+      }
+      if (id === "open-legendary-chest-btn") {
+        return legendaryButton;
       }
       if (id === "profile-search-form") {
         return searchForm;
@@ -10017,6 +10122,8 @@ test("ui: profile chest labels stay non-interactive while chest buttons remain c
         actions: {
           openBasicChest: () => "basic",
           openMilestoneChest: () => "milestone",
+          openEpicChest: () => "epic",
+          openLegendaryChest: () => "legendary",
           searchProfiles: () => {},
           viewProfile: () => {},
           clearViewed: () => {},
@@ -10028,10 +10135,10 @@ test("ui: profile chest labels stay non-interactive while chest buttons remain c
     global.document = previousDocument;
   }
 
-  assert.equal(actions.length, 2);
+  assert.equal(actions.length, 4);
   assert.deepEqual(
     actions.map(([name]) => name),
-    ["basic", "milestone"]
+    ["basic", "milestone", "epic", "legendary"]
   );
 });
 
@@ -10052,7 +10159,7 @@ test("ui: profile chest row keeps milestone chest to the right of the basic ches
   assert.equal((html.match(/data-profile-chest-slot="/g) ?? []).length, 4);
   assert.match(html, /data-profile-chest-row="true"/);
   assert.match(html, /Basic Chest/);
-  assert.match(html, /Rare Chest/);
+  assert.match(html, /Milestone Chest/);
   assert.match(html, /Epic Chest/);
   assert.match(html, /Legendary Chest/);
 });
@@ -10068,23 +10175,33 @@ test("ui: profile reward chest panel adds subtle spacing above the section", () 
   assert.match(html, /class="stack-sm chest-panel profile-chest-panel"/);
 });
 
-test("ui: epic and legendary profile chest entries render as visual-only disabled slots", () => {
+test("ui: epic and legendary profile chest entries enable opening when inventory exists and support the open visual state", () => {
   const html = profileScreen.render(
     createProfileScreenContext({
       profile: {
         ...createProfileScreenContext().profile,
         username: "VisualChestUser",
         chests: { basic: 0, milestone: 0, epic: 4, legendary: 2 }
+      },
+      basicChestVisualState: {
+        basicOpen: false,
+        milestoneOpen: false,
+        epicOpen: true,
+        legendaryOpen: true
       }
     })
   );
 
   assert.match(html, /data-epic-chest-image="true"/);
   assert.match(html, /data-legendary-chest-image="true"/);
-  assert.match(html, /aria-label="Epic Chest unavailable"/);
-  assert.match(html, /aria-label="Legendary Chest unavailable"/);
-  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/epic_chest\.png"/);
-  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/legendary_chest\.png"/);
+  assert.match(html, /id="open-epic-chest-btn"/);
+  assert.match(html, /id="open-legendary-chest-btn"/);
+  assert.match(html, /aria-label="Open Epic Chest"/);
+  assert.match(html, /aria-label="Open Legendary Chest"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/epic_chest_open\.png"/);
+  assert.match(html, /src="(?:file:.*\/)?assets\/icons\/legendary_chest_open\.png"/);
+  assert.doesNotMatch(html, /id="open-epic-chest-btn"[^>]*disabled/);
+  assert.doesNotMatch(html, /id="open-legendary-chest-btn"[^>]*disabled/);
 });
 
 test("ui: profile shows the new milestone chest popup with the exact grant message and acknowledges it once", async () => {
@@ -10355,14 +10472,15 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
       winner: "p1",
       endReason: "normal",
       history: [
-        { result: "p1" },
-        { result: "p2", cardsCaptured: { p1: 2 } },
-        { result: "p1" }
+        { result: "p1", capturedCards: 2, capturedOpponentCards: 1 },
+        { result: "p2", capturedCards: 6, capturedOpponentCards: 3 },
+        { result: "none", capturedCards: 0, capturedOpponentCards: 0 },
+        { result: "p1", capturedCards: 6, capturedOpponentCards: 3 }
       ]
     },
     {
       stats: {
-        cardsCaptured: 3,
+        cardsCaptured: 4,
         warsEntered: 2,
         longestWar: 4
       }
@@ -10372,13 +10490,44 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   assert.match(payload.bodyHtml, /class="match-complete-modal is-victory"/);
   assert.match(payload.bodyHtml, /<h4 class="match-complete-outcome">Victory<\/h4>/);
   assert.match(payload.bodyHtml, /VampyrLee defeated Elemental AI\./);
-  assert.match(payload.bodyHtml, /VampyrLee • 3 \| Elemental AI • 0/);
+  assert.match(payload.bodyHtml, /VampyrLee • 4 \| Elemental AI • 3/);
   assert.match(payload.bodyHtml, /Captures/);
   assert.match(payload.bodyHtml, /WARs Entered/);
   assert.match(payload.bodyHtml, /Longest WAR/);
   assert.match(payload.bodyHtml, /Rounds Played/);
   assert.match(payload.bodyHtml, /id="match-complete-play-again"/);
   assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
+});
+
+test("ui: PvE match complete payload uses derived match stats for both player and AI captures", () => {
+  const controller = createRendererController();
+  controller.username = "VampyrLee";
+  controller.profile = { username: "VampyrLee" };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      mode: "pve",
+      history: [
+        { result: "p1", capturedCards: 2, capturedOpponentCards: 1, warClashes: 0 },
+        { result: "p2", capturedCards: 6, capturedOpponentCards: 3, warClashes: 2 },
+        { result: "none", capturedCards: 0, capturedOpponentCards: 0, warClashes: 0 },
+        { result: "p1", capturedCards: 6, capturedOpponentCards: 3, warClashes: 2 }
+      ]
+    },
+    {
+      stats: {
+        cardsCaptured: 8,
+        warsEntered: 2,
+        longestWar: 4
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /VampyrLee • 4 \| Elemental AI • 3/);
+  assert.match(payload.bodyHtml, /<strong class="match-complete-stat-value">4 \| 3<\/strong>/);
 });
 
 test("ui: match complete payload renders polished local PvP naming and draw state", () => {
