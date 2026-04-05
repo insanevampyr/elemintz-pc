@@ -12,6 +12,7 @@ import {
   acknowledgeUnlockedLoadoutSlots,
   applyAchievementCosmeticRewards,
   applyCosmeticLoadout,
+  buildAuthoritativeCosmeticSnapshot,
   getCosmeticCatalogForProfile,
   getCosmeticDefinition,
   getCosmeticLoadoutsForProfile,
@@ -22,7 +23,12 @@ import {
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
 import { buyStoreItem, getStoreViewForProfile, grantSupporterPass } from "./storeSystem.js";
-import { acknowledgeMilestoneChestReward, grantChest, openChest } from "./chestSystem.js";
+import {
+  acknowledgeMilestoneChestReward,
+  applyWinStreakChestGrants,
+  grantChest,
+  openChest
+} from "./chestSystem.js";
 import {
   applyDailyChallengesForMatch,
   getDailyChallengesView,
@@ -79,6 +85,32 @@ function profileCommitSnapshot(profile) {
 function appendBoundedTimestamp(list, timestamp, limit = 10) {
   const next = Array.isArray(list) ? [...list, timestamp] : [timestamp];
   return next.slice(-limit);
+}
+
+function normalizeSettlementKey(settlementKey) {
+  const normalized = String(settlementKey ?? "").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeAppliedSettlementKeys(keys, limit = 50) {
+  if (!Array.isArray(keys)) {
+    return [];
+  }
+
+  return keys
+    .map((entry) => normalizeSettlementKey(entry))
+    .filter(Boolean)
+    .slice(-limit);
+}
+
+function appendAppliedSettlementKey(keys, settlementKey, limit = 50) {
+  const normalizedKey = normalizeSettlementKey(settlementKey);
+  if (!normalizedKey) {
+    return normalizeAppliedSettlementKeys(keys, limit);
+  }
+
+  const existing = normalizeAppliedSettlementKeys(keys, limit).filter((entry) => entry !== normalizedKey);
+  return [...existing, normalizedKey].slice(-limit);
 }
 
 function getOwnedCosmeticIds(profile, type) {
@@ -269,13 +301,14 @@ export class StateCoordinator {
   }
 
   buildCosmeticsView(profile) {
-    const randomizeAfterEachMatch = normalizeCosmeticRandomizationPreferences(
-      profile?.cosmeticRandomizeAfterMatch,
-      { legacyBackgroundEnabled: Boolean(profile?.randomizeBackgroundEachMatch) }
-    );
+    const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
+    const randomizeAfterEachMatch = normalizeCosmeticRandomizationPreferences(snapshot.preferences);
     return {
-      equipped: profile.equippedCosmetics,
-      owned: profile.ownedCosmetics,
+      authority: "server",
+      source: "stateCoordinator",
+      snapshot,
+      equipped: snapshot.equipped,
+      owned: snapshot.owned,
       catalog: getCosmeticCatalogForProfile(profile),
       preferences: {
         randomizeBackgroundEachMatch: Boolean(randomizeAfterEachMatch.background),
@@ -400,7 +433,9 @@ export class StateCoordinator {
       const profileWithStats = statWrite.skipped
         ? (console.warn("[RuntimeGuard] skipped stat write due to unresolved mode"),
           profileBefore)
-        : await this.profiles.applyMatchStats(username, matchStats, mode);
+        : await this.profiles.applyMatchStats(username, matchStats, mode, {
+            resetWinStreakOnDraw: true
+          });
 
       console.info("[StateCoordinator] recordMatchResult:after-stats", {
         mode,
@@ -419,6 +454,11 @@ export class StateCoordinator {
       });
 
       let workingProfile = challengeResult.profile;
+      const streakChestGrantResult = applyWinStreakChestGrants(workingProfile, {
+        previousWinStreak: profileBefore?.winStreak ?? 0,
+        nextWinStreak: profileWithStats?.winStreak ?? workingProfile?.winStreak ?? 0
+      });
+      workingProfile = streakChestGrantResult.profile;
       const levelRewardResult = applyLevelRewardsForLevelChange(workingProfile, {
         fromLevel: challengeResult.levelBefore,
         toLevel: challengeResult.levelAfter
@@ -621,6 +661,11 @@ export class StateCoordinator {
       });
 
       let workingProfile = challengeResult.profile;
+      const streakChestGrantResult = applyWinStreakChestGrants(workingProfile, {
+        previousWinStreak: profileBefore?.winStreak ?? 0,
+        nextWinStreak: profileWithStats?.winStreak ?? workingProfile?.winStreak ?? 0
+      });
+      workingProfile = streakChestGrantResult.profile;
       const levelRewardResult = applyLevelRewardsForLevelChange(workingProfile, {
         fromLevel: challengeResult.levelBefore,
         toLevel: challengeResult.levelAfter
@@ -825,6 +870,94 @@ export class StateCoordinator {
         basicChests: safeBasicChests
       }
     };
+  }
+
+  async applyOnlineRewardSettlementDecision({
+    username,
+    settlementKey,
+    rewardDecision,
+    participantRole = "host"
+  }) {
+    return this.runMatchPersistence(async () => {
+      if (!username) {
+        throw new Error("username is required to apply online reward settlements.");
+      }
+
+      const effectiveSettlementKey = normalizeSettlementKey(settlementKey);
+      if (!effectiveSettlementKey) {
+        throw new Error("settlementKey is required to apply online reward settlements.");
+      }
+
+      const normalizedRole = participantRole === "guest" ? "guest" : "host";
+      const participantUsernameKey = normalizedRole === "guest" ? "guestUsername" : "hostUsername";
+      const expectedUsername = String(
+        rewardDecision?.participants?.[participantUsernameKey] ?? ""
+      ).trim();
+
+      if (expectedUsername && expectedUsername !== username) {
+        throw new Error(`Reward settlement participant mismatch for ${username}.`);
+      }
+
+      const selectedRewards =
+        normalizedRole === "guest"
+          ? rewardDecision?.rewards?.guest ?? null
+          : rewardDecision?.rewards?.host ?? null;
+
+      if (!selectedRewards || typeof selectedRewards !== "object") {
+        throw new Error(`Reward settlement rewards are missing for ${normalizedRole}.`);
+      }
+
+      const safeTokens = Math.max(0, Number(selectedRewards.tokens ?? 0));
+      const safeXp = Math.max(0, Number(selectedRewards.xp ?? 0));
+      const safeBasicChests = Math.max(0, Number(selectedRewards.basicChests ?? 0));
+      let duplicate = false;
+
+      const profile = await this.profiles.updateProfile(username, (current) => {
+        const appliedSettlementKeys = normalizeAppliedSettlementKeys(
+          current?.onlineRewardSettlements?.appliedSettlementKeys
+        );
+
+        if (appliedSettlementKeys.includes(effectiveSettlementKey)) {
+          duplicate = true;
+          return current;
+        }
+
+        let nextProfile = {
+          ...current,
+          tokens: Math.max(0, Number(current.tokens ?? 0) + safeTokens),
+          playerXP: Math.max(0, Number(current.playerXP ?? 0) + safeXp)
+        };
+
+        if (safeBasicChests > 0) {
+          nextProfile = grantChest(nextProfile, {
+            chestType: "basic",
+            amount: safeBasicChests
+          });
+        }
+
+        return {
+          ...nextProfile,
+          onlineRewardSettlements: {
+            ...(nextProfile.onlineRewardSettlements ?? {}),
+            appliedSettlementKeys: appendAppliedSettlementKey(
+              appliedSettlementKeys,
+              effectiveSettlementKey
+            )
+          }
+        };
+      });
+
+      return {
+        duplicate,
+        settlementKey: effectiveSettlementKey,
+        profile,
+        rewards: {
+          tokens: safeTokens,
+          xp: safeXp,
+          basicChests: safeBasicChests
+        }
+      };
+    });
   }
 
   async openChest({ username, chestType = "basic" }) {

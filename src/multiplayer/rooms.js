@@ -1,3 +1,5 @@
+import { AI_DIFFICULTY, chooseAiCardIndex } from "../engine/index.js";
+
 const ROOM_CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const ROOM_CODE_DIGITS = "23456789";
 const INITIAL_HAND_COUNTS = Object.freeze({
@@ -451,15 +453,63 @@ export function containRuntimeMatchSummaryState(matchResult, logger = console) {
 function buildPlayer(socket, payload = {}, identity = null) {
   const username = normalizeUsername(identity?.username ?? payload.username);
   const sessionId = String(identity?.sessionId ?? "").trim() || null;
+  const bot = Boolean(payload?.bot);
+  const aiDifficulty = bot
+    ? normalizeAiDifficulty(payload?.aiDifficulty)
+    : null;
   return {
     socketId: socket.id,
     connected: true,
+    bot,
+    ...(aiDifficulty ? { aiDifficulty } : {}),
     ...(username ? { username } : {}),
     ...(sessionId ? { sessionId } : {}),
     equippedCosmetics: normalizeEquippedCosmetics(payload.equippedCosmetics),
     joinedAt: new Date().toISOString(),
     disconnectedAt: null
   };
+}
+
+function normalizeAiDifficulty(value) {
+  const allowed = new Set(Object.values(AI_DIFFICULTY));
+  return allowed.has(value) ? value : AI_DIFFICULTY.NORMAL;
+}
+
+function expandHandCounts(hand) {
+  const cards = [];
+
+  for (const element of Object.keys(INITIAL_HAND_COUNTS)) {
+    const count = safeRuntimeCount(hand?.[element], 0);
+    for (let index = 0; index < count; index += 1) {
+      cards.push(element);
+    }
+  }
+
+  return cards;
+}
+
+function chooseAuthoritativeBotMove(room) {
+  const aiHand = expandHandCounts(room?.guestHand);
+  const aiIndex = chooseAiCardIndex(aiHand, {
+    difficulty: normalizeAiDifficulty(room?.guest?.aiDifficulty),
+    publicState: {
+      aiCardsRemaining: aiHand.length,
+      playerCardsRemaining: getTotalCardsInHand(room?.hostHand),
+      aiCaptured: safeRuntimeCount(room?.guestScore, 0),
+      playerCaptured: safeRuntimeCount(room?.hostScore, 0),
+      warActive: Boolean(room?.warActive),
+      pileCount:
+        (Array.isArray(room?.warPot?.host) ? room.warPot.host.length : 0) +
+        (Array.isArray(room?.warPot?.guest) ? room.warPot.guest.length : 0),
+      totalWarClashes: safeRuntimeCount(room?.warDepth, 0)
+    }
+  });
+
+  if (!Number.isInteger(aiIndex) || aiIndex < 0 || aiIndex >= aiHand.length) {
+    return aiHand[0] ?? null;
+  }
+
+  return aiHand[aiIndex] ?? null;
 }
 
 function createEmptyMoveState() {
@@ -481,8 +531,215 @@ function createInitialMatchState() {
     roundNumber: 1,
     lastOutcomeType: null,
     roundHistory: [],
-    matchSequence: 1
+    matchSequence: 1,
+    lastResolvedRoundResult: null,
+    lastResolvedStepId: null,
+    lastResolvedAt: null
   };
+}
+
+function buildServerMatchId(room) {
+  return `${room?.roomCode ?? ""}:match:${Math.max(1, safeRuntimeCount(room?.matchSequence, 1))}`;
+}
+
+function buildServerResolutionStepId(
+  room,
+  {
+    roundNumber = Math.max(1, safeRuntimeCount(room?.roundNumber, 1)),
+    warActive = Boolean(room?.warActive),
+    warDepth = safeRuntimeCount(room?.warDepth, 0)
+  } = {}
+) {
+  const stepType = warActive ? "war" : "round";
+  const normalizedWarDepth = warActive ? Math.max(1, warDepth) : 0;
+  return [
+    buildServerMatchId(room),
+    `round:${roundNumber}`,
+    `step:${stepType}`,
+    `warDepth:${normalizedWarDepth}`
+  ].join(":");
+}
+
+function buildServerTurnState(room) {
+  const waitingOn = [];
+  const lockedIn = [];
+
+  if (room?.moves?.hostMove) {
+    lockedIn.push("host");
+  } else {
+    waitingOn.push("host");
+  }
+
+  if (room?.moves?.guestMove) {
+    lockedIn.push("guest");
+  } else {
+    waitingOn.push("guest");
+  }
+
+  return {
+    waitingOn,
+    lockedIn,
+    resolutionReady: waitingOn.length === 0
+  };
+}
+
+function buildAuthoritativeOutcomeType(roundResult) {
+  const outcomeType = String(roundResult?.outcomeType ?? "").trim();
+
+  if (outcomeType === "resolved") {
+    return "win";
+  }
+
+  if (outcomeType === "no_effect") {
+    return "no_effect";
+  }
+
+  if (outcomeType === "war_resolved") {
+    return "war_resolved";
+  }
+
+  if (outcomeType === "war") {
+    return Array.isArray(roundResult?.warRounds) && roundResult.warRounds.length > 1
+      ? "war_continue"
+      : "war_start";
+  }
+
+  return null;
+}
+
+function buildAuthoritativeWinner(roundResult) {
+  if (roundResult?.hostResult === "win") {
+    return "host";
+  }
+
+  if (roundResult?.guestResult === "win") {
+    return "guest";
+  }
+
+  return null;
+}
+
+function cloneLastResolvedRoundResult(lastResolvedRoundResult) {
+  if (
+    !lastResolvedRoundResult ||
+    typeof lastResolvedRoundResult !== "object" ||
+    Array.isArray(lastResolvedRoundResult)
+  ) {
+    return null;
+  }
+
+  return {
+    ...lastResolvedRoundResult,
+    rematch: { ...(lastResolvedRoundResult.rematch ?? {}) },
+    hostHand: { ...(lastResolvedRoundResult.hostHand ?? {}) },
+    guestHand: { ...(lastResolvedRoundResult.guestHand ?? {}) },
+    warPot: {
+      host: Array.isArray(lastResolvedRoundResult.warPot?.host)
+        ? [...lastResolvedRoundResult.warPot.host]
+        : [],
+      guest: Array.isArray(lastResolvedRoundResult.warPot?.guest)
+        ? [...lastResolvedRoundResult.warPot.guest]
+        : []
+    },
+    warRounds: Array.isArray(lastResolvedRoundResult.warRounds)
+      ? lastResolvedRoundResult.warRounds.map((entry) => ({ ...entry }))
+      : []
+  };
+}
+
+function buildLastResolvedOutcome(room) {
+  const lastResolvedRoundResult = cloneLastResolvedRoundResult(room?.lastResolvedRoundResult);
+  if (!lastResolvedRoundResult) {
+    return null;
+  }
+
+  return {
+    stepId: room?.lastResolvedStepId ?? null,
+    resolvedAt: room?.lastResolvedAt ?? null,
+    round: safeRuntimeCount(lastResolvedRoundResult.round, 0),
+    type: buildAuthoritativeOutcomeType(lastResolvedRoundResult),
+    winner: buildAuthoritativeWinner(lastResolvedRoundResult),
+    hostMove: lastResolvedRoundResult.hostMove ?? null,
+    guestMove: lastResolvedRoundResult.guestMove ?? null
+  };
+}
+
+function cloneServerMatchPlayerIdentifier(player) {
+  if (!player) {
+    return null;
+  }
+
+  return {
+    socketId: player.socketId ?? null,
+    sessionId: player.sessionId ?? null,
+    username: player.username ?? null
+  };
+}
+
+function deriveServerMatchStatus(room) {
+  if (room?.matchComplete) {
+    return "complete";
+  }
+
+  if (room?.status === "full") {
+    return "active";
+  }
+
+  return "waiting";
+}
+
+function buildServerMatchState(room) {
+  const turnState = buildServerTurnState(room);
+  return {
+    roomCode: room?.roomCode ?? null,
+    matchId: buildServerMatchId(room),
+    players: {
+      host: cloneServerMatchPlayerIdentifier(room?.host),
+      guest: cloneServerMatchPlayerIdentifier(room?.guest)
+    },
+    currentRound: Math.max(1, safeRuntimeCount(room?.roundNumber, 1)),
+    activeStep: {
+      id: buildServerResolutionStepId(room),
+      round: Math.max(1, safeRuntimeCount(room?.roundNumber, 1)),
+      type: room?.warActive ? "war" : "round",
+      warDepth: room?.warActive ? Math.max(1, safeRuntimeCount(room?.warDepth, 0)) : 0,
+      status: turnState.resolutionReady ? "locked" : "collecting"
+    },
+    playerHands: {
+      host: { ...(room?.hostHand ?? {}) },
+      guest: { ...(room?.guestHand ?? {}) }
+    },
+    warState: {
+      active: Boolean(room?.warActive),
+      depth: safeRuntimeCount(room?.warDepth, 0)
+    },
+    pendingActions: {
+      host: room?.moves?.hostMove
+        ? {
+            selectedCard: room.moves.hostMove,
+            submittedAt: room?.moves?.updatedAt ?? null
+          }
+        : null,
+      guest: room?.moves?.guestMove
+        ? {
+            selectedCard: room.moves.guestMove,
+            submittedAt: room?.moves?.updatedAt ?? null
+          }
+        : null
+    },
+    matchStatus: deriveServerMatchStatus(room),
+    lastResolvedOutcome: buildLastResolvedOutcome(room),
+    turnState
+  };
+}
+
+function syncServerMatchState(room) {
+  if (!room || typeof room !== "object" || Array.isArray(room)) {
+    return null;
+  }
+
+  room.serverMatchState = buildServerMatchState(room);
+  return room.serverMatchState;
 }
 
 function createInitialTauntState() {
@@ -520,6 +777,8 @@ function createInitialRewardSettlementState() {
     rewardSettlement: {
       granted: false,
       grantedAt: null,
+      settlementKey: null,
+      decision: null,
       summary: null
     }
   };
@@ -563,11 +822,20 @@ function cloneMoveState(room) {
   };
 }
 
+function isLocalAuthoritySocketId(socketId) {
+  return String(socketId ?? "").startsWith("local-");
+}
+
+function isLocalAuthorityRoom(room) {
+  return isLocalAuthoritySocketId(room?.host?.socketId) && isLocalAuthoritySocketId(room?.guest?.socketId);
+}
+
 function resetMoveState(room) {
   const guards = getRuntimeEdgeGuards(room);
   room.moves = createEmptyMoveState();
   room.latestRoundResult = createEmptyRoundResult();
   guards.lastAppliedRoundSignature = null;
+  syncServerMatchState(room);
 }
 
 function resetHandState(room) {
@@ -600,12 +868,17 @@ function resetMatchState(room) {
   room.lastOutcomeType = null;
   room.roundHistory = [];
   room.matchSequence = Math.max(1, Number(room.matchSequence ?? 1) + 1);
+  room.lastResolvedRoundResult = null;
+  room.lastResolvedStepId = null;
+  room.lastResolvedAt = null;
   room.matchComplete = false;
   room.winner = null;
   room.winReason = null;
   room.rewardSettlement = {
     granted: false,
     grantedAt: null,
+    settlementKey: null,
+    decision: null,
     summary: null
   };
   room.disconnectState = {
@@ -624,6 +897,7 @@ function resetMatchState(room) {
   resetHandState(room);
   resetMoveState(room);
   guards.lastCompletionSignature = null;
+  syncServerMatchState(room);
 }
 
 function markPlayerDisconnected(player) {
@@ -683,6 +957,7 @@ function closeRoom(room, {
   };
   resetMoveState(room);
   resetRematchState(room);
+  syncServerMatchState(room);
 }
 
 function pauseRoomForReconnect(room, {
@@ -706,6 +981,7 @@ function pauseRoomForReconnect(room, {
     resumedAt: null
   };
   resetRematchState(room);
+  syncServerMatchState(room);
 }
 
 function expireRoomAsNoContest(room) {
@@ -725,12 +1001,15 @@ function expireRoomAsNoContest(room) {
     expiresAt: room.disconnectState?.expiresAt ?? null,
     resumedAt: room.disconnectState?.resumedAt ?? null
   };
+  syncServerMatchState(room);
 }
 
 function cloneRewardSettlement(room) {
   if (
     !room.rewardSettlement?.granted &&
     !room.rewardSettlement?.grantedAt &&
+    !room.rewardSettlement?.settlementKey &&
+    !room.rewardSettlement?.decision &&
     !room.rewardSettlement?.summary
   ) {
     return null;
@@ -739,6 +1018,24 @@ function cloneRewardSettlement(room) {
   return {
     granted: Boolean(room.rewardSettlement?.granted),
     grantedAt: room.rewardSettlement?.grantedAt ?? null,
+    settlementKey: room.rewardSettlement?.settlementKey ?? null,
+    decision: room.rewardSettlement?.decision
+      ? {
+          matchId: room.rewardSettlement.decision.matchId ?? null,
+          roomCode: room.rewardSettlement.decision.roomCode ?? null,
+          winner: room.rewardSettlement.decision.winner ?? null,
+          isDraw: Boolean(room.rewardSettlement.decision.isDraw),
+          rewards: {
+            host: { ...(room.rewardSettlement.decision.rewards?.host ?? {}) },
+            guest: { ...(room.rewardSettlement.decision.rewards?.guest ?? {}) }
+          },
+          participants: {
+            hostUsername: room.rewardSettlement.decision.participants?.hostUsername ?? null,
+            guestUsername: room.rewardSettlement.decision.participants?.guestUsername ?? null
+          },
+          decidedAt: room.rewardSettlement.decision.decidedAt ?? null
+        }
+      : null,
     summary: room.rewardSettlement?.summary
       ? {
           granted: Boolean(room.rewardSettlement.summary.granted),
@@ -850,7 +1147,26 @@ function appendWarPot(room, hostMove, guestMove) {
   room.warPot.guest.push(guestMove);
 }
 
+function countResolvedRoundCaptureStats(roundResult) {
+  const hostWon = roundResult?.hostResult === "win";
+  const guestWon = roundResult?.guestResult === "win";
+
+  if (!hostWon && !guestWon) {
+    return {
+      capturedCards: 0,
+      capturedOpponentCards: 0
+    };
+  }
+
+  return {
+    capturedCards: 2,
+    capturedOpponentCards: 1
+  };
+}
+
 function awardResolvedRoundCards(room, roundResult) {
+  const captureStats = countResolvedRoundCaptureStats(roundResult);
+
   if (roundResult.hostResult === "win") {
     addElementToHand(room.hostHand, roundResult.hostMove);
     addElementToHand(room.hostHand, roundResult.guestMove);
@@ -861,10 +1177,20 @@ function awardResolvedRoundCards(room, roundResult) {
     addElementToHand(room.hostHand, roundResult.hostMove);
     addElementToHand(room.guestHand, roundResult.guestMove);
   }
+
+  return captureStats;
 }
 
 function awardWarPot(room, roundResult) {
+  const hostCommittedCards = Array.isArray(room?.warPot?.host) ? room.warPot.host.length : 0;
+  const guestCommittedCards = Array.isArray(room?.warPot?.guest) ? room.warPot.guest.length : 0;
+  const captureStats = {
+    capturedCards: hostCommittedCards + guestCommittedCards,
+    capturedOpponentCards: 0
+  };
+
   if (roundResult.hostResult === "win") {
+    captureStats.capturedOpponentCards = guestCommittedCards;
     for (const card of room.warPot.host) {
       addElementToHand(room.hostHand, card);
     }
@@ -872,6 +1198,7 @@ function awardWarPot(room, roundResult) {
       addElementToHand(room.hostHand, card);
     }
   } else if (roundResult.guestResult === "win") {
+    captureStats.capturedOpponentCards = hostCommittedCards;
     for (const card of room.warPot.guest) {
       addElementToHand(room.guestHand, card);
     }
@@ -884,6 +1211,8 @@ function awardWarPot(room, roundResult) {
     host: [],
     guest: []
   };
+
+  return captureStats;
 }
 
 function completeMatchFromExhaustion(room, winner) {
@@ -897,6 +1226,56 @@ function clearMatchCompletion(room) {
   room.matchComplete = false;
   room.winner = null;
   room.winReason = null;
+}
+
+function returnWarPotToOwners(room) {
+  for (const card of Array.isArray(room?.warPot?.host) ? room.warPot.host : []) {
+    addElementToHand(room.hostHand, card);
+  }
+
+  for (const card of Array.isArray(room?.warPot?.guest) ? room.warPot.guest : []) {
+    addElementToHand(room.guestHand, card);
+  }
+
+  resetWarState(room);
+}
+
+function forceCompleteRoomMatch(room, { winner = "draw", reason = "manual" } = {}) {
+  if (!room || room.matchComplete) {
+    return room ? cloneRoom(room) : null;
+  }
+
+  containRuntimeRoomState(room, {
+    logMessage: "[RuntimeInvariant] contained malformed pre-completion state"
+  });
+
+  if (room.warActive || (Array.isArray(room.warPot?.host) && room.warPot.host.length > 0) || (Array.isArray(room.warPot?.guest) && room.warPot.guest.length > 0)) {
+    returnWarPotToOwners(room);
+  }
+
+  resetMoveState(room);
+  room.matchComplete = true;
+  room.winner = winner;
+  room.winReason = reason;
+  resetRematchState(room);
+  syncServerMatchState(room);
+  return cloneRoom(room);
+}
+
+function forceCompleteRoomMatchByCardCount(room, { reason = "time_limit" } = {}) {
+  if (!room || room.matchComplete) {
+    return room ? cloneRoom(room) : null;
+  }
+
+  containRuntimeRoomState(room, {
+    logMessage: "[RuntimeInvariant] contained malformed pre-completion state"
+  });
+
+  const hostOwnedCards = getTotalOwnedCards(room.hostHand, room.warPot?.host);
+  const guestOwnedCards = getTotalOwnedCards(room.guestHand, room.warPot?.guest);
+  const winner = hostOwnedCards > guestOwnedCards ? "host" : guestOwnedCards > hostOwnedCards ? "guest" : "draw";
+
+  return forceCompleteRoomMatch(room, { winner, reason });
 }
 
 export function updateMatchCompletion(room) {
@@ -1046,6 +1425,7 @@ export function applyRoundToMatchState(room, roundResult) {
   containRuntimeRoomState(room, {
     logMessage: "[RuntimeInvariant] contained malformed pre-round state"
   });
+  const resolutionStepId = buildServerResolutionStepId(room);
 
   if (
     room.latestRoundResult &&
@@ -1085,6 +1465,10 @@ export function applyRoundToMatchState(room, roundResult) {
 
   const resolvedRoundNumber = room.roundNumber;
   const outcomeType = guardedRound.outcomeType ?? null;
+  let captureStats = {
+    capturedCards: 0,
+    capturedOpponentCards: 0
+  };
 
   if (outcomeType === "war") {
     appendWarPot(room, guardedRound.hostMove, guardedRound.guestMove);
@@ -1130,11 +1514,11 @@ export function applyRoundToMatchState(room, roundResult) {
   }
 
   if (outcomeType === "resolved") {
-    awardResolvedRoundCards(room, guardedRound);
+    captureStats = awardResolvedRoundCards(room, guardedRound);
   } else if (outcomeType === "no_effect" && !room.warActive) {
-    awardResolvedRoundCards(room, guardedRound);
+    captureStats = awardResolvedRoundCards(room, guardedRound);
   } else if (outcomeType === "war_resolved") {
-    awardWarPot(room, guardedRound);
+    captureStats = awardWarPot(room, guardedRound);
     // WAR state is transient and should not leak into the next round once the pile resolves.
     resetWarState(room);
   }
@@ -1156,7 +1540,9 @@ export function applyRoundToMatchState(room, roundResult) {
     guestMove: guardedRound.guestMove,
     outcomeType,
     hostResult: guardedRound.hostResult,
-    guestResult: guardedRound.guestResult
+    guestResult: guardedRound.guestResult,
+    capturedCards: captureStats.capturedCards,
+    capturedOpponentCards: captureStats.capturedOpponentCards
   });
 
   containRuntimeRoomState(room, {
@@ -1171,6 +1557,8 @@ export function applyRoundToMatchState(room, roundResult) {
 
   const safeMatchResult = containRuntimeMatchSummaryState({
     ...guardedRound,
+    capturedCards: captureStats.capturedCards,
+    capturedOpponentCards: captureStats.capturedOpponentCards,
     hostScore: room.hostScore,
     guestScore: room.guestScore,
     roundNumber: room.roundNumber,
@@ -1190,12 +1578,24 @@ export function applyRoundToMatchState(room, roundResult) {
     warRounds: room.warRounds.map((entry) => ({ ...entry }))
   }).value;
 
+  room.lastResolvedRoundResult = cloneLastResolvedRoundResult(safeMatchResult);
+  room.lastResolvedStepId = resolutionStepId;
+  room.lastResolvedAt = new Date().toISOString();
   guards.lastAppliedRoundSignature = roundSignature;
 
   return safeMatchResult;
 }
 
+function resolvePendingRound(room) {
+  if (!room?.moves?.hostMove || !room?.moves?.guestMove) {
+    return null;
+  }
+
+  return applyRoundToMatchState(room, buildRoundResult(room));
+}
+
 function cloneRoom(room) {
+  const serverMatchState = syncServerMatchState(room);
   const rewardSettlement = cloneRewardSettlement(room);
   return {
     roomCode: room.roomCode,
@@ -1238,6 +1638,41 @@ function cloneRoom(room) {
     warRounds: room.warRounds.map((entry) => ({ ...entry })),
     roundHistory: room.roundHistory.map((entry) => ({ ...entry })),
     moveSync: cloneMoveState(room),
+    serverMatchState: serverMatchState
+      ? {
+          ...serverMatchState,
+          players: {
+            host: serverMatchState.players?.host ? { ...serverMatchState.players.host } : null,
+            guest: serverMatchState.players?.guest ? { ...serverMatchState.players.guest } : null
+          },
+          playerHands: {
+            host: { ...(serverMatchState.playerHands?.host ?? {}) },
+            guest: { ...(serverMatchState.playerHands?.guest ?? {}) }
+          },
+          warState: { ...(serverMatchState.warState ?? {}) },
+          pendingActions: {
+            host: serverMatchState.pendingActions?.host
+              ? { ...serverMatchState.pendingActions.host }
+              : null,
+            guest: serverMatchState.pendingActions?.guest
+              ? { ...serverMatchState.pendingActions.guest }
+              : null
+          },
+          activeStep: { ...(serverMatchState.activeStep ?? {}) },
+          lastResolvedOutcome: serverMatchState.lastResolvedOutcome
+            ? { ...serverMatchState.lastResolvedOutcome }
+            : null,
+          turnState: {
+            waitingOn: Array.isArray(serverMatchState.turnState?.waitingOn)
+              ? [...serverMatchState.turnState.waitingOn]
+              : [],
+            lockedIn: Array.isArray(serverMatchState.turnState?.lockedIn)
+              ? [...serverMatchState.turnState.lockedIn]
+              : [],
+            resolutionReady: Boolean(serverMatchState.turnState?.resolutionReady)
+          }
+        }
+      : null,
     taunts: Array.isArray(room.taunts) ? room.taunts.map((entry) => ({ ...entry })) : []
   };
 }
@@ -1291,6 +1726,7 @@ export function createRoomStore({ random = Math.random } = {}) {
         moves: createEmptyMoveState(),
         latestRoundResult: createEmptyRoundResult()
       };
+      syncServerMatchState(room);
 
       rooms.set(roomCode, room);
       socketToRoom.set(socket.id, roomCode);
@@ -1360,6 +1796,38 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
+      if (room.status === "closing" && room.disconnectState?.reason === "post_match_disconnect") {
+        const disconnectedRole = room.disconnectState?.disconnectedRole ?? null;
+        const disconnectedSessionId = room.disconnectState?.disconnectedSessionId ?? null;
+        const reconnectPlayer =
+          disconnectedRole === "host"
+            ? room.host
+            : disconnectedRole === "guest"
+              ? room.guest
+              : null;
+
+        if (!sessionId || !disconnectedSessionId || sessionId !== disconnectedSessionId || !reconnectPlayer) {
+          return {
+            ok: false,
+            error: {
+              code: "ROOM_RECONNECT_RESERVED",
+              message: "This room is reserved for the disconnected player to resume."
+            }
+          };
+        }
+
+        markPlayerConnected(reconnectPlayer, socket);
+        clearDisconnectState(room, { resumedAt: new Date().toISOString() });
+        room.status = "closing";
+        socketToRoom.set(socket.id, roomCode);
+
+        return {
+          ok: true,
+          room: cloneRoom(room),
+          reconnected: true
+        };
+      }
+
       if (room.status === "expired") {
         return {
           ok: false,
@@ -1380,30 +1848,31 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
-        if (room.guest) {
-          return {
-            ok: false,
-            error: {
+      if (room.guest) {
+        return {
+          ok: false,
+          error: {
             code: "ROOM_FULL",
             message: "Room is already full."
           }
-          };
-        }
+        };
+      }
 
-        if (username && room.host?.username && username === room.host.username) {
-          return {
-            ok: false,
-            error: {
-              code: "ROOM_USERNAME_IN_USE",
-              message: "This username is already active in the room."
-            }
-          };
-        }
+      if (username && room.host?.username && username === room.host.username) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_USERNAME_IN_USE",
+            message: "This username is already active in the room."
+          }
+        };
+      }
 
-        room.guest = buildPlayer(socket, { ...payload, username }, identity);
+      room.guest = buildPlayer(socket, { ...payload, username }, identity);
       room.status = "full";
       resetMoveState(room);
       resetRematchState(room);
+      syncServerMatchState(room);
       socketToRoom.set(socket.id, roomCode);
 
       return {
@@ -1726,6 +2195,16 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
+      if (room.moves.hostMove !== null && room.moves.guestMove !== null && room.latestRoundResult) {
+        return {
+          ok: false,
+          error: {
+            code: "MOVE_STEP_RESOLVED",
+            message: "This resolution step already completed on the server."
+          }
+        };
+      }
+
       if (room.moves[moveKey] !== null) {
         console.warn("[RuntimeEdgeGuard] skipped duplicate move application");
         return {
@@ -1750,26 +2229,132 @@ export function createRoomStore({ random = Math.random } = {}) {
       room[handKey][move] -= 1;
       room.moves[moveKey] = move;
       room.moves.updatedAt = new Date().toISOString();
-      room.latestRoundResult = applyRoundToMatchState(room, buildRoundResult(room));
-      if (room.latestRoundResult) {
-        updateMatchCompletion(room);
+
+      if (
+        room.guest?.bot &&
+        moveKey === "hostMove" &&
+        room.moves.guestMove === null &&
+        !room.matchComplete
+      ) {
+        const botMove = chooseAuthoritativeBotMove(room);
+        if (!botMove || safeRuntimeCount(room.guestHand?.[botMove], 0) <= 0) {
+          return {
+            ok: false,
+            error: {
+              code: "BOT_MOVE_UNAVAILABLE",
+              message: "The authoritative AI could not select a legal move."
+            }
+          };
+        }
+
+        room.guestHand[botMove] -= 1;
+        room.moves.guestMove = botMove;
+        room.moves.updatedAt = new Date().toISOString();
       }
-      if (room.latestRoundResult) {
+
+      syncServerMatchState(room);
+      const resolvedRoundResult = resolvePendingRound(room);
+      if (resolvedRoundResult) {
+        updateMatchCompletion(room);
+        syncServerMatchState(room);
+      }
+      let responseRoundResult = null;
+      if (resolvedRoundResult) {
         const rewardSettlement = cloneRewardSettlement(room);
-        room.latestRoundResult = {
-          ...room.latestRoundResult,
+        responseRoundResult = {
+          ...resolvedRoundResult,
           matchComplete: room.matchComplete,
           winner: room.winner,
           winReason: room.winReason,
           rematch: { ...room.rematch },
           ...(rewardSettlement ? { rewardSettlement } : {})
         };
+
+        if (isLocalAuthorityRoom(room)) {
+          resetMoveState(room);
+        } else {
+          room.latestRoundResult = responseRoundResult;
+        }
       }
 
       return {
         ok: true,
         room: cloneRoom(room),
-        roundResult: room.latestRoundResult
+        roundResult: responseRoundResult
+      };
+    },
+
+    completeMatch(socketId, options = {}) {
+      const room = getRoomBySocket(socketId);
+      if (!room) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_NOT_FOUND",
+            message: "Room code not found."
+          }
+        };
+      }
+
+      const roomPlayerRole =
+        room.host?.socketId === socketId ? "host" : room.guest?.socketId === socketId ? "guest" : null;
+      if (!roomPlayerRole) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_PLAYER_NOT_FOUND",
+            message: "This socket is not assigned to a room player slot."
+          }
+        };
+      }
+
+      const winnerInput = String(options?.winner ?? "").trim().toLowerCase();
+      const winner =
+        winnerInput === "host" || winnerInput === "guest" || winnerInput === "draw"
+          ? winnerInput
+          : roomPlayerRole === "host"
+            ? "guest"
+            : roomPlayerRole === "guest"
+              ? "host"
+              : "draw";
+      const reason = String(options?.reason ?? "manual").trim() || "manual";
+      const snapshot = forceCompleteRoomMatch(room, { winner, reason });
+      return {
+        ok: true,
+        room: snapshot
+      };
+    },
+
+    completeMatchByCardCount(socketId, options = {}) {
+      const room = getRoomBySocket(socketId);
+      if (!room) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_NOT_FOUND",
+            message: "Room code not found."
+          }
+        };
+      }
+
+      const roomPlayerRole =
+        room.host?.socketId === socketId ? "host" : room.guest?.socketId === socketId ? "guest" : null;
+      if (!roomPlayerRole) {
+        return {
+          ok: false,
+          error: {
+            code: "ROOM_PLAYER_NOT_FOUND",
+            message: "This socket is not assigned to a room player slot."
+          }
+        };
+      }
+
+      const snapshot = forceCompleteRoomMatchByCardCount(room, {
+        reason: String(options?.reason ?? "time_limit").trim() || "time_limit"
+      });
+      return {
+        ok: true,
+        room: snapshot
       };
     },
 
@@ -1935,7 +2520,15 @@ export function createRoomStore({ random = Math.random } = {}) {
       return `${room.roomCode}:match:${Math.max(1, Number(room.matchSequence ?? 1))}`;
     },
 
-    setRewardSettlement(roomCodeInput, summary, grantedAt = new Date().toISOString()) {
+    setRewardSettlement(
+      roomCodeInput,
+      summary,
+      grantedAt = new Date().toISOString(),
+      {
+        settlementKey = null,
+        decision = null
+      } = {}
+    ) {
       const roomCode = sanitizeRoomCode(roomCodeInput);
       const room = rooms.get(roomCode);
       if (!room) {
@@ -1945,6 +2538,24 @@ export function createRoomStore({ random = Math.random } = {}) {
       room.rewardSettlement = {
         granted: Boolean(summary),
         grantedAt: summary ? grantedAt : null,
+        settlementKey: summary ? String(settlementKey ?? "").trim() || null : null,
+        decision: summary && decision
+          ? {
+              matchId: decision.matchId ?? null,
+              roomCode: decision.roomCode ?? null,
+              winner: decision.winner ?? null,
+              isDraw: Boolean(decision.isDraw),
+              rewards: {
+                host: { ...(decision.rewards?.host ?? {}) },
+                guest: { ...(decision.rewards?.guest ?? {}) }
+              },
+              participants: {
+                hostUsername: decision.participants?.hostUsername ?? null,
+                guestUsername: decision.participants?.guestUsername ?? null
+              },
+              decidedAt: decision.decidedAt ?? grantedAt
+            }
+          : null,
         summary: summary
           ? {
               granted: Boolean(summary.granted),

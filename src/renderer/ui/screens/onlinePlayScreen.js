@@ -68,13 +68,16 @@ function deriveRoleLabel(context) {
 
 function deriveSettledRoleLabel(context) {
   const username = String(context.username ?? "").trim();
-  const summary = context.multiplayer?.room?.rewardSettlement?.summary;
+  const decision = context.multiplayer?.room?.rewardSettlement?.decision ?? null;
+  const summary = context.multiplayer?.room?.rewardSettlement?.summary ?? null;
+  const hostUsername = decision?.participants?.hostUsername ?? summary?.settledHostUsername ?? null;
+  const guestUsername = decision?.participants?.guestUsername ?? summary?.settledGuestUsername ?? null;
 
-  if (username && summary?.settledHostUsername === username) {
+  if (username && hostUsername === username) {
     return "Host";
   }
 
-  if (username && summary?.settledGuestUsername === username) {
+  if (username && guestUsername === username) {
     return "Guest";
   }
 
@@ -126,7 +129,8 @@ function formatMoveLabel(move) {
 }
 
 function deriveRoundResultView(context) {
-  const result = context.multiplayer?.latestRoundResult;
+  const authoritativeResult = context.multiplayer?.latestAuthoritativeRoundResult ?? null;
+  const result = authoritativeResult?.roundResult ?? context.multiplayer?.latestRoundResult;
   const roleLabel =
     result?.matchComplete || context.multiplayer?.room?.matchComplete
       ? deriveSettledRoleLabel(context)
@@ -160,8 +164,8 @@ function deriveRoundResultView(context) {
   }
 
   return {
-    hostMove: formatMoveLabel(result.hostMove),
-    guestMove: formatMoveLabel(result.guestMove),
+    hostMove: formatMoveLabel(authoritativeResult?.submittedCards?.host ?? result.hostMove),
+    guestMove: formatMoveLabel(authoritativeResult?.submittedCards?.guest ?? result.guestMove),
     perspectiveLabel
   };
 }
@@ -628,7 +632,7 @@ function deriveMatchCompleteView(context) {
     hostReady: Boolean(room.rematch?.hostReady),
     guestReady: Boolean(room.rematch?.guestReady),
     ownReady,
-    rewardSummary: room.rewardSettlement?.summary ?? null,
+    rewardDecision: room.rewardSettlement?.decision ?? null,
     roleLabel
   };
 }
@@ -714,6 +718,19 @@ function formatRewardSummaryLine(rewards) {
   }
 
   return parts.join(", ");
+}
+
+function deriveAuthoritativeRewardLine(matchComplete) {
+  const decision = matchComplete?.rewardDecision ?? null;
+  const roleLabel = matchComplete?.roleLabel ?? null;
+  const rewards =
+    roleLabel === "Host"
+      ? decision?.rewards?.host ?? null
+      : roleLabel === "Guest"
+        ? decision?.rewards?.guest ?? null
+        : null;
+
+  return formatRewardSummaryLine(rewards);
 }
 
 function formatBasicChestWaitingLine(profile) {
@@ -871,18 +888,12 @@ export const onlinePlayScreen = {
                     <p><strong>Host Ready:</strong> ${matchComplete.hostReady ? "Yes" : "No"}</p>
                     <p><strong>Guest Ready:</strong> ${matchComplete.guestReady ? "Yes" : "No"}</p>
                     ${
-                      matchComplete.rewardSummary
+                      matchComplete.rewardDecision
                         ? `
                           <section class="stack-sm">
                             <h3 class="section-title">Rewards Granted</h3>
                             <p><strong>You Gained:</strong> ${escapeHtml(
-                              formatRewardSummaryLine(
-                                matchComplete.roleLabel === "Host"
-                                  ? matchComplete.rewardSummary.hostRewards
-                                  : matchComplete.roleLabel === "Guest"
-                                    ? matchComplete.rewardSummary.guestRewards
-                                    : null
-                              )
+                              deriveAuthoritativeRewardLine(matchComplete)
                             )}</p>
                             <p><strong>Basic Chests Waiting:</strong> ${escapeHtml(formatBasicChestWaitingLine(context.profile))}</p>
                           </section>

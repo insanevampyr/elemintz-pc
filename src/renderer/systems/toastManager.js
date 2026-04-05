@@ -140,17 +140,22 @@ export class ToastManager {
     const xpAmount = Math.max(0, Number(rewards?.xp) || 0);
     const tokenAmount = Math.max(0, Number(rewards?.tokens) || 0);
     const cosmeticName = String(rewards?.cosmetic?.name ?? "").trim();
+    const rewardLines = [];
 
-    let heading = "";
+    if (tokenAmount > 0) {
+      rewardLines.push(`<p>+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}</p>`);
+    }
     if (xpAmount > 0) {
-      heading = `+${xpAmount} XP`;
-    } else if (tokenAmount > 0) {
-      heading = `+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}`;
-    } else if (cosmeticName) {
-      heading = `New Common Cosmetic: ${cosmeticName}`;
+      rewardLines.push(`<p>+${xpAmount} XP</p>`);
+    }
+    if (cosmeticName) {
+      const rarity = String(rewards?.cosmetic?.rarity ?? "").trim();
+      rewardLines.push(
+        `<p>${rarity ? `${rarity} ` : ""}Cosmetic: <strong>${cosmeticName}</strong></p>`
+      );
     }
 
-    if (!heading) {
+    if (rewardLines.length === 0) {
       return;
     }
 
@@ -160,7 +165,8 @@ export class ToastManager {
       html: `
         <div class="reward-toast-icon">\uD83E\uDDF0</div>
         <div>
-          <h4>${heading}</h4>
+          <h4>Chest Opened</h4>
+          ${rewardLines.join("")}
         </div>
       `
     });

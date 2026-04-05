@@ -74,6 +74,21 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getCosmetics(payload);
   });
 
+  ipcMain.handle("multiplayer:claimDailyLoginReward", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.claimDailyLoginReward(payload);
+  });
+
+  ipcMain.handle("multiplayer:buyStoreItem", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.buyStoreItem(payload);
+  });
+
+  ipcMain.handle("multiplayer:openChest", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.openChest(payload);
+  });
+
   ipcMain.handle("multiplayer:equipCosmetic", async (event, payload) => {
     subscribers.add(event.sender);
     return client.equipCosmetic(payload);
@@ -135,4 +150,8 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     subscribers.add(event.sender);
     return client.logout(payload);
   });
+
+  return {
+    client
+  };
 }

@@ -10355,6 +10355,76 @@ test("ui: opening a milestone chest reuses the profile chest open flow and updat
   }
 });
 
+test("ui: failed chest opens clear the renderer in-flight state and exit the opening visual", async () => {
+  const previousWindow = global.window;
+  const previousSetTimeout = global.setTimeout;
+  const shown = [];
+  const modalCalls = [];
+  let showProfileCalls = 0;
+  let failRefreshAfterOpen = true;
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {}
+    },
+    toastManager: {
+      showChestOpenReward: () => {}
+    }
+  });
+
+  global.setTimeout = (handler) => {
+    handler();
+    return 0;
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => ({
+          ...createProfileScreenContext().profile,
+          username: "FailureChestUser",
+          chests: { basic: 0, milestone: 0, epic: 0, legendary: 1 }
+        }),
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [],
+        openChest: async () => {
+          throw new Error("boom");
+        }
+      }
+    }
+  };
+
+  const originalShowProfile = app.showProfile.bind(app);
+  app.showProfile = async (...args) => {
+    showProfileCalls += 1;
+    if (failRefreshAfterOpen && showProfileCalls >= 3) {
+      failRefreshAfterOpen = false;
+      throw new Error("refresh failed");
+    }
+    return originalShowProfile(...args);
+  };
+
+  try {
+    app.username = "FailureChestUser";
+    await app.showProfile();
+    const openAction = shown.at(-1).actions.openLegendaryChest;
+    await openAction();
+
+    assert.equal(app.profileChestOpenInFlight, false);
+    assert.equal(app.profileChestVisualState.legendaryOpen, false);
+    assert.equal(modalCalls.at(-1)?.title, "Chest Open Failed");
+    assert.ok(shown.some((context) => context.basicChestVisualState?.legendaryOpen === true));
+    assert.equal(shown.at(-1).profileChestOpenInFlight, false);
+  } finally {
+    global.window = previousWindow;
+    global.setTimeout = previousSetTimeout;
+  }
+});
+
 test("ui: profile unlocked achievements render comeback_win badge once earned", () => {
   const html = profileScreen.render({
     profile: {

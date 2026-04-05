@@ -2215,6 +2215,17 @@ export function normalizeProfileCosmetics(profile) {
   };
 }
 
+export function buildAuthoritativeCosmeticSnapshot(profile) {
+  const normalized = normalizeProfileCosmetics(profile);
+
+  return {
+    owned: normalized.ownedCosmetics,
+    equipped: normalized.equippedCosmetics,
+    loadouts: normalized.cosmeticLoadouts,
+    preferences: normalized.cosmeticRandomizeAfterMatch
+  };
+}
+
 export function getCosmeticCatalogForProfile(profile) {
   const normalized = normalizeProfileCosmetics(profile);
 

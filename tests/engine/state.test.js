@@ -83,13 +83,15 @@ test("state: deriveMatchStats counts only opponent cards captured and ignores no
       winner: "p1",
       endReason: null,
       mode: "pve",
-      round: 3,
+      round: 5,
       players: {
         p1: { hand: ["fire"] },
         p2: { hand: [] }
       },
       history: [
         { result: "p1", warClashes: 0, capturedCards: 2, capturedOpponentCards: 1 },
+        { result: "none", warClashes: 0, capturedCards: 0, capturedOpponentCards: 0 },
+        { result: "none", warClashes: 0, capturedCards: 0, capturedOpponentCards: 0 },
         { result: "none", warClashes: 0, capturedCards: 0, capturedOpponentCards: 0 },
         { result: "p1", warClashes: 1, capturedCards: 6, capturedOpponentCards: 3 }
       ],
@@ -101,6 +103,55 @@ test("state: deriveMatchStats counts only opponent cards captured and ignores no
   assert.equal(stats.cardsCaptured, 4);
   assert.equal(stats.warsEntered, 1);
   assert.equal(stats.warsWon, 1);
+});
+
+test("state: online settlement persists exact cumulative cards taken for both perspectives", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const matchState = {
+    status: "completed",
+    winner: "p2",
+    endReason: null,
+    mode: "online_pvp",
+    round: 5,
+    history: [
+      { result: "p1", warClashes: 0, capturedCards: 2, capturedOpponentCards: 1, p1Card: "fire", p2Card: "earth" },
+      { result: "none", warClashes: 0, capturedCards: 0, capturedOpponentCards: 0, p1Card: "water", p2Card: "water" },
+      { result: "none", warClashes: 0, capturedCards: 0, capturedOpponentCards: 0, p1Card: "earth", p2Card: "fire" },
+      { result: "none", warClashes: 0, capturedCards: 0, capturedOpponentCards: 0, p1Card: "wind", p2Card: "wind" },
+      { result: "p2", warClashes: 3, capturedCards: 6, capturedOpponentCards: 3, p1Card: "fire", p2Card: "water" }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: { totalCards: 16 }
+  };
+
+  try {
+    await state.recordOnlineMatchResult({
+      username: "OnlineCardsP1",
+      matchState,
+      perspective: "p1",
+      settlementKey: "cards-semantic-p1"
+    });
+    await state.recordOnlineMatchResult({
+      username: "OnlineCardsP2",
+      matchState,
+      perspective: "p2",
+      settlementKey: "cards-semantic-p2"
+    });
+
+    const p1 = await state.profiles.getProfile("OnlineCardsP1");
+    const p2 = await state.profiles.getProfile("OnlineCardsP2");
+
+    assert.equal(p1.cardsCaptured, 1);
+    assert.equal(p1.modeStats.online_pvp.cardsCaptured, 1);
+    assert.equal(p2.cardsCaptured, 3);
+    assert.equal(p2.modeStats.online_pvp.cardsCaptured, 3);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
 });
 
 test("state: updates and reads settings", async () => {
@@ -346,6 +397,104 @@ test("state: online_pvp draw records games played, resets win streak, and avoids
     ).length,
     1
   );
+});
+
+test("state: local_pvp draw records games played and resets win streak through the shared stat path", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("LocalDrawUser", {
+    winStreak: 4,
+    bestWinStreak: 4
+  });
+
+  const result = await state.recordMatchResult({
+    username: "LocalDrawUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "draw",
+      endReason: "hand_exhaustion",
+      mode: "local_pvp",
+      round: 6,
+      history: [{ result: "none", warClashes: 2, capturedOpponentCards: 0 }],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: [] }
+      },
+      meta: { totalCards: 16 }
+    }
+  });
+
+  assert.equal(result.profile.gamesPlayed, 1);
+  assert.equal(result.profile.wins, 0);
+  assert.equal(result.profile.losses, 0);
+  assert.equal(result.profile.winStreak, 0);
+  assert.equal(result.profile.bestWinStreak, 4);
+  assert.equal(result.profile.warsEntered, 1);
+  assert.equal(result.profile.warsWon, 0);
+  assert.equal(result.profile.longestWar, 2);
+  assert.equal(result.profile.cardsCaptured, 0);
+  assert.deepEqual(result.profile.modeStats.local_pvp, {
+    gamesPlayed: 1,
+    wins: 0,
+    losses: 0,
+    warsEntered: 1,
+    warsWon: 0,
+    longestWar: 2,
+    cardsCaptured: 0,
+    quickWins: 0,
+    timeLimitWins: 0
+  });
+});
+
+test("state: pve draw records games played and resets win streak through the shared stat path", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("PveDrawUser", {
+    winStreak: 4,
+    bestWinStreak: 4
+  });
+
+  const result = await state.recordMatchResult({
+    username: "PveDrawUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "draw",
+      endReason: "hand_exhaustion",
+      mode: "pve",
+      round: 6,
+      history: [{ result: "none", warClashes: 2, capturedOpponentCards: 0 }],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: [] }
+      },
+      meta: { totalCards: 16 }
+    }
+  });
+
+  assert.equal(result.profile.gamesPlayed, 1);
+  assert.equal(result.profile.wins, 0);
+  assert.equal(result.profile.losses, 0);
+  assert.equal(result.profile.winStreak, 0);
+  assert.equal(result.profile.bestWinStreak, 4);
+  assert.equal(result.profile.warsEntered, 1);
+  assert.equal(result.profile.warsWon, 0);
+  assert.equal(result.profile.longestWar, 2);
+  assert.equal(result.profile.cardsCaptured, 0);
+  assert.deepEqual(result.profile.modeStats.pve, {
+    gamesPlayed: 1,
+    wins: 0,
+    losses: 0,
+    warsEntered: 1,
+    warsWon: 0,
+    longestWar: 2,
+    cardsCaptured: 0,
+    quickWins: 0,
+    timeLimitWins: 0
+  });
 });
 
 test("state: online_pvp rematch can settle the next completed match once and WAR counters persist", async () => {

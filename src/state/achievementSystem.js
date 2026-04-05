@@ -296,27 +296,6 @@ export const ACHIEVEMENT_DEFINITIONS = Object.freeze([
     repeatable: false
   },
   {
-    id: "elemental_conqueror",
-    name: "Elemental Conqueror",
-    description: "Reach 25 total wins.",
-    image: "badges/elementalConqueror.png",
-    repeatable: false
-  },
-  {
-    id: "elemental_master",
-    name: "Elemental Master",
-    description: "Reach 50 total wins.",
-    image: "badges/elementalMaster.png",
-    repeatable: false
-  },
-  {
-    id: "elemental_grandmaster",
-    name: "Elemental Grandmaster",
-    description: "Reach 100 total wins.",
-    image: "badges/elementalGrandmaster.png",
-    repeatable: false
-  },
-  {
     id: "elemental_overlord",
     name: "Elemental Overlord",
     description: "Reach 200 total wins.",
@@ -328,20 +307,6 @@ export const ACHIEVEMENT_DEFINITIONS = Object.freeze([
     name: "Collector",
     description: "Capture 25 total cards.",
     image: "badges/collector.png",
-    repeatable: false
-  },
-  {
-    id: "collector_supreme",
-    name: "Collector Supreme",
-    description: "Capture 100 total cards.",
-    image: "badges/collectorSupreme.png",
-    repeatable: false
-  },
-  {
-    id: "collector_lord",
-    name: "Collector Lord",
-    description: "Capture 250 total cards.",
-    image: "badges/collectorLord.png",
     repeatable: false
   },
   {
@@ -430,7 +395,9 @@ export function normalizeAchievementProgressMap(achievements) {
   }
 
   return Object.fromEntries(
-    Object.entries(achievements).map(([id, entry]) => [id, normalizeAchievementProgressEntry(entry)])
+    Object.entries(achievements)
+      .filter(([id]) => DEFINITION_MAP.has(id))
+      .map(([id, entry]) => [id, normalizeAchievementProgressEntry(entry)])
   );
 }
 
@@ -626,32 +593,12 @@ export function evaluateAchievements({
     unlock("marathon_gamer", unlocks);
   }
 
-  if ((profileAfter.wins ?? 0) >= 25) {
-    unlock("elemental_conqueror", unlocks);
-  }
-
-  if ((profileAfter.wins ?? 0) >= 50) {
-    unlock("elemental_master", unlocks);
-  }
-
-  if ((profileAfter.wins ?? 0) >= 100) {
-    unlock("elemental_grandmaster", unlocks);
-  }
-
   if ((profileAfter.wins ?? 0) >= 200) {
     unlock("elemental_overlord", unlocks);
   }
 
   if ((profileAfter.cardsCaptured ?? 0) >= 25) {
     unlock("collector", unlocks);
-  }
-
-  if ((profileAfter.cardsCaptured ?? 0) >= 100) {
-    unlock("collector_supreme", unlocks);
-  }
-
-  if ((profileAfter.cardsCaptured ?? 0) >= 250) {
-    unlock("collector_lord", unlocks);
   }
 
   if ((profileAfter.warsWon ?? 0) >= 10) {

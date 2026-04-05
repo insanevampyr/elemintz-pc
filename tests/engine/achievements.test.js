@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   ACHIEVEMENT_DEFINITIONS,
+  buildAchievementCatalog,
   evaluateAchievements
 } from "../../src/state/achievementSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
@@ -15,6 +16,7 @@ function buildCompletedMatch({
   rounds = 3,
   endReason = null,
   history = [],
+  mode = "pve",
   p1Hand = ["fire", "water", "earth", "wind"],
   p2Hand = [],
   durationMs = 240000
@@ -23,7 +25,7 @@ function buildCompletedMatch({
     id: "match-ach",
     status: "completed",
     round: rounds,
-    mode: "pve",
+    mode,
     difficulty: "balanced",
     winner,
     endReason,
@@ -67,10 +69,8 @@ test("achievement definitions include required badges", () => {
   assert.ok(ids.includes("perfect_warrior"));
   assert.ok(ids.includes("overtime_champion"));
   assert.ok(ids.includes("marathon_gamer"));
-  assert.ok(ids.includes("elemental_conqueror"));
   assert.ok(ids.includes("elemental_overlord"));
   assert.ok(ids.includes("collector"));
-  assert.ok(ids.includes("collector_supreme"));
   assert.ok(ids.includes("streak_lord"));
   assert.ok(ids.includes("unbreakable_streak"));
   assert.ok(ids.includes("the_immortal"));
@@ -243,7 +243,6 @@ test("achievement evaluator: unlocks overtime and progression achievements", () 
   const ids = unlocked.map((item) => item.id);
   assert.ok(ids.includes("overtime_champion"));
   assert.ok(ids.includes("marathon_gamer"));
-  assert.ok(ids.includes("elemental_conqueror"));
   assert.ok(ids.includes("match_wins_25"));
   assert.ok(ids.includes("collector"));
   assert.ok(ids.includes("warrior"));
@@ -286,10 +285,49 @@ test("achievement evaluator: unlocks extended progression milestones", () => {
   const ids = unlocked.map((item) => item.id);
   assert.ok(ids.includes("elemental_overlord"));
   assert.ok(ids.includes("streak_lord"));
-  assert.ok(ids.includes("collector_lord"));
+  assert.ok(ids.includes("cards_captured_250"));
   assert.ok(ids.includes("matches_played_50"));
   assert.ok(ids.includes("cards_captured_250"));
   assert.ok(ids.includes("card_hoarder_elite"));
+});
+
+test("achievement normalization removes deleted duplicate achievements from saved progress and catalog output", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "DuplicateCleanupUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    achievements: {
+      ...profile.achievements,
+      elemental_conqueror: {
+        count: 1,
+        firstUnlockedAt: "2026-01-01T00:00:00.000Z",
+        lastUnlockedAt: "2026-01-01T00:00:00.000Z"
+      },
+      collector_supreme: {
+        count: 1,
+        firstUnlockedAt: "2026-01-02T00:00:00.000Z",
+        lastUnlockedAt: "2026-01-02T00:00:00.000Z"
+      },
+      match_wins_25: {
+        count: 1,
+        firstUnlockedAt: "2026-01-03T00:00:00.000Z",
+        lastUnlockedAt: "2026-01-03T00:00:00.000Z"
+      }
+    }
+  });
+
+  const normalized = await state.profiles.getProfile(username);
+  assert.equal("elemental_conqueror" in normalized.achievements, false);
+  assert.equal("collector_supreme" in normalized.achievements, false);
+  assert.equal(normalized.achievements.match_wins_25.count, 1);
+
+  const catalogIds = buildAchievementCatalog(normalized).map((item) => item.id);
+  assert.ok(!catalogIds.includes("elemental_conqueror"));
+  assert.ok(!catalogIds.includes("collector_supreme"));
+  assert.ok(catalogIds.includes("match_wins_25"));
 });
 
 test("achievement evaluator: phase 1 tiered achievements unlock at the configured thresholds", () => {
@@ -569,6 +607,126 @@ test("state coordinator: persists unlocked achievements and repeat counts", asyn
   const profile = await state.profiles.getProfile("AchTester");
   assert.ok(profile.achievements.quick_draw.count >= 2);
   assert.ok(second.profileAchievements.some((item) => item.id === "quick_draw"));
+});
+
+test("state coordinator: PvE unlocks mode achievements through the shared authoritative path", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "PveAchievementUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    wins: 24,
+    gamesPlayed: 24,
+    modeStats: {
+      ...profile.modeStats,
+      pve: {
+        ...(profile.modeStats?.pve ?? {}),
+        wins: 24,
+        losses: profile.modeStats?.pve?.losses ?? 0
+      }
+    }
+  });
+
+  const result = await state.recordMatchResult({
+    username,
+    perspective: "p1",
+    matchState: buildCompletedMatch({
+      mode: "pve",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "pve_wins_25"));
+  assert.equal(result.profile.achievements.pve_wins_25.count, 1);
+});
+
+test("state coordinator: local PvP unlocks mode achievements through the shared authoritative path", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "LocalPvpAchievementUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    wins: 24,
+    gamesPlayed: 24,
+    modeStats: {
+      ...profile.modeStats,
+      local_pvp: {
+        ...(profile.modeStats?.local_pvp ?? {}),
+        wins: 24,
+        losses: profile.modeStats?.local_pvp?.losses ?? 0
+      }
+    }
+  });
+
+  const result = await state.recordMatchResult({
+    username,
+    perspective: "p1",
+    matchState: buildCompletedMatch({
+      mode: "local_pvp",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "local_pvp_wins_25"));
+  assert.equal(result.profile.achievements.local_pvp_wins_25.count, 1);
+});
+
+test("state coordinator: online PvP unlocks through recordOnlineMatchResult on the shared authoritative path", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const result = await state.recordOnlineMatchResult({
+    username: "OnlineAchievementUser",
+    perspective: "p1",
+    settlementKey: "achievement-online-1",
+    matchState: buildCompletedMatch({
+      mode: "online_pvp",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "first_flame"));
+  assert.equal(result.profile.achievements.first_flame.count, 1);
+});
+
+test("state coordinator: already unlocked non-repeatable achievements do not persist twice", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "DuplicateAchievementUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    wins: 1,
+    gamesPlayed: 1,
+    achievements: {
+      ...profile.achievements,
+      first_flame: {
+        count: 1,
+        unlockedAt: "2026-01-01T00:00:00.000Z"
+      }
+    }
+  });
+
+  const result = await state.recordMatchResult({
+    username,
+    perspective: "p1",
+    matchState: buildCompletedMatch({
+      mode: "pve",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  assert.ok(!result.unlockedAchievements.some((item) => item.id === "first_flame"));
+  assert.equal(result.profile.achievements.first_flame.count, 1);
 });
 
 test("state coordinator: unlocks war machine from single-match WAR wins", async () => {

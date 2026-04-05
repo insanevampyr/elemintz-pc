@@ -143,6 +143,9 @@ export function createDefaultProfile(username) {
     ...createDefaultEconomyState(),
     ...createDefaultChestState(),
     dailyChallenges: createDefaultDailyChallenges(),
+    onlineRewardSettlements: {
+      appliedSettlementKeys: []
+    },
     onlineDisconnectTracking: {
       totalLiveMatchDisconnects: 0,
       totalReconnectTimeoutExpirations: 0,

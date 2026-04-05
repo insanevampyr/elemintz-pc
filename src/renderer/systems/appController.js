@@ -1727,14 +1727,23 @@ export class AppController {
         body: String(error?.message ?? "Unable to open this chest."),
         actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
       });
-    } finally {
-      this.profileChestOpenInFlight = false;
-      this.setProfileChestVisualState(safeChestType, false);
-      if (this.screenFlow === "profile") {
-        await this.showProfile({ preserveModal });
+      } finally {
+        this.profileChestOpenInFlight = false;
+        this.setProfileChestVisualState(safeChestType, false);
+        if (this.screenFlow === "profile") {
+          try {
+            await this.showProfile({ preserveModal });
+          } catch (renderError) {
+            console.error("Failed to refresh profile after chest open", renderError);
+            try {
+              await this.showProfile({ preserveModal });
+            } catch (retryError) {
+              console.error("Failed to refresh profile after chest open retry", retryError);
+            }
+          }
+        }
       }
     }
-  }
 
   emitChestOpenToast(result) {
     if (!result?.rewards) {

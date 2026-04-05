@@ -5,6 +5,7 @@ import { Server as SocketIOServer } from "socket.io";
 
 import { createRoomStore } from "./rooms.js";
 import { createSessionStore } from "./sessionStore.js";
+import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
 
 const DEFAULT_PORT = 3001;
@@ -13,7 +14,7 @@ const ROOM_CLEANUP_DELAY_MS = 30000;
 const ROOM_RECONNECT_TIMEOUT_MS = 60000;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
 export const MULTIPLAYER_FOUNDATION_PHASE = 22;
-const DEVELOPMENT_PHASE_LABEL = "Online-Only Conversion — Phase 2B";
+const DEVELOPMENT_PHASE_LABEL = "Shared Authoritative Achievements - Pass 2";
 
 function logRoomEvent(logger, message, details = {}) {
   logger.info("[Multiplayer] " + message, details);
@@ -21,6 +22,74 @@ function logRoomEvent(logger, message, details = {}) {
 
 function logMatchEvent(logger, message, details = {}) {
   logger.info("[Match] " + message, details);
+}
+
+function toAckCallback(respond) {
+  return typeof respond === "function" ? respond : () => {};
+}
+
+function cloneAuthoritativeEquippedCosmetics(equippedCosmetics) {
+  if (!equippedCosmetics || typeof equippedCosmetics !== "object" || Array.isArray(equippedCosmetics)) {
+    return null;
+  }
+
+  return {
+    avatar: equippedCosmetics.avatar ?? null,
+    background: equippedCosmetics.background ?? null,
+    cardBack: equippedCosmetics.cardBack ?? null,
+    elementCardVariant:
+      equippedCosmetics.elementCardVariant &&
+      typeof equippedCosmetics.elementCardVariant === "object" &&
+      !Array.isArray(equippedCosmetics.elementCardVariant)
+        ? {
+            fire: equippedCosmetics.elementCardVariant.fire ?? null,
+            water: equippedCosmetics.elementCardVariant.water ?? null,
+            earth: equippedCosmetics.elementCardVariant.earth ?? null,
+            wind: equippedCosmetics.elementCardVariant.wind ?? null
+          }
+        : null,
+    title: equippedCosmetics.title ?? null,
+    badge: equippedCosmetics.badge ?? null
+  };
+}
+
+async function attachAuthoritativeOnlineCosmetics(payload, session, profileAuthority, logger) {
+  const basePayload =
+    payload && typeof payload === "object" && !Array.isArray(payload) ? { ...payload } : {};
+  const authorityUsername = session?.profileKey ?? session?.username ?? null;
+
+  if (!authorityUsername || typeof profileAuthority?.getProfile !== "function") {
+    return basePayload;
+  }
+
+  try {
+    const profileSnapshot = await profileAuthority.getProfile(authorityUsername);
+    const authoritativeEquipped = cloneAuthoritativeEquippedCosmetics(
+      profileSnapshot?.cosmetics?.snapshot?.equipped ??
+        profileSnapshot?.profile?.equippedCosmetics ??
+        null
+    );
+
+    return authoritativeEquipped
+      ? {
+          ...basePayload,
+          equippedCosmetics: authoritativeEquipped
+        }
+      : {
+          ...basePayload,
+          equippedCosmetics: undefined
+        };
+  } catch (error) {
+    logger?.warn?.("[OnlinePlay][Cosmetics] failed to load authoritative cosmetics for room payload", {
+      username: authorityUsername,
+      message: error?.message ?? String(error)
+    });
+
+    return {
+      ...basePayload,
+      equippedCosmetics: undefined
+    };
+  }
 }
 
 function normalizeSettledUsername(username) {
@@ -31,7 +100,7 @@ function normalizeSettledUsername(username) {
   return normalized.length > 0 ? normalized : null;
 }
 
-function buildSettledIdentity(room, logger = console) {
+function buildSettledIdentity(room, logger = DEFAULT_TIMESTAMPED_LOGGER) {
   const settledHostUsername = normalizeSettledUsername(room?.host?.username);
   const settledGuestUsername = normalizeSettledUsername(room?.guest?.username);
 
@@ -68,7 +137,7 @@ function rollChestDrop({ random, outcome, role, logger }) {
   return awarded ? 1 : 0;
 }
 
-function buildRewardSummary(room, { random = Math.random, logger = console } = {}) {
+function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMESTAMPED_LOGGER } = {}) {
   if (!room?.matchComplete || !room?.winner) {
     return null;
   }
@@ -144,6 +213,36 @@ function buildRewardSummary(room, { random = Math.random, logger = console } = {
   return null;
 }
 
+function buildRewardDecision(room, summary, {
+  settlementKey = null,
+  decidedAt = new Date().toISOString()
+} = {}) {
+  if (!room?.matchComplete || !summary) {
+    return null;
+  }
+
+  const matchId =
+    room.serverMatchState?.matchId ??
+    (room.roomCode ? `${room.roomCode}:match:${Math.max(1, Number(room.matchSequence ?? 1))}` : null);
+
+  return {
+    matchId,
+    roomCode: room.roomCode ?? null,
+    winner: room.winner ?? null,
+    isDraw: room.winner === "draw",
+    settlementKey: String(settlementKey ?? "").trim() || null,
+    rewards: {
+      host: { ...(summary.hostRewards ?? {}) },
+      guest: { ...(summary.guestRewards ?? {}) }
+    },
+    participants: {
+      hostUsername: summary.settledHostUsername ?? null,
+      guestUsername: summary.settledGuestUsername ?? null
+    },
+    decidedAt
+  };
+}
+
 function resolvePerspectiveResultFromRoomWinner(roomWinner) {
   if (roomWinner === "host") {
     return "p1";
@@ -168,6 +267,41 @@ function resolvePerspectiveResultFromRound(entry) {
   return "none";
 }
 
+function getStoredCapturedOpponentCards(entry, fallback = 0) {
+  const explicit = Number(entry?.capturedOpponentCards);
+  if (Number.isFinite(explicit) && explicit >= 0) {
+    return explicit;
+  }
+
+  return Math.max(0, Number(fallback) || 0);
+}
+
+function getStoredCapturedCards(entry, fallback = 0) {
+  const explicit = Number(entry?.capturedCards);
+  if (Number.isFinite(explicit) && explicit >= 0) {
+    return explicit;
+  }
+
+  return Math.max(0, Number(fallback) || 0);
+}
+
+function countWarResolutionClashes(roundHistory, resolvedIndex) {
+  let warClashes = 1;
+
+  for (let cursor = resolvedIndex - 1; cursor >= 0; cursor -= 1) {
+    const priorOutcomeType = String(roundHistory[cursor]?.outcomeType ?? "");
+
+    if (priorOutcomeType === "war" || priorOutcomeType === "no_effect") {
+      warClashes += 1;
+      continue;
+    }
+
+    break;
+  }
+
+  return warClashes;
+}
+
 function buildOnlineHistoryFromRoundHistory(roundHistory = []) {
   const history = [];
 
@@ -176,47 +310,24 @@ function buildOnlineHistoryFromRoundHistory(roundHistory = []) {
     const outcomeType = String(entry?.outcomeType ?? "");
 
     if (outcomeType === "war") {
-      let warClashes = 1;
-      let resolvedWinner = "none";
-      let capturedOpponentCards = 0;
-      let cursor = index + 1;
-
-      while (cursor < roundHistory.length) {
-        const nextEntry = roundHistory[cursor];
-        const nextOutcomeType = String(nextEntry?.outcomeType ?? "");
-
-        if (nextOutcomeType === "war" || nextOutcomeType === "no_effect") {
-          warClashes += 1;
-          cursor += 1;
-          continue;
-        }
-
-        if (nextOutcomeType === "war_resolved") {
-          warClashes += 1;
-          resolvedWinner = resolvePerspectiveResultFromRound(nextEntry);
-          capturedOpponentCards = resolvedWinner === "p1" || resolvedWinner === "p2" ? warClashes : 0;
-          cursor += 1;
-        }
-
-        break;
-      }
-
       history.push({
-        result: resolvedWinner,
-        warClashes,
-        capturedOpponentCards,
+        result: "none",
+        warClashes: 0,
+        capturedCards: 0,
+        capturedOpponentCards: 0,
         p1Card: String(entry?.hostMove ?? "").toLowerCase(),
         p2Card: String(entry?.guestMove ?? "").toLowerCase()
       });
-      index = cursor - 1;
       continue;
     }
 
     if (outcomeType === "war_resolved") {
+      const warClashes = countWarResolutionClashes(roundHistory, index);
       history.push({
         result: resolvePerspectiveResultFromRound(entry),
-        warClashes: 1,
-        capturedOpponentCards: 1,
+        warClashes,
+        capturedCards: getStoredCapturedCards(entry, 0),
+        capturedOpponentCards: getStoredCapturedOpponentCards(entry, 0),
         p1Card: String(entry?.hostMove ?? "").toLowerCase(),
         p2Card: String(entry?.guestMove ?? "").toLowerCase()
       });
@@ -227,7 +338,14 @@ function buildOnlineHistoryFromRoundHistory(roundHistory = []) {
       history.push({
         result: resolvePerspectiveResultFromRound(entry),
         warClashes: 0,
-        capturedOpponentCards: entry?.hostResult === "win" || entry?.guestResult === "win" ? 1 : 0,
+        capturedCards: getStoredCapturedCards(
+          entry,
+          entry?.hostResult === "win" || entry?.guestResult === "win" ? 2 : 0
+        ),
+        capturedOpponentCards: getStoredCapturedOpponentCards(
+          entry,
+          entry?.hostResult === "win" || entry?.guestResult === "win" ? 1 : 0
+        ),
         p1Card: String(entry?.hostMove ?? "").toLowerCase(),
         p2Card: String(entry?.guestMove ?? "").toLowerCase()
       });
@@ -237,6 +355,7 @@ function buildOnlineHistoryFromRoundHistory(roundHistory = []) {
     history.push({
       result: "none",
       warClashes: 0,
+      capturedCards: 0,
       capturedOpponentCards: 0,
       p1Card: String(entry?.hostMove ?? "").toLowerCase(),
       p2Card: String(entry?.guestMove ?? "").toLowerCase()
@@ -266,9 +385,81 @@ function buildOnlineMatchStateFromRoom(room) {
   };
 }
 
+export function resolveRound(room, roundResult) {
+  if (!room || !roundResult) {
+    return null;
+  }
+
+  return {
+    roomCode: room.roomCode,
+    matchId: room.serverMatchState?.matchId ?? `${room.roomCode}:match:unknown`,
+    stepId: room.serverMatchState?.lastResolvedOutcome?.stepId ?? null,
+    submittedCards: {
+      host: roundResult.hostMove ?? null,
+      guest: roundResult.guestMove ?? null
+    },
+    authoritativeOutcomeType:
+      room.serverMatchState?.lastResolvedOutcome?.type ??
+      (roundResult.outcomeType === "resolved" ? "win" : roundResult.outcomeType ?? null),
+    authoritativeWinner:
+      room.serverMatchState?.lastResolvedOutcome?.winner ??
+      (roundResult.hostResult === "win"
+        ? "host"
+        : roundResult.guestResult === "win"
+          ? "guest"
+          : null),
+    roundResult: {
+      ...roundResult
+    },
+    matchSnapshot: room.serverMatchState
+      ? {
+          ...room.serverMatchState,
+          players: {
+            host: room.serverMatchState.players?.host
+              ? { ...room.serverMatchState.players.host }
+              : null,
+            guest: room.serverMatchState.players?.guest
+              ? { ...room.serverMatchState.players.guest }
+              : null
+          },
+          playerHands: {
+            host: { ...(room.serverMatchState.playerHands?.host ?? {}) },
+            guest: { ...(room.serverMatchState.playerHands?.guest ?? {}) }
+          },
+          warState: { ...(room.serverMatchState.warState ?? {}) },
+          pendingActions: {
+            host: room.serverMatchState.pendingActions?.host
+              ? { ...room.serverMatchState.pendingActions.host }
+              : null,
+            guest: room.serverMatchState.pendingActions?.guest
+              ? { ...room.serverMatchState.pendingActions.guest }
+              : null
+          },
+          activeStep: { ...(room.serverMatchState.activeStep ?? {}) },
+          lastResolvedOutcome: room.serverMatchState.lastResolvedOutcome
+            ? { ...room.serverMatchState.lastResolvedOutcome }
+            : null,
+          turnState: {
+            waitingOn: Array.isArray(room.serverMatchState.turnState?.waitingOn)
+              ? [...room.serverMatchState.turnState.waitingOn]
+              : [],
+            lockedIn: Array.isArray(room.serverMatchState.turnState?.lockedIn)
+              ? [...room.serverMatchState.turnState.lockedIn]
+              : [],
+            resolutionReady: Boolean(room.serverMatchState.turnState?.resolutionReady)
+          }
+        }
+      : null,
+    animation: {
+      clearWarStateAfterDelay: roundResult.outcomeType === "war_resolved",
+      matchComplete: Boolean(room.matchComplete)
+    }
+  };
+}
+
 export function createMultiplayerFoundation({
   port = Number(process.env.PORT) || DEFAULT_PORT,
-  logger = console,
+  logger = DEFAULT_TIMESTAMPED_LOGGER,
   random = Math.random,
   roundResetDelayMs = ROUND_RESET_DELAY_MS,
   roomCleanupDelayMs = ROOM_CLEANUP_DELAY_MS,
@@ -291,6 +482,7 @@ export function createMultiplayerFoundation({
   const roomResetTimers = new Map();
   const roomCleanupTimers = new Map();
   const roomReconnectTimers = new Map();
+  const roomSettlementTasks = new Map();
 
   // Phase 18 foundation: private 2-player room lifecycle plus authoritative
   // move submission sync, round resolution, repeat-round reset, WAR chain
@@ -360,6 +552,7 @@ export function createMultiplayerFoundation({
 
     clearTimeout(existingTimer);
     roomCleanupTimers.delete(roomCode);
+    roomStore.setClosingAt(roomCode, null);
   }
 
   function clearReconnectExpiry(roomCode) {
@@ -374,6 +567,7 @@ export function createMultiplayerFoundation({
 
     clearTimeout(existingTimer);
     roomReconnectTimers.delete(roomCode);
+    roomStore.setDisconnectExpiresAt(roomCode, null);
   }
 
   function buildAccountError(error, fallbackCode = "AUTH_FAILED") {
@@ -402,8 +596,17 @@ export function createMultiplayerFoundation({
 
     const timerId = setTimeout(() => {
       roomReconnectTimers.delete(roomCode);
+      const currentRoom = roomStore.getRoom(roomCode);
+      if (
+        !currentRoom ||
+        currentRoom.status !== "paused" ||
+        currentRoom.disconnectState?.expiresAt !== expiresAt
+      ) {
+        return;
+      }
+
       const expiredRoom = roomStore.expireDisconnectedRoom(roomCode);
-      if (!expiredRoom) {
+      if (!expiredRoom || expiredRoom.status !== "expired") {
         return;
       }
 
@@ -445,6 +648,15 @@ export function createMultiplayerFoundation({
 
     const timerId = setTimeout(() => {
       roomCleanupTimers.delete(roomCode);
+      const currentRoom = roomStore.getRoom(roomCode);
+      if (
+        !currentRoom ||
+        currentRoom.closingAt !== closingAt ||
+        (currentRoom.status !== "closing" && currentRoom.status !== "expired")
+      ) {
+        return;
+      }
+
       roomStore.removeRoom(roomCode);
       logger.info("[OnlinePlay][Server] room cleaned up", {
         roomCode
@@ -535,66 +747,115 @@ export function createMultiplayerFoundation({
       return room;
     }
 
-    if (room?.rewardSettlement?.granted) {
+    const settlementKey = roomStore.getCurrentMatchSettlementKey(room.roomCode);
+    const existingTask = roomSettlementTasks.get(room.roomCode);
+    if (existingTask?.settlementKey === settlementKey) {
+      return existingTask.promise;
+    }
+
+    if (
+      room?.rewardSettlement?.granted &&
+      room?.rewardSettlement?.settlementKey &&
+      room.rewardSettlement.settlementKey === settlementKey
+    ) {
       logMatchEvent(logger, "Settlement skipped", {
         roomCode: room.roomCode,
-        winner: room.winner
+        winner: room.winner,
+        settlementKey
       });
       return room;
     }
 
-    logMatchEvent(logger, "Settlement start", {
-      roomCode: room.roomCode,
-      winner: room.winner,
-      hostUsername: room.host?.username ?? null,
-      guestUsername: room.guest?.username ?? null
-    });
+    const settlementTask = (async () => {
+      logMatchEvent(logger, "Settlement start", {
+        roomCode: room.roomCode,
+        winner: room.winner,
+        hostUsername: room.host?.username ?? null,
+        guestUsername: room.guest?.username ?? null
+      });
 
-    const authoritativeRoom = roomStore.getRoom(room.roomCode) ?? null;
-    const settlementRoom = {
-      ...room,
-      host: authoritativeRoom?.host ?? room.host ?? null,
-      guest: authoritativeRoom?.guest ?? room.guest ?? null
-    };
+      const authoritativeRoom = roomStore.getRoom(room.roomCode) ?? null;
+      const settlementRoom = {
+        ...room,
+        host: authoritativeRoom?.host ?? room.host ?? null,
+        guest: authoritativeRoom?.guest ?? room.guest ?? null
+      };
 
-    const summary = buildRewardSummary(settlementRoom, { random, logger });
-    if (!summary) {
-      return room;
-    }
+      const summary = buildRewardSummary(settlementRoom, { random, logger });
+      if (!summary) {
+        return room;
+      }
+      const grantedAt = new Date().toISOString();
+      const decision = buildRewardDecision(settlementRoom, summary, {
+        settlementKey,
+        decidedAt: grantedAt
+      });
 
-    logMatchEvent(logger, "Host reward package", {
-      roomCode: room.roomCode,
-      username: room.host?.username ?? null,
-      rewards: summary.hostRewards
-    });
-    logMatchEvent(logger, "Guest reward package", {
-      roomCode: room.roomCode,
-      username: room.guest?.username ?? null,
-      rewards: summary.guestRewards
+      logMatchEvent(logger, "Host reward package", {
+        roomCode: room.roomCode,
+        username: room.host?.username ?? null,
+        rewards: summary.hostRewards
+      });
+      logMatchEvent(logger, "Guest reward package", {
+        roomCode: room.roomCode,
+        username: room.guest?.username ?? null,
+        rewards: summary.guestRewards
+      });
+
+      try {
+        if (typeof rewardPersister === "function") {
+          await rewardPersister({
+            room,
+            summary,
+            decision,
+            settlementKey
+          });
+        }
+        logMatchEvent(logger, "Settlement persisted", {
+          roomCode: room.roomCode,
+          winner: summary.winner,
+          settlementKey
+        });
+      } catch (error) {
+        logger.error?.("[OnlinePlay][Rewards] persistence failed", {
+          roomCode: room.roomCode,
+          message: error?.message,
+          stack: error?.stack
+        });
+        return roomStore.getRoom(room.roomCode) ?? room;
+      }
+
+      const currentSettlementKey = roomStore.getCurrentMatchSettlementKey(room.roomCode);
+      if (currentSettlementKey !== settlementKey) {
+        logMatchEvent(logger, "Settlement skipped after room advanced", {
+          roomCode: room.roomCode,
+          settlementKey,
+          currentSettlementKey
+        });
+        return roomStore.getRoom(room.roomCode) ?? room;
+      }
+
+      return (
+        roomStore.setRewardSettlement(room.roomCode, summary, grantedAt, {
+          settlementKey,
+          decision
+        }) ?? room
+      );
+    })();
+
+    roomSettlementTasks.set(room.roomCode, {
+      settlementKey,
+      promise: settlementTask
     });
 
     try {
-      if (typeof rewardPersister === "function") {
-        await rewardPersister({
-          room,
-          summary,
-          settlementKey: roomStore.getCurrentMatchSettlementKey(room.roomCode)
-        });
+      return await settlementTask;
+    } finally {
+      const activeTask = roomSettlementTasks.get(room.roomCode);
+      if (activeTask?.promise === settlementTask) {
+        roomSettlementTasks.delete(room.roomCode);
       }
-      logMatchEvent(logger, "Settlement persisted", {
-        roomCode: room.roomCode,
-        winner: summary.winner
-      });
-    } catch (error) {
-      logger.error?.("[OnlinePlay][Rewards] persistence failed", {
-        roomCode: room.roomCode,
-        message: error?.message,
-        stack: error?.stack
-      });
-      return room;
     }
-
-    return roomStore.setRewardSettlement(room.roomCode, summary) ?? room;
   }
 
   io.on("connection", (socket) => {
@@ -612,7 +873,13 @@ export function createMultiplayerFoundation({
           return;
         }
 
-        const result = roomStore.createRoom(socket, payload, sessionResult.session);
+        const authoritativePayload = await attachAuthoritativeOnlineCosmetics(
+          payload,
+          sessionResult.session,
+          profileAuthority,
+          logger
+        );
+        const result = roomStore.createRoom(socket, authoritativePayload, sessionResult.session);
 
         if (!result.ok) {
           socket.emit("room:error", result.error);
@@ -649,7 +916,18 @@ export function createMultiplayerFoundation({
           return;
         }
 
-        const result = roomStore.joinRoom(socket, payload.roomCode, payload, sessionResult.session);
+        const authoritativePayload = await attachAuthoritativeOnlineCosmetics(
+          payload,
+          sessionResult.session,
+          profileAuthority,
+          logger
+        );
+        const result = roomStore.joinRoom(
+          socket,
+          authoritativePayload?.roomCode ?? payload.roomCode,
+          authoritativePayload,
+          sessionResult.session
+        );
 
         if (!result.ok) {
           socket.emit("room:error", result.error);
@@ -673,7 +951,7 @@ export function createMultiplayerFoundation({
           });
         }
         socket.emit("room:joined", result.room);
-        io.to(result.room.roomCode).emit("room:update", result.room);
+        socket.to(result.room.roomCode).emit("room:update", result.room);
         logRoomEvent(logger, result.reconnected ? "Player rejoined room" : "Player joined room", {
           roomCode: result.room.roomCode,
           username: sessionResult.session?.username ?? result.room.guest?.username ?? null,
@@ -693,6 +971,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("session:bootstrap", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const result = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!result?.ok) {
         respond(result);
@@ -706,6 +985,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("auth:register", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       if (
         typeof accountStore?.register !== "function" ||
         typeof profileAuthority?.assertProfileClaimAvailable !== "function" ||
@@ -750,6 +1030,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("auth:login", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       if (typeof accountStore?.login !== "function") {
         respond(buildAccountError({
           code: "AUTH_UNAVAILABLE",
@@ -780,6 +1061,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("session:resume", (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const result = sessionStore.resumeSession({
         token: payload?.sessionToken,
         socketId: socket.id
@@ -796,6 +1078,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("session:logout", (_payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const existingSession = sessionStore.getSessionBySocket(socket.id);
       if (!existingSession) {
         respond({ ok: true });
@@ -851,6 +1134,8 @@ export function createMultiplayerFoundation({
         }
       }
 
+      const authoritativeRoundResult = resolveRound(result.room, result.roundResult);
+
       logger.info("[OnlinePlay][Server] broadcasting room:moveSync", {
         roomCode: result.room.roomCode,
         moveSync: result.room.moveSync
@@ -860,6 +1145,9 @@ export function createMultiplayerFoundation({
       if (result.roundResult) {
         logger.info("[OnlinePlay][Server] about to emit room:roundResult", result.roundResult);
         io.to(result.room.roomCode).emit("room:roundResult", result.roundResult);
+        if (authoritativeRoundResult) {
+          io.to(result.room.roomCode).emit("room:serverRoundResult", authoritativeRoundResult);
+        }
         if (!result.room.matchComplete) {
           scheduleRoundReset(result.room.roomCode, {
             clearWarState: result.roundResult.outcomeType === "war_resolved"
@@ -892,6 +1180,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:get", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!sessionResult?.ok) {
         respond(sessionResult);
@@ -933,10 +1222,11 @@ export function createMultiplayerFoundation({
       }
     });
 
-    socket.on("profile:getCosmetics", async (payload = {}, respond = () => {}) => {
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
-      if (!sessionResult?.ok) {
-        respond(sessionResult);
+      socket.on("profile:getCosmetics", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
         return;
       }
 
@@ -965,12 +1255,129 @@ export function createMultiplayerFoundation({
           error: {
             code: "PROFILE_COSMETICS_READ_FAILED",
             message: String(error?.message ?? "Unable to read authoritative cosmetics.")
+            }
+          });
+        }
+      });
+
+      socket.on("profile:claimDailyLoginReward", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof profileAuthority?.claimDailyLoginReward !== "function") {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            }
+          });
+          return;
+        }
+
+        try {
+          const result = await profileAuthority.claimDailyLoginReward(
+            sessionResult.session?.profileKey ?? sessionResult.session?.username
+          );
+          respond({
+            ok: true,
+            result
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_DAILY_LOGIN_WRITE_FAILED",
+              message: String(error?.message ?? "Unable to complete authoritative daily login claim.")
+            }
+          });
+        }
+      });
+
+      socket.on("profile:buyStoreItem", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.buyStoreItem !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.buyStoreItem({
+          ...payload,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_STORE_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to complete authoritative store purchase.")
+          }
+        });
+      }
+    });
+
+      socket.on("profile:openChest", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.openChest !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.openChest({
+          ...payload,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_CHEST_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to open authoritative chest.")
           }
         });
       }
     });
 
     socket.on("profile:equipCosmetic", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!sessionResult?.ok) {
         respond(sessionResult);
@@ -1009,6 +1416,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:updateCosmeticPreferences", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!sessionResult?.ok) {
         respond(sessionResult);
@@ -1047,6 +1455,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:randomizeOwnedCosmetics", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!sessionResult?.ok) {
         respond(sessionResult);
@@ -1085,6 +1494,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:saveCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!sessionResult?.ok) {
         respond(sessionResult);
@@ -1123,6 +1533,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:applyCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!sessionResult?.ok) {
         respond(sessionResult);
@@ -1161,6 +1572,7 @@ export function createMultiplayerFoundation({
     });
 
     socket.on("profile:renameCosmeticLoadout", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
       if (!sessionResult?.ok) {
         respond(sessionResult);
@@ -1311,5 +1723,6 @@ export {
   ROUND_RESET_DELAY_MS,
   ROOM_RECONNECT_TIMEOUT_MS,
   buildOnlineMatchStateFromRoom,
+  buildRewardDecision,
   buildRewardSummary
 };

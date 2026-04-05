@@ -1,10 +1,10 @@
 import { buildXpBreakdown, deriveLevelFromXp, getLevelProgress, getXpThresholds } from "./levelRewardsSystem.js";
-import { grantChest } from "./chestSystem.js";
+import { EPIC_CHEST_TYPE, grantChest } from "./chestSystem.js";
 
 const RESET_TIME_ZONE = "America/Chicago";
 const RESET_HOUR = 18;
 const DAILY_COMPLETION_CHEST_AMOUNT = 1;
-const WEEKLY_COMPLETION_CHEST_AMOUNT = 2;
+const WEEKLY_COMPLETION_CHEST_AMOUNT = 1;
 
 const WEEKDAY_INDEX = Object.freeze({
   Mon: 1,
@@ -755,7 +755,7 @@ export function applyDailyChallengesForMatch({
           weekly: weeklyState
         }
       },
-      { amount: WEEKLY_COMPLETION_CHEST_AMOUNT }
+      { chestType: EPIC_CHEST_TYPE, amount: WEEKLY_COMPLETION_CHEST_AMOUNT }
     );
     weeklyChestDelta = WEEKLY_COMPLETION_CHEST_AMOUNT;
   }

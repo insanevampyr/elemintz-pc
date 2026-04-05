@@ -2,13 +2,14 @@ import { buildOnlineMatchStateFromRoom, createMultiplayerFoundation } from "./fo
 import { StateCoordinator } from "../state/stateCoordinator.js";
 import { MultiplayerProfileAuthority } from "./profileAuthority.js";
 import { MultiplayerAccountStore } from "./accountStore.js";
+import { createTimestampedLogger } from "./logger.js";
 import os from "node:os";
 import path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
 
-const SERVER_NAME = "EleMintz Server";
-const PHASE_LABEL = "Online-Only Conversion — Phase 2B";
+const PHASE_LABEL = "Shared Authoritative Achievements - Pass 2";
 const ENVIRONMENT_LABEL = process.env.NODE_ENV === "production" ? "Production" : "Development";
+const logger = createTimestampedLogger(console);
 
 function resolveStandaloneDataDir() {
   if (process.env.ELEMINTZ_DATA_DIR) {
@@ -30,16 +31,17 @@ const stateCoordinator = new StateCoordinator({
 });
 const profileAuthority = new MultiplayerProfileAuthority({
   coordinator: stateCoordinator,
-  logger: console
+  logger
 });
 const accountStore = new MultiplayerAccountStore({
   dataDir: resolveStandaloneDataDir(),
-  logger: console
+  logger
 });
 
-async function rewardPersister({ room, summary, settlementKey }) {
-  const hostUsername = summary?.settledHostUsername ?? null;
-  const guestUsername = summary?.settledGuestUsername ?? null;
+async function rewardPersister({ room, summary, decision, settlementKey }) {
+  const rewardDecision = decision ?? room?.rewardSettlement?.decision ?? null;
+  const hostUsername = rewardDecision?.participants?.hostUsername ?? summary?.settledHostUsername ?? null;
+  const guestUsername = rewardDecision?.participants?.guestUsername ?? summary?.settledGuestUsername ?? null;
   const onlineMatchState = buildOnlineMatchStateFromRoom(room);
 
   if (hostUsername) {
@@ -47,13 +49,15 @@ async function rewardPersister({ room, summary, settlementKey }) {
       username: hostUsername,
       perspective: "p1",
       result: onlineMatchState,
-      settlementKey: settlementKey ? `${settlementKey}:${hostUsername}` : null,
-      rewards: summary.hostRewards
+      settlementKey,
+      rewardDecision,
+      participantRole: "host"
     });
-    console.info("[Match] Host rewards persisted", {
+    logger.info("[Match] Host rewards persisted", {
       roomCode: room?.roomCode ?? null,
       username: hostUsername,
-      rewards: summary.hostRewards
+      rewards: rewardDecision?.rewards?.host ?? summary?.hostRewards ?? null,
+      settlementKey: settlementKey ?? null
     });
   }
 
@@ -62,13 +66,15 @@ async function rewardPersister({ room, summary, settlementKey }) {
       username: guestUsername,
       perspective: "p2",
       result: onlineMatchState,
-      settlementKey: settlementKey ? `${settlementKey}:${guestUsername}` : null,
-      rewards: summary.guestRewards
+      settlementKey,
+      rewardDecision,
+      participantRole: "guest"
     });
-    console.info("[Match] Guest rewards persisted", {
+    logger.info("[Match] Guest rewards persisted", {
       roomCode: room?.roomCode ?? null,
       username: guestUsername,
-      rewards: summary.guestRewards
+      rewards: rewardDecision?.rewards?.guest ?? summary?.guestRewards ?? null,
+      settlementKey: settlementKey ?? null
     });
   }
 }
@@ -97,7 +103,8 @@ const server = createMultiplayerFoundation({
   rewardPersister,
   disconnectTracker,
   profileAuthority,
-  accountStore
+  accountStore,
+  logger
 });
 let shuttingDown = false;
 
@@ -107,12 +114,12 @@ async function shutdown(signal) {
   }
 
   shuttingDown = true;
-  console.info("[Multiplayer] shutting down", { signal });
+  logger.info("[Multiplayer] shutting down", { signal });
 
   try {
     await server.stop();
   } catch (error) {
-    console.error("[Multiplayer] failed to shut down cleanly", {
+    logger.error("[Multiplayer] failed to shut down cleanly", {
       signal,
       message: error?.message,
       stack: error?.stack
@@ -122,15 +129,15 @@ async function shutdown(signal) {
 
 server.start()
   .then((listeningPort) => {
-    console.info(`[${SERVER_NAME}] Started`);
-    console.info(`[${SERVER_NAME}] Version: ${packageJson.version}`);
-    console.info(`[${SERVER_NAME}] Port: ${listeningPort}`);
-    console.info(`[${SERVER_NAME}] Mode: ${ENVIRONMENT_LABEL}`);
-    console.info(`[${SERVER_NAME}] Systems: Multiplayer ✔ | Profile Authority ✔`);
-    console.info(`[${SERVER_NAME}] Phase: ${PHASE_LABEL}`);
+    logger.info("Started");
+    logger.info(`Version: ${packageJson.version}`);
+    logger.info(`Port: ${listeningPort}`);
+    logger.info(`Mode: ${ENVIRONMENT_LABEL}`);
+    logger.info("Systems: Multiplayer ✔ | Profile Authority ✔");
+    logger.info(`Phase: ${PHASE_LABEL}`);
   })
   .catch((error) => {
-    console.error(`[${SERVER_NAME}] Failed to start`, {
+    logger.error("Failed to start", {
       message: error?.message,
       stack: error?.stack
     });

@@ -1,4 +1,5 @@
 import { StateCoordinator } from "../state/stateCoordinator.js";
+import { buildAuthoritativeCosmeticSnapshot } from "../state/cosmeticSystem.js";
 import { getLevelProgress } from "../state/levelRewardsSystem.js";
 
 function normalizeAuthorityUsername(username) {
@@ -25,11 +26,16 @@ function summarizeMatchOutcome(result, perspective) {
 }
 
 function buildSnapshotCosmetics(profile) {
+  const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
+
   return {
-    equipped: profile?.equippedCosmetics ?? null,
-    owned: profile?.ownedCosmetics ?? null,
-    loadouts: profile?.cosmeticLoadouts ?? null,
-    preferences: profile?.cosmeticRandomizeAfterMatch ?? null
+    authority: "server",
+    source: "profileAuthority",
+    snapshot,
+    equipped: snapshot.equipped,
+    owned: snapshot.owned,
+    loadouts: snapshot.loadouts,
+    preferences: snapshot.preferences
   };
 }
 
@@ -190,7 +196,9 @@ export class MultiplayerProfileAuthority {
     result,
     perspective = "p1",
     settlementKey = null,
-    rewards = null
+    rewards = null,
+    rewardDecision = null,
+    participantRole = perspective === "p2" ? "guest" : "host"
   }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -208,7 +216,14 @@ export class MultiplayerProfileAuthority {
     });
 
     let rewardGrant = null;
-    if (rewards && (rewards.tokens || rewards.xp || rewards.basicChests)) {
+    if (rewardDecision && settlementKey) {
+      rewardGrant = await this.coordinator.applyOnlineRewardSettlementDecision({
+        username: safeUsername,
+        settlementKey,
+        rewardDecision,
+        participantRole
+      });
+    } else if (rewards && (rewards.tokens || rewards.xp || rewards.basicChests)) {
       rewardGrant = await this.coordinator.grantOnlineMatchRewards({
         username: safeUsername,
         ...rewards
@@ -235,6 +250,57 @@ export class MultiplayerProfileAuthority {
 
     this.logger.info?.(`[ProfileAuthority] getCosmetics -> ${safeUsername} (server)`);
     return this.coordinator.getCosmetics(safeUsername);
+  }
+
+  async claimDailyLoginReward(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative daily login claims.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] claimDailyLoginReward -> ${safeUsername} (server)`);
+    const result = await this.coordinator.claimDailyLoginReward(safeUsername);
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async buyStoreItem({ username, type, cosmeticId }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative store purchases.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] buyStoreItem -> ${safeUsername} (${type ?? "unknown"})`);
+    const result = await this.coordinator.buyStoreItem({
+      username: safeUsername,
+      type,
+      cosmeticId
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async openChest({ username, chestType }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative chest opening.");
+    }
+
+    this.logger.info?.(
+      `[ProfileAuthority] openChest -> ${safeUsername} (${String(chestType ?? "basic")})`
+    );
+    const result = await this.coordinator.openChest({
+      username: safeUsername,
+      chestType
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
   }
 
   async equipCosmetic({ username, type, cosmeticId }) {

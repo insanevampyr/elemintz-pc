@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { GameController, MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
+import { createRoomStore } from "../../src/multiplayer/rooms.js";
 
 function canonicalizeUsername(username) {
   const value = String(username ?? "").trim();
@@ -34,20 +35,123 @@ function createMinimalMatch(mode = "pve") {
   };
 }
 
+function findCardIndexByElement(hand, element) {
+  return Array.isArray(hand) ? hand.findIndex((card) => card === element) : -1;
+}
+
+function createAuthoritativeLocalRoom({
+  roomCode = "ABC123",
+  roundNumber = 1,
+  matchComplete = false,
+  winner = null,
+  winReason = null,
+  hostHand = { fire: 2, water: 2, earth: 2, wind: 2 },
+  guestHand = { fire: 2, water: 2, earth: 2, wind: 2 },
+  warActive = false,
+  warRounds = [],
+  warPot = { host: [], guest: [] },
+  roundHistory = []
+} = {}) {
+  return {
+    roomCode,
+    status: "full",
+    matchComplete,
+    winner,
+    winReason,
+    roundNumber,
+    hostHand,
+    guestHand,
+    warActive,
+    warRounds,
+    warPot,
+    roundHistory,
+    serverMatchState: {
+      matchId: `${roomCode}:match:1`
+    }
+  };
+}
+
+function createAuthoritativePveStore({
+  initialRoom = createAuthoritativeLocalRoom(),
+  createRoom,
+  joinRoom,
+  submitMove,
+  completeMatchByCardCount,
+  completeMatch
+} = {}) {
+  return {
+    createRoom:
+      createRoom ??
+      (() => ({ ok: true, room: initialRoom })),
+    joinRoom:
+      joinRoom ??
+      (() => ({
+        ok: true,
+        room: {
+          ...initialRoom,
+          guest: {
+            username: "EleMintz AI",
+            bot: true,
+            aiDifficulty: "normal"
+          }
+        }
+      })),
+    submitMove,
+    completeMatchByCardCount,
+    completeMatch
+  };
+}
+
 test("gameController: AI selection is independent from player's current card", async () => {
-  const originalRandom = Math.random;
   const originalWindow = globalThis.window;
+  const submittedMoves = [];
+  const initialRoom = createAuthoritativeLocalRoom();
+  const resolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 1, earth: 3, wind: 2 },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    ]
+  });
 
   const controller = new GameController({
     username: "FairnessUser",
     timerSeconds: 30,
     aiDifficulty: "hard",
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: (_socketId, move) => {
+          submittedMoves.push(move);
+          return {
+            ok: true,
+            room: resolvedRoom,
+            roundResult: {
+              round: 1,
+              hostMove: "fire",
+              guestMove: "earth",
+              outcomeType: "resolved",
+              hostResult: "win",
+              guestResult: "lose",
+              warRounds: [],
+              warPot: { host: [], guest: [] }
+            }
+          };
+        }
+      }),
     onUpdate: () => {},
     onMatchComplete: () => {}
   });
 
   try {
-    Math.random = () => 0;
     globalThis.window = {
       elemintz: {
         state: {
@@ -56,15 +160,15 @@ test("gameController: AI selection is independent from player's current card", a
       }
     };
 
-    controller.match = createMinimalMatch();
+    controller.startNewMatch();
     await controller.playCard(0);
 
+    assert.deepEqual(submittedMoves, ["fire"]);
     assert.equal(controller.lastRound.p1Card, "fire");
     assert.equal(controller.lastRound.p2Card, "earth");
   } finally {
     controller.stopTimer();
     controller.stopMatchClock();
-    Math.random = originalRandom;
     globalThis.window = originalWindow;
   }
 });
@@ -135,32 +239,1221 @@ test("gameController: completed PvE rounds wait for async match-complete handlin
 
 test("gameController: local hotseat uses two pass states and resolves only on confirmation", async () => {
   const originalWindow = globalThis.window;
+  const submitCalls = [];
+  const initialRoom = createAuthoritativeLocalRoom();
+  const resolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 3, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 1, water: 2, earth: 1, wind: 2 },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    ]
+  });
+  const fakeStore = {
+    createRoom: () => ({ ok: true, room: initialRoom }),
+    joinRoom: () => ({ ok: true, room: initialRoom }),
+    submitMove: (_socketId, move) => {
+      submitCalls.push(move);
+      if (submitCalls.length === 1) {
+        return { ok: true, room: initialRoom, roundResult: null };
+      }
+
+      return {
+        ok: true,
+        room: resolvedRoom,
+        roundResult: {
+          round: 1,
+          hostMove: "fire",
+          guestMove: "earth",
+          outcomeType: "resolved",
+          hostResult: "win",
+          guestResult: "lose",
+          warRounds: [],
+          warPot: { host: [], guest: [] }
+        }
+      };
+    }
+  };
 
   const controller = new GameController({
     username: "LocalTester",
     timerSeconds: 30,
     mode: MATCH_MODE.LOCAL_PVP,
     aiDifficulty: "hard",
+    localAuthorityStoreFactory: () => fakeStore,
     onUpdate: () => {},
     onMatchComplete: () => {}
   });
 
   try {
     globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
 
-    controller.match = createMinimalMatch(MATCH_MODE.LOCAL_PVP);
-
-    const p1Selection = await controller.submitHotseatSelection(1);
+    const p1Selection = await controller.submitHotseatSelection(0);
     assert.equal(p1Selection.status, "pass_to_p2");
 
-    const p2Selection = await controller.submitHotseatSelection(1);
+    const p2Selection = await controller.submitHotseatSelection(4);
     assert.equal(p2Selection.status, "pass_to_p1");
     assert.equal(controller.lastRound, null);
 
     const confirmed = await controller.confirmHotseatRound();
     assert.equal(confirmed.status, "round_resolved");
-    assert.equal(controller.lastRound.p1Card, "wind");
-    assert.equal(controller.lastRound.p2Card, "water");
+    assert.deepEqual(submitCalls, ["fire", "earth"]);
+    assert.equal(controller.lastRound.p1Card, "fire");
+    assert.equal(controller.lastRound.p2Card, "earth");
+    assert.equal(controller.match.players.p1.hand.length, 9);
+    assert.equal(controller.match.players.p2.hand.length, 6);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: local hotseat WAR continuation comes from authoritative room state", async () => {
+  const originalWindow = globalThis.window;
+  const initialRoom = createAuthoritativeLocalRoom();
+  const warRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+    warActive: true,
+    warRounds: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war"
+      }
+    ],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  let submitCount = 0;
+  const fakeStore = {
+    createRoom: () => ({ ok: true, room: initialRoom }),
+    joinRoom: () => ({ ok: true, room: initialRoom }),
+    submitMove: (_socketId, move) => {
+      if (move !== "fire") {
+        return { ok: false, error: { code: "UNEXPECTED_MOVE" } };
+      }
+
+      submitCount += 1;
+      return submitCount > 1
+        ? {
+            ok: true,
+            room: warRoom,
+            roundResult: {
+              round: 1,
+              hostMove: "fire",
+              guestMove: "fire",
+              outcomeType: "war",
+              hostResult: "war",
+              guestResult: "war",
+              warRounds: [{ round: 1, outcomeType: "war" }],
+              warPot: { host: ["fire"], guest: ["fire"] }
+            }
+          }
+        : { ok: true, room: initialRoom, roundResult: null };
+    }
+  };
+  const controller = new GameController({
+    username: "WarAuthorityUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    localAuthorityStoreFactory: () => fakeStore,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    await controller.submitHotseatSelection(0);
+    await controller.submitHotseatSelection(0);
+    const confirmed = await controller.confirmHotseatRound();
+
+    assert.equal(confirmed.status, "war_continues");
+    assert.equal(controller.lastRound, null);
+    assert.equal(controller.match.war.active, true);
+    assert.deepEqual(controller.match.currentPile, ["fire", "fire"]);
+    assert.equal(controller.roundResultText, "WAR continues. Choose new cards for the next clash.");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: local hotseat authoritative room store accepts round progression beyond the first round", async () => {
+  const originalWindow = globalThis.window;
+  const controller = new GameController({
+    username: "LocalRoundProgressUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    let result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p1.hand, "water")
+    );
+    assert.equal(result.status, "pass_to_p2");
+
+    result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p2.hand, "fire")
+    );
+    assert.equal(result.status, "pass_to_p1");
+
+    const firstRound = await controller.confirmHotseatRound();
+    assert.equal(firstRound.status, "round_resolved");
+    assert.equal(controller.match.status, "active");
+
+    result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p1.hand, "water")
+    );
+    assert.equal(result.status, "pass_to_p2");
+
+    result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p2.hand, "fire")
+    );
+    assert.equal(result.status, "pass_to_p1");
+
+    const secondRound = await controller.confirmHotseatRound();
+    assert.equal(secondRound.status, "round_resolved");
+    assert.equal(controller.match.status, "active");
+    assert.equal(controller.match.round, 2);
+    assert.equal(controller.pendingHotseatP1CardIndex, null);
+    assert.equal(controller.pendingHotseatP2CardIndex, null);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: local hotseat authoritative room store accepts WAR continuation submissions", async () => {
+  const originalWindow = globalThis.window;
+  const controller = new GameController({
+    username: "LocalWarProgressUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    let result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p1.hand, "fire")
+    );
+    assert.equal(result.status, "pass_to_p2");
+
+    result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p2.hand, "fire")
+    );
+    assert.equal(result.status, "pass_to_p1");
+
+    const warStart = await controller.confirmHotseatRound();
+    assert.equal(warStart.status, "war_continues");
+    assert.equal(controller.match.war.active, true);
+
+    result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p1.hand, "fire")
+    );
+    assert.equal(result.status, "pass_to_p2");
+
+    result = await controller.submitHotseatSelection(
+      findCardIndexByElement(controller.match.players.p2.hand, "fire")
+    );
+    assert.equal(result.status, "pass_to_p1");
+
+    const warContinue = await controller.confirmHotseatRound();
+    assert.equal(warContinue.status, "war_continues");
+    assert.equal(controller.match.war.active, true);
+    assert.equal(controller.pendingHotseatP1CardIndex, null);
+    assert.equal(controller.pendingHotseatP2CardIndex, null);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE authoritative room store accepts multiple resolved rounds and WAR continuation", async () => {
+  const originalWindow = globalThis.window;
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    const resolvedController = new GameController({
+      username: "PveProgressUser",
+      timerSeconds: 30,
+      mode: MATCH_MODE.PVE,
+      localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+      onUpdate: () => {},
+      onMatchComplete: () => {}
+    });
+    resolvedController.startNewMatch();
+
+    const firstRound = await resolvedController.playCard(
+      findCardIndexByElement(resolvedController.match.players.p1.hand, "water")
+    );
+    assert.equal(firstRound.status, "resolved");
+    assert.equal(resolvedController.match.status, "active");
+
+    const secondRound = await resolvedController.playCard(
+      findCardIndexByElement(resolvedController.match.players.p1.hand, "wind")
+    );
+    assert.equal(secondRound.status, "resolved");
+    assert.equal(resolvedController.match.status, "active");
+    assert.equal(resolvedController.match.round, 2);
+    resolvedController.stopTimer();
+    resolvedController.stopMatchClock();
+
+    const warController = new GameController({
+      username: "PveWarProgressUser",
+      timerSeconds: 30,
+      mode: MATCH_MODE.PVE,
+      localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+      onUpdate: () => {},
+      onMatchComplete: () => {}
+    });
+    warController.startNewMatch();
+
+    const warStart = await warController.playCard(
+      findCardIndexByElement(warController.match.players.p1.hand, "fire")
+    );
+    assert.equal(warStart.status, "war_continues");
+    assert.equal(warController.match.war.active, true);
+
+    const warContinue = await warController.playCard(
+      findCardIndexByElement(warController.match.players.p1.hand, "fire")
+    );
+    assert.notEqual(warContinue.skipped, true);
+    assert.match(warContinue.status, /^(war_continues|resolved)$/);
+    warController.stopTimer();
+    warController.stopMatchClock();
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: active authoritative sync clears stale local round presentation before the next clash", () => {
+  const controller = new GameController({
+    username: "RoundResetUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.PVE),
+      status: "active",
+      war: { active: false, clashes: 0, pendingClashes: 0, pendingPileSizes: [] }
+    };
+    controller.lastRound = {
+      round: 1,
+      p1Card: "fire",
+      p2Card: "earth",
+      result: "p1",
+      warClashes: 0,
+      capturedOpponentCards: 1
+    };
+    controller.roundResultText = "Player wins this clash.";
+
+    controller.syncLocalAuthorityState(createAuthoritativeLocalRoom(), null);
+
+    assert.equal(controller.lastRound, null);
+    assert.equal(controller.roundResultText, "Choose a card to begin the next clash.");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: PvE rebuilt local history keeps capture totals monotonic through WAR chains", () => {
+  const controller = new GameController({
+    username: "PveWarCaptureUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const preWarRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      }
+    ]
+  });
+
+  const warStartRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    warActive: true,
+    warRounds: [
+      { round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" }
+    ],
+    warPot: { host: ["water"], guest: ["water"] },
+    roundHistory: [
+      ...preWarRoom.roundHistory,
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      }
+    ]
+  });
+
+  const warContinueRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    warActive: true,
+    warRounds: [
+      { round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" },
+      { round: 2, hostMove: "earth", guestMove: "fire", outcomeType: "no_effect" }
+    ],
+    warPot: { host: ["water", "earth"], guest: ["water", "fire"] },
+    roundHistory: [
+      ...preWarRoom.roundHistory,
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 2,
+        hostMove: "earth",
+        guestMove: "fire",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      }
+    ]
+  });
+
+  const warResolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 3,
+    roundHistory: [
+      ...warContinueRoom.roundHistory,
+      {
+        round: 2,
+        hostMove: "wind",
+        guestMove: "water",
+        outcomeType: "war_resolved",
+        hostResult: "lose",
+        guestResult: "win",
+        capturedCards: 6,
+        capturedOpponentCards: 3
+      }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(preWarRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+
+    controller.syncLocalAuthorityState(warStartRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+    assert.deepEqual(
+      controller.match.history.map((round) => round.capturedOpponentCards),
+      [1, 0]
+    );
+
+    controller.syncLocalAuthorityState(warContinueRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+    assert.deepEqual(
+      controller.match.history.map((round) => round.capturedOpponentCards),
+      [1, 0, 0]
+    );
+
+    controller.syncLocalAuthorityState(warResolvedRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 3 });
+    assert.deepEqual(
+      controller.match.history.map((round) => round.capturedOpponentCards),
+      [1, 0, 0, 3]
+    );
+    assert.deepEqual(
+      controller.match.history.map((round) => round.warClashes),
+      [0, 0, 0, 3]
+    );
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local PvE WAR stats ignore pre-WAR no-effect rows when resolving war depth", () => {
+  const controller = new GameController({
+    username: "PveWarDepthTruthUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const tracedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 7,
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "lose",
+        guestResult: "win",
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      },
+      {
+        round: 3,
+        hostMove: "wind",
+        guestMove: "wind",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 4,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 5,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 6,
+        hostMove: "earth",
+        guestMove: "wind",
+        outcomeType: "war_resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 6,
+        capturedOpponentCards: 3
+      }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(tracedRoom, null);
+
+    assert.deepEqual(
+      controller.match.history.map((round) => round.warClashes),
+      [0, 0, 0, 0, 0, 3]
+    );
+    assert.deepEqual(controller.captured, { p1: 4, p2: 1 });
+    assert.equal(controller.getViewModel().captured.p1, 4);
+    assert.equal(controller.getViewModel().captured.p2, 1);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local PvE live captured tally uses derived match stats without preserving higher prior values", () => {
+  const controller = new GameController({
+    username: "PveLiveCaptureUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const higherCaptureRoom = createAuthoritativeLocalRoom({
+    roundNumber: 4,
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 2,
+        hostMove: "earth",
+        guestMove: "fire",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 2,
+        hostMove: "wind",
+        guestMove: "water",
+        outcomeType: "war_resolved",
+        hostResult: "lose",
+        guestResult: "win",
+        capturedCards: 6,
+        capturedOpponentCards: 3
+      }
+    ]
+  });
+
+  const lowerSnapshotRoom = createAuthoritativeLocalRoom({
+    roundNumber: 3,
+    warActive: true,
+    warRounds: [
+      { round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" }
+    ],
+    warPot: { host: ["water"], guest: ["water"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(higherCaptureRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 3 });
+
+    controller.syncLocalAuthorityState(lowerSnapshotRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local PvE no-effect snapshot does not erase prior captured totals when room history is trimmed", () => {
+  const controller = new GameController({
+    username: "PveTrimNoEffectUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const beforeTrimRoom = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM",
+    roundNumber: 11,
+    roundHistory: [
+      { round: 1, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 2, hostMove: "water", guestMove: "earth", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 3, hostMove: "earth", guestMove: "wind", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 4, hostMove: "wind", guestMove: "wind", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "fire", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 8, hostMove: "wind", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "fire", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 }
+    ]
+  });
+
+  const trimmedNoEffectRoom = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM",
+    roundNumber: 12,
+    roundHistory: [
+      { round: 2, hostMove: "water", guestMove: "earth", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 3, hostMove: "earth", guestMove: "wind", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 4, hostMove: "wind", guestMove: "wind", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "fire", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 8, hostMove: "wind", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "fire", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 11, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(beforeTrimRoom, null);
+    assert.deepEqual(controller.captured, { p1: 4, p2: 3 });
+
+    controller.syncLocalAuthorityState(trimmedNoEffectRoom, null);
+    assert.deepEqual(controller.captured, { p1: 4, p2: 3 });
+    assert.equal(controller.match.history.length, 11);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local PvE later resolved player win does not erase prior AI captures when room history is trimmed", () => {
+  const controller = new GameController({
+    username: "PveTrimResolvedUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const beforeResolvedRoom = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM2",
+    roundNumber: 12,
+    roundHistory: [
+      { round: 1, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 2, hostMove: "water", guestMove: "earth", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 3, hostMove: "earth", guestMove: "wind", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 4, hostMove: "wind", guestMove: "wind", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "fire", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 8, hostMove: "wind", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "fire", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 11, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 }
+    ]
+  });
+
+  const trimmedResolvedRoom = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM2",
+    roundNumber: 13,
+    roundHistory: [
+      { round: 3, hostMove: "earth", guestMove: "wind", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 4, hostMove: "wind", guestMove: "wind", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "fire", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 8, hostMove: "wind", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "fire", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 11, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 12, hostMove: "wind", guestMove: "fire", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(beforeResolvedRoom, null);
+    assert.deepEqual(controller.captured, { p1: 4, p2: 3 });
+
+    controller.syncLocalAuthorityState(trimmedResolvedRoom, null);
+    assert.deepEqual(controller.captured, { p1: 5, p2: 3 });
+    assert.equal(controller.match.history.length, 12);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local PvE WAR trigger does not erase prior player captures when room history is trimmed", () => {
+  const controller = new GameController({
+    username: "PveTrimWarUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const beforeWarRoom = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM3",
+    roundNumber: 13,
+    roundHistory: [
+      { round: 1, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 2, hostMove: "water", guestMove: "earth", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 3, hostMove: "earth", guestMove: "wind", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 4, hostMove: "wind", guestMove: "wind", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "fire", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 8, hostMove: "wind", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "fire", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 11, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 12, hostMove: "wind", guestMove: "fire", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 }
+    ]
+  });
+
+  const trimmedWarRoom = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM3",
+    roundNumber: 14,
+    warActive: true,
+    warDepth: 1,
+    warRounds: [{ round: 13, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      { round: 4, hostMove: "wind", guestMove: "wind", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "fire", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 8, hostMove: "wind", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "fire", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 11, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 12, hostMove: "wind", guestMove: "fire", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 13, hostMove: "fire", guestMove: "fire", outcomeType: "war", hostResult: "war", guestResult: "war", capturedCards: 0, capturedOpponentCards: 0 }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(beforeWarRoom, null);
+    assert.deepEqual(controller.captured, { p1: 5, p2: 3 });
+
+    controller.syncLocalAuthorityState(trimmedWarRoom, null);
+    assert.deepEqual(controller.captured, { p1: 5, p2: 3 });
+    assert.equal(controller.match.history.length, 13);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local PvE repeated WAR and no-effect patterns do not duplicate prior rows during trimmed merges", () => {
+  const controller = new GameController({
+    username: "PveTrimRepeatedWarUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const snapshotA = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM4",
+    roundNumber: 11,
+    roundHistory: [
+      { round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war", hostResult: "war", guestResult: "war", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 2, hostMove: "fire", guestMove: "earth", outcomeType: "war_resolved", hostResult: "win", guestResult: "lose", capturedCards: 4, capturedOpponentCards: 2 },
+      { round: 3, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 4, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "fire", outcomeType: "war", hostResult: "war", guestResult: "war", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "wind", outcomeType: "war_resolved", hostResult: "lose", guestResult: "win", capturedCards: 6, capturedOpponentCards: 3 },
+      { round: 8, hostMove: "wind", guestMove: "fire", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 }
+    ]
+  });
+
+  const snapshotB = createAuthoritativeLocalRoom({
+    roomCode: "PVETRM4",
+    roundNumber: 14,
+    warActive: true,
+    warDepth: 2,
+    warRounds: [
+      { round: 11, hostMove: "fire", guestMove: "fire", outcomeType: "war" },
+      { round: 12, hostMove: "water", guestMove: "water", outcomeType: "war" }
+    ],
+    warPot: { host: ["fire", "water"], guest: ["fire", "water"] },
+    roundHistory: [
+      { round: 4, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 5, hostMove: "fire", guestMove: "fire", outcomeType: "war", hostResult: "war", guestResult: "war", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 6, hostMove: "water", guestMove: "water", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 7, hostMove: "earth", guestMove: "wind", outcomeType: "war_resolved", hostResult: "lose", guestResult: "win", capturedCards: 6, capturedOpponentCards: 3 },
+      { round: 8, hostMove: "wind", guestMove: "fire", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 9, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 10, hostMove: "water", guestMove: "wind", outcomeType: "resolved", hostResult: "lose", guestResult: "win", capturedCards: 2, capturedOpponentCards: 1 },
+      { round: 11, hostMove: "fire", guestMove: "fire", outcomeType: "war", hostResult: "war", guestResult: "war", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 12, hostMove: "water", guestMove: "water", outcomeType: "war", hostResult: "war", guestResult: "war", capturedCards: 0, capturedOpponentCards: 0 },
+      { round: 13, hostMove: "earth", guestMove: "earth", outcomeType: "no_effect", hostResult: "no_effect", guestResult: "no_effect", capturedCards: 0, capturedOpponentCards: 0 }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(snapshotA, null);
+    assert.deepEqual(controller.captured, { p1: 4, p2: 5 });
+    assert.equal(controller.match.history.length, 10);
+
+    controller.syncLocalAuthorityState(snapshotB, null);
+    assert.deepEqual(controller.captured, { p1: 4, p2: 5 });
+    assert.equal(controller.match.history.length, 13);
+    assert.equal(
+      controller.match.history.filter((round) => round.warClashes > 0).length,
+      2
+    );
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local PvP rebuilt local history keeps capture totals monotonic through WAR chains", () => {
+  const controller = new GameController({
+    username: "LocalPvpWarCaptureUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const preWarRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      }
+    ]
+  });
+
+  const warStartRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    warActive: true,
+    warRounds: [
+      { round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" }
+    ],
+    warPot: { host: ["water"], guest: ["water"] },
+    roundHistory: [
+      ...preWarRoom.roundHistory,
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      }
+    ]
+  });
+
+  const warContinueRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    warActive: true,
+    warRounds: [
+      { round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" },
+      { round: 2, hostMove: "earth", guestMove: "fire", outcomeType: "no_effect" }
+    ],
+    warPot: { host: ["water", "earth"], guest: ["water", "fire"] },
+    roundHistory: [
+      ...preWarRoom.roundHistory,
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 2,
+        hostMove: "earth",
+        guestMove: "fire",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      }
+    ]
+  });
+
+  const warResolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 3,
+    roundHistory: [
+      ...warContinueRoom.roundHistory,
+      {
+        round: 2,
+        hostMove: "wind",
+        guestMove: "water",
+        outcomeType: "war_resolved",
+        hostResult: "lose",
+        guestResult: "win",
+        capturedCards: 6,
+        capturedOpponentCards: 3
+      }
+    ]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(preWarRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+
+    controller.syncLocalAuthorityState(warStartRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+
+    controller.syncLocalAuthorityState(warContinueRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+
+    controller.syncLocalAuthorityState(warResolvedRoom, null);
+    assert.deepEqual(controller.captured, { p1: 1, p2: 3 });
+    assert.deepEqual(
+      controller.match.history.map((round) => round.capturedOpponentCards),
+      [1, 0, 0, 3]
+    );
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local time-limit completion comes from the authoritative room bridge", async () => {
+  const originalWindow = globalThis.window;
+  const completionCalls = [];
+  const completedRoom = createAuthoritativeLocalRoom({
+    matchComplete: true,
+    winner: "host",
+    winReason: "time_limit",
+    roundNumber: 3,
+    hostHand: { fire: 3, water: 2, earth: 2, wind: 1 },
+    guestHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const fakeStore = {
+    createRoom: () => ({ ok: true, room: createAuthoritativeLocalRoom() }),
+    joinRoom: () => ({ ok: true, room: createAuthoritativeLocalRoom() }),
+    completeMatchByCardCount: (_socketId, options) => {
+      completionCalls.push(options);
+      return { ok: true, room: completedRoom };
+    }
+  };
+  const controller = new GameController({
+    username: "LocalTimeLimitAuthority",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    localAuthorityStoreFactory: () => fakeStore,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+    await controller.finalizeByTimeLimit();
+
+    assert.deepEqual(completionCalls, [{ reason: "time_limit" }]);
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p1");
+    assert.equal(controller.match.endReason, "time_limit");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: local quit completion comes from the authoritative room bridge", async () => {
+  const originalWindow = globalThis.window;
+  const completionCalls = [];
+  const completedRoom = createAuthoritativeLocalRoom({
+    matchComplete: true,
+    winner: "guest",
+    winReason: "quit_forfeit",
+    roundNumber: 2,
+    hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 2, earth: 2, wind: 2 }
+  });
+  const fakeStore = {
+    createRoom: () => ({ ok: true, room: createAuthoritativeLocalRoom() }),
+    joinRoom: () => ({ ok: true, room: createAuthoritativeLocalRoom() }),
+    completeMatch: (_socketId, options) => {
+      completionCalls.push(options);
+      return { ok: true, room: completedRoom };
+    }
+  };
+  const controller = new GameController({
+    username: "LocalQuitAuthority",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    localAuthorityStoreFactory: () => fakeStore,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+    await controller.quitMatch({ quitter: "p1", reason: "quit_forfeit" });
+
+    assert.deepEqual(completionCalls, [{ winner: "guest", reason: "quit_forfeit" }]);
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p2");
+    assert.equal(controller.match.endReason, "quit_forfeit");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: local authoritative rematch start resets to a fresh room-backed state", async () => {
+  const originalWindow = globalThis.window;
+  const createdRooms = [];
+  const roomA = createAuthoritativeLocalRoom({
+    roomCode: "AAA111",
+    roundNumber: 4,
+    hostHand: { fire: 5, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 1, earth: 1, wind: 1 },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    ]
+  });
+  const roomB = createAuthoritativeLocalRoom({
+    roomCode: "BBB222",
+    roundNumber: 1,
+    hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    roundHistory: []
+  });
+  const fakeStore = {
+    createRoom: () => {
+      const room = createdRooms.length === 0 ? roomA : roomB;
+      createdRooms.push(room.roomCode);
+      return { ok: true, room };
+    },
+    joinRoom: () => ({ ok: true, room: createdRooms.length === 1 ? roomA : roomB })
+  };
+  const controller = new GameController({
+    username: "LocalRematchAuthority",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    localAuthorityStoreFactory: () => fakeStore,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+    assert.equal(controller.match.id, "AAA111:match:1");
+    assert.equal(controller.match.round, 3);
+    assert.ok(controller.match.history.length > 0);
+
+    controller.startNewMatch();
+    assert.deepEqual(createdRooms, ["AAA111", "BBB222"]);
+    assert.equal(controller.match.id, "BBB222:match:1");
+    assert.equal(controller.match.round, 0);
+    assert.deepEqual(controller.match.history, []);
+    assert.equal(controller.match.players.p1.hand.length, 8);
+    assert.equal(controller.match.players.p2.hand.length, 8);
   } finally {
     controller.stopTimer();
     controller.stopMatchClock();
@@ -851,6 +2144,69 @@ test("appController: online menu challenge refresh prefers the multiplayer profi
     assert.equal(app.dailyChallenges.daily.challenges[0].id, "daily");
     assert.equal(app.dailyChallenges.weekly.challenges[0].id, "weekly");
     assert.equal(app.dailyChallenges.dailyLogin.msUntilReset, 1800000);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: authenticated online menu flow does not call the disabled local loadout unlock acknowledgement path", async () => {
+  const originalWindow = globalThis.window;
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const calls = {
+    acknowledgeLoadoutUnlocks: 0,
+    multiplayerGetProfile: 0
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          acknowledgeLoadoutUnlocks: async () => {
+            calls.acknowledgeLoadoutUnlocks += 1;
+            return null;
+          }
+        },
+        multiplayer: {
+          getProfile: async ({ username }) => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              username,
+              profile: { username, tokens: 200, equippedCosmetics: {} },
+              progression: {
+                dailyChallenges: { challenges: [], msUntilReset: 3600000 },
+                weeklyChallenges: { challenges: [], msUntilReset: 7200000 },
+                dailyLogin: { eligible: false, msUntilReset: 1800000 }
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "MenuOnlineUser";
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        username: "MenuOnlineUser",
+        sessionId: "session-1",
+        accountId: "account-1",
+        profileKey: "MenuOnlineUser",
+        authenticated: true
+      }
+    });
+
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(calls.acknowledgeLoadoutUnlocks, 0);
+    assert.equal(calls.multiplayerGetProfile, 1);
   } finally {
     globalThis.window = originalWindow;
   }
@@ -1939,40 +3295,27 @@ test("appController: account login uses the multiplayer auth path and hydrates t
 
   try {
     globalThis.window = {
-      elemintz: {
-        state: {
-          ensureProfile: async () => {
-            calls.ensureProfile += 1;
-            return { username: "LocalFallbackUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
-          },
-          claimDailyLoginReward: async (username) => {
-            calls.claimDailyLoginReward += 1;
-            return {
-              granted: false,
-              profile: { username, tokens: 260, playerXP: 24, playerLevel: 2, equippedCosmetics: {} },
-              dailyLoginStatus: {
-                eligible: false,
-                loginDayKey: "2026-03-28T00:00:00.000Z",
-                lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
-                msUntilReset: 3600000
-              }
-            };
-          },
-          getDailyChallenges: async () => {
-            calls.getDailyChallenges += 1;
-            return {
-              dailyLogin: { eligible: false, msUntilReset: 3600000 },
-              daily: { msUntilReset: 3600000, challenges: [] },
+        elemintz: {
+          state: {
+            ensureProfile: async () => {
+              calls.ensureProfile += 1;
+              return { username: "LocalFallbackUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+            },
+            getDailyChallenges: async () => {
+              calls.getDailyChallenges += 1;
+              return {
+                dailyLogin: { eligible: false, msUntilReset: 3600000 },
+                daily: { msUntilReset: 3600000, challenges: [] },
               weekly: { msUntilReset: 7200000, challenges: [] }
             };
           }
         },
         multiplayer: {
-          login: async (payload) => {
-            calls.multiplayerLogin.push(payload);
-            return {
-              ok: true,
-              account: {
+            login: async (payload) => {
+              calls.multiplayerLogin.push(payload);
+              return {
+                ok: true,
+                account: {
                 accountId: "account-1",
                 email: payload.email,
                 username: "AccountUser"
@@ -1983,11 +3326,38 @@ test("appController: account login uses the multiplayer auth path and hydrates t
                 username: "AccountUser",
                 profileKey: "AccountUser",
                 accountId: "account-1",
-                authenticated: true
-              }
-            };
-          },
-          getState: async () => {
+                  authenticated: true
+                }
+              };
+            },
+            claimDailyLoginReward: async ({ username }) => {
+              calls.claimDailyLoginReward += 1;
+              return {
+                granted: false,
+                profile: { username, tokens: 260, playerXP: 24, playerLevel: 2, equippedCosmetics: {} },
+                snapshot: {
+                  authority: "server",
+                  profile: { username, tokens: 260, playerXP: 24, playerLevel: 2, equippedCosmetics: {} },
+                  progression: {
+                    dailyChallenges: { challenges: [] },
+                    weeklyChallenges: { challenges: [] },
+                    dailyLogin: {
+                      eligible: false,
+                      loginDayKey: "2026-03-28T00:00:00.000Z",
+                      lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
+                      msUntilReset: 3600000
+                    }
+                  }
+                },
+                dailyLoginStatus: {
+                  eligible: false,
+                  loginDayKey: "2026-03-28T00:00:00.000Z",
+                  lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
+                  msUntilReset: 3600000
+                }
+              };
+            },
+            getState: async () => {
             calls.multiplayerGetState += 1;
             return {
               connectionStatus: "connected",
@@ -2117,35 +3487,49 @@ test("appController: init restores a persisted authenticated session and auto-en
         }
       }
     };
-    globalThis.window = {
-      elemintz: {
-        state: {
-          getSettings: async () => ({ gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false }, audio: { enabled: true } }),
-          claimDailyLoginReward: async (username) => {
-            calls.claimDailyLoginReward += 1;
-            return {
-              granted: false,
-              profile: { username, tokens: 275, playerXP: 22, playerLevel: 2, equippedCosmetics: {} },
-              dailyLoginStatus: {
-                eligible: false,
-                loginDayKey: "2026-03-28T00:00:00.000Z",
-                lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
-                msUntilReset: 3600000
-              }
-            };
+      globalThis.window = {
+        elemintz: {
+          state: {
+            getSettings: async () => ({ gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false }, audio: { enabled: true } }),
+            getDailyChallenges: async () => ({
+              dailyLogin: { eligible: false, msUntilReset: 3600000 },
+              daily: { msUntilReset: 3600000, challenges: [] },
+              weekly: { msUntilReset: 7200000, challenges: [] }
+            })
           },
-          getDailyChallenges: async () => ({
-            dailyLogin: { eligible: false, msUntilReset: 3600000 },
-            daily: { msUntilReset: 3600000, challenges: [] },
-            weekly: { msUntilReset: 7200000, challenges: [] }
-          })
-        },
-        multiplayer: {
-          onUpdate: () => () => {},
-          getState: async () => ({
-            connectionStatus: "disconnected",
-            session: {
-              active: false,
+          multiplayer: {
+            onUpdate: () => () => {},
+            claimDailyLoginReward: async ({ username }) => {
+              calls.claimDailyLoginReward += 1;
+              return {
+                granted: false,
+                profile: { username, tokens: 275, playerXP: 22, playerLevel: 2, equippedCosmetics: {} },
+                snapshot: {
+                  authority: "server",
+                  profile: { username, tokens: 275, playerXP: 22, playerLevel: 2, equippedCosmetics: {} },
+                  progression: {
+                    dailyChallenges: { challenges: [] },
+                    weeklyChallenges: { challenges: [] },
+                    dailyLogin: {
+                      eligible: false,
+                      loginDayKey: "2026-03-28T00:00:00.000Z",
+                      lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
+                      msUntilReset: 3600000
+                    }
+                  }
+                },
+                dailyLoginStatus: {
+                  eligible: false,
+                  loginDayKey: "2026-03-28T00:00:00.000Z",
+                  lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
+                  msUntilReset: 3600000
+                }
+              };
+            },
+            getState: async () => ({
+              connectionStatus: "disconnected",
+              session: {
+                active: false,
               username: null,
               sessionId: null,
               accountId: null,
@@ -2378,34 +3762,15 @@ test("appController: restored authenticated startup still exposes local setup an
         }
       }
     };
-    globalThis.window = {
-      elemintz: {
-        state: {
-          getSettings: async () => ({ gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false }, audio: { enabled: true } }),
-          claimDailyLoginReward: async (username) => {
-            calls.claimDailyLoginReward.push(username);
-            return {
-              granted: false,
-              profile: {
-                username,
-                tokens: username === "LocalP2" ? 210 : 275,
-                playerXP: 12,
-                playerLevel: 2,
-                equippedCosmetics: {}
-              },
-              dailyLoginStatus: {
-                eligible: false,
-                loginDayKey: "2026-03-28T00:00:00.000Z",
-                lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
-                msUntilReset: 3600000
-              }
-            };
-          },
-          getDailyChallenges: async () => ({
-            dailyLogin: { eligible: false, msUntilReset: 3600000 },
-            daily: { msUntilReset: 3600000, challenges: [] },
-            weekly: { msUntilReset: 7200000, challenges: [] }
-          }),
+      globalThis.window = {
+        elemintz: {
+          state: {
+            getSettings: async () => ({ gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false }, audio: { enabled: true } }),
+            getDailyChallenges: async () => ({
+              dailyLogin: { eligible: false, msUntilReset: 3600000 },
+              daily: { msUntilReset: 3600000, challenges: [] },
+              weekly: { msUntilReset: 7200000, challenges: [] }
+            }),
           recordMatchResult: async () => ({}),
           getProfile: async (username) => ({
             username,
@@ -2415,13 +3780,52 @@ test("appController: restored authenticated startup still exposes local setup an
             equippedCosmetics: {}
           }),
           getCosmetics: async () => ({ owned: {}, equipped: {}, loadouts: [] })
-        },
-        multiplayer: {
-          onUpdate: () => () => {},
-          getState: async () => ({
-            connectionStatus: "disconnected",
-            session: {
-              active: false,
+          },
+          multiplayer: {
+            onUpdate: () => () => {},
+            claimDailyLoginReward: async ({ username }) => {
+              calls.claimDailyLoginReward.push(username);
+              return {
+                granted: false,
+                profile: {
+                  username,
+                  tokens: username === "LocalP2" ? 210 : 275,
+                  playerXP: 12,
+                  playerLevel: 2,
+                  equippedCosmetics: {}
+                },
+                snapshot: {
+                  authority: "server",
+                  profile: {
+                    username,
+                    tokens: username === "LocalP2" ? 210 : 275,
+                    playerXP: 12,
+                    playerLevel: 2,
+                    equippedCosmetics: {}
+                  },
+                  progression: {
+                    dailyChallenges: { challenges: [] },
+                    weeklyChallenges: { challenges: [] },
+                    dailyLogin: {
+                      eligible: false,
+                      loginDayKey: "2026-03-28T00:00:00.000Z",
+                      lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
+                      msUntilReset: 3600000
+                    }
+                  }
+                },
+                dailyLoginStatus: {
+                  eligible: false,
+                  loginDayKey: "2026-03-28T00:00:00.000Z",
+                  lastDailyLoginClaimDate: "2026-03-28T00:00:00.000Z",
+                  msUntilReset: 3600000
+                }
+              };
+            },
+            getState: async () => ({
+              connectionStatus: "disconnected",
+              session: {
+                active: false,
               username: null,
               sessionId: null,
               accountId: null,
@@ -3801,6 +5205,153 @@ test("appController: opening a basic chest is a no-op when the profile has zero 
   }
 });
 
+test("appController: authenticated online profile chest opening uses multiplayer authority for epic chests", async () => {
+  const originalWindow = globalThis.window;
+  const originalSetTimeout = globalThis.setTimeout;
+  const shownScreens = [];
+  const multiplayerOpenCalls = [];
+  const localOpenCalls = [];
+  const chestToastCalls = [];
+  let serverProfileSnapshot = null;
+
+  const onlineProfile = {
+    username: "OnlineChestUser",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 200,
+    playerXP: 0,
+    playerLevel: 1,
+    supporterPass: false,
+    chests: { basic: 0, milestone: 0, epic: 1, legendary: 0 },
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 }, online_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
+    ownedCosmetics: {}
+  };
+  const serverSnapshotBeforeOpen = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      ...onlineProfile
+    },
+    progression: {}
+  };
+  serverProfileSnapshot = serverSnapshotBeforeOpen;
+  const openedSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      ...onlineProfile,
+      tokens: 280,
+      playerXP: 30,
+      chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+    },
+    progression: {}
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {
+      showChestOpenReward: (payload) => chestToastCalls.push(payload)
+    }
+  });
+
+  try {
+    globalThis.setTimeout = (callback) => {
+      callback();
+      return 0;
+    };
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => {
+            throw new Error("local profile path should not be used");
+          },
+          getCosmetics: async () => ({
+            equipped: onlineProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
+          getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+          listProfiles: async () => [],
+          openChest: async (payload) => {
+            localOpenCalls.push(payload);
+            return {};
+          }
+        },
+        multiplayer: {
+          getProfile: async () => serverProfileSnapshot,
+          getCosmetics: async () => ({
+            equipped: onlineProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
+          openChest: async (payload) => {
+            multiplayerOpenCalls.push(payload);
+            serverProfileSnapshot = openedSnapshot;
+            return {
+              chestType: "epic",
+              consumed: 1,
+              remaining: 0,
+              rewards: { xp: 30, tokens: 80, cosmetic: null },
+              snapshot: openedSnapshot
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "OnlineChestUser";
+    app.profile = onlineProfile;
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        username: "OnlineChestUser",
+        sessionId: "session-1",
+        accountId: "account-1",
+        profileKey: "OnlineChestUser",
+        authenticated: true
+      }
+    });
+
+    await app.showProfile();
+    await shownScreens.at(-1).context.actions.openEpicChest();
+
+    assert.deepEqual(multiplayerOpenCalls, [{ username: "OnlineChestUser", chestType: "epic" }]);
+    assert.deepEqual(localOpenCalls, []);
+    assert.equal(chestToastCalls.length, 1);
+    assert.equal(shownScreens.at(-1).context.profile.chests.epic, 0);
+    assert.equal(shownScreens.at(-2).context.basicChestVisualState.epicOpen, true);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
 test("appController: summary and turn flow update only after resolved hotseat round", async () => {
   const originalWindow = globalThis.window;
   const originalAudio = globalThis.Audio;
@@ -4313,9 +5864,9 @@ test("appController: shared resolution popup uses 3-second skippable pass screen
   assert.equal(typeof captured.onContinue, "function");
 });
 
-test("appController: local hotseat waits for shared resolution popup before showing Player 1 ready prompt", async () => {
+test("appController: local hotseat waits for shared resolution popup before re-entering the next selectable turn", async () => {
   let releaseResolution;
-  let readyCalls = 0;
+  let enterCalls = 0;
 
   const app = new AppController({
     screenManager: { register: () => {}, show: () => {} },
@@ -4325,8 +5876,8 @@ test("appController: local hotseat waits for shared resolution popup before show
 
   app.settings = { gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
   app.showGame = () => {};
-  app.showPlayer1TurnPass = async () => {
-    readyCalls += 1;
+  app.enterHotseatTurn = () => {
+    enterCalls += 1;
   };
   app.showSharedResolutionPopup = () =>
     new Promise((resolve) => {
@@ -4345,11 +5896,86 @@ test("appController: local hotseat waits for shared resolution popup before show
 
   const pending = app.presentHotseatResolution();
   await Promise.resolve();
-  assert.equal(readyCalls, 0);
+  assert.equal(enterCalls, 0);
 
   releaseResolution();
   await pending;
-  assert.equal(readyCalls, 1);
+  assert.equal(enterCalls, 1);
+});
+
+test("appController: local hotseat resolved round returns directly to game instead of leaving screenFlow on pass", async () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.showSharedResolutionPopup = async () => {};
+  app.sound = { playReveal: () => {}, play: () => {} };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resetTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    rearmActiveRoundPresentation: () => {},
+    getViewModel: () => ({
+      status: "active",
+      warActive: false,
+      mode: MATCH_MODE.LOCAL_PVP,
+      canSelectCard: true,
+      hotseatTurn: "p1",
+      hotseatPending: false,
+      round: 1,
+      roundResult: "Choose a card to begin the next clash.",
+      lastRound: null
+    }),
+    confirmHotseatRound: async () => ({
+      status: "round_resolved",
+      round: { result: "p1", p1Card: "fire", p2Card: "earth", warClashes: 0, capturedOpponentCards: 1 },
+      revealedCards: { p1Card: "fire", p2Card: "earth" }
+    })
+  };
+
+  await app.presentHotseatResolution();
+
+  assert.equal(app.screenFlow, "game");
+  assert.deepEqual(app.roundPresentation, {
+    phase: "idle",
+    busy: false,
+    selectedCardIndex: null
+  });
+});
+
+test("appController: local hotseat WAR continuation clears the busy lock if popup flow is interrupted", async () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.showGame = () => {};
+  app.showPlayer1TurnPass = async () => {};
+  app.showSharedResolutionPopup = async () => {
+    throw new Error("popup interrupted");
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    getViewModel: () => ({ status: "active", warActive: true }),
+    confirmHotseatRound: async () => ({
+      status: "war_continues",
+      war: { clashes: 1, pileSize: 2, pileSizes: [2] },
+      revealedCards: { p1Card: "fire", p2Card: "fire" }
+    })
+  };
+  app.sound = { playReveal: () => {}, play: () => {} };
+
+  await assert.rejects(() => app.presentHotseatResolution(), /popup interrupted/);
+  assert.deepEqual(app.roundPresentation, {
+    phase: "idle",
+    busy: false,
+    selectedCardIndex: null
+  });
 });
 
 test("appController: PvE match-complete modal waits for shared resolution popup to finish", async () => {
@@ -4392,6 +6018,38 @@ test("appController: PvE match-complete modal waits for shared resolution popup 
   releaseResolution();
   await pending;
   assert.equal(flushCalls, 1);
+});
+
+test("appController: PvE WAR continuation clears the busy lock if popup flow is interrupted", async () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.showGame = () => {};
+  app.waitForRevealSoundSpacing = async () => {};
+  app.showSharedResolutionPopup = async () => {
+    throw new Error("popup interrupted");
+  };
+  app.gameController = {
+    stopTimer: () => {},
+    playCard: async () => ({
+      status: "war_continues",
+      war: { clashes: 1, pileSize: 2, pileSizes: [2] },
+      revealedCards: { p1Card: "fire", p2Card: "fire" }
+    }),
+    getViewModel: () => ({ status: "active", warActive: true })
+  };
+  app.sound = { playReveal: () => {}, play: () => {}, playRoundResolved: () => {} };
+
+  await assert.rejects(() => app.presentPveRound(0), /popup interrupted/);
+  assert.deepEqual(app.roundPresentation, {
+    phase: "idle",
+    busy: false,
+    selectedCardIndex: null
+  });
 });
 
 test("appController: PvE round plays player reveal sound before popup and outcome sound on popup mount", async () => {
@@ -4458,19 +6116,159 @@ test("appController: PvE round plays player reveal sound before popup and outcom
 
 test("gameController: PvE WAR requires additional player choices while AI auto-selects", async () => {
   const originalWindow = globalThis.window;
-  const originalRandom = Math.random;
+  let submitCount = 0;
+  const initialRoom = createAuthoritativeLocalRoom();
+  const warRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 1, water: 1, earth: 1, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 1, wind: 1 },
+    warActive: true,
+    warRounds: [{ round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const warRoomTwo = createAuthoritativeLocalRoom({
+    roundNumber: 3,
+    hostHand: { fire: 0, water: 1, earth: 1, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 1 },
+    warActive: true,
+    warRounds: [
+      { round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" },
+      { round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" }
+    ],
+    warPot: { host: ["fire", "water"], guest: ["fire", "water"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const resolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 4,
+    hostHand: { fire: 4, water: 0, earth: 1, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 1 },
+    warActive: false,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "water",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      },
+      {
+        round: 3,
+        hostMove: "earth",
+        guestMove: "wind",
+        outcomeType: "war_resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    ]
+  });
 
   const controller = new GameController({
     username: "PveWarUser",
     mode: MATCH_MODE.PVE,
     timerSeconds: 30,
     aiDifficulty: "normal",
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: () => {
+          submitCount += 1;
+          if (submitCount === 1) {
+            return {
+              ok: true,
+              room: warRoom,
+              roundResult: {
+                round: 1,
+                hostMove: "fire",
+                guestMove: "fire",
+                outcomeType: "war",
+                hostResult: "war",
+                guestResult: "war",
+                warRounds: [{ round: 1, outcomeType: "war" }],
+                warPot: { host: ["fire"], guest: ["fire"] }
+              }
+            };
+          }
+
+          if (submitCount === 2) {
+            return {
+              ok: true,
+              room: warRoomTwo,
+              roundResult: {
+                round: 2,
+                hostMove: "water",
+                guestMove: "water",
+                outcomeType: "war",
+                hostResult: "war",
+                guestResult: "war",
+                warRounds: [{ round: 1, outcomeType: "war" }, { round: 2, outcomeType: "war" }],
+                warPot: { host: ["fire", "water"], guest: ["fire", "water"] }
+              }
+            };
+          }
+
+          return {
+            ok: true,
+            room: resolvedRoom,
+            roundResult: {
+              round: 3,
+              hostMove: "earth",
+              guestMove: "wind",
+              outcomeType: "war_resolved",
+              hostResult: "win",
+              guestResult: "lose",
+              warRounds: [
+                { round: 1, outcomeType: "war" },
+                { round: 2, outcomeType: "war" },
+                { round: 3, outcomeType: "war_resolved" }
+              ],
+              warPot: { host: [], guest: [] }
+            }
+          };
+        }
+      }),
     onUpdate: () => {},
     onMatchComplete: () => {}
   });
 
   try {
-    Math.random = () => 0; // AI always picks first available card.
     globalThis.window = {
       elemintz: {
         state: {
@@ -4479,17 +6277,7 @@ test("gameController: PvE WAR requires additional player choices while AI auto-s
       }
     };
 
-    controller.match = {
-      ...createMinimalMatch(MATCH_MODE.PVE),
-      players: {
-        p1: { hand: ["fire", "water", "earth"], wonRounds: 0 },
-        p2: { hand: ["fire", "earth", "wind"], wonRounds: 0 }
-      },
-      currentPile: [],
-      war: { active: false, clashes: 0, pendingClashes: 0, pendingPileSizes: [] },
-      history: [],
-      meta: { totalCards: 6 }
-    };
+    controller.startNewMatch();
 
     const first = await controller.playCard(0);
     assert.equal(first.status, "war_continues");
@@ -4513,7 +6301,284 @@ test("gameController: PvE WAR requires additional player choices while AI auto-s
     controller.stopTimer();
     controller.stopMatchClock();
     globalThis.window = originalWindow;
-    Math.random = originalRandom;
+  }
+});
+
+test("gameController: rearming an active local WAR clears stale cards while preserving authoritative WAR continuation text", () => {
+  const controller = new GameController({
+    username: "WarResetUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.LOCAL_PVP),
+      status: "active",
+      war: { active: true, clashes: 1, pendingClashes: 1, pendingPileSizes: [2] }
+    };
+    controller.lastRound = {
+      round: 1,
+      p1Card: "fire",
+      p2Card: "fire",
+      result: "none",
+      warClashes: 1,
+      capturedOpponentCards: 0
+    };
+    controller.roundResultText = "WAR triggered";
+
+    controller.rearmActiveRoundPresentation();
+
+    assert.equal(controller.lastRound, null);
+    assert.equal(controller.roundResultText, "WAR continues. Choose new cards for the next clash.");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: local authoritative history uses stored per-card capture values", () => {
+  const controller = new GameController({
+    username: "LocalCaptureTruth",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.syncLocalAuthorityState(
+      createAuthoritativeLocalRoom({
+        roundNumber: 4,
+        winner: "host",
+        roundHistory: [
+          {
+            round: 1,
+            hostMove: "fire",
+            guestMove: "fire",
+            outcomeType: "war",
+            hostResult: "war",
+            guestResult: "war",
+            capturedCards: 0,
+            capturedOpponentCards: 0
+          },
+          {
+            round: 2,
+            hostMove: "water",
+            guestMove: "water",
+            outcomeType: "no_effect",
+            hostResult: "no_effect",
+            guestResult: "no_effect",
+            capturedCards: 0,
+            capturedOpponentCards: 0
+          },
+          {
+            round: 3,
+            hostMove: "earth",
+            guestMove: "wind",
+            outcomeType: "war_resolved",
+            hostResult: "win",
+            guestResult: "lose",
+            capturedCards: 6,
+            capturedOpponentCards: 3
+          }
+        ]
+      }),
+      null
+    );
+
+    assert.deepEqual(controller.match.history, [
+      {
+        result: "p1",
+        warClashes: 3,
+        capturedCards: 6,
+        capturedOpponentCards: 3,
+        p1Card: "fire",
+        p2Card: "fire"
+      }
+    ]);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: PvE time-limit completion comes from the authoritative room bridge", async () => {
+  const originalWindow = globalThis.window;
+  const completionCalls = [];
+  const completedRoom = createAuthoritativeLocalRoom({
+    matchComplete: true,
+    winner: "host",
+    winReason: "time_limit",
+    roundNumber: 3,
+    hostHand: { fire: 3, water: 1, earth: 1, wind: 1 },
+    guestHand: { fire: 0, water: 1, earth: 0, wind: 0 },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    ]
+  });
+
+  const controller = new GameController({
+    username: "PveTimeLimitAuthority",
+    mode: MATCH_MODE.PVE,
+    timerSeconds: 30,
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        completeMatchByCardCount: (_socketId, options) => {
+          completionCalls.push(options);
+          return { ok: true, room: completedRoom };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+    await controller.finalizeByTimeLimit();
+
+    assert.deepEqual(completionCalls, [{ reason: "time_limit" }]);
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p1");
+    assert.equal(controller.match.endReason, "time_limit");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE quit completion comes from the authoritative room bridge", async () => {
+  const originalWindow = globalThis.window;
+  const completionCalls = [];
+  const completedRoom = createAuthoritativeLocalRoom({
+    matchComplete: true,
+    winner: "guest",
+    winReason: "quit_forfeit",
+    roundNumber: 2,
+    hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 2, earth: 2, wind: 2 }
+  });
+
+  const controller = new GameController({
+    username: "PveQuitAuthority",
+    mode: MATCH_MODE.PVE,
+    timerSeconds: 30,
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        completeMatch: (_socketId, options) => {
+          completionCalls.push(options);
+          return { ok: true, room: completedRoom };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+    await controller.quitMatch({ quitter: "p1", reason: "quit_forfeit" });
+
+    assert.deepEqual(completionCalls, [{ winner: "guest", reason: "quit_forfeit" }]);
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p2");
+    assert.equal(controller.match.endReason, "quit_forfeit");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE authoritative restart resets to a fresh room-backed state", async () => {
+  const originalWindow = globalThis.window;
+  const createdRooms = [];
+  const roomA = createAuthoritativeLocalRoom({
+    roomCode: "PVE111",
+    roundNumber: 4,
+    hostHand: { fire: 5, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 1, earth: 1, wind: 1 },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    ]
+  });
+  const roomB = createAuthoritativeLocalRoom({
+    roomCode: "PVE222",
+    roundNumber: 1,
+    hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+    roundHistory: []
+  });
+
+  const controller = new GameController({
+    username: "PveRestartAuthority",
+    mode: MATCH_MODE.PVE,
+    timerSeconds: 30,
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        createRoom: () => {
+          const room = createdRooms.length === 0 ? roomA : roomB;
+          createdRooms.push(room.roomCode);
+          return { ok: true, room };
+        },
+        joinRoom: () => {
+          const room = createdRooms.length === 1 ? roomA : roomB;
+          return {
+            ok: true,
+            room: {
+              ...room,
+              guest: {
+                username: "EleMintz AI",
+                bot: true,
+                aiDifficulty: "normal"
+              }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+    assert.equal(controller.match.id, "PVE111:match:1");
+    assert.equal(controller.match.round, 3);
+    assert.ok(controller.match.history.length > 0);
+
+    controller.startNewMatch();
+    assert.deepEqual(createdRooms, ["PVE111", "PVE222"]);
+    assert.equal(controller.match.id, "PVE222:match:1");
+    assert.equal(controller.match.round, 0);
+    assert.deepEqual(controller.match.history, []);
+    assert.equal(controller.match.players.p1.hand.length, 8);
+    assert.equal(controller.match.players.p2.hand.length, 8);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
   }
 });
 
@@ -4554,31 +6619,103 @@ test("gameController: PvE captured totals ignore unresolved WAR pile stake", asy
 
 test("gameController: PvE WAR resolves immediately on non-tie continuation reveal", async () => {
   const originalWindow = globalThis.window;
-  const originalRandom = Math.random;
+  let submitCount = 0;
+  const initialRoom = createAuthoritativeLocalRoom();
+  const warRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 1, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 1, earth: 0, wind: 0 },
+    warActive: true,
+    warRounds: [{ round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const resolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 3,
+    hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 2, water: 0, earth: 0, wind: 0 },
+    warActive: false,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      },
+      {
+        round: 2,
+        hostMove: "fire",
+        guestMove: "water",
+        outcomeType: "war_resolved",
+        hostResult: "lose",
+        guestResult: "win"
+      }
+    ]
+  });
 
   const controller = new GameController({
     username: "PveWarResolve",
     timerSeconds: 30,
     mode: MATCH_MODE.PVE,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: () => {
+          submitCount += 1;
+          return submitCount === 1
+            ? {
+                ok: true,
+                room: warRoom,
+                roundResult: {
+                  round: 1,
+                  hostMove: "fire",
+                  guestMove: "fire",
+                  outcomeType: "war",
+                  hostResult: "war",
+                  guestResult: "war",
+                  warRounds: [{ round: 1, outcomeType: "war" }],
+                  warPot: { host: ["fire"], guest: ["fire"] }
+                }
+              }
+            : {
+                ok: true,
+                room: resolvedRoom,
+                roundResult: {
+                  round: 2,
+                  hostMove: "fire",
+                  guestMove: "water",
+                  outcomeType: "war_resolved",
+                  hostResult: "lose",
+                  guestResult: "win",
+                  warRounds: [
+                    { round: 1, outcomeType: "war" },
+                    { round: 2, outcomeType: "war_resolved" }
+                  ],
+                  warPot: { host: [], guest: [] }
+                }
+              };
+        }
+      }),
     onUpdate: () => {},
     onMatchComplete: () => {}
   });
 
   try {
-    Math.random = () => 0;
     globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
-
-    controller.match = {
-      ...createMinimalMatch(MATCH_MODE.PVE),
-      players: {
-        p1: { hand: ["fire", "fire"], wonRounds: 0 },
-        p2: { hand: ["fire", "water"], wonRounds: 0 }
-      },
-      currentPile: [],
-      war: { active: false, clashes: 0, pendingClashes: 0, pendingPileSizes: [] },
-      history: [],
-      meta: { totalCards: 4 }
-    };
+    controller.startNewMatch();
 
     const first = await controller.playCard(0);
     assert.equal(first.status, "war_continues");
@@ -4592,37 +6729,100 @@ test("gameController: PvE WAR resolves immediately on non-tie continuation revea
     controller.stopTimer();
     controller.stopMatchClock();
     globalThis.window = originalWindow;
-    Math.random = originalRandom;
   }
 });
 
 test("gameController: PvE simultaneous WAR exhaustion resolves immediately without waiting for timer", async () => {
   const originalWindow = globalThis.window;
-  const originalRandom = Math.random;
+  let submitCount = 0;
+  const initialRoom = createAuthoritativeLocalRoom();
+  const warRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 0, water: 1, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 1, wind: 0 },
+    warActive: true,
+    warRounds: [{ round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const resolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    matchComplete: true,
+    winner: "draw",
+    winReason: "hand_exhaustion",
+    hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    warActive: false,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
 
   const controller = new GameController({
     username: "PveWarExhaust",
     timerSeconds: 30,
     mode: MATCH_MODE.PVE,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: () => {
+          submitCount += 1;
+          return submitCount === 1
+            ? {
+                ok: true,
+                room: warRoom,
+                roundResult: {
+                  round: 1,
+                  hostMove: "fire",
+                  guestMove: "fire",
+                  outcomeType: "war",
+                  hostResult: "war",
+                  guestResult: "war",
+                  warRounds: [{ round: 1, outcomeType: "war" }],
+                  warPot: { host: ["fire"], guest: ["fire"] }
+                }
+              }
+            : {
+                ok: true,
+                room: resolvedRoom,
+                roundResult: {
+                  round: 1,
+                  hostMove: "water",
+                  guestMove: "earth",
+                  outcomeType: "no_effect",
+                  hostResult: "no_effect",
+                  guestResult: "no_effect",
+                  warRounds: [{ round: 1, outcomeType: "war" }],
+                  warPot: { host: [], guest: [] }
+                }
+              };
+        }
+      }),
     onUpdate: () => {},
     onMatchComplete: () => {}
   });
 
   try {
-    Math.random = () => 0;
     globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
-
-    controller.match = {
-      ...createMinimalMatch(MATCH_MODE.PVE),
-      players: {
-        p1: { hand: ["fire", "water"], wonRounds: 0 },
-        p2: { hand: ["fire", "earth"], wonRounds: 0 }
-      },
-      currentPile: [],
-      war: { active: false, clashes: 0, pendingClashes: 0, pendingPileSizes: [] },
-      history: [],
-      meta: { totalCards: 4 }
-    };
+    controller.startNewMatch();
 
     const first = await controller.playCard(0);
     assert.equal(first.status, "war_continues");
@@ -4637,7 +6837,6 @@ test("gameController: PvE simultaneous WAR exhaustion resolves immediately witho
     controller.stopTimer();
     controller.stopMatchClock();
     globalThis.window = originalWindow;
-    Math.random = originalRandom;
   }
 });
 

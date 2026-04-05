@@ -1,0 +1,165 @@
+1. Exact files inspected
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\stateCoordinator.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\stateCoordinator.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\profileSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\profileSystem.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\statsTracking.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\statsTracking.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\chestSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\chestSystem.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\shared\basicChestDrop.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\shared\basicChestDrop.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\dailyChallengesSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\dailyChallengesSystem.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\levelRewardsSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\levelRewardsSystem.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\achievementSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\achievementSystem.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\cosmeticSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\cosmeticSystem.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\storage\jsonStore.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\storage\jsonStore.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\paths.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\paths.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\multiplayer\foundation.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\multiplayer\foundation.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\multiplayer\profileAuthority.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\multiplayer\profileAuthority.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\multiplayer\server.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\multiplayer\server.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\renderer\systems\appController.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\renderer\systems\appController.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\renderer\systems\gameController.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\renderer\systems\gameController.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\renderer\systems\toastManager.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\renderer\systems\toastManager.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\renderer\ui\screens\profileScreen.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\renderer\ui\screens\profileScreen.js)
+- [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\main\ipc\stateIpc.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\main\ipc\stateIpc.js)
+- Package-wide search across `src` for: `chest`, `basicChest`, `milestoneChest`, `epicChest`, `legendaryChest`, `openChest`, `daily challenge`, `weekly challenge`, `level milestone`
+
+2. Current implemented chest types found
+- `basic`
+- `milestone`
+- `epic` only as a displayed/count-read profile key in the profile UI
+- `legendary` only as a displayed/count-read profile key in the profile UI
+
+3. Exact current Basic Chest grant logic/values
+- Local/shared authoritative match result path: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\stateCoordinator.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\stateCoordinator.js)
+  - `recordMatchResult(...)` computes `matchOutcome` as `win`, `draw`, or `loss`
+  - then calls `rollBasicChest(matchOutcome, { mode, difficulty, random })`
+  - if true, it grants exactly `1` Basic Chest via `grantChest(..., { amount: 1 })`
+- Exact Basic Chest drop chances: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\shared\basicChestDrop.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\shared\basicChestDrop.js)
+  - win: `0.1` = `10%`
+  - loss: `0.02` = `2%`
+  - draw: `0.02` = `2%`
+  - PvE `easy` difficulty override: chance is exactly `0%` for all outcomes
+- Daily Challenge full completion grant: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\dailyChallengesSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\dailyChallengesSystem.js)
+  - if all daily challenges are completed and `completionChestGranted` is false, grant exactly `1` Basic Chest
+- Weekly Challenge full completion grant:
+  - if all weekly challenges are completed and `completionChestGranted` is false, grant exactly `2` Basic Chests
+- Online match grant source: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\multiplayer\foundation.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\multiplayer\foundation.js)
+  - draw: each player gets chest roll with `draw` chance `2%`
+  - winner: winner gets chest roll with `win` chance `10%`
+  - loser: loser gets chest roll with `loss` chance `2%`
+  - granted as `basicChests: 1` when roll succeeds, else `0`
+  - persisted through [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\stateCoordinator.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\stateCoordinator.js) `grantOnlineMatchRewards(...)` / `applyOnlineRewardSettlementDecision(...)`
+- Confirmed from code:
+  - completing all Daily Challenges: yes, `+1` Basic Chest
+  - completing all Weekly Challenges: yes, `+2` Basic Chests
+  - winning a game: yes, chest roll source exists
+  - losing a game: yes, chest roll source exists
+  - drawing a game: yes, chest roll source exists
+
+4. Exact current Milestone Chest grant logic/values
+- Source: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\chestSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\chestSystem.js)
+- Exact interval: `MILESTONE_CHEST_LEVEL_INTERVAL = 5`
+- Exact grant rule:
+  - loop `for (level = 5; level <= playerLevel; level += 5)`
+  - for each divisible-by-5 level not already in `milestoneChestGrantedLevels`, mark that level granted and add `1` Milestone Chest
+- This is:
+  - levels divisible by 5: yes
+  - every 5 levels: yes
+  - one-time per milestone level: yes
+- Exact trigger path:
+  - [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\profileSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\profileSystem.js) `normalizeProfile(...)`
+  - calls `applyLevelMilestoneChestGrants(...)`
+  - so milestone chest granting happens during profile normalization/load/update
+- Notice field:
+  - `pendingMilestoneChestRewardLevel` is set to the last newly granted milestone level
+  - acknowledgment clears only that pending notice; it does not remove the chest already granted
+
+5. Exact current Epic Chest logic/values
+- No dedicated Epic Chest constant, reward table, drop chance, or grant source was found.
+- No direct Epic Chest grant path was found in gameplay, challenge, achievement, store, multiplayer, or profile-authority flow.
+- Profile UI reads `profile?.chests?.epic ?? 0` and displays an Epic Chest slot with disabled button: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\renderer\ui\screens\profileScreen.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\renderer\ui\screens\profileScreen.js)
+- Generic chest plumbing does allow arbitrary chest type strings:
+  - `grantChest(profile, { chestType, amount })`
+  - `openChest(profile, { chestType, random })`
+- If an `epic` chest count exists in profile data and `openChest(..., { chestType: "epic" })` is called directly in code, it would use the non-milestone branch, which is the same reward logic as Basic Chest.
+- Current app surface does not expose an Epic Chest open action.
+
+6. Exact current Legendary Chest logic/values
+- No dedicated Legendary Chest constant, reward table, drop chance, or grant source was found.
+- No direct Legendary Chest grant path was found in gameplay, challenge, achievement, store, multiplayer, or profile-authority flow.
+- Profile UI reads `profile?.chests?.legendary ?? 0` and displays a Legendary Chest slot with disabled button: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\renderer\ui\screens\profileScreen.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\renderer\ui\screens\profileScreen.js)
+- Generic chest plumbing allows arbitrary chest type strings, so if `legendary` count exists and `openChest(..., { chestType: "legendary" })` is called directly, it would use the same non-milestone reward logic as Basic Chest.
+- Current app surface does not expose a Legendary Chest open action.
+
+7. Exact current chest opening reward logic/values
+- Source: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\chestSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\chestSystem.js)
+- `milestone` chest:
+  - exact reward: tokens only
+  - exact amount: random integer from `2` to `100` inclusive
+  - no XP
+  - no cosmetics
+  - no cards
+- `basic` chest:
+  - one random roll
+  - if roll `< 0.5`: `+5 XP`
+  - else if roll `< 0.95`: `+10 Tokens`
+  - else: cosmetic branch (`5%`)
+- Basic chest cosmetic branch:
+  - pool is all `Common` cosmetics across catalog where item is:
+    - `purchasable === true`
+    - `defaultOwned !== true`
+    - `supporterOnly !== true`
+    - `rarity === "Common"`
+    - not already owned
+  - one cosmetic is selected uniformly from that pool
+  - reward payload is `{ cosmetic: { type, id, name } }`
+- Duplicate cosmetic behavior:
+  - duplicates are prevented by excluding already owned cosmetics from the pool
+  - if the cosmetic pool is empty, fallback reward is `+10 Tokens`
+- Cards:
+  - no chest type awards cards
+- Anything else:
+  - no other reward type was found
+- Any non-`milestone` chest type opened through generic `openChest(...)` currently uses the same reward logic as Basic Chest
+
+8. Exact current chest inventory/profile storage path
+- Top-level profile fields:
+  - `chests`
+  - `milestoneChestGrantedLevels`
+  - `pendingMilestoneChestRewardLevel`
+- Default chest state: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\chestSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\chestSystem.js)
+  - `chests.basic = 0`
+  - `chests.milestone = 0`
+  - `milestoneChestGrantedLevels = {}`
+  - `pendingMilestoneChestRewardLevel = null`
+- Profile persistence:
+  - [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\profileSystem.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\profileSystem.js) uses `new JsonStore("profiles.json", options)`
+  - [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\storage\jsonStore.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\storage\jsonStore.js) writes to `path.join(resolveDataDir(options.dataDir), "profiles.json")`
+  - default resolved data dir: [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\state\paths.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\state\paths.js) -> `%USERPROFILE%\\AppData\\Roaming\\EleMintz\\data`
+  - default profile file path therefore is `%USERPROFILE%\\AppData\\Roaming\\EleMintz\\data\\profiles.json` unless an explicit `dataDir` override is supplied
+- Authority:
+  - Online chest inventory is server-authoritative/shared-authoritative through `StateCoordinator` + `MultiplayerProfileAuthority`
+  - Local PvP/PvE chest inventory is shared local authoritative through the same `StateCoordinator`/`ProfileSystem`
+  - chest state is not renderer-authoritative
+- Chest open persistence:
+  - if `StateCoordinator.openChest(...)` is called, the updated profile persists back into `profiles.json`
+  - open results persist via profile mutations to `playerXP`, `tokens`, `ownedCosmetics`, and `chests`
+- Current runtime exposure:
+  - there is no current `state:openChest` IPC handler in [C:\Users\mxz\Desktop\Projects\Codex EleMintz PC\src\main\ipc\stateIpc.js](C:\Users\mxz\Desktop\Projects\Codex%20EleMintz%20PC\src\main\ipc\stateIpc.js)
+  - no multiplayer chest-open API was found
+  - profile UI buttons currently do not call open logic
+
+9. Anything chest-related that is currently only partial / placeholder / unused
+- `openChest(...)` exists in the state layer and `StateCoordinator.openChest(...)` wraps it, but no current IPC/preload/multiplayer/renderer call path exposes it.
+- Profile screen still says `Click a chest image to open it.` but current Basic/Milestone button actions are blocked with:
+  - `Basic Chest opening is unavailable here while offline/local progression paths are being removed.`
+  - `Milestone Chest opening is unavailable here while offline/local progression paths are being removed.`
+- `emitChestOpenToast(...)` and `toastManager.showChestOpenReward(...)` exist, but no current chest-open UI flow reaches them.
+- Epic and Legendary chest support is partial:
+  - UI count display exists
+  - icons exist
+  - buttons are permanently disabled
+  - no dedicated grant source exists
+  - no dedicated reward logic exists
+  - only the generic arbitrary-`chestType` state functions would handle them if called directly
+- Milestone chest notice text is only a notice/acknowledgment path, not an open path:
+  - modal says `Congrats ... a FREE Token Reward is now Available`
+  - actual granted item is already the `milestone` chest count in profile
+- `profile.chests` normalization preserves arbitrary keys from saved data, so manually present `epic`/`legendary` counts can survive normalization even though default state only defines `basic` and `milestone`.
