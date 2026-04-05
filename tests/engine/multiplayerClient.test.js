@@ -570,6 +570,79 @@ class FakeSocket {
   }
 }
 
+class DeferredChestSocket extends FakeSocket {
+  constructor() {
+    super();
+    this.pendingChestAcks = [];
+    this.remainingChests = {
+      basic: 3,
+      milestone: 2,
+      epic: 10,
+      legendary: 10
+    };
+  }
+
+  emit(eventName, payload, ack) {
+    if (eventName === "profile:openChest") {
+      this.sentEvents.push({ eventName, payload });
+      this.pendingChestAcks.push({ payload, ack });
+      return this;
+    }
+
+    return super.emit(eventName, payload, ack);
+  }
+
+  resolveNextChestOpen() {
+    const next = this.pendingChestAcks.shift();
+    if (!next) {
+      return;
+    }
+
+    const chestType = next.payload?.chestType ?? "basic";
+    const currentCount = Math.max(0, Number(this.remainingChests[chestType] ?? 0));
+    this.remainingChests[chestType] = Math.max(0, currentCount - 1);
+    queueMicrotask(() => {
+      next.ack?.({
+        ok: true,
+        result: {
+          chestType,
+          consumed: 1,
+          remaining: this.remainingChests[chestType],
+          rewards: {
+            tokens: chestType === "legendary" ? 140 : chestType === "epic" ? 80 : 20,
+            xp: chestType === "legendary" ? 70 : chestType === "epic" ? 30 : 5,
+            cosmetic: null
+          },
+          snapshot: {
+            authority: "server",
+            source: "multiplayer",
+            profile: {
+              username: this.sessionUsername ?? next.payload?.username ?? null,
+              chests: {
+                ...this.remainingChests
+              },
+              equippedCosmetics: createEquippedCosmetics()
+            },
+            progression: {}
+          }
+        }
+      });
+    });
+  }
+}
+
+async function waitFor(predicate, { attempts = 20 } = {}) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (predicate()) {
+      return true;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  return false;
+}
+
 class InvalidResumeSocket extends FakeSocket {
   emit(eventName, payload, ack) {
     if (eventName === "session:resume") {
@@ -933,6 +1006,81 @@ test("multiplayer client: server-authoritative legendary chest opening returns u
   assert.equal(result?.chestType, "legendary");
   assert.equal(result?.rewards?.tokens, 80);
   assert.equal(result?.snapshot?.profile?.chests?.legendary, 0);
+});
+
+test("multiplayer client: rejects concurrent chest opens while a request is already in flight", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new DeferredChestSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const firstOpenPromise = client.openChest({
+    username: "ChestAuthorityUser",
+    chestType: "legendary"
+  });
+  assert.equal(await waitFor(() => lastSocket?.pendingChestAcks?.length === 1), true);
+
+  const secondResult = await client
+    .openChest({
+      username: "ChestAuthorityUser",
+      chestType: "legendary"
+    })
+    .then(
+      () => ({ ok: true }),
+      (error) => ({ ok: false, message: String(error?.message ?? "") })
+    );
+
+  assert.equal(
+    lastSocket.sentEvents.filter((event) => event.eventName === "profile:openChest").length,
+    1
+  );
+  assert.equal(secondResult.ok, false);
+  assert.match(secondResult.message, /already being opened/i);
+
+  lastSocket.resolveNextChestOpen();
+  const firstResult = await firstOpenPromise;
+  assert.equal(firstResult?.chestType, "legendary");
+  assert.equal(client.isOpeningChest, false);
+});
+
+test("multiplayer client: sequential and mixed chest opens complete after each prior request resolves", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new DeferredChestSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const requestOrder = ["legendary", "epic", "legendary", "epic"];
+  const results = [];
+
+  for (const chestType of requestOrder) {
+    const openPromise = client.openChest({
+      username: "ChestAuthorityUser",
+      chestType
+    });
+    assert.equal(await waitFor(() => lastSocket?.pendingChestAcks?.length === 1), true);
+    lastSocket.resolveNextChestOpen();
+    results.push(await openPromise);
+  }
+
+  assert.deepEqual(
+    lastSocket.sentEvents
+      .filter((event) => event.eventName === "profile:openChest")
+      .map((event) => event.payload?.chestType),
+    requestOrder
+  );
+  assert.deepEqual(
+    results.map((result) => result?.chestType),
+    requestOrder
+  );
+  assert.equal(client.isOpeningChest, false);
 });
 
 test("multiplayer client: authenticated login reuses the server-issued session for later room actions", async () => {

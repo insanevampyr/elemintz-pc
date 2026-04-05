@@ -10204,6 +10204,26 @@ test("ui: epic and legendary profile chest entries enable opening when inventory
   assert.doesNotMatch(html, /id="open-legendary-chest-btn"[^>]*disabled/);
 });
 
+test("ui: profile chest buttons disable and show opening state while a chest open is in flight", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        username: "OpeningChestUser",
+        chests: { basic: 2, milestone: 1, epic: 4, legendary: 3 }
+      },
+      profileChestOpenInFlight: true
+    })
+  );
+
+  assert.match(html, /id="open-basic-chest-btn"[^>]*disabled aria-disabled="true"/);
+  assert.match(html, /id="open-milestone-chest-btn"[^>]*disabled aria-disabled="true"/);
+  assert.match(html, /id="open-epic-chest-btn"[^>]*disabled aria-disabled="true"/);
+  assert.match(html, /id="open-legendary-chest-btn"[^>]*disabled aria-disabled="true"/);
+  assert.match(html, /data-basic-chest-label="true">Opening\.\.\.</);
+  assert.match(html, /data-legendary-chest-label="true">Opening\.\.\.</);
+});
+
 test("ui: profile shows the new milestone chest popup with the exact grant message and acknowledges it once", async () => {
   const previousWindow = global.window;
   const shown = [];

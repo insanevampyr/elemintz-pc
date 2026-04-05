@@ -17,7 +17,10 @@ import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, ge
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
+import { buildAchievementCatalog } from "../../state/achievementSystem.js";
 import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
+import { getStoreViewForProfile } from "../../state/storeSystem.js";
+import { deriveMatchStats } from "../../state/statsTracking.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS } from "../ui/shared/playSurfaceShared.js";
 
@@ -113,9 +116,12 @@ export class AppController {
     this.pveOpponentStyle = null;
     this.profileChestVisualState = {
       basicOpen: false,
-      milestoneOpen: false
+      milestoneOpen: false,
+      epicOpen: false,
+      legendaryOpen: false
     };
     this.profileMilestoneChestNoticeOpen = false;
+    this.profileChestOpenInFlight = false;
     this.onlinePlayState = null;
     this.onlinePlayJoinCode = "";
     this.onlinePlayUnsubscribe = null;
@@ -137,6 +143,7 @@ export class AppController {
     this.opponentDisplayName = "Elemental AI";
     this.storeViewState = this.createDefaultStoreViewState();
     this.cosmeticsViewState = createDefaultCategoryViewState();
+    this.presentedAchievementUnlockKeys = new Set();
     this.roundPresentation = {
       phase: "idle",
       busy: false,
@@ -894,6 +901,12 @@ export class AppController {
     return title === "Request Quit" || title === "Leave Match";
   }
 
+  hasActiveMatchCompleteModal() {
+    const modalTitle = globalThis.document?.querySelector?.(".modal-overlay .modal h3");
+    const title = String(modalTitle?.textContent ?? "").trim();
+    return title === "Match Complete";
+  }
+
   clearTransientUiBeforeScreenTransition({ preserveModal = false } = {}) {
     this.clearMatchTauntUiTimer();
     if (preserveModal) {
@@ -918,6 +931,8 @@ export class AppController {
             weekly: serverProfile.progression?.weeklyChallenges ?? null,
             dailyLogin: serverProfile.progression?.dailyLogin ?? null
           }
+        : this.isAuthenticatedOnlineProfileFlow()
+          ? null
         : globalThis.window?.elemintz?.state?.getDailyChallenges
           ? await globalThis.window.elemintz.state.getDailyChallenges(this.username)
           : null;
@@ -983,7 +998,12 @@ export class AppController {
   }
 
   getBackgroundIdFromProfile(profile) {
-    return profile?.cosmetics?.background ?? profile?.equippedCosmetics?.background ?? "default_background";
+    return (
+      profile?.cosmetics?.snapshot?.equipped?.background ??
+      profile?.cosmetics?.background ??
+      profile?.equippedCosmetics?.background ??
+      "default_background"
+    );
   }
 
   getBackgroundFromProfile(profile) {
@@ -1092,15 +1112,18 @@ export class AppController {
 
   buildPlayerDisplay(profile, fallbackName, fallbackTitle = "Initiate") {
     const avatarId =
+      profile?.cosmetics?.snapshot?.equipped?.avatar ??
       profile?.equippedCosmetics?.avatar ??
       profile?.cosmetics?.equipped?.avatar ??
       profile?.cosmetics?.avatar ??
       "default_avatar";
     const titleId =
+      profile?.cosmetics?.snapshot?.equipped?.title ??
       profile?.equippedCosmetics?.title ??
       profile?.cosmetics?.equipped?.title ??
       null;
     const badgeId =
+      profile?.cosmetics?.snapshot?.equipped?.badge ??
       profile?.equippedCosmetics?.badge ??
       profile?.cosmetics?.equipped?.badge ??
       profile?.cosmetics?.badge ??
@@ -1118,7 +1141,8 @@ export class AppController {
   }
 
   getOnlineEquippedCosmeticValue(profile = null, key, fallback) {
-    return profile?.cosmetics?.equipped?.[key] ??
+    return profile?.cosmetics?.snapshot?.equipped?.[key] ??
+      profile?.cosmetics?.equipped?.[key] ??
       profile?.equippedCosmetics?.[key] ??
       profile?.cosmetics?.[key] ??
       (key === "title" ? profile?.title : undefined) ??
@@ -1133,8 +1157,31 @@ export class AppController {
     return this.isConnectedOnlineProfileFlow(onlineState) && Boolean(window.elemintz?.multiplayer?.getProfile);
   }
 
+  isAuthenticatedOnlineProfileFlow(onlineState = this.onlinePlayState, username = this.username) {
+    if (!this.hasMultiplayerProfileAccess(onlineState)) {
+      return false;
+    }
+
+    if (!onlineState?.session?.authenticated) {
+      return false;
+    }
+
+    const requestedUsername = String(username ?? "").trim();
+    const sessionUsername = String(onlineState?.session?.username ?? "").trim();
+    return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
+  }
+
+  showLegacyLocalAuthorityDisabledModal(body) {
+    this.modalManager.show({
+      title: "Online Authority Only",
+      body,
+      actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+    });
+  }
+
   buildOnlineEquippedCosmetics(profile = null) {
     const equippedVariants =
+      profile?.cosmetics?.snapshot?.equipped?.elementCardVariant ??
       profile?.equippedCosmetics?.elementCardVariant ??
       profile?.cosmetics?.equipped?.elementCardVariant ??
       profile?.cosmetics?.elementCardVariant ??
@@ -1177,13 +1224,29 @@ export class AppController {
     return {
       ...baseProfile,
       ...(nextUsername ? { username: nextUsername } : {}),
+      ...(cosmetics ? { cosmetics } : {}),
       ...(cosmetics
         ? {
-            equippedCosmetics: cosmetics.equipped ?? baseProfile?.equippedCosmetics ?? null,
-            ownedCosmetics: cosmetics.owned ?? baseProfile?.ownedCosmetics ?? null,
-            cosmeticLoadouts: cosmetics.loadouts ?? baseProfile?.cosmeticLoadouts ?? null,
+            equippedCosmetics:
+              cosmetics.snapshot?.equipped ??
+              cosmetics.equipped ??
+              baseProfile?.equippedCosmetics ??
+              null,
+            ownedCosmetics:
+              cosmetics.snapshot?.owned ??
+              cosmetics.owned ??
+              baseProfile?.ownedCosmetics ??
+              null,
+            cosmeticLoadouts:
+              cosmetics.snapshot?.loadouts ??
+              cosmetics.loadouts ??
+              baseProfile?.cosmeticLoadouts ??
+              null,
             cosmeticRandomizeAfterMatch:
-              cosmetics.preferences ?? baseProfile?.cosmeticRandomizeAfterMatch ?? null
+              cosmetics.snapshot?.preferences ??
+              cosmetics.preferences ??
+              baseProfile?.cosmeticRandomizeAfterMatch ??
+              null
           }
         : {}),
       ...(stats
@@ -1203,6 +1266,10 @@ export class AppController {
           }
         : {})
     };
+  }
+
+  buildAchievementCatalogForProfile(profile) {
+    return buildAchievementCatalog(profile ?? {});
   }
 
   mergeServerOwnedProfileDomains(localProfile, serverProfile) {
@@ -1254,6 +1321,30 @@ export class AppController {
     }
 
     return this.profile;
+  }
+
+  buildAchievementUnlockPresentationKey(achievement, playerName) {
+    const safePlayerName = String(playerName ?? "").trim() || "Player";
+    const safeAchievement =
+      achievement && typeof achievement === "object" && !Array.isArray(achievement)
+        ? achievement
+        : {};
+    const id = String(safeAchievement.id ?? "").trim() || "unknown";
+    const count = Math.max(0, Number(safeAchievement.count ?? 0));
+    const lastUnlockedAt = String(safeAchievement.lastUnlockedAt ?? "").trim() || "none";
+    const firstUnlockedAt = String(safeAchievement.firstUnlockedAt ?? "").trim() || "none";
+
+    return `${safePlayerName}|${id}|${count}|${lastUnlockedAt}|${firstUnlockedAt}`;
+  }
+
+  shouldPresentAchievementUnlock(achievement, playerName) {
+    const key = this.buildAchievementUnlockPresentationKey(achievement, playerName);
+    if (this.presentedAchievementUnlockKeys.has(key)) {
+      return false;
+    }
+
+    this.presentedAchievementUnlockKeys.add(key);
+    return true;
   }
 
   async fetchAuthenticatedHotseatProfile({ mode = "login", username = "", email = "", password = "" } = {}) {
@@ -1379,6 +1470,10 @@ export class AppController {
       }
     }
 
+    if (this.isAuthenticatedOnlineProfileFlow(onlineState, safeUsername)) {
+      return this.profile;
+    }
+
     if (allowEnsureLocal && window.elemintz?.state?.ensureProfile) {
       this.profile = await window.elemintz.state.ensureProfile(safeUsername);
       return this.profile;
@@ -1458,6 +1553,10 @@ export class AppController {
       return;
     }
 
+    if (this.isAuthenticatedOnlineProfileFlow()) {
+      return;
+    }
+
     try {
       const result = await globalThis.window.elemintz.state.acknowledgeLoadoutUnlocks(this.username);
       if (!result) {
@@ -1532,12 +1631,109 @@ export class AppController {
     return normalizeName(result?.profile?.username, fallbackName);
   }
 
+  getChestCount(profile, chestType = "basic") {
+    return Math.max(0, Number(profile?.chests?.[chestType] ?? 0) || 0);
+  }
+
   getBasicChestCount(profile) {
-    return Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
+    return this.getChestCount(profile, "basic");
   }
 
   getMilestoneChestCount(profile) {
-    return Math.max(0, Number(profile?.chests?.milestone ?? 0) || 0);
+    return this.getChestCount(profile, "milestone");
+  }
+
+  getChestLabel(chestType) {
+    switch (String(chestType ?? "basic").trim()) {
+      case "milestone":
+        return "Milestone Chest";
+      case "epic":
+        return "Epic Chest";
+      case "legendary":
+        return "Legendary Chest";
+      case "basic":
+      default:
+        return "Basic Chest";
+    }
+  }
+
+  getChestVisualStateKey(chestType) {
+    switch (String(chestType ?? "basic").trim()) {
+      case "milestone":
+        return "milestoneOpen";
+      case "epic":
+        return "epicOpen";
+      case "legendary":
+        return "legendaryOpen";
+      case "basic":
+      default:
+        return "basicOpen";
+    }
+  }
+
+  setProfileChestVisualState(chestType, isOpen) {
+    const visualKey = this.getChestVisualStateKey(chestType);
+    this.profileChestVisualState = {
+      basicOpen: false,
+      milestoneOpen: false,
+      epicOpen: false,
+      legendaryOpen: false,
+      [visualKey]: Boolean(isOpen)
+    };
+  }
+
+  async openProfileChest(chestType) {
+    const safeChestType = String(chestType ?? "basic").trim() || "basic";
+    if (this.profileChestOpenInFlight || this.getChestCount(this.profile, safeChestType) <= 0) {
+      return;
+    }
+
+    const openWithMultiplayer =
+      this.hasMultiplayerProfileAccess() && globalThis.window?.elemintz?.multiplayer?.openChest;
+    const openAuthority = openWithMultiplayer
+      ? globalThis.window.elemintz.multiplayer.openChest
+      : globalThis.window?.elemintz?.state?.openChest;
+
+    if (typeof openAuthority !== "function") {
+      this.modalManager.show({
+        title: "Chest Unavailable",
+        body: "Unable to open this chest right now.",
+        actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
+      return;
+    }
+
+    this.profileChestOpenInFlight = true;
+    let preserveModal = false;
+
+    try {
+      this.setProfileChestVisualState(safeChestType, true);
+      await this.showProfile();
+      await delay(this.isReducedMotion() ? 0 : 220);
+
+      const result = await openAuthority({
+        username: this.username,
+        chestType: safeChestType
+      });
+
+      this.profile = result?.snapshot
+        ? this.buildProfileFromServerSnapshot(result.snapshot)
+        : result?.profile ?? this.profile;
+      this.emitChestOpenToast(result);
+    } catch (error) {
+      preserveModal = true;
+      this.modalManager.show({
+        title: "Chest Open Failed",
+        body: String(error?.message ?? "Unable to open this chest."),
+        actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
+    } finally {
+      this.profileChestOpenInFlight = false;
+      this.setProfileChestVisualState(safeChestType, false);
+      if (this.screenFlow === "profile") {
+        await this.showProfile({ preserveModal });
+      }
+    }
   }
 
   emitChestOpenToast(result) {
@@ -1659,7 +1855,26 @@ export class AppController {
     return {
       ...fallback,
       ...(state ?? {}),
-      room: normalizedRoom
+      room: normalizedRoom,
+      latestAuthoritativeRoundResult: state?.latestAuthoritativeRoundResult
+        ? {
+            ...state.latestAuthoritativeRoundResult,
+            submittedCards: {
+              host: state.latestAuthoritativeRoundResult.submittedCards?.host ?? null,
+              guest: state.latestAuthoritativeRoundResult.submittedCards?.guest ?? null
+            },
+            roundResult: state.latestAuthoritativeRoundResult.roundResult
+              ? { ...state.latestAuthoritativeRoundResult.roundResult }
+              : null,
+            matchSnapshot: state.latestAuthoritativeRoundResult.matchSnapshot
+              ? { ...state.latestAuthoritativeRoundResult.matchSnapshot }
+              : null,
+            animation: state.latestAuthoritativeRoundResult.animation
+              ? { ...state.latestAuthoritativeRoundResult.animation }
+              : null,
+            syncSource: state.latestAuthoritativeRoundResult.syncSource ?? null
+          }
+        : null
     };
   }
 
@@ -1670,6 +1885,7 @@ export class AppController {
 
   deriveOnlineSettlementRefreshKey(state) {
     const room = state?.room;
+    const decision = room?.rewardSettlement?.decision;
     const summary = room?.rewardSettlement?.summary;
     const username = String(this.username ?? "").trim();
 
@@ -1677,14 +1893,20 @@ export class AppController {
       return null;
     }
 
-    if (summary?.settledHostUsername !== username && summary?.settledGuestUsername !== username) {
+    const hostUsername = decision?.participants?.hostUsername ?? summary?.settledHostUsername ?? null;
+    const guestUsername = decision?.participants?.guestUsername ?? summary?.settledGuestUsername ?? null;
+
+    if (hostUsername !== username && guestUsername !== username) {
       return null;
     }
 
-    return `${room.roomCode ?? "room"}:${room.rewardSettlement?.grantedAt ?? "settled"}:${username}`;
+    return (
+      decision?.settlementKey ??
+      `${room.roomCode ?? "room"}:${room.rewardSettlement?.grantedAt ?? "settled"}:${username}`
+    );
   }
 
-  async refreshOnlinePlayChallengeSummary(state = this.onlinePlayState) {
+  async refreshOnlinePlayChallengeSummary(state = this.onlinePlayState, options = {}) {
     const summaryKey = this.deriveOnlineChallengeSummaryKey(state);
 
     if (!summaryKey) {
@@ -1700,9 +1922,10 @@ export class AppController {
     }
 
     const serverProfile =
-      window.elemintz?.multiplayer?.getProfile
+      options?.serverProfile ??
+      (window.elemintz?.multiplayer?.getProfile
         ? await window.elemintz.multiplayer.getProfile({ username: this.username })
-        : null;
+        : null);
     const result = serverProfile
       ? {
           daily: serverProfile.progression?.dailyChallenges ?? null,
@@ -1746,9 +1969,10 @@ export class AppController {
     this.onlinePlayProfileRefreshKey = refreshKey;
     this.onlinePlayProfileRefreshPromise = (async () => {
       const serverProfile =
-        window.elemintz?.multiplayer?.getProfile
+        options?.serverProfile ??
+        (window.elemintz?.multiplayer?.getProfile
           ? await window.elemintz.multiplayer.getProfile({ username: this.username })
-          : null;
+          : null);
       const nextProfile = serverProfile
         ? this.buildProfileFromServerSnapshot(serverProfile)
         : (
@@ -1805,6 +2029,38 @@ export class AppController {
         this.onlinePlayProfileRefreshPromise = null;
       }
     }
+  }
+
+  async refreshOnlineSettlementStateFromServer(state = this.onlinePlayState) {
+    if (!this.username) {
+      return {
+        challengeSummary: this.onlinePlayChallengeSummary,
+        profile: this.profile
+      };
+    }
+
+    const serverProfile =
+      window.elemintz?.multiplayer?.getProfile
+        ? await window.elemintz.multiplayer.getProfile({ username: this.username })
+        : null;
+    const challengeSummary = await this.refreshOnlinePlayChallengeSummary(state, {
+      serverProfile
+    });
+    const profile = await this.refreshLocalProfileAfterOnlineSettlement(state, {
+      serverProfile,
+      challengeStatus: challengeSummary
+        ? {
+            daily: challengeSummary.daily ?? null,
+            weekly: challengeSummary.weekly ?? null,
+            dailyLogin: this.dailyChallenges?.dailyLogin ?? null
+          }
+        : null
+    });
+
+    return {
+      challengeSummary,
+      profile
+    };
   }
 
   derivePendingReconnectReminderKey(reminder = this.onlineReconnectReminder) {
@@ -2032,8 +2288,14 @@ export class AppController {
     const previousSubmittedCount = Number(previousState?.room?.moveSync?.submittedCount ?? 0);
     const nextSubmittedCount = Number(nextState?.room?.moveSync?.submittedCount ?? 0);
     const hasLatestRoundResult = Boolean(nextState?.latestRoundResult);
+    const isSnapshotResync =
+      String(nextState?.latestAuthoritativeRoundResult?.syncSource ?? "").trim() === "room_snapshot";
 
     if (!hasLatestRoundResult) {
+      return nextState;
+    }
+
+    if (isSnapshotResync) {
       return nextState;
     }
 
@@ -2041,7 +2303,8 @@ export class AppController {
       console.info("[OnlinePlay][Renderer] new round detected, clearing round result");
       return this.normalizeOnlinePlayState({
         ...nextState,
-        latestRoundResult: null
+        latestRoundResult: null,
+        latestAuthoritativeRoundResult: null
       });
     }
 
@@ -2049,7 +2312,8 @@ export class AppController {
       console.info("[OnlinePlay][Renderer] new round detected, clearing round result");
       return this.normalizeOnlinePlayState({
         ...nextState,
-        latestRoundResult: null
+        latestRoundResult: null,
+        latestAuthoritativeRoundResult: null
       });
     }
 
@@ -2098,18 +2362,7 @@ export class AppController {
         this.renderOnlinePlayScreen();
       }
       if (this.onlinePlayState?.room?.matchComplete) {
-        void this.refreshOnlinePlayChallengeSummary(this.onlinePlayState)
-          .then((challengeSummary) =>
-            this.refreshLocalProfileAfterOnlineSettlement(this.onlinePlayState, {
-              challengeStatus: challengeSummary
-                ? {
-                    daily: challengeSummary.daily ?? null,
-                    weekly: challengeSummary.weekly ?? null,
-                    dailyLogin: this.dailyChallenges?.dailyLogin ?? null
-                  }
-                : null
-            })
-          )
+        void this.refreshOnlineSettlementStateFromServer(this.onlinePlayState)
           .then(() => {
           if (this.screenFlow === "onlinePlay") {
             this.renderOnlinePlayScreen();
@@ -2183,16 +2436,7 @@ export class AppController {
             console.info("[OnlinePlay][Renderer] latest round result stored in renderer state", this.onlinePlayState.latestRoundResult);
           }
           if (this.onlinePlayState?.room?.matchComplete) {
-            const challengeSummary = await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
-            await this.refreshLocalProfileAfterOnlineSettlement(this.onlinePlayState, {
-              challengeStatus: challengeSummary
-                ? {
-                    daily: challengeSummary.daily ?? null,
-                    weekly: challengeSummary.weekly ?? null,
-                    dailyLogin: this.dailyChallenges?.dailyLogin ?? null
-                  }
-                : null
-            });
+            await this.refreshOnlineSettlementStateFromServer(this.onlinePlayState);
           }
           this.ensureOnlineReconnectUiTimer();
           this.renderOnlinePlayScreen();
@@ -2248,26 +2492,41 @@ export class AppController {
   }
 
   async claimDailyLoginRewardFor(username, { showToasts = false } = {}) {
-    if (!username || !globalThis.window?.elemintz?.state?.claimDailyLoginReward) {
+    const isAuthenticatedOnline = this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, username);
+    const localClaimMethod = globalThis.window?.elemintz?.state?.claimDailyLoginReward;
+    const multiplayerClaimMethod = globalThis.window?.elemintz?.multiplayer?.claimDailyLoginReward;
+
+    if (!username || (!localClaimMethod && !multiplayerClaimMethod)) {
       console.info("[DailyLogin][Renderer] claim unavailable", {
         username,
         hasWindow: Boolean(globalThis.window),
         hasElemintz: Boolean(globalThis.window?.elemintz),
         hasState: Boolean(globalThis.window?.elemintz?.state),
-        hasClaimMethod: Boolean(globalThis.window?.elemintz?.state?.claimDailyLoginReward)
+        hasClaimMethod: Boolean(localClaimMethod),
+        hasMultiplayerClaimMethod: Boolean(multiplayerClaimMethod)
       });
       return null;
     }
 
     console.info("[DailyLogin][Renderer] about to call claim", {
       username,
-      showToasts
+      showToasts,
+      authority: isAuthenticatedOnline ? "multiplayer" : "local"
     });
     console.info("[DailyLogin][Renderer] request", {
       username,
       showToasts
     });
-    const reward = await globalThis.window.elemintz.state.claimDailyLoginReward(username);
+    if (isAuthenticatedOnline && !multiplayerClaimMethod) {
+      console.info("[DailyLogin][Renderer] authoritative multiplayer claim unavailable", {
+        username
+      });
+      return null;
+    }
+
+    const reward = isAuthenticatedOnline
+      ? await multiplayerClaimMethod({ username })
+      : await localClaimMethod?.(username);
     console.info("[DailyLogin][Renderer] claim call finished", {
       username,
       granted: Boolean(reward?.granted)
@@ -2280,12 +2539,28 @@ export class AppController {
       lastDailyLoginClaimDate: reward?.dailyLoginStatus?.lastDailyLoginClaimDate,
       toastRequested: Boolean(showToasts && reward?.granted)
     });
-    if (!reward?.profile) {
+    if (!reward?.profile && !reward?.snapshot) {
       return reward;
     }
 
-    if (this.username === username) {
-      this.profile = reward.profile;
+    const nextProfile = reward?.snapshot
+      ? this.applyServerProfileSnapshot(reward.snapshot)
+      : reward.profile;
+
+    if (this.username === username && nextProfile) {
+      this.profile = nextProfile;
+    }
+
+    if (reward?.snapshot?.progression || reward?.dailyLoginStatus) {
+      this.dailyChallenges = {
+        daily: reward?.snapshot?.progression?.dailyChallenges ?? this.dailyChallenges?.daily ?? null,
+        weekly: reward?.snapshot?.progression?.weeklyChallenges ?? this.dailyChallenges?.weekly ?? null,
+        dailyLogin:
+          reward?.snapshot?.progression?.dailyLogin
+          ?? reward?.dailyLoginStatus
+          ?? this.dailyChallenges?.dailyLogin
+          ?? null
+      };
     }
 
     if (showToasts && reward.granted) {
@@ -2344,6 +2619,10 @@ export class AppController {
       : [];
 
     for (const achievement of achievements) {
+      if (!this.shouldPresentAchievementUnlock(achievement, playerName)) {
+        continue;
+      }
+
       this.toastManager.showAchievement(achievement, { playerName });
     }
 
@@ -2375,15 +2654,17 @@ export class AppController {
       });
     }
 
-    const chestDelta = Math.max(
-      0,
-      this.getBasicChestCount(result.profile) - this.getBasicChestCount(previousProfile)
-    );
-    if (chestDelta > 0) {
-      this.toastManager.showChestGrant?.({
-        amount: chestDelta,
-        chestLabel: "Basic Chest"
-      });
+    for (const chestType of ["basic", "milestone", "epic", "legendary"]) {
+      const chestDelta = Math.max(
+        0,
+        this.getChestCount(result.profile, chestType) - this.getChestCount(previousProfile, chestType)
+      );
+      if (chestDelta > 0) {
+        this.toastManager.showChestGrant?.({
+          amount: chestDelta,
+          chestLabel: this.getChestLabel(chestType)
+        });
+      }
     }
 
     this.toastManager.showXpBreakdown?.({
@@ -2427,6 +2708,24 @@ export class AppController {
     }
 
     return Math.max(0, Math.floor(Number(round?.capturedCards ?? 0) / 2));
+  }
+
+  getMatchPerspectiveCapturedTotal(match, perspective) {
+    if (!Array.isArray(match?.history)) {
+      return null;
+    }
+
+    return match.history
+      .filter((round) => round?.result === perspective)
+      .reduce((sum, round) => sum + this.getResolvedOpponentCardsCaptured(round), 0);
+  }
+
+  getMatchPerspectiveStats(match, perspective) {
+    try {
+      return deriveMatchStats(match, perspective);
+    } catch {
+      return null;
+    }
   }
 
   playRoundRevealSounds(result, mode = MATCH_MODE.PVE, { warWasActive = false } = {}) {
@@ -2543,15 +2842,15 @@ export class AppController {
 
     const leftStats = isLocalPvp ? finalPersisted?.p1?.stats : finalPersisted?.stats;
     const rightStats = isLocalPvp ? finalPersisted?.p2?.stats : null;
+    const leftDerivedStats = this.getMatchPerspectiveStats(match, "p1");
+    const rightDerivedStats = this.getMatchPerspectiveStats(match, "p2");
 
-    const leftCaptured = safeValue(leftStats?.cardsCaptured);
+    const leftCaptured = isLocalPvp
+      ? safeValue(leftStats?.cardsCaptured)
+      : safeValue(leftDerivedStats?.cardsCaptured);
     const rightCaptured = isLocalPvp
       ? safeValue(rightStats?.cardsCaptured)
-      : safeValue(
-        match?.history
-          ?.filter((round) => round?.result === "p2")
-          .reduce((sum, round) => sum + this.getResolvedOpponentCardsCaptured(round), 0)
-      );
+      : safeValue(rightDerivedStats?.cardsCaptured);
 
     const warsEntered = isLocalPvp
       ? `${safeValue(leftStats?.warsEntered)} | ${safeValue(rightStats?.warsEntered)}`
@@ -2981,6 +3280,7 @@ export class AppController {
 
     this.gameController = new GameController({
       username: mode === MATCH_MODE.LOCAL_PVP ? this.getLocalNames().p1 : this.username,
+      localPlayerNames: mode === MATCH_MODE.LOCAL_PVP ? this.getLocalNames() : null,
       timerSeconds: this.settings?.gameplay?.timerSeconds ?? FALLBACK_SETTINGS.gameplay.timerSeconds,
       matchTimeLimitSeconds: 300,
       aiDifficulty: mode === MATCH_MODE.PVE ? this.getConfiguredAiDifficulty() : FALLBACK_SETTINGS.aiDifficulty,
@@ -3246,24 +3546,27 @@ export class AppController {
 
     this.playRoundRevealSounds(result, MATCH_MODE.LOCAL_PVP, { warWasActive });
 
-    this.roundPresentation = {
-      phase: "idle",
-      busy: true,
-      selectedCardIndex: null
-    };
-    await this.showSharedResolutionPopup(result, MATCH_MODE.LOCAL_PVP);
-
-    this.roundPresentation = {
-      phase: "idle",
-      busy: false,
-      selectedCardIndex: null
-    };
-    this.screenFlow = "idle";
-
-    if (this.gameController.getViewModel()?.status === "active") {
-      await this.showPlayer1TurnPass(false);
-      return;
+    try {
+      this.roundPresentation = {
+        phase: "idle",
+        busy: true,
+        selectedCardIndex: null
+      };
+      await this.showSharedResolutionPopup(result, MATCH_MODE.LOCAL_PVP);
+    } finally {
+      this.roundPresentation = {
+        phase: "idle",
+        busy: false,
+        selectedCardIndex: null
+      };
+      this.screenFlow = "idle";
     }
+
+      if (this.gameController.getViewModel()?.status === "active") {
+        this.gameController?.rearmActiveRoundPresentation?.();
+        this.enterHotseatTurn();
+        return;
+      }
 
     this.flushPendingMatchCompleteModal();
   }
@@ -3308,34 +3611,44 @@ export class AppController {
     if (result?.status === "war_continues" || result?.status === "resolved") {
       const playedReveal = this.playRoundRevealSounds(result, MATCH_MODE.PVE, { warWasActive });
       await this.waitForRevealSoundSpacing(playedReveal);
-      this.roundPresentation = {
-        phase: "idle",
-        busy: true,
-        selectedCardIndex: null
-      };
-      await this.showSharedResolutionPopup(
-        result?.status === "resolved"
-          ? { status: "round_resolved", round: result.round }
-          : result,
-        MATCH_MODE.PVE,
-        {
-          onShown: async () => {
-            if (deferredOutcomeRound) {
-              this.sound.playRoundResolved({ mode: MATCH_MODE.PVE, round: deferredOutcomeRound });
+      try {
+        this.roundPresentation = {
+          phase: "idle",
+          busy: true,
+          selectedCardIndex: null
+        };
+        await this.showSharedResolutionPopup(
+          result?.status === "resolved"
+            ? { status: "round_resolved", round: result.round }
+            : result,
+          MATCH_MODE.PVE,
+          {
+            onShown: async () => {
+              if (deferredOutcomeRound) {
+                this.sound.playRoundResolved({ mode: MATCH_MODE.PVE, round: deferredOutcomeRound });
+              }
             }
           }
-        }
-      );
+        );
+      } finally {
+        this.roundPresentation = {
+          phase: "idle",
+          busy: false,
+          selectedCardIndex: null
+        };
+        this.screenFlow = "idle";
+      }
+    } else {
+      this.roundPresentation = {
+        phase: "idle",
+        busy: false,
+        selectedCardIndex: null
+      };
+      this.screenFlow = "idle";
     }
 
-    this.roundPresentation = {
-      phase: "idle",
-      busy: false,
-      selectedCardIndex: null
-    };
-    this.screenFlow = "idle";
-
     if (this.gameController.getViewModel()?.status === "active") {
+      this.gameController?.rearmActiveRoundPresentation?.();
       this.showGame();
       return;
     }
@@ -3453,7 +3766,7 @@ export class AppController {
     }
 
     this.clearTransientUiBeforeScreenTransition({
-      preserveModal: this.hasActiveQuitConfirmationModal()
+      preserveModal: this.hasActiveQuitConfirmationModal() || this.hasActiveMatchCompleteModal()
     });
     this.screenFlow = "game";
     const tauntHud = this.getCurrentTauntHudState();
@@ -3558,8 +3871,11 @@ export class AppController {
     const serverProfile = this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
       : null;
-    const localProfile = await window.elemintz.state.getProfile(this.username);
+    const localProfile = this.isAuthenticatedOnlineProfileFlow()
+      ? this.profile ?? null
+      : await window.elemintz.state.getProfile(this.username);
     this.profile = this.mergeServerOwnedProfileDomains(localProfile, serverProfile);
+    const achievementCatalog = this.buildAchievementCatalogForProfile(this.profile);
     const cosmetics =
       this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
         ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
@@ -3586,89 +3902,29 @@ export class AppController {
 
     this.screenManager.show("profile", {
       profile: this.profile,
+      achievementCatalog,
       titleIcon: TITLE_ICON_MAP[this.resolveTitleLabel(this.profile)]
         ? getAssetPath(TITLE_ICON_MAP[this.resolveTitleLabel(this.profile)])
         : null,
-      cosmetics,
-      backgroundImage: this.getBackgroundFromProfile(this.profile),
-      basicChestVisualState: this.profileChestVisualState,
-      searchQuery: this.profileSearchQuery,
-      searchResults,
-      viewedProfile,
+        cosmetics,
+        backgroundImage: this.getBackgroundFromProfile(this.profile),
+        basicChestVisualState: this.profileChestVisualState,
+        profileChestOpenInFlight: this.profileChestOpenInFlight,
+        searchQuery: this.profileSearchQuery,
+        searchResults,
+        viewedProfile,
       actions: {
         openBasicChest: async () => {
-          if (this.getBasicChestCount(this.profile) <= 0) {
-            return;
-          }
-
-          try {
-            this.profileChestVisualState = {
-              ...this.profileChestVisualState,
-              basicOpen: true
-            };
-            await this.showProfile();
-            await delay(400);
-
-            const result = await window.elemintz.state.openChest({
-              username: this.username,
-              chestType: "basic"
-            });
-            this.profile = result.profile ?? this.profile;
-            this.emitChestOpenToast(result);
-            this.profileChestVisualState = {
-              ...this.profileChestVisualState,
-              basicOpen: false
-            };
-            await this.showProfile();
-          } catch (error) {
-            this.profileChestVisualState = {
-              ...this.profileChestVisualState,
-              basicOpen: false
-            };
-            await this.showProfile();
-            this.modalManager.show({
-              title: "Chest Unavailable",
-              body: String(error?.message ?? "Unable to open Basic Chest."),
-              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-            });
-          }
+          await this.openProfileChest("basic");
         },
         openMilestoneChest: async () => {
-          if (this.getMilestoneChestCount(this.profile) <= 0) {
-            return;
-          }
-
-          try {
-            this.profileChestVisualState = {
-              ...this.profileChestVisualState,
-              milestoneOpen: true
-            };
-            await this.showProfile();
-            await delay(400);
-
-            const result = await window.elemintz.state.openChest({
-              username: this.username,
-              chestType: "milestone"
-            });
-            this.profile = result.profile ?? this.profile;
-            this.emitChestOpenToast(result);
-            this.profileChestVisualState = {
-              ...this.profileChestVisualState,
-              milestoneOpen: false
-            };
-            await this.showProfile();
-          } catch (error) {
-            this.profileChestVisualState = {
-              ...this.profileChestVisualState,
-              milestoneOpen: false
-            };
-            await this.showProfile();
-            this.modalManager.show({
-              title: "Chest Unavailable",
-              body: String(error?.message ?? "Unable to open Milestone Chest."),
-              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-            });
-          }
+          await this.openProfileChest("milestone");
+        },
+        openEpicChest: async () => {
+          await this.openProfileChest("epic");
+        },
+        openLegendaryChest: async () => {
+          await this.openProfileChest("legendary");
         },
         equip: async (type, cosmeticId) => {
           const result =
@@ -3712,6 +3968,12 @@ export class AppController {
           weekly: serverProfile.progression?.weeklyChallenges ?? null,
           tokens: serverProfile.currency?.tokens ?? serverProfile.profile?.tokens ?? this.profile?.tokens ?? 0
         }
+      : this.isAuthenticatedOnlineProfileFlow()
+        ? {
+            daily: this.dailyChallenges?.daily ?? null,
+            weekly: this.dailyChallenges?.weekly ?? null,
+            tokens: this.profile?.tokens ?? 0
+          }
       : await window.elemintz.state.getDailyChallenges(this.username);
     this.dailyChallenges = { daily: result.daily, weekly: result.weekly };
 
@@ -3729,10 +3991,20 @@ export class AppController {
   async showAchievements() {
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "achievements";
-    const result = await window.elemintz.state.getAchievements(this.username);
+    const serverProfile = this.hasMultiplayerProfileAccess()
+      ? await window.elemintz.multiplayer.getProfile({ username: this.username })
+      : null;
+    const authoritativeProfile = serverProfile
+      ? this.applyServerProfileSnapshot(serverProfile)
+      : this.isAuthenticatedOnlineProfileFlow()
+        ? this.profile ?? null
+        : null;
+    const achievements = authoritativeProfile
+      ? this.buildAchievementCatalogForProfile(authoritativeProfile)
+      : (await window.elemintz.state.getAchievements(this.username)).achievements;
 
     this.screenManager.show("achievements", {
-      achievements: result.achievements,
+      achievements,
       actions: {
         back: () => this.showMenu()
       }
@@ -3901,7 +4173,14 @@ export class AppController {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "store";
     const viewState = this.ensureStoreViewState();
-    const store = await window.elemintz.state.getStore(this.username);
+    const serverProfile = this.hasMultiplayerProfileAccess()
+      ? await window.elemintz.multiplayer.getProfile({ username: this.username })
+      : null;
+    const store = serverProfile
+      ? getStoreViewForProfile(
+          this.buildProfileFromServerSnapshot(serverProfile) ?? serverProfile.profile ?? this.profile ?? {}
+        )
+      : await window.elemintz.state.getStore(this.username);
     let purchaseConfirmOpen = false;
     let purchasePending = false;
 
@@ -3910,63 +4189,56 @@ export class AppController {
       viewState,
       actions: {
         buy: async (type, cosmeticId) => {
-          if (purchaseConfirmOpen || purchasePending) {
+          if (this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.buyStoreItem) {
+            try {
+              const result = await window.elemintz.multiplayer.buyStoreItem({
+                username: this.username,
+                type,
+                cosmeticId
+              });
+              this.profile = result?.snapshot
+                ? this.buildProfileFromServerSnapshot(result.snapshot)
+                : result?.profile ?? this.profile;
+
+              if (result?.purchase?.status === "already-owned") {
+                this.modalManager.show({
+                  title: "Already Owned",
+                  body: "That store item is already owned on your profile.",
+                  actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+                });
+                await this.showStore({ preserveModal: true });
+                return;
+              }
+
+              await this.showStore();
+            } catch (error) {
+              this.modalManager.show({
+                title: "Purchase Failed",
+                body: String(error?.message ?? "Unable to complete this store purchase."),
+                actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+              });
+            }
             return;
           }
 
-          const item = store?.catalog?.[type]?.find((entry) => entry.id === cosmeticId);
-          const price = Number(item?.price ?? 0);
-          purchaseConfirmOpen = true;
-
-          this.modalManager.show({
-            title: "Confirm Purchase",
-            body: `Buy this item for ${price} tokens?`,
-            actions: [
-              {
-                label: "Yes",
-                onClick: async () => {
-                  if (purchasePending) {
-                    return;
-                  }
-
-                  purchaseConfirmOpen = false;
-                  purchasePending = true;
-                  this.modalManager.hide();
-
-                  try {
-                    const result = await window.elemintz.state.buyStoreItem({ username: this.username, type, cosmeticId });
-                    this.profile = result.profile;
-                    await this.showStore();
-                  } catch (error) {
-                    this.modalManager.show({
-                      title: "Purchase Failed",
-                      body: String(error?.message ?? "Unable to complete purchase."),
-                      actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-                    });
-                  } finally {
-                    purchasePending = false;
-                  }
-                }
-              },
-              {
-                label: "No",
-                onClick: () => {
-                  purchaseConfirmOpen = false;
-                  this.modalManager.hide();
-                }
-              }
-            ]
-          });
+          this.showLegacyLocalAuthorityDisabledModal(
+            "Local store purchases are unavailable while duplicate offline progression systems are being removed."
+          );
         },
         equip: async (type, cosmeticId) => {
-          const result = await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
-          this.profile = result.profile;
+          const result =
+            this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.equipCosmetic
+              ? await window.elemintz.multiplayer.equipCosmetic({ username: this.username, type, cosmeticId })
+              : await window.elemintz.state.equipCosmetic({ username: this.username, type, cosmeticId });
+          this.profile = result?.snapshot
+            ? this.buildProfileFromServerSnapshot(result.snapshot)
+            : result.profile;
           await this.showStore();
         },
         activateSupporter: async () => {
-          const result = await window.elemintz.state.grantSupporterPass(this.username);
-          this.profile = result.profile;
-          await this.showStore();
+          this.showLegacyLocalAuthorityDisabledModal(
+            "Local supporter pass grants are unavailable while duplicate offline progression systems are being removed."
+          );
         },
         back: () => this.showMenu()
       }

@@ -5,6 +5,8 @@ export const DEFAULT_MULTIPLAYER_SERVER_URL = "http://127.0.0.1:3001";
 const MULTIPLAYER_SESSION_SCHEMA_VERSION = 1;
 const MULTIPLAYER_SESSION_FILENAME = "multiplayer-session.json";
 const AUTHENTICATED_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
+const ROOM_ACTION_TIMEOUT_MS = 2000;
+const SUBMIT_MOVE_TIMEOUT_MS = 2000;
 const INVALID_SESSION_ERROR_CODES = new Set([
   "SESSION_NOT_FOUND",
   "SESSION_TOKEN_REQUIRED",
@@ -27,6 +29,308 @@ function clonePlayer(player) {
           : null
       }
     : null;
+}
+
+function cloneServerMatchState(matchState) {
+  return matchState
+    ? {
+        roomCode: matchState.roomCode ?? null,
+        matchId: matchState.matchId ?? null,
+        players: {
+          host: matchState.players?.host ? { ...matchState.players.host } : null,
+          guest: matchState.players?.guest ? { ...matchState.players.guest } : null
+        },
+        currentRound: Number(matchState.currentRound ?? 1),
+        activeStep: matchState.activeStep
+          ? {
+              id: matchState.activeStep.id ?? null,
+              round: Number(matchState.activeStep.round ?? 1),
+              type: matchState.activeStep.type ?? null,
+              warDepth: Number(matchState.activeStep.warDepth ?? 0),
+              status: matchState.activeStep.status ?? null
+            }
+          : null,
+        playerHands: {
+          host: { ...(matchState.playerHands?.host ?? {}) },
+          guest: { ...(matchState.playerHands?.guest ?? {}) }
+        },
+        warState: {
+          active: Boolean(matchState.warState?.active),
+          depth: Number(matchState.warState?.depth ?? 0)
+        },
+        pendingActions: {
+          host: matchState.pendingActions?.host ? { ...matchState.pendingActions.host } : null,
+          guest: matchState.pendingActions?.guest ? { ...matchState.pendingActions.guest } : null
+        },
+        matchStatus: matchState.matchStatus ?? "waiting",
+        lastResolvedOutcome: matchState.lastResolvedOutcome
+          ? {
+              stepId: matchState.lastResolvedOutcome.stepId ?? null,
+              resolvedAt: matchState.lastResolvedOutcome.resolvedAt ?? null,
+              round: Number(matchState.lastResolvedOutcome.round ?? 0),
+              type: matchState.lastResolvedOutcome.type ?? null,
+              winner: matchState.lastResolvedOutcome.winner ?? null,
+              hostMove: matchState.lastResolvedOutcome.hostMove ?? null,
+              guestMove: matchState.lastResolvedOutcome.guestMove ?? null
+            }
+          : null,
+        turnState: matchState.turnState
+          ? {
+              waitingOn: Array.isArray(matchState.turnState.waitingOn)
+                ? [...matchState.turnState.waitingOn]
+                : [],
+              lockedIn: Array.isArray(matchState.turnState.lockedIn)
+                ? [...matchState.turnState.lockedIn]
+                : [],
+              resolutionReady: Boolean(matchState.turnState.resolutionReady)
+            }
+          : null
+      }
+    : null;
+}
+
+function cloneRewardSettlement(rewardSettlement) {
+  return rewardSettlement
+    ? {
+        granted: Boolean(rewardSettlement.granted),
+        grantedAt: rewardSettlement.grantedAt ?? null,
+        settlementKey: rewardSettlement.settlementKey ?? null,
+        decision: rewardSettlement.decision
+          ? {
+              matchId: rewardSettlement.decision.matchId ?? null,
+              roomCode: rewardSettlement.decision.roomCode ?? null,
+              winner: rewardSettlement.decision.winner ?? null,
+              isDraw: Boolean(rewardSettlement.decision.isDraw),
+              settlementKey: rewardSettlement.decision.settlementKey ?? null,
+              rewards: {
+                host: { ...(rewardSettlement.decision.rewards?.host ?? {}) },
+                guest: { ...(rewardSettlement.decision.rewards?.guest ?? {}) }
+              },
+              participants: {
+                hostUsername: rewardSettlement.decision.participants?.hostUsername ?? null,
+                guestUsername: rewardSettlement.decision.participants?.guestUsername ?? null
+              },
+              decidedAt: rewardSettlement.decision.decidedAt ?? null
+            }
+          : null,
+        summary: rewardSettlement.summary
+          ? {
+              granted: Boolean(rewardSettlement.summary.granted),
+              winner: rewardSettlement.summary.winner ?? null,
+              settledHostUsername: rewardSettlement.summary.settledHostUsername ?? null,
+              settledGuestUsername: rewardSettlement.summary.settledGuestUsername ?? null,
+              hostRewards: { ...(rewardSettlement.summary.hostRewards ?? {}) },
+              guestRewards: { ...(rewardSettlement.summary.guestRewards ?? {}) }
+            }
+          : null
+      }
+    : null;
+}
+
+function toRoundResultOutcomeType(authoritativeOutcomeType) {
+  const safeType = String(authoritativeOutcomeType ?? "").trim();
+  if (safeType === "win") {
+    return "resolved";
+  }
+
+  if (safeType === "war_start" || safeType === "war_continue") {
+    return "war";
+  }
+
+  if (safeType === "war_resolved") {
+    return "war_resolved";
+  }
+
+  if (safeType === "no_effect") {
+    return "no_effect";
+  }
+
+  return null;
+}
+
+function toRoundSideResult(authoritativeOutcomeType, authoritativeWinner, side) {
+  const safeType = String(authoritativeOutcomeType ?? "").trim();
+  const safeWinner = String(authoritativeWinner ?? "").trim();
+  const safeSide = String(side ?? "").trim();
+
+  if (safeType === "no_effect") {
+    return "no_effect";
+  }
+
+  if (safeType === "war_start" || safeType === "war_continue") {
+    return "war";
+  }
+
+  if (safeWinner === "host" || safeWinner === "guest") {
+    return safeWinner === safeSide ? "win" : "lose";
+  }
+
+  return "no_effect";
+}
+
+function buildRoundResultFromRoomSnapshot(room, matchSnapshot, lastResolvedOutcome) {
+  if (!room || !matchSnapshot || !lastResolvedOutcome) {
+    return null;
+  }
+
+  const outcomeType = toRoundResultOutcomeType(lastResolvedOutcome.type);
+  if (!outcomeType) {
+    return null;
+  }
+
+  return {
+    roomCode: room.roomCode ?? matchSnapshot.roomCode ?? null,
+    round: Number(lastResolvedOutcome.round ?? 0),
+    hostMove: lastResolvedOutcome.hostMove ?? null,
+    guestMove: lastResolvedOutcome.guestMove ?? null,
+    outcomeType,
+    hostScore: Number(room.hostScore ?? 0),
+    guestScore: Number(room.guestScore ?? 0),
+    roundNumber: Number(room.roundNumber ?? matchSnapshot.currentRound ?? 1),
+    lastOutcomeType: outcomeType,
+    matchComplete: Boolean(room.matchComplete),
+    winner: room.winner ?? null,
+    winReason: room.winReason ?? null,
+    rematch: {
+      hostReady: Boolean(room.rematch?.hostReady),
+      guestReady: Boolean(room.rematch?.guestReady)
+    },
+    rewardSettlement: room.rewardSettlement ? cloneRewardSettlement(room.rewardSettlement) : null,
+    hostHand: { ...(room.hostHand ?? {}) },
+    guestHand: { ...(room.guestHand ?? {}) },
+    warPot: {
+      host: Array.isArray(room.warPot?.host) ? [...room.warPot.host] : [],
+      guest: Array.isArray(room.warPot?.guest) ? [...room.warPot.guest] : []
+    },
+    warActive: Boolean(room.warActive),
+    warDepth: Number(room.warDepth ?? 0),
+    warRounds: Array.isArray(room.warRounds) ? room.warRounds.map((entry) => ({ ...entry })) : [],
+    hostResult: toRoundSideResult(lastResolvedOutcome.type, lastResolvedOutcome.winner, "host"),
+    guestResult: toRoundSideResult(lastResolvedOutcome.type, lastResolvedOutcome.winner, "guest")
+  };
+}
+
+function buildAuthoritativeRoundResultFromRoomSnapshot(room) {
+  const matchSnapshot = cloneServerMatchState(room?.serverMatchState);
+  const lastResolvedOutcome = matchSnapshot?.lastResolvedOutcome ?? null;
+  if (!room || !matchSnapshot || !lastResolvedOutcome?.stepId) {
+    return null;
+  }
+
+  const roundResult = buildRoundResultFromRoomSnapshot(room, matchSnapshot, lastResolvedOutcome);
+  if (!roundResult) {
+    return null;
+  }
+
+  return {
+    roomCode: room.roomCode ?? matchSnapshot.roomCode ?? null,
+    matchId: matchSnapshot.matchId ?? null,
+    stepId: lastResolvedOutcome.stepId ?? null,
+    submittedCards: {
+      host: lastResolvedOutcome.hostMove ?? null,
+      guest: lastResolvedOutcome.guestMove ?? null
+    },
+    authoritativeOutcomeType: lastResolvedOutcome.type ?? null,
+    authoritativeWinner: lastResolvedOutcome.winner ?? null,
+    roundResult,
+    matchSnapshot,
+    animation: {
+      clearWarStateAfterDelay: lastResolvedOutcome.type === "war_resolved",
+      matchComplete: Boolean(room.matchComplete)
+    },
+    syncSource: "room_snapshot"
+  };
+}
+
+function cloneAuthoritativeRoundResult(result) {
+  return result
+    ? {
+        roomCode: result.roomCode ?? null,
+        matchId: result.matchId ?? null,
+        stepId: result.stepId ?? null,
+        submittedCards: {
+          host: result.submittedCards?.host ?? null,
+          guest: result.submittedCards?.guest ?? null
+        },
+        authoritativeOutcomeType: result.authoritativeOutcomeType ?? null,
+        authoritativeWinner: result.authoritativeWinner ?? null,
+        roundResult: cloneRoundResult(result.roundResult),
+        matchSnapshot: cloneServerMatchState(result.matchSnapshot),
+        animation: result.animation
+          ? {
+              clearWarStateAfterDelay: Boolean(result.animation.clearWarStateAfterDelay),
+              matchComplete: Boolean(result.animation.matchComplete)
+            }
+          : null,
+        syncSource: result.syncSource ?? null
+      }
+    : null;
+}
+
+function parseStepId(stepId) {
+  const value = String(stepId ?? "").trim();
+  if (!value) {
+    return null;
+  }
+
+  const matchId = value.includes(":round:") ? value.slice(0, value.indexOf(":round:")) : null;
+  const roundMatch = value.match(/:round:(\d+):/);
+  const typeMatch = value.match(/:step:([^:]+):/);
+  const warDepthMatch = value.match(/:warDepth:(\d+)$/);
+
+  return {
+    raw: value,
+    matchId,
+    round: Number(roundMatch?.[1] ?? 0),
+    type: typeMatch?.[1] ?? null,
+    warDepth: Number(warDepthMatch?.[1] ?? 0)
+  };
+}
+
+function compareStepIdentity(left, right) {
+  const leftStep = parseStepId(left);
+  const rightStep = parseStepId(right);
+
+  if (!leftStep || !rightStep) {
+    return 0;
+  }
+
+  if (leftStep.matchId && rightStep.matchId && leftStep.matchId !== rightStep.matchId) {
+    return 0;
+  }
+
+  if (leftStep.round !== rightStep.round) {
+    return leftStep.round - rightStep.round;
+  }
+
+  const typeRank = (value) => (value === "war" ? 1 : value === "round" ? 0 : -1);
+  if (typeRank(leftStep.type) !== typeRank(rightStep.type)) {
+    return typeRank(leftStep.type) - typeRank(rightStep.type);
+  }
+
+  return leftStep.warDepth - rightStep.warDepth;
+}
+
+function extractRoomSnapshotIdentity(room) {
+  const matchId = String(room?.serverMatchState?.matchId ?? "").trim();
+  const activeStepId = String(room?.serverMatchState?.activeStep?.id ?? "").trim();
+  const lastResolvedStepId = String(room?.serverMatchState?.lastResolvedOutcome?.stepId ?? "").trim();
+
+  return {
+    matchId: matchId || null,
+    activeStepId: activeStepId || null,
+    lastResolvedStepId: lastResolvedStepId || null
+  };
+}
+
+function getRewardSettlementKey(room) {
+  const settlementKey = String(
+    room?.rewardSettlement?.decision?.settlementKey ??
+      room?.rewardSettlement?.settlementKey ??
+      ""
+  ).trim();
+
+  return settlementKey || null;
 }
 
 function cloneRoom(room) {
@@ -61,20 +365,7 @@ function cloneRoom(room) {
           guestReady: Boolean(room.rematch?.guestReady)
         },
         rewardSettlement: room.rewardSettlement
-          ? {
-              granted: Boolean(room.rewardSettlement.granted),
-              grantedAt: room.rewardSettlement.grantedAt ?? null,
-              summary: room.rewardSettlement.summary
-                ? {
-                    granted: Boolean(room.rewardSettlement.summary.granted),
-                    winner: room.rewardSettlement.summary.winner ?? null,
-                    settledHostUsername: room.rewardSettlement.summary.settledHostUsername ?? null,
-                    settledGuestUsername: room.rewardSettlement.summary.settledGuestUsername ?? null,
-                    hostRewards: { ...(room.rewardSettlement.summary.hostRewards ?? {}) },
-                    guestRewards: { ...(room.rewardSettlement.summary.guestRewards ?? {}) }
-                  }
-                : null
-            }
+          ? cloneRewardSettlement(room.rewardSettlement)
           : null,
         hostHand: { ...(room.hostHand ?? {}) },
         guestHand: { ...(room.guestHand ?? {}) },
@@ -87,6 +378,7 @@ function cloneRoom(room) {
         warRounds: Array.isArray(room.warRounds) ? room.warRounds.map((entry) => ({ ...entry })) : [],
         roundHistory: Array.isArray(room.roundHistory) ? room.roundHistory.map((entry) => ({ ...entry })) : [],
         moveSync: room.moveSync ? { ...room.moveSync } : null,
+        serverMatchState: cloneServerMatchState(room.serverMatchState),
         taunts: Array.isArray(room.taunts) ? room.taunts.map((entry) => ({ ...entry })) : []
       }
     : null;
@@ -112,20 +404,7 @@ function cloneRoundResult(roundResult) {
           guestReady: Boolean(roundResult.rematch?.guestReady)
         },
         rewardSettlement: roundResult.rewardSettlement
-          ? {
-              granted: Boolean(roundResult.rewardSettlement.granted),
-              grantedAt: roundResult.rewardSettlement.grantedAt ?? null,
-              summary: roundResult.rewardSettlement.summary
-                ? {
-                    granted: Boolean(roundResult.rewardSettlement.summary.granted),
-                    winner: roundResult.rewardSettlement.summary.winner ?? null,
-                    settledHostUsername: roundResult.rewardSettlement.summary.settledHostUsername ?? null,
-                    settledGuestUsername: roundResult.rewardSettlement.summary.settledGuestUsername ?? null,
-                    hostRewards: { ...(roundResult.rewardSettlement.summary.hostRewards ?? {}) },
-                    guestRewards: { ...(roundResult.rewardSettlement.summary.guestRewards ?? {}) }
-                  }
-                : null
-            }
+          ? cloneRewardSettlement(roundResult.rewardSettlement)
           : null,
         hostHand: { ...(roundResult.hostHand ?? {}) },
         guestHand: { ...(roundResult.guestHand ?? {}) },
@@ -166,6 +445,7 @@ function cloneState(state) {
         },
     room: cloneRoom(state.room),
     latestRoundResult: cloneRoundResult(state.latestRoundResult),
+    latestAuthoritativeRoundResult: cloneAuthoritativeRoundResult(state.latestAuthoritativeRoundResult),
     lastError: state.lastError ? { ...state.lastError } : null,
     statusMessage: state.statusMessage
   };
@@ -246,12 +526,14 @@ export class MultiplayerClient {
       },
       room: null,
       latestRoundResult: null,
+      latestAuthoritativeRoundResult: null,
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
-    this.sessionToken = null;
-    this.sessionBoundSocketId = null;
-  }
+      this.sessionToken = null;
+      this.sessionBoundSocketId = null;
+      this.isOpeningChest = false;
+    }
 
   async readPersistedSessionRecord() {
     if (!this.sessionStore) {
@@ -314,6 +596,166 @@ export class MultiplayerClient {
     for (const listener of this.subscribers) {
       listener(snapshot);
     }
+  }
+
+  getCurrentResolvedStepId() {
+    return (
+      this.state.latestAuthoritativeRoundResult?.stepId ??
+      this.state.room?.serverMatchState?.lastResolvedOutcome?.stepId ??
+      null
+    );
+  }
+
+  getCurrentSnapshotIdentity() {
+    return extractRoomSnapshotIdentity(this.state.room);
+  }
+
+  shouldAcceptAuthoritativeRoundResult(result) {
+    const nextStepId = String(result?.stepId ?? "").trim();
+    const nextMatchId = String(result?.matchId ?? "").trim();
+    if (!nextStepId || !nextMatchId) {
+      return false;
+    }
+
+    const currentStepId = this.getCurrentResolvedStepId();
+    const currentMatchId = String(
+      this.state.latestAuthoritativeRoundResult?.matchId ??
+      this.state.room?.serverMatchState?.matchId ??
+      ""
+    ).trim();
+
+    if (currentStepId && currentStepId === nextStepId && currentMatchId === nextMatchId) {
+      return false;
+    }
+
+    if (currentStepId && currentMatchId === nextMatchId && compareStepIdentity(nextStepId, currentStepId) < 0) {
+      return false;
+    }
+
+    return true;
+  }
+
+  shouldAcceptRoomSnapshot(room, { allowEqualSnapshot = true } = {}) {
+    if (!room?.serverMatchState) {
+      return true;
+    }
+
+    const incoming = extractRoomSnapshotIdentity(room);
+    const current = this.getCurrentSnapshotIdentity();
+
+    if (!incoming.matchId || !current.matchId || incoming.matchId !== current.matchId) {
+      return true;
+    }
+
+    const currentRoom = this.state.room;
+    const currentSettlementKey = getRewardSettlementKey(currentRoom);
+    const incomingSettlementKey = getRewardSettlementKey(room);
+
+    if (currentRoom?.status === "expired" && room?.status !== "expired") {
+      return false;
+    }
+
+    if (Boolean(currentRoom?.matchComplete) && !Boolean(room?.matchComplete)) {
+      return false;
+    }
+
+    if (currentSettlementKey && !incomingSettlementKey) {
+      return false;
+    }
+
+    if (
+      currentSettlementKey &&
+      incomingSettlementKey &&
+      currentSettlementKey !== incomingSettlementKey
+    ) {
+      return false;
+    }
+
+    const incomingResolved = incoming.lastResolvedStepId;
+    const currentResolved = current.lastResolvedStepId;
+    if (incomingResolved && currentResolved) {
+      const resolvedCompare = compareStepIdentity(incomingResolved, currentResolved);
+      if (resolvedCompare < 0) {
+        return false;
+      }
+
+      if (!allowEqualSnapshot && resolvedCompare === 0) {
+        const incomingActive = incoming.activeStepId;
+        const currentActive = current.activeStepId;
+        if (incomingActive && currentActive && compareStepIdentity(incomingActive, currentActive) <= 0) {
+          return false;
+        }
+      }
+    }
+
+    const incomingActive = incoming.activeStepId;
+    const currentActive = current.activeStepId;
+    if (incomingActive && currentActive) {
+      const activeCompare = compareStepIdentity(incomingActive, currentActive);
+      if (activeCompare < 0) {
+        return false;
+      }
+
+      if (!allowEqualSnapshot && activeCompare === 0 && incomingResolved === currentResolved) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  buildAuthoritativeOutcomeLabel(result) {
+    const outcomeType = String(result?.authoritativeOutcomeType ?? "").trim();
+    const winner = String(result?.authoritativeWinner ?? "").trim();
+    const myRole =
+      this.state.room?.host?.socketId === this.state.socketId
+        ? "host"
+        : this.state.room?.guest?.socketId === this.state.socketId
+          ? "guest"
+          : null;
+
+    if (outcomeType === "war_start") {
+      return "WAR Started";
+    }
+
+    if (outcomeType === "war_continue") {
+      return "WAR Continues";
+    }
+
+    if (outcomeType === "war_resolved") {
+      if (winner && myRole) {
+        return winner === myRole ? "WAR Won" : "WAR Lost";
+      }
+
+      return "WAR Resolved";
+    }
+
+    if (outcomeType === "no_effect") {
+      return "No Effect";
+    }
+
+    if (outcomeType === "win") {
+      if (winner && myRole) {
+        return winner === myRole ? "You Win" : "You Lose";
+      }
+
+      return "Round Resolved";
+    }
+
+    return "Authoritative round result received.";
+  }
+
+  buildAuthoritativeStateFromRoomSnapshot(room) {
+    const snapshotResult = buildAuthoritativeRoundResultFromRoomSnapshot(room);
+    return snapshotResult
+      ? {
+          latestRoundResult: cloneRoundResult(snapshotResult.roundResult),
+          latestAuthoritativeRoundResult: cloneAuthoritativeRoundResult(snapshotResult)
+        }
+      : {
+          latestRoundResult: null,
+          latestAuthoritativeRoundResult: null
+        };
   }
 
   normalizeServerUrl(serverUrl) {
@@ -767,6 +1209,7 @@ export class MultiplayerClient {
         },
         room: null,
         latestRoundResult: null,
+        latestAuthoritativeRoundResult: null,
         lastError: {
           code: "CONNECTION_FAILED",
           message: String(error?.message ?? "Unable to connect to multiplayer server.")
@@ -777,6 +1220,7 @@ export class MultiplayerClient {
     };
 
     const onDisconnect = (reason) => {
+      const preserveAuthoritativeState = reason !== "io client disconnect";
       this.logger.info("[Multiplayer][Electron] disconnected", {
         socketId: socket.id,
         reason
@@ -792,9 +1236,17 @@ export class MultiplayerClient {
           profileKey: this.state.session?.profileKey ?? null,
           authenticated: Boolean(this.state.session?.authenticated)
         },
-        room: null,
-        latestRoundResult: null,
-        statusMessage: reason === "io client disconnect" ? "Disconnected." : "Connection closed."
+        room: preserveAuthoritativeState ? this.state.room : null,
+        latestRoundResult: preserveAuthoritativeState ? this.state.latestRoundResult : null,
+        latestAuthoritativeRoundResult: preserveAuthoritativeState
+          ? this.state.latestAuthoritativeRoundResult
+          : null,
+        statusMessage:
+          reason === "io client disconnect"
+            ? "Disconnected."
+            : this.state.room?.roomCode
+              ? `Connection closed. Room ${this.state.room.roomCode} is awaiting reconnect.`
+              : "Connection closed."
       });
       this.sessionBoundSocketId = null;
     };
@@ -803,25 +1255,53 @@ export class MultiplayerClient {
       this.updateState({
         room: cloneRoom(room),
         latestRoundResult: null,
+        latestAuthoritativeRoundResult: null,
         lastError: null,
         statusMessage: `Room ${room.roomCode} created. Waiting for another player.`
       });
     };
 
     const onRoomJoined = (room) => {
+      if (!this.shouldAcceptRoomSnapshot(room, { allowEqualSnapshot: false })) {
+        this.logger.info?.("[OnlinePlay][MainClient] ignored stale/duplicate joined room snapshot", {
+          roomCode: room?.roomCode ?? null,
+          matchId: room?.serverMatchState?.matchId ?? null,
+          activeStepId: room?.serverMatchState?.activeStep?.id ?? null
+        });
+        return;
+      }
+
+      const snapshotState = this.buildAuthoritativeStateFromRoomSnapshot(room);
       this.updateState({
         room: cloneRoom(room),
-        latestRoundResult: null,
+        latestRoundResult: snapshotState.latestRoundResult,
+        latestAuthoritativeRoundResult: snapshotState.latestAuthoritativeRoundResult,
         lastError: null,
         statusMessage: `Joined room ${room.roomCode}.`
       });
     };
 
     const onRoomUpdate = (room) => {
+      if (!this.shouldAcceptRoomSnapshot(room)) {
+        this.logger.info?.("[OnlinePlay][MainClient] ignored stale room snapshot", {
+          roomCode: room?.roomCode ?? null,
+          matchId: room?.serverMatchState?.matchId ?? null,
+          activeStepId: room?.serverMatchState?.activeStep?.id ?? null
+        });
+        return;
+      }
+
       const disconnectReason = room?.disconnectState?.reason ?? null;
       this.updateState({
         room: cloneRoom(room),
-        latestRoundResult: room?.status === "full" ? this.state.latestRoundResult : null,
+        latestRoundResult:
+          room?.status === "full" || room?.matchComplete
+            ? this.state.latestRoundResult
+            : null,
+        latestAuthoritativeRoundResult:
+          room?.status === "full" || room?.matchComplete
+            ? this.state.latestAuthoritativeRoundResult
+            : null,
         lastError: null,
         statusMessage:
           room?.matchComplete
@@ -850,6 +1330,8 @@ export class MultiplayerClient {
       this.updateState({
         room: cloneRoom(room),
         latestRoundResult: submittedCount >= 2 ? this.state.latestRoundResult : null,
+        latestAuthoritativeRoundResult:
+          submittedCount >= 2 ? this.state.latestAuthoritativeRoundResult : null,
         lastError: null,
         statusMessage
       });
@@ -857,39 +1339,27 @@ export class MultiplayerClient {
 
     const onRoomRoundResult = (roundResult) => {
       this.logger.info?.("[OnlinePlay][MainClient] room:roundResult received", roundResult);
-      const myRole =
-        this.state.room?.host?.socketId === this.state.socketId
-          ? "host"
-          : this.state.room?.guest?.socketId === this.state.socketId
-            ? "guest"
-            : null;
-      const perspectiveResult =
-        myRole === "host"
-          ? roundResult?.hostResult
-          : myRole === "guest"
-            ? roundResult?.guestResult
-            : null;
-      const outcomeLabel =
-        roundResult?.outcomeType === "war_resolved"
-          ? perspectiveResult === "win"
-            ? "WAR Won"
-            : perspectiveResult === "lose"
-              ? "WAR Lost"
-              : "WAR Resolved"
-          : perspectiveResult === "win"
-          ? "You Win"
-          : perspectiveResult === "lose"
-            ? "You Lose"
-            : perspectiveResult === "war"
-              ? "WAR Continues"
-              : perspectiveResult === "no_effect"
-                ? "No Effect"
-              : "Round result received.";
+      this.updateState({
+        lastError: null,
+        statusMessage: `Authoritative result pending for room ${roundResult?.roomCode ?? ""}`.trim()
+      });
+    };
+
+    const onServerRoundResult = (result) => {
+      this.logger.info?.("[OnlinePlay][MainClient] room:serverRoundResult received", result);
+      if (!this.shouldAcceptAuthoritativeRoundResult(result)) {
+        this.logger.info?.("[OnlinePlay][MainClient] ignored stale/duplicate authoritative result", {
+          stepId: result?.stepId ?? null,
+          matchId: result?.matchId ?? null
+        });
+        return;
+      }
 
       this.updateState({
-        latestRoundResult: cloneRoundResult(roundResult),
+        latestRoundResult: cloneRoundResult(result?.roundResult),
+        latestAuthoritativeRoundResult: cloneAuthoritativeRoundResult(result),
         lastError: null,
-        statusMessage: `${outcomeLabel} Room ${roundResult?.roomCode ?? ""}`.trim()
+        statusMessage: `${this.buildAuthoritativeOutcomeLabel(result)} Room ${result?.roomCode ?? ""}`.trim()
       });
     };
 
@@ -911,6 +1381,7 @@ export class MultiplayerClient {
     socket.on("room:update", onRoomUpdate);
     socket.on("room:moveSync", onRoomMoveSync);
     socket.on("room:roundResult", onRoomRoundResult);
+    socket.on("room:serverRoundResult", onServerRoundResult);
     socket.on("room:error", onRoomError);
 
     this.boundSocketListeners = {
@@ -922,6 +1393,7 @@ export class MultiplayerClient {
       onRoomUpdate,
       onRoomMoveSync,
       onRoomRoundResult,
+      onServerRoundResult,
       onRoomError
     };
   }
@@ -939,6 +1411,7 @@ export class MultiplayerClient {
     socket.off("room:update", this.boundSocketListeners.onRoomUpdate);
     socket.off("room:moveSync", this.boundSocketListeners.onRoomMoveSync);
     socket.off("room:roundResult", this.boundSocketListeners.onRoomRoundResult);
+    socket.off("room:serverRoundResult", this.boundSocketListeners.onServerRoundResult);
     socket.off("room:error", this.boundSocketListeners.onRoomError);
     this.boundSocketListeners = null;
   }
@@ -1016,9 +1489,31 @@ export class MultiplayerClient {
     delete sanitizedPayload.username;
     delete sanitizedPayload.sessionToken;
     return new Promise((resolve) => {
+      let finished = false;
+      const timeoutId = setTimeout(() => {
+        if (finished) {
+          return;
+        }
+
+        this.updateState({
+          lastError: {
+            code: "REQUEST_TIMEOUT",
+            message: "Room action timed out."
+          },
+          statusMessage: "Room action timed out."
+        });
+        finish();
+      }, ROOM_ACTION_TIMEOUT_MS);
+
       const finish = () => {
+        if (finished) {
+          return;
+        }
+
+        finished = true;
         socket.off(successEvent, handleSuccess);
         socket.off("room:error", handleError);
+        clearTimeout(timeoutId);
         resolve(this.getState());
       };
 
@@ -1117,7 +1612,18 @@ export class MultiplayerClient {
     const socket = this.socket;
     return new Promise((resolve) => {
       let resolved = false;
-      let waitingForRoundResult = false;
+      let waitingForAuthoritativeResult = false;
+      const expectedRoomCode = this.state.room?.roomCode ?? null;
+      const timeoutId = setTimeout(() => {
+        this.updateState({
+          lastError: {
+            code: "REQUEST_TIMEOUT",
+            message: "Move submission timed out while waiting for the server."
+          },
+          statusMessage: "Move submission timed out."
+        });
+        finish();
+      }, SUBMIT_MOVE_TIMEOUT_MS);
 
       const finish = () => {
         if (resolved) {
@@ -1126,8 +1632,9 @@ export class MultiplayerClient {
 
         resolved = true;
         socket.off("room:moveSync", handleMoveSync);
-        socket.off("room:roundResult", handleRoundResult);
+        socket.off("room:serverRoundResult", handleServerRoundResult);
         socket.off("room:error", handleError);
+        clearTimeout(timeoutId);
         resolve(this.getState());
       };
 
@@ -1143,12 +1650,16 @@ export class MultiplayerClient {
           return;
         }
 
-        waitingForRoundResult = true;
+        waitingForAuthoritativeResult = true;
       };
 
-      const handleRoundResult = (roundResult) => {
-        this.logger.info?.("[OnlinePlay][MainClient] submitMove roundResult received", roundResult);
-        if (!waitingForRoundResult) {
+      const handleServerRoundResult = (roundResult) => {
+        this.logger.info?.("[OnlinePlay][MainClient] submitMove authoritative result received", roundResult);
+        if (
+          expectedRoomCode &&
+          String(roundResult?.roomCode ?? "").trim() &&
+          String(roundResult.roomCode).trim() !== expectedRoomCode
+        ) {
           return;
         }
 
@@ -1164,7 +1675,7 @@ export class MultiplayerClient {
       };
 
       socket.once("room:moveSync", handleMoveSync);
-      socket.once("room:roundResult", handleRoundResult);
+      socket.once("room:serverRoundResult", handleServerRoundResult);
       socket.once("room:error", handleError);
       this.logger.info?.("[OnlinePlay][MainClient] socket emit", {
         eventName: "room:submitMove",
@@ -1198,6 +1709,54 @@ export class MultiplayerClient {
     }
 
     return response.cosmetics ?? null;
+  }
+
+  async claimDailyLoginReward({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:claimDailyLoginReward",
+      { username },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to claim daily login reward.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async buyStoreItem({ username, type, cosmeticId, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:buyStoreItem",
+      { username, type, cosmeticId },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to complete store purchase.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async openChest({ username, chestType, serverUrl } = {}) {
+    if (this.isOpeningChest) {
+      throw new Error("A chest is already being opened.");
+    }
+
+    this.isOpeningChest = true;
+    try {
+      const response = await this.runServerRequest(
+        "profile:openChest",
+        { username, chestType },
+        { serverUrl }
+      );
+      if (!response?.ok) {
+        throw new Error(response?.error?.message ?? "Unable to open chest.");
+      }
+
+      return response.result ?? null;
+    } finally {
+      this.isOpeningChest = false;
+    }
   }
 
   async equipCosmetic({ username, type, cosmeticId, serverUrl } = {}) {
@@ -1300,6 +1859,7 @@ export class MultiplayerClient {
       },
       room: null,
       latestRoundResult: null,
+      latestAuthoritativeRoundResult: null,
       lastError: null,
       serverUrl: preserveServerUrl ? this.state.serverUrl : this.defaultServerUrl,
       statusMessage: silent ? this.state.statusMessage : "Disconnected."

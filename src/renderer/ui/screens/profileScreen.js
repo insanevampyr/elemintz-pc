@@ -171,11 +171,13 @@ function renderXpProgress(profile) {
   `;
 }
 
-function renderChestPanel(profile, visualState = {}) {
+function renderChestPanel(profile, visualState = {}, options = {}) {
   const basicChestCount = Math.max(0, Number(profile?.chests?.basic ?? 0) || 0);
   const milestoneChestCount = Math.max(0, Number(profile?.chests?.milestone ?? 0) || 0);
   const epicChestCount = Math.max(0, Number(profile?.chests?.epic ?? 0) || 0);
   const legendaryChestCount = Math.max(0, Number(profile?.chests?.legendary ?? 0) || 0);
+  const openingInFlight = Boolean(options?.openingInFlight);
+  const openingLabel = openingInFlight ? "Opening..." : null;
   const basicChestIcon = getAssetPath(
     visualState?.basicOpen ? "icons/basic_chest_open.png" : "icons/basic_chest.png"
   );
@@ -202,52 +204,52 @@ function renderChestPanel(profile, visualState = {}) {
             id="open-basic-chest-btn"
             class="chest-open-trigger"
             type="button"
-            ${basicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            ${basicChestCount > 0 && !openingInFlight ? "" : "disabled aria-disabled=\"true\""}
             aria-label="Open Basic Chest"
           >
             <span class="chest-count-bubble" aria-label="Basic Chest count">${basicChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${basicChestIcon}" alt="Basic Chest" data-basic-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper ${commonLabelClass}" data-basic-chest-label="true">${basicChestCount > 0 ? "Basic Chest" : "No Basic Chests available"}</p>
+          <p class="text-muted chest-open-helper ${commonLabelClass}" data-basic-chest-label="true">${openingLabel ?? (basicChestCount > 0 ? "Basic Chest" : "No Basic Chests available")}</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="milestone">
           <button
             id="open-milestone-chest-btn"
             class="chest-open-trigger"
             type="button"
-            ${milestoneChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            ${milestoneChestCount > 0 && !openingInFlight ? "" : "disabled aria-disabled=\"true\""}
             aria-label="Open Milestone Chest"
           >
             <span class="chest-count-bubble" aria-label="Milestone Chest count">${milestoneChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${milestoneChestIcon}" alt="Milestone Chest" data-milestone-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper ${rareLabelClass}" data-milestone-chest-label="true">Milestone Chest</p>
+          <p class="text-muted chest-open-helper ${rareLabelClass}" data-milestone-chest-label="true">${openingLabel ?? "Milestone Chest"}</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="epic">
           <button
             id="open-epic-chest-btn"
             class="chest-open-trigger"
             type="button"
-            ${epicChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            ${epicChestCount > 0 && !openingInFlight ? "" : "disabled aria-disabled=\"true\""}
             aria-label="Open Epic Chest"
           >
             <span class="chest-count-bubble" aria-label="Epic Chest count">${epicChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${epicChestIcon}" alt="Epic Chest" data-epic-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper ${epicLabelClass}" data-epic-chest-label="true">Epic Chest</p>
+          <p class="text-muted chest-open-helper ${epicLabelClass}" data-epic-chest-label="true">${openingLabel ?? "Epic Chest"}</p>
         </div>
         <div class="chest-slot" data-profile-chest-slot="legendary">
           <button
             id="open-legendary-chest-btn"
             class="chest-open-trigger"
             type="button"
-            ${legendaryChestCount > 0 ? "" : "disabled aria-disabled=\"true\""}
+            ${legendaryChestCount > 0 && !openingInFlight ? "" : "disabled aria-disabled=\"true\""}
             aria-label="Open Legendary Chest"
           >
             <span class="chest-count-bubble" aria-label="Legendary Chest count">${legendaryChestCount}</span>
             <img class="player-avatar chest-open-trigger__image" src="${legendaryChestIcon}" alt="Legendary Chest" data-legendary-chest-image="true" />
           </button>
-          <p class="text-muted chest-open-helper ${legendaryLabelClass}" data-legendary-chest-label="true">Legendary Chest</p>
+          <p class="text-muted chest-open-helper ${legendaryLabelClass}" data-legendary-chest-label="true">${openingLabel ?? "Legendary Chest"}</p>
         </div>
       </div>
       <p class="text-muted chest-panel-helper">Click a chest image to open it.</p>
@@ -393,7 +395,9 @@ export const profileScreen = {
           <p>Tokens: <strong>${profile.tokens ?? 0}</strong></p>
           <p>Founder / Supporter: <strong>${profile.supporterPass ? "Active" : "Not Active"}</strong></p>
           ${renderXpProgress(profile)}
-          ${renderChestPanel(profile, context.basicChestVisualState)}
+          ${renderChestPanel(profile, context.basicChestVisualState, {
+            openingInFlight: context.profileChestOpenInFlight
+          })}
 
           <div class="grid two-col">
             <p>Wins: ${profile.wins}</p>
