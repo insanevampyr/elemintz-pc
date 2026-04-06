@@ -12,6 +12,7 @@ import {
   settingsScreen,
   storeScreen
 } from "../ui/screens/index.js";
+import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature } from "../ui/screens/gameScreen.js";
 import { renderMenuChallengePreview, renderMenuDailyLoginStatus } from "../ui/screens/menuScreen.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../utils/assets.js";
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
@@ -22,7 +23,7 @@ import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from 
 import { getStoreViewForProfile } from "../../state/storeSystem.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
-import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS } from "../ui/shared/playSurfaceShared.js";
+import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS, renderMatchTauntHudContents } from "../ui/shared/playSurfaceShared.js";
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
@@ -297,12 +298,76 @@ export class AppController {
     return localActive || onlineActive || hasCooldown;
   }
 
+  buildCurrentTauntHudRenderState(screenFlow = this.screenFlow) {
+    const tauntHud = this.getCurrentTauntHudState();
+    const idPrefix = screenFlow === "onlinePlay" ? "online" : "game";
+    return {
+      idPrefix,
+      panelOpen: this.matchTauntPanelOpen,
+      messages:
+        screenFlow === "onlinePlay"
+          ? this.getRenderableOnlineTaunts()
+          : this.getRenderableMatchTaunts(),
+      presetLines: MATCH_TAUNT_PRESETS,
+      cooldownRemainingMs: tauntHud.cooldownRemainingMs,
+      canSend: tauntHud.canSend
+    };
+  }
+
+  bindRenderedTauntHud(shell, screenFlow = this.screenFlow) {
+    if (!shell || typeof shell.querySelectorAll !== "function") {
+      return;
+    }
+
+    const toggleButton = shell.querySelector?.(`#${screenFlow === "onlinePlay" ? "online" : "game"}-taunts-toggle-btn`);
+    toggleButton?.addEventListener("click", async () => {
+      this.toggleMatchTauntPanel();
+    });
+
+    shell.querySelectorAll("[data-taunt-line]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const line = button.getAttribute("data-taunt-line") ?? "";
+        if (screenFlow === "onlinePlay") {
+          await this.sendCurrentOnlineTaunt(line);
+          return;
+        }
+
+        await this.sendCurrentMatchTaunt(line);
+      });
+    });
+  }
+
+  refreshCurrentTauntHudInPlace(screenFlow = this.screenFlow) {
+    if (typeof document?.querySelector !== "function") {
+      return false;
+    }
+
+    const renderState = this.buildCurrentTauntHudRenderState(screenFlow);
+    const shell = document.querySelector(`[data-match-taunt-shell="${renderState.idPrefix}"]`);
+    if (!shell) {
+      return false;
+    }
+
+    shell.className = `match-taunt-shell ${renderState.panelOpen ? "is-open" : ""}`.trim();
+    shell.innerHTML = renderMatchTauntHudContents(renderState);
+    this.bindRenderedTauntHud(shell, screenFlow);
+    return true;
+  }
+
   refreshTauntHudIfNeeded() {
     const removedExpired = this.pruneExpiredLocalMatchTaunts();
 
     if (this.screenFlow === "game") {
+      if (this.refreshCurrentTauntHudInPlace("game")) {
+        return;
+      }
+
       this.showGame();
     } else if (this.screenFlow === "onlinePlay") {
+      if (this.refreshCurrentTauntHudInPlace("onlinePlay")) {
+        return;
+      }
+
       this.renderOnlinePlayScreen();
     } else if (removedExpired || !this.hasActiveTauntHudState()) {
       this.clearMatchTauntUiTimer();
@@ -357,11 +422,19 @@ export class AppController {
   toggleMatchTauntPanel() {
     this.matchTauntPanelOpen = !this.matchTauntPanelOpen;
     if (this.screenFlow === "onlinePlay") {
+      if (this.refreshCurrentTauntHudInPlace("onlinePlay")) {
+        return;
+      }
+
       this.renderOnlinePlayScreen();
       return;
     }
 
     if (this.screenFlow === "game") {
+      if (this.refreshCurrentTauntHudInPlace("game")) {
+        return;
+      }
+
       this.showGame();
     }
   }
@@ -394,6 +467,10 @@ export class AppController {
     if (this.isPlayerTauntCoolingDown(senderKey)) {
       this.ensureMatchTauntUiTimer();
       if (this.screenFlow === "game") {
+        if (this.refreshCurrentTauntHudInPlace("game")) {
+          return;
+        }
+
         this.showGame();
       }
       return;
@@ -406,7 +483,38 @@ export class AppController {
     });
     this.startPlayerTauntCooldown(senderKey);
     this.closeMatchTauntPanel();
-    this.showGame();
+    if (!this.refreshCurrentTauntHudInPlace("game")) {
+      this.showGame();
+    }
+  }
+
+  async sendCurrentOnlineTaunt(line) {
+    if (!window.elemintz?.multiplayer?.sendTaunt) {
+      return;
+    }
+
+    const safeLine = String(line ?? "").trim();
+    if (!MATCH_TAUNT_PRESETS.includes(safeLine)) {
+      return;
+    }
+
+    const senderKey = this.getCurrentOnlineTauntSenderKey();
+    if (this.isPlayerTauntCoolingDown(senderKey)) {
+      this.ensureMatchTauntUiTimer();
+      if (!this.refreshCurrentTauntHudInPlace("onlinePlay")) {
+        this.renderOnlinePlayScreen();
+      }
+      return;
+    }
+
+    this.matchTauntPanelOpen = false;
+    this.onlinePlayState = this.normalizeOnlinePlayState(
+      await window.elemintz.multiplayer.sendTaunt({ line: safeLine })
+    );
+    this.startPlayerTauntCooldown(senderKey);
+    if (!this.refreshCurrentTauntHudInPlace("onlinePlay")) {
+      this.renderOnlinePlayScreen();
+    }
   }
 
   randomChanceBetween(min, max) {
@@ -447,7 +555,9 @@ export class AppController {
     this.aiTauntCooldownUntil = now + this.randomChanceBetween(AI_TAUNT_COOLDOWN_MIN_MS, AI_TAUNT_COOLDOWN_MAX_MS);
 
     if (this.screenFlow === "game") {
-      this.showGame();
+      if (!this.refreshCurrentTauntHudInPlace("game")) {
+        this.showGame();
+      }
     }
 
     return true;
@@ -2624,28 +2734,7 @@ export class AppController {
           this.toggleMatchTauntPanel();
         },
         sendTaunt: async (line) => {
-          if (!window.elemintz?.multiplayer?.sendTaunt) {
-            return;
-          }
-
-          const safeLine = String(line ?? "").trim();
-          if (!MATCH_TAUNT_PRESETS.includes(safeLine)) {
-            return;
-          }
-
-          const senderKey = this.getCurrentOnlineTauntSenderKey();
-          if (this.isPlayerTauntCoolingDown(senderKey)) {
-            this.ensureMatchTauntUiTimer();
-            this.renderOnlinePlayScreen();
-            return;
-          }
-
-          this.matchTauntPanelOpen = false;
-          this.onlinePlayState = this.normalizeOnlinePlayState(
-            await window.elemintz.multiplayer.sendTaunt({ line: safeLine })
-          );
-          this.startPlayerTauntCooldown(senderKey);
-          this.renderOnlinePlayScreen();
+          await this.sendCurrentOnlineTaunt(line);
         },
         readyRematch: async () => {
           if (!window.elemintz?.multiplayer?.readyRematch) {
@@ -3401,6 +3490,10 @@ export class AppController {
       return;
     }
 
+    if (this.refreshActiveGameHudInPlace()) {
+      return;
+    }
+
     this.showGame();
   }
 
@@ -3548,6 +3641,54 @@ export class AppController {
     if (mode === MATCH_MODE.PVE) {
       this.maybeEmitPveAiTaunt("match_start");
     }
+  }
+
+  buildActiveGameRefreshContext(vm = this.gameController?.getViewModel?.()) {
+    if (!vm) {
+      return null;
+    }
+
+    const names = this.getLocalNames();
+    return {
+      game: vm,
+      hotseat: {
+        enabled: vm.mode === MATCH_MODE.LOCAL_PVP,
+        activePlayer: vm.mode === MATCH_MODE.LOCAL_PVP ? vm.hotseatTurn : "p1",
+        p1Name: names.p1,
+        p2Name: names.p2,
+        turnLabel:
+          vm.mode === MATCH_MODE.LOCAL_PVP
+            ? `${vm.hotseatTurn === "p1" ? names.p1 : names.p2} Turn`
+            : "Player Turn"
+      },
+      presentation: this.roundPresentation
+    };
+  }
+
+  refreshActiveGameHudInPlace() {
+    if (this.screenFlow !== "game" || typeof document?.querySelector !== "function") {
+      return false;
+    }
+
+    const context = this.buildActiveGameRefreshContext();
+    if (!context) {
+      return false;
+    }
+
+    const root = document.querySelector(".screen-game");
+    const hudLine = document.getElementById?.("game-hud-primary-line") ?? null;
+    if (!root || !hudLine) {
+      return false;
+    }
+
+    const currentSignature = root.getAttribute?.("data-game-live-update-signature") ?? "";
+    const nextSignature = buildGameLiveUpdateSignature(context);
+    if (currentSignature !== nextSignature) {
+      return false;
+    }
+
+    hudLine.textContent = buildGameHudPrimaryLine(context);
+    return true;
   }
 
   async showPassScreen({

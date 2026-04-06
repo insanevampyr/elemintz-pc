@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { achievementsScreen } from "../../src/renderer/ui/screens/achievementsScreen.js";
 import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.js";
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
-import { gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
+import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature, gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
 import { localSetupScreen } from "../../src/renderer/ui/screens/localSetupScreen.js";
 import { menuScreen } from "../../src/renderer/ui/screens/menuScreen.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
@@ -8725,6 +8725,239 @@ test("ui: game HUD refresh preserves an active match-complete modal for local Pv
     assert.equal(shown.length, 1);
     assert.equal(shown.at(-1).screenId, "game");
     assert.equal(clearCalls, 0);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: game HUD timer updates patch the existing screen in place when live state is otherwise unchanged", () => {
+  const previousDocument = global.document;
+  const shown = [];
+  const hudLine = { textContent: "" };
+  const baseContext = {
+    game: {
+      status: "active",
+      winner: null,
+      endReason: null,
+      round: 3,
+      mode: MATCH_MODE.PVE,
+      hotseatTurn: "p1",
+      hotseatPending: false,
+      playerHand: ["fire", "water"],
+      opponentHand: ["earth", "wind"],
+      warActive: false,
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      warPileSizes: [],
+      captured: { p1: 2, p2: 1 },
+      lastRound: null,
+      roundResult: "Choose a card to begin the next clash.",
+      roundOutcome: { key: "no_effect" },
+      canSelectCard: true,
+      timerSeconds: 18,
+      totalMatchSeconds: 244
+    },
+    hotseat: {
+      enabled: false,
+      activePlayer: "p1",
+      p1Name: "Player 1",
+      p2Name: "Player 2",
+      turnLabel: "Player Turn"
+    },
+    presentation: {
+      phase: "idle",
+      busy: false,
+      selectedCardIndex: null
+    }
+  };
+  const root = {
+    getAttribute: (name) =>
+      name === "data-game-live-update-signature" ? buildGameLiveUpdateSignature(baseContext) : null
+  };
+
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-game" ? root : null),
+    getElementById: (id) => (id === "game-hud-primary-line" ? hudLine : null)
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId) => shown.push(screenId)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.screenFlow = "game";
+  controller.gameController = {
+    getViewModel: () => ({
+      ...baseContext.game,
+      timerSeconds: 17,
+      totalMatchSeconds: 243
+    })
+  };
+
+  try {
+    controller.handleGameUpdate();
+
+    assert.equal(shown.length, 0);
+    assert.equal(
+      hudLine.textContent,
+      buildGameHudPrimaryLine({
+        ...baseContext,
+        game: {
+          ...baseContext.game,
+          timerSeconds: 17,
+          totalMatchSeconds: 243
+        }
+      })
+    );
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: taunt HUD ticks refresh the active game screen in place without calling showGame", async () => {
+  const previousDocument = global.document;
+  const fixedNow = 1_700_000_000_000;
+  const toggleButton = createFakeElement();
+  const tauntOption = {
+    listeners: new Map(),
+    getAttribute: (name) => (name === "data-taunt-line" ? "Your move." : null),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
+  const shell = {
+    className: "match-taunt-shell",
+    innerHTML: "",
+    querySelector: (selector) => (selector === "#game-taunts-toggle-btn" ? toggleButton : null),
+    querySelectorAll: (selector) => (selector === "[data-taunt-line]" ? [tauntOption] : [])
+  };
+  const shown = [];
+
+  global.document = {
+    querySelector: (selector) => (selector === '[data-match-taunt-shell="game"]' ? shell : null)
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId) => shown.push(screenId)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.screenFlow = "game";
+  controller.matchTauntPanelOpen = true;
+  controller.getTauntNow = () => fixedNow;
+  controller.matchTaunts = [
+    {
+      id: "taunt-1",
+      speaker: "Hero",
+      text: "Well played.",
+      kind: "player",
+      createdAt: fixedNow,
+      fadeAt: fixedNow + 1000,
+      expiresAt: fixedNow + 2000
+    }
+  ];
+  controller.playerTauntCooldowns = { "user:Hero": fixedNow + 7000 };
+  controller.username = "Hero";
+
+  let toggleCalls = 0;
+  let sendCalls = 0;
+  controller.toggleMatchTauntPanel = () => {
+    toggleCalls += 1;
+  };
+  controller.sendCurrentMatchTaunt = async () => {
+    sendCalls += 1;
+  };
+
+  try {
+    controller.refreshTauntHudIfNeeded();
+    assert.equal(shown.length, 0);
+    assert.match(shell.className, /is-open/);
+    assert.match(shell.innerHTML, /Well played\./);
+    assert.match(shell.innerHTML, />\s*7s\s*</);
+
+    await toggleButton.listeners.get("click")();
+    await tauntOption.listeners.get("click")();
+
+    assert.equal(toggleCalls, 1);
+    assert.equal(sendCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: taunt HUD ticks refresh the active online screen in place without calling renderOnlinePlayScreen", async () => {
+  const previousDocument = global.document;
+  const fixedNow = 1_700_000_000_000;
+  const shell = {
+    className: "match-taunt-shell",
+    innerHTML: "",
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  let renderCalls = 0;
+
+  global.document = {
+    querySelector: (selector) => (selector === '[data-match-taunt-shell="online"]' ? shell : null)
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.screenFlow = "onlinePlay";
+  controller.getTauntNow = () => fixedNow;
+  controller.username = "HostUser";
+  controller.playerTauntCooldowns = { "online:host": fixedNow + 5000 };
+  controller.onlinePlayState = {
+    socketId: "socket-host",
+    room: {
+      status: "full",
+      host: { socketId: "socket-host" },
+      guest: { socketId: "socket-guest" },
+      taunts: [
+        {
+          id: "taunt-online-1",
+          speaker: "HostUser",
+          text: "Your move.",
+          kind: "player",
+          sentAt: new Date(fixedNow).toISOString()
+        }
+      ]
+    }
+  };
+  controller.renderOnlinePlayScreen = () => {
+    renderCalls += 1;
+  };
+
+  try {
+    controller.refreshTauntHudIfNeeded();
+
+    assert.equal(renderCalls, 0);
+    assert.match(shell.innerHTML, /Your move\./);
+    assert.match(shell.innerHTML, />\s*5s\s*</);
   } finally {
     global.document = previousDocument;
   }

@@ -285,6 +285,28 @@ export function renderMatchTauntHud({
   cooldownRemainingMs = 0,
   canSend = true
 } = {}) {
+  return `
+    <aside class="match-taunt-shell ${panelOpen ? "is-open" : ""}" data-match-taunt-shell="${escapeHtml(idPrefix)}">
+      ${renderMatchTauntHudContents({
+        idPrefix,
+        panelOpen,
+        messages,
+        presetLines,
+        cooldownRemainingMs,
+        canSend
+      })}
+    </aside>
+  `;
+}
+
+export function renderMatchTauntHudContents({
+  idPrefix = "match",
+  panelOpen = false,
+  messages = [],
+  presetLines = MATCH_TAUNT_PRESETS,
+  cooldownRemainingMs = 0,
+  canSend = true
+} = {}) {
   const safeMessages = Array.isArray(messages) ? messages.slice(-MATCH_TAUNT_FEED_LIMIT) : [];
   const safePresetLines = Array.isArray(presetLines) ? presetLines : MATCH_TAUNT_PRESETS;
   const safeCooldownMs = Math.max(0, Number(cooldownRemainingMs) || 0);
@@ -292,53 +314,51 @@ export function renderMatchTauntHud({
   const cooldownLabel = safeCooldownMs > 0 ? `${cooldownSeconds}s` : "Ready";
 
   return `
-    <aside class="match-taunt-shell ${panelOpen ? "is-open" : ""}" data-match-taunt-shell="${escapeHtml(idPrefix)}">
-      <div class="match-taunt-feed" aria-live="polite" aria-label="Recent taunts">
-        ${safeMessages
-          .map(
-            (message) => `
-              <div
-                class="match-taunt-entry ${getTauntSpeakerClass(message)} ${message?.isFading ? "is-fading" : ""}"
-                data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
-              >
-                <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
-                <span>${escapeHtml(message?.text ?? "")}</span>
-              </div>
-            `
-          )
-          .join("")}
-      </div>
-      <div class="match-taunt-controls">
-        <button id="${escapeHtml(idPrefix)}-taunts-toggle-btn" type="button" class="btn btn-secondary match-taunts-toggle-btn" aria-expanded="${panelOpen ? "true" : "false"}">
-          Taunts
-        </button>
-        <p class="match-taunt-cooldown" data-taunt-cooldown-state="${safeCooldownMs > 0 ? "cooldown" : "ready"}">
-          ${escapeHtml(cooldownLabel)}
-        </p>
-        ${
-          panelOpen
-            ? `
-              <div id="${escapeHtml(idPrefix)}-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="${escapeHtml(idPrefix)}">
-                ${safePresetLines
-                  .map(
-                    (line, index) => `
-                      <button
-                        type="button"
-                        class="match-taunt-option"
-                        data-taunt-line="${escapeHtml(line)}"
-                        data-taunt-index="${String(index)}"
-                        ${canSend ? "" : "disabled"}
-                      >
-                        ${escapeHtml(line)}
-                      </button>
-                    `
-                  )
-                  .join("")}
-              </div>
-            `
-            : ""
-        }
-      </div>
-    </aside>
+    <div class="match-taunt-feed" aria-live="polite" aria-label="Recent taunts">
+      ${safeMessages
+        .map(
+          (message) => `
+            <div
+              class="match-taunt-entry ${getTauntSpeakerClass(message)} ${message?.isFading ? "is-fading" : ""}"
+              data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
+            >
+              <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
+              <span>${escapeHtml(message?.text ?? "")}</span>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+    <div class="match-taunt-controls">
+      <button id="${escapeHtml(idPrefix)}-taunts-toggle-btn" type="button" class="btn btn-secondary match-taunts-toggle-btn" aria-expanded="${panelOpen ? "true" : "false"}">
+        Taunts
+      </button>
+      <p class="match-taunt-cooldown" data-taunt-cooldown-state="${safeCooldownMs > 0 ? "cooldown" : "ready"}">
+        ${escapeHtml(cooldownLabel)}
+      </p>
+      ${
+        panelOpen
+          ? `
+            <div id="${escapeHtml(idPrefix)}-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="${escapeHtml(idPrefix)}">
+              ${safePresetLines
+                .map(
+                  (line, index) => `
+                    <button
+                      type="button"
+                      class="match-taunt-option"
+                      data-taunt-line="${escapeHtml(line)}"
+                      data-taunt-index="${String(index)}"
+                      ${canSend ? "" : "disabled"}
+                    >
+                      ${escapeHtml(line)}
+                    </button>
+                  `
+                )
+                .join("")}
+            </div>
+          `
+          : ""
+      }
+    </div>
   `;
 }

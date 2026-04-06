@@ -15,6 +15,61 @@ let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
 
+export function buildGameHudPrimaryLine({ game, hotseat }) {
+  const vm = game ?? {};
+  const compactTurnLabel = escapeHtml(hotseat?.turnLabel ?? "Player Turn");
+  return `Round ${vm.round} | Turn: ${vm.timerSeconds}s | Match: ${formatClock(vm.totalMatchSeconds)} | ${compactTurnLabel}`;
+}
+
+export function buildGameLiveUpdateSignature(context) {
+  const vm = context.game ?? {};
+  return JSON.stringify({
+    status: vm.status ?? null,
+    winner: vm.winner ?? null,
+    endReason: vm.endReason ?? null,
+    round: vm.round ?? null,
+    mode: vm.mode ?? null,
+    hotseatTurn: vm.hotseatTurn ?? null,
+    hotseatPending: Boolean(vm.hotseatPending),
+    playerHand: Array.isArray(vm.playerHand) ? vm.playerHand : [],
+    opponentHand: Array.isArray(vm.opponentHand) ? vm.opponentHand : [],
+    warActive: Boolean(vm.warActive),
+    pileCount: Number(vm.pileCount ?? 0),
+    totalWarClashes: Number(vm.totalWarClashes ?? 0),
+    warPileCards: Array.isArray(vm.warPileCards) ? vm.warPileCards : [],
+    warPileSizes: Array.isArray(vm.warPileSizes) ? vm.warPileSizes : [],
+    captured: {
+      p1: Number(vm.captured?.p1 ?? 0),
+      p2: Number(vm.captured?.p2 ?? 0)
+    },
+    lastRound: vm.lastRound
+      ? {
+          p1Card: vm.lastRound.p1Card ?? null,
+          p2Card: vm.lastRound.p2Card ?? null,
+          result: vm.lastRound.result ?? null,
+          warClashes: Number(vm.lastRound.warClashes ?? 0),
+          capturedCards: Number(vm.lastRound.capturedCards ?? 0),
+          capturedOpponentCards: Number(vm.lastRound.capturedOpponentCards ?? 0)
+        }
+      : null,
+    roundResult: vm.roundResult ?? "",
+    roundOutcomeKey: vm.roundOutcome?.key ?? null,
+    canSelectCard: Boolean(vm.canSelectCard),
+    presentation: {
+      phase: context.presentation?.phase ?? "idle",
+      busy: Boolean(context.presentation?.busy),
+      selectedCardIndex: context.presentation?.selectedCardIndex ?? null
+    },
+    hotseat: {
+      enabled: Boolean(context.hotseat?.enabled),
+      activePlayer: context.hotseat?.activePlayer ?? null,
+      p1Name: context.hotseat?.p1Name ?? null,
+      p2Name: context.hotseat?.p2Name ?? null,
+      turnLabel: context.hotseat?.turnLabel ?? null
+    }
+  });
+}
+
 function formatClock(seconds) {
   const safe = Math.max(0, Number(seconds) || 0);
   const mins = String(Math.floor(safe / 60)).padStart(2, "0");
@@ -276,11 +331,11 @@ export const gameScreen = {
     const capturedStatus = `Captured: ${capturedLeftName} • ${vm.captured.p1} | ${capturedRightName} • ${vm.captured.p2}`;
 
     return `
-      <section class="screen screen-game phase-${phase}">
+      <section class="screen screen-game phase-${phase}" data-game-live-update-signature="${escapeHtml(buildGameLiveUpdateSignature(context))}">
         <header class="hud panel">
           <div class="hud-summary">
             <h2 class="view-title">Game Screen</h2>
-            <p class="hud-line">Round ${vm.round} | Turn: ${vm.timerSeconds}s | Match: ${formatClock(vm.totalMatchSeconds)} | ${compactTurnLabel}</p>
+            <p id="game-hud-primary-line" class="hud-line">${buildGameHudPrimaryLine(context)}</p>
           </div>
           <div class="stack-sm inline-actions">
             <button id="back-menu-btn" class="btn">Back to Menu</button>
