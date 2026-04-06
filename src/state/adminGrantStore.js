@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+
 import { JsonStore } from "./storage/jsonStore.js";
 
 function normalizeTransactionId(transactionId) {
@@ -18,6 +20,15 @@ function normalizeAdminId(adminId) {
 function normalizeConfirmationStatus(status) {
   const normalized = String(status ?? "").trim();
   return normalized.length > 0 ? normalized : "pending";
+}
+
+async function pathExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function cloneEntry(entry) {
@@ -99,6 +110,7 @@ export class AdminGrantStore {
         confirmationStatus: "pending",
         error: null,
         status: "processing",
+        deliveredAt: null,
         confirmedAt: null
       };
 
@@ -151,6 +163,64 @@ export class AdminGrantStore {
     });
   }
 
+  async listPendingNoticesForUsername(username) {
+    const safeUsername = normalizeUsername(username);
+    if (!safeUsername) {
+      return [];
+    }
+
+    if (!(await pathExists(this.store.filePath))) {
+      return [];
+    }
+
+    const entries = await this.listEntries();
+    return entries
+      .filter((entry) => {
+        if (normalizeUsername(entry?.targetUsername) !== safeUsername) {
+          return false;
+        }
+
+        if (String(entry?.status ?? "").trim() !== "success") {
+          return false;
+        }
+
+        return normalizeConfirmationStatus(entry?.confirmationStatus) !== "confirmed";
+      })
+      .map((entry) => cloneEntry(entry));
+  }
+
+  async markDelivered({ transactionId, confirmationStatus = "delivered" }) {
+    return this.runMutation(async () => {
+      const safeTransactionId = normalizeTransactionId(transactionId);
+      if (!safeTransactionId) {
+        throw new Error("transactionId is required.");
+      }
+
+      const entries = await this.listEntries();
+      const index = entries.findIndex(
+        (entry) => normalizeTransactionId(entry?.transactionId) === safeTransactionId
+      );
+      if (index === -1) {
+        throw new Error(`Unknown admin grant transaction '${safeTransactionId}'.`);
+      }
+
+      const current = entries[index];
+      if (normalizeConfirmationStatus(current?.confirmationStatus) === "confirmed") {
+        return cloneEntry(current);
+      }
+
+      const nextEntry = {
+        ...current,
+        confirmationStatus: normalizeConfirmationStatus(confirmationStatus),
+        deliveredAt: current?.deliveredAt ?? new Date().toISOString()
+      };
+
+      entries[index] = nextEntry;
+      await this.store.write(entries);
+      return cloneEntry(nextEntry);
+    });
+  }
+
   async confirmTransaction({ transactionId, username }) {
     return this.runMutation(async () => {
       const safeTransactionId = normalizeTransactionId(transactionId);
@@ -181,6 +251,7 @@ export class AdminGrantStore {
           : {
               ...current,
               confirmationStatus: "confirmed",
+              deliveredAt: current?.deliveredAt ?? new Date().toISOString(),
               confirmedAt: new Date().toISOString()
             };
 

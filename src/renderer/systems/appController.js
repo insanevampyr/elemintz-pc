@@ -124,6 +124,7 @@ export class AppController {
     this.profileChestOpenInFlight = false;
     this.onlinePlayState = null;
     this.activeAdminGrantNoticeId = null;
+    this.queuedAdminGrantNoticeIds = [];
     this.onlinePlayJoinCode = "";
     this.onlinePlayUnsubscribe = null;
     this.onlinePlayChallengeSummary = null;
@@ -1910,7 +1911,71 @@ export class AppController {
   }
 
   getPendingAdminGrantNotice(state = this.onlinePlayState) {
-    return Array.isArray(state?.pendingAdminGrantNotices) ? state.pendingAdminGrantNotices[0] ?? null : null;
+    this.syncPendingAdminGrantNoticeQueue(state);
+    const notices = Array.isArray(state?.pendingAdminGrantNotices) ? state.pendingAdminGrantNotices : [];
+    const queuedId = this.queuedAdminGrantNoticeIds[0] ?? null;
+
+    if (queuedId) {
+      return notices.find((entry) => entry?.transactionId === queuedId) ?? null;
+    }
+
+    return notices[0] ?? null;
+  }
+
+  syncPendingAdminGrantNoticeQueue(state = this.onlinePlayState) {
+    const notices = Array.isArray(state?.pendingAdminGrantNotices) ? state.pendingAdminGrantNotices : [];
+    const noticeIds = new Set(
+      notices
+        .map((entry) => String(entry?.transactionId ?? "").trim())
+        .filter(Boolean)
+    );
+
+    this.queuedAdminGrantNoticeIds = this.queuedAdminGrantNoticeIds.filter((transactionId) =>
+      noticeIds.has(transactionId)
+    );
+
+    for (const notice of notices) {
+      const transactionId = String(notice?.transactionId ?? "").trim();
+      if (!transactionId || this.queuedAdminGrantNoticeIds.includes(transactionId)) {
+        continue;
+      }
+      this.queuedAdminGrantNoticeIds.push(transactionId);
+    }
+  }
+
+  getAdminGrantNoticeSignature(state = this.onlinePlayState) {
+    return (Array.isArray(state?.pendingAdminGrantNotices) ? state.pendingAdminGrantNotices : [])
+      .map((entry) => String(entry?.transactionId ?? "").trim())
+      .filter(Boolean)
+      .join("|");
+  }
+
+  dequeuePendingAdminGrantNotice(transactionId) {
+    const safeTransactionId = String(transactionId ?? "").trim();
+    if (!safeTransactionId) {
+      return;
+    }
+
+    this.queuedAdminGrantNoticeIds = this.queuedAdminGrantNoticeIds.filter(
+      (queuedTransactionId) => queuedTransactionId !== safeTransactionId
+    );
+  }
+
+  isAdminGrantNoticeUiReady() {
+    return [
+      "menu",
+      "onlinePlay",
+      "profile",
+      "dailyChallenges",
+      "achievements",
+      "cosmetics",
+      "store",
+      "settings"
+    ].includes(this.screenFlow);
+  }
+
+  releaseQueuedAdminGrantNotice(state = this.onlinePlayState) {
+    this.maybeShowPendingAdminGrantNotice(state);
   }
 
   maybeShowPendingAdminGrantNotice(state = this.onlinePlayState) {
@@ -1919,6 +1984,10 @@ export class AppController {
       if (this.activeAdminGrantNoticeId && !this.getPendingAdminGrantNotice()) {
         this.activeAdminGrantNoticeId = null;
       }
+      return;
+    }
+
+    if (!this.isAdminGrantNoticeUiReady()) {
       return;
     }
 
@@ -1949,11 +2018,15 @@ export class AppController {
                 transactionId: notice.transactionId
               });
               this.modalManager.hide();
+              this.dequeuePendingAdminGrantNotice(notice.transactionId);
               this.activeAdminGrantNoticeId = null;
               await this.syncOnlinePlayState();
-              if (this.screenFlow === "onlinePlay") {
+              if (this.screenFlow === "profile") {
+                await this.showProfile();
+              } else if (this.screenFlow === "onlinePlay") {
                 this.renderOnlinePlayScreen();
               }
+              this.maybeShowPendingAdminGrantNotice();
             } catch (error) {
               this.modalManager.hide();
               this.activeAdminGrantNoticeId = null;
@@ -2437,7 +2510,10 @@ export class AppController {
     this.onlinePlayUnsubscribe = window.elemintz.multiplayer.onUpdate((state) => {
       const previousState = this.onlinePlayState;
       const nextState = this.normalizeOnlinePlayState(state);
+      const previousAdminNoticeSignature = this.getAdminGrantNoticeSignature(previousState);
       this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+      const nextAdminNoticeSignature = this.getAdminGrantNoticeSignature(this.onlinePlayState);
+      const adminNoticeStateChanged = previousAdminNoticeSignature !== nextAdminNoticeSignature;
       const lostAuthenticatedSession =
         Boolean(previousState?.session?.authenticated) &&
         !Boolean(this.onlinePlayState?.session?.authenticated);
@@ -2454,13 +2530,16 @@ export class AppController {
       this.clearOnlineReconnectReminderFromState(this.onlinePlayState);
       this.ensureOnlineReconnectUiTimer();
       this.updateOnlineReconnectReminderModal();
-      this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
       if (this.onlinePlayState?.latestRoundResult) {
         console.info("[OnlinePlay][Renderer] latest round result stored in renderer state", this.onlinePlayState.latestRoundResult);
       }
       if (this.screenFlow === "onlinePlay") {
         this.renderOnlinePlayScreen();
       }
+      if (this.screenFlow === "profile" && adminNoticeStateChanged) {
+        void this.showProfile({ preserveModal: true });
+      }
+      this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
       if (this.onlinePlayState?.room?.matchComplete) {
         void this.refreshOnlineSettlementStateFromServer(this.onlinePlayState)
           .then(() => {
@@ -3208,6 +3287,7 @@ export class AppController {
     this.renderMenuScreen();
     this.updateOnlineReconnectReminderModal();
     this.refreshDailyChallengesForMenu();
+    Promise.resolve().then(() => this.releaseQueuedAdminGrantNotice(this.onlinePlayState));
     Promise.resolve().then(() => this.maybeShowLoadoutUnlockNotice());
 
     if (autoClaimDailyLogin) {

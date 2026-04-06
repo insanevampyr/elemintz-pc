@@ -368,6 +368,8 @@ test("multiplayer foundation: admin lookup returns the authoritative profile sna
     assert.equal(response?.ok, true);
     assert.equal(response?.profile?.username, "LookupTarget");
     assert.equal(response?.profile?.authority, "server");
+    assert.ok(Array.isArray(response?.cosmetics?.catalog?.avatar));
+    assert.ok(response?.cosmetics?.owned?.avatar?.includes("default_avatar"));
   } finally {
     adminClient?.disconnect();
     await foundation.stop();
@@ -479,6 +481,362 @@ test("multiplayer foundation: admin grants apply once, notify the player, and up
     assert.equal(confirmResponse?.result?.confirmationStatus, "confirmed");
     assert.equal(grantStatus?.transactionId, "grant-transaction-1");
     assert.equal(grantStatus?.confirmationStatus, "confirmed");
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: offline admin notices persist, deliver on next authenticated login, and do not re-grant rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let resumeClient = null;
+
+  try {
+    const profileBefore = await coordinator.profiles.ensureProfile("OfflineGrantTarget");
+    const tokensBefore = Number(profileBefore?.tokens ?? 0);
+    const xpBefore = Number(profileBefore?.playerXP ?? 0);
+    const chestBefore = Number(profileBefore?.chests?.legendary ?? 0);
+
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "offlinegrant@example.com",
+      password: "PlayerPass123",
+      username: "OfflineGrantTarget"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+
+    const offlineGrantResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantRewards",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "offline-grant-login-1",
+          username: "OfflineGrantTarget",
+          xp: 10,
+          tokens: 15,
+          chests: [{ chestType: "legendary", amount: 1 }]
+        },
+        resolve
+      );
+    });
+
+    assert.equal(offlineGrantResponse?.ok, true);
+    assert.equal(offlineGrantResponse?.result?.confirmationStatus, "player_offline");
+
+    const ledgerAfterGrant = await adminGrantStore.getByTransactionId("offline-grant-login-1");
+    assert.equal(ledgerAfterGrant?.confirmationStatus, "player_offline");
+    assert.equal(ledgerAfterGrant?.deliveredAt, null);
+
+    const profileAfterGrant = await coordinator.profiles.getProfile("OfflineGrantTarget");
+    assert.equal(Number(profileAfterGrant?.playerXP ?? 0), xpBefore + 10);
+    assert.ok(Number(profileAfterGrant?.tokens ?? 0) >= tokensBefore + 15);
+    assert.equal(Number(profileAfterGrant?.chests?.legendary ?? 0), chestBefore + 1);
+
+    playerClient = await connectClient(port);
+    const deferredNotice = waitForEvent(playerClient, "admin:grantNotice");
+    const playerLogin = await loginAccount(playerClient, {
+      email: "offlinegrant@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(playerLogin?.ok, true);
+    const deliveredNotice = await deferredNotice;
+
+    assert.equal(deliveredNotice?.transactionId, "offline-grant-login-1");
+    assert.match(deliveredNotice?.message ?? "", /15 Tokens/i);
+
+    const profileAfterLogin = await coordinator.profiles.getProfile("OfflineGrantTarget");
+    assert.equal(Number(profileAfterLogin?.playerXP ?? 0), Number(profileAfterGrant?.playerXP ?? 0));
+    assert.equal(Number(profileAfterLogin?.tokens ?? 0), Number(profileAfterGrant?.tokens ?? 0));
+    assert.equal(
+      Number(profileAfterLogin?.chests?.legendary ?? 0),
+      Number(profileAfterGrant?.chests?.legendary ?? 0)
+    );
+
+    const ledgerAfterDelivery = await adminGrantStore.getByTransactionId("offline-grant-login-1");
+    assert.equal(ledgerAfterDelivery?.confirmationStatus, "delivered");
+    assert.ok(ledgerAfterDelivery?.deliveredAt);
+
+    const confirmResponse = await new Promise((resolve) => {
+      playerClient.emit("admin:confirmGrantReceipt", { transactionId: "offline-grant-login-1" }, resolve);
+    });
+    assert.equal(confirmResponse?.ok, true);
+    assert.equal(confirmResponse?.result?.confirmationStatus, "confirmed");
+
+    const ledgerAfterConfirm = await adminGrantStore.getByTransactionId("offline-grant-login-1");
+    assert.equal(ledgerAfterConfirm?.confirmationStatus, "confirmed");
+    assert.ok(ledgerAfterConfirm?.confirmedAt);
+
+    playerClient.disconnect();
+    playerClient = null;
+    resumeClient = await connectClient(port);
+    let redelivered = false;
+    resumeClient.on("admin:grantNotice", () => {
+      redelivered = true;
+    });
+    const resumed = await resumeSession(resumeClient, playerLogin?.session?.token);
+    assert.equal(resumed?.ok, true);
+    await wait(50);
+    assert.equal(redelivered, false);
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    resumeClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: offline admin notices deliver on valid session resume without duplicate reward application", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let resumeClient = null;
+
+  try {
+    await coordinator.profiles.ensureProfile("ResumeGrantTarget");
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "resumegrant@example.com",
+      password: "PlayerPass123",
+      username: "ResumeGrantTarget"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+
+    const playerLogin = await loginAccount(playerClient, {
+      email: "resumegrant@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(playerLogin?.ok, true);
+    playerClient.disconnect();
+    playerClient = null;
+
+    const profileBeforeGrant = await coordinator.profiles.getProfile("ResumeGrantTarget");
+    const grantResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantRewards",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "offline-grant-resume-1",
+          username: "ResumeGrantTarget",
+          xp: 12,
+          tokens: 18,
+          chests: [{ chestType: "epic", amount: 1 }]
+        },
+        resolve
+      );
+    });
+
+    assert.equal(grantResponse?.ok, true);
+    assert.equal(grantResponse?.result?.confirmationStatus, "player_offline");
+
+    const profileAfterGrant = await coordinator.profiles.getProfile("ResumeGrantTarget");
+    assert.equal(Number(profileAfterGrant?.playerXP ?? 0), Number(profileBeforeGrant?.playerXP ?? 0) + 12);
+    assert.ok(Number(profileAfterGrant?.tokens ?? 0) >= Number(profileBeforeGrant?.tokens ?? 0) + 18);
+    assert.equal(
+      Number(profileAfterGrant?.chests?.epic ?? 0),
+      Number(profileBeforeGrant?.chests?.epic ?? 0) + 1
+    );
+
+    resumeClient = await connectClient(port);
+    const deferredNotice = waitForEvent(resumeClient, "admin:grantNotice");
+    const resumed = await resumeSession(resumeClient, playerLogin?.session?.token);
+    assert.equal(resumed?.ok, true);
+    const deliveredNotice = await deferredNotice;
+    assert.equal(deliveredNotice?.transactionId, "offline-grant-resume-1");
+
+    const profileAfterResume = await coordinator.profiles.getProfile("ResumeGrantTarget");
+    assert.equal(Number(profileAfterResume?.playerXP ?? 0), Number(profileAfterGrant?.playerXP ?? 0));
+    assert.equal(Number(profileAfterResume?.tokens ?? 0), Number(profileAfterGrant?.tokens ?? 0));
+    assert.equal(Number(profileAfterResume?.chests?.epic ?? 0), Number(profileAfterGrant?.chests?.epic ?? 0));
+
+    const ledgerAfterResume = await adminGrantStore.getByTransactionId("offline-grant-resume-1");
+    assert.equal(ledgerAfterResume?.confirmationStatus, "delivered");
+    assert.ok(ledgerAfterResume?.deliveredAt);
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    resumeClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin cosmetic grants return updated authoritative ownership and reject duplicate ownership cleanly", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+
+  try {
+    await coordinator.profiles.ensureProfile("CosmeticGrantTarget");
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    const playerSession = await bootstrapSession(playerClient, "CosmeticGrantTarget");
+    assert.equal(playerSession?.ok, true);
+
+    const noticePromise = waitForEvent(playerClient, "admin:grantNotice");
+    const grantResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantRewards",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "cosmetic-grant-1",
+          username: "CosmeticGrantTarget",
+          cosmetic: {
+            type: "avatar",
+            cosmeticId: "fireavatarF"
+          }
+        },
+        resolve
+      );
+    });
+    const notice = await noticePromise;
+
+    assert.equal(grantResponse?.ok, true);
+    assert.equal(grantResponse?.result?.status, "success");
+    assert.equal(
+      grantResponse?.result?.result?.applied?.cosmetic?.cosmeticId,
+      "fireavatarF"
+    );
+    assert.ok(
+      grantResponse?.result?.result?.cosmetics?.owned?.avatar?.includes("fireavatarF")
+    );
+    assert.match(notice?.message ?? "", /Fire Avatar/);
+    assert.doesNotMatch(notice?.message ?? "", /avatar:fireavatarF/);
+
+    const invalidCosmeticResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantRewards",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "cosmetic-grant-invalid",
+          username: "CosmeticGrantTarget",
+          cosmetic: {
+            type: "avatar",
+            cosmeticId: "not_a_real_avatar"
+          }
+        },
+        resolve
+      );
+    });
+
+    assert.equal(invalidCosmeticResponse?.ok, false);
+    assert.match(
+      invalidCosmeticResponse?.error?.message ?? "",
+      /cosmetic item not found/i
+    );
+
+    const duplicateOwnershipResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantRewards",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "cosmetic-grant-2",
+          username: "CosmeticGrantTarget",
+          cosmetic: {
+            type: "avatar",
+            cosmeticId: "fireavatarF"
+          }
+        },
+        resolve
+      );
+    });
+
+    assert.equal(duplicateOwnershipResponse?.ok, false);
+    assert.match(
+      duplicateOwnershipResponse?.error?.message ?? "",
+      /already owned/i
+    );
   } finally {
     adminClient?.disconnect();
     playerClient?.disconnect();

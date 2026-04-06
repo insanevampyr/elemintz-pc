@@ -10477,6 +10477,7 @@ test("ui: appController shows and confirms an incoming admin reward notice throu
 
   try {
     app.username = "NoticePlayer";
+    app.screenFlow = "menu";
     app.bindOnlinePlayUpdates();
 
     multiplayerListeners[0]?.({
@@ -10503,6 +10504,240 @@ test("ui: appController shows and confirms an incoming admin reward notice throu
     await modalCalls[0].actions?.[0]?.onClick?.();
 
     assert.deepEqual(confirmCalls, [{ transactionId: "admin-grant-1" }]);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController queues admin reward notices until the menu screen is active", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const confirmCalls = [];
+  const renderedScreens = [];
+
+  global.document = {
+    querySelector: () => null
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        confirmAdminGrantNotice: async (payload) => {
+          confirmCalls.push(payload);
+          return {
+            transactionId: payload?.transactionId ?? null,
+            confirmationStatus: "confirmed"
+          };
+        }
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "QueuedNoticePlayer";
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        username: "QueuedNoticePlayer",
+        authenticated: true
+      },
+      pendingAdminGrantNotices: [
+        {
+          transactionId: "queued-admin-grant-1",
+          targetUsername: "QueuedNoticePlayer",
+          message: "EleMintz has sent you 25 Tokens. Click OK to confirm.",
+          payload: { xp: 0, tokens: 25, chests: [] },
+          timestamp: "2026-04-05T12:00:00.000Z"
+        }
+      ]
+    };
+    app.screenFlow = "login";
+    app.renderMenuScreen = () => {
+      renderedScreens.push("menu");
+    };
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.updateOnlineReconnectReminderModal = () => {};
+    app.maybeShowLoadoutUnlockNotice = () => {};
+    app.syncOnlinePlayState = async () => app.onlinePlayState;
+
+    app.maybeShowPendingAdminGrantNotice(app.onlinePlayState);
+
+    assert.equal(modalCalls.length, 0);
+    assert.deepEqual(app.queuedAdminGrantNoticeIds, ["queued-admin-grant-1"]);
+
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+
+    assert.deepEqual(renderedScreens, ["menu"]);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Reward Confirmation");
+    assert.match(modalCalls[0].bodyHtml, /25 Tokens/);
+
+    await modalCalls[0].actions?.[0]?.onClick?.();
+
+    assert.deepEqual(confirmCalls, [{ transactionId: "queued-admin-grant-1" }]);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController refreshes the open profile screen when an admin reward notice arrives", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const multiplayerListeners = [];
+  const profileRefreshes = [];
+
+  global.document = {
+    querySelector: () => null
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        onUpdate: (listener) => {
+          multiplayerListeners.push(listener);
+          return () => {};
+        },
+        confirmAdminGrantNotice: async () => ({
+          confirmationStatus: "confirmed"
+        })
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "ProfileNoticePlayer";
+    app.screenFlow = "profile";
+    app.showProfile = async ({ preserveModal = false } = {}) => {
+      profileRefreshes.push({ preserveModal });
+    };
+    app.bindOnlinePlayUpdates();
+
+    multiplayerListeners[0]?.({
+      connectionStatus: "connected",
+      session: {
+        username: "ProfileNoticePlayer",
+        authenticated: true
+      },
+      pendingAdminGrantNotices: [
+        {
+          transactionId: "profile-notice-1",
+          targetUsername: "ProfileNoticePlayer",
+          message: "EleMintz has sent you 30 XP. Click OK to confirm.",
+          payload: { xp: 30, tokens: 0, chests: [] },
+          timestamp: "2026-04-05T12:00:00.000Z"
+        }
+      ]
+    });
+
+    assert.deepEqual(profileRefreshes, [{ preserveModal: true }]);
+    assert.equal(modalCalls.length, 1);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController refreshes the open profile screen after confirming an admin reward notice", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const confirmCalls = [];
+  const profileRefreshes = [];
+
+  global.document = {
+    querySelector: () => null
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        confirmAdminGrantNotice: async (payload) => {
+          confirmCalls.push(payload);
+          return {
+            transactionId: payload?.transactionId ?? null,
+            confirmationStatus: "confirmed"
+          };
+        }
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "ProfileConfirmPlayer";
+    app.screenFlow = "profile";
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        username: "ProfileConfirmPlayer",
+        authenticated: true
+      },
+      pendingAdminGrantNotices: [
+        {
+          transactionId: "profile-confirm-1",
+          targetUsername: "ProfileConfirmPlayer",
+          message: "EleMintz has sent you 10 Tokens. Click OK to confirm.",
+          payload: { xp: 0, tokens: 10, chests: [] },
+          timestamp: "2026-04-05T12:00:00.000Z"
+        }
+      ]
+    };
+    app.showProfile = async ({ preserveModal = false } = {}) => {
+      profileRefreshes.push({ preserveModal });
+    };
+    app.syncOnlinePlayState = async () => {
+      app.onlinePlayState = {
+        ...app.onlinePlayState,
+        pendingAdminGrantNotices: []
+      };
+      return app.onlinePlayState;
+    };
+
+    app.maybeShowPendingAdminGrantNotice(app.onlinePlayState);
+    await modalCalls[0].actions?.[0]?.onClick?.();
+
+    assert.deepEqual(confirmCalls, [{ transactionId: "profile-confirm-1" }]);
+    assert.deepEqual(profileRefreshes, [{ preserveModal: false }]);
   } finally {
     global.window = previousWindow;
     global.document = previousDocument;

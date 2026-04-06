@@ -223,3 +223,36 @@ export function grantSupporterPass(profile) {
     granted
   };
 }
+
+export function grantCosmeticItem(profile, { type, cosmeticId }) {
+  const normalized = normalizeProfileStore(profile);
+  const previousTracking = normalized.cosmeticUnlockTracking;
+  const item = COSMETIC_CATALOG[type]?.find((entry) => entry.id === cosmeticId);
+
+  if (!item) {
+    throw new Error(`Cosmetic item not found for ${type}:${cosmeticId}.`);
+  }
+
+  if (normalized.ownedCosmetics[type]?.includes(cosmeticId)) {
+    throw new Error(`Cosmetic '${cosmeticId}' is already owned.`);
+  }
+
+  const updated = normalizeProfileStore({
+    ...normalized,
+    ownedCosmetics: {
+      ...normalized.ownedCosmetics,
+      [type]: [...normalized.ownedCosmetics[type], cosmeticId]
+    }
+  });
+  const tracking = getTrackingMilestoneDiff(previousTracking, updated.cosmeticUnlockTracking);
+
+  return {
+    profile: updated,
+    grant: {
+      status: "granted",
+      type,
+      cosmeticId
+    },
+    tracking
+  };
+}

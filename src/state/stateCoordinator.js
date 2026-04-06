@@ -22,7 +22,7 @@ import {
   saveCosmeticLoadout
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
-import { buyStoreItem, getStoreViewForProfile, grantSupporterPass } from "./storeSystem.js";
+import { buyStoreItem, getStoreViewForProfile, grantCosmeticItem, grantSupporterPass } from "./storeSystem.js";
 import {
   acknowledgeMilestoneChestReward,
   applyWinStreakChestGrants,
@@ -845,7 +845,8 @@ export class StateCoordinator {
     username,
     xp = 0,
     tokens = 0,
-    chests = []
+    chests = [],
+    cosmetic = null
   }) {
     const safeUsername = String(username ?? "").trim();
     if (!safeUsername) {
@@ -860,6 +861,13 @@ export class StateCoordinator {
         amount: Math.max(0, Math.floor(Number(entry?.amount ?? 0) || 0))
       }))
       .filter((entry) => entry.amount > 0);
+    const normalizedCosmetic =
+      cosmetic && typeof cosmetic === "object"
+        ? {
+            type: String(cosmetic.type ?? "").trim(),
+            cosmeticId: String(cosmetic.cosmeticId ?? "").trim()
+          }
+        : null;
 
     for (const entry of normalizedChests) {
       if (!VALID_ADMIN_CHEST_TYPES.has(entry.chestType)) {
@@ -867,7 +875,11 @@ export class StateCoordinator {
       }
     }
 
-    if (safeXp <= 0 && safeTokens <= 0 && normalizedChests.length === 0) {
+    if (normalizedCosmetic && (!normalizedCosmetic.type || !normalizedCosmetic.cosmeticId)) {
+      throw new Error("Both cosmetic type and cosmeticId are required for cosmetic grants.");
+    }
+
+    if (safeXp <= 0 && safeTokens <= 0 && normalizedChests.length === 0 && !normalizedCosmetic) {
       throw new Error("At least one admin reward value is required.");
     }
 
@@ -900,10 +912,18 @@ export class StateCoordinator {
         });
       }
 
+      let cosmeticGrant = null;
+      if (normalizedCosmetic) {
+        const cosmeticResult = grantCosmeticItem(nextProfile, normalizedCosmetic);
+        nextProfile = cosmeticResult.profile;
+        cosmeticGrant = cosmeticResult.grant;
+      }
+
       grantSummary = {
         xpDelta: safeXp,
         tokenDelta: safeTokens,
         chestGrants: normalizedChests,
+        cosmeticGrant,
         levelBefore,
         levelAfter: Math.max(levelAfterGain, Number(nextProfile?.playerLevel ?? levelAfterGain)),
         levelRewards: levelRewardResult.grantedRewards,
@@ -919,6 +939,7 @@ export class StateCoordinator {
       xpDelta: grantSummary?.xpDelta ?? safeXp,
       tokenDelta: grantSummary?.tokenDelta ?? safeTokens,
       chestGrants: grantSummary?.chestGrants ?? normalizedChests,
+      cosmeticGrant: grantSummary?.cosmeticGrant ?? null,
       levelBefore: grantSummary?.levelBefore ?? Number(profile?.playerLevel ?? 1),
       levelAfter: grantSummary?.levelAfter ?? Number(profile?.playerLevel ?? 1),
       levelRewards: grantSummary?.levelRewards ?? [],

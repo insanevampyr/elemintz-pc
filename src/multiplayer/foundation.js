@@ -7,6 +7,7 @@ import { createRoomStore } from "./rooms.js";
 import { createSessionStore } from "./sessionStore.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
+import { getCosmeticDefinition } from "../state/cosmeticSystem.js";
 
 const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
@@ -115,11 +116,39 @@ function sanitizeAdminChestEntries(chests) {
     .filter((entry) => entry.amount > 0 && VALID_ADMIN_CHEST_TYPES.has(entry.chestType));
 }
 
-function formatAdminGrantSummary({ xp = 0, tokens = 0, chests = [] } = {}) {
+function sanitizeAdminCosmeticEntry(cosmetic) {
+  if (!cosmetic || typeof cosmetic !== "object") {
+    return null;
+  }
+
+  const type = String(cosmetic.type ?? "").trim();
+  const cosmeticId = String(cosmetic.cosmeticId ?? "").trim();
+  if (!type || !cosmeticId) {
+    return null;
+  }
+
+  return {
+    type,
+    cosmeticId
+  };
+}
+
+function formatAdminCosmeticSummary(cosmetic) {
+  const safeCosmetic = sanitizeAdminCosmeticEntry(cosmetic);
+  if (!safeCosmetic) {
+    return null;
+  }
+
+  const definition = getCosmeticDefinition(safeCosmetic.type, safeCosmetic.cosmeticId);
+  return definition?.name ?? `${safeCosmetic.type}:${safeCosmetic.cosmeticId}`;
+}
+
+function formatAdminGrantSummary({ xp = 0, tokens = 0, chests = [], cosmetic = null } = {}) {
   const parts = [];
   const safeXp = Math.max(0, Math.floor(Number(xp ?? 0) || 0));
   const safeTokens = Math.max(0, Math.floor(Number(tokens ?? 0) || 0));
   const safeChests = sanitizeAdminChestEntries(chests);
+  const cosmeticLabel = formatAdminCosmeticSummary(cosmetic);
 
   if (safeXp > 0) {
     parts.push(`${safeXp} XP`);
@@ -130,6 +159,9 @@ function formatAdminGrantSummary({ xp = 0, tokens = 0, chests = [] } = {}) {
   for (const entry of safeChests) {
     const chestLabel = `${entry.amount} ${entry.chestType.charAt(0).toUpperCase()}${entry.chestType.slice(1)} Chest${entry.amount === 1 ? "" : "s"}`;
     parts.push(chestLabel);
+  }
+  if (cosmeticLabel) {
+    parts.push(cosmeticLabel);
   }
 
   if (parts.length === 0) {
@@ -148,7 +180,8 @@ function buildAdminGrantNoticePayload(entry) {
   const summary = formatAdminGrantSummary({
     xp: payload?.xp ?? 0,
     tokens: payload?.tokens ?? 0,
-    chests: payload?.chests ?? []
+    chests: payload?.chests ?? [],
+    cosmetic: payload?.cosmetic ?? null
   });
 
   return {
@@ -158,7 +191,8 @@ function buildAdminGrantNoticePayload(entry) {
     payload: {
       xp: Math.max(0, Math.floor(Number(payload?.xp ?? 0) || 0)),
       tokens: Math.max(0, Math.floor(Number(payload?.tokens ?? 0) || 0)),
-      chests: sanitizeAdminChestEntries(payload?.chests ?? [])
+      chests: sanitizeAdminChestEntries(payload?.chests ?? []),
+      cosmetic: sanitizeAdminCosmeticEntry(payload?.cosmetic ?? null)
     },
     timestamp: entry?.timestamp ?? new Date().toISOString()
   };
@@ -176,6 +210,7 @@ function buildAdminGrantStatusPayload(entry) {
     confirmationStatus: entry?.confirmationStatus ?? "pending",
     error: entry?.error ?? null,
     status: entry?.status ?? null,
+    deliveredAt: entry?.deliveredAt ?? null,
     confirmedAt: entry?.confirmedAt ?? null
   };
 }
@@ -571,6 +606,41 @@ export function createMultiplayerFoundation({
   const roomCleanupTimers = new Map();
   const roomReconnectTimers = new Map();
   const roomSettlementTasks = new Map();
+
+  async function deliverPendingAdminNoticesForSession(session, targetSocketId) {
+    if (!adminGrantStore || !targetSocketId) {
+      return;
+    }
+
+    const targetUsername = normalizeSettledUsername(session?.profileKey ?? session?.username);
+    if (!targetUsername) {
+      return;
+    }
+
+    try {
+      const pendingEntries = await adminGrantStore.listPendingNoticesForUsername(targetUsername);
+      for (const entry of pendingEntries) {
+        const deliveredEntry = await adminGrantStore.markDelivered({
+          transactionId: entry?.transactionId,
+          confirmationStatus: "delivered"
+        });
+        io.to(targetSocketId).emit("admin:grantNotice", buildAdminGrantNoticePayload(deliveredEntry));
+
+        if (deliveredEntry?.adminSocketId) {
+          io.to(deliveredEntry.adminSocketId).emit(
+            "admin:grantStatus",
+            buildAdminGrantStatusPayload(deliveredEntry)
+          );
+        }
+      }
+    } catch (error) {
+      logger?.warn?.("[AdminGrant] Failed to deliver pending admin notices", {
+        username: targetUsername,
+        socketId: targetSocketId,
+        message: error?.message ?? String(error)
+      });
+    }
+  }
 
   // Phase 18 foundation: private 2-player room lifecycle plus authoritative
   // move submission sync, round resolution, repeat-round reset, WAR chain
@@ -1188,6 +1258,7 @@ export function createMultiplayerFoundation({
           account,
           session: sessionStore.toPublicSession(sessionResult.session)
         });
+        void deliverPendingAdminNoticesForSession(sessionResult.session, socket.id);
       } catch (error) {
         respond(buildAccountError(error, "ACCOUNT_LOGIN_FAILED"));
       }
@@ -1208,6 +1279,7 @@ export function createMultiplayerFoundation({
         ok: true,
         session: sessionStore.toPublicSession(result.session)
       });
+      void deliverPendingAdminNoticesForSession(result.session, socket.id);
     });
 
     socket.on("session:logout", (_payload = {}, respond = () => {}) => {
@@ -1385,7 +1457,10 @@ export function createMultiplayerFoundation({
         return;
       }
 
-      if (typeof profileAuthority?.getProfile !== "function") {
+      if (
+        typeof profileAuthority?.getProfile !== "function" ||
+        typeof profileAuthority?.getCosmetics !== "function"
+      ) {
         respond(
           buildAdminError(
             {
@@ -1400,9 +1475,11 @@ export function createMultiplayerFoundation({
 
       try {
         const snapshot = await profileAuthority.getProfile(targetUsername);
+        const cosmetics = await profileAuthority.getCosmetics(targetUsername);
         respond({
           ok: true,
-          profile: snapshot
+          profile: snapshot,
+          cosmetics
         });
       } catch (error) {
         respond(buildAdminError(error, "ADMIN_LOOKUP_FAILED"));
@@ -1480,7 +1557,8 @@ export function createMultiplayerFoundation({
       const grantPayload = {
         xp: Math.max(0, Math.floor(Number(payload?.xp ?? 0) || 0)),
         tokens: Math.max(0, Math.floor(Number(payload?.tokens ?? 0) || 0)),
-        chests: sanitizeAdminChestEntries(payload?.chests ?? [])
+        chests: sanitizeAdminChestEntries(payload?.chests ?? []),
+        cosmetic: sanitizeAdminCosmeticEntry(payload?.cosmetic ?? null)
       };
 
       try {
@@ -1529,7 +1607,7 @@ export function createMultiplayerFoundation({
           ...grantPayload
         });
         const targetSocketId = sessionStore.getSocketIdByUsername(targetUsername);
-        const finalizedEntry = await adminGrantStore.finalizeTransaction({
+        let finalizedEntry = await adminGrantStore.finalizeTransaction({
           transactionId,
           status: "success",
           result: {
@@ -1538,16 +1616,22 @@ export function createMultiplayerFoundation({
               xp: grantResult?.xpDelta ?? grantPayload.xp,
               tokens: grantResult?.tokenDelta ?? grantPayload.tokens,
               chests: grantResult?.chestGrants ?? grantPayload.chests,
+              cosmetic: grantResult?.cosmeticGrant ?? grantPayload.cosmetic,
               levelBefore: grantResult?.levelBefore ?? null,
               levelAfter: grantResult?.levelAfter ?? null,
               levelRewards: grantResult?.levelRewards ?? []
-            }
+            },
+            cosmetics: grantResult?.cosmetics ?? null
           },
           confirmationStatus: targetSocketId ? "awaiting_player" : "player_offline",
           error: null
         });
 
         if (targetSocketId) {
+          finalizedEntry = await adminGrantStore.markDelivered({
+            transactionId,
+            confirmationStatus: "awaiting_player"
+          });
           io.to(targetSocketId).emit("admin:grantNotice", buildAdminGrantNoticePayload(finalizedEntry));
         }
 
