@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, session } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerMultiplayerIpcHandlers } from "./ipc/multiplayerIpc.js";
@@ -90,7 +90,33 @@ function createWindow() {
   win.loadFile(path.join(__dirname, "../renderer/index.html"));
 }
 
+function configurePermissionDenials(targetSession) {
+  if (!targetSession) {
+    return;
+  }
+
+  targetSession.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission === "geolocation") {
+      return false;
+    }
+    return true;
+  });
+
+  targetSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === "geolocation") {
+      console.info("[Main] denied permission request", {
+        permission
+      });
+      callback(false);
+      return;
+    }
+    callback(true);
+  });
+}
+
 app.whenReady().then(() => {
+  configurePermissionDenials(session.defaultSession);
+
   const dataDir = path.join(app.getPath("userData"), "elemintz-data");
   const multiplayerIpc = registerMultiplayerIpcHandlers(ipcMain, { dataDir });
   registerStateIpcHandlers(ipcMain, {
