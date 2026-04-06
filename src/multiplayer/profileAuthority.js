@@ -303,6 +303,26 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async applyAdminGrant({ username, xp = 0, tokens = 0, chests = [] }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative admin grants.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] applyAdminGrant -> ${safeUsername}`);
+    const result = await this.coordinator.applyAdminGrant({
+      username: safeUsername,
+      xp,
+      tokens,
+      chests
+    });
+
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
   async equipCosmetic({ username, type, cosmeticId }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

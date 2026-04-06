@@ -2,6 +2,7 @@ import { buildOnlineMatchStateFromRoom, createMultiplayerFoundation } from "./fo
 import { StateCoordinator } from "../state/stateCoordinator.js";
 import { MultiplayerProfileAuthority } from "./profileAuthority.js";
 import { MultiplayerAccountStore } from "./accountStore.js";
+import { AdminGrantStore } from "../state/adminGrantStore.js";
 import { createTimestampedLogger } from "./logger.js";
 import os from "node:os";
 import path from "node:path";
@@ -36,6 +37,9 @@ const profileAuthority = new MultiplayerProfileAuthority({
 const accountStore = new MultiplayerAccountStore({
   dataDir: resolveStandaloneDataDir(),
   logger
+});
+const adminGrantStore = new AdminGrantStore({
+  dataDir: resolveStandaloneDataDir()
 });
 
 async function rewardPersister({ room, summary, decision, settlementKey }) {
@@ -104,6 +108,7 @@ const server = createMultiplayerFoundation({
   disconnectTracker,
   profileAuthority,
   accountStore,
+  adminGrantStore,
   logger
 });
 let shuttingDown = false;

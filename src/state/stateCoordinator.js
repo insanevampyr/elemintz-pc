@@ -40,6 +40,7 @@ import { rollBasicChest } from "../shared/basicChestDrop.js";
 const DAILY_LOGIN_TOKENS = 5;
 const DAILY_LOGIN_XP = 2;
 const VALID_RUNTIME_MODES = new Set(["pve", "local_pvp", "online_pvp"]);
+const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 
 function profilesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -837,6 +838,91 @@ export class StateCoordinator {
         chestType,
         amount
       }
+    };
+  }
+
+  async applyAdminGrant({
+    username,
+    xp = 0,
+    tokens = 0,
+    chests = []
+  }) {
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      throw new Error("username is required for admin grants.");
+    }
+
+    const safeXp = Math.max(0, Math.floor(Number(xp ?? 0) || 0));
+    const safeTokens = Math.max(0, Math.floor(Number(tokens ?? 0) || 0));
+    const normalizedChests = (Array.isArray(chests) ? chests : [])
+      .map((entry) => ({
+        chestType: String(entry?.chestType ?? "").trim(),
+        amount: Math.max(0, Math.floor(Number(entry?.amount ?? 0) || 0))
+      }))
+      .filter((entry) => entry.amount > 0);
+
+    for (const entry of normalizedChests) {
+      if (!VALID_ADMIN_CHEST_TYPES.has(entry.chestType)) {
+        throw new Error(`Unsupported chest type '${entry.chestType}'.`);
+      }
+    }
+
+    if (safeXp <= 0 && safeTokens <= 0 && normalizedChests.length === 0) {
+      throw new Error("At least one admin reward value is required.");
+    }
+
+    let grantSummary = null;
+    const profile = await this.profiles.updateProfile(safeUsername, (current) => {
+      const levelBefore = Math.max(1, Number(current?.playerLevel ?? getLevelProgress(current).playerLevel ?? 1));
+      let nextProfile = {
+        ...current,
+        tokens: Math.max(0, Number(current?.tokens ?? 0) + safeTokens),
+        playerXP: Math.max(0, Number(current?.playerXP ?? 0) + safeXp),
+        playerLevel: levelBefore
+      };
+
+      const levelAfterGain = Math.max(levelBefore, getLevelProgress(nextProfile).playerLevel);
+      nextProfile = {
+        ...nextProfile,
+        playerLevel: levelAfterGain
+      };
+
+      const levelRewardResult = applyLevelRewardsForLevelChange(nextProfile, {
+        fromLevel: levelBefore,
+        toLevel: levelAfterGain
+      });
+      nextProfile = levelRewardResult.profile;
+
+      for (const entry of normalizedChests) {
+        nextProfile = grantChest(nextProfile, {
+          chestType: entry.chestType,
+          amount: entry.amount
+        });
+      }
+
+      grantSummary = {
+        xpDelta: safeXp,
+        tokenDelta: safeTokens,
+        chestGrants: normalizedChests,
+        levelBefore,
+        levelAfter: Math.max(levelAfterGain, Number(nextProfile?.playerLevel ?? levelAfterGain)),
+        levelRewards: levelRewardResult.grantedRewards,
+        levelRewardTokenDelta: levelRewardResult.tokenDelta
+      };
+
+      return nextProfile;
+    });
+
+    return {
+      profile,
+      xp: getLevelProgress(profile),
+      xpDelta: grantSummary?.xpDelta ?? safeXp,
+      tokenDelta: grantSummary?.tokenDelta ?? safeTokens,
+      chestGrants: grantSummary?.chestGrants ?? normalizedChests,
+      levelBefore: grantSummary?.levelBefore ?? Number(profile?.playerLevel ?? 1),
+      levelAfter: grantSummary?.levelAfter ?? Number(profile?.playerLevel ?? 1),
+      levelRewards: grantSummary?.levelRewards ?? [],
+      levelRewardTokenDelta: grantSummary?.levelRewardTokenDelta ?? 0
     };
   }
 

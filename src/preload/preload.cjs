@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("elemintz", {
     claimDailyLoginReward: (payload) => ipcRenderer.invoke("multiplayer:claimDailyLoginReward", payload),
     buyStoreItem: (payload) => ipcRenderer.invoke("multiplayer:buyStoreItem", payload),
     openChest: (payload) => ipcRenderer.invoke("multiplayer:openChest", payload),
+    confirmAdminGrantNotice: (payload) => ipcRenderer.invoke("multiplayer:confirmAdminGrantNotice", payload),
     equipCosmetic: (payload) => ipcRenderer.invoke("multiplayer:equipCosmetic", payload),
     updateCosmeticPreferences: (payload) => ipcRenderer.invoke("multiplayer:updateCosmeticPreferences", payload),
     randomizeOwnedCosmetics: (payload) => ipcRenderer.invoke("multiplayer:randomizeOwnedCosmetics", payload),

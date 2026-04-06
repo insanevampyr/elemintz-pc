@@ -554,6 +554,20 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "admin:confirmGrantReceipt") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            transactionId: payload?.transactionId ?? null,
+            targetUsername: this.sessionUsername ?? payload?.username ?? null,
+            confirmationStatus: "confirmed",
+            status: "success"
+          }
+        });
+      });
+    }
+
     return true;
   }
 
@@ -1081,6 +1095,43 @@ test("multiplayer client: sequential and mixed chest opens complete after each p
     requestOrder
   );
   assert.equal(client.isOpeningChest, false);
+});
+
+test("multiplayer client: receives admin grant notices and confirms them through the authoritative socket path", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  await client.connect();
+  await client.ensureSession({ username: "NoticePlayer" });
+
+  lastSocket.serverEmit("admin:grantNotice", {
+    transactionId: "grant-1",
+    targetUsername: "NoticePlayer",
+    message: "EleMintz has sent you 50 XP. Click OK to confirm.",
+    payload: { xp: 50, tokens: 0, chests: [] },
+    timestamp: "2026-04-05T12:00:00.000Z"
+  });
+
+  assert.equal(client.getState().pendingAdminGrantNotices.length, 1);
+  assert.equal(client.getState().pendingAdminGrantNotices[0].transactionId, "grant-1");
+
+  const result = await client.confirmAdminGrantNotice({ transactionId: "grant-1" });
+
+  assert.equal(result?.transactionId, "grant-1");
+  assert.equal(result?.confirmationStatus, "confirmed");
+  assert.equal(client.getState().pendingAdminGrantNotices.length, 0);
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "admin:confirmGrantReceipt",
+    payload: {
+      transactionId: "grant-1"
+    }
+  });
 });
 
 test("multiplayer client: authenticated login reuses the server-issued session for later room actions", async () => {

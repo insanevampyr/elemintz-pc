@@ -127,6 +127,27 @@ function cloneRewardSettlement(rewardSettlement) {
     : null;
 }
 
+function cloneAdminGrantNotice(notice) {
+  return notice
+    ? {
+        transactionId: notice.transactionId ?? null,
+        targetUsername: notice.targetUsername ?? null,
+        message: notice.message ?? "",
+        payload: {
+          xp: Number(notice.payload?.xp ?? 0),
+          tokens: Number(notice.payload?.tokens ?? 0),
+          chests: Array.isArray(notice.payload?.chests)
+            ? notice.payload.chests.map((entry) => ({
+                chestType: entry?.chestType ?? null,
+                amount: Number(entry?.amount ?? 0)
+              }))
+            : []
+        },
+        timestamp: notice.timestamp ?? null
+      }
+    : null;
+}
+
 function toRoundResultOutcomeType(authoritativeOutcomeType) {
   const safeType = String(authoritativeOutcomeType ?? "").trim();
   if (safeType === "win") {
@@ -446,6 +467,9 @@ function cloneState(state) {
     room: cloneRoom(state.room),
     latestRoundResult: cloneRoundResult(state.latestRoundResult),
     latestAuthoritativeRoundResult: cloneAuthoritativeRoundResult(state.latestAuthoritativeRoundResult),
+    pendingAdminGrantNotices: Array.isArray(state.pendingAdminGrantNotices)
+      ? state.pendingAdminGrantNotices.map((entry) => cloneAdminGrantNotice(entry)).filter(Boolean)
+      : [],
     lastError: state.lastError ? { ...state.lastError } : null,
     statusMessage: state.statusMessage
   };
@@ -527,6 +551,7 @@ export class MultiplayerClient {
       room: null,
       latestRoundResult: null,
       latestAuthoritativeRoundResult: null,
+      pendingAdminGrantNotices: [],
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
@@ -596,6 +621,49 @@ export class MultiplayerClient {
     for (const listener of this.subscribers) {
       listener(snapshot);
     }
+  }
+
+  upsertPendingAdminGrantNotice(notice) {
+    const cloned = cloneAdminGrantNotice(notice);
+    if (!cloned?.transactionId) {
+      return;
+    }
+
+    const existing = Array.isArray(this.state.pendingAdminGrantNotices)
+      ? this.state.pendingAdminGrantNotices
+      : [];
+    const nextNotices = [
+      ...existing.filter((entry) => String(entry?.transactionId ?? "") !== cloned.transactionId),
+      cloned
+    ].slice(-20);
+
+    this.updateState({
+      pendingAdminGrantNotices: nextNotices,
+      lastError: null,
+      statusMessage: "A new EleMintz reward confirmation is waiting."
+    });
+  }
+
+  removePendingAdminGrantNotice(transactionId) {
+    const safeTransactionId = String(transactionId ?? "").trim();
+    if (!safeTransactionId) {
+      return;
+    }
+
+    const existing = Array.isArray(this.state.pendingAdminGrantNotices)
+      ? this.state.pendingAdminGrantNotices
+      : [];
+    const nextNotices = existing.filter(
+      (entry) => String(entry?.transactionId ?? "").trim() !== safeTransactionId
+    );
+
+    if (nextNotices.length === existing.length) {
+      return;
+    }
+
+    this.updateState({
+      pendingAdminGrantNotices: nextNotices
+    });
   }
 
   getCurrentResolvedStepId() {
@@ -1373,6 +1441,14 @@ export class MultiplayerClient {
       });
     };
 
+    const onAdminGrantNotice = (notice) => {
+      this.logger.info?.("[OnlinePlay][MainClient] admin:grantNotice received", {
+        transactionId: notice?.transactionId ?? null,
+        targetUsername: notice?.targetUsername ?? null
+      });
+      this.upsertPendingAdminGrantNotice(notice);
+    };
+
     socket.on("connect", onConnect);
     socket.on("connect_error", onConnectError);
     socket.on("disconnect", onDisconnect);
@@ -1383,6 +1459,7 @@ export class MultiplayerClient {
     socket.on("room:roundResult", onRoomRoundResult);
     socket.on("room:serverRoundResult", onServerRoundResult);
     socket.on("room:error", onRoomError);
+    socket.on("admin:grantNotice", onAdminGrantNotice);
 
     this.boundSocketListeners = {
       onConnect,
@@ -1394,7 +1471,8 @@ export class MultiplayerClient {
       onRoomMoveSync,
       onRoomRoundResult,
       onServerRoundResult,
-      onRoomError
+      onRoomError,
+      onAdminGrantNotice
     };
   }
 
@@ -1413,6 +1491,7 @@ export class MultiplayerClient {
     socket.off("room:roundResult", this.boundSocketListeners.onRoomRoundResult);
     socket.off("room:serverRoundResult", this.boundSocketListeners.onServerRoundResult);
     socket.off("room:error", this.boundSocketListeners.onRoomError);
+    socket.off("admin:grantNotice", this.boundSocketListeners.onAdminGrantNotice);
     this.boundSocketListeners = null;
   }
 
@@ -1759,6 +1838,34 @@ export class MultiplayerClient {
     }
   }
 
+  async confirmAdminGrantNotice({ transactionId, serverUrl } = {}) {
+    const safeTransactionId = String(transactionId ?? "").trim();
+    if (!safeTransactionId) {
+      throw new Error("transactionId is required to confirm an admin grant notice.");
+    }
+
+    const response = await this.runServerRequest(
+      "admin:confirmGrantReceipt",
+      {
+        username: this.state.session?.username ?? null,
+        transactionId: safeTransactionId
+      },
+      { serverUrl }
+    );
+
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to confirm this EleMintz reward.");
+    }
+
+    this.removePendingAdminGrantNotice(safeTransactionId);
+    this.updateState({
+      lastError: null,
+      statusMessage: "Reward confirmation sent."
+    });
+
+    return response.result ?? null;
+  }
+
   async equipCosmetic({ username, type, cosmeticId, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:equipCosmetic",
@@ -1860,6 +1967,7 @@ export class MultiplayerClient {
       room: null,
       latestRoundResult: null,
       latestAuthoritativeRoundResult: null,
+      pendingAdminGrantNotices: [],
       lastError: null,
       serverUrl: preserveServerUrl ? this.state.serverUrl : this.defaultServerUrl,
       statusMessage: silent ? this.state.statusMessage : "Disconnected."

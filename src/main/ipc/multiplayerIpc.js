@@ -89,6 +89,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.openChest(payload);
   });
 
+  ipcMain.handle("multiplayer:confirmAdminGrantNotice", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.confirmAdminGrantNotice(payload);
+  });
+
   ipcMain.handle("multiplayer:equipCosmetic", async (event, payload) => {
     subscribers.add(event.sender);
     return client.equipCosmetic(payload);

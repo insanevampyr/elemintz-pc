@@ -10425,6 +10425,90 @@ test("ui: failed chest opens clear the renderer in-flight state and exit the ope
   }
 });
 
+test("ui: appController shows and confirms an incoming admin reward notice through multiplayer authority", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const shown = [];
+  const multiplayerListeners = [];
+  const confirmCalls = [];
+
+  global.document = {
+    querySelector: () => null
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        onUpdate: (listener) => {
+          multiplayerListeners.push(listener);
+          return () => {};
+        },
+        confirmAdminGrantNotice: async (payload) => {
+          confirmCalls.push(payload);
+          return {
+            transactionId: payload?.transactionId ?? null,
+            confirmationStatus: "confirmed"
+          };
+        },
+        getState: async () => ({
+          connectionStatus: "connected",
+          session: {
+            username: "NoticePlayer",
+            authenticated: true
+          },
+          pendingAdminGrantNotices: []
+        })
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "NoticePlayer";
+    app.bindOnlinePlayUpdates();
+
+    multiplayerListeners[0]?.({
+      connectionStatus: "connected",
+      session: {
+        username: "NoticePlayer",
+        authenticated: true
+      },
+      pendingAdminGrantNotices: [
+        {
+          transactionId: "admin-grant-1",
+          targetUsername: "NoticePlayer",
+          message: "EleMintz has sent you 50 XP. Click OK to confirm.",
+          payload: { xp: 50, tokens: 0, chests: [] },
+          timestamp: "2026-04-05T12:00:00.000Z"
+        }
+      ]
+    });
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Reward Confirmation");
+    assert.match(modalCalls[0].bodyHtml, /EleMintz has sent you 50 XP\. Click OK to confirm\./);
+
+    await modalCalls[0].actions?.[0]?.onClick?.();
+
+    assert.deepEqual(confirmCalls, [{ transactionId: "admin-grant-1" }]);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
 test("ui: profile unlocked achievements render comeback_win badge once earned", () => {
   const html = profileScreen.render({
     profile: {

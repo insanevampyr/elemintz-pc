@@ -13,6 +13,7 @@ const ROUND_RESET_DELAY_MS = 1700;
 const ROOM_CLEANUP_DELAY_MS = 30000;
 const ROOM_RECONNECT_TIMEOUT_MS = 60000;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
+const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 export const MULTIPLAYER_FOUNDATION_PHASE = 22;
 const DEVELOPMENT_PHASE_LABEL = "Shared Authoritative Achievements - Pass 2";
 
@@ -99,6 +100,92 @@ function normalizeSettledUsername(username) {
     .slice(0, MAX_SETTLED_USERNAME_LENGTH);
   return normalized.length > 0 ? normalized : null;
 }
+
+function normalizeAdminTransactionId(transactionId) {
+  const normalized = String(transactionId ?? "").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function sanitizeAdminChestEntries(chests) {
+  return (Array.isArray(chests) ? chests : [])
+    .map((entry) => ({
+      chestType: String(entry?.chestType ?? "").trim(),
+      amount: Math.max(0, Math.floor(Number(entry?.amount ?? 0) || 0))
+    }))
+    .filter((entry) => entry.amount > 0 && VALID_ADMIN_CHEST_TYPES.has(entry.chestType));
+}
+
+function formatAdminGrantSummary({ xp = 0, tokens = 0, chests = [] } = {}) {
+  const parts = [];
+  const safeXp = Math.max(0, Math.floor(Number(xp ?? 0) || 0));
+  const safeTokens = Math.max(0, Math.floor(Number(tokens ?? 0) || 0));
+  const safeChests = sanitizeAdminChestEntries(chests);
+
+  if (safeXp > 0) {
+    parts.push(`${safeXp} XP`);
+  }
+  if (safeTokens > 0) {
+    parts.push(`${safeTokens} Tokens`);
+  }
+  for (const entry of safeChests) {
+    const chestLabel = `${entry.amount} ${entry.chestType.charAt(0).toUpperCase()}${entry.chestType.slice(1)} Chest${entry.amount === 1 ? "" : "s"}`;
+    parts.push(chestLabel);
+  }
+
+  if (parts.length === 0) {
+    return "a reward";
+  }
+
+  if (parts.length === 1) {
+    return parts[0];
+  }
+
+  return `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
+}
+
+function buildAdminGrantNoticePayload(entry) {
+  const payload = entry?.payload ?? {};
+  const summary = formatAdminGrantSummary({
+    xp: payload?.xp ?? 0,
+    tokens: payload?.tokens ?? 0,
+    chests: payload?.chests ?? []
+  });
+
+  return {
+    transactionId: entry?.transactionId ?? null,
+    targetUsername: entry?.targetUsername ?? null,
+    message: `EleMintz has sent you ${summary}. Click OK to confirm.`,
+    payload: {
+      xp: Math.max(0, Math.floor(Number(payload?.xp ?? 0) || 0)),
+      tokens: Math.max(0, Math.floor(Number(payload?.tokens ?? 0) || 0)),
+      chests: sanitizeAdminChestEntries(payload?.chests ?? [])
+    },
+    timestamp: entry?.timestamp ?? new Date().toISOString()
+  };
+}
+
+function buildAdminGrantStatusPayload(entry) {
+  return {
+    transactionId: entry?.transactionId ?? null,
+    timestamp: entry?.timestamp ?? null,
+    adminIdentifier: entry?.adminIdentifier ?? null,
+    targetUsername: entry?.targetUsername ?? null,
+    grantType: entry?.grantType ?? "manual_reward_grant",
+    payload: entry?.payload ?? null,
+    result: entry?.result ?? null,
+    confirmationStatus: entry?.confirmationStatus ?? "pending",
+    error: entry?.error ?? null,
+    status: entry?.status ?? null,
+    confirmedAt: entry?.confirmedAt ?? null
+  };
+}
+
+const ADMIN_ALLOWLIST = Object.freeze([
+  Object.freeze({
+    username: "VampyrLee",
+    email: "insanevampyr@gmail.com"
+  })
+]);
 
 function buildSettledIdentity(room, logger = DEFAULT_TIMESTAMPED_LOGGER) {
   const settledHostUsername = normalizeSettledUsername(room?.host?.username);
@@ -467,7 +554,8 @@ export function createMultiplayerFoundation({
   disconnectTracker = null,
   rewardPersister = null,
   profileAuthority = null,
-  accountStore = null
+  accountStore = null,
+  adminGrantStore = null
 } = {}) {
   const app = express();
   const httpServer = http.createServer(app);
@@ -678,6 +766,42 @@ export function createMultiplayerFoundation({
     };
   }
 
+  function buildAdminError(error, fallbackCode = "ADMIN_REQUEST_FAILED") {
+    return {
+      ok: false,
+      error: {
+        code: error?.code ?? fallbackCode,
+        message: error?.message ?? "Unable to complete admin request."
+      }
+    };
+  }
+
+  function assertAdminAccessForSession(session) {
+    const normalizedUsername = normalizeSettledUsername(session?.profileKey ?? session?.username);
+    const normalizedEmail = String(session?.email ?? "").trim().toLowerCase() || null;
+
+    if (!session?.authenticated || !normalizedUsername || !normalizedEmail) {
+      const error = new Error("An authenticated EleMintz account session is required.");
+      error.code = "ADMIN_AUTH_REQUIRED";
+      throw error;
+    }
+
+    const match =
+      ADMIN_ALLOWLIST.find(
+        (entry) => entry.username === normalizedUsername && entry.email === normalizedEmail
+      ) ?? null;
+
+    if (!match) {
+      const error = new Error("This EleMintz account does not have admin access.");
+      error.code = "ADMIN_ACCESS_DENIED";
+      throw error;
+    }
+
+    return {
+      adminIdentifier: normalizedUsername
+    };
+  }
+
   async function resolveBootstrapUsername(username) {
     const requestedUsername = normalizeSettledUsername(username);
     if (!requestedUsername) {
@@ -719,10 +843,19 @@ export function createMultiplayerFoundation({
 
     const sessionToken = String(payload?.sessionToken ?? "").trim();
     if (sessionToken) {
-      return sessionStore.resumeSession({
+      const resumed = sessionStore.resumeSession({
         token: sessionToken,
         socketId: socket.id
       });
+
+      if (!resumed?.ok) {
+        return resumed;
+      }
+
+      return {
+        ok: true,
+        session: sessionStore.getSessionBySocket(socket.id) ?? resumed.session
+      };
     }
 
     if (!allowBootstrap) {
@@ -1219,6 +1352,267 @@ export function createMultiplayerFoundation({
             message: String(error?.message ?? "Unable to read authoritative profile.")
           }
         });
+        }
+      });
+
+    socket.on("admin:lookupUser", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_AUTH_FAILED"));
+        return;
+      }
+
+      const targetUsername = normalizeSettledUsername(payload?.username);
+      if (!targetUsername) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_TARGET_USERNAME_REQUIRED",
+              message: "username is required for admin lookup."
+            },
+            "ADMIN_TARGET_USERNAME_REQUIRED"
+          )
+        );
+        return;
+      }
+
+      if (typeof profileAuthority?.getProfile !== "function") {
+        respond(
+          buildAdminError(
+            {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            },
+            "PROFILE_AUTHORITY_UNAVAILABLE"
+          )
+        );
+        return;
+      }
+
+      try {
+        const snapshot = await profileAuthority.getProfile(targetUsername);
+        respond({
+          ok: true,
+          profile: snapshot
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_LOOKUP_FAILED"));
+      }
+    });
+
+    socket.on("admin:grantRewards", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+
+      let adminAccess = null;
+      try {
+        adminAccess = assertAdminAccessForSession(sessionResult.session);
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_AUTH_FAILED"));
+        return;
+      }
+
+      const targetUsername = normalizeSettledUsername(payload?.username);
+      const transactionId = normalizeAdminTransactionId(payload?.transactionId);
+      if (!targetUsername) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_TARGET_USERNAME_REQUIRED",
+              message: "username is required for admin grants."
+            },
+            "ADMIN_TARGET_USERNAME_REQUIRED"
+          )
+        );
+        return;
+      }
+      if (!transactionId) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_TRANSACTION_REQUIRED",
+              message: "transactionId is required for admin grants."
+            },
+            "ADMIN_TRANSACTION_REQUIRED"
+          )
+        );
+        return;
+      }
+      if (!adminGrantStore) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_GRANT_STORE_UNAVAILABLE",
+              message: "Admin grant persistence is not available."
+            },
+            "ADMIN_GRANT_STORE_UNAVAILABLE"
+          )
+        );
+        return;
+      }
+      if (typeof profileAuthority?.applyAdminGrant !== "function") {
+        respond(
+          buildAdminError(
+            {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            },
+            "PROFILE_AUTHORITY_UNAVAILABLE"
+          )
+        );
+        return;
+      }
+
+      const grantPayload = {
+        xp: Math.max(0, Math.floor(Number(payload?.xp ?? 0) || 0)),
+        tokens: Math.max(0, Math.floor(Number(payload?.tokens ?? 0) || 0)),
+        chests: sanitizeAdminChestEntries(payload?.chests ?? [])
+      };
+
+      try {
+        const transactionStart = await adminGrantStore.beginTransaction({
+          transactionId,
+          timestamp: new Date().toISOString(),
+          adminId: adminAccess.adminIdentifier,
+          targetUsername,
+          grantType: "manual_reward_grant",
+          payload: grantPayload,
+          adminSocketId: socket.id
+        });
+
+        if (transactionStart.duplicate) {
+          const existing = transactionStart.entry;
+          if (existing?.status === "success") {
+            respond({
+              ok: true,
+              duplicate: true,
+              result: buildAdminGrantStatusPayload(existing)
+            });
+            return;
+          }
+
+          respond({
+            ok: false,
+            duplicate: true,
+            error: {
+              code:
+                existing?.status === "failure"
+                  ? "ADMIN_GRANT_PREVIOUS_FAILURE"
+                  : "ADMIN_GRANT_IN_PROGRESS",
+              message:
+                existing?.error?.message ??
+                (existing?.status === "failure"
+                  ? "This transaction previously failed."
+                  : "This transaction is already being processed.")
+            },
+            result: buildAdminGrantStatusPayload(existing)
+          });
+          return;
+        }
+
+        const grantResult = await profileAuthority.applyAdminGrant({
+          username: targetUsername,
+          ...grantPayload
+        });
+        const targetSocketId = sessionStore.getSocketIdByUsername(targetUsername);
+        const finalizedEntry = await adminGrantStore.finalizeTransaction({
+          transactionId,
+          status: "success",
+          result: {
+            profile: grantResult?.snapshot ?? null,
+            applied: {
+              xp: grantResult?.xpDelta ?? grantPayload.xp,
+              tokens: grantResult?.tokenDelta ?? grantPayload.tokens,
+              chests: grantResult?.chestGrants ?? grantPayload.chests,
+              levelBefore: grantResult?.levelBefore ?? null,
+              levelAfter: grantResult?.levelAfter ?? null,
+              levelRewards: grantResult?.levelRewards ?? []
+            }
+          },
+          confirmationStatus: targetSocketId ? "awaiting_player" : "player_offline",
+          error: null
+        });
+
+        if (targetSocketId) {
+          io.to(targetSocketId).emit("admin:grantNotice", buildAdminGrantNoticePayload(finalizedEntry));
+        }
+
+        respond({
+          ok: true,
+          result: buildAdminGrantStatusPayload(finalizedEntry)
+        });
+      } catch (error) {
+        const finalizedEntry = await adminGrantStore
+          .finalizeTransaction({
+            transactionId,
+            status: "failure",
+            result: null,
+            confirmationStatus: "failed",
+            error: {
+              code: error?.code ?? "ADMIN_GRANT_FAILED",
+              message: String(error?.message ?? "Unable to apply admin grant.")
+            }
+          })
+          .catch(() => null);
+
+        respond({
+          ...buildAdminError(error, "ADMIN_GRANT_FAILED"),
+          ...(finalizedEntry ? { result: buildAdminGrantStatusPayload(finalizedEntry) } : {})
+        });
+      }
+    });
+
+    socket.on("admin:confirmGrantReceipt", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (!adminGrantStore) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_GRANT_STORE_UNAVAILABLE",
+              message: "Admin grant persistence is not available."
+            },
+            "ADMIN_GRANT_STORE_UNAVAILABLE"
+          )
+        );
+        return;
+      }
+
+      try {
+        const entry = await adminGrantStore.confirmTransaction({
+          transactionId: payload?.transactionId,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+        });
+
+        if (entry?.adminSocketId) {
+          io.to(entry.adminSocketId).emit("admin:grantStatus", buildAdminGrantStatusPayload(entry));
+        }
+
+        respond({
+          ok: true,
+          result: buildAdminGrantStatusPayload(entry)
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_GRANT_CONFIRM_FAILED"));
       }
     });
 

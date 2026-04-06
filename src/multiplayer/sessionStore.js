@@ -267,6 +267,42 @@ export function createSessionStore({
     return safeToken ? sessionsByToken.get(safeToken) ?? null : null;
   }
 
+  function getSessionByUsername(username) {
+    const safeUsername = normalizeUsername(username);
+    if (!safeUsername) {
+      return null;
+    }
+
+    for (const session of sessionsByToken.values()) {
+      if (
+        normalizeUsername(session?.username) === safeUsername ||
+        normalizeUsername(session?.profileKey) === safeUsername
+      ) {
+        return toPublicSession(session);
+      }
+    }
+
+    return null;
+  }
+
+  function getSocketIdByUsername(username) {
+    const safeUsername = normalizeUsername(username);
+    if (!safeUsername) {
+      return null;
+    }
+
+    for (const session of sessionsByToken.values()) {
+      if (
+        normalizeUsername(session?.username) === safeUsername ||
+        normalizeUsername(session?.profileKey) === safeUsername
+      ) {
+        return session?.socketId ?? null;
+      }
+    }
+
+    return null;
+  }
+
   function disconnectSocket(socketId) {
     const token = tokenBySocketId.get(socketId);
     if (!token) {
@@ -295,6 +331,8 @@ export function createSessionStore({
     resumeSession,
     getSessionBySocket,
     getSessionByToken,
+    getSessionByUsername,
+    getSocketIdByUsername,
     disconnectSocket,
     destroySession,
     toPublicSession

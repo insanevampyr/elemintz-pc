@@ -18,6 +18,7 @@ import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
+import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
 
 function connectClient(port) {
@@ -67,6 +68,12 @@ async function bootstrapSession(socket, username) {
 async function resumeSession(socket, sessionToken) {
   return new Promise((resolve) => {
     socket.emit("session:resume", { sessionToken }, resolve);
+  });
+}
+
+async function loginAccount(socket, { email, password }) {
+  return new Promise((resolve) => {
+    socket.emit("auth:login", { email, password }, resolve);
   });
 }
 
@@ -308,6 +315,232 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
   } finally {
     client?.disconnect();
     await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: admin lookup returns the authoritative profile snapshot by username", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+
+  try {
+    await coordinator.profiles.ensureProfile("LookupTarget");
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    const login = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(login?.ok, true);
+
+    const response = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:lookupUser",
+        {
+          sessionToken: login?.session?.token,
+          username: "LookupTarget"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(response?.ok, true);
+    assert.equal(response?.profile?.username, "LookupTarget");
+    assert.equal(response?.profile?.authority, "server");
+  } finally {
+    adminClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin grants apply once, notify the player, and update confirmation status", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+
+  try {
+    const profileBefore = await coordinator.profiles.ensureProfile("GrantTarget");
+    const tokensBefore = Number(profileBefore?.tokens ?? 0);
+    const xpBefore = Number(profileBefore?.playerXP ?? 0);
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    const playerSession = await bootstrapSession(playerClient, "GrantTarget");
+    assert.equal(playerSession?.ok, true);
+
+    const noticePromise = waitForEvent(playerClient, "admin:grantNotice");
+    const grantResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantRewards",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "grant-transaction-1",
+          username: "GrantTarget",
+          xp: 25,
+          tokens: 40,
+          chests: [{ chestType: "epic", amount: 2 }]
+        },
+        resolve
+      );
+    });
+
+    const notice = await noticePromise;
+    assert.equal(grantResponse?.ok, true);
+    assert.equal(grantResponse?.result?.transactionId, "grant-transaction-1");
+    assert.equal(grantResponse?.result?.status, "success");
+    assert.equal(grantResponse?.result?.confirmationStatus, "awaiting_player");
+    assert.equal(notice?.transactionId, "grant-transaction-1");
+    assert.match(notice?.message ?? "", /EleMintz has sent you/i);
+
+    const profileAfterGrant = await coordinator.profiles.getProfile("GrantTarget");
+    assert.ok(Number(profileAfterGrant?.tokens ?? 0) >= tokensBefore + 40);
+    assert.equal(Number(profileAfterGrant?.playerXP ?? 0), xpBefore + 25);
+    assert.equal(Number(profileAfterGrant?.chests?.epic ?? 0), Number(profileBefore?.chests?.epic ?? 0) + 2);
+
+    const duplicateResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantRewards",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "grant-transaction-1",
+          username: "GrantTarget",
+          xp: 25,
+          tokens: 40,
+          chests: [{ chestType: "epic", amount: 2 }]
+        },
+        resolve
+      );
+    });
+
+    const profileAfterDuplicate = await coordinator.profiles.getProfile("GrantTarget");
+    assert.equal(duplicateResponse?.ok, true);
+    assert.equal(duplicateResponse?.duplicate, true);
+    assert.equal(Number(profileAfterDuplicate?.tokens ?? 0), Number(profileAfterGrant?.tokens ?? 0));
+    assert.equal(Number(profileAfterDuplicate?.playerXP ?? 0), Number(profileAfterGrant?.playerXP ?? 0));
+    assert.equal(Number(profileAfterDuplicate?.chests?.epic ?? 0), Number(profileAfterGrant?.chests?.epic ?? 0));
+
+    const grantStatusPromise = waitForEvent(adminClient, "admin:grantStatus");
+    const confirmResponse = await new Promise((resolve) => {
+      playerClient.emit("admin:confirmGrantReceipt", { transactionId: "grant-transaction-1" }, resolve);
+    });
+    const grantStatus = await grantStatusPromise;
+
+    assert.equal(confirmResponse?.ok, true);
+    assert.equal(confirmResponse?.result?.confirmationStatus, "confirmed");
+    assert.equal(grantStatus?.transactionId, "grant-transaction-1");
+    assert.equal(grantStatus?.confirmationStatus, "confirmed");
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin requests reject authenticated accounts outside the server allowlist", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.ensureProfile("LookupTarget");
+    await accountStore.register({
+      email: "player@example.com",
+      password: "PlayerPass123",
+      username: "RegularPlayer"
+    });
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+    const login = await loginAccount(client, {
+      email: "player@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(login?.ok, true);
+
+    const response = await new Promise((resolve) => {
+      client.emit(
+        "admin:lookupUser",
+        {
+          sessionToken: login?.session?.token,
+          username: "LookupTarget"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(response?.ok, false);
+    assert.equal(response?.error?.code, "ADMIN_ACCESS_DENIED");
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
 

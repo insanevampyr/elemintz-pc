@@ -123,6 +123,7 @@ export class AppController {
     this.profileMilestoneChestNoticeOpen = false;
     this.profileChestOpenInFlight = false;
     this.onlinePlayState = null;
+    this.activeAdminGrantNoticeId = null;
     this.onlinePlayJoinCode = "";
     this.onlinePlayUnsubscribe = null;
     this.onlinePlayChallengeSummary = null;
@@ -1857,6 +1858,7 @@ export class AppController {
       socketId: null,
       room: null,
       latestRoundResult: null,
+      pendingAdminGrantNotices: [],
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
@@ -1865,6 +1867,26 @@ export class AppController {
       ...fallback,
       ...(state ?? {}),
       room: normalizedRoom,
+      pendingAdminGrantNotices: Array.isArray(state?.pendingAdminGrantNotices)
+        ? state.pendingAdminGrantNotices
+            .map((entry) => ({
+              transactionId: String(entry?.transactionId ?? "").trim() || null,
+              targetUsername: String(entry?.targetUsername ?? "").trim() || null,
+              message: String(entry?.message ?? "").trim(),
+              payload: {
+                xp: Math.max(0, Number(entry?.payload?.xp ?? 0) || 0),
+                tokens: Math.max(0, Number(entry?.payload?.tokens ?? 0) || 0),
+                chests: Array.isArray(entry?.payload?.chests)
+                  ? entry.payload.chests.map((chest) => ({
+                      chestType: String(chest?.chestType ?? "").trim() || null,
+                      amount: Math.max(0, Number(chest?.amount ?? 0) || 0)
+                    }))
+                  : []
+              },
+              timestamp: entry?.timestamp ?? null
+            }))
+            .filter((entry) => entry.transactionId)
+        : [],
       latestAuthoritativeRoundResult: state?.latestAuthoritativeRoundResult
         ? {
             ...state.latestAuthoritativeRoundResult,
@@ -1885,6 +1907,74 @@ export class AppController {
           }
         : null
     };
+  }
+
+  getPendingAdminGrantNotice(state = this.onlinePlayState) {
+    return Array.isArray(state?.pendingAdminGrantNotices) ? state.pendingAdminGrantNotices[0] ?? null : null;
+  }
+
+  maybeShowPendingAdminGrantNotice(state = this.onlinePlayState) {
+    const notice = this.getPendingAdminGrantNotice(state);
+    if (!notice?.transactionId || !window.elemintz?.multiplayer?.confirmAdminGrantNotice) {
+      if (this.activeAdminGrantNoticeId && !this.getPendingAdminGrantNotice()) {
+        this.activeAdminGrantNoticeId = null;
+      }
+      return;
+    }
+
+    if (this.activeAdminGrantNoticeId === notice.transactionId) {
+      return;
+    }
+
+    const activeAdminNotice = globalThis.document?.querySelector?.("[data-admin-grant-notice='true']");
+    const activeModal = globalThis.document?.querySelector?.(".modal-overlay");
+    if (activeModal && !activeAdminNotice) {
+      return;
+    }
+
+    this.activeAdminGrantNoticeId = notice.transactionId;
+    this.modalManager.show({
+      title: "Reward Confirmation",
+      bodyHtml: `
+        <div data-admin-grant-notice="true" class="stack-sm">
+          <p>${escapeHtml(notice.message || "EleMintz has sent you a reward. Click OK to confirm.")}</p>
+        </div>
+      `,
+      actions: [
+        {
+          label: "OK",
+          onClick: async () => {
+            try {
+              await window.elemintz.multiplayer.confirmAdminGrantNotice({
+                transactionId: notice.transactionId
+              });
+              this.modalManager.hide();
+              this.activeAdminGrantNoticeId = null;
+              await this.syncOnlinePlayState();
+              if (this.screenFlow === "onlinePlay") {
+                this.renderOnlinePlayScreen();
+              }
+            } catch (error) {
+              this.modalManager.hide();
+              this.activeAdminGrantNoticeId = null;
+              this.modalManager.show({
+                title: "Confirmation Failed",
+                body: String(error?.message ?? "Unable to confirm this EleMintz reward."),
+                actions: [
+                  {
+                    label: "OK",
+                    onClick: () => {
+                      this.modalManager.hide();
+                      this.maybeShowPendingAdminGrantNotice();
+                    }
+                  }
+                ]
+              });
+            }
+          }
+        }
+      ]
+    });
   }
 
   deriveOnlineChallengeSummaryKey(state) {
@@ -2364,6 +2454,7 @@ export class AppController {
       this.clearOnlineReconnectReminderFromState(this.onlinePlayState);
       this.ensureOnlineReconnectUiTimer();
       this.updateOnlineReconnectReminderModal();
+      this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
       if (this.onlinePlayState?.latestRoundResult) {
         console.info("[OnlinePlay][Renderer] latest round result stored in renderer state", this.onlinePlayState.latestRoundResult);
       }
@@ -3158,6 +3249,7 @@ export class AppController {
     await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
     this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();
+    this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
 
     if (!window.elemintz?.multiplayer?.connect) {
       return;
@@ -3172,6 +3264,7 @@ export class AppController {
     await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
     this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();
+    this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
   }
 
   showLocalSetup({ errorMessage = "", setupDefaults = null } = {}) {
