@@ -26,11 +26,17 @@
   !error "UNINSTALL_REGISTRY_KEY define is required"
 !endif
 
+!ifndef APP_ICON
+  !error "APP_ICON define is required"
+!endif
+
 Unicode true
 RequestExecutionLevel user
 
 Name "${PRODUCT_NAME}"
 OutFile "${OUTPUT_FILE}"
+Icon "${APP_ICON}"
+UninstallIcon "${APP_ICON}"
 InstallDir "$LOCALAPPDATA\Programs\${INSTALL_DIR_NAME}"
 InstallDirRegKey HKCU "${UNINSTALL_REGISTRY_KEY}" "InstallLocation"
 ShowInstDetails show
@@ -47,12 +53,13 @@ Section "Install"
 
   SetOutPath "$INSTDIR"
   File /r "${APP_SOURCE}\*.*"
+  File "/oname=icon.ico" "${APP_ICON}"
 
   WriteUninstaller "$INSTDIR\Uninstall ${PRODUCT_NAME}.exe"
 
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
-  CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\${APP_EXECUTABLE}"
-  CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall ${PRODUCT_NAME}.lnk" "$INSTDIR\Uninstall ${PRODUCT_NAME}.exe"
+  CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\${APP_EXECUTABLE}" "" "$INSTDIR\icon.ico" 0
+  CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall ${PRODUCT_NAME}.lnk" "$INSTDIR\Uninstall ${PRODUCT_NAME}.exe" "" "$INSTDIR\icon.ico" 0
 
   WriteRegStr HKCU "${UNINSTALL_REGISTRY_KEY}" "DisplayName" "${PRODUCT_NAME}"
   WriteRegStr HKCU "${UNINSTALL_REGISTRY_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"

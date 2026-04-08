@@ -11,7 +11,7 @@
     "multiplayer:dev": "nodemon --watch src/multiplayer --ext js --exec node src/multiplayer/server.js",
     "test": "node --test",
     "dist:win": "powershell -ExecutionPolicy Bypass -File build/make-win-installer.ps1",
-    "pack:win": "electron-builder --dir --win x64 --publish never"
+    "pack:win": "electron-builder --dir --win --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -29,6 +29,9 @@
     "asar": true,
     "directories": {
       "output": "dist"
+    },
+    "win": {
+      "icon": "build/icon.ico"
     },
     "files": [
       "assets/**/*",

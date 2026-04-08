@@ -11,7 +11,12 @@ $distDir = Join-Path $projectRoot "dist"
 $appSource = Join-Path $distDir "win-unpacked"
 $outputFile = Join-Path $distDir "EleMintz-Setup-$version.exe"
 $scriptPath = Join-Path $projectRoot "build\\alpha-installer.nsi"
+$iconPath = Join-Path $projectRoot "build\\icon.ico"
 $defaultMakensis = Join-Path $env:LOCALAPPDATA "electron-builder\\Cache\\nsis\\nsis-3.0.4.1\\Bin\\makensis.exe"
+
+if (-not (Test-Path $iconPath)) {
+  throw "Installer icon was not found at $iconPath"
+}
 
 if (-not (Test-Path $appSource)) {
   & npm.cmd run pack:win
@@ -39,6 +44,7 @@ if ([string]::IsNullOrWhiteSpace($makensisPath) -or -not (Test-Path $makensisPat
 & $makensisPath `
   "/DAPP_SOURCE=$appSource" `
   "/DAPP_EXECUTABLE=EleMintz.exe" `
+  "/DAPP_ICON=$iconPath" `
   "/DOUTPUT_FILE=$outputFile" `
   "/DPRODUCT_NAME=$productName" `
   "/DPRODUCT_VERSION=$version" `

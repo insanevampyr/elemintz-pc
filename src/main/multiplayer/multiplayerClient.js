@@ -1,7 +1,7 @@
 import { io as createSocket } from "socket.io-client";
 import { JsonStore } from "../../state/storage/jsonStore.js";
 
-export const DEFAULT_MULTIPLAYER_SERVER_URL = "http://127.0.0.1:3001";
+export const DEFAULT_MULTIPLAYER_SERVER_URL = "https://uncatchable-jonelle-pronouncedly.ngrok-free.dev";
 const MULTIPLAYER_SESSION_SCHEMA_VERSION = 1;
 const MULTIPLAYER_SESSION_FILENAME = "multiplayer-session.json";
 const AUTHENTICATED_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;

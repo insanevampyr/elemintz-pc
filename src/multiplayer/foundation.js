@@ -2159,7 +2159,7 @@ export function createMultiplayerFoundation({
     async start() {
       await new Promise((resolve, reject) => {
         httpServer.once("error", reject);
-        httpServer.listen(port, () => {
+        httpServer.listen(port, "0.0.0.0", () => {
           httpServer.off("error", reject);
           listeningPort = httpServer.address()?.port ?? port;
           resolve();
