@@ -516,6 +516,46 @@ function isExpiredPersistedSessionRecord(session) {
   return Date.now() - persistedAtMs > AUTHENTICATED_SESSION_MAX_AGE_MS;
 }
 
+function formatConnectionErrorDetail(value) {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized && serialized !== "{}" ? serialized : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildConnectionFailure(error, serverUrl) {
+  const safeServerUrl = String(serverUrl ?? "").trim();
+  const messageDetail = formatConnectionErrorDetail(error?.message) ?? "Unable to connect to multiplayer server.";
+  const descriptionDetail = formatConnectionErrorDetail(error?.description);
+  const contextDetail = formatConnectionErrorDetail(error?.context);
+  const detailParts = [
+    `message=${messageDetail}`,
+    descriptionDetail ? `description=${descriptionDetail}` : null,
+    contextDetail ? `context=${contextDetail}` : null
+  ].filter(Boolean);
+
+  return {
+    code: "CONNECTION_FAILED",
+    serverUrl: safeServerUrl || null,
+    description: error?.description ?? null,
+    context: error?.context ?? null,
+    message:
+      `Unable to connect to multiplayer server${safeServerUrl ? ` at ${safeServerUrl}` : ""}. ` +
+      detailParts.join("; ")
+  };
+}
+
 export class MultiplayerClient {
   constructor({
     socketFactory = createSocket,
@@ -984,12 +1024,12 @@ export class MultiplayerClient {
   async authenticate(eventName, payload, { serverUrl } = {}) {
     const connected = await this.ensureConnected({ serverUrl });
     if (!connected || !this.socket) {
+      const error = this.state.lastError
+        ? { ...this.state.lastError }
+        : buildConnectionFailure(null, this.normalizeServerUrl(serverUrl));
       return {
         ok: false,
-        error: {
-          code: "CONNECTION_FAILED",
-          message: "Unable to connect to multiplayer server."
-        }
+        error
       };
     }
 
@@ -1043,10 +1083,7 @@ export class MultiplayerClient {
       const handleError = (error) =>
         finish({
           ok: false,
-          error: {
-            code: "CONNECTION_FAILED",
-            message: String(error?.message ?? "Unable to connect to multiplayer server.")
-          }
+          error: buildConnectionFailure(error, nextServerUrl)
         });
 
       socket.once("connect", handleConnect);
@@ -1105,10 +1142,7 @@ export class MultiplayerClient {
     if (!connection?.ok || !connection.socket) {
       return {
         ok: false,
-        error: connection?.error ?? {
-          code: "CONNECTION_FAILED",
-          message: "Unable to connect to multiplayer server."
-        }
+        error: connection?.error ?? buildConnectionFailure(null, this.normalizeServerUrl(serverUrl))
       };
     }
 
@@ -1259,9 +1293,13 @@ export class MultiplayerClient {
     };
 
     const onConnectError = (error) => {
+      const connectionFailure = buildConnectionFailure(error, this.state.serverUrl);
       this.logger.error?.("[Multiplayer][Electron] connect_error", {
         serverUrl: this.state.serverUrl,
-        message: error?.message
+        message: error?.message ?? null,
+        description: error?.description ?? null,
+        context: error?.context ?? null,
+        surfacedMessage: connectionFailure.message
       });
       this.updateState({
         connectionStatus: "disconnected",
@@ -1277,11 +1315,8 @@ export class MultiplayerClient {
         room: null,
         latestRoundResult: null,
         latestAuthoritativeRoundResult: null,
-        lastError: {
-          code: "CONNECTION_FAILED",
-          message: String(error?.message ?? "Unable to connect to multiplayer server.")
-        },
-        statusMessage: "Connection failed."
+        lastError: connectionFailure,
+        statusMessage: connectionFailure.message
       });
       this.sessionBoundSocketId = null;
     };
