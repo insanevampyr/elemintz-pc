@@ -1023,7 +1023,6 @@ export class MultiplayerClient {
   async connectIsolatedSocket({ serverUrl } = {}) {
     const nextServerUrl = this.normalizeServerUrl(serverUrl);
     const socket = this.socketFactory(nextServerUrl, {
-      transports: ["websocket"],
       reconnection: false,
       autoConnect: true
     });
@@ -1518,7 +1517,6 @@ export class MultiplayerClient {
     });
 
     const socket = this.socketFactory(nextServerUrl, {
-      transports: ["websocket"],
       reconnection: false,
       autoConnect: true
     });
