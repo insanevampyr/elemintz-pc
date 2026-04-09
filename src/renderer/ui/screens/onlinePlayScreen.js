@@ -790,7 +790,9 @@ export const onlinePlayScreen = {
     const roomStateView = deriveRoomStateView(context);
     const joinCode = escapeHtml(context.joinCode ?? "");
     const isBusy = multiplayer?.connectionStatus === "connecting";
-    const errorMessage = multiplayer?.lastError?.message ? escapeHtml(multiplayer.lastError.message) : "";
+    const errorMessage = String(context.formattedErrorMessage ?? "").trim()
+      ? escapeHtml(context.formattedErrorMessage)
+      : "";
     const roomCode = escapeHtml(room?.roomCode ?? "");
     const safeConnectionStatus = escapeHtml(multiplayer?.connectionStatus ?? "disconnected");
     const safeRoleLabel = roleLabel ? escapeHtml(roleLabel) : "";

@@ -2020,6 +2020,48 @@ export class AppController {
     };
   }
 
+  formatMultiplayerErrorDetail(value) {
+    if (value == null) {
+      return "";
+    }
+
+    if (typeof value === "string") {
+      return value.trim();
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  formatMultiplayerErrorMessage(error, fallbackMessage = "") {
+    if (!error && !fallbackMessage) {
+      return "";
+    }
+
+    const message = String(error?.message ?? "").trim();
+    const serverUrl = String(error?.serverUrl ?? "").trim();
+    const description = this.formatMultiplayerErrorDetail(error?.description);
+    const context = this.formatMultiplayerErrorDetail(error?.context);
+    const parts = [message || fallbackMessage].filter(Boolean);
+
+    if (serverUrl && !parts.some((entry) => entry.includes(serverUrl))) {
+      parts.push(`serverUrl=${serverUrl}`);
+    }
+
+    if (description && !parts.some((entry) => entry.includes(`description=${description}`))) {
+      parts.push(`description=${description}`);
+    }
+
+    if (context && !parts.some((entry) => entry.includes(`context=${context}`))) {
+      parts.push(`context=${context}`);
+    }
+
+    return parts.join(" | ");
+  }
+
   getPendingAdminGrantNotice(state = this.onlinePlayState) {
     this.syncPendingAdminGrantNoticeQueue(state);
     const notices = Array.isArray(state?.pendingAdminGrantNotices) ? state.pendingAdminGrantNotices : [];
@@ -2666,6 +2708,7 @@ export class AppController {
     const tauntHud = this.getCurrentTauntHudState();
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
+      formattedErrorMessage: this.formatMultiplayerErrorMessage(this.onlinePlayState?.lastError),
       onlineChallengeSummary: this.onlinePlayChallengeSummary,
       profile: this.profile,
       username: this.profile?.username ?? this.username,
@@ -3273,7 +3316,10 @@ export class AppController {
       }
       const restoreFailureMessage =
         restoreResult?.invalid
-          ? (restoreResult?.error?.message ?? "Saved session expired. Please sign in again.")
+          ? this.formatMultiplayerErrorMessage(
+              restoreResult?.error,
+              "Saved session expired. Please sign in again."
+            )
           : "";
       this.showLogin({
         ...(restoreFailureMessage ? { statusMessage: restoreFailureMessage } : {})
@@ -3322,7 +3368,13 @@ export class AppController {
                 password
               });
               if (!authResult?.ok) {
-                throw new Error(authResult?.error?.message ?? "Unable to authenticate this account.");
+                console.error("[OnlinePlay][Renderer] authentication failed", authResult?.error ?? null);
+                throw new Error(
+                  this.formatMultiplayerErrorMessage(
+                    authResult?.error,
+                    "Unable to authenticate this account."
+                  )
+                );
               }
 
               this.onlinePlayState = this.normalizeOnlinePlayState(
