@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, session } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerMultiplayerIpcHandlers } from "./ipc/multiplayerIpc.js";
@@ -6,6 +7,22 @@ import { registerStateIpcHandlers } from "./ipc/stateIpc.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function writeStartupLogLine({
+  appDataPath,
+  userDataPath,
+  startupLogPath,
+  multiplayerClientLogPath
+} = {}) {
+  const timestamp = new Date().toISOString();
+
+  fs.mkdirSync(path.dirname(startupLogPath), { recursive: true });
+  fs.appendFileSync(
+    startupLogPath,
+    `${timestamp} MAIN PROCESS STARTED | appData=${appDataPath} | userData=${userDataPath} | envAPPDATA=${process.env.APPDATA ?? ""} | startupLogPath=${startupLogPath} | multiplayerClientLogPath=${multiplayerClientLogPath}\n`,
+    "utf8"
+  );
+}
 
 process.on("uncaughtException", (error) => {
   console.error("[Main] uncaughtException", {
@@ -115,17 +132,29 @@ function configurePermissionDenials(targetSession) {
 }
 
 app.whenReady().then(() => {
+  const appDataPath = app.getPath("appData");
+  const userDataPath = app.getPath("userData");
+  const startupLogPath = path.join(appDataPath, "elemintz-pc", "logs", "startup.log");
+  const multiplayerClientLogPath = path.join(appDataPath, "elemintz-pc", "logs", "multiplayer-client.log");
+
+  writeStartupLogLine({
+    appDataPath,
+    userDataPath,
+    startupLogPath,
+    multiplayerClientLogPath
+  });
   configurePermissionDenials(session.defaultSession);
 
-  const dataDir = path.join(app.getPath("userData"), "elemintz-data");
-  const multiplayerIpc = registerMultiplayerIpcHandlers(ipcMain, { dataDir });
+  const dataDir = path.join(userDataPath, "elemintz-data");
+  const multiplayerIpc = registerMultiplayerIpcHandlers(ipcMain, { dataDir, appDataPath });
   registerStateIpcHandlers(ipcMain, {
     dataDir,
     getOnlineAuthorityState: () => multiplayerIpc?.client?.getState?.() ?? null
   });
 
   console.info("[Startup] Electron userData", {
-    userData: app.getPath("userData"),
+    appData: appDataPath,
+    userData: userDataPath,
     stateDataDir: dataDir
   });
 

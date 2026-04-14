@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import { io as createSocket } from "socket.io-client";
 import { JsonStore } from "../../state/storage/jsonStore.js";
+import { formatServerTimestamp } from "../../multiplayer/logger.js";
 
 export const DEFAULT_MULTIPLAYER_SERVER_URL = "https://uncatchable-jonelle-pronouncedly.ngrok-free.dev";
 const MULTIPLAYER_SESSION_SCHEMA_VERSION = 1;
@@ -470,7 +473,7 @@ function cloneState(state) {
     pendingAdminGrantNotices: Array.isArray(state.pendingAdminGrantNotices)
       ? state.pendingAdminGrantNotices.map((entry) => cloneAdminGrantNotice(entry)).filter(Boolean)
       : [],
-    lastError: state.lastError ? { ...state.lastError } : null,
+    lastError: cloneIpcSafeError(state.lastError),
     statusMessage: state.statusMessage
   };
 }
@@ -548,11 +551,154 @@ function buildConnectionFailure(error, serverUrl) {
   return {
     code: "CONNECTION_FAILED",
     serverUrl: safeServerUrl || null,
-    description: error?.description ?? null,
-    context: error?.context ?? null,
+    description: serializeMultiplayerLogValue(error?.description),
+    context: serializeMultiplayerLogValue(error?.context),
     message:
       `Unable to connect to multiplayer server${safeServerUrl ? ` at ${safeServerUrl}` : ""}. ` +
       detailParts.join("; ")
+  };
+}
+
+function serializeMultiplayerLogValue(value) {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (value instanceof Error) {
+    return {
+      name: value.name ?? "Error",
+      message: value.message ?? "",
+      stack: value.stack ?? null
+    };
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function cloneIpcSafeValue(value) {
+  const serialized = serializeMultiplayerLogValue(value);
+  if (serialized == null) {
+    return null;
+  }
+
+  if (typeof serialized === "object") {
+    try {
+      return JSON.parse(JSON.stringify(serialized));
+    } catch {
+      return String(serialized);
+    }
+  }
+
+  return serialized;
+}
+
+function cloneIpcSafeError(error) {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  return {
+    code: error?.code != null ? String(error.code) : null,
+    message: error?.message != null ? String(error.message) : null,
+    serverUrl: error?.serverUrl != null ? String(error.serverUrl) : null,
+    description: cloneIpcSafeValue(error?.description),
+    context: cloneIpcSafeValue(error?.context)
+  };
+}
+
+function cloneIpcSafeSession(session) {
+  if (!session || typeof session !== "object") {
+    return null;
+  }
+
+  return {
+    token: session?.token != null ? String(session.token) : null,
+    active: Boolean(session?.active),
+    username: session?.username ?? null,
+    sessionId: session?.sessionId ?? null,
+    accountId: session?.accountId ?? null,
+    profileKey: session?.profileKey ?? null,
+    authenticated: Boolean(session?.authenticated)
+  };
+}
+
+function cloneIpcSafeAuthResponse(response) {
+  if (!response || typeof response !== "object") {
+    return response ?? null;
+  }
+
+  return {
+    ...response,
+    error: cloneIpcSafeError(response?.error),
+    session: cloneIpcSafeSession(response?.session),
+    account: cloneIpcSafeValue(response?.account)
+  };
+}
+
+function appendMultiplayerClientLog(logPath, level, args) {
+  if (!logPath) {
+    return;
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    const line = JSON.stringify({
+      timestamp: formatServerTimestamp(new Date()),
+      level,
+      entries: Array.isArray(args)
+        ? args.map((entry) => serializeMultiplayerLogValue(entry))
+        : []
+    });
+    fs.appendFileSync(logPath, `${line}\n`, "utf8");
+  } catch {
+    // Logging must never interrupt multiplayer startup.
+  }
+}
+
+function resolveMultiplayerClientLogPath({ appDataPath, dataDir } = {}) {
+  const safeAppDataPath = String(appDataPath ?? "").trim();
+  if (safeAppDataPath) {
+    return path.join(safeAppDataPath, "elemintz-pc", "logs", "multiplayer-client.log");
+  }
+
+  return dataDir ? path.resolve(dataDir, "..", "logs", "multiplayer-client.log") : null;
+}
+
+function createPersistentMultiplayerLogger(baseLogger = console, { dataDir, appDataPath } = {}) {
+  const logPath = resolveMultiplayerClientLogPath({ appDataPath, dataDir });
+  const wrap = (methodName) => {
+    const method =
+      typeof baseLogger?.[methodName] === "function"
+        ? baseLogger[methodName].bind(baseLogger)
+        : typeof baseLogger?.log === "function"
+          ? baseLogger.log.bind(baseLogger)
+          : null;
+
+    return (...args) => {
+      appendMultiplayerClientLog(logPath, methodName, args);
+      method?.(...args);
+    };
+  };
+
+  return {
+    logger: {
+      ...baseLogger,
+      info: wrap("info"),
+      warn: wrap("warn"),
+      error: wrap("error"),
+      log: wrap("log"),
+      debug: wrap("debug")
+    },
+    logPath
   };
 }
 
@@ -562,10 +708,13 @@ export class MultiplayerClient {
     logger = console,
     defaultServerUrl = DEFAULT_MULTIPLAYER_SERVER_URL,
     dataDir,
+    appDataPath,
     persistSession = true
   } = {}) {
     this.socketFactory = socketFactory;
-    this.logger = logger;
+    const persistentLogger = createPersistentMultiplayerLogger(logger, { dataDir, appDataPath });
+    this.logger = persistentLogger.logger;
+    this.logPath = persistentLogger.logPath;
     this.defaultServerUrl = defaultServerUrl;
     this.persistSession = persistSession;
     this.socket = null;
@@ -595,10 +744,13 @@ export class MultiplayerClient {
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
-      this.sessionToken = null;
-      this.sessionBoundSocketId = null;
-      this.isOpeningChest = false;
-    }
+    this.sessionToken = null;
+    this.sessionBoundSocketId = null;
+    this.isOpeningChest = false;
+    this.logger.info?.("[Multiplayer][Electron] persistent client log ready", {
+      logPath: this.logPath
+    });
+  }
 
   async readPersistedSessionRecord() {
     if (!this.sessionStore) {
@@ -1025,7 +1177,7 @@ export class MultiplayerClient {
     const connected = await this.ensureConnected({ serverUrl });
     if (!connected || !this.socket) {
       const error = this.state.lastError
-        ? { ...this.state.lastError }
+        ? cloneIpcSafeError(this.state.lastError)
         : buildConnectionFailure(null, this.normalizeServerUrl(serverUrl));
       return {
         ok: false,
@@ -1044,14 +1196,14 @@ export class MultiplayerClient {
             ? "Account created. Online session active."
             : "Signed in. Online session active."
       });
-      return response;
+      return cloneIpcSafeAuthResponse(response);
     }
 
     this.updateState({
-      lastError: response?.error ? { ...response.error } : null,
+      lastError: cloneIpcSafeError(response?.error),
       statusMessage: response?.error?.message ?? this.state.statusMessage
     });
-    return response ?? {
+    return cloneIpcSafeAuthResponse(response) ?? {
       ok: false,
       error: {
         code: "AUTH_FAILED",
@@ -1062,6 +1214,9 @@ export class MultiplayerClient {
 
   async connectIsolatedSocket({ serverUrl } = {}) {
     const nextServerUrl = this.normalizeServerUrl(serverUrl);
+    this.logger.info?.("[Multiplayer][Electron] isolated connect start", {
+      serverUrl: nextServerUrl
+    });
     const socket = this.socketFactory(nextServerUrl, {
       reconnection: false,
       autoConnect: true
@@ -1079,12 +1234,29 @@ export class MultiplayerClient {
         socket.off("connect_error", handleError);
         resolve(result);
       };
-      const handleConnect = () => finish({ ok: true, socket });
-      const handleError = (error) =>
+      const handleConnect = () => {
+        this.logger.info?.("[Multiplayer][Electron] isolated connect success", {
+          serverUrl: nextServerUrl,
+          socketId: socket.id ?? null
+        });
+        finish({ ok: true, socket });
+      };
+      const handleError = (error) => {
+        const failure = buildConnectionFailure(error, nextServerUrl);
+        this.logger.error?.("[Multiplayer][Electron] isolated connect_error", {
+          serverUrl: nextServerUrl,
+          name: error?.name ?? null,
+          message: error?.message ?? null,
+          description: error?.description ?? null,
+          context: error?.context ?? null,
+          stack: error?.stack ?? null,
+          failure
+        });
         finish({
           ok: false,
-          error: buildConnectionFailure(error, nextServerUrl)
+          error: failure
         });
+      };
 
       socket.once("connect", handleConnect);
       socket.once("connect_error", handleError);
@@ -1296,9 +1468,12 @@ export class MultiplayerClient {
       const connectionFailure = buildConnectionFailure(error, this.state.serverUrl);
       this.logger.error?.("[Multiplayer][Electron] connect_error", {
         serverUrl: this.state.serverUrl,
+        name: error?.name ?? null,
         message: error?.message ?? null,
         description: error?.description ?? null,
         context: error?.context ?? null,
+        stack: error?.stack ?? null,
+        rawError: serializeMultiplayerLogValue(error),
         surfacedMessage: connectionFailure.message
       });
       this.updateState({
@@ -1325,7 +1500,8 @@ export class MultiplayerClient {
       const preserveAuthoritativeState = reason !== "io client disconnect";
       this.logger.info("[Multiplayer][Electron] disconnected", {
         socketId: socket.id,
-        reason
+        reason,
+        serverUrl: this.state.serverUrl
       });
       this.updateState({
         connectionStatus: "disconnected",
@@ -1549,6 +1725,10 @@ export class MultiplayerClient {
       room: null,
       lastError: null,
       statusMessage: `Connecting to ${nextServerUrl}...`
+    });
+    this.logger.info?.("[Multiplayer][Electron] connect start", {
+      serverUrl: nextServerUrl,
+      logPath: this.logPath
     });
 
     const socket = this.socketFactory(nextServerUrl, {
