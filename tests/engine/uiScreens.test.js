@@ -12356,6 +12356,165 @@ test("ui: relogin path keeps the announcement hidden when local persistence is a
   }
 });
 
+test("ui: app restart path keeps the announcement hidden after daily login refresh rebuilds the profile", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  let durableSeen = true;
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => ({
+          username,
+          seenAnnouncements: durableSeen ? { "cosmetics_v0.1.6": true } : {},
+          equippedCosmetics: { background: "default_background" }
+        })
+      },
+      multiplayer: {
+        getProfile: async ({ username }) => ({
+          username,
+          profile: {
+            username,
+            seenAnnouncements: durableSeen ? { "cosmetics_v0.1.6": true } : {},
+            equippedCosmetics: { background: "default_background" }
+          }
+        }),
+        claimDailyLoginReward: async ({ username }) => ({
+          granted: false,
+          profile: {
+            username,
+            equippedCosmetics: { background: "default_background" }
+          },
+          snapshot: {
+            username,
+            profile: {
+              username,
+              seenAnnouncements: durableSeen ? { "cosmetics_v0.1.6": true } : {},
+              equippedCosmetics: { background: "default_background" }
+            }
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "AnnouncementUser"
+      }
+    };
+    app.screenFlow = "menu";
+
+    await app.loadPreferredProfileForOnlineSession({
+      username: "AnnouncementUser",
+      onlineState: app.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+
+    await app.ensureDailyLoginAutoClaim({ showToasts: false, requestKey: "restart-test" });
+
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+
+    const shownAfterRestart = await app.maybeShowNewCosmeticsAnnouncement();
+    assert.equal(shownAfterRestart, false);
+    assert.equal(modalCalls.length, 0);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: manual login path keeps the announcement hidden after the durable seen flag is reloaded", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  let durableSeen = true;
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => ({
+          username,
+          seenAnnouncements: durableSeen ? { "cosmetics_v0.1.6": true } : {},
+          equippedCosmetics: { background: "default_background" }
+        })
+      },
+      multiplayer: {
+        getProfile: async ({ username }) => ({
+          username,
+          profile: {
+            username,
+            seenAnnouncements: durableSeen ? { "cosmetics_v0.1.6": true } : {},
+            equippedCosmetics: { background: "default_background" }
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "AnnouncementUser"
+      }
+    };
+    app.screenFlow = "menu";
+
+    await app.loadPreferredProfileForOnlineSession({
+      username: "AnnouncementUser",
+      onlineState: app.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+
+    const shownAfterManualLogin = await app.maybeShowNewCosmeticsAnnouncement();
+    assert.equal(shownAfterManualLogin, false);
+    assert.equal(modalCalls.length, 0);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
 test("ui: new cosmetics announcement does not show again after being seen", async () => {
   const previousWindow = global.window;
   const previousDocument = global.document;

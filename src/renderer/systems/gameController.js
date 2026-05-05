@@ -335,7 +335,7 @@ function difficultyFromSettings(value) {
 function formatRoundResult(round) {
   if (!round) return "No round played yet.";
 
-  const capturedOpponentCards = getOpponentCardsCaptured(round);
+  const capturedOpponentCards = getWinnerCapturedOpponentCards(round);
 
   if (round.result === "none") {
     return "No effect. Both players keep their own card.";
@@ -343,20 +343,24 @@ function formatRoundResult(round) {
 
   if (round.warClashes > 0) {
     if (round.result === "p1") {
-      return `WAR triggered. Player wins and captured ${capturedOpponentCards} opponent cards.`;
+      return `WAR resolved. You captured ${capturedOpponentCards} opponent card(s).`;
     }
 
     if (round.result === "p2") {
-      return `WAR triggered. Opponent wins and captured ${capturedOpponentCards} opponent cards.`;
+      return capturedOpponentCards > 0
+        ? `WAR resolved. Opponent captured ${capturedOpponentCards} of your card(s).`
+        : "WAR resolved. Opponent won the WAR pot.";
     }
   }
 
   if (round.result === "p1") {
-    return `Player wins the round and captured ${capturedOpponentCards} opponent cards.`;
+    return `You captured ${capturedOpponentCards} opponent card(s).`;
   }
 
   if (round.result === "p2") {
-    return `Opponent wins the round and captured ${capturedOpponentCards} opponent cards.`;
+    return capturedOpponentCards > 0
+      ? `Opponent captured ${capturedOpponentCards} of your card(s).`
+      : "Opponent won the round.";
   }
 
   return "Round ended in a draw.";
@@ -426,6 +430,19 @@ function getOpponentCardsCaptured(round) {
   }
 
   return Math.max(0, Math.floor(Number(round?.capturedCards ?? 0) / 2));
+}
+
+function getWinnerCapturedOpponentCards(round) {
+  const explicit = getOpponentCardsCaptured(round);
+  const totalCaptured = Math.max(0, Math.floor(Number(round?.capturedCards ?? 0) / 2));
+
+  // `capturedOpponentCards` is local-player-perspective data in some paths, so an opponent win
+  // can legitimately arrive with `0` even when the winner took cards from the WAR pot.
+  if (round?.result === "p2" && totalCaptured > 0) {
+    return totalCaptured;
+  }
+
+  return explicit > 0 ? explicit : totalCaptured;
 }
 
 function hasRequiredWarCards(hand) {

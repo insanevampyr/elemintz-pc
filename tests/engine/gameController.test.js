@@ -5866,6 +5866,96 @@ test("appController: local WAR summary uses opponent-card capture counts after W
   );
 });
 
+test("appController: PvE WAR resolution popup uses opponent-safe wording for player wins", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const content = app.buildResolutionPopupContent(
+    {
+      status: "round_resolved",
+      round: {
+        result: "p1",
+        warClashes: 2,
+        capturedCards: 4,
+        capturedOpponentCards: 2
+      }
+    },
+    MATCH_MODE.PVE
+  );
+
+  assert.equal(content.message, "Player wins");
+  assert.equal(content.summary, "WAR resolved. You captured 2 opponent card(s).");
+});
+
+test("appController: PvE WAR resolution popup never shows zero opponent-card wording for opponent wins", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const content = app.buildResolutionPopupContent(
+    {
+      status: "round_resolved",
+      round: {
+        result: "p2",
+        warClashes: 2,
+        capturedCards: 4,
+        capturedOpponentCards: 0
+      }
+    },
+    MATCH_MODE.PVE
+  );
+
+  assert.equal(content.message, "Opponent wins");
+  assert.equal(content.summary, "WAR resolved. Opponent captured 2 of your card(s).");
+  assert.doesNotMatch(content.summary, /captured 0 opponent card\(s\)/);
+});
+
+test("appController: local hotseat WAR resolution popup uses named winner-safe wording", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.localPlayerNames = {
+    p1: "Player 1",
+    p2: "Player 2"
+  };
+
+  const p1Content = app.buildResolutionPopupContent(
+    {
+      status: "round_resolved",
+      round: {
+        result: "p1",
+        warClashes: 2,
+        capturedCards: 4,
+        capturedOpponentCards: 2
+      }
+    },
+    MATCH_MODE.LOCAL_PVP
+  );
+  const p2Content = app.buildResolutionPopupContent(
+    {
+      status: "round_resolved",
+      round: {
+        result: "p2",
+        warClashes: 2,
+        capturedCards: 4,
+        capturedOpponentCards: 0
+      }
+    },
+    MATCH_MODE.LOCAL_PVP
+  );
+
+  assert.equal(p1Content.summary, "WAR resolved. Player 1 captured 2 opponent card(s).");
+  assert.equal(p2Content.summary, "WAR resolved. Player 2 captured 2 of Player 1's card(s).");
+});
+
 test("appController: shared resolution popup uses 3-second skippable pass screen", async () => {
   let captured = null;
 
@@ -6363,6 +6453,31 @@ test("gameController: rearming an active local WAR clears stale cards while pres
     controller.stopTimer();
     controller.stopMatchClock();
   }
+});
+
+test("gameController: PvE WAR resolved Opponent wins summary uses winner-safe capture counts", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.gameController = {
+    getViewModel: () => ({
+      lastRound: {
+        result: "p2",
+        warClashes: 2,
+        capturedCards: 4,
+        capturedOpponentCards: 0
+      }
+    }),
+    roundResultText: "unused"
+  };
+
+  assert.equal(
+    app.getLastRoundSummary(),
+    "Last Round: Player 2 won. Player 2 captured 2 of Player 1's card(s)."
+  );
 });
 
 test("gameController: local authoritative history uses stored per-card capture values", () => {

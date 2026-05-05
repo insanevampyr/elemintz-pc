@@ -898,27 +898,33 @@ export class AppController {
     const reward = await this.dailyLoginAutoClaimPromise;
 
     if (reward?.profile) {
+      const nextRewardProfile =
+        this.hasMultiplayerProfileAccess() && this.profile
+          ? {
+              ...reward.profile,
+              username: this.profile.username ?? reward.profile.username ?? this.username,
+              wins: this.profile.wins ?? reward.profile.wins ?? 0,
+              losses: this.profile.losses ?? reward.profile.losses ?? 0,
+              gamesPlayed: this.profile.gamesPlayed ?? reward.profile.gamesPlayed ?? 0,
+              warsEntered: this.profile.warsEntered ?? reward.profile.warsEntered ?? 0,
+              warsWon: this.profile.warsWon ?? reward.profile.warsWon ?? 0,
+              cardsCaptured: this.profile.cardsCaptured ?? reward.profile.cardsCaptured ?? 0,
+              modeStats: this.profile.modeStats ?? reward.profile.modeStats ?? null,
+              equippedCosmetics:
+                this.profile.equippedCosmetics ?? reward.profile.equippedCosmetics ?? null,
+              ownedCosmetics: this.profile.ownedCosmetics ?? reward.profile.ownedCosmetics ?? null,
+              cosmeticLoadouts:
+                this.profile.cosmeticLoadouts ?? reward.profile.cosmeticLoadouts ?? null,
+              cosmeticRandomizeAfterMatch:
+                this.profile.cosmeticRandomizeAfterMatch ??
+                reward.profile.cosmeticRandomizeAfterMatch ??
+                null
+            }
+          : reward.profile;
+
+      this.profile = this.mergeSeenAnnouncementsIntoProfile(nextRewardProfile, this.profile);
       if (this.hasMultiplayerProfileAccess() && this.profile) {
-        this.profile = {
-          ...reward.profile,
-          username: this.profile.username ?? reward.profile.username ?? this.username,
-          wins: this.profile.wins ?? reward.profile.wins ?? 0,
-          losses: this.profile.losses ?? reward.profile.losses ?? 0,
-          gamesPlayed: this.profile.gamesPlayed ?? reward.profile.gamesPlayed ?? 0,
-          warsEntered: this.profile.warsEntered ?? reward.profile.warsEntered ?? 0,
-          warsWon: this.profile.warsWon ?? reward.profile.warsWon ?? 0,
-          cardsCaptured: this.profile.cardsCaptured ?? reward.profile.cardsCaptured ?? 0,
-          modeStats: this.profile.modeStats ?? reward.profile.modeStats ?? null,
-          equippedCosmetics: this.profile.equippedCosmetics ?? reward.profile.equippedCosmetics ?? null,
-          ownedCosmetics: this.profile.ownedCosmetics ?? reward.profile.ownedCosmetics ?? null,
-          cosmeticLoadouts: this.profile.cosmeticLoadouts ?? reward.profile.cosmeticLoadouts ?? null,
-          cosmeticRandomizeAfterMatch:
-            this.profile.cosmeticRandomizeAfterMatch ??
-            reward.profile.cosmeticRandomizeAfterMatch ??
-            null
-        };
-      } else {
-        this.profile = reward.profile;
+        this.username = this.profile?.username ?? this.username;
       }
     }
 
@@ -3326,8 +3332,11 @@ export class AppController {
             ? "No effect"
             : "Draw";
 
-    const capturedOpponentCards = this.getResolvedOpponentCardsCaptured(vm.lastRound);
-    return `Last Round: ${resultLabel}. Captured ${capturedOpponentCards} opponent card(s).`;
+    return `Last Round: ${resultLabel}. ${this.buildResolvedCaptureSummary(vm.lastRound, {
+      p1Label: names.p1,
+      p2Label: names.p2,
+      useSecondPersonForP1: false
+    })}`;
   }
 
   getResolvedOpponentCardsCaptured(round) {
@@ -3337,6 +3346,42 @@ export class AppController {
     }
 
     return Math.max(0, Math.floor(Number(round?.capturedCards ?? 0) / 2));
+  }
+
+  getResolvedWinnerCaptureCount(round) {
+    const explicit = this.getResolvedOpponentCardsCaptured(round);
+    const totalCaptured = Math.max(0, Math.floor(Number(round?.capturedCards ?? 0) / 2));
+
+    // Some local-authoritative WAR rows store `capturedOpponentCards` from the player-side
+    // perspective, so an opponent WAR win can arrive with `0` even though the winner took cards.
+    if (round?.result === "p2" && totalCaptured > 0) {
+      return totalCaptured;
+    }
+
+    return explicit > 0 ? explicit : totalCaptured;
+  }
+
+  buildResolvedCaptureSummary(
+    round,
+    { p1Label = "Player", p2Label = "Opponent", useSecondPersonForP1 = false } = {}
+  ) {
+    const capturedCount = this.getResolvedWinnerCaptureCount(round);
+    if (round?.result === "p1") {
+      const subject = useSecondPersonForP1 ? "You" : p1Label;
+      return `${subject} captured ${capturedCount} opponent card(s).`;
+    }
+
+    if (round?.result === "p2") {
+      if (capturedCount > 0) {
+        return useSecondPersonForP1
+          ? `${p2Label} captured ${capturedCount} of your card(s).`
+          : `${p2Label} captured ${capturedCount} of ${p1Label}'s card(s).`;
+      }
+
+      return `${p2Label} won the WAR pot.`;
+    }
+
+    return "No cards were captured.";
   }
 
   getMatchPerspectiveCapturedTotal(match, perspective) {
@@ -3406,7 +3451,6 @@ export class AppController {
       };
     }
 
-    const capturedOpponentCards = this.getResolvedOpponentCardsCaptured(round);
     if (round.result === "none") {
       return {
         message: "No effect",
@@ -3425,7 +3469,11 @@ export class AppController {
     const warPrefix = Number(round.warClashes ?? 0) > 0 ? "WAR resolved. " : "";
     return {
       message: `${winnerLabel} wins`,
-      summary: `${warPrefix}${winnerLabel} captured ${capturedOpponentCards} opponent card(s).`
+      summary: `${warPrefix}${this.buildResolvedCaptureSummary(round, {
+        p1Label,
+        p2Label,
+        useSecondPersonForP1: !isLocalPvp
+      })}`
     };
   }
 
