@@ -1987,10 +1987,10 @@ test("app controller: online cosmetic helpers prefer authoritative server snapsh
           background: "server_background",
           cardBack: "server_card_back",
           elementCardVariant: {
-            fire: "server_fire_variant",
-            water: "server_water_variant",
-            earth: "server_earth_variant",
-            wind: "server_wind_variant"
+            fire: "fire_variant_phoenix",
+            water: "water_variant_crystal",
+            earth: "earth_variant_titan",
+            wind: "wind_variant_storm_eye"
           },
           title: "server_title",
           badge: "server_badge"
@@ -2003,7 +2003,7 @@ test("app controller: online cosmetic helpers prefer authoritative server snapsh
   assert.equal(equipped.avatar, "server_avatar");
   assert.equal(equipped.background, "server_background");
   assert.equal(equipped.cardBack, "server_card_back");
-  assert.equal(equipped.elementCardVariant.fire, "server_fire_variant");
+  assert.equal(equipped.elementCardVariant.fire, "fire_variant_phoenix");
   assert.equal(equipped.title, "server_title");
   assert.equal(equipped.badge, "server_badge");
   assert.equal(controller.getBackgroundIdFromProfile(profileLike), "server_background");

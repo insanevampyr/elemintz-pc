@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { GameController, MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
+import { buildOnlineMatchStateFromRoom } from "../../src/multiplayer/foundation.js";
 import { createRoomStore } from "../../src/multiplayer/rooms.js";
 
 function canonicalizeUsername(username) {
@@ -914,7 +915,7 @@ test("gameController: local PvE live captured tally uses derived match stats wit
     assert.deepEqual(controller.captured, { p1: 1, p2: 3 });
 
     controller.syncLocalAuthorityState(lowerSnapshotRoom, null);
-    assert.deepEqual(controller.captured, { p1: 1, p2: 0 });
+    assert.deepEqual(controller.captured, { p1: 1, p2: 3 });
   } finally {
     controller.stopTimer();
     controller.stopMatchClock();
@@ -5840,6 +5841,31 @@ test("appController: resolution popup content reflects WAR continuation without 
   assert.match(content.summary, /6 card\(s\)/);
 });
 
+test("appController: local WAR summary uses opponent-card capture counts after WAR resolution", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.gameController = {
+    getViewModel: () => ({
+      lastRound: {
+        result: "p1",
+        warClashes: 2,
+        capturedCards: 4,
+        capturedOpponentCards: 2
+      }
+    }),
+    roundResultText: "unused"
+  };
+
+  assert.equal(
+    app.getLastRoundSummary(),
+    "Last Round: Player 1 won. Captured 2 opponent card(s)."
+  );
+});
+
 test("appController: shared resolution popup uses 3-second skippable pass screen", async () => {
   let captured = null;
 
@@ -6391,18 +6417,73 @@ test("gameController: local authoritative history uses stored per-card capture v
 
     assert.deepEqual(controller.match.history, [
       {
+        result: "none",
+        warClashes: 0,
+        capturedCards: 0,
+        capturedOpponentCards: 0,
+        p1Card: "fire",
+        p2Card: "fire"
+      },
+      {
+        result: "none",
+        warClashes: 0,
+        capturedCards: 0,
+        capturedOpponentCards: 0,
+        p1Card: "water",
+        p2Card: "water"
+      },
+      {
         result: "p1",
         warClashes: 3,
         capturedCards: 6,
         capturedOpponentCards: 3,
-        p1Card: "fire",
-        p2Card: "fire"
+        p1Card: "earth",
+        p2Card: "wind"
       }
     ]);
   } finally {
     controller.stopTimer();
     controller.stopMatchClock();
   }
+});
+
+test("foundation: online warClashes ignores pre-WAR no_effect rows before a WAR chain", () => {
+  const history = buildOnlineMatchStateFromRoom({
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "wind",
+        guestMove: "fire",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 2,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        capturedCards: 0,
+        capturedOpponentCards: 0
+      },
+      {
+        round: 3,
+        hostMove: "water",
+        guestMove: "fire",
+        outcomeType: "war_resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 4,
+        capturedOpponentCards: 2
+      }
+    ]
+  }).history;
+
+  assert.equal(history.at(-1)?.warClashes, 2);
 });
 
 test("gameController: PvE time-limit completion comes from the authoritative room bridge", async () => {

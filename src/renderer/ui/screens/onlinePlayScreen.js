@@ -1,4 +1,4 @@
-import { getAvatarImage, getCardBackImage, getVariantCardImages } from "../../utils/assets.js";
+import { getAvatarImage, getCardBackImage, getCardImage, getVariantCardImages } from "../../utils/assets.js";
 import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
 import { escapeHtml } from "../../utils/dom.js";
 import { formatElement } from "../../utils/index.js";
@@ -252,6 +252,7 @@ function deriveOnlineBoardView(context) {
     localCount: sumHandCount(localHand),
     remoteCount: sumHandCount(remoteHand),
     localVariantMap: localIdentity.variantImages ?? null,
+    opponentCardVariants: room.opponentCardVariants ?? null,
     remoteCardBack: remoteIdentity.cardBackImage ?? null,
     selectable: room.status === "full" && !room.matchComplete && Boolean(moveSync) && !moveSync.ownSubmitted,
     ownSubmitted: Boolean(moveSync?.ownSubmitted)
@@ -302,6 +303,28 @@ function getCardBackRarity(cardBackId) {
   return normalizeCosmeticRarity(getCosmeticDefinition("cardBack", cardBackId)?.rarity ?? "Common");
 }
 
+function renderOnlineOpponentVariantTracker(opponentCardVariants) {
+  const opponentVariantImages = getVariantCardImages(opponentCardVariants ?? null);
+
+  return `
+    <section class="stack-sm" data-online-opponent-variant-tracker="true">
+      <h3 class="section-title">Opponent Card Style</h3>
+      <div class="online-waiting-preview-grid">
+        ${ELEMENT_ORDER.map((element) => `
+          <article class="online-waiting-preview-card" aria-label="Opponent ${formatElement(element)} variant">
+            <img
+              class="online-waiting-preview-art"
+              src="${getCardImage(element, opponentVariantImages)}"
+              alt="Opponent ${escapeHtml(formatElement(element))} card style"
+            />
+            <p class="online-waiting-preview-label">${escapeHtml(formatElement(element))}</p>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLabel, roomLifecycle) {
   const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
   const localCardBackRarity = getCardBackRarity(boardView.localIdentity.cardBackId);
@@ -341,6 +364,7 @@ function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLa
               ${renderHiddenHandSummary(boardView.remoteCount, boardView.remoteCardBack, remoteCardBackRarity)}
             </div>
           </div>
+          ${renderOnlineOpponentVariantTracker(boardView.opponentCardVariants)}
         </div>
       </article>
 

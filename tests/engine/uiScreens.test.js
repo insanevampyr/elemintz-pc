@@ -3503,6 +3503,539 @@ test("ui: appController applies random PvE AI style from the global catalog", ()
   assert.notEqual(shown.at(-1).context.opponentDisplay.badgeId, "none");
   assert.ok(shown.at(-1).context.opponentDisplay.featuredBadge);
   assert.doesNotMatch(shown.at(-1).context.cardBacks.p2, /default_back\.(jpg|png)/);
+  assert.deepEqual(shown.at(-1).context.opponentCardVariants, {
+    fire: "default_fire_card",
+    water: "default_water_card",
+    earth: "default_earth_card",
+    wind: "default_wind_card"
+  });
+  assert.equal(shown.at(-1).context.cosmeticIds.variants.p2, null);
+});
+
+test("ui: local PvP showGame exposes opponent card variants from player two cosmetics", () => {
+  const shown = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shown.push({ name, context })
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  app.profile = {
+    username: "PlayerOne",
+    equippedCosmetics: {
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+  app.localPlayers = {
+    p1: "PlayerOne",
+    p2: "PlayerTwo"
+  };
+  app.localProfiles = {
+    p1: app.profile,
+    p2: {
+      username: "PlayerTwo",
+      equippedCosmetics: {
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "fire_variant_phoenix",
+          water: "water_variant_crystal",
+          earth: "earth_variant_titan",
+          wind: "wind_variant_storm_eye"
+        }
+      }
+    }
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.LOCAL_PVP,
+      hotseatTurn: "p1",
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+
+  app.showGame();
+
+  assert.equal(shown.at(-1).name, "game");
+  assert.deepEqual(shown.at(-1).context.opponentCardVariants, {
+    fire: "fire_variant_phoenix",
+    water: "water_variant_crystal",
+    earth: "earth_variant_titan",
+    wind: "wind_variant_storm_eye"
+  });
+});
+
+test("ui: local PvP showGame exposes player one variants to the Player 2 hotseat view", () => {
+  const shown = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shown.push({ name, context })
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  app.profile = {
+    username: "PlayerOne",
+    equippedCosmetics: {
+      elementCardVariant: {
+        fire: "fire_variant_phoenix",
+        water: "water_variant_crystal",
+        earth: "earth_variant_titan",
+        wind: "wind_variant_storm_eye"
+      }
+    }
+  };
+  app.localPlayers = {
+    p1: "PlayerOne",
+    p2: "PlayerTwo"
+  };
+  app.localProfiles = {
+    p1: app.profile,
+    p2: {
+      username: "PlayerTwo",
+      equippedCosmetics: {
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "fire_variant_ember",
+          water: "water_variant_tidal_spirit",
+          earth: "earth_variant_rooted_monolith",
+          wind: "wind_variant_sky_serpent"
+        }
+      }
+    }
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.LOCAL_PVP,
+      hotseatTurn: "p2",
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+
+  app.showGame();
+
+  assert.equal(shown.at(-1).name, "game");
+  assert.deepEqual(shown.at(-1).context.opponentCardVariants, {
+    fire: "fire_variant_phoenix",
+    water: "water_variant_crystal",
+    earth: "earth_variant_titan",
+    wind: "wind_variant_storm_eye"
+  });
+});
+
+test("ui: normalized online room state exposes authoritative opponent card variants with safe defaults", () => {
+  const controller = createRendererController();
+  controller.onlinePlayState = {
+    socketId: "host-1"
+  };
+
+  const normalized = controller.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "host-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      host: {
+        socketId: "host-1",
+        username: "LocalUser",
+        equippedCosmetics: {
+          elementCardVariant: {
+            fire: "fire_variant_phoenix",
+            water: "water_variant_crystal",
+            earth: "earth_variant_titan",
+            wind: "wind_variant_storm_eye"
+          }
+        }
+      },
+      guest: {
+        socketId: "guest-1",
+        username: "RemoteUser",
+        equippedCosmetics: {
+          elementCardVariant: {
+            fire: "fire_variant_ember",
+            water: "water_variant_tidal_spirit",
+            earth: "invalid_remote_variant",
+            wind: "wind_variant_sky_serpent"
+          }
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(normalized.room.opponentCardVariants, {
+    fire: "fire_variant_ember",
+    water: "water_variant_tidal_spirit",
+    earth: "default_earth_card",
+    wind: "wind_variant_sky_serpent"
+  });
+});
+
+test("ui: PvE bottom-right WAR tracker uses opponent variants instead of player variants", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    opponentCardVariants: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
+    game: {
+      roundOutcome: { key: "war_triggered", label: "WAR triggered" },
+      roundResult: "WAR triggered.",
+      round: 2,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      warActive: true,
+      playerHand: [],
+      opponentHand: [],
+      pileCount: 4,
+      totalWarClashes: 2,
+      warPileCards: ["fire", "earth", "water", "wind"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /assets\/cards\/fire_variant_phoenix\.png/);
+  assert.match(html, /assets\/cards\/water_variant_tidal_spirit\.png/);
+  assert.match(html, /assets\/cards\/earth_variant_titan\.png/);
+  assert.match(html, /assets\/cards\/wind_variant_storm_eye\.png/);
+  assert.match(html, /assets\/customFire\.jpg/);
+  assert.match(html, /WAR Fire x1/);
+  assert.match(html, /class="war-impact-ring"/);
+});
+
+test("ui: local PvP bottom-right WAR tracker uses player two variants", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "P1", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "P2", title: "Initiate", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: true, activePlayer: "p1", turnLabel: "P1 Turn", p1Name: "P1", p2Name: "P2" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    opponentCardVariants: {
+      fire: "fire_variant_ember",
+      water: "water_variant_crystal",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    },
+    cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
+    game: {
+      roundOutcome: { key: "war_triggered", label: "WAR triggered" },
+      roundResult: "WAR triggered.",
+      round: 3,
+      timerSeconds: 18,
+      totalMatchSeconds: 280,
+      canSelectCard: true,
+      mode: "local_pvp",
+      playerHand: [],
+      opponentHand: [],
+      pileCount: 2,
+      totalWarClashes: 1,
+      warPileCards: ["fire", "earth"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /assets\/cards\/fire_variant_ember\.png/);
+  assert.match(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
+  assert.match(html, /assets\/customFire\.jpg/);
+  assert.match(html, /WAR Fire x1/);
+  assert.match(html, /WAR Earth x1/);
+});
+
+test("ui: gameplay WAR tracker safely falls back to default opponent cards when variants are missing", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "RemoteHero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "RemoteOpponent", title: "Initiate", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "RemoteHero", p2Name: "RemoteOpponent" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    opponentCardVariants: {
+      fire: "fire_variant_phoenix",
+      water: "invalid_remote_variant",
+      earth: null,
+      wind: "wind_variant_vortex_spirit"
+    },
+    game: {
+      roundOutcome: { key: "war_triggered", label: "WAR triggered" },
+      roundResult: "WAR triggered.",
+      round: 4,
+      timerSeconds: 18,
+      totalMatchSeconds: 260,
+      canSelectCard: true,
+      mode: "pve",
+      warActive: true,
+      playerHand: [],
+      opponentHand: [],
+      pileCount: 4,
+      totalWarClashes: 1,
+      warPileCards: ["fire", "water", "earth", "wind"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /assets\/cards\/fire_variant_phoenix\.png/);
+  assert.match(html, /assets\/cards\/water\.jpg/);
+  assert.match(html, /assets\/cards\/earth\.jpg/);
+  assert.match(html, /assets\/cards\/wind_variant_vortex_spirit\.png/);
+  assert.match(html, /WAR Water x1/);
+  assert.match(html, /WAR Earth x1/);
+});
+
+test("ui: online authoritative opponent variants can drive the gameplay WAR tracker display", () => {
+  const controller = createRendererController();
+  controller.onlinePlayState = {
+    socketId: "host-1",
+    session: {
+      username: "LocalUser"
+    }
+  };
+
+  const normalized = controller.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "host-1",
+    session: {
+      username: "LocalUser"
+    },
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      host: {
+        socketId: "host-1",
+        username: "LocalUser",
+        equippedCosmetics: {
+          elementCardVariant: {
+            fire: "fire_variant_phoenix",
+            water: "water_variant_crystal",
+            earth: "earth_variant_titan",
+            wind: "wind_variant_storm_eye"
+          }
+        }
+      },
+      guest: {
+        socketId: "guest-1",
+        username: "RemoteUser",
+        equippedCosmetics: {
+          elementCardVariant: {
+            fire: "fire_variant_ember",
+            water: "water_variant_tidal_spirit",
+            earth: "earth_variant_rooted_monolith",
+            wind: "wind_variant_sky_serpent"
+          }
+        }
+      }
+    }
+  });
+
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "LocalUser", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "RemoteUser", title: "Initiate", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "LocalUser", p2Name: "RemoteUser" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    opponentCardVariants: normalized.room.opponentCardVariants,
+    game: {
+      roundOutcome: { key: "war_triggered", label: "WAR triggered" },
+      roundResult: "WAR triggered.",
+      round: 5,
+      timerSeconds: 18,
+      totalMatchSeconds: 250,
+      canSelectCard: true,
+      mode: "pve",
+      warActive: true,
+      playerHand: [],
+      opponentHand: [],
+      pileCount: 2,
+      totalWarClashes: 1,
+      warPileCards: ["fire", "wind"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /assets\/cards\/fire_variant_ember\.png/);
+  assert.match(html, /assets\/cards\/wind_variant_sky_serpent\.png/);
+  assert.match(html, /assets\/customFire\.jpg/);
+});
+
+test("ui: online play screen renders the opponent variant showcase from authoritative room data without counts", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        hostResolvedIdentity: {
+          slotLabel: "Host",
+          username: "LocalUser",
+          connected: true,
+          avatarImage: getAvatarImage("avatar_fourfold_lord"),
+          backgroundImage: getArenaBackground("bg_elemental_throne"),
+          cardBackId: "cardback_elemental_nexus",
+          cardBackImage: getCardBackImage("cardback_elemental_nexus"),
+          titleLabel: "War Master",
+          badgeImage: getBadgeImage("badge_arena_legend"),
+          variantSelection: {
+            fire: "fire_variant_phoenix",
+            water: "water_variant_crystal",
+            earth: "earth_variant_titan",
+            wind: "wind_variant_storm_eye"
+          },
+          variantImages: getVariantCardImages({
+            fire: "fire_variant_phoenix",
+            water: "water_variant_crystal",
+            earth: "earth_variant_titan",
+            wind: "wind_variant_storm_eye"
+          })
+        },
+        guestResolvedIdentity: {
+          slotLabel: "Guest",
+          username: "RemoteUser",
+          connected: true,
+          avatarImage: getAvatarImage("avatar_storm_oracle"),
+          backgroundImage: getArenaBackground("bg_storm_temple"),
+          cardBackId: "cardback_storm_spiral",
+          cardBackImage: getCardBackImage("cardback_storm_spiral"),
+          titleLabel: "Element Sovereign",
+          badgeImage: getBadgeImage("badge_element_veteran"),
+          variantSelection: {
+            fire: "fire_variant_ember",
+            water: "water_variant_tidal_spirit",
+            earth: "earth_variant_rooted_monolith",
+            wind: "wind_variant_sky_serpent"
+          },
+          variantImages: getVariantCardImages({
+            fire: "fire_variant_ember",
+            water: "water_variant_tidal_spirit",
+            earth: "earth_variant_rooted_monolith",
+            wind: "wind_variant_sky_serpent"
+          })
+        },
+        host: { socketId: "host-1", username: "LocalUser" },
+        guest: { socketId: "guest-1", username: "RemoteUser" },
+        hostScore: 0,
+        guestScore: 0,
+        roundNumber: 2,
+        lastOutcomeType: "war",
+        hostHand: { fire: 2, earth: 1, wind: 0, water: 3 },
+        guestHand: { fire: 9, earth: 0, wind: 0, water: 0 },
+        opponentCardVariants: {
+          fire: "fire_variant_ember",
+          water: "invalid_remote_variant",
+          earth: "earth_variant_rooted_monolith",
+          wind: "wind_variant_sky_serpent"
+        },
+        warActive: true,
+        warDepth: 1,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-online-opponent-variant-tracker="true"/);
+  assert.match(html, /Opponent Card Style/);
+  assert.match(html, /assets\/cards\/fire_variant_ember\.png/);
+  assert.match(html, /assets\/cards\/water\.jpg/);
+  assert.match(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
+  assert.match(html, /assets\/cards\/wind_variant_sky_serpent\.png/);
+  assert.match(html, /Opponent Fire card style/);
+  assert.match(html, /Opponent Earth card style/);
+  assert.match(html, /Opponent Wind card style/);
+  assert.match(html, /Opponent Water card style/);
+  assert.doesNotMatch(html, /war-slot-count-badge/);
+  assert.doesNotMatch(html, /Opponent Fire x\d+/);
+  assert.doesNotMatch(html, /Opponent Earth x\d+/);
+  assert.doesNotMatch(html, /Opponent Wind x\d+/);
+  assert.doesNotMatch(html, /Opponent Water x\d+/);
 });
 
 test("ui: moved element card variants resolve from assets/cards", () => {
@@ -6903,6 +7436,7 @@ test("ui: online play screen renders room flow status and room details", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "abc123",
+    formattedErrorMessage: "Previous error",
     multiplayer: {
       connectionStatus: "connected",
       socketId: "host-1",
@@ -7207,6 +7741,16 @@ test("ui: online play screen renders match complete and rematch readiness state"
         rewardSettlement: {
           granted: true,
           grantedAt: "2026-03-20T12:00:00.000Z",
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            },
+            rewards: {
+              host: { tokens: 25, xp: 20, basicChests: 1 },
+              guest: { tokens: 5, xp: 5, basicChests: 0 }
+            }
+          },
           summary: {
             granted: true,
             winner: "host",
@@ -7279,6 +7823,16 @@ test("ui: online play screen reward summary reflects an actual chest grant", () 
         rewardSettlement: {
           granted: true,
           grantedAt: "2026-03-20T12:00:00.000Z",
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            },
+            rewards: {
+              host: { tokens: 25, xp: 20, basicChests: 1 },
+              guest: { tokens: 5, xp: 5, basicChests: 0 }
+            }
+          },
           summary: {
             granted: true,
             winner: "host",
@@ -7334,6 +7888,16 @@ test("ui: online play results use current basic chest inventory without implying
         rewardSettlement: {
           granted: true,
           grantedAt: "2026-03-20T12:00:00.000Z",
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            },
+            rewards: {
+              host: { tokens: 25, xp: 20, basicChests: 1 },
+              guest: { tokens: 5, xp: 5, basicChests: 0 }
+            }
+          },
           summary: {
             granted: true,
             settledHostUsername: "HostRewardUser",
@@ -7417,6 +7981,16 @@ test("ui: completed online match renders local player daily and weekly challenge
         rewardSettlement: {
           granted: true,
           grantedAt: "2026-03-20T12:00:00.000Z",
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            },
+            rewards: {
+              host: { tokens: 25, xp: 20, basicChests: 1 },
+              guest: { tokens: 5, xp: 5, basicChests: 0 }
+            }
+          },
           summary: {
             granted: true,
             winner: "host",
@@ -7570,6 +8144,16 @@ test("ui: online play screen keeps settled guest rewards after host migration", 
         rewardSettlement: {
           granted: true,
           grantedAt: "2026-03-20T12:00:00.000Z",
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            },
+            rewards: {
+              host: { tokens: 25, xp: 20, basicChests: 1 },
+              guest: { tokens: 5, xp: 5, basicChests: 0 }
+            }
+          },
           summary: {
             granted: true,
             winner: "host",
@@ -9245,6 +9829,16 @@ test("ui: online play challenge visibility stays in the existing screen without 
         rewardSettlement: {
           granted: true,
           grantedAt: "2026-03-20T12:00:00.000Z",
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            },
+            rewards: {
+              host: { tokens: 25, xp: 20, basicChests: 1 },
+              guest: { tokens: 5, xp: 5, basicChests: 0 }
+            }
+          },
           summary: {
             granted: true,
             winner: "host",
@@ -9841,6 +10435,16 @@ test("ui: online play screen keeps settled host rewards after guest disconnect",
         rewardSettlement: {
           granted: true,
           grantedAt: "2026-03-20T12:00:00.000Z",
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            },
+            rewards: {
+              host: { tokens: 25, xp: 20, basicChests: 1 },
+              guest: { tokens: 5, xp: 5, basicChests: 0 }
+            }
+          },
           summary: {
             granted: true,
             winner: "host",

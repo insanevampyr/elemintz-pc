@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
 
-const PHASE_LABEL = "Shared Authoritative Achievements - Pass 2";
+const PHASE_LABEL = "Opponent Variant Display + External Tester Stabilization";
 const ENVIRONMENT_LABEL = process.env.NODE_ENV === "production" ? "Production" : "Development";
 const logger = createTimestampedLogger(console);
 
@@ -138,7 +138,6 @@ server.start()
     logger.info(`Version: ${packageJson.version}`);
     logger.info(`Port: ${listeningPort}`);
     logger.info(`Mode: ${ENVIRONMENT_LABEL}`);
-    logger.info("Systems: Multiplayer ✔ | Profile Authority ✔");
     logger.info(`Phase: ${PHASE_LABEL}`);
   })
   .catch((error) => {

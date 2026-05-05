@@ -59,6 +59,7 @@ const ONLINE_DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
   title: "Initiate",
   badge: "none"
 });
+const ELEMENT_CARD_VARIANT_ELEMENTS = Object.freeze(["fire", "water", "earth", "wind"]);
 const MATCH_TAUNT_HISTORY_LIMIT = 8;
 const MATCH_TAUNT_VISIBLE_MS = 20000;
 const MATCH_TAUNT_FADE_MS = 400;
@@ -718,6 +719,42 @@ export class AppController {
     return pool[index] ?? pool[0];
   }
 
+  getDefaultElementCardVariantMap() {
+    return {
+      ...ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant
+    };
+  }
+
+  normalizeElementCardVariantMap(selection = null, fallbackMap = this.getDefaultElementCardVariantMap()) {
+    return Object.fromEntries(
+      ELEMENT_CARD_VARIANT_ELEMENTS.map((element) => {
+        const fallbackId = String(
+          fallbackMap?.[element] ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant[element]
+        );
+        const requestedId = String(selection?.[element] ?? "").trim();
+        const definition = requestedId ? getCosmeticDefinition("elementCardVariant", requestedId) : null;
+        const resolvedId = definition?.element === element ? requestedId : fallbackId;
+        return [element, resolvedId];
+      })
+    );
+  }
+
+  chooseRandomElementCardVariantMap() {
+    const fallbackMap = this.getDefaultElementCardVariantMap();
+
+    return Object.fromEntries(
+      ELEMENT_CARD_VARIANT_ELEMENTS.map((element) => {
+        const variants = (Array.isArray(COSMETIC_CATALOG.elementCardVariant)
+          ? COSMETIC_CATALOG.elementCardVariant
+          : []
+        ).filter((item) => item?.element === element && item?.id);
+        const index = variants.length > 0 ? Math.floor(Math.random() * variants.length) : -1;
+        const chosenId = variants[index]?.id ?? fallbackMap[element];
+        return [element, chosenId];
+      })
+    );
+  }
+
   buildPveOpponentStyle() {
     if (this.getConfiguredAiOpponentStyle() !== "random") {
       return {
@@ -725,7 +762,8 @@ export class AppController {
         titleId: null,
         titleName: "Arena Rival",
         badgeId: "none",
-        cardBackId: "default_card_back"
+        cardBackId: "default_card_back",
+        elementCardVariant: this.getDefaultElementCardVariantMap()
       };
     }
 
@@ -739,7 +777,8 @@ export class AppController {
       titleId: title?.id ?? null,
       titleName: getCosmeticDisplayName("title", title?.id, title?.name ?? "Arena Rival"),
       badgeId: badge?.id ?? "none",
-      cardBackId: cardBack?.id ?? "default_card_back"
+      cardBackId: cardBack?.id ?? "default_card_back",
+      elementCardVariant: this.chooseRandomElementCardVariantMap()
     };
   }
 
@@ -1299,19 +1338,14 @@ export class AppController {
       profile?.cosmetics?.elementCardVariant ??
       {};
 
-    return {
-      avatar: String(this.getOnlineEquippedCosmeticValue(profile, "avatar", ONLINE_DEFAULT_EQUIPPED_COSMETICS.avatar)),
-      background: String(this.getOnlineEquippedCosmeticValue(profile, "background", ONLINE_DEFAULT_EQUIPPED_COSMETICS.background)),
-      cardBack: String(this.getOnlineEquippedCosmeticValue(profile, "cardBack", ONLINE_DEFAULT_EQUIPPED_COSMETICS.cardBack)),
-      elementCardVariant: {
-        fire: String(equippedVariants?.fire ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.fire),
-        water: String(equippedVariants?.water ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.water),
-        earth: String(equippedVariants?.earth ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.earth),
-        wind: String(equippedVariants?.wind ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant.wind)
-      },
-      title: String(this.getOnlineEquippedCosmeticValue(profile, "title", ONLINE_DEFAULT_EQUIPPED_COSMETICS.title)),
-      badge: String(this.getOnlineEquippedCosmeticValue(profile, "badge", ONLINE_DEFAULT_EQUIPPED_COSMETICS.badge))
-    };
+      return {
+        avatar: String(this.getOnlineEquippedCosmeticValue(profile, "avatar", ONLINE_DEFAULT_EQUIPPED_COSMETICS.avatar)),
+        background: String(this.getOnlineEquippedCosmeticValue(profile, "background", ONLINE_DEFAULT_EQUIPPED_COSMETICS.background)),
+        cardBack: String(this.getOnlineEquippedCosmeticValue(profile, "cardBack", ONLINE_DEFAULT_EQUIPPED_COSMETICS.cardBack)),
+        elementCardVariant: this.normalizeElementCardVariantMap(equippedVariants),
+        title: String(this.getOnlineEquippedCosmeticValue(profile, "title", ONLINE_DEFAULT_EQUIPPED_COSMETICS.title)),
+        badge: String(this.getOnlineEquippedCosmeticValue(profile, "badge", ONLINE_DEFAULT_EQUIPPED_COSMETICS.badge))
+      };
   }
 
   buildProfileFromServerSnapshot(serverProfile) {
@@ -1657,7 +1691,34 @@ export class AppController {
       badgeImage: playerDisplay.featuredBadge,
       variantSelection: equippedCosmetics.elementCardVariant,
       variantImages: getVariantCardImages(equippedCosmetics.elementCardVariant)
-    };
+      };
+  }
+
+  buildOnlineOpponentCardVariants(
+    room = null,
+    {
+      socketId = this.onlinePlayState?.socketId ?? null,
+      sessionUsername = this.onlinePlayState?.session?.username ?? this.username ?? null
+    } = {}
+  ) {
+    const activeSocketId = String(socketId ?? "").trim();
+    const activeUsername = String(sessionUsername ?? "").trim();
+    const hostSocketId = String(room?.host?.socketId ?? "").trim();
+    const guestSocketId = String(room?.guest?.socketId ?? "").trim();
+    const hostUsername = String(room?.host?.username ?? "").trim();
+    const guestUsername = String(room?.guest?.username ?? "").trim();
+    const remoteIdentity =
+      activeSocketId && activeSocketId === guestSocketId
+        ? room?.hostResolvedIdentity ?? null
+        : activeSocketId && activeSocketId === hostSocketId
+          ? room?.guestResolvedIdentity ?? null
+          : activeUsername && activeUsername === guestUsername
+            ? room?.hostResolvedIdentity ?? null
+            : activeUsername && activeUsername === hostUsername
+              ? room?.guestResolvedIdentity ?? null
+              : room?.guestResolvedIdentity ?? null;
+
+    return this.normalizeElementCardVariantMap(remoteIdentity?.variantSelection ?? null);
   }
 
   async maybeShowLoadoutUnlockNotice() {
@@ -1918,7 +1979,7 @@ export class AppController {
   normalizeOnlinePlayState(state) {
     const normalizedHost = this.normalizeOnlineRoomPlayer(state?.room?.host);
     const normalizedGuest = this.normalizeOnlineRoomPlayer(state?.room?.guest);
-    const normalizedRoom = state?.room
+    let normalizedRoom = state?.room
       ? {
           ...state.room,
           host: normalizedHost,
@@ -1960,9 +2021,21 @@ export class AppController {
                 kind: entry?.kind ?? "player",
                 sentAt: entry?.sentAt ?? null
               }))
-            : []
-        }
-      : null;
+              : []
+          }
+        : null;
+    if (normalizedRoom) {
+      normalizedRoom = {
+        ...normalizedRoom,
+        opponentCardVariants: this.buildOnlineOpponentCardVariants(
+          normalizedRoom,
+          {
+            socketId: state?.socketId ?? this.onlinePlayState?.socketId ?? null,
+            sessionUsername: state?.session?.username ?? this.onlinePlayState?.session?.username ?? this.username ?? null
+          }
+        )
+      };
+    }
 
     const fallback = {
       connectionStatus: "disconnected",
@@ -3009,7 +3082,8 @@ export class AppController {
             ? "No effect"
             : "Draw";
 
-    return `Last Round: ${resultLabel}. Captured ${vm.lastRound.capturedCards} card(s).`;
+    const capturedOpponentCards = this.getResolvedOpponentCardsCaptured(vm.lastRound);
+    return `Last Round: ${resultLabel}. Captured ${capturedOpponentCards} opponent card(s).`;
   }
 
   getResolvedOpponentCardsCaptured(round) {
@@ -4159,6 +4233,18 @@ export class AppController {
     const p1Profile = localPvp ? this.localProfiles?.p1 : this.profile;
     const p2Profile = localPvp ? this.localProfiles?.p2 : null;
     const pveOpponentStyle = localPvp ? null : this.resolvePveOpponentStyle();
+    const localViewerKey = localPvp && vm.hotseatTurn === "p2" ? "p2" : "p1";
+    const localOpponentProfile =
+      !localPvp
+        ? null
+        : localViewerKey === "p2"
+          ? p1Profile ?? this.profile
+          : p2Profile ?? null;
+    const opponentCardVariants = this.normalizeElementCardVariantMap(
+      localPvp
+        ? localOpponentProfile?.equippedCosmetics?.elementCardVariant ?? null
+        : pveOpponentStyle?.elementCardVariant ?? null
+    );
 
     const playerDisplay = this.buildPlayerDisplay(p1Profile, names.p1, "Initiate");
     const opponentDisplay = localPvp
@@ -4194,19 +4280,20 @@ export class AppController {
         p1: getVariantCardImages(p1Variant),
         p2: getVariantCardImages(p2Variant)
       },
-      cosmeticIds: {
-        variants: {
-          p1: p1Variant,
-          p2: p2Variant
+        cosmeticIds: {
+          variants: {
+            p1: p1Variant,
+            p2: p2Variant
         },
         cardBacks: {
           p1: p1CardBack,
           p2: p2CardBack
         }
-      },
-      cardBacks: {
-        p1: getCardBackImage(p1CardBack),
-        p2: getCardBackImage(p2CardBack)
+        },
+        opponentCardVariants,
+        cardBacks: {
+          p1: getCardBackImage(p1CardBack),
+          p2: getCardBackImage(p2CardBack)
       },
       playerDisplay,
       opponentDisplay,

@@ -16,7 +16,7 @@ const ROOM_RECONNECT_TIMEOUT_MS = 60000;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 export const MULTIPLAYER_FOUNDATION_PHASE = 22;
-const DEVELOPMENT_PHASE_LABEL = "Shared Authoritative Achievements - Pass 2";
+const DEVELOPMENT_PHASE_LABEL = "Opponent Variant Display + External Tester Stabilization";
 
 function logRoomEvent(logger, message, details = {}) {
   logger.info("[Multiplayer] " + message, details);
@@ -408,20 +408,24 @@ function getStoredCapturedCards(entry, fallback = 0) {
 }
 
 function countWarResolutionClashes(roundHistory, resolvedIndex) {
-  let warClashes = 1;
+  const priorChainOutcomes = [];
 
   for (let cursor = resolvedIndex - 1; cursor >= 0; cursor -= 1) {
     const priorOutcomeType = String(roundHistory[cursor]?.outcomeType ?? "");
 
     if (priorOutcomeType === "war" || priorOutcomeType === "no_effect") {
-      warClashes += 1;
+      priorChainOutcomes.unshift(priorOutcomeType);
       continue;
     }
 
     break;
   }
 
-  return warClashes;
+  while (priorChainOutcomes[0] === "no_effect") {
+    priorChainOutcomes.shift();
+  }
+
+  return 1 + priorChainOutcomes.length;
 }
 
 function buildOnlineHistoryFromRoundHistory(roundHistory = []) {

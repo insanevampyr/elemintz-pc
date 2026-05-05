@@ -1,4 +1,4 @@
-import { ASSET_CATALOG, escapeHtml, getCardImage, formatElement } from "../../utils/index.js";
+import { ASSET_CATALOG, escapeHtml, getCardImage, getVariantCardImages, formatElement } from "../../utils/index.js";
 import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
 import {
   ELEMENT_ORDER,
@@ -91,14 +91,14 @@ function getWarPresentationSignature(context) {
   ].join("|");
 }
 
-function renderWarPileSummary(pileCards, cardImages, emphasize) {
+function renderWarPileSummary(pileCards, opponentCardVariantImages, emphasize) {
   const normalizedCards = Array.isArray(pileCards) ? pileCards.map((card) => getCardElement(card)) : [];
 
   return `
     <div class="war-summary-grid ${emphasize ? "is-emphasized" : ""}">
       ${ELEMENT_ORDER.map((element) => {
         const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
-        const variantMap = cardImages?.p1 ?? null;
+        const variantMap = opponentCardVariantImages ?? null;
         const classes = ["war-slot", `war-slot-${element}`];
 
         if (count === 0) {
@@ -298,13 +298,14 @@ export const gameScreen = {
       p1: context.hotseat?.p1Name ?? "Player 1",
       p2: context.hotseat?.p2Name ?? "Player 2"
     };
-    const phase = context.presentation?.phase ?? "idle";
-    const warTriggered = vm.roundOutcome?.key === "war_triggered" || Boolean(vm.warActive);
-    const emphasizePlayed = phase === "reveal" || phase === "result";
-    const hands = renderHands(vm, context, phase, names);
-    const playedVariantRarities = {
-      p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
-      p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
+      const phase = context.presentation?.phase ?? "idle";
+      const warTriggered = vm.roundOutcome?.key === "war_triggered" || Boolean(vm.warActive);
+      const emphasizePlayed = phase === "reveal" || phase === "result";
+      const hands = renderHands(vm, context, phase, names);
+      const opponentCardVariantImages = getVariantCardImages(context.opponentCardVariants ?? null);
+      const playedVariantRarities = {
+        p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
+        p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
     };
     const hotseatBusyReveal = vm.mode === "local_pvp" && phase === "reveal" && (context.presentation?.busy ?? false);
     const resultBannerActive = phase === "result" || phase === "reveal";
@@ -395,10 +396,10 @@ export const gameScreen = {
                 <p class="round-status-line">${capturedStatus}</p>
                 ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR Progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
               </div>
-              <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
-                ${renderWarPileSummary(vm.warPileCards, context.cardImages, warTriggered)}
-              </div>
-            </article>
+                <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
+                 ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
+                </div>
+              </article>
           </section>
         </section>
         ${
