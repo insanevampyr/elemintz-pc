@@ -233,6 +233,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("ownedCosmetics", defaults.ownedCosmetics);
   repairObjectSection("equippedCosmetics", defaults.equippedCosmetics);
   repairObjectSection("cosmetics", defaults.cosmetics);
+  repairObjectSection("seenAnnouncements", defaults.seenAnnouncements);
   repairObjectSection("levelRewardsClaimed", defaults.levelRewardsClaimed);
   repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
   repairObjectSection("onlineRewardSettlements", defaults.onlineRewardSettlements);

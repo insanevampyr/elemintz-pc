@@ -2003,6 +2003,19 @@ export class MultiplayerClient {
     return response.cosmetics ?? null;
   }
 
+  async acknowledgeAnnouncement({ username, key, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:acknowledgeAnnouncement",
+      { username, key },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to acknowledge the announcement.");
+    }
+
+    return response.result ?? null;
+  }
+
   async claimDailyLoginReward({ username, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:claimDailyLoginReward",

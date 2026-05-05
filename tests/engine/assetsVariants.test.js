@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { getAssetPath } from "../../src/renderer/utils/dom.js";
-import { getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
+import { getAvatarImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 
 test("assets: per-element variant selection affects only selected element", () => {
   const map = getVariantCardImages({
@@ -58,4 +59,55 @@ test("assets: getAssetPath resolves assets from module location as a file URL", 
 
   assert.match(resolved, /^file:/);
   assert.match(resolved, /assets\/titles\/title_apprentice\.png$/);
+});
+
+test("assets: new avatar ids resolve through the avatar asset map", () => {
+  const avatarIds = [
+    "avatar_smirk_ember",
+    "avatar_bubble_brat",
+    "avatar_moss_mood",
+    "avatar_neon_puff",
+    "avatar_stone_cold_cutie",
+    "avatar_storm_brat",
+    "avatar_tidal_diva",
+    "avatar_ashen_trickster",
+    "avatar_corrupt_cherub",
+    "avatar_void_glam",
+    "avatar_riot_halo",
+    "avatar_golden_menace",
+    "avatar_chaos_monarch",
+    "avatar_rose_riot"
+  ];
+
+  for (const avatarId of avatarIds) {
+    const resolved = getAvatarImage(avatarId);
+    assert.match(resolved, /^file:/);
+    assert.match(resolved, new RegExp(`assets/avatars/${avatarId}\\.png$`.replace(/\//g, "\\/")));
+  }
+});
+
+test("assets: new title catalog image paths resolve to the expected title assets", () => {
+  const titleIds = [
+    "title_chaos_gremlin",
+    "title_soft_doom",
+    "title_pretty_problem",
+    "title_silent_menace",
+    "title_drama_magnet",
+    "title_neon_rebel",
+    "title_velvet_villain",
+    "title_void_doll",
+    "title_glitch_royalty",
+    "title_crownless_king",
+    "title_divine_menace",
+    "title_cataclysm_icon"
+  ];
+  const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
+
+  for (const titleId of titleIds) {
+    const item = titles.get(titleId);
+    assert.ok(item, `missing title ${titleId}`);
+    const resolved = getAssetPath(item.image);
+    assert.match(resolved, /^file:/);
+    assert.match(resolved, new RegExp(`assets/titles/${titleId}\\.png$`.replace(/\//g, "\\/")));
+  }
 });

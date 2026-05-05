@@ -1742,6 +1742,45 @@ export function createMultiplayerFoundation({
         }
       });
 
+      socket.on("profile:acknowledgeAnnouncement", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof profileAuthority?.acknowledgeAnnouncement !== "function") {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            }
+          });
+          return;
+        }
+
+        try {
+          const result = await profileAuthority.acknowledgeAnnouncement({
+            ...payload,
+            username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+          });
+          respond({
+            ok: true,
+            result
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_ANNOUNCEMENT_WRITE_FAILED",
+              message: String(error?.message ?? "Unable to acknowledge the announcement.")
+            }
+          });
+        }
+      });
+
       socket.on("profile:claimDailyLoginReward", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
         const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });

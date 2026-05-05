@@ -122,6 +122,7 @@ export function createDefaultProfile(username) {
     username,
     linkedAccountId: null,
     title: "Initiate",
+    seenAnnouncements: {},
     wins: 0,
     losses: 0,
     gamesPlayed: 0,

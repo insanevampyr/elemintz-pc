@@ -6,6 +6,38 @@ import path from "node:path";
 
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
+const NEW_TITLE_EXPECTATIONS = Object.freeze([
+  ["title_chaos_gremlin", "Common", 100],
+  ["title_soft_doom", "Common", 100],
+  ["title_pretty_problem", "Common", 100],
+  ["title_silent_menace", "Rare", 250],
+  ["title_drama_magnet", "Rare", 250],
+  ["title_neon_rebel", "Rare", 250],
+  ["title_velvet_villain", "Epic", 500],
+  ["title_void_doll", "Epic", 500],
+  ["title_glitch_royalty", "Epic", 500],
+  ["title_crownless_king", "Legendary", 850],
+  ["title_divine_menace", "Legendary", 850],
+  ["title_cataclysm_icon", "Legendary", 850]
+]);
+
+const NEW_AVATAR_EXPECTATIONS = Object.freeze([
+  ["avatar_smirk_ember", "Common", 150],
+  ["avatar_bubble_brat", "Common", 150],
+  ["avatar_moss_mood", "Common", 150],
+  ["avatar_neon_puff", "Common", 150],
+  ["avatar_stone_cold_cutie", "Rare", 300],
+  ["avatar_storm_brat", "Rare", 300],
+  ["avatar_tidal_diva", "Rare", 300],
+  ["avatar_ashen_trickster", "Rare", 300],
+  ["avatar_corrupt_cherub", "Epic", 600],
+  ["avatar_void_glam", "Epic", 600],
+  ["avatar_riot_halo", "Epic", 600],
+  ["avatar_golden_menace", "Legendary", 900],
+  ["avatar_chaos_monarch", "Legendary", 900],
+  ["avatar_rose_riot", "Legendary", 900]
+]);
+
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-"));
 }
@@ -501,4 +533,35 @@ test("store: war machine badge is hidden from store and remains achievement-lock
   assert.equal(warMachine.purchasable, false);
   assert.equal(warMachine.unlockSource?.type, "achievement reward");
   assert.equal(warMachine.unlockSource?.achievementId, "war_machine");
+});
+
+test("store: new avatar and title cosmetics are purchasable and visible with exact rarity pricing", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const store = await state.getStore("NewCosmeticsStoreUser");
+
+  const titles = new Map((store.catalog.title ?? []).map((item) => [item.id, item]));
+  const avatars = new Map((store.catalog.avatar ?? []).map((item) => [item.id, item]));
+
+  for (const [id, rarity, price] of NEW_TITLE_EXPECTATIONS) {
+    const item = titles.get(id);
+    assert.ok(item, `missing store title ${id}`);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.owned, false);
+    assert.equal(item.rarity, rarity);
+    assert.equal(item.price, price);
+    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.isNew, true);
+  }
+
+  for (const [id, rarity, price] of NEW_AVATAR_EXPECTATIONS) {
+    const item = avatars.get(id);
+    assert.ok(item, `missing store avatar ${id}`);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.owned, false);
+    assert.equal(item.rarity, rarity);
+    assert.equal(item.price, price);
+    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.isNew, true);
+  }
 });

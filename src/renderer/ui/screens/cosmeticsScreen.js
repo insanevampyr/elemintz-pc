@@ -115,9 +115,11 @@ function renderItem(type, item) {
     type === "elementCardVariant" && item.element
       ? `<p>Applies to: ${item.element[0].toUpperCase()}${item.element.slice(1)} cards only</p>`
       : "";
+  const newBadge = item.isNew ? '<span class="store-item-badge store-item-badge-new">NEW</span>' : "";
 
   return `
-    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}">
+    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}" data-cosmetic-is-new="${item.isNew ? "true" : "false"}" data-cosmetic-original-index="${item.originalIndex ?? 0}">
+      ${newBadge}
       ${preview(type, item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
@@ -144,6 +146,44 @@ function sortOwnedItems(items) {
       return leftRarity - rightRarity;
     }
     return String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
+  });
+}
+
+function sortOwnedItemsForDisplay(items, showNewFirst) {
+  const ordered = sortOwnedItems(items).map((item, index) => ({
+    ...item,
+    originalIndex: index
+  }));
+
+  if (!showNewFirst) {
+    return ordered;
+  }
+
+  return [...ordered].sort((left, right) => {
+    const newDelta = Number(Boolean(right?.isNew)) - Number(Boolean(left?.isNew));
+    if (newDelta !== 0) {
+      return newDelta;
+    }
+
+    return Number(left?.originalIndex ?? 0) - Number(right?.originalIndex ?? 0);
+  });
+}
+
+function sortRenderedCosmeticItems(items, showNewFirst) {
+  return [...items].sort((left, right) => {
+    if (showNewFirst) {
+      const newDelta =
+        Number(Boolean(right.getAttribute("data-cosmetic-is-new") === "true")) -
+        Number(Boolean(left.getAttribute("data-cosmetic-is-new") === "true"));
+      if (newDelta !== 0) {
+        return newDelta;
+      }
+    }
+
+    return (
+      Number(left.getAttribute("data-cosmetic-original-index") ?? 0) -
+      Number(right.getAttribute("data-cosmetic-original-index") ?? 0)
+    );
   });
 }
 
@@ -247,6 +287,7 @@ export const cosmeticsScreen = {
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.showNewFirst = viewState.showNewFirst;
     }
 
     return `
@@ -296,15 +337,27 @@ export const cosmeticsScreen = {
                   ).join("")}
                 </div>
               </fieldset>
+              <fieldset class="store-filter-group">
+                <legend>Order</legend>
+                <div class="store-filter-options">
+                  <label class="store-filter-option store-filter-option-toggle">
+                    <input type="checkbox" id="cosmetics-show-new-first" ${viewState.showNewFirst ? "checked" : ""} />
+                    <span>Show NEW First</span>
+                  </label>
+                </div>
+              </fieldset>
             </div>
           </section>
 
           ${renderRandomizePanel(cosmetics)}
 
           <div class="grid cosmetics-sections">
-            ${COSMETIC_SECTIONS.map(([type, title]) => {
-              const owned = sortOwnedItems((cosmetics.catalog[type] ?? []).filter((item) => item.owned));
-              return `
+              ${COSMETIC_SECTIONS.map(([type, title]) => {
+                const owned = sortOwnedItemsForDisplay(
+                  (cosmetics.catalog[type] ?? []).filter((item) => item.owned),
+                  viewState.showNewFirst
+                );
+                return `
                 <section class="cosmetic-section" data-cosmetic-section="${type}">
                   <h3 class="section-title">${title}</h3>
                   <div class="cosmetic-grid">
@@ -327,18 +380,28 @@ export const cosmeticsScreen = {
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.showNewFirst = viewState.showNewFirst;
     }
 
     const applyFilters = () => {
       const sections = Array.from(scope.querySelectorAll("[data-cosmetic-section]"));
       const categoriesEnabled = viewState.categories.size > 0;
       const raritiesEnabled = viewState.rarities.size > 0;
-      let anyVisible = false;
+        let anyVisible = false;
 
-      for (const section of sections) {
-        const type = section.getAttribute("data-cosmetic-section");
-        const items = Array.from(section.querySelectorAll(".cosmetic-item"));
-        const categoryVisible = categoriesEnabled && viewState.categories.has(type);
+        for (const section of sections) {
+          const type = section.getAttribute("data-cosmetic-section");
+          const grid = section.querySelector(".cosmetic-grid");
+          if (grid) {
+            sortRenderedCosmeticItems(
+              Array.from(grid.querySelectorAll(".cosmetic-item")),
+              viewState.showNewFirst
+            ).forEach((item) => {
+              grid.appendChild(item);
+            });
+          }
+          const items = Array.from(section.querySelectorAll(".cosmetic-item"));
+          const categoryVisible = categoriesEnabled && viewState.categories.has(type);
         let hasVisibleItem = false;
 
         for (const item of items) {
@@ -406,17 +469,22 @@ export const cosmeticsScreen = {
       });
     });
 
-    scope.querySelectorAll("[data-cosmetic-rarity-filter]").forEach((input) => {
-      input.addEventListener("change", () => {
-        const rarity = input.getAttribute("data-cosmetic-rarity-filter");
+      scope.querySelectorAll("[data-cosmetic-rarity-filter]").forEach((input) => {
+        input.addEventListener("change", () => {
+          const rarity = input.getAttribute("data-cosmetic-rarity-filter");
         if (input.checked) {
           viewState.rarities.add(rarity);
         } else {
           viewState.rarities.delete(rarity);
         }
         applyFilters();
+        });
       });
-    });
+
+      document.getElementById("cosmetics-show-new-first")?.addEventListener("change", (event) => {
+        viewState.showNewFirst = Boolean(event?.target?.checked);
+        applyFilters();
+      });
 
     document.querySelectorAll("[data-equip-type]").forEach((button) => {
       button.addEventListener("click", async () => {

@@ -191,6 +191,34 @@ export class MultiplayerProfileAuthority {
     return this.getProfile(safeUsername);
   }
 
+  async acknowledgeAnnouncement({ username, key }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    const safeKey = String(key ?? "").trim();
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative announcement updates.");
+    }
+    if (!safeKey) {
+      throw new Error("announcement key is required for server-authoritative announcement updates.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] acknowledgeAnnouncement -> ${safeUsername} (${safeKey})`);
+
+    await this.coordinator.profiles.updateProfile(safeUsername, (current) => ({
+      ...current,
+      seenAnnouncements: {
+        ...(current?.seenAnnouncements ?? {}),
+        [safeKey]: true
+      }
+    }));
+
+    const snapshot = await this.getProfile(safeUsername);
+    return {
+      key: safeKey,
+      seen: Boolean(snapshot?.profile?.seenAnnouncements?.[safeKey]),
+      snapshot
+    };
+  }
+
   async applyMatchResult({
     username,
     result,

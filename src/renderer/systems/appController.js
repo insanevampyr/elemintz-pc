@@ -69,6 +69,10 @@ const AI_TAUNT_COOLDOWN_MIN_MS = 20000;
 const AI_TAUNT_COOLDOWN_MAX_MS = 30000;
 const AI_TAUNT_CHANCE_MIN = 0.3;
 const AI_TAUNT_CHANCE_MAX = 0.5;
+const NEW_COSMETICS_ANNOUNCEMENT_KEY = "cosmetics_v0.1.6";
+const NEW_COSMETICS_ANNOUNCEMENT_TITLE = "New Cosmetics Added!";
+const NEW_COSMETICS_ANNOUNCEMENT_BODY =
+  "26 new titles and avatars are now available in the Store.";
 const PVE_AI_TAUNT_LINES = Object.freeze({
   match_start: Object.freeze(["Your move.", "Let's finish this.", "I saw that coming."]),
   player_win: Object.freeze(["Interesting.", "Not bad.", "Bold choice."]),
@@ -143,6 +147,8 @@ export class AppController {
     this.playerTauntCooldowns = Object.create(null);
     this.aiTauntCooldownUntil = 0;
     this.aiLastTauntEventKey = null;
+    this.activeAnnouncementKey = null;
+    this.seenAnnouncementSessionFlags = new Set();
     this.tauntRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
     this.storeViewState = this.createDefaultStoreViewState();
@@ -665,7 +671,8 @@ export class AppController {
     return {
       searchText: "",
       categories: new Set(["avatar", "background", "cardBack", "elementCardVariant", "title", "badge"]),
-      rarities: new Set(["Common", "Rare", "Epic", "Legendary"])
+      rarities: new Set(["Common", "Rare", "Epic", "Legendary"]),
+      showNewFirst: true
     };
   }
 
@@ -683,6 +690,10 @@ export class AppController {
       this.storeViewState.rarities instanceof Set
         ? this.storeViewState.rarities
         : new Set(this.storeViewState.rarities ?? this.createDefaultStoreViewState().rarities);
+    this.storeViewState.showNewFirst =
+      typeof this.storeViewState.showNewFirst === "boolean"
+        ? this.storeViewState.showNewFirst
+        : this.createDefaultStoreViewState().showNewFirst;
 
     return this.storeViewState;
   }
@@ -701,6 +712,10 @@ export class AppController {
       this.cosmeticsViewState.rarities instanceof Set
         ? this.cosmeticsViewState.rarities
         : new Set(this.cosmeticsViewState.rarities ?? defaults.rarities);
+    this.cosmeticsViewState.showNewFirst =
+      typeof this.cosmeticsViewState.showNewFirst === "boolean"
+        ? this.cosmeticsViewState.showNewFirst
+        : defaults.showNewFirst;
 
     return this.cosmeticsViewState;
   }
@@ -959,6 +974,7 @@ export class AppController {
     this.onlineReconnectReminder = null;
     this.onlineReconnectReminderDismissedKey = null;
     this.pendingMatchCompletePayload = null;
+    this.activeAnnouncementKey = null;
     this.resetDailyLoginAutoClaimGuard();
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
@@ -1444,8 +1460,11 @@ export class AppController {
     };
   }
 
-  applyServerProfileSnapshot(serverProfile) {
-    const nextProfile = this.buildProfileFromServerSnapshot(serverProfile);
+  applyServerProfileSnapshot(serverProfile, { fallbackProfile = null } = {}) {
+    const nextProfile = this.mergeSeenAnnouncementsIntoProfile(
+      this.buildProfileFromServerSnapshot(serverProfile),
+      fallbackProfile ?? this.profile
+    );
     if (nextProfile) {
       this.profile = nextProfile;
       this.username = nextProfile.username ?? this.username;
@@ -1607,10 +1626,16 @@ export class AppController {
       return this.profile;
     }
 
+    const localProfile = window.elemintz?.state?.getProfile
+      ? await window.elemintz.state.getProfile(safeUsername)
+      : null;
+
     const onlineConnected = String(onlineState?.connectionStatus ?? "").toLowerCase() === "connected";
     if (onlineConnected && window.elemintz?.multiplayer?.getProfile) {
       const serverProfile = await window.elemintz.multiplayer.getProfile({ username: safeUsername });
-      const nextProfile = this.applyServerProfileSnapshot(serverProfile);
+      const nextProfile = this.applyServerProfileSnapshot(serverProfile, {
+        fallbackProfile: localProfile
+      });
       if (nextProfile) {
         return nextProfile;
       }
@@ -1625,8 +1650,8 @@ export class AppController {
       return this.profile;
     }
 
-    if (window.elemintz?.state?.getProfile) {
-      this.profile = await window.elemintz.state.getProfile(safeUsername);
+    if (localProfile) {
+      this.profile = localProfile;
     }
 
     return this.profile;
@@ -1788,9 +1813,225 @@ export class AppController {
           });
         });
       }
+      await this.maybeShowNewCosmeticsAnnouncement();
     } catch (error) {
       console.error("Failed to acknowledge loadout unlocks", error);
     }
+  }
+
+  hasSeenAnnouncement(key, profile = this.profile) {
+    const safeKey = String(key ?? "").trim();
+    if (!safeKey) {
+      return false;
+    }
+
+    return Boolean(profile?.seenAnnouncements?.[safeKey]);
+  }
+
+  getAnnouncementSessionKey(key, username = this.username) {
+    const safeKey = String(key ?? "").trim();
+    const safeUsername = String(username ?? "").trim();
+    if (!safeKey || !safeUsername) {
+      return "";
+    }
+
+    return `${safeUsername}:${safeKey}`;
+  }
+
+  hasSeenAnnouncementInSession(key, username = this.username) {
+    const sessionKey = this.getAnnouncementSessionKey(key, username);
+    return Boolean(sessionKey) && this.seenAnnouncementSessionFlags.has(sessionKey);
+  }
+
+  markAnnouncementSeenInSession(key, username = this.username) {
+    const sessionKey = this.getAnnouncementSessionKey(key, username);
+    if (sessionKey) {
+      this.seenAnnouncementSessionFlags.add(sessionKey);
+    }
+  }
+
+  applySeenAnnouncementToProfile(key, profile = this.profile) {
+    const safeKey = String(key ?? "").trim();
+    if (!safeKey || !profile || typeof profile !== "object" || Array.isArray(profile)) {
+      return profile;
+    }
+
+    return {
+      ...profile,
+      seenAnnouncements: {
+        ...(profile?.seenAnnouncements ?? {}),
+        [safeKey]: true
+      }
+    };
+  }
+
+  mergeSeenAnnouncementsIntoProfile(primaryProfile, fallbackProfile = null) {
+    const primary =
+      primaryProfile && typeof primaryProfile === "object" && !Array.isArray(primaryProfile)
+        ? primaryProfile
+        : null;
+    if (!primary) {
+      return primaryProfile;
+    }
+
+    const fallback =
+      fallbackProfile && typeof fallbackProfile === "object" && !Array.isArray(fallbackProfile)
+        ? fallbackProfile
+        : null;
+    const primarySeen = primary?.seenAnnouncements;
+    const fallbackSeen = fallback?.seenAnnouncements;
+    const primaryKeys =
+      primarySeen && typeof primarySeen === "object" && !Array.isArray(primarySeen)
+        ? Object.keys(primarySeen)
+        : [];
+    const fallbackKeys =
+      fallbackSeen && typeof fallbackSeen === "object" && !Array.isArray(fallbackSeen)
+        ? Object.keys(fallbackSeen)
+        : [];
+    const keys = new Set([...primaryKeys, ...fallbackKeys]);
+    if (keys.size === 0) {
+      return primary;
+    }
+
+    const mergedSeenAnnouncements = {};
+    for (const key of keys) {
+      mergedSeenAnnouncements[key] = Boolean(primarySeen?.[key] || fallbackSeen?.[key]);
+    }
+
+    return {
+      ...primary,
+      seenAnnouncements: mergedSeenAnnouncements
+    };
+  }
+
+  async acknowledgeAnnouncementSeen(key) {
+    const safeKey = String(key ?? "").trim();
+    if (!safeKey) {
+      return null;
+    }
+
+    this.markAnnouncementSeenInSession(safeKey);
+    const fallbackProfile = this.applySeenAnnouncementToProfile(safeKey, this.profile ?? {});
+    this.profile = fallbackProfile ?? this.profile;
+
+    const localAcknowledge = globalThis.window?.elemintz?.state?.acknowledgeAnnouncement;
+    const multiplayerAcknowledge = globalThis.window?.elemintz?.multiplayer?.acknowledgeAnnouncement;
+    const useMultiplayerAuthority =
+      this.hasMultiplayerProfileAccess() && typeof multiplayerAcknowledge === "function";
+
+    try {
+      let localResult = null;
+      if (typeof localAcknowledge === "function") {
+        localResult = await localAcknowledge({
+          username: this.username,
+          key: safeKey
+        });
+      }
+
+      let multiplayerResult = null;
+      if (useMultiplayerAuthority) {
+        try {
+          multiplayerResult = await multiplayerAcknowledge({
+            username: this.username,
+            key: safeKey
+          });
+        } catch {
+        }
+      }
+
+      const nextProfile = multiplayerResult?.snapshot
+        ? this.mergeSeenAnnouncementsIntoProfile(
+            this.buildProfileFromServerSnapshot(multiplayerResult.snapshot),
+            localResult?.profile ?? fallbackProfile
+          )
+        : this.mergeSeenAnnouncementsIntoProfile(localResult?.profile ?? fallbackProfile, this.profile);
+      this.profile = nextProfile ?? fallbackProfile;
+      return multiplayerResult ?? localResult ?? { key: safeKey, seen: true, profile: this.profile };
+    } catch (error) {
+      console.error("[Announcements] Failed to persist seen announcement", {
+        username: this.username,
+        key: safeKey,
+        message: error?.message,
+        stack: error?.stack
+      });
+      this.profile = fallbackProfile;
+      return {
+        key: safeKey,
+        seen: true,
+        profile: this.profile
+      };
+    }
+  }
+
+  isNewCosmeticsAnnouncementUiReady() {
+    if (this.screenFlow !== "menu" || !this.username) {
+      return false;
+    }
+
+    if (this.activeAnnouncementKey === NEW_COSMETICS_ANNOUNCEMENT_KEY) {
+      return false;
+    }
+
+    if (this.pendingMatchCompletePayload || this.roundPresentation?.busy) {
+      return false;
+    }
+
+    if (this.activeAdminGrantNoticeId || this.getPendingAdminGrantNotice?.(this.onlinePlayState)) {
+      return false;
+    }
+
+    if (this.getActiveOnlineReconnectReminder?.()) {
+      return false;
+    }
+
+    const activeAnnouncementModal =
+      globalThis.document?.querySelector?.("[data-new-cosmetics-announcement='true']");
+    const activeModal = globalThis.document?.querySelector?.(".modal-overlay");
+    if (activeModal && !activeAnnouncementModal) {
+      return false;
+    }
+
+    return true;
+  }
+
+  async maybeShowNewCosmeticsAnnouncement() {
+    if (
+      this.hasSeenAnnouncement(NEW_COSMETICS_ANNOUNCEMENT_KEY) ||
+      this.hasSeenAnnouncementInSession(NEW_COSMETICS_ANNOUNCEMENT_KEY) ||
+      !this.isNewCosmeticsAnnouncementUiReady()
+    ) {
+      return false;
+    }
+
+    this.activeAnnouncementKey = NEW_COSMETICS_ANNOUNCEMENT_KEY;
+    this.modalManager.show({
+      title: NEW_COSMETICS_ANNOUNCEMENT_TITLE,
+      bodyHtml: `
+        <div data-new-cosmetics-announcement="true" class="stack-sm">
+          <p>${escapeHtml(NEW_COSMETICS_ANNOUNCEMENT_BODY)}</p>
+        </div>
+      `,
+      actions: [
+        {
+          label: "Open Store",
+          onClick: async () => {
+            this.modalManager.hide();
+            this.activeAnnouncementKey = null;
+            await this.acknowledgeAnnouncementSeen(NEW_COSMETICS_ANNOUNCEMENT_KEY);
+            await this.showStore();
+          }
+        },
+        {
+          label: "OK",
+          onClick: async () => {
+            this.modalManager.hide();
+            this.activeAnnouncementKey = null;
+            await this.acknowledgeAnnouncementSeen(NEW_COSMETICS_ANNOUNCEMENT_KEY);
+          }
+        }
+      ]
+    });
+    return true;
   }
 
   getLocalNames() {
@@ -2252,6 +2493,7 @@ export class AppController {
                 this.renderOnlinePlayScreen();
               }
               this.maybeShowPendingAdminGrantNotice();
+              void this.maybeShowNewCosmeticsAnnouncement();
             } catch (error) {
               this.modalManager.hide();
               this.activeAdminGrantNoticeId = null;
@@ -2264,6 +2506,7 @@ export class AppController {
                     onClick: () => {
                       this.modalManager.hide();
                       this.maybeShowPendingAdminGrantNotice();
+                      void this.maybeShowNewCosmeticsAnnouncement();
                     }
                   }
                 ]
@@ -2649,6 +2892,7 @@ export class AppController {
           onClick: () => {
             this.onlineReconnectReminderDismissedKey = reminderKey;
             this.modalManager.hide();
+            void this.maybeShowNewCosmeticsAnnouncement();
           }
         }
       ]
@@ -3503,7 +3747,10 @@ export class AppController {
     this.updateOnlineReconnectReminderModal();
     this.refreshDailyChallengesForMenu();
     Promise.resolve().then(() => this.releaseQueuedAdminGrantNotice(this.onlinePlayState));
-    Promise.resolve().then(() => this.maybeShowLoadoutUnlockNotice());
+    Promise.resolve().then(async () => {
+      await this.maybeShowLoadoutUnlockNotice();
+      await this.maybeShowNewCosmeticsAnnouncement();
+    });
 
     if (autoClaimDailyLogin) {
       Promise.resolve()

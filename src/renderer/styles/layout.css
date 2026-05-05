@@ -312,7 +312,36 @@ body {
   padding: 8px;
   display: grid;
   gap: 8px;
+  position: relative;
   transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
+}
+
+.store-item-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 6px 12px rgba(4, 11, 18, 0.28);
+}
+
+.store-item-badge-new {
+  color: #102432;
+  background: linear-gradient(135deg, #ffe183 0%, #ffb86c 100%);
+  border: 1px solid rgba(255, 245, 193, 0.7);
+}
+
+.store-filter-option-toggle {
+  font-weight: 600;
 }
 
 .cosmetic-item.locked {

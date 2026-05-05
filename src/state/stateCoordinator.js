@@ -795,6 +795,27 @@ export class StateCoordinator {
     return getStoreViewForProfile(profile);
   }
 
+  async acknowledgeAnnouncement({ username, key }) {
+    const safeKey = String(key ?? "").trim();
+    if (!safeKey) {
+      throw new Error("Announcement key is required.");
+    }
+
+    const profile = await this.profiles.updateProfile(username, (current) => ({
+      ...current,
+      seenAnnouncements: {
+        ...(current?.seenAnnouncements ?? {}),
+        [safeKey]: true
+      }
+    }));
+
+    return {
+      key: safeKey,
+      seen: Boolean(profile?.seenAnnouncements?.[safeKey]),
+      profile
+    };
+  }
+
   async buyStoreItem({ username, type, cosmeticId }) {
     let purchaseResult = null;
 

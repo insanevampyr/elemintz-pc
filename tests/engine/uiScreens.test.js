@@ -146,6 +146,55 @@ function createProfileScreenContext(overrides = {}) {
   };
 }
 
+function createFakeCheckbox({ checked = false, attributeMap = {} } = {}) {
+  const listeners = new Map();
+  return {
+    checked,
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    getAttribute(name) {
+      return attributeMap[name] ?? null;
+    },
+    trigger(type) {
+      const handler = listeners.get(type);
+      if (handler) {
+        handler({ target: this });
+      }
+    }
+  };
+}
+
+function createSortableItem(attributeMap) {
+  return {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    getAttribute(name) {
+      return attributeMap[name] ?? null;
+    }
+  };
+}
+
+function createFakeGrid(items) {
+  return {
+    items,
+    querySelectorAll(selector) {
+      if (selector === "[data-store-item]" || selector === ".cosmetic-item") {
+        return this.items;
+      }
+      return [];
+    },
+    appendChild(item) {
+      this.items = this.items.filter((entry) => entry !== item);
+      this.items.push(item);
+    }
+  };
+}
+
 test("ui: settings screen renders PvE AI difficulty and style options with easy warning", () => {
   const html = settingsScreen.render({
     settings: {
@@ -366,6 +415,66 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.ok(getAvatarImage("avatar_fairy_f").includes("avatar_fairy_f.png"));
   assert.ok(getArenaBackground("bg_celestial_observatory").includes("bg_celestial_observatory.png"));
   assert.ok(getArenaBackground("bg_sunken_ruins").includes("bg_sunken_ruins.png"));
+});
+
+test("ui: store screen renders NEW badges only for cosmetics marked as new", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_smirk_ember",
+            name: "Smirk Ember",
+            image: "avatars/avatar_smirk_ember.png",
+            rarity: "Common",
+            price: 150,
+            purchasable: true,
+            owned: false,
+            isNew: true
+          },
+          {
+            id: "fireavatarF",
+            name: "Fire Avatar Classic (F)",
+            image: "avatars/fireavatarF.png",
+            rarity: "Common",
+            price: 150,
+            purchasable: true,
+            owned: false
+          }
+        ],
+        title: [
+          {
+            id: "title_chaos_gremlin",
+            name: "Chaos Gremlin",
+            image: "titles/title_chaos_gremlin.png",
+            rarity: "Common",
+            price: 100,
+            purchasable: true,
+            owned: false,
+            isNew: true
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: []
+      }
+    },
+    viewState: {}
+  });
+
+  const newBadges = html.match(/store-item-badge-new">NEW<\/span>/g) ?? [];
+  assert.equal(newBadges.length, 2);
+  assert.match(html, /Smirk Ember/);
+  assert.match(html, /Chaos Gremlin/);
+  const legacyAvatarCard =
+    (html.match(/<article[\s\S]*?<\/article>/g) ?? []).find((article) =>
+      article.includes('data-buy-id="fireavatarF"')
+    ) ?? "";
+  assert.match(legacyAvatarCard, /Fire Avatar Classic \(F\)/);
+  assert.doesNotMatch(legacyAvatarCard, /store-item-badge-new">NEW<\/span>/);
 });
 
 test("ui: screen back buttons render inside the shared topbar", () => {
@@ -832,6 +941,33 @@ test("ui: store screen renders cosmetic search and category/rarity filters", () 
   assert.match(html, /data-store-category-filter="badge"/);
   assert.match(html, /data-store-rarity-filter="Common"/);
   assert.match(html, /data-store-rarity-filter="Legendary"/);
+});
+
+test("ui: store screen shows the Show NEW First control by default", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 120,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    viewState: {
+      searchText: "",
+      categories: new Set(["avatar", "title"]),
+      rarities: new Set(["Common", "Rare"]),
+      showNewFirst: true
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Show NEW First/);
+  assert.match(html, /id="store-show-new-first" checked/);
 });
 
 test("ui: store search and filters update visible cosmetics without mutating catalog output", () => {
@@ -1825,6 +1961,67 @@ test("ui: cosmetics screen shows owned items only", () => {
   assert.doesNotMatch(html, /background-randomize-toggle/);
   assert.doesNotMatch(html, /Fire Avatar/);
   assert.doesNotMatch(html, /data-buy-type=/);
+});
+
+test("ui: cosmetics screen shows the Show NEW First control by default", () => {
+  const html = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    viewState: {
+      categories: new Set(["avatar", "title"]),
+      rarities: new Set(["Common", "Rare"]),
+      showNewFirst: true
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Show NEW First/);
+  assert.match(html, /id="cosmetics-show-new-first" checked/);
+});
+
+test("ui: cosmetics screen keeps NEW badges visible for newly marked owned cosmetics", () => {
+  const html = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_smirk_ember",
+            name: "Smirk Ember",
+            image: "avatars/avatar_smirk_ember.png",
+            rarity: "Common",
+            owned: true,
+            equipped: false,
+            isNew: true
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    viewState: {
+      categories: new Set(["avatar"]),
+      rarities: new Set(["Common"]),
+      showNewFirst: true
+    },
+    actions: {}
+  });
+
+  assert.match(html, /store-item-badge store-item-badge-new">NEW</);
 });
 
 test("ui: cosmetics screen randomization panel and loadout controls bind through actions", async () => {
@@ -3207,19 +3404,23 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
   const titleItems = [
     { hidden: false, style: {}, classList: { toggle() {} }, getAttribute: (name) => (name === "data-cosmetic-rarity" ? "Common" : null) }
   ];
+  const avatarGrid = createFakeGrid(avatarItems);
+  const titleGrid = createFakeGrid(titleItems);
   const avatarSection = {
     hidden: false,
     style: {},
     classList: { toggle() {} },
     getAttribute: () => "avatar",
-    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? avatarItems : [])
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? avatarGrid : null),
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? avatarGrid.items : [])
   };
   const titleSection = {
     hidden: false,
     style: {},
     classList: { toggle() {} },
     getAttribute: () => "title",
-    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? titleItems : [])
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? titleGrid : null),
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? titleGrid.items : [])
   };
   const avatarFilter = {
     checked: true,
@@ -3252,13 +3453,7 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
   const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
   const backButton = { addEventListener() {} };
 
-  global.document = {
-    querySelector: (selector) => (selector === ".screen-cosmetics" ? {} : null),
-    getElementById: (id) =>
-      ({
-        "cosmetics-back-btn": backButton,
-        "cosmetics-empty-state": emptyState
-      })[id] ?? null,
+  const cosmeticsRoot = {
     querySelectorAll: (selector) => {
       switch (selector) {
         case "[data-cosmetic-section]":
@@ -3267,10 +3462,26 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
           return [avatarFilter, titleFilter];
         case "[data-cosmetic-rarity-filter]":
           return [commonRarityFilter, epicRarityFilter];
+        case "[data-randomize-after-match]":
+        case "[data-equip-type]":
+        case "[data-loadout-save]":
+        case "[data-loadout-apply]":
+        case "[data-loadout-rename]":
+          return [];
         default:
           return [];
       }
     }
+  };
+
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-cosmetics" ? cosmeticsRoot : null),
+    getElementById: (id) =>
+      ({
+        "cosmetics-back-btn": backButton,
+        "cosmetics-empty-state": emptyState
+      })[id] ?? null,
+    querySelectorAll: () => []
   };
 
   try {
@@ -3301,6 +3512,182 @@ test("ui: cosmetics screen category filters hide unselected owned sections", () 
     assert.equal(avatarItems[0].hidden, true);
     assert.equal(avatarSection.hidden, true);
     assert.equal(emptyState.hidden, false);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: store screen Show NEW First sorts new cosmetics before non-new while preserving default order when off", () => {
+  const previousDocument = global.document;
+
+  const newItem = createSortableItem({
+    "data-store-name": "smirk ember",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Common",
+    "data-store-is-new": "true",
+    "data-store-original-index": "1"
+  });
+  const oldItem = createSortableItem({
+    "data-store-name": "fire avatar",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Common",
+    "data-store-is-new": "false",
+    "data-store-original-index": "0"
+  });
+  const grid = createFakeGrid([oldItem, newItem]);
+  const section = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? grid : null),
+    querySelectorAll: (selector) => (selector === "[data-store-item]" ? grid.items : []),
+    getAttribute: () => "avatar"
+  };
+  const categoryInput = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "avatar" } });
+  const rarityInput = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Common" } });
+  const showNewFirstInput = createFakeCheckbox({ checked: true });
+  const backButton = { addEventListener() {} };
+  const root = {
+    querySelectorAll(selector) {
+      if (selector === "[data-store-item]") {
+        return grid.items;
+      }
+      if (selector === "[data-store-section]") {
+        return [section];
+      }
+      if (selector === "[data-store-category-filter]") {
+        return [categoryInput];
+      }
+      if (selector === "[data-store-rarity-filter]") {
+        return [rarityInput];
+      }
+      if (selector === "[data-buy-type]" || selector === "[data-equip-type]") {
+        return [];
+      }
+      return [];
+    }
+  };
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-store" ? root : null),
+    getElementById: (id) => {
+      if (id === "store-show-new-first") return showNewFirstInput;
+      if (id === "store-back-btn") return backButton;
+      if (id === "store-empty-state") return emptyState;
+      return null;
+    }
+  };
+
+  try {
+    const viewState = {
+      searchText: "",
+      categories: new Set(["avatar"]),
+      rarities: new Set(["Common"]),
+      showNewFirst: true
+    };
+    storeScreen.bind({
+      viewState,
+      actions: {
+        back: () => {},
+        activateSupporter: () => {}
+      }
+    });
+
+    assert.equal(grid.items[0], newItem);
+    assert.equal(grid.items[1], oldItem);
+
+    showNewFirstInput.checked = false;
+    showNewFirstInput.trigger("change");
+
+    assert.equal(grid.items[0], oldItem);
+    assert.equal(grid.items[1], newItem);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: cosmetics screen Show NEW First sorts new owned cosmetics first across categories", () => {
+  const previousDocument = global.document;
+
+  const newBadgeItem = createSortableItem({
+    "data-cosmetic-rarity": "Common",
+    "data-cosmetic-is-new": "true",
+    "data-cosmetic-original-index": "1"
+  });
+  const oldBadgeItem = createSortableItem({
+    "data-cosmetic-rarity": "Common",
+    "data-cosmetic-is-new": "false",
+    "data-cosmetic-original-index": "0"
+  });
+  const avatarGrid = createFakeGrid([oldBadgeItem, newBadgeItem]);
+  const avatarSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? avatarGrid : null),
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? avatarGrid.items : []),
+    getAttribute: () => "badge"
+  };
+  const categoryInput = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-category-filter": "badge" } });
+  const rarityInput = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-rarity-filter": "Common" } });
+  const showNewFirstInput = createFakeCheckbox({ checked: true });
+  const backButton = { addEventListener() {} };
+
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-cosmetics" ? {
+      querySelectorAll(innerSelector) {
+        if (innerSelector === "[data-cosmetic-section]") return [avatarSection];
+        if (innerSelector === "[data-cosmetic-category-filter]") return [categoryInput];
+        if (innerSelector === "[data-cosmetic-rarity-filter]") return [rarityInput];
+        if (
+          innerSelector === "[data-randomize-after-match]" ||
+          innerSelector === "[data-equip-type]" ||
+          innerSelector === "[data-loadout-save]" ||
+          innerSelector === "[data-loadout-apply]" ||
+          innerSelector === "[data-loadout-rename]"
+        ) {
+          return [];
+        }
+        return [];
+      }
+    } : null),
+    getElementById: (id) => {
+      if (id === "cosmetics-show-new-first") return showNewFirstInput;
+      if (id === "cosmetics-back-btn") return backButton;
+      if (id === "cosmetics-empty-state") return { hidden: true, style: {}, classList: { toggle() {} } };
+      return null;
+    },
+    querySelectorAll: () => []
+  };
+
+  try {
+    const viewState = {
+      categories: new Set(["badge"]),
+      rarities: new Set(["Common"]),
+      showNewFirst: true
+    };
+    cosmeticsScreen.bind({
+      viewState,
+      actions: {
+        back: () => {},
+        updateRandomizationPreferences: async () => {},
+        randomizeNow: async () => {},
+        equip: async () => {},
+        saveLoadout: async () => {},
+        applyLoadout: async () => {},
+        renameLoadout: async () => {}
+      }
+    });
+
+    assert.equal(avatarGrid.items[0], newBadgeItem);
+    assert.equal(avatarGrid.items[1], oldBadgeItem);
+
+    showNewFirstInput.checked = false;
+    showNewFirstInput.trigger("change");
+
+    assert.equal(avatarGrid.items[0], oldBadgeItem);
+    assert.equal(avatarGrid.items[1], newBadgeItem);
   } finally {
     global.document = previousDocument;
   }
@@ -11431,6 +11818,725 @@ test("ui: appController queues admin reward notices until the menu screen is act
     global.window = previousWindow;
     global.document = previousDocument;
   }
+});
+
+test("ui: new cosmetics announcement appears once for an unseen profile on the menu", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async ({ username, key }) => ({
+          key,
+          seen: true,
+          profile: {
+            username,
+            seenAnnouncements: {
+              [key]: true
+            }
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.releaseQueuedAdminGrantNotice = () => {};
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.updateOnlineReconnectReminderModal = () => {};
+
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "New Cosmetics Added!");
+    assert.match(modalCalls[0].bodyHtml, /26 new titles and avatars are now available in the Store\./);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: dismissing the new cosmetics announcement marks it seen and keeps the current screen", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const ackCalls = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async (payload) => {
+          ackCalls.push(payload);
+          return {
+            key: payload.key,
+            seen: true,
+            profile: {
+              username: payload.username,
+              seenAnnouncements: {
+                [payload.key]: true
+              }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.screenFlow = "menu";
+
+    await app.maybeShowNewCosmeticsAnnouncement();
+    await modalCalls[0].actions?.[1]?.onClick?.();
+
+    assert.deepEqual(ackCalls, [{ username: "AnnouncementUser", key: "cosmetics_v0.1.6" }]);
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+    assert.equal(app.screenFlow, "menu");
+
+    app.releaseQueuedAdminGrantNotice = () => {};
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.updateOnlineReconnectReminderModal = () => {};
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 1);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: opening the store from the new cosmetics announcement marks it seen and navigates", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const ackCalls = [];
+  const storeCalls = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async (payload) => {
+          ackCalls.push(payload);
+          return {
+            key: payload.key,
+            seen: true,
+            profile: {
+              username: payload.username,
+              seenAnnouncements: {
+                [payload.key]: true
+              }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.screenFlow = "menu";
+    app.showStore = async () => {
+      storeCalls.push("store");
+    };
+
+    await app.maybeShowNewCosmeticsAnnouncement();
+    await modalCalls[0].actions?.[0]?.onClick?.();
+
+    assert.deepEqual(ackCalls, [{ username: "AnnouncementUser", key: "cosmetics_v0.1.6" }]);
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+    assert.deepEqual(storeCalls, ["store"]);
+
+    app.releaseQueuedAdminGrantNotice = () => {};
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.updateOnlineReconnectReminderModal = () => {};
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 1);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: dismissing the new cosmetics announcement persists it through the authenticated multiplayer profile path", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const multiplayerAckCalls = [];
+  const localAckCalls = [];
+  let seenOnServer = false;
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async ({ username, key }) => {
+          localAckCalls.push({ username, key });
+          return {
+            key,
+            seen: true,
+            profile: {
+              username,
+              seenAnnouncements: {
+                [key]: true
+              },
+              equippedCosmetics: { background: "default_background" }
+            }
+          };
+        },
+        getProfile: async (username) => ({
+          username,
+          seenAnnouncements: seenOnServer ? { "cosmetics_v0.1.6": true } : {},
+          equippedCosmetics: { background: "default_background" }
+        })
+      },
+      multiplayer: {
+        getProfile: async ({ username }) => ({
+          username,
+          profile: {
+            username,
+            seenAnnouncements: seenOnServer ? { "cosmetics_v0.1.6": true } : {},
+            equippedCosmetics: { background: "default_background" }
+          }
+        }),
+        acknowledgeAnnouncement: async (payload) => {
+          multiplayerAckCalls.push(payload);
+          seenOnServer = true;
+          return {
+            key: payload.key,
+            seen: true,
+            snapshot: {
+              username: payload.username,
+              profile: {
+                username: payload.username,
+                seenAnnouncements: {
+                  [payload.key]: true
+                },
+                equippedCosmetics: { background: "default_background" }
+              }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "AnnouncementUser"
+      }
+    };
+    app.screenFlow = "menu";
+
+    await app.maybeShowNewCosmeticsAnnouncement();
+    await modalCalls[0].actions?.[1]?.onClick?.();
+
+    assert.deepEqual(localAckCalls, [{ username: "AnnouncementUser", key: "cosmetics_v0.1.6" }]);
+    assert.deepEqual(multiplayerAckCalls, [{ username: "AnnouncementUser", key: "cosmetics_v0.1.6" }]);
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+
+    app.profile = null;
+    await app.loadPreferredProfileForOnlineSession({
+      username: "AnnouncementUser",
+      onlineState: app.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    const shownAfterRelogin = await app.maybeShowNewCosmeticsAnnouncement();
+    assert.equal(shownAfterRelogin, false);
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: opening the store from the new cosmetics announcement persists it through the authenticated multiplayer profile path", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const multiplayerAckCalls = [];
+  const localAckCalls = [];
+  const storeCalls = [];
+  let seenOnServer = false;
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async ({ username, key }) => {
+          localAckCalls.push({ username, key });
+          return {
+            key,
+            seen: true,
+            profile: {
+              username,
+              seenAnnouncements: {
+                [key]: true
+              },
+              equippedCosmetics: { background: "default_background" }
+            }
+          };
+        },
+        getProfile: async (username) => ({
+          username,
+          seenAnnouncements: seenOnServer ? { "cosmetics_v0.1.6": true } : {},
+          equippedCosmetics: { background: "default_background" }
+        })
+      },
+      multiplayer: {
+        getProfile: async ({ username }) => ({
+          username,
+          profile: {
+            username,
+            seenAnnouncements: seenOnServer ? { "cosmetics_v0.1.6": true } : {},
+            equippedCosmetics: { background: "default_background" }
+          }
+        }),
+        acknowledgeAnnouncement: async (payload) => {
+          multiplayerAckCalls.push(payload);
+          seenOnServer = true;
+          return {
+            key: payload.key,
+            seen: true,
+            snapshot: {
+              username: payload.username,
+              profile: {
+                username: payload.username,
+                seenAnnouncements: {
+                  [payload.key]: true
+                },
+                equippedCosmetics: { background: "default_background" }
+              }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "AnnouncementUser"
+      }
+    };
+    app.screenFlow = "menu";
+    app.showStore = async () => {
+      storeCalls.push("store");
+    };
+
+    await app.maybeShowNewCosmeticsAnnouncement();
+    await modalCalls[0].actions?.[0]?.onClick?.();
+
+    assert.deepEqual(localAckCalls, [{ username: "AnnouncementUser", key: "cosmetics_v0.1.6" }]);
+    assert.deepEqual(multiplayerAckCalls, [{ username: "AnnouncementUser", key: "cosmetics_v0.1.6" }]);
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+    assert.deepEqual(storeCalls, ["store"]);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: relogin path keeps the announcement hidden when local persistence is ahead of the multiplayer snapshot", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  let localSeen = false;
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async ({ username, key }) => {
+          localSeen = true;
+          return {
+            key,
+            seen: true,
+            profile: {
+              username,
+              seenAnnouncements: {
+                [key]: true
+              },
+              equippedCosmetics: { background: "default_background" }
+            }
+          };
+        },
+        getProfile: async (username) => ({
+          username,
+          seenAnnouncements: localSeen ? { "cosmetics_v0.1.6": true } : {},
+          equippedCosmetics: { background: "default_background" }
+        })
+      },
+      multiplayer: {
+        getProfile: async ({ username }) => ({
+          username,
+          profile: {
+            username,
+            seenAnnouncements: {},
+            equippedCosmetics: { background: "default_background" }
+          }
+        }),
+        acknowledgeAnnouncement: async ({ username, key }) => ({
+          key,
+          seen: true,
+          snapshot: {
+            username,
+            profile: {
+              username,
+              seenAnnouncements: {},
+              equippedCosmetics: { background: "default_background" }
+            }
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "AnnouncementUser"
+      }
+    };
+    app.screenFlow = "menu";
+
+    await app.maybeShowNewCosmeticsAnnouncement();
+    await modalCalls[0].actions?.[1]?.onClick?.();
+
+    app.profile = null;
+    modalCalls.length = 0;
+    await app.loadPreferredProfileForOnlineSession({
+      username: "AnnouncementUser",
+      onlineState: app.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    const shownAfterRelogin = await app.maybeShowNewCosmeticsAnnouncement();
+    assert.equal(shownAfterRelogin, false);
+    assert.equal(app.profile.seenAnnouncements["cosmetics_v0.1.6"], true);
+    assert.equal(modalCalls.length, 0);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: new cosmetics announcement does not show again after being seen", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async () => ({ seen: true })
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {
+        "cosmetics_v0.1.6": true
+      },
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.screenFlow = "menu";
+
+    const shown = await app.maybeShowNewCosmeticsAnnouncement();
+    assert.equal(shown, false);
+    assert.equal(modalCalls.length, 0);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: new cosmetics announcement does not show during active game flow", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async () => ({ seen: true })
+      }
+    }
+  };
+
+  try {
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.screenFlow = "game";
+
+    const shown = await app.maybeShowNewCosmeticsAnnouncement();
+    assert.equal(shown, false);
+    assert.equal(modalCalls.length, 0);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: a different profile without the announcement flag still gets the cosmetics popup", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.document = {
+    querySelector: () => null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        acknowledgeAnnouncement: async ({ username, key }) => ({
+          key,
+          seen: true,
+          profile: {
+            username,
+            seenAnnouncements: {
+              [key]: true
+            }
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    app.releaseQueuedAdminGrantNotice = () => {};
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.updateOnlineReconnectReminderModal = () => {};
+
+    app.username = "SeenPlayer";
+    app.profile = {
+      username: "SeenPlayer",
+      seenAnnouncements: {
+        "cosmetics_v0.1.6": true
+      },
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    app.username = "FreshPlayer";
+    app.profile = {
+      username: "FreshPlayer",
+      seenAnnouncements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "New Cosmetics Added!");
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: temporary announcement debug logs are removed from runtime source files", () => {
+  const appControllerSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\systems\\appController.js",
+    "utf8"
+  );
+  const stateCoordinatorSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\stateCoordinator.js",
+    "utf8"
+  );
+  const profileAuthoritySource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\multiplayer\\profileAuthority.js",
+    "utf8"
+  );
+
+  assert.equal(appControllerSource.includes("[AnnouncementDebug]"), false);
+  assert.equal(stateCoordinatorSource.includes("[AnnouncementDebug]"), false);
+  assert.equal(profileAuthoritySource.includes("[AnnouncementDebug]"), false);
 });
 
 test("ui: appController refreshes the open profile screen when an admin reward notice arrives", async () => {

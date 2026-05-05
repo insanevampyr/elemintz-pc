@@ -28,7 +28,8 @@ export const RARITY_SORT_ORDER = Object.freeze({
 export function createDefaultCategoryViewState() {
   return {
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
-    rarities: new Set(FILTERABLE_RARITIES)
+    rarities: new Set(FILTERABLE_RARITIES),
+    showNewFirst: true
   };
 }
 
@@ -42,6 +43,10 @@ export function normalizeCategoryViewState(viewState) {
     rarities:
       viewState?.rarities instanceof Set
         ? viewState.rarities
-        : new Set(viewState?.rarities ?? defaults.rarities)
+        : new Set(viewState?.rarities ?? defaults.rarities),
+    showNewFirst:
+      typeof viewState?.showNewFirst === "boolean"
+        ? viewState.showNewFirst
+        : defaults.showNewFirst
   };
 }

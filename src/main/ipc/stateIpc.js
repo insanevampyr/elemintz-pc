@@ -106,6 +106,10 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
 
   ipcMain.handle("state:getStore", async (_event, username) => coordinator.getStore(username));
 
+  ipcMain.handle("state:acknowledgeAnnouncement", async (_event, payload) =>
+    coordinator.acknowledgeAnnouncement(payload)
+  );
+
   ipcMain.handle("state:acknowledgeMilestoneChestReward", async (_event, payload) =>
     coordinator.acknowledgeMilestoneChestReward(payload)
   );

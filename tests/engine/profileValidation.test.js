@@ -317,3 +317,27 @@ test("profile validation: corrupted profile repairs only on first normalize pass
   assert.equal(repairedFieldLogs.length > 0 || repairedSectionLogs.length > 0, true);
   assert.equal(idempotentLogs.length >= 1, true);
 });
+
+test("profile validation: seenAnnouncements repairs malformed values to an object", () => {
+  const normalized = normalizeProfile({
+    username: "AnnouncementRepairUser",
+    seenAnnouncements: "bad-data"
+  });
+
+  assert.deepEqual(normalized.seenAnnouncements, {});
+});
+
+test("profile validation: seenAnnouncements preserves valid announcement flags", () => {
+  const normalized = normalizeProfile({
+    username: "AnnouncementSeenUser",
+    seenAnnouncements: {
+      "cosmetics_v0.1.6": true,
+      future_release: false
+    }
+  });
+
+  assert.deepEqual(normalized.seenAnnouncements, {
+    "cosmetics_v0.1.6": true,
+    future_release: false
+  });
+});

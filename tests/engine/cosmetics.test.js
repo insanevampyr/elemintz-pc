@@ -4,7 +4,40 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
+
+const NEW_TITLE_DEFINITIONS = Object.freeze([
+  ["title_chaos_gremlin", "Chaos Gremlin", "Common", 100, "titles/title_chaos_gremlin.png"],
+  ["title_soft_doom", "Soft Doom", "Common", 100, "titles/title_soft_doom.png"],
+  ["title_pretty_problem", "Pretty Problem", "Common", 100, "titles/title_pretty_problem.png"],
+  ["title_silent_menace", "Silent Menace", "Rare", 250, "titles/title_silent_menace.png"],
+  ["title_drama_magnet", "Drama Magnet", "Rare", 250, "titles/title_drama_magnet.png"],
+  ["title_neon_rebel", "Neon Rebel", "Rare", 250, "titles/title_neon_rebel.png"],
+  ["title_velvet_villain", "Velvet Villain", "Epic", 500, "titles/title_velvet_villain.png"],
+  ["title_void_doll", "Void Doll", "Epic", 500, "titles/title_void_doll.png"],
+  ["title_glitch_royalty", "Glitch Royalty", "Epic", 500, "titles/title_glitch_royalty.png"],
+  ["title_crownless_king", "Crownless King", "Legendary", 850, "titles/title_crownless_king.png"],
+  ["title_divine_menace", "Divine Menace", "Legendary", 850, "titles/title_divine_menace.png"],
+  ["title_cataclysm_icon", "Cataclysm Icon", "Legendary", 850, "titles/title_cataclysm_icon.png"]
+]);
+
+const NEW_AVATAR_DEFINITIONS = Object.freeze([
+  ["avatar_smirk_ember", "Smirk Ember", "Common", 150, "avatars/avatar_smirk_ember.png"],
+  ["avatar_bubble_brat", "Bubble Brat", "Common", 150, "avatars/avatar_bubble_brat.png"],
+  ["avatar_moss_mood", "Moss Mood", "Common", 150, "avatars/avatar_moss_mood.png"],
+  ["avatar_neon_puff", "Neon Puff", "Common", 150, "avatars/avatar_neon_puff.png"],
+  ["avatar_stone_cold_cutie", "Stone Cold Cutie", "Rare", 300, "avatars/avatar_stone_cold_cutie.png"],
+  ["avatar_storm_brat", "Storm Brat", "Rare", 300, "avatars/avatar_storm_brat.png"],
+  ["avatar_tidal_diva", "Tidal Diva", "Rare", 300, "avatars/avatar_tidal_diva.png"],
+  ["avatar_ashen_trickster", "Ashen Trickster", "Rare", 300, "avatars/avatar_ashen_trickster.png"],
+  ["avatar_corrupt_cherub", "Corrupt Cherub", "Epic", 600, "avatars/avatar_corrupt_cherub.png"],
+  ["avatar_void_glam", "Void Glam", "Epic", 600, "avatars/avatar_void_glam.png"],
+  ["avatar_riot_halo", "Riot Halo", "Epic", 600, "avatars/avatar_riot_halo.png"],
+  ["avatar_golden_menace", "Golden Menace", "Legendary", 900, "avatars/avatar_golden_menace.png"],
+  ["avatar_chaos_monarch", "Chaos Monarch", "Legendary", 900, "avatars/avatar_chaos_monarch.png"],
+  ["avatar_rose_riot", "Rose Riot", "Legendary", 900, "avatars/avatar_rose_riot.png"]
+]);
 
 function buildCompletedMatch({
   winner = "p1",
@@ -329,4 +362,47 @@ test("cosmetics: newly added water variant equips only water and persists across
   const stateB = new StateCoordinator({ dataDir });
   const profile = await stateB.profiles.getProfile("WaterVariantUser");
   assert.equal(profile.equippedCosmetics.elementCardVariant.water, "wave_water_card");
+});
+
+test("cosmetics: new avatar and title catalog entries are present with exact metadata", () => {
+  const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
+  const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
+
+  assert.equal(
+    new Set(
+      Object.values(COSMETIC_CATALOG)
+        .flatMap((items) => items.map((item) => item.id))
+    ).size,
+    Object.values(COSMETIC_CATALOG).reduce((sum, items) => sum + items.length, 0),
+    "duplicate cosmetic ids found"
+  );
+
+  assert.equal(NEW_TITLE_DEFINITIONS.length, 12);
+  assert.equal(NEW_AVATAR_DEFINITIONS.length, 14);
+
+  for (const [id, name, rarity, price, image] of NEW_TITLE_DEFINITIONS) {
+    const item = titles.get(id);
+    assert.ok(item, `missing title ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, rarity);
+    assert.equal(item.price, price);
+    assert.equal(item.image, image);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.isNew, true);
+  }
+
+  for (const [id, name, rarity, price, image] of NEW_AVATAR_DEFINITIONS) {
+    const item = avatars.get(id);
+    assert.ok(item, `missing avatar ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, rarity);
+    assert.equal(item.price, price);
+    assert.equal(item.image, image);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.isNew, true);
+  }
 });

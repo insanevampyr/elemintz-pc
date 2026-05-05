@@ -157,7 +157,21 @@ const AVATAR_MAP = Object.freeze({
   avatar_novice_mage: getAssetPath("avatars/avatar_novice_mage.png"),
   avatar_battle_adept: getAssetPath("avatars/avatar_battle_adept.png"),
   avatar_veteran_champion: getAssetPath("avatars/avatar_veteran_champion.png"),
-  avatar_grand_archmage: getAssetPath("avatars/avatar_grand_archmage.png")
+  avatar_grand_archmage: getAssetPath("avatars/avatar_grand_archmage.png"),
+  avatar_smirk_ember: getAssetPath("avatars/avatar_smirk_ember.png"),
+  avatar_bubble_brat: getAssetPath("avatars/avatar_bubble_brat.png"),
+  avatar_moss_mood: getAssetPath("avatars/avatar_moss_mood.png"),
+  avatar_neon_puff: getAssetPath("avatars/avatar_neon_puff.png"),
+  avatar_stone_cold_cutie: getAssetPath("avatars/avatar_stone_cold_cutie.png"),
+  avatar_storm_brat: getAssetPath("avatars/avatar_storm_brat.png"),
+  avatar_tidal_diva: getAssetPath("avatars/avatar_tidal_diva.png"),
+  avatar_ashen_trickster: getAssetPath("avatars/avatar_ashen_trickster.png"),
+  avatar_corrupt_cherub: getAssetPath("avatars/avatar_corrupt_cherub.png"),
+  avatar_void_glam: getAssetPath("avatars/avatar_void_glam.png"),
+  avatar_riot_halo: getAssetPath("avatars/avatar_riot_halo.png"),
+  avatar_golden_menace: getAssetPath("avatars/avatar_golden_menace.png"),
+  avatar_chaos_monarch: getAssetPath("avatars/avatar_chaos_monarch.png"),
+  avatar_rose_riot: getAssetPath("avatars/avatar_rose_riot.png")
 });
 
 const BADGE_IMAGES = Object.freeze({

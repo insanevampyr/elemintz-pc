@@ -527,6 +527,160 @@ export const COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: false,
       price: 900
+    },
+    {
+      id: "avatar_smirk_ember",
+      name: "Smirk Ember",
+      image: "avatars/avatar_smirk_ember.png",
+      rarity: "Common",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_bubble_brat",
+      name: "Bubble Brat",
+      image: "avatars/avatar_bubble_brat.png",
+      rarity: "Common",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_moss_mood",
+      name: "Moss Mood",
+      image: "avatars/avatar_moss_mood.png",
+      rarity: "Common",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_neon_puff",
+      name: "Neon Puff",
+      image: "avatars/avatar_neon_puff.png",
+      rarity: "Common",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_stone_cold_cutie",
+      name: "Stone Cold Cutie",
+      image: "avatars/avatar_stone_cold_cutie.png",
+      rarity: "Rare",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_storm_brat",
+      name: "Storm Brat",
+      image: "avatars/avatar_storm_brat.png",
+      rarity: "Rare",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_tidal_diva",
+      name: "Tidal Diva",
+      image: "avatars/avatar_tidal_diva.png",
+      rarity: "Rare",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_ashen_trickster",
+      name: "Ashen Trickster",
+      image: "avatars/avatar_ashen_trickster.png",
+      rarity: "Rare",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Rare
+    },
+    {
+      id: "avatar_corrupt_cherub",
+      name: "Corrupt Cherub",
+      image: "avatars/avatar_corrupt_cherub.png",
+      rarity: "Epic",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_void_glam",
+      name: "Void Glam",
+      image: "avatars/avatar_void_glam.png",
+      rarity: "Epic",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_riot_halo",
+      name: "Riot Halo",
+      image: "avatars/avatar_riot_halo.png",
+      rarity: "Epic",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_golden_menace",
+      name: "Golden Menace",
+      image: "avatars/avatar_golden_menace.png",
+      rarity: "Legendary",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_chaos_monarch",
+      name: "Chaos Monarch",
+      image: "avatars/avatar_chaos_monarch.png",
+      rarity: "Legendary",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_rose_riot",
+      name: "Rose Riot",
+      image: "avatars/avatar_rose_riot.png",
+      rarity: "Legendary",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
     }
   ]),
   cardBack: Object.freeze([
@@ -1679,8 +1833,139 @@ export const COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       price: 100
-    }
-  ,
+    },
+    {
+      id: "title_chaos_gremlin",
+      name: "Chaos Gremlin",
+      image: "titles/title_chaos_gremlin.png",
+      rarity: "Common",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 100
+    },
+    {
+      id: "title_soft_doom",
+      name: "Soft Doom",
+      image: "titles/title_soft_doom.png",
+      rarity: "Common",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 100
+    },
+    {
+      id: "title_pretty_problem",
+      name: "Pretty Problem",
+      image: "titles/title_pretty_problem.png",
+      rarity: "Common",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 100
+    },
+    {
+      id: "title_silent_menace",
+      name: "Silent Menace",
+      image: "titles/title_silent_menace.png",
+      rarity: "Rare",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 250
+    },
+    {
+      id: "title_drama_magnet",
+      name: "Drama Magnet",
+      image: "titles/title_drama_magnet.png",
+      rarity: "Rare",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 250
+    },
+    {
+      id: "title_neon_rebel",
+      name: "Neon Rebel",
+      image: "titles/title_neon_rebel.png",
+      rarity: "Rare",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 250
+    },
+    {
+      id: "title_velvet_villain",
+      name: "Velvet Villain",
+      image: "titles/title_velvet_villain.png",
+      rarity: "Epic",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 500
+    },
+    {
+      id: "title_void_doll",
+      name: "Void Doll",
+      image: "titles/title_void_doll.png",
+      rarity: "Epic",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 500
+    },
+    {
+      id: "title_glitch_royalty",
+      name: "Glitch Royalty",
+      image: "titles/title_glitch_royalty.png",
+      rarity: "Epic",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 500
+    },
+    {
+      id: "title_crownless_king",
+      name: "Crownless King",
+      image: "titles/title_crownless_king.png",
+      rarity: "Legendary",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 850
+    },
+    {
+      id: "title_divine_menace",
+      name: "Divine Menace",
+      image: "titles/title_divine_menace.png",
+      rarity: "Legendary",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 850
+    },
+    {
+      id: "title_cataclysm_icon",
+      name: "Cataclysm Icon",
+      image: "titles/title_cataclysm_icon.png",
+      rarity: "Legendary",
+      releaseTag: "v0.1.6",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 850
+    },
     {
       id: "title_apprentice",
       name: "Apprentice",

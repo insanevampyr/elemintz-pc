@@ -28,7 +28,8 @@ function createDefaultViewState() {
   return {
     searchText: "",
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
-    rarities: new Set(FILTERABLE_RARITIES)
+    rarities: new Set(FILTERABLE_RARITIES),
+    showNewFirst: true
   };
 }
 
@@ -43,8 +44,30 @@ function normalizeViewState(viewState) {
     rarities:
       viewState?.rarities instanceof Set
         ? viewState.rarities
-        : new Set(viewState?.rarities ?? defaults.rarities)
+        : new Set(viewState?.rarities ?? defaults.rarities),
+    showNewFirst:
+      typeof viewState?.showNewFirst === "boolean"
+        ? viewState.showNewFirst
+        : defaults.showNewFirst
   };
+}
+
+function sortSectionItemsByNewness(items, showNewFirst) {
+  return [...items].sort((left, right) => {
+    if (showNewFirst) {
+      const newDelta =
+        Number(Boolean(right.getAttribute("data-store-is-new") === "true")) -
+        Number(Boolean(left.getAttribute("data-store-is-new") === "true"));
+      if (newDelta !== 0) {
+        return newDelta;
+      }
+    }
+
+    return (
+      Number(left.getAttribute("data-store-original-index") ?? 0) -
+      Number(right.getAttribute("data-store-original-index") ?? 0)
+    );
+  });
 }
 
 function unlockText(item) {
@@ -176,12 +199,13 @@ function renderActions(type, item) {
   return `${equipButton}${buyButton}`;
 }
 
-function renderStoreItem(type, item) {
+function renderStoreItem(type, item, originalIndex) {
   const framed = usesRarityFrame(type);
   const variantHint =
     type === "elementCardVariant" && item.element
       ? `<p>Applies to: ${item.element[0].toUpperCase()}${item.element.slice(1)} cards only</p>`
       : "";
+  const newBadge = item.isNew ? '<span class="store-item-badge store-item-badge-new">NEW</span>' : "";
 
   return `
     <article
@@ -190,7 +214,10 @@ function renderStoreItem(type, item) {
       data-store-type="${type}"
       data-store-rarity="${normalizeRarity(item.rarity)}"
       data-store-name="${normalizeFilterText(item.name)}"
+      data-store-is-new="${item.isNew ? "true" : "false"}"
+      data-store-original-index="${originalIndex}"
     >
+      ${newBadge}
       ${renderPreview(type, item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
@@ -275,6 +302,15 @@ export const storeScreen = {
                   ).join("")}
                 </div>
               </fieldset>
+              <fieldset class="store-filter-group">
+                <legend>Order</legend>
+                <div class="store-filter-options">
+                  <label class="store-filter-option store-filter-option-toggle">
+                    <input type="checkbox" id="store-show-new-first" ${viewState.showNewFirst ? "checked" : ""} />
+                    <span>Show NEW First</span>
+                  </label>
+                </div>
+              </fieldset>
             </div>
           </section>
           <div class="grid cosmetics-sections">
@@ -283,7 +319,7 @@ export const storeScreen = {
                 <section class="cosmetic-section" data-store-section="${type}">
                   <h3 class="section-title">${label}</h3>
                   <div class="cosmetic-grid">
-                    ${getRenderableStoreItems(store, type).map((item) => renderStoreItem(type, item)).join("")}
+                    ${getRenderableStoreItems(store, type).map((item, index) => renderStoreItem(type, item, index)).join("")}
                   </div>
                 </section>
               `
@@ -302,6 +338,7 @@ export const storeScreen = {
       context.viewState.searchText = viewState.searchText;
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.showNewFirst = viewState.showNewFirst;
     }
 
     const applyFilters = () => {
@@ -328,6 +365,15 @@ export const storeScreen = {
 
       let anyVisible = false;
       for (const section of sections) {
+        const grid = section.querySelector(".cosmetic-grid");
+        if (grid) {
+          sortSectionItemsByNewness(
+            Array.from(grid.querySelectorAll("[data-store-item]")),
+            viewState.showNewFirst
+          ).forEach((item) => {
+            grid.appendChild(item);
+          });
+        }
         const visibleItems = Array.from(section.querySelectorAll("[data-store-item]")).filter((item) => !item.hidden);
         const isVisible = visibleItems.length > 0;
         section.hidden = !isVisible;
@@ -405,6 +451,15 @@ export const storeScreen = {
         applyFilters();
       });
     });
+
+    const showNewFirstInput = document.getElementById("store-show-new-first");
+    if (showNewFirstInput) {
+      showNewFirstInput.checked = viewState.showNewFirst;
+      showNewFirstInput.addEventListener("change", () => {
+        viewState.showNewFirst = Boolean(showNewFirstInput.checked);
+        applyFilters();
+      });
+    }
 
     applyFilters();
   }
