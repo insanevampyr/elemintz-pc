@@ -22,7 +22,13 @@ import {
   saveCosmeticLoadout
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
-import { buyStoreItem, getStoreViewForProfile, grantCosmeticItem, grantSupporterPass } from "./storeSystem.js";
+import {
+  buyStoreItem,
+  getStoreViewForProfile,
+  grantCosmeticItem,
+  grantFounderStatus,
+  grantSupporterPass
+} from "./storeSystem.js";
 import {
   acknowledgeMilestoneChestReward,
   applyWinStreakChestGrants,
@@ -843,6 +849,24 @@ export class StateCoordinator {
     return {
       profile,
       granted: supportResult?.granted ?? [],
+      store: getStoreViewForProfile(profile)
+    };
+  }
+
+  async grantFounderStatus(username) {
+    let founderResult = null;
+
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      founderResult = grantFounderStatus(current);
+      return founderResult.profile;
+    });
+
+    return {
+      profile,
+      founderStatusActive: Boolean(founderResult?.founderStatusActive ?? profile?.supporterPass),
+      supporterPassActivated: Boolean(founderResult?.supporterPassActivated),
+      grantedItems: founderResult?.granted ?? [],
+      skippedItems: founderResult?.skipped ?? [],
       store: getStoreViewForProfile(profile)
     };
   }

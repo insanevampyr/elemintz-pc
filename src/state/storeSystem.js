@@ -1,5 +1,6 @@
 import {
   COSMETIC_CATALOG,
+  getCosmeticDefinition,
   getCosmeticCatalogForProfile,
   getSupporterRewards,
   normalizeProfileCosmetics
@@ -16,6 +17,11 @@ const UNLOCK_FLAG_BY_TYPE = Object.freeze({
   title: "FIRST_TITLE_UNLOCKED",
   badge: "FIRST_BADGE_UNLOCKED"
 });
+const FOUNDER_REWARD_BUNDLE = Object.freeze([
+  Object.freeze({ type: "title", cosmeticId: "Arena Founder" }),
+  Object.freeze({ type: "badge", cosmeticId: "supporter_badge" }),
+  Object.freeze({ type: "cardBack", cosmeticId: "founder_deluxe_card_back" })
+]);
 
 function safeTokens(value) {
   const numeric = Number(value);
@@ -221,6 +227,54 @@ export function grantSupporterPass(profile) {
   return {
     profile: normalized,
     granted
+  };
+}
+
+export function getFounderRewardBundle() {
+  return FOUNDER_REWARD_BUNDLE.map((entry) => {
+    const definition = getCosmeticDefinition(entry.type, entry.cosmeticId);
+    return {
+      type: entry.type,
+      cosmeticId: entry.cosmeticId,
+      displayName: definition?.name ?? `${entry.type}:${entry.cosmeticId}`
+    };
+  });
+}
+
+export function grantFounderStatus(profile) {
+  let normalized = normalizeProfileStore(profile);
+  const supporterPassWasActive = Boolean(normalized.supporterPass);
+  const granted = [];
+  const skipped = [];
+
+  for (const reward of getFounderRewardBundle()) {
+    const alreadyOwned = normalized.ownedCosmetics?.[reward.type]?.includes(reward.cosmeticId);
+    if (alreadyOwned) {
+      skipped.push(reward);
+      continue;
+    }
+
+    normalized = normalizeProfileStore({
+      ...normalized,
+      ownedCosmetics: {
+        ...normalized.ownedCosmetics,
+        [reward.type]: [...normalized.ownedCosmetics[reward.type], reward.cosmeticId]
+      }
+    });
+    granted.push(reward);
+  }
+
+  normalized = normalizeProfileStore({
+    ...normalized,
+    supporterPass: true
+  });
+
+  return {
+    profile: normalized,
+    founderStatusActive: Boolean(normalized.supporterPass),
+    supporterPassActivated: !supporterPassWasActive && Boolean(normalized.supporterPass),
+    granted,
+    skipped
   };
 }
 

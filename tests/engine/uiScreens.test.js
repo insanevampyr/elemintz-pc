@@ -703,7 +703,7 @@ test("ui: daily challenges screen renders completed status when hydrated progres
   assert.doesNotMatch(html, /In Progress/);
 });
 
-test("ui: store screen keeps the title left and renders the token balance in right-side topbar controls with buy/equip actions", () => {
+test("ui: Store screen keeps the title left and renders the token balance in right-side topbar controls with buy/equip actions", () => {
   const html = storeScreen.render({
     store: {
       tokens: 120,
@@ -740,7 +740,8 @@ test("ui: store screen keeps the title left and renders the token balance in rig
   assert.doesNotMatch(html, /<p>Tokens: <strong>/);
   assert.match(html, /data-buy-type="avatar"/);
   assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
-  assert.match(html, /Activate Founder Pass/);
+  assert.match(html, /Founder \/ Supporter: <strong>Not Active<\/strong>/);
+  assert.doesNotMatch(html, /Activate Founder Pass \(Local\)/);
 });
 
 test("ui: store screen hides owned cosmetics while keeping unowned listings visible", () => {
@@ -970,6 +971,83 @@ test("ui: store screen shows the Show NEW First control by default", () => {
   assert.match(html, /id="store-show-new-first" checked/);
 });
 
+test("ui: store screen renders the featured new personality cosmetics banner above controls", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 120,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_smirk_ember",
+            name: "Smirk Ember",
+            image: "avatars/avatar_smirk_ember.png",
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 150,
+            rarity: "Common",
+            isNew: true,
+            unlockSource: { type: "store" }
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [
+          {
+            id: "title_chaos_gremlin",
+            name: "Chaos Gremlin",
+            image: "titles/title_chaos_gremlin.png",
+            owned: false,
+            equipped: false,
+            purchasable: true,
+            price: 100,
+            rarity: "Common",
+            isNew: true,
+            unlockSource: { type: "store" }
+          }
+        ],
+        badge: []
+      }
+    },
+    viewState: {
+      showNewFirst: true
+    }
+  });
+
+  assert.match(html, /New Personality Cosmetics Are Live!/);
+  assert.match(html, /Fresh avatars and titles are now available\. Use “Show NEW First” to find them fast\./);
+  assert.match(html, /Show NEW First/);
+  assert.match(html, /store-item-badge-new">NEW<\/span>/);
+  assert.match(html, /Price: 150 Tokens/);
+  assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
+  assert.ok(html.indexOf("New Personality Cosmetics Are Live!") < html.indexOf("Show NEW First"));
+});
+
+test("ui: Store screen keeps Founder / Supporter status visible without exposing the local activation button", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 120,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(html, /Founder \/ Supporter: <strong>Not Active<\/strong>/);
+  assert.doesNotMatch(html, /Activate Founder Pass \(Local\)/);
+  assert.match(html, /Show NEW First/);
+  assert.match(html, /Search Cosmetics/);
+});
+
 test("ui: store search and filters update visible cosmetics without mutating catalog output", () => {
   const previousDocument = global.document;
   const createClassList = () => {
@@ -1037,7 +1115,6 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 
   const backButton = createControl();
-  const supporterButton = createControl();
   const searchInput = createControl();
   const emptyState = { hidden: true, style: {}, classList: createClassList() };
   const avatarItem = createStoreItem({ type: "avatar", rarity: "Common", name: "fire avatar" });
@@ -1087,7 +1164,6 @@ test("ui: store search and filters update visible cosmetics without mutating cat
     getElementById: (id) =>
       ({
         "store-back-btn": backButton,
-        "activate-supporter-btn": supporterButton,
         "store-search-input": searchInput,
         "store-empty-state": emptyState
       })[id] ?? null,
@@ -1099,7 +1175,6 @@ test("ui: store search and filters update visible cosmetics without mutating cat
     storeScreen.bind({
       actions: {
         back: () => {},
-        activateSupporter: () => {},
         buy: async () => {},
         equip: async () => {}
       }
@@ -3693,7 +3768,7 @@ test("ui: cosmetics screen Show NEW First sorts new owned cosmetics first across
   }
 });
 
-test("ui: store banner controls still bind while the token balance lives in the sticky topbar", async () => {
+test("ui: Store banner controls still bind while the token balance lives in the sticky topbar", async () => {
   const previousDocument = global.document;
   const calls = [];
 
@@ -3711,7 +3786,6 @@ test("ui: store banner controls still bind while the token balance lives in the 
   }
 
   const backButton = createControl();
-  const supporterButton = createControl();
   const searchInput = createControl();
   searchInput.value = "";
   const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
@@ -3735,7 +3809,6 @@ test("ui: store banner controls still bind while the token balance lives in the 
     getElementById: (id) =>
       ({
         "store-back-btn": backButton,
-        "activate-supporter-btn": supporterButton,
         "store-search-input": searchInput,
         "store-empty-state": emptyState
       })[id] ?? null,
@@ -3747,16 +3820,14 @@ test("ui: store banner controls still bind while the token balance lives in the 
     storeScreen.bind({
       actions: {
         back: () => calls.push("back"),
-        activateSupporter: () => calls.push("supporter"),
         buy: async () => {},
         equip: async () => {}
       }
     });
 
     await backButton.listeners.get("click")();
-    await supporterButton.listeners.get("click")();
 
-    assert.deepEqual(calls, ["back", "supporter"]);
+    assert.deepEqual(calls, ["back"]);
   } finally {
     global.document = previousDocument;
   }

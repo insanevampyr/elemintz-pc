@@ -221,6 +221,70 @@ test("store: founder/supporter grant unlocks supporter cosmetics", async () => {
   assert.ok(!result.profile.ownedCosmetics.cardBack.includes("supporter_card_back"));
 });
 
+test("store: founder status grant is idempotent-safe and grants the founder bundle once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const first = await state.grantFounderStatus("FounderGrantUser");
+
+  assert.equal(first.founderStatusActive, true);
+  assert.equal(first.profile.supporterPass, true);
+  assert.deepEqual(
+    first.grantedItems.map((item) => item.cosmeticId).sort(),
+    ["Arena Founder", "founder_deluxe_card_back", "supporter_badge"].sort()
+  );
+  assert.deepEqual(first.skippedItems, []);
+
+  const second = await state.grantFounderStatus("FounderGrantUser");
+
+  assert.equal(second.founderStatusActive, true);
+  assert.equal(second.profile.supporterPass, true);
+  assert.deepEqual(second.grantedItems, []);
+  assert.deepEqual(
+    second.skippedItems.map((item) => item.cosmeticId).sort(),
+    ["Arena Founder", "founder_deluxe_card_back", "supporter_badge"].sort()
+  );
+});
+
+test("store: founder status grant only fills missing founder bundle items", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("PartialFounderUser", {
+    supporterPass: false,
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none", "supporter_badge"],
+      title: ["Initiate"]
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "Initiate"
+    }
+  });
+
+  const result = await state.grantFounderStatus("PartialFounderUser");
+
+  assert.equal(result.profile.supporterPass, true);
+  assert.deepEqual(
+    result.grantedItems.map((item) => item.cosmeticId).sort(),
+    ["Arena Founder", "founder_deluxe_card_back"].sort()
+  );
+  assert.deepEqual(result.skippedItems.map((item) => item.cosmeticId), ["supporter_badge"]);
+});
+
 test("store: legacy supporter card back is migrated out of inventories", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });

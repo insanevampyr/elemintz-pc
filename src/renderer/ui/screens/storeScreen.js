@@ -256,13 +256,15 @@ export const storeScreen = {
               <button id="store-back-btn" class="btn screen-back-btn">Back to Menu</button>
             </div>
           </div>
+          <section class="store-feature-banner" aria-label="Featured cosmetics update">
+            <p class="store-feature-banner-eyebrow">Featured Update</p>
+            <h3 class="store-feature-banner-title">New Personality Cosmetics Are Live!</h3>
+            <p class="store-feature-banner-copy">
+              Fresh avatars and titles are now available. Use “Show NEW First” to find them fast.
+            </p>
+          </section>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
           <p>Badges are gameplay/achievement rewards and cannot be purchased.</p>
-          ${
-            store.supporterPass
-              ? ""
-              : '<button id="activate-supporter-btn" class="btn">Activate Founder Pass (Local)</button>'
-          }
           <section class="store-toolbar panel">
             <div class="store-search-group">
               <label class="store-search-label" for="store-search-input">Search Cosmetics</label>

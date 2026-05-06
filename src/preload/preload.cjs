@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("elemintz", {
     getDailyChallenges: (username) => ipcRenderer.invoke("state:getDailyChallenges", username),
     getCosmetics: (username) => ipcRenderer.invoke("state:getCosmetics", username),
     getStore: (username) => ipcRenderer.invoke("state:getStore", username),
+    acknowledgeAnnouncement: (payload) => ipcRenderer.invoke("state:acknowledgeAnnouncement", payload),
     acknowledgeMilestoneChestReward: (payload) =>
       ipcRenderer.invoke("state:acknowledgeMilestoneChestReward", payload),
     openChest: (payload) => ipcRenderer.invoke("state:openChest", payload),
@@ -43,6 +44,7 @@ contextBridge.exposeInMainWorld("elemintz", {
     restoreSession: (payload) => ipcRenderer.invoke("multiplayer:restoreSession", payload),
     getProfile: (payload) => ipcRenderer.invoke("multiplayer:getProfile", payload),
     getCosmetics: (payload) => ipcRenderer.invoke("multiplayer:getCosmetics", payload),
+    acknowledgeAnnouncement: (payload) => ipcRenderer.invoke("multiplayer:acknowledgeAnnouncement", payload),
     claimDailyLoginReward: (payload) => ipcRenderer.invoke("multiplayer:claimDailyLoginReward", payload),
     buyStoreItem: (payload) => ipcRenderer.invoke("multiplayer:buyStoreItem", payload),
     openChest: (payload) => ipcRenderer.invoke("multiplayer:openChest", payload),

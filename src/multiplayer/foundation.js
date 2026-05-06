@@ -177,6 +177,7 @@ function formatAdminGrantSummary({ xp = 0, tokens = 0, chests = [], cosmetic = n
 
 function buildAdminGrantNoticePayload(entry) {
   const payload = entry?.payload ?? {};
+  const customMessage = String(entry?.result?.noticeMessage ?? payload?.noticeMessage ?? "").trim();
   const summary = formatAdminGrantSummary({
     xp: payload?.xp ?? 0,
     tokens: payload?.tokens ?? 0,
@@ -187,7 +188,7 @@ function buildAdminGrantNoticePayload(entry) {
   return {
     transactionId: entry?.transactionId ?? null,
     targetUsername: entry?.targetUsername ?? null,
-    message: `EleMintz has sent you ${summary}. Click OK to confirm.`,
+    message: customMessage || `EleMintz has sent you ${summary}. Click OK to confirm.`,
     payload: {
       xp: Math.max(0, Math.floor(Number(payload?.xp ?? 0) || 0)),
       tokens: Math.max(0, Math.floor(Number(payload?.tokens ?? 0) || 0)),
@@ -213,6 +214,24 @@ function buildAdminGrantStatusPayload(entry) {
     deliveredAt: entry?.deliveredAt ?? null,
     confirmedAt: entry?.confirmedAt ?? null
   };
+}
+
+function formatFounderRewardItemNames(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => String(item?.displayName ?? "").trim())
+    .filter(Boolean);
+}
+
+function buildFounderGrantNoticeMessage(grantedItems, skippedItems) {
+  const allNames = formatFounderRewardItemNames([...(grantedItems ?? []), ...(skippedItems ?? [])]);
+  const uniqueNames = [...new Set(allNames)].map((name) =>
+    name === "Arena Founder" ? "Arena Founder Title" : name
+  );
+  const summary =
+    uniqueNames.length > 0
+      ? uniqueNames.join(", ")
+      : "Arena Founder title, Founder Badge, and Founder Deluxe Card Back";
+  return `EleMintz has granted Founder Status to your account. You received: ${summary}. Click OK to confirm.`;
 }
 
 const ADMIN_ALLOWLIST = Object.freeze([
@@ -600,6 +619,7 @@ export function createMultiplayerFoundation({
   const httpServer = http.createServer(app);
   const roomStore = createRoomStore({ random });
   const sessionStore = createSessionStore({ logger, gracePeriodMs: roomReconnectTimeoutMs });
+  const inFlightFounderGrants = new Map();
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: "*",
@@ -1661,6 +1681,215 @@ export function createMultiplayerFoundation({
           ...buildAdminError(error, "ADMIN_GRANT_FAILED"),
           ...(finalizedEntry ? { result: buildAdminGrantStatusPayload(finalizedEntry) } : {})
         });
+      }
+    });
+
+    socket.on("admin:grantFounderStatus", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+
+      let adminAccess = null;
+      try {
+        adminAccess = assertAdminAccessForSession(sessionResult.session);
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_AUTH_FAILED"));
+        return;
+      }
+
+      const targetUsername = normalizeSettledUsername(payload?.username);
+      const transactionId = normalizeAdminTransactionId(payload?.transactionId);
+      if (!targetUsername) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_TARGET_USERNAME_REQUIRED",
+              message: "username is required for founder grants."
+            },
+            "ADMIN_TARGET_USERNAME_REQUIRED"
+          )
+        );
+        return;
+      }
+      if (!transactionId) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_TRANSACTION_REQUIRED",
+              message: "transactionId is required for founder grants."
+            },
+            "ADMIN_TRANSACTION_REQUIRED"
+          )
+        );
+        return;
+      }
+      if (!adminGrantStore) {
+        respond(
+          buildAdminError(
+            {
+              code: "ADMIN_GRANT_STORE_UNAVAILABLE",
+              message: "Admin grant persistence is not available."
+            },
+            "ADMIN_GRANT_STORE_UNAVAILABLE"
+          )
+        );
+        return;
+      }
+      if (typeof profileAuthority?.grantFounderStatus !== "function") {
+        respond(
+          buildAdminError(
+            {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server founder grant authority is not available."
+            },
+            "PROFILE_AUTHORITY_UNAVAILABLE"
+          )
+        );
+        return;
+      }
+
+      const existingUsernameFlight = inFlightFounderGrants.get(targetUsername);
+      if (existingUsernameFlight) {
+        respond({
+          ok: false,
+          duplicate: true,
+          error: {
+            code: "ADMIN_FOUNDER_GRANT_IN_PROGRESS",
+            message: "A Founder Status grant is already being processed for this username."
+          }
+        });
+        return;
+      }
+
+      const founderGrantPayload = {
+        founderStatus: true,
+        founderBundle: [
+          { type: "title", cosmeticId: "Arena Founder" },
+          { type: "badge", cosmeticId: "supporter_badge" },
+          { type: "cardBack", cosmeticId: "founder_deluxe_card_back" }
+        ]
+      };
+
+      const founderFlight = (async () => {
+        const transactionStart = await adminGrantStore.beginTransaction({
+          transactionId,
+          timestamp: new Date().toISOString(),
+          adminId: adminAccess.adminIdentifier,
+          targetUsername,
+          grantType: "founder_status_grant",
+          payload: founderGrantPayload,
+          adminSocketId: socket.id
+        });
+
+        if (transactionStart.duplicate) {
+          const existing = transactionStart.entry;
+          if (existing?.status === "success") {
+            return {
+              ok: true,
+              duplicate: true,
+              result: buildAdminGrantStatusPayload(existing)
+            };
+          }
+
+          return {
+            ok: false,
+            duplicate: true,
+            error: {
+              code:
+                existing?.status === "failure"
+                  ? "ADMIN_GRANT_PREVIOUS_FAILURE"
+                  : "ADMIN_GRANT_IN_PROGRESS",
+              message:
+                existing?.error?.message ??
+                (existing?.status === "failure"
+                  ? "This Founder Status transaction previously failed."
+                  : "This Founder Status transaction is already being processed.")
+            },
+            result: buildAdminGrantStatusPayload(existing)
+          };
+        }
+
+        try {
+          const grantResult = await profileAuthority.grantFounderStatus({
+            username: targetUsername
+          });
+          const grantedItems = Array.isArray(grantResult?.grantedItems) ? grantResult.grantedItems : [];
+          const skippedItems = Array.isArray(grantResult?.skippedItems) ? grantResult.skippedItems : [];
+          const noticeRequired =
+            Boolean(grantResult?.supporterPassActivated) || grantedItems.length > 0;
+          const noticeMessage = noticeRequired
+            ? buildFounderGrantNoticeMessage(grantedItems, skippedItems)
+            : null;
+          const targetSocketId = noticeRequired
+            ? sessionStore.getSocketIdByUsername(targetUsername)
+            : null;
+
+          let finalizedEntry = await adminGrantStore.finalizeTransaction({
+            transactionId,
+            status: "success",
+            result: {
+              profile: grantResult?.snapshot ?? null,
+              founderStatusActive: Boolean(grantResult?.founderStatusActive),
+              supporterPassActivated: Boolean(grantResult?.supporterPassActivated),
+              grantedItems,
+              skippedItems,
+              noticeMessage,
+              noticeQueued: Boolean(noticeRequired && targetSocketId),
+              noticeRequired,
+              cosmetics: grantResult?.cosmetics ?? null
+            },
+            confirmationStatus: noticeRequired
+              ? targetSocketId
+                ? "awaiting_player"
+                : "player_offline"
+              : "confirmed",
+            error: null
+          });
+
+          if (targetSocketId) {
+            finalizedEntry = await adminGrantStore.markDelivered({
+              transactionId,
+              confirmationStatus: "awaiting_player"
+            });
+            io.to(targetSocketId).emit("admin:grantNotice", buildAdminGrantNoticePayload(finalizedEntry));
+          }
+
+          return {
+            ok: true,
+            result: buildAdminGrantStatusPayload(finalizedEntry)
+          };
+        } catch (error) {
+          const finalizedEntry = await adminGrantStore
+            .finalizeTransaction({
+              transactionId,
+              status: "failure",
+              result: null,
+              confirmationStatus: "failed",
+              error: {
+                code: error?.code ?? "ADMIN_FOUNDER_GRANT_FAILED",
+                message: String(error?.message ?? "Unable to apply Founder Status.")
+              }
+            })
+            .catch(() => null);
+
+          return {
+            ...buildAdminError(error, "ADMIN_FOUNDER_GRANT_FAILED"),
+            ...(finalizedEntry ? { result: buildAdminGrantStatusPayload(finalizedEntry) } : {})
+          };
+        }
+      })();
+
+      inFlightFounderGrants.set(targetUsername, founderFlight);
+      try {
+        respond(await founderFlight);
+      } finally {
+        if (inFlightFounderGrants.get(targetUsername) === founderFlight) {
+          inFlightFounderGrants.delete(targetUsername);
+        }
       }
     });
 

@@ -90,6 +90,7 @@ export class MultiplayerProfileAuthority {
   constructor({ coordinator = null, logger = console, ...options } = {}) {
     this.coordinator = coordinator ?? new StateCoordinator(options);
     this.logger = logger;
+    this.founderGrantFlights = new Map();
   }
 
   async getProfile(username) {
@@ -351,6 +352,37 @@ export class MultiplayerProfileAuthority {
       snapshot: await this.getProfile(safeUsername),
       cosmetics: await this.getCosmetics(safeUsername)
     };
+  }
+
+  async grantFounderStatus({ username }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative founder grants.");
+    }
+
+    const existingFlight = this.founderGrantFlights.get(safeUsername);
+    if (existingFlight) {
+      return existingFlight;
+    }
+
+    const flight = (async () => {
+      this.logger.info?.(`[ProfileAuthority] grantFounderStatus -> ${safeUsername}`);
+      const result = await this.coordinator.grantFounderStatus(safeUsername);
+      return {
+        ...result,
+        snapshot: await this.getProfile(safeUsername),
+        cosmetics: await this.getCosmetics(safeUsername)
+      };
+    })();
+
+    this.founderGrantFlights.set(safeUsername, flight);
+    try {
+      return await flight;
+    } finally {
+      if (this.founderGrantFlights.get(safeUsername) === flight) {
+        this.founderGrantFlights.delete(safeUsername);
+      }
+    }
   }
 
   async equipCosmetic({ username, type, cosmeticId }) {

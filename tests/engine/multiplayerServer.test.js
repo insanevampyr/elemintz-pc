@@ -618,6 +618,136 @@ test("multiplayer foundation: offline admin notices persist, deliver on next aut
   }
 });
 
+test("multiplayer foundation: Founder Status grants supporter pass, fills missing founder items, and queues a notice", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+
+  try {
+    await coordinator.profiles.updateProfile("FounderTarget", {
+      supporterPass: false,
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        cardBack: ["default_card_back"],
+        background: ["default_background"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none", "supporter_badge"],
+        title: ["Initiate"]
+      },
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      }
+    });
+
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    const playerSession = await bootstrapSession(playerClient, "FounderTarget");
+    assert.equal(playerSession?.ok, true);
+
+    const noticePromise = waitForEvent(playerClient, "admin:grantNotice");
+    const grantResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantFounderStatus",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "founder-grant-1",
+          username: "FounderTarget"
+        },
+        resolve
+      );
+    });
+    const notice = await noticePromise;
+
+    assert.equal(grantResponse?.ok, true);
+    assert.equal(grantResponse?.result?.grantType, "founder_status_grant");
+    assert.equal(grantResponse?.result?.result?.founderStatusActive, true);
+    assert.equal(grantResponse?.result?.result?.supporterPassActivated, true);
+    assert.deepEqual(
+      grantResponse?.result?.result?.grantedItems?.map((item) => item.cosmeticId).sort(),
+      ["Arena Founder", "founder_deluxe_card_back"].sort()
+    );
+    assert.deepEqual(
+      grantResponse?.result?.result?.skippedItems?.map((item) => item.cosmeticId),
+      ["supporter_badge"]
+    );
+    assert.match(notice?.message ?? "", /Founder Status/i);
+    assert.match(notice?.message ?? "", /Arena Founder Title/i);
+    assert.match(notice?.message ?? "", /Founder Badge/i);
+    assert.match(notice?.message ?? "", /Founder Deluxe Card Back/i);
+
+    const profileAfterGrant = await coordinator.profiles.getProfile("FounderTarget");
+    assert.equal(profileAfterGrant?.supporterPass, true);
+    assert.ok(profileAfterGrant?.ownedCosmetics?.title?.includes("Arena Founder"));
+    assert.ok(profileAfterGrant?.ownedCosmetics?.badge?.includes("supporter_badge"));
+    assert.ok(profileAfterGrant?.ownedCosmetics?.cardBack?.includes("founder_deluxe_card_back"));
+
+    const secondResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:grantFounderStatus",
+        {
+          sessionToken: adminLogin?.session?.token,
+          transactionId: "founder-grant-2",
+          username: "FounderTarget"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(secondResponse?.ok, true);
+    assert.equal(secondResponse?.result?.result?.supporterPassActivated, false);
+    assert.deepEqual(secondResponse?.result?.result?.grantedItems ?? [], []);
+    assert.deepEqual(
+      secondResponse?.result?.result?.skippedItems?.map((item) => item.cosmeticId).sort(),
+      ["Arena Founder", "founder_deluxe_card_back", "supporter_badge"].sort()
+    );
+    assert.equal(secondResponse?.result?.confirmationStatus, "confirmed");
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: offline admin notices deliver on valid session resume without duplicate reward application", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
