@@ -1,0 +1,370 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+
+import { createUpdateLifecycleStore } from "../../src/main/updates/updateLifecycle.js";
+import { registerUpdateIpcHandlers } from "../../src/main/ipc/updateIpc.js";
+import { buildUpdateCoordinatorState, buildUpdateDiagnosticsSnapshot } from "../../src/renderer/systems/updateCoordinator.js";
+import { createUpdaterAdapter } from "../../src/main/updates/updaterAdapter.js";
+import { RUNTIME_PUBLISH_CONFIGURATION, hasRuntimePublishConfiguration } from "../../src/main/updates/publishConfiguration.js";
+
+function createFakeIpcMain() {
+  const handlers = new Map();
+  const events = new Map();
+  return {
+    handlers,
+    events,
+    handle(channel, handler) {
+      handlers.set(channel, handler);
+    },
+    on(channel, handler) {
+      events.set(channel, handler);
+    }
+  };
+}
+
+function createFakeSender() {
+  return {
+    messages: [],
+    send(channel, payload) {
+      this.messages.push({ channel, payload });
+    },
+    isDestroyed() {
+      return false;
+    }
+  };
+}
+
+function createFakeUpdater() {
+  const emitter = new EventEmitter();
+  const calls = {
+    checkForUpdates: 0,
+    quitAndInstall: 0,
+    setFeedURL: []
+  };
+
+  emitter.checkForUpdates = async () => {
+    calls.checkForUpdates += 1;
+    emitter.emit("checking-for-update");
+    return { cancellationToken: null };
+  };
+  emitter.quitAndInstall = () => {
+    calls.quitAndInstall += 1;
+  };
+  emitter.setFeedURL = (configuration) => {
+    calls.setFeedURL.push(configuration);
+  };
+  emitter.autoDownload = true;
+  emitter.autoInstallOnAppQuit = true;
+
+  return {
+    updater: emitter,
+    calls
+  };
+}
+
+test("update lifecycle: initial state is idle", () => {
+  const store = createUpdateLifecycleStore();
+  const state = store.getState();
+
+  assert.equal(state.status, "idle");
+  assert.equal(state.restartRequested, false);
+  assert.equal(state.deferredUntilSafe, false);
+  assert.equal(state.error, null);
+  assert.equal(state.lastCheckedAt, null);
+  assert.match(state.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("update IPC: requestCheck is disabled safely in dev/unpackaged mode", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    isPackaged: false,
+    hasPublishConfiguration: true,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: false,
+      hasPublishConfiguration: true
+    })
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestCheck")();
+
+  assert.equal(response.status, "idle");
+  assert.equal(response.restartRequested, false);
+  assert.equal(response.deferredUntilSafe, false);
+  assert.match(response.message, /disabled in dev\/unpackaged builds/i);
+  assert.match(response.lastCheckedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(calls.checkForUpdates, 0);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: requestInstallWhenSafe sets deferred restart state and cancel clears it", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "downloaded",
+    message: "Update downloaded."
+  });
+  registerUpdateIpcHandlers(ipcMain, { store });
+
+  const deferred = await ipcMain.handlers.get("updates:requestInstallWhenSafe")();
+  assert.equal(deferred.status, "deferred");
+  assert.equal(deferred.restartRequested, true);
+  assert.equal(deferred.deferredUntilSafe, true);
+
+  const cleared = await ipcMain.handlers.get("updates:cancelDeferredInstall")();
+  assert.equal(cleared.status, "downloaded");
+  assert.equal(cleared.restartRequested, false);
+  assert.equal(cleared.deferredUntilSafe, false);
+});
+
+test("update IPC: mock downloaded trigger sets lifecycle to downloaded with mock update info", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  registerUpdateIpcHandlers(ipcMain, { store, allowDevSimulation: true });
+
+  const state = await ipcMain.handlers.get("updates:devMarkDownloaded")({}, { version: "1.2.3-mock" });
+
+  assert.equal(state.status, "downloaded");
+  assert.equal(state.updateInfo?.version, "1.2.3-mock");
+  assert.equal(state.updateInfo?.mock, true);
+  assert.equal(state.downloadProgress?.percent, 100);
+  assert.equal(state.restartRequested, false);
+  assert.equal(state.deferredUntilSafe, false);
+});
+
+test("update IPC: stateChanged notification emits on lifecycle changes", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  registerUpdateIpcHandlers(ipcMain, { store, allowDevSimulation: true });
+
+  const sender = createFakeSender();
+  ipcMain.events.get("updates:subscribe")({ sender });
+  sender.messages.length = 0;
+
+  await ipcMain.handlers.get("updates:devMarkDownloaded")({}, { version: "9.9.9-mock" });
+  await ipcMain.handlers.get("updates:requestInstallWhenSafe")();
+
+  assert.equal(sender.messages.length, 2);
+  assert.deepEqual(
+    sender.messages.map((entry) => entry.channel),
+    ["updates:stateChanged", "updates:stateChanged"]
+  );
+  assert.equal(sender.messages[0].payload.status, "downloaded");
+  assert.equal(sender.messages[0].payload.updateInfo?.mock, true);
+  assert.equal(sender.messages[1].payload.status, "deferred");
+  assert.equal(sender.messages[1].payload.restartRequested, true);
+});
+
+test("update adapter: real updater events map into lifecycle state without install side effects", async () => {
+  const store = createUpdateLifecycleStore();
+  const { updater, calls } = createFakeUpdater();
+  createUpdaterAdapter({
+    store,
+    updater,
+    isPackaged: true,
+    hasPublishConfiguration: true
+  });
+
+  assert.equal(updater.autoDownload, false);
+  assert.equal(updater.autoInstallOnAppQuit, false);
+
+  updater.emit("update-available", { version: "0.1.7" });
+  let state = store.getState();
+  assert.equal(state.status, "available");
+  assert.equal(state.updateInfo?.version, "0.1.7");
+
+  updater.emit("download-progress", { percent: 42, transferred: 420, total: 1000, bytesPerSecond: 8 });
+  state = store.getState();
+  assert.equal(state.status, "downloading");
+  assert.equal(state.downloadProgress?.percent, 42);
+
+  updater.emit("update-downloaded", { version: "0.1.7", files: ["EleMintz-Setup.exe"] });
+  state = store.getState();
+  assert.equal(state.status, "downloaded");
+  assert.equal(state.updateInfo?.version, "0.1.7");
+  assert.equal(state.restartRequested, false);
+  assert.equal(state.deferredUntilSafe, false);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: requestCheck uses the real adapter in packaged builds without install side effects", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  const { updater, calls } = createFakeUpdater();
+  const adapter = createUpdaterAdapter({
+    store,
+    updater,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: adapter,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestCheck")();
+
+  assert.equal(calls.checkForUpdates, 1);
+  assert.deepEqual(calls.setFeedURL, [RUNTIME_PUBLISH_CONFIGURATION]);
+  assert.equal(calls.quitAndInstall, 0);
+  assert.equal(response.status, "checking");
+  assert.equal(response.restartRequested, false);
+  assert.equal(response.deferredUntilSafe, false);
+});
+
+test("update IPC: requestCheck reports a safe error when publish config is missing", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: true,
+      hasPublishConfiguration: false
+    }),
+    isPackaged: true,
+    hasPublishConfiguration: false
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestCheck")();
+
+  assert.equal(response.status, "error");
+  assert.match(response.message, /publish configuration is missing/i);
+  assert.equal(calls.checkForUpdates, 0);
+  assert.deepEqual(calls.setFeedURL, []);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("publish config: packaged-style runtime config detection succeeds for shipped GitHub config", () => {
+  assert.equal(hasRuntimePublishConfiguration(RUNTIME_PUBLISH_CONFIGURATION), true);
+});
+
+test("publish config: missing runtime config stays false", () => {
+  assert.equal(hasRuntimePublishConfiguration(null), false);
+  assert.equal(hasRuntimePublishConfiguration({ provider: "github", owner: "", repo: "elemintz-pc" }), false);
+});
+
+test("update adapter: object-shaped updater errors become readable messages", () => {
+  const store = createUpdateLifecycleStore();
+  const { updater } = createFakeUpdater();
+  createUpdaterAdapter({
+    store,
+    updater,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  updater.emit("error", {
+    message: "Cannot find latest.yml in the latest release artifacts.",
+    code: "ERR_UPDATER_LATEST_YML_MISSING"
+  });
+
+  const state = store.getState();
+  assert.equal(state.status, "error");
+  assert.equal(state.error?.message, "Cannot find latest.yml in the latest release artifacts.");
+});
+
+test("update coordinator: blocks install when safety is unsafe and returns blocker reasons", () => {
+  const coordinator = buildUpdateCoordinatorState({
+    lifecycleState: {
+      status: "downloaded",
+      restartRequested: true,
+      deferredUntilSafe: true,
+      message: "Ready when safe."
+    },
+    safetyState: {
+      safe: false,
+      reasons: ["active_match", "pending_admin_grant_notice"],
+      checkedAt: "2026-05-06T12:00:00.000Z"
+    }
+  });
+
+  assert.equal(coordinator.installAllowedNow, false);
+  assert.equal(coordinator.deferredUntilSafe, true);
+  assert.deepEqual(coordinator.blockedReasons, ["active_match", "pending_admin_grant_notice"]);
+});
+
+test("update coordinator: allows install only when lifecycle is ready and safety is clear", () => {
+  const coordinator = buildUpdateCoordinatorState({
+    lifecycleState: {
+      status: "downloaded",
+      restartRequested: true,
+      deferredUntilSafe: true,
+      message: "Ready when safe."
+    },
+    safetyState: {
+      safe: true,
+      reasons: [],
+      checkedAt: "2026-05-06T12:00:00.000Z"
+    }
+  });
+
+  assert.equal(coordinator.installAllowedNow, true);
+  assert.deepEqual(coordinator.blockedReasons, []);
+  assert.equal(coordinator.deferredUntilSafe, true);
+});
+
+test("update coordinator: diagnostics snapshot exposes install gate facts without side effects", () => {
+  const coordinator = buildUpdateCoordinatorState({
+    lifecycleState: {
+      status: "deferred",
+      restartRequested: true,
+      deferredUntilSafe: true,
+      message: "Waiting for safe state."
+    },
+    safetyState: {
+      safe: false,
+      reasons: ["active_match", "active_war"],
+      checkedAt: "2026-05-06T12:00:00.000Z"
+    }
+  });
+
+  const diagnostics = buildUpdateDiagnosticsSnapshot(coordinator);
+
+  assert.deepEqual(diagnostics, {
+    lifecycleStatus: "deferred",
+    message: "Waiting for safe state.",
+    error: null,
+    updateInfo: null,
+    downloadProgress: null,
+    deferredUntilSafe: true,
+    restartRequested: true,
+    installAllowedNow: false,
+    blockedReasons: ["active_match", "active_war"]
+  });
+});
+
+test("update coordinator: does not imply restart side effects from state computation", () => {
+  const lifecycleState = {
+    status: "downloaded",
+    restartRequested: true,
+    deferredUntilSafe: true,
+    message: "Ready when safe."
+  };
+  const safetyState = {
+    safe: false,
+    reasons: ["chest_open_in_flight"],
+    checkedAt: "2026-05-06T12:00:00.000Z"
+  };
+
+  const coordinator = buildUpdateCoordinatorState({
+    lifecycleState,
+    safetyState
+  });
+
+  assert.equal(coordinator.lifecycleState.restartRequested, true);
+  assert.equal(coordinator.installAllowedNow, false);
+  assert.deepEqual(safetyState.reasons, ["chest_open_in_flight"]);
+  assert.equal(lifecycleState.status, "downloaded");
+});

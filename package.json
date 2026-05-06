@@ -1,6 +1,6 @@
 {
   "name": "elemintz-pc",
-  "version": "0.1.6",
+  "version": "2.0.0",
   "description": "EleMintz desktop card game",
   "private": true,
   "type": "module",
@@ -11,7 +11,8 @@
     "multiplayer:dev": "nodemon --watch src/multiplayer --ext js --exec node src/multiplayer/server.js",
     "test": "node --test",
     "dist:win": "powershell -ExecutionPolicy Bypass -File build/make-win-installer.ps1",
-    "pack:win": "electron-builder --dir --win --x64 --publish never"
+    "pack:win": "electron-builder --dir --win --x64 --publish never",
+    "release:win": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -19,6 +20,7 @@
     "nodemon": "^3.1.14"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "express": "^5.2.1",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
@@ -27,11 +29,18 @@
     "appId": "com.elemintz.pc",
     "productName": "EleMintz",
     "asar": true,
+    "artifactName": "EleMintz_Setup_${version}.${ext}",
     "directories": {
       "output": "dist"
     },
     "win": {
       "icon": "build/icon.ico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "insanevampyr",
+      "repo": "elemintz-pc",
+      "releaseType": "release"
     },
     "files": [
       "assets/**/*",

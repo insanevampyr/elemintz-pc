@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { GameController, MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
+import { getUpdateSafetyState, isSafeForUpdateRestart } from "../../src/renderer/systems/updateSafety.js";
 import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
 import { buildOnlineMatchStateFromRoom } from "../../src/multiplayer/foundation.js";
 import { createRoomStore } from "../../src/multiplayer/rooms.js";
@@ -102,6 +103,537 @@ function createAuthoritativePveStore({
     completeMatch
   };
 }
+
+function createUpdateSafetyController() {
+  return new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: { show: () => {} }
+  });
+}
+
+function createMockUpdateBridge(initialState = {}) {
+  let listener = null;
+  const requestCheckResponses = Array.isArray(initialState.requestCheckResponses)
+    ? [...initialState.requestCheckResponses]
+    : [];
+  const calls = {
+    requestCheck: 0,
+    devMarkDownloaded: 0,
+    requestInstallWhenSafe: 0,
+    cancelDeferredInstall: 0,
+    quitAndInstall: 0
+  };
+  let state = {
+    status: "idle",
+    message: "",
+    error: null,
+    updateInfo: null,
+    downloadProgress: null,
+    restartRequested: false,
+    deferredUntilSafe: false,
+    lastCheckedAt: null,
+    updatedAt: "2026-05-06T12:00:00.000Z",
+    ...initialState
+  };
+  delete state.requestCheckResponses;
+
+  const emit = () => {
+    if (typeof listener === "function") {
+      listener({ ...state });
+    }
+  };
+
+  return {
+    calls,
+    getState: async () => ({ ...state }),
+    onStateChanged(nextListener) {
+      listener = nextListener;
+      return () => {
+        if (listener === nextListener) {
+          listener = null;
+        }
+      };
+    },
+    async requestCheck() {
+      calls.requestCheck += 1;
+      const nextResponse = requestCheckResponses.shift() ?? {
+        status: state.status === "idle" ? "checking" : state.status,
+        message: "Manual update check requested."
+      };
+      state = {
+        ...state,
+        ...nextResponse,
+        updatedAt: "2026-05-06T12:00:30.000Z"
+      };
+      emit();
+      return { ...state };
+    },
+    async devMarkDownloaded(payload = {}) {
+      calls.devMarkDownloaded += 1;
+      state = {
+        ...state,
+        status: "downloaded",
+        message: "Mock update marked as downloaded.",
+        error: null,
+        updateInfo: {
+          version: payload.version ?? "dev-simulated",
+          notes: payload.notes ?? "Mock downloaded update for renderer testing.",
+          mock: true
+        },
+        downloadProgress: {
+          percent: 100,
+          transferred: 1,
+          total: 1,
+          bytesPerSecond: 0,
+          mock: true
+        },
+        updatedAt: "2026-05-06T12:01:00.000Z"
+      };
+      emit();
+      return { ...state };
+    },
+    async requestInstallWhenSafe() {
+      calls.requestInstallWhenSafe += 1;
+      state = {
+        ...state,
+        status: ["downloaded", "deferred", "readyToInstall"].includes(state.status) ? "deferred" : state.status,
+        message: "Update install requested. Waiting for a safe restart window.",
+        restartRequested: true,
+        deferredUntilSafe: true,
+        updatedAt: "2026-05-06T12:02:00.000Z"
+      };
+      emit();
+      return { ...state };
+    },
+    async cancelDeferredInstall() {
+      calls.cancelDeferredInstall += 1;
+      state = {
+        ...state,
+        status: state.status === "deferred" ? "downloaded" : state.status,
+        message: "Deferred update install cleared.",
+        restartRequested: false,
+        deferredUntilSafe: false,
+        updatedAt: "2026-05-06T12:03:00.000Z"
+      };
+      emit();
+      return { ...state };
+    },
+    quitAndInstall() {
+      calls.quitAndInstall += 1;
+    }
+  };
+}
+
+test("appController: update safety returns safe true for a clean idle menu state", () => {
+  const app = createUpdateSafetyController();
+  app.screenFlow = "menu";
+  app.username = "SafetyUser";
+
+  const safety = app.getUpdateSafetyState();
+
+  assert.equal(safety.safe, true);
+  assert.deepEqual(safety.reasons, []);
+  assert.match(safety.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(app.isSafeForUpdateRestart(), true);
+});
+
+test("appController: update safety blocks active match, war, and busy round presentation without mutating state", () => {
+  const app = createUpdateSafetyController();
+  app.gameController = {
+    getViewModel: () => ({
+      status: "active",
+      warActive: true
+    })
+  };
+  app.screenFlow = "game";
+  app.roundPresentation = {
+    phase: "reveal",
+    busy: true,
+    selectedCardIndex: 1
+  };
+
+  const before = {
+    screenFlow: app.screenFlow,
+    roundPresentation: { ...app.roundPresentation }
+  };
+
+  const safety = getUpdateSafetyState(app);
+
+  assert.equal(safety.safe, false);
+  assert.deepEqual(safety.reasons, ["active_match", "active_war", "round_presentation_busy"]);
+  assert.deepEqual(
+    {
+      screenFlow: app.screenFlow,
+      roundPresentation: { ...app.roundPresentation }
+    },
+    before
+  );
+  assert.equal(isSafeForUpdateRestart(app), false);
+});
+
+test("appController: update safety blocks chest, pending admin notice, reconnect reminder, and reward settlement blockers together", () => {
+  const app = createUpdateSafetyController();
+  app.profileChestOpenInFlight = true;
+  app.profileMilestoneChestNoticeOpen = true;
+  app.activeAdminGrantNoticeId = "grant-1";
+  app.onlineReconnectReminder = {
+    username: "SafetyUser",
+    roomCode: "ROOM1",
+    expiresAt: "2026-05-06T12:00:00.000Z"
+  };
+  app.dailyLoginAutoClaimPromise = Promise.resolve();
+  app.onlinePlayProfileRefreshPromise = Promise.resolve();
+  app.onlinePlayState = {
+    room: {
+      status: "closing",
+      matchComplete: true,
+      rewardSettlement: {
+        granted: false
+      },
+      pendingActions: {
+        host: null,
+        guest: null
+      }
+    },
+    pendingAdminGrantNotices: [{ transactionId: "grant-1" }]
+  };
+
+  const safety = app.getUpdateSafetyState();
+
+  assert.equal(safety.safe, false);
+  assert.deepEqual(safety.reasons, [
+    "chest_open_in_flight",
+    "milestone_chest_notice_open",
+    "pending_admin_grant_notice",
+    "reconnect_paused_or_reminder_active",
+    "pending_reward_settlement",
+    "daily_login_claim_in_flight",
+    "online_profile_refresh_in_flight"
+  ]);
+});
+
+test("appController: update safety blocks active online match, reconnect paused state, and pending room actions", () => {
+  const app = createUpdateSafetyController();
+  app.onlinePlayState = {
+    room: {
+      status: "paused",
+      matchComplete: false,
+      warActive: false,
+      disconnectState: {
+        active: true,
+        expiresAt: "2026-05-06T12:00:00.000Z"
+      },
+      pendingActions: {
+        host: { type: "submit_move" },
+        guest: null
+      }
+    },
+    pendingAdminGrantNotices: []
+  };
+
+  const safety = app.getUpdateSafetyState();
+
+  assert.equal(safety.safe, false);
+  assert.deepEqual(safety.reasons, [
+    "reconnect_paused_or_reminder_active",
+    "pending_online_room_action"
+  ]);
+});
+
+test("appController: update safety blocks a live online match and active online war", () => {
+  const app = createUpdateSafetyController();
+  app.onlinePlayState = {
+    room: {
+      status: "full",
+      matchComplete: false,
+      warActive: true,
+      pendingActions: {
+        host: null,
+        guest: null
+      }
+    },
+    pendingAdminGrantNotices: []
+  };
+
+  const safety = app.getUpdateSafetyState();
+
+  assert.equal(safety.safe, false);
+  assert.deepEqual(safety.reasons, ["active_online_match", "active_war"]);
+});
+
+test("appController: update safety blocks pending local match-complete flow", () => {
+  const app = createUpdateSafetyController();
+  app.pendingMatchCompletePayload = {
+    title: "Match Complete"
+  };
+
+  const safety = app.getUpdateSafetyState();
+
+  assert.equal(safety.safe, false);
+  assert.deepEqual(safety.reasons, ["pending_match_complete_flow"]);
+});
+
+test("appController: update safety blocks active quit and match-complete modals when present", () => {
+  const originalDocument = globalThis.document;
+  const app = createUpdateSafetyController();
+
+  try {
+    globalThis.document = {
+      querySelector: () => ({ textContent: "Match Complete" })
+    };
+
+    let safety = app.getUpdateSafetyState();
+    assert.equal(safety.safe, false);
+    assert.deepEqual(safety.reasons, ["match_complete_modal_active"]);
+
+    globalThis.document = {
+      querySelector: () => ({ textContent: "Leave Match" })
+    };
+
+    safety = app.getUpdateSafetyState();
+    assert.equal(safety.safe, false);
+    assert.deepEqual(safety.reasons, ["quit_confirmation_modal_active"]);
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test("appController: dev update simulation flow stays deferred while unsafe and becomes install-allowed once safe", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = createUpdateSafetyController();
+    app.bindUpdateLifecycleUpdates();
+    await app.refreshUpdateCoordinatorState();
+
+    app.screenFlow = "game";
+    app.roundPresentation = {
+      phase: "reveal",
+      busy: true,
+      selectedCardIndex: 0
+    };
+    app.gameController = {
+      getViewModel: () => ({
+        status: "active",
+        warActive: true
+      })
+    };
+
+    await app.devSimulateDownloadedUpdate({ version: "dev-flow-1" });
+    assert.equal(app.getUpdateCoordinatorState().lifecycleState.status, "downloaded");
+    assert.equal(app.getUpdateCoordinatorState().lifecycleState.updateInfo?.mock, true);
+
+    await app.devRequestInstallWhenSafe();
+    assert.equal(app.getUpdateCoordinatorState().lifecycleState.status, "deferred");
+    assert.equal(app.getUpdateCoordinatorState().deferredUntilSafe, true);
+    assert.equal(app.getUpdateCoordinatorState().installAllowedNow, false);
+    assert.deepEqual(app.getUpdateCoordinatorState().blockedReasons, [
+      "active_match",
+      "active_war",
+      "round_presentation_busy"
+    ]);
+    assert.deepEqual(app.getUpdateDiagnostics(), {
+      lifecycleStatus: "deferred",
+      message: "Update install requested. Waiting for a safe restart window.",
+      error: null,
+      updateInfo: {
+        version: "dev-flow-1",
+        notes: "Mock downloaded update for renderer testing.",
+        mock: true
+      },
+      downloadProgress: {
+        percent: 100,
+        transferred: 1,
+        total: 1,
+        bytesPerSecond: 0,
+        mock: true
+      },
+      deferredUntilSafe: true,
+      restartRequested: true,
+      installAllowedNow: false,
+      blockedReasons: ["active_match", "active_war", "round_presentation_busy"]
+    });
+
+    app.screenFlow = "menu";
+    app.roundPresentation = {
+      phase: "idle",
+      busy: false,
+      selectedCardIndex: null
+    };
+    app.gameController = {
+      getViewModel: () => ({
+        status: "idle",
+        warActive: false
+      })
+    };
+
+    await app.refreshUpdateCoordinatorState();
+    assert.equal(app.getUpdateCoordinatorState().installAllowedNow, true);
+    assert.deepEqual(app.getUpdateCoordinatorState().blockedReasons, []);
+    assert.deepEqual(app.getUpdateDiagnostics(), {
+      lifecycleStatus: "deferred",
+      message: "Update install requested. Waiting for a safe restart window.",
+      error: null,
+      updateInfo: {
+        version: "dev-flow-1",
+        notes: "Mock downloaded update for renderer testing.",
+        mock: true
+      },
+      downloadProgress: {
+        percent: 100,
+        transferred: 1,
+        total: 1,
+        bytesPerSecond: 0,
+        mock: true
+      },
+      deferredUntilSafe: true,
+      restartRequested: true,
+      installAllowedNow: true,
+      blockedReasons: []
+    });
+
+    await app.devCancelDeferredUpdateInstall();
+    assert.equal(app.getUpdateCoordinatorState().lifecycleState.status, "downloaded");
+    assert.equal(app.getUpdateCoordinatorState().deferredUntilSafe, false);
+    assert.equal(app.getUpdateCoordinatorState().lifecycleState.restartRequested, false);
+    assert.equal(app.getUpdateCoordinatorState().installAllowedNow, false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: dev update lifecycle subscription updates coordinator from stateChanged events", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = createUpdateSafetyController();
+    app.screenFlow = "menu";
+    app.bindUpdateLifecycleUpdates();
+
+    await app.devSimulateDownloadedUpdate({ version: "subscription-flow-1" });
+
+    const coordinator = app.getUpdateCoordinatorState();
+    assert.equal(coordinator.lifecycleState.status, "downloaded");
+    assert.equal(coordinator.lifecycleState.updateInfo?.version, "subscription-flow-1");
+    assert.equal(coordinator.installAllowedNow, false);
+    assert.equal(coordinator.deferredUntilSafe, false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: manual update check calls the update API once and refreshes diagnostics safely in dev/unpackaged mode", async () => {
+  const originalWindow = globalThis.window;
+  const originalConsoleInfo = console.info;
+  const originalConsoleError = console.error;
+  const logs = [];
+  const errors = [];
+  const updateBridge = createMockUpdateBridge({
+    requestCheckResponses: [
+      {
+        status: "idle",
+        message: "Update checks are disabled in dev/unpackaged builds.",
+        error: null,
+        lastCheckedAt: "2026-05-06T12:10:00.000Z"
+      }
+    ]
+  });
+
+  try {
+    console.info = (...args) => logs.push(args);
+    console.error = (...args) => errors.push(args);
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = createUpdateSafetyController();
+    app.screenFlow = "menu";
+    app.bindUpdateLifecycleUpdates();
+
+    const coordinator = await app.requestManualUpdateCheck();
+    const diagnostics = app.getUpdateDiagnostics();
+
+    assert.equal(updateBridge.calls.requestCheck, 1);
+    assert.equal(updateBridge.calls.quitAndInstall, 0);
+    assert.equal(coordinator.lifecycleState.status, "idle");
+    assert.match(diagnostics.message, /disabled in dev\/unpackaged builds/i);
+    assert.equal(diagnostics.lifecycleStatus, "idle");
+    assert.equal(diagnostics.restartRequested, false);
+    assert.equal(diagnostics.deferredUntilSafe, false);
+    assert.equal(diagnostics.installAllowedNow, false);
+    assert.deepEqual(diagnostics.blockedReasons, []);
+    assert.equal(errors.length, 0);
+    assert.equal(logs.some((entry) => String(entry[0]).includes("[Updates][ManualCheck] requested")), true);
+    assert.equal(logs.some((entry) => String(entry[0]).includes("[Updates][ManualCheck] completed")), true);
+  } finally {
+    console.info = originalConsoleInfo;
+    console.error = originalConsoleError;
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: manual update check in packaged-style flow does not install or restart", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge({
+    requestCheckResponses: [
+      {
+        status: "checking",
+        message: "Checking for updates...",
+        error: null,
+        updateInfo: null,
+        downloadProgress: null,
+        lastCheckedAt: "2026-05-06T12:11:00.000Z"
+      }
+    ]
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = createUpdateSafetyController();
+    app.screenFlow = "menu";
+    app.bindUpdateLifecycleUpdates();
+
+    const coordinator = await app.requestManualUpdateCheck();
+    const diagnostics = app.getUpdateDiagnostics();
+
+    assert.equal(updateBridge.calls.requestCheck, 1);
+    assert.equal(updateBridge.calls.quitAndInstall, 0);
+    assert.equal(coordinator.lifecycleState.status, "checking");
+    assert.equal(diagnostics.lifecycleStatus, "checking");
+    assert.equal(diagnostics.message, "Checking for updates...");
+    assert.equal(diagnostics.error, null);
+    assert.equal(diagnostics.updateInfo, null);
+    assert.equal(diagnostics.downloadProgress, null);
+    assert.equal(diagnostics.restartRequested, false);
+    assert.equal(diagnostics.deferredUntilSafe, false);
+    assert.equal(diagnostics.installAllowedNow, false);
+    assert.deepEqual(diagnostics.blockedReasons, []);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
 
 test("gameController: AI selection is independent from player's current card", async () => {
   const originalWindow = globalThis.window;

@@ -24,6 +24,12 @@ import { getStoreViewForProfile } from "../../state/storeSystem.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS, renderMatchTauntHudContents } from "../ui/shared/playSurfaceShared.js";
+import { getUpdateSafetyState as buildUpdateSafetyState, isSafeForUpdateRestart as computeIsSafeForUpdateRestart } from "./updateSafety.js";
+import {
+  buildUpdateCoordinatorState,
+  buildUpdateDiagnosticsSnapshot,
+  refreshUpdateCoordinatorState as loadUpdateCoordinatorState
+} from "./updateCoordinator.js";
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
@@ -154,15 +160,17 @@ export class AppController {
     this.storeViewState = this.createDefaultStoreViewState();
     this.cosmeticsViewState = createDefaultCategoryViewState();
     this.presentedAchievementUnlockKeys = new Set();
-    this.roundPresentation = {
-      phase: "idle",
-      busy: false,
-      selectedCardIndex: null
-    };
-    this.screenFlow = "idle";
+      this.roundPresentation = {
+        phase: "idle",
+        busy: false,
+        selectedCardIndex: null
+      };
+      this.screenFlow = "idle";
+      this.updateCoordinatorState = buildUpdateCoordinatorState();
+      this.updateLifecycleUnsubscribe = null;
 
-    this.registerScreens();
-  }
+      this.registerScreens();
+    }
 
   resetDailyLoginAutoClaimGuard() {
     this.dailyLoginAutoClaimKey = null;
@@ -1350,6 +1358,103 @@ export class AppController {
       body,
       actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
     });
+  }
+
+  getUpdateSafetyState() {
+    return buildUpdateSafetyState(this);
+  }
+
+  isSafeForUpdateRestart() {
+    return computeIsSafeForUpdateRestart(this);
+  }
+
+  getUpdateCoordinatorState() {
+    return this.updateCoordinatorState;
+  }
+
+  getUpdateDiagnostics() {
+    return buildUpdateDiagnosticsSnapshot(this.updateCoordinatorState);
+  }
+
+  hasDevUpdateSimulationAccess() {
+    const updates = globalThis.window?.elemintz?.updates ?? null;
+    return Boolean(
+      updates?.devMarkDownloaded &&
+      updates?.requestInstallWhenSafe &&
+      updates?.cancelDeferredInstall
+    );
+  }
+
+  ensureDevUpdateSimulationAccess() {
+    if (!this.hasDevUpdateSimulationAccess()) {
+      throw new Error("Update dev simulation is unavailable in this build.");
+    }
+  }
+
+  async refreshUpdateCoordinatorState() {
+    this.updateCoordinatorState = await loadUpdateCoordinatorState(this);
+    return this.updateCoordinatorState;
+  }
+
+  bindUpdateLifecycleUpdates() {
+    if (this.updateLifecycleUnsubscribe || !globalThis.window?.elemintz?.updates?.onStateChanged) {
+      return;
+    }
+
+    this.updateLifecycleUnsubscribe = globalThis.window.elemintz.updates.onStateChanged((lifecycleState) => {
+      const safetyState = this.getUpdateSafetyState();
+      this.updateCoordinatorState = buildUpdateCoordinatorState({
+        lifecycleState,
+        safetyState
+      });
+
+      console.info("[Updates][Coordinator]", this.getUpdateDiagnostics());
+    });
+  }
+
+  async devSimulateDownloadedUpdate(payload = {}) {
+    this.ensureDevUpdateSimulationAccess();
+    await globalThis.window.elemintz.updates.devMarkDownloaded(payload);
+    return this.refreshUpdateCoordinatorState();
+  }
+
+  async devRequestInstallWhenSafe() {
+    this.ensureDevUpdateSimulationAccess();
+    await globalThis.window.elemintz.updates.requestInstallWhenSafe();
+    return this.refreshUpdateCoordinatorState();
+  }
+
+  async devCancelDeferredUpdateInstall() {
+    this.ensureDevUpdateSimulationAccess();
+    await globalThis.window.elemintz.updates.cancelDeferredInstall();
+    return this.refreshUpdateCoordinatorState();
+  }
+
+  async requestManualUpdateCheck() {
+    const updates = globalThis.window?.elemintz?.updates ?? null;
+    if (!updates?.requestCheck) {
+      throw new Error("Update checks are unavailable in this build.");
+    }
+
+    console.info("[Updates][ManualCheck] requested", {
+      before: this.getUpdateDiagnostics()
+    });
+
+    try {
+      await updates.requestCheck();
+      const nextState = await this.refreshUpdateCoordinatorState();
+      console.info("[Updates][ManualCheck] completed", {
+        after: this.getUpdateDiagnostics()
+      });
+      return nextState;
+    } catch (error) {
+      const nextState = await this.refreshUpdateCoordinatorState();
+      console.error("[Updates][ManualCheck] failed", {
+        message: String(error?.message ?? error ?? "Unknown update check failure."),
+        after: this.getUpdateDiagnostics()
+      });
+      return nextState;
+    }
   }
 
   buildOnlineEquippedCosmetics(profile = null) {
@@ -3645,6 +3750,8 @@ export class AppController {
         }
 
         this.bindOnlinePlayUpdates();
+        this.bindUpdateLifecycleUpdates();
+        await this.refreshUpdateCoordinatorState();
         this.settings = await window.elemintz.state.getSettings();
         await this.syncOnlinePlayState();
         restoreResult = await window.elemintz?.multiplayer?.restoreSession?.();

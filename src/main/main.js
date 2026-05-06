@@ -1,12 +1,17 @@
 import { app, BrowserWindow, ipcMain, session } from "electron";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { registerMultiplayerIpcHandlers } from "./ipc/multiplayerIpc.js";
 import { registerStateIpcHandlers } from "./ipc/stateIpc.js";
+import { registerUpdateIpcHandlers } from "./ipc/updateIpc.js";
+import { RUNTIME_PUBLISH_CONFIGURATION, hasRuntimePublishConfiguration } from "./updates/publishConfiguration.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
+const packageMetadata = require("../../package.json");
 
 function writeStartupLogLine({
   appDataPath,
@@ -150,6 +155,12 @@ app.whenReady().then(() => {
   registerStateIpcHandlers(ipcMain, {
     dataDir,
     getOnlineAuthorityState: () => multiplayerIpc?.client?.getState?.() ?? null
+  });
+  registerUpdateIpcHandlers(ipcMain, {
+    allowDevSimulation: !app.isPackaged,
+    isPackaged: app.isPackaged,
+    hasPublishConfiguration: hasRuntimePublishConfiguration(RUNTIME_PUBLISH_CONFIGURATION),
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
   });
 
   console.info("[Startup] Electron userData", {
