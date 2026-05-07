@@ -697,6 +697,31 @@ input[type="number"] {
   align-items: start;
 }
 
+.online-turn-timer-shell {
+  min-height: 1.4rem;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 6px;
+  pointer-events: none;
+}
+
+.online-turn-timer-shell.is-hidden {
+  visibility: hidden;
+}
+
+.online-turn-timer-label {
+  font-size: 0.82rem;
+  line-height: 1.2;
+  color: rgba(214, 233, 248, 0.74);
+  letter-spacing: 0.01em;
+  text-align: right;
+}
+
+.online-turn-timer-shell.is-low-time .online-turn-timer-label {
+  color: rgba(255, 214, 143, 0.94);
+}
+
 .match-status-panel.clash-winner-fire {
   box-shadow: inset 0 0 0 1px rgba(255, 126, 74, 0.2), 0 0 24px rgba(255, 126, 74, 0.12);
 }

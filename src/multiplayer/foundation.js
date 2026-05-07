@@ -3,7 +3,7 @@ import http from "node:http";
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 
-import { createRoomStore } from "./rooms.js";
+import { ONLINE_TURN_TIMER_DURATION_MS, createRoomStore } from "./rooms.js";
 import { createSessionStore } from "./sessionStore.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
@@ -13,6 +13,7 @@ const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
 const ROOM_CLEANUP_DELAY_MS = 30000;
 const ROOM_RECONNECT_TIMEOUT_MS = 60000;
+const ONLINE_TURN_TIMER_DURATION_MS_DEFAULT = ONLINE_TURN_TIMER_DURATION_MS;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 export const MULTIPLAYER_FOUNDATION_PHASE = 22;
@@ -609,6 +610,7 @@ export function createMultiplayerFoundation({
   roundResetDelayMs = ROUND_RESET_DELAY_MS,
   roomCleanupDelayMs = ROOM_CLEANUP_DELAY_MS,
   roomReconnectTimeoutMs = ROOM_RECONNECT_TIMEOUT_MS,
+  onlineTurnTimerDurationMs = ONLINE_TURN_TIMER_DURATION_MS_DEFAULT,
   disconnectTracker = null,
   rewardPersister = null,
   profileAuthority = null,
@@ -627,6 +629,7 @@ export function createMultiplayerFoundation({
     }
   });
   const roomResetTimers = new Map();
+  const roomTurnTimers = new Map();
   const roomCleanupTimers = new Map();
   const roomReconnectTimers = new Map();
   const roomSettlementTasks = new Map();
@@ -696,8 +699,100 @@ export function createMultiplayerFoundation({
     roomResetTimers.delete(roomCode);
   }
 
+  function clearTurnTimerSchedule(roomCode) {
+    if (!roomCode) {
+      return;
+    }
+
+    const existingTimer = roomTurnTimers.get(roomCode);
+    if (!existingTimer) {
+      return;
+    }
+
+    clearTimeout(existingTimer);
+    roomTurnTimers.delete(roomCode);
+  }
+
+  function clearRoomTurnTimer(roomCode, options = {}) {
+    clearTurnTimerSchedule(roomCode);
+    return roomStore.clearTurnTimer(roomCode, {
+      durationMs: onlineTurnTimerDurationMs,
+      ...options
+    });
+  }
+
+  async function handleRoomTurnTimerExpired(roomCode, expectedStepId) {
+    clearTurnTimerSchedule(roomCode);
+    const result = roomStore.expireTurnTimer(roomCode, { stepId: expectedStepId });
+    if (!result?.room) {
+      return;
+    }
+
+    if (!result.ok) {
+      if (result.room) {
+        io.to(result.room.roomCode).emit("room:update", result.room);
+      }
+      return;
+    }
+
+    if (result.room.matchComplete) {
+      const settledRoom = await settleCompletedMatchRewards(result.room);
+      result.room = settledRoom;
+      logMatchEvent(logger, "End", {
+        roomCode: settledRoom.roomCode,
+        winner: settledRoom.winner ?? "draw",
+        hostUsername: settledRoom.host?.username ?? null,
+        guestUsername: settledRoom.guest?.username ?? null,
+        winReason: settledRoom.winReason ?? null
+      });
+      if (result.roundResult) {
+        result.roundResult = {
+          ...result.roundResult,
+          ...(settledRoom.rewardSettlement ? { rewardSettlement: settledRoom.rewardSettlement } : {})
+        };
+      }
+    }
+
+    const authoritativeRoundResult = resolveRound(result.room, result.roundResult);
+    io.to(result.room.roomCode).emit("room:moveSync", result.room);
+    if (result.roundResult) {
+      io.to(result.room.roomCode).emit("room:roundResult", result.roundResult);
+      if (authoritativeRoundResult) {
+        io.to(result.room.roomCode).emit("room:serverRoundResult", authoritativeRoundResult);
+      }
+      if (!result.room.matchComplete) {
+        scheduleRoundReset(result.room.roomCode, {
+          clearWarState: result.roundResult.outcomeType === "war_resolved"
+        });
+      }
+    } else {
+      io.to(result.room.roomCode).emit("room:update", result.room);
+    }
+  }
+
+  function ensureRoomTurnTimer(roomCode) {
+    clearTurnTimerSchedule(roomCode);
+    const activation = roomStore.activateTurnTimer(roomCode, {
+      durationMs: onlineTurnTimerDurationMs
+    });
+
+    if (!activation?.ok || !activation.room?.serverMatchState?.turnTimer?.active) {
+      return activation?.room ?? null;
+    }
+
+    const turnTimer = activation.room.serverMatchState.turnTimer;
+    const delayMs = Math.max(0, Date.parse(turnTimer.expiresAt ?? "") - Date.now());
+    const timerId = setTimeout(() => {
+      void handleRoomTurnTimerExpired(roomCode, turnTimer.stepId);
+    }, delayMs);
+    timerId.unref?.();
+    roomTurnTimers.set(roomCode, timerId);
+    return activation.room;
+  }
+
   function scheduleRoundReset(roomCode, { clearWarState = false } = {}) {
     clearRoundReset(roomCode);
+    clearTurnTimerSchedule(roomCode);
     logger.info("[OnlinePlay][Server] scheduling round reset", {
       roomCode,
       delayMs: roundResetDelayMs,
@@ -710,12 +805,13 @@ export function createMultiplayerFoundation({
       if (!resetRoom) {
         return;
       }
+      const timedRoom = ensureRoomTurnTimer(resetRoom.roomCode) ?? resetRoom;
 
       logger.info("[OnlinePlay][Server] round reset for next turn", {
-        roomCode: resetRoom.roomCode,
-        moveSync: resetRoom.moveSync
+        roomCode: timedRoom.roomCode,
+        moveSync: timedRoom.moveSync
       });
-      io.to(resetRoom.roomCode).emit("room:moveSync", resetRoom);
+      io.to(timedRoom.roomCode).emit("room:moveSync", timedRoom);
     }, roundResetDelayMs);
 
     timerId.unref?.();
@@ -1177,21 +1273,25 @@ export function createMultiplayerFoundation({
             clearWarState: result.room.lastOutcomeType === "war_resolved"
           });
         }
-        socket.emit("room:joined", result.room);
-        socket.to(result.room.roomCode).emit("room:update", result.room);
+        const roomWithTimer =
+          result.room.status === "full" && !result.room.matchComplete && !result.room.moveSync?.bothSubmitted
+            ? ensureRoomTurnTimer(result.room.roomCode) ?? result.room
+            : clearRoomTurnTimer(result.room.roomCode) ?? result.room;
+        socket.emit("room:joined", roomWithTimer);
+        socket.to(roomWithTimer.roomCode).emit("room:update", roomWithTimer);
         logRoomEvent(logger, result.reconnected ? "Player rejoined room" : "Player joined room", {
-          roomCode: result.room.roomCode,
+          roomCode: roomWithTimer.roomCode,
           username: sessionResult.session?.username ?? result.room.guest?.username ?? null,
-          hostUsername: result.room.host?.username ?? null,
-          guestUsername: result.room.guest?.username ?? null,
-          status: result.room.status,
+          hostUsername: roomWithTimer.host?.username ?? null,
+          guestUsername: roomWithTimer.guest?.username ?? null,
+          status: roomWithTimer.status,
           sessionId: sessionResult.session?.sessionId ?? null
         });
-        if (result.room.status === "full" && Array.isArray(result.room.roundHistory) && result.room.roundHistory.length === 0) {
+        if (roomWithTimer.status === "full" && Array.isArray(roomWithTimer.roundHistory) && roomWithTimer.roundHistory.length === 0) {
           logMatchEvent(logger, "Start", {
-            roomCode: result.room.roomCode,
-            hostUsername: result.room.host?.username ?? null,
-            guestUsername: result.room.guest?.username ?? null
+            roomCode: roomWithTimer.roomCode,
+            hostUsername: roomWithTimer.host?.username ?? null,
+            guestUsername: roomWithTimer.guest?.username ?? null
           });
         }
       })();
@@ -1345,6 +1445,13 @@ export function createMultiplayerFoundation({
         return;
       }
 
+      if (result.roundResult) {
+        clearTurnTimerSchedule(result.room.roomCode);
+      } else if (result.room?.serverMatchState?.turnTimer?.active) {
+        ensureRoomTurnTimer(result.room.roomCode);
+        result.room = roomStore.getRoom(result.room.roomCode) ?? result.room;
+      }
+
       if (result.room?.matchComplete) {
         const settledRoom = await settleCompletedMatchRewards(result.room);
         result.room = settledRoom;
@@ -1405,7 +1512,12 @@ export function createMultiplayerFoundation({
       }
 
       clearRoundReset(result.room.roomCode);
-      io.to(result.room.roomCode).emit("room:update", result.room);
+      clearTurnTimerSchedule(result.room.roomCode);
+      const roomWithTimer =
+        result.room.status === "full" && !result.room.matchComplete
+          ? ensureRoomTurnTimer(result.room.roomCode) ?? result.room
+          : result.room;
+      io.to(roomWithTimer.roomCode).emit("room:update", roomWithTimer);
     });
 
     socket.on("profile:get", async (payload = {}, respond = () => {}) => {
@@ -2364,6 +2476,7 @@ export function createMultiplayerFoundation({
       sessionStore.disconnectSocket(socket.id);
       const roomResult = roomStore.removeSocket(socket.id);
       clearRoundReset(roomResult.removedRoomCode ?? roomResult.room?.roomCode ?? null);
+      clearTurnTimerSchedule(roomResult.removedRoomCode ?? roomResult.room?.roomCode ?? null);
       void (async () => {
         let nextRoom = roomResult.room;
 
@@ -2444,6 +2557,9 @@ export function createMultiplayerFoundation({
       io.removeAllListeners();
       for (const roomCode of roomResetTimers.keys()) {
         clearRoundReset(roomCode);
+      }
+      for (const roomCode of roomTurnTimers.keys()) {
+        clearTurnTimerSchedule(roomCode);
       }
       for (const roomCode of roomCleanupTimers.keys()) {
         clearRoomCleanup(roomCode);

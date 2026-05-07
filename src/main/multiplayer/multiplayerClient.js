@@ -77,6 +77,15 @@ function cloneServerMatchState(matchState) {
               guestMove: matchState.lastResolvedOutcome.guestMove ?? null
             }
           : null,
+        turnTimer: matchState.turnTimer
+          ? {
+              active: Boolean(matchState.turnTimer.active),
+              stepId: matchState.turnTimer.stepId ?? null,
+              durationMs: Number(matchState.turnTimer.durationMs ?? 20000),
+              startedAt: matchState.turnTimer.startedAt ?? null,
+              expiresAt: matchState.turnTimer.expiresAt ?? null
+            }
+          : null,
         turnState: matchState.turnState
           ? {
               waitingOn: Array.isArray(matchState.turnState.waitingOn)

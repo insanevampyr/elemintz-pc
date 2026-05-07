@@ -11380,14 +11380,13 @@ test("ui: online play screen renders war resolved result from player perspective
   assert.match(html, /Changed:<\/strong> The WAR pile was awarded and the round score has been updated\./);
 });
 
-test("ui: online play screen no longer renders a client-side turn timer label", () => {
+test("ui: online play screen renders a server-authoritative turn timer label in the status panel", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "ABC123",
     onlineTurnTimer: {
       visible: true,
-      label: "20s",
-      secondsLeft: 20,
+      label: "Time to choose: 20s",
       lowTime: false
     },
     multiplayer: {
@@ -11436,14 +11435,24 @@ test("ui: online play screen no longer renders a client-side turn timer label", 
           submittedCount: 0,
           bothSubmitted: false,
           updatedAt: null
+        },
+        serverMatchState: {
+          turnTimer: {
+            active: true,
+            stepId: "ABC123:match:1:round:1:step:round:warDepth:0",
+            durationMs: 20000,
+            startedAt: "2026-05-07T12:00:00.000Z",
+            expiresAt: "2026-05-07T12:00:20.000Z"
+          }
         }
       }
     },
     actions: {}
   });
 
-  assert.doesNotMatch(html, /Time to choose:/);
-  assert.doesNotMatch(html, /data-online-turn-timer-label=/);
+  assert.match(html, /Time to choose: 20s/);
+  assert.match(html, /data-online-turn-timer-label="true"/);
+  assert.match(html, /data-online-turn-timer-shell="true"/);
 });
 
 test("ui: online play screen bind delegates move button clicks to submitMove", async () => {

@@ -146,6 +146,7 @@ export class AppController {
     this.onlineReconnectReminder = null;
     this.onlineReconnectReminderDismissedKey = null;
     this.onlineReconnectUiTimerId = null;
+    this.onlineTurnTimerUiId = null;
     this.onlineMoveSubmitPromise = null;
     this.matchTaunts = [];
     this.matchTauntPanelOpen = false;
@@ -759,6 +760,13 @@ export class AppController {
     }
   }
 
+  clearOnlineTurnTimerUi() {
+    if (this.onlineTurnTimerUiId) {
+      clearInterval(this.onlineTurnTimerUiId);
+      this.onlineTurnTimerUiId = null;
+    }
+  }
+
   getOnlineRoleLabelFromState(state = this.onlinePlayState) {
     const room = state?.room ?? null;
     const socketId = state?.socketId ?? null;
@@ -853,6 +861,85 @@ export class AppController {
     }
 
     return this.getOnlineSelectableElementsFromState(state).length > 0;
+  }
+
+  getOnlineTurnTimerViewState(state = this.onlinePlayState, now = Date.now()) {
+    const room = state?.room ?? null;
+    const sync = this.getOnlineMoveSyncFromState(state);
+    const turnTimer = room?.serverMatchState?.turnTimer ?? null;
+
+    if (
+      String(state?.connectionStatus ?? "").trim().toLowerCase() !== "connected" ||
+      !room ||
+      room.status !== "full" ||
+      room.matchComplete ||
+      room.disconnectState?.active ||
+      !turnTimer?.active ||
+      !turnTimer?.expiresAt ||
+      sync?.ownSubmitted ||
+      sync?.bothSubmitted ||
+      this.getOnlineSelectableElementsFromState(state).length === 0
+    ) {
+      return {
+        visible: false,
+        label: "",
+        lowTime: false
+      };
+    }
+
+    const expiresAtMs = Date.parse(turnTimer.expiresAt);
+    if (!Number.isFinite(expiresAtMs)) {
+      return {
+        visible: false,
+        label: "",
+        lowTime: false
+      };
+    }
+
+    const secondsRemaining = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
+    return {
+      visible: true,
+      label: `Time to choose: ${String(secondsRemaining).padStart(2, "0")}s`,
+      lowTime: secondsRemaining <= 5
+    };
+  }
+
+  syncOnlineTurnTimerUi() {
+    const shell = globalThis.document?.querySelector?.("[data-online-turn-timer-shell='true']");
+    const label = globalThis.document?.querySelector?.("[data-online-turn-timer-label='true']");
+    if (!shell || !label) {
+      return false;
+    }
+
+    const timerView = this.getOnlineTurnTimerViewState();
+    shell.classList.toggle("is-hidden", !timerView.visible);
+    shell.classList.toggle("is-low-time", Boolean(timerView.lowTime && timerView.visible));
+    label.textContent = timerView.visible ? timerView.label : "";
+    return timerView.visible;
+  }
+
+  ensureOnlineTurnTimerUi() {
+    if (this.screenFlow !== "onlinePlay") {
+      this.clearOnlineTurnTimerUi();
+      return;
+    }
+
+    const visible = this.syncOnlineTurnTimerUi();
+    if (!visible) {
+      this.clearOnlineTurnTimerUi();
+      return;
+    }
+
+    if (this.onlineTurnTimerUiId) {
+      return;
+    }
+
+    this.onlineTurnTimerUiId = setInterval(() => {
+      if (!this.syncOnlineTurnTimerUi()) {
+        this.clearOnlineTurnTimerUi();
+      }
+    }, 250);
+    this.onlineTurnTimerUiId?.unref?.();
   }
 
   async submitOnlineMove(move, { source = "manual" } = {}) {
@@ -1337,6 +1424,7 @@ export class AppController {
 
   clearTransientUiBeforeScreenTransition({ preserveModal = false } = {}) {
     this.clearMatchTauntUiTimer();
+    this.clearOnlineTurnTimerUi();
     if (preserveModal) {
       return false;
     }
@@ -3513,6 +3601,7 @@ export class AppController {
     const tauntHud = this.getCurrentTauntHudState();
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
+      onlineTurnTimer: this.getOnlineTurnTimerViewState(),
       formattedErrorMessage: this.formatPlayerFacingMultiplayerError(this.onlinePlayState?.lastError, ""),
       onlineChallengeSummary: this.onlinePlayChallengeSummary,
       profile: this.profile,
@@ -3587,6 +3676,7 @@ export class AppController {
         }
       }
     });
+    this.ensureOnlineTurnTimerUi();
     this.ensureMatchTauntUiTimer();
   }
 

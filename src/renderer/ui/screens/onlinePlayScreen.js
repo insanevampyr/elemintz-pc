@@ -436,7 +436,14 @@ function renderSharedBattleResultPanel(battleResultView) {
   `;
 }
 
-function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLabel, roomLifecycle) {
+function renderOnlineLiveBoard(
+  boardView,
+  roomStateView,
+  matchStatus,
+  moveSyncLabel,
+  roomLifecycle,
+  onlineTurnTimer
+) {
   const battleResultView = boardView.battleResultView ?? null;
   const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
   const localCardBackRarity = getCardBackRarity(boardView.localIdentity.cardBackId);
@@ -483,6 +490,15 @@ function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLa
       </article>
 
       <article class="panel match-status-panel online-play-status-panel">
+        <div
+          class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
+          data-online-turn-timer-shell="true"
+          aria-live="polite"
+        >
+          <span class="online-turn-timer-label" data-online-turn-timer-label="true">
+            ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
+          </span>
+        </div>
         <div class="status-meta">
           <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
             <strong>${escapeHtml(roomStateView.label)}</strong>
@@ -979,6 +995,7 @@ export const onlinePlayScreen = {
   const roomStateView = deriveRoomStateView(context);
   const battleResultView = deriveSharedBattleResultView(context);
   const connectionBanner = deriveConnectionBannerView(context);
+    const onlineTurnTimer = context.onlineTurnTimer ?? { visible: false, label: "", lowTime: false };
     const joinCode = escapeHtml(context.joinCode ?? "");
     const isBusy = multiplayer?.connectionStatus === "connecting";
     const errorMessage = String(context.formattedErrorMessage ?? "").trim()
@@ -1080,7 +1097,8 @@ export const onlinePlayScreen = {
                     roomStateView,
                     matchStatus,
                     moveSyncLabel,
-                    roomLifecycle
+                    roomLifecycle,
+                    onlineTurnTimer
                   )
                 : ""
             }

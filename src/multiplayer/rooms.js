@@ -36,6 +36,7 @@ const MATCH_TAUNT_PRESETS = Object.freeze([
 const ROOM_TAUNT_HISTORY_LIMIT = 8;
 const MAX_USERNAME_LENGTH = 32;
 const MAX_COSMETIC_ID_LENGTH = 128;
+export const ONLINE_TURN_TIMER_DURATION_MS = 20000;
 
 function randomChar(source, random) {
   const index = Math.floor(random() * source.length);
@@ -560,6 +561,43 @@ function buildServerResolutionStepId(
   ].join(":");
 }
 
+function createInactiveTurnTimerState(stepId = null, durationMs = ONLINE_TURN_TIMER_DURATION_MS) {
+  return {
+    active: false,
+    stepId: stepId ?? null,
+    durationMs,
+    startedAt: null,
+    expiresAt: null
+  };
+}
+
+function cloneTurnTimerState(turnTimer, fallbackStepId = null) {
+  const durationMs = Math.max(
+    0,
+    safeRuntimeCount(turnTimer?.durationMs, ONLINE_TURN_TIMER_DURATION_MS)
+  ) || ONLINE_TURN_TIMER_DURATION_MS;
+
+  return {
+    active: Boolean(turnTimer?.active),
+    stepId: String(turnTimer?.stepId ?? fallbackStepId ?? "").trim() || null,
+    durationMs,
+    startedAt: turnTimer?.startedAt ?? null,
+    expiresAt: turnTimer?.expiresAt ?? null
+  };
+}
+
+function setRoomTurnTimer(room, turnTimer) {
+  room.turnTimer = cloneTurnTimerState(turnTimer, buildServerResolutionStepId(room));
+  return room.turnTimer;
+}
+
+function clearRoomTurnTimer(room, {
+  stepId = buildServerResolutionStepId(room),
+  durationMs = room?.turnTimer?.durationMs ?? ONLINE_TURN_TIMER_DURATION_MS
+} = {}) {
+  return setRoomTurnTimer(room, createInactiveTurnTimerState(stepId, durationMs));
+}
+
 function buildServerTurnState(room) {
   const waitingOn = [];
   const lockedIn = [];
@@ -690,6 +728,7 @@ function deriveServerMatchStatus(room) {
 
 function buildServerMatchState(room) {
   const turnState = buildServerTurnState(room);
+  const activeStepId = buildServerResolutionStepId(room);
   return {
     roomCode: room?.roomCode ?? null,
     matchId: buildServerMatchId(room),
@@ -699,7 +738,7 @@ function buildServerMatchState(room) {
     },
     currentRound: Math.max(1, safeRuntimeCount(room?.roundNumber, 1)),
     activeStep: {
-      id: buildServerResolutionStepId(room),
+      id: activeStepId,
       round: Math.max(1, safeRuntimeCount(room?.roundNumber, 1)),
       type: room?.warActive ? "war" : "round",
       warDepth: room?.warActive ? Math.max(1, safeRuntimeCount(room?.warDepth, 0)) : 0,
@@ -729,6 +768,7 @@ function buildServerMatchState(room) {
     },
     matchStatus: deriveServerMatchStatus(room),
     lastResolvedOutcome: buildLastResolvedOutcome(room),
+    turnTimer: cloneTurnTimerState(room?.turnTimer, activeStepId),
     turnState
   };
 }
@@ -835,6 +875,7 @@ function resetMoveState(room) {
   room.moves = createEmptyMoveState();
   room.latestRoundResult = createEmptyRoundResult();
   guards.lastAppliedRoundSignature = null;
+  clearRoomTurnTimer(room);
   syncServerMatchState(room);
 }
 
@@ -1594,6 +1635,100 @@ function resolvePendingRound(room) {
   return applyRoundToMatchState(room, buildRoundResult(room));
 }
 
+function getHandKeyForRole(role) {
+  return role === "host" ? "hostHand" : role === "guest" ? "guestHand" : null;
+}
+
+function getMoveKeyForRole(role) {
+  return role === "host" ? "hostMove" : role === "guest" ? "guestMove" : null;
+}
+
+function getLegalMovesForRole(room, role) {
+  const handKey = getHandKeyForRole(role);
+  if (!handKey) {
+    return [];
+  }
+
+  return Object.keys(INITIAL_HAND_COUNTS).filter(
+    (element) => safeRuntimeCount(room?.[handKey]?.[element], 0) > 0
+  );
+}
+
+function chooseLegalTimeoutMove(room, role) {
+  return getLegalMovesForRole(room, role)[0] ?? null;
+}
+
+function applyMoveForRole(room, role, moveInput) {
+  const moveKey = getMoveKeyForRole(role);
+  const handKey = getHandKeyForRole(role);
+  const move = String(moveInput ?? "").trim().toLowerCase();
+
+  if (!moveKey || !handKey) {
+    return {
+      ok: false,
+      error: {
+        code: "ROOM_PLAYER_NOT_FOUND",
+        message: "This room player slot is unavailable."
+      }
+    };
+  }
+
+  if (!Object.hasOwn(INITIAL_HAND_COUNTS, move)) {
+    return {
+      ok: false,
+      error: {
+        code: "MOVE_INVALID",
+        message: "Move selection is required."
+      }
+    };
+  }
+
+  if (room.moves[moveKey] !== null) {
+    return {
+      ok: false,
+      error: {
+        code: "MOVE_ALREADY_SUBMITTED",
+        message: "This player already submitted a move."
+      }
+    };
+  }
+
+  if (safeRuntimeCount(room?.[handKey]?.[move], 0) <= 0) {
+    return {
+      ok: false,
+      error: {
+        code: "ILLEGAL_MOVE_NOT_IN_HAND",
+        message: "That element is no longer available in this hand."
+      }
+    };
+  }
+
+  room[handKey][move] -= 1;
+  room.moves[moveKey] = move;
+  room.moves.updatedAt = new Date().toISOString();
+
+  return {
+    ok: true,
+    move
+  };
+}
+
+function buildResolvedSubmitResult(room, resolvedRoundResult) {
+  if (!resolvedRoundResult) {
+    return null;
+  }
+
+  const rewardSettlement = cloneRewardSettlement(room);
+  return {
+    ...resolvedRoundResult,
+    matchComplete: room.matchComplete,
+    winner: room.winner,
+    winReason: room.winReason,
+    rematch: { ...room.rematch },
+    ...(rewardSettlement ? { rewardSettlement } : {})
+  };
+}
+
 function cloneRoom(room) {
   const serverMatchState = syncServerMatchState(room);
   const rewardSettlement = cloneRewardSettlement(room);
@@ -1662,6 +1797,9 @@ function cloneRoom(room) {
           lastResolvedOutcome: serverMatchState.lastResolvedOutcome
             ? { ...serverMatchState.lastResolvedOutcome }
             : null,
+          turnTimer: serverMatchState.turnTimer
+            ? { ...serverMatchState.turnTimer }
+            : null,
           turnState: {
             waitingOn: Array.isArray(serverMatchState.turnState?.waitingOn)
               ? [...serverMatchState.turnState.waitingOn]
@@ -1724,7 +1862,8 @@ export function createRoomStore({ random = Math.random } = {}) {
         ...createInitialHandState(),
         ...createInitialWarState(),
         moves: createEmptyMoveState(),
-        latestRoundResult: createEmptyRoundResult()
+        latestRoundResult: createEmptyRoundResult(),
+        turnTimer: createInactiveTurnTimerState()
       };
       syncServerMatchState(room);
 
@@ -2083,6 +2222,216 @@ export function createRoomStore({ random = Math.random } = {}) {
       return room ? cloneRoom(room) : null;
     },
 
+    activateTurnTimer(roomCodeInput, {
+      durationMs = ONLINE_TURN_TIMER_DURATION_MS,
+      startedAt = new Date().toISOString()
+    } = {}) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return {
+          ok: false,
+          reason: "room_not_found",
+          room: null
+        };
+      }
+
+      syncServerMatchState(room);
+      const activeStepId = room.serverMatchState?.activeStep?.id ?? buildServerResolutionStepId(room);
+      const turnState = room.serverMatchState?.turnState ?? buildServerTurnState(room);
+      const normalizedDurationMs =
+        Math.max(0, safeRuntimeCount(durationMs, ONLINE_TURN_TIMER_DURATION_MS)) ||
+        ONLINE_TURN_TIMER_DURATION_MS;
+
+      const missingRoles = turnState.waitingOn.filter((role) =>
+        getLegalMovesForRole(room, role).length > 0
+      );
+
+      if (
+        room.status !== "full" ||
+        !room.host ||
+        !room.guest ||
+        !room.host.connected ||
+        !room.guest.connected ||
+        room.matchComplete ||
+        room.status === "paused" ||
+        room.status === "closing" ||
+        room.status === "expired" ||
+        turnState.resolutionReady ||
+        missingRoles.length === 0
+      ) {
+        clearRoomTurnTimer(room, {
+          stepId: activeStepId,
+          durationMs: normalizedDurationMs
+        });
+        return {
+          ok: false,
+          reason: "not_playable",
+          room: cloneRoom(room)
+        };
+      }
+
+      if (
+        room.turnTimer?.active &&
+        room.turnTimer?.stepId === activeStepId &&
+        room.turnTimer?.expiresAt
+      ) {
+        syncServerMatchState(room);
+        return {
+          ok: true,
+          reused: true,
+          room: cloneRoom(room)
+        };
+      }
+
+      const startedAtMs = Date.parse(startedAt);
+      const safeStartedAt = Number.isFinite(startedAtMs) ? new Date(startedAtMs).toISOString() : new Date().toISOString();
+      const expiresAt = new Date(Date.parse(safeStartedAt) + normalizedDurationMs).toISOString();
+
+      setRoomTurnTimer(room, {
+        active: true,
+        stepId: activeStepId,
+        durationMs: normalizedDurationMs,
+        startedAt: safeStartedAt,
+        expiresAt
+      });
+      syncServerMatchState(room);
+
+      return {
+        ok: true,
+        reused: false,
+        room: cloneRoom(room)
+      };
+    },
+
+    clearTurnTimer(roomCodeInput, {
+      stepId = null,
+      durationMs = ONLINE_TURN_TIMER_DURATION_MS
+    } = {}) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return null;
+      }
+
+      clearRoomTurnTimer(room, {
+        stepId: stepId ?? buildServerResolutionStepId(room),
+        durationMs
+      });
+      syncServerMatchState(room);
+      return cloneRoom(room);
+    },
+
+    expireTurnTimer(roomCodeInput, {
+      stepId = null
+    } = {}) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return {
+          ok: false,
+          reason: "room_not_found",
+          room: null,
+          roundResult: null
+        };
+      }
+
+      syncServerMatchState(room);
+      const activeStepId = room.serverMatchState?.activeStep?.id ?? buildServerResolutionStepId(room);
+      const expectedStepId = String(stepId ?? room.turnTimer?.stepId ?? "").trim() || null;
+
+      if (
+        room.status !== "full" ||
+        !room.host ||
+        !room.guest ||
+        !room.host.connected ||
+        !room.guest.connected ||
+        room.matchComplete ||
+        room.status === "paused" ||
+        room.status === "closing" ||
+        room.status === "expired" ||
+        !room.turnTimer?.active ||
+        !expectedStepId ||
+        expectedStepId !== activeStepId
+      ) {
+        clearRoomTurnTimer(room, { stepId: activeStepId });
+        syncServerMatchState(room);
+        return {
+          ok: false,
+          reason: "stale_or_unavailable",
+          room: cloneRoom(room),
+          roundResult: null
+        };
+      }
+
+      const missingRoles = ["host", "guest"].filter((role) => room.moves[getMoveKeyForRole(role)] === null);
+      if (missingRoles.length === 0) {
+        clearRoomTurnTimer(room, { stepId: activeStepId });
+        syncServerMatchState(room);
+        return {
+          ok: false,
+          reason: "no_missing_moves",
+          room: cloneRoom(room),
+          roundResult: null
+        };
+      }
+
+      const autoPickedMoves = {};
+      for (const role of missingRoles) {
+        const legalMove = chooseLegalTimeoutMove(room, role);
+        if (!legalMove) {
+          console.warn("[OnlinePlay][Server] turn timer expired without a legal move", {
+            roomCode,
+            role,
+            stepId: activeStepId
+          });
+          clearRoomTurnTimer(room, { stepId: activeStepId });
+          syncServerMatchState(room);
+          return {
+            ok: false,
+            reason: "no_legal_move",
+            room: cloneRoom(room),
+            roundResult: null
+          };
+        }
+
+        const appliedMove = applyMoveForRole(room, role, legalMove);
+        if (!appliedMove.ok) {
+          clearRoomTurnTimer(room, { stepId: activeStepId });
+          syncServerMatchState(room);
+          return {
+            ok: false,
+            reason: "auto_submit_failed",
+            room: cloneRoom(room),
+            roundResult: null,
+            error: appliedMove.error
+          };
+        }
+
+        autoPickedMoves[role] = appliedMove.move;
+      }
+
+      syncServerMatchState(room);
+      const resolvedRoundResult = resolvePendingRound(room);
+      if (resolvedRoundResult) {
+        updateMatchCompletion(room);
+      }
+      clearRoomTurnTimer(room, { stepId: buildServerResolutionStepId(room) });
+      syncServerMatchState(room);
+
+      const responseRoundResult = buildResolvedSubmitResult(room, resolvedRoundResult);
+      if (responseRoundResult) {
+        room.latestRoundResult = responseRoundResult;
+      }
+
+      return {
+        ok: true,
+        room: cloneRoom(room),
+        roundResult: responseRoundResult,
+        autoPickedMoves
+      };
+    },
+
     submitMove(socketId, moveInput) {
       const room = getRoomBySocket(socketId);
       if (!room) {
@@ -2216,19 +2565,13 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
-      if (!handKey || Number(room[handKey]?.[move] ?? 0) <= 0) {
+      const appliedMove = applyMoveForRole(room, moveKey === "hostMove" ? "host" : "guest", move);
+      if (!appliedMove.ok) {
         return {
           ok: false,
-          error: {
-            code: "ILLEGAL_MOVE_NOT_IN_HAND",
-            message: "That element is no longer available in this hand."
-          }
+          error: appliedMove.error
         };
       }
-
-      room[handKey][move] -= 1;
-      room.moves[moveKey] = move;
-      room.moves.updatedAt = new Date().toISOString();
 
       if (
         room.guest?.bot &&
@@ -2247,29 +2590,26 @@ export function createRoomStore({ random = Math.random } = {}) {
           };
         }
 
-        room.guestHand[botMove] -= 1;
-        room.moves.guestMove = botMove;
-        room.moves.updatedAt = new Date().toISOString();
+        const appliedBotMove = applyMoveForRole(room, "guest", botMove);
+        if (!appliedBotMove.ok) {
+          return {
+            ok: false,
+            error: appliedBotMove.error
+          };
+        }
       }
 
       syncServerMatchState(room);
       const resolvedRoundResult = resolvePendingRound(room);
       if (resolvedRoundResult) {
         updateMatchCompletion(room);
-        syncServerMatchState(room);
       }
-      let responseRoundResult = null;
       if (resolvedRoundResult) {
-        const rewardSettlement = cloneRewardSettlement(room);
-        responseRoundResult = {
-          ...resolvedRoundResult,
-          matchComplete: room.matchComplete,
-          winner: room.winner,
-          winReason: room.winReason,
-          rematch: { ...room.rematch },
-          ...(rewardSettlement ? { rewardSettlement } : {})
-        };
-
+        clearRoomTurnTimer(room, { stepId: buildServerResolutionStepId(room) });
+      }
+      syncServerMatchState(room);
+      const responseRoundResult = buildResolvedSubmitResult(room, resolvedRoundResult);
+      if (responseRoundResult) {
         if (isLocalAuthorityRoom(room)) {
           resetMoveState(room);
         } else {

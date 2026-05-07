@@ -52,7 +52,14 @@ function createAuthoritativeMatchState({
   matchId = `${roomCode}:match:1`,
   currentRound = 1,
   activeStepId = `${matchId}:round:${currentRound}:step:round:warDepth:0`,
-  lastResolvedOutcome = null
+  lastResolvedOutcome = null,
+  turnTimer = {
+    active: false,
+    stepId: activeStepId,
+    durationMs: 20000,
+    startedAt: null,
+    expiresAt: null
+  }
 } = {}) {
   return {
     roomCode,
@@ -83,6 +90,7 @@ function createAuthoritativeMatchState({
     },
     matchStatus: "active",
     lastResolvedOutcome,
+    turnTimer,
     turnState: {
       waitingOn: ["host", "guest"],
       lockedIn: [],

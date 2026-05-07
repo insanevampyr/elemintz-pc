@@ -2381,6 +2381,13 @@ test("multiplayer rooms: room creation returns a short waiting room", async () =
       },
       matchStatus: "waiting",
       lastResolvedOutcome: null,
+      turnTimer: {
+        active: false,
+        stepId: `${room.roomCode}:match:1:round:1:step:round:warDepth:0`,
+        durationMs: 20000,
+        startedAt: null,
+        expiresAt: null
+      },
       turnState: {
         waitingOn: ["host", "guest"],
         lockedIn: [],
@@ -2393,8 +2400,12 @@ test("multiplayer rooms: room creation returns a short waiting room", async () =
   }
 });
 
-test("multiplayer rooms: room join succeeds and notifies both players", async () => {
-  const foundation = createMultiplayerFoundation({ port: 0, logger: { info: () => {} } });
+test("multiplayer rooms: room join succeeds, notifies both players, and starts the authoritative turn timer", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    onlineTurnTimerDurationMs: 20000
+  });
   let host = null;
   let guest = null;
 
@@ -2447,6 +2458,14 @@ test("multiplayer rooms: room join succeeds and notifies both players", async ()
       bothSubmitted: false,
       updatedAt: null
     });
+    assert.equal(joinedRoom.serverMatchState?.turnTimer?.active, true);
+    assert.equal(
+      joinedRoom.serverMatchState?.turnTimer?.stepId,
+      `${createdRoom.roomCode}:match:1:round:1:step:round:warDepth:0`
+    );
+    assert.equal(joinedRoom.serverMatchState?.turnTimer?.durationMs, 20000);
+    assert.equal(hostUpdate.serverMatchState?.turnTimer?.stepId, joinedRoom.serverMatchState?.turnTimer?.stepId);
+    assert.equal(hostUpdate.serverMatchState?.turnTimer?.expiresAt, joinedRoom.serverMatchState?.turnTimer?.expiresAt);
     assert.deepEqual(hostUpdate, joinedRoom);
     assert.equal(guestReceivedRedundantUpdate, false);
   } finally {
@@ -2566,6 +2585,13 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
       },
       matchStatus: "active",
       lastResolvedOutcome: null,
+      turnTimer: {
+        active: true,
+        stepId: `${room.roomCode}:match:1:round:1:step:round:warDepth:0`,
+        durationMs: 20000,
+        startedAt: hostMoveSync.serverMatchState.turnTimer.startedAt,
+        expiresAt: hostMoveSync.serverMatchState.turnTimer.expiresAt
+      },
       turnState: {
         waitingOn: ["guest"],
         lockedIn: ["host"],
@@ -2603,6 +2629,7 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
     assert.equal(hostBothSync.warActive, false);
     assert.equal(hostBothSync.warDepth, 0);
     assert.deepEqual(hostBothSync.warRounds, []);
+    assert.equal(hostBothSync.serverMatchState?.turnTimer?.active, false);
     assert.deepEqual(guestBothSync, hostBothSync);
     assert.deepEqual(hostRoundResult, {
       roomCode: room.roomCode,
@@ -2612,6 +2639,8 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
       outcomeType: "resolved",
       hostScore: 0,
       guestScore: 1,
+      capturedCards: 2,
+      capturedOpponentCards: 1,
       roundNumber: 2,
       lastOutcomeType: "resolved",
       matchComplete: false,
@@ -2673,7 +2702,104 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
     assert.equal(hostResetSync.warActive, false);
     assert.equal(hostResetSync.warDepth, 0);
     assert.deepEqual(hostResetSync.warRounds, []);
+    assert.equal(hostResetSync.serverMatchState?.turnTimer?.active, true);
+    assert.equal(
+      hostResetSync.serverMatchState?.turnTimer?.stepId,
+      `${room.roomCode}:match:1:round:2:step:round:warDepth:0`
+    );
     assert.deepEqual(guestResetSync, hostResetSync);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: authoritative turn timer auto-picks the missing guest move and restarts for the WAR continuation step", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 20,
+    onlineTurnTimerDurationMs: 40
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const room = await createFullRoom(host, guest);
+
+    const firstSyncPromise = waitForEvent(host, "room:moveSync");
+    host.emit("room:submitMove", { move: "fire" });
+    const firstSync = await firstSyncPromise;
+    assert.equal(firstSync.serverMatchState?.turnTimer?.active, true);
+
+    const laterSyncsPromise = waitForEvents(host, "room:moveSync", 2);
+    const roundResultPromise = waitForEvent(host, "room:roundResult");
+    const serverRoundResultPromise = waitForEvent(host, "room:serverRoundResult");
+
+    const [resolvedSync, resetSync] = await laterSyncsPromise;
+    const roundResult = await roundResultPromise;
+    const serverRoundResult = await serverRoundResultPromise;
+
+    assert.equal(roundResult.hostMove, "fire");
+    assert.equal(roundResult.guestMove, "fire");
+    assert.equal(roundResult.outcomeType, "war");
+    assert.equal(serverRoundResult.submittedCards.host, "fire");
+    assert.equal(serverRoundResult.submittedCards.guest, "fire");
+    assert.equal(resolvedSync.serverMatchState?.turnTimer?.active, false);
+    assert.equal(resetSync.serverMatchState?.turnTimer?.active, true);
+    assert.equal(resetSync.serverMatchState?.activeStep?.type, "war");
+    assert.equal(
+      resetSync.serverMatchState?.turnTimer?.stepId,
+      `${room.roomCode}:match:1:round:2:step:war:warDepth:1`
+    );
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: authoritative turn timer auto-picks both missing moves and emits one resolved step", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 20,
+    onlineTurnTimerDurationMs: 40
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const room = await createFullRoom(host, guest);
+    const moveSyncsPromise = waitForEvents(host, "room:moveSync", 2);
+    const roundResultPromise = waitForEvent(host, "room:roundResult");
+    const serverRoundResultPromise = waitForEvent(host, "room:serverRoundResult");
+
+    const [resolvedSync, resetSync] = await moveSyncsPromise;
+    const roundResult = await roundResultPromise;
+    const serverRoundResult = await serverRoundResultPromise;
+
+    assert.equal(roundResult.hostMove, "fire");
+    assert.equal(roundResult.guestMove, "fire");
+    assert.equal(roundResult.outcomeType, "war");
+    assert.equal(serverRoundResult.submittedCards.host, "fire");
+    assert.equal(serverRoundResult.submittedCards.guest, "fire");
+    assert.equal(resolvedSync.moveSync?.bothSubmitted, true);
+    assert.equal(resolvedSync.serverMatchState?.turnTimer?.active, false);
+    assert.equal(resetSync.serverMatchState?.turnTimer?.active, true);
+    assert.equal(
+      resetSync.serverMatchState?.turnTimer?.stepId,
+      `${room.roomCode}:match:1:round:2:step:war:warDepth:1`
+    );
   } finally {
     host?.disconnect();
     guest?.disconnect();
