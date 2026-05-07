@@ -59,6 +59,8 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
     updates: {
       getState: () => ipcRendererRef.invoke("updates:getState"),
       requestCheck: () => ipcRendererRef.invoke("updates:requestCheck"),
+      requestDownload: () => ipcRendererRef.invoke("updates:requestDownload"),
+      requestInstall: (safetyState) => ipcRendererRef.invoke("updates:requestInstall", safetyState),
       requestInstallWhenSafe: () => ipcRendererRef.invoke("updates:requestInstallWhenSafe"),
       cancelDeferredInstall: () => ipcRendererRef.invoke("updates:cancelDeferredInstall"),
       devMarkDownloaded: (payload) => ipcRendererRef.invoke("updates:devMarkDownloaded", payload),

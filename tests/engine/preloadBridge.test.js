@@ -75,6 +75,7 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.state.getSettings, "function");
   assert.equal(typeof bridge.updates.getState, "function");
   assert.equal(typeof bridge.updates.requestCheck, "function");
+  assert.equal(typeof bridge.updates.requestInstall, "function");
   assert.equal(typeof bridge.multiplayer.getState, "function");
 
   await bridge.state.getSettings();

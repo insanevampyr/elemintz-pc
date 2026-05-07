@@ -39,6 +39,7 @@ function createFakeUpdater() {
   const emitter = new EventEmitter();
   const calls = {
     checkForUpdates: 0,
+    downloadUpdate: 0,
     quitAndInstall: 0,
     setFeedURL: []
   };
@@ -47,6 +48,10 @@ function createFakeUpdater() {
     calls.checkForUpdates += 1;
     emitter.emit("checking-for-update");
     return { cancellationToken: null };
+  };
+  emitter.downloadUpdate = async () => {
+    calls.downloadUpdate += 1;
+    return ["EleMintz_Setup_test.exe"];
   };
   emitter.quitAndInstall = () => {
     calls.quitAndInstall += 1;
@@ -99,6 +104,34 @@ test("update IPC: requestCheck is disabled safely in dev/unpackaged mode", async
   assert.match(response.message, /disabled in dev\/unpackaged builds/i);
   assert.match(response.lastCheckedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(calls.checkForUpdates, 0);
+  assert.equal(calls.downloadUpdate, 0);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: requestDownload is disabled safely in dev/unpackaged mode", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "available",
+    updateInfo: { version: "9.9.9" }
+  });
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    isPackaged: false,
+    hasPublishConfiguration: true,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: false,
+      hasPublishConfiguration: true
+    })
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestDownload")();
+
+  assert.equal(response.status, "available");
+  assert.match(response.message, /disabled in dev\/unpackaged builds/i);
+  assert.equal(calls.downloadUpdate, 0);
   assert.equal(calls.quitAndInstall, 0);
 });
 
@@ -189,6 +222,254 @@ test("update adapter: real updater events map into lifecycle state without insta
   assert.equal(state.restartRequested, false);
   assert.equal(state.deferredUntilSafe, false);
   assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: requestDownload uses the real adapter only when an update is available", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "available",
+    message: "Update available.",
+    updateInfo: { version: "2.0.1" }
+  });
+  const { updater, calls } = createFakeUpdater();
+  const adapter = createUpdaterAdapter({
+    store,
+    updater,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: adapter,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestDownload")();
+
+  assert.equal(calls.downloadUpdate, 1);
+  assert.equal(calls.quitAndInstall, 0);
+  assert.equal(response.status, "downloading");
+  assert.match(response.message, /starting update download/i);
+});
+
+test("update IPC: duplicate requestDownload calls are blocked while download is in flight", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "available",
+    message: "Update available.",
+    updateInfo: { version: "2.0.1" }
+  });
+  const { updater, calls } = createFakeUpdater();
+  let resolveDownload = null;
+  updater.downloadUpdate = () => {
+    calls.downloadUpdate += 1;
+    return new Promise((resolve) => {
+      resolveDownload = resolve;
+    });
+  };
+  const adapter = createUpdaterAdapter({
+    store,
+    updater,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: adapter,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  const firstPromise = ipcMain.handlers.get("updates:requestDownload")();
+  const secondResponse = await ipcMain.handlers.get("updates:requestDownload")();
+
+  assert.equal(calls.downloadUpdate, 1);
+  assert.equal(secondResponse.status, "downloading");
+  assert.match(secondResponse.message, /already in progress/i);
+  assert.equal(calls.quitAndInstall, 0);
+
+  resolveDownload?.(["EleMintz_Setup_2.0.1.exe"]);
+  await firstPromise;
+});
+
+test("update IPC: requestDownload rejects when no update is available", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "idle",
+    message: "No updates available."
+  });
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: true,
+      hasPublishConfiguration: true,
+      publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+    }),
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestDownload")();
+
+  assert.equal(response.status, "error");
+  assert.match(response.message, /no available update to download/i);
+  assert.equal(calls.downloadUpdate, 0);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: requestInstall is blocked when no downloaded update exists", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "available",
+    message: "Update available.",
+    updateInfo: { version: "2.0.2" }
+  });
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: true,
+      hasPublishConfiguration: true,
+      publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+    })
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestInstall")(null, { safe: true, reasons: [] });
+
+  assert.equal(response.status, "error");
+  assert.match(response.message, /no downloaded update/i);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: requestInstall defers while unsafe", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "downloaded",
+    message: "Update downloaded.",
+    updateInfo: { version: "2.0.2" }
+  });
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: true,
+      hasPublishConfiguration: true,
+      publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+    })
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestInstall")(null, {
+    safe: false,
+    reasons: ["active_match"],
+    checkedAt: "2026-05-07T00:30:00.000Z"
+  });
+
+  assert.equal(response.status, "deferred");
+  assert.equal(response.restartRequested, true);
+  assert.equal(response.deferredUntilSafe, true);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: duplicate deferred requestInstall calls are blocked while unsafe", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "deferred",
+    message: "Update install requested. Waiting for a safe restart window.",
+    updateInfo: { version: "2.0.2" },
+    restartRequested: true,
+    deferredUntilSafe: true
+  });
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: true,
+      hasPublishConfiguration: true,
+      publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+    })
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestInstall")(null, {
+    safe: false,
+    reasons: ["active_match"]
+  });
+
+  assert.equal(response.status, "deferred");
+  assert.match(response.message, /already deferred/i);
+  assert.equal(calls.quitAndInstall, 0);
+});
+
+test("update IPC: requestInstall calls quitAndInstall only when safe", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "downloaded",
+    message: "Update downloaded.",
+    updateInfo: { version: "2.0.2" }
+  });
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: true,
+      hasPublishConfiguration: true,
+      publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+    })
+  });
+
+  const response = await ipcMain.handlers.get("updates:requestInstall")(null, {
+    safe: true,
+    reasons: [],
+    checkedAt: "2026-05-07T00:31:00.000Z"
+  });
+
+  assert.equal(response.status, "readyToInstall");
+  assert.equal(response.restartRequested, true);
+  assert.equal(response.deferredUntilSafe, false);
+  assert.equal(calls.quitAndInstall, 1);
+});
+
+test("update IPC: duplicate requestInstall calls are blocked once install has started", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore({
+    status: "downloaded",
+    message: "Update downloaded.",
+    updateInfo: { version: "2.0.2" }
+  });
+  const { updater, calls } = createFakeUpdater();
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: true,
+      hasPublishConfiguration: true,
+      publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+    })
+  });
+
+  await ipcMain.handlers.get("updates:requestInstall")(null, { safe: true, reasons: [] });
+  const response = await ipcMain.handlers.get("updates:requestInstall")(null, { safe: true, reasons: [] });
+
+  assert.equal(response.status, "readyToInstall");
+  assert.match(response.message, /already requested/i);
+  assert.equal(calls.quitAndInstall, 1);
 });
 
 test("update IPC: requestCheck uses the real adapter in packaged builds without install side effects", async () => {

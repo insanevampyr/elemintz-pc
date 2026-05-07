@@ -1457,6 +1457,36 @@ export class AppController {
     }
   }
 
+  async requestUpdateInstall() {
+    const updates = globalThis.window?.elemintz?.updates ?? null;
+    if (!updates?.requestInstall) {
+      throw new Error("Update install is unavailable in this build.");
+    }
+
+    const safetyState = this.getUpdateSafetyState();
+
+    console.info("[Updates][InstallRequest] requested", {
+      safetyState,
+      before: this.getUpdateDiagnostics()
+    });
+
+    try {
+      await updates.requestInstall(safetyState);
+      const nextState = await this.refreshUpdateCoordinatorState();
+      console.info("[Updates][InstallRequest] completed", {
+        after: this.getUpdateDiagnostics()
+      });
+      return nextState;
+    } catch (error) {
+      const nextState = await this.refreshUpdateCoordinatorState();
+      console.error("[Updates][InstallRequest] failed", {
+        message: String(error?.message ?? error ?? "Unknown update install failure."),
+        after: this.getUpdateDiagnostics()
+      });
+      return nextState;
+    }
+  }
+
   buildOnlineEquippedCosmetics(profile = null) {
     const equippedVariants =
       profile?.cosmetics?.snapshot?.equipped?.elementCardVariant ??

@@ -119,6 +119,7 @@ function createMockUpdateBridge(initialState = {}) {
     : [];
   const calls = {
     requestCheck: 0,
+    requestInstall: 0,
     devMarkDownloaded: 0,
     requestInstallWhenSafe: 0,
     cancelDeferredInstall: 0,
@@ -166,6 +167,55 @@ function createMockUpdateBridge(initialState = {}) {
         ...nextResponse,
         updatedAt: "2026-05-06T12:00:30.000Z"
       };
+      emit();
+      return { ...state };
+    },
+    async requestInstall(safetyState) {
+      calls.requestInstall += 1;
+      const safe = Boolean(safetyState?.safe);
+      if (!["downloaded", "deferred", "readyToInstall"].includes(state.status)) {
+        state = {
+          ...state,
+          status: "error",
+          message: "No downloaded update is ready to install.",
+          error: { message: "No downloaded update is ready to install." },
+          updatedAt: "2026-05-06T12:01:30.000Z"
+        };
+        emit();
+        return { ...state };
+      }
+      if (!safe) {
+        state = {
+          ...state,
+          status: state.status === "downloaded" ? "deferred" : state.status,
+          message: state.deferredUntilSafe
+            ? "Update install already deferred until the app is safe."
+            : "Update install requested. Waiting for a safe restart window.",
+          restartRequested: true,
+          deferredUntilSafe: true,
+          updatedAt: "2026-05-06T12:01:30.000Z"
+        };
+        emit();
+        return { ...state };
+      }
+      if (state.restartRequested && !state.deferredUntilSafe) {
+        state = {
+          ...state,
+          message: "Update install already requested.",
+          updatedAt: "2026-05-06T12:01:45.000Z"
+        };
+        emit();
+        return { ...state };
+      }
+      state = {
+        ...state,
+        status: "readyToInstall",
+        message: "Update install approved. Restarting to install update.",
+        restartRequested: true,
+        deferredUntilSafe: false,
+        updatedAt: "2026-05-06T12:01:45.000Z"
+      };
+      calls.quitAndInstall += 1;
       emit();
       return { ...state };
     },
@@ -630,6 +680,56 @@ test("appController: manual update check in packaged-style flow does not install
     assert.equal(diagnostics.deferredUntilSafe, false);
     assert.equal(diagnostics.installAllowedNow, false);
     assert.deepEqual(diagnostics.blockedReasons, []);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: explicit install request defers while unsafe and installs only after a safe retry", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge({
+    status: "downloaded",
+    message: "Update downloaded.",
+    updateInfo: { version: "2.0.2" }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = createUpdateSafetyController();
+    app.bindUpdateLifecycleUpdates();
+    app.screenFlow = "game";
+    app.roundPresentation = { phase: "reveal", busy: true, selectedCardIndex: 0 };
+    app.gameController = {
+      getViewModel: () => ({ status: "active", warActive: true })
+    };
+    await app.refreshUpdateCoordinatorState();
+
+    let coordinator = await app.requestUpdateInstall();
+    assert.equal(updateBridge.calls.requestInstall, 1);
+    assert.equal(updateBridge.calls.quitAndInstall, 0);
+    assert.equal(coordinator.lifecycleState.status, "deferred");
+    assert.equal(coordinator.deferredUntilSafe, true);
+    assert.equal(coordinator.installAllowedNow, false);
+    assert.deepEqual(coordinator.blockedReasons, ["active_match", "active_war", "round_presentation_busy"]);
+
+    app.screenFlow = "menu";
+    app.roundPresentation = { phase: "idle", busy: false, selectedCardIndex: null };
+    app.gameController = {
+      getViewModel: () => ({ status: "idle", warActive: false })
+    };
+    await app.refreshUpdateCoordinatorState();
+
+    coordinator = await app.requestUpdateInstall();
+    assert.equal(updateBridge.calls.requestInstall, 2);
+    assert.equal(updateBridge.calls.quitAndInstall, 1);
+    assert.equal(coordinator.lifecycleState.status, "readyToInstall");
+    assert.equal(coordinator.lifecycleState.restartRequested, true);
+    assert.equal(coordinator.deferredUntilSafe, false);
   } finally {
     globalThis.window = originalWindow;
   }

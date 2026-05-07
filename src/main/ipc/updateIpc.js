@@ -49,6 +49,8 @@ export function registerUpdateIpcHandlers(
   ipcMain.handle("updates:getState", async () => store.getState());
 
   ipcMain.handle("updates:requestCheck", async () => getUpdaterAdapter().requestCheck());
+  ipcMain.handle("updates:requestDownload", async () => getUpdaterAdapter().requestDownload());
+  ipcMain.handle("updates:requestInstall", async (_event, safetyState) => getUpdaterAdapter().requestInstall(safetyState));
 
   ipcMain.handle("updates:requestInstallWhenSafe", async () =>
     store.markInstallDeferred("Update install requested. Waiting for a safe restart window.")
