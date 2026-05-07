@@ -11380,6 +11380,72 @@ test("ui: online play screen renders war resolved result from player perspective
   assert.match(html, /Changed:<\/strong> The WAR pile was awarded and the round score has been updated\./);
 });
 
+test("ui: online play screen no longer renders a client-side turn timer label", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    onlineTurnTimer: {
+      visible: true,
+      label: "20s",
+      secondsLeft: 20,
+      lowTime: false
+    },
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Waiting for GuestUser to choose a move.",
+      lastError: null,
+      latestRoundResult: null,
+      latestAuthoritativeRoundResult: null,
+      lastCompletedBattleResult: null,
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 0,
+        roundNumber: 1,
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        warActive: false,
+        warDepth: 0,
+        warPot: { host: [], guest: [] },
+        warRounds: [],
+        roundHistory: [],
+        hostResolvedIdentity: {
+          username: "HostUser",
+          avatarImage: getAvatarImage("default_avatar"),
+          backgroundImage: "assets/arena/default.webp",
+          cardBackImage: getCardBackImage("default_card_back"),
+          variantImages: getVariantCardImages(),
+          variantSelection: null
+        },
+        guestResolvedIdentity: {
+          username: "GuestUser",
+          avatarImage: getAvatarImage("default_avatar"),
+          backgroundImage: "assets/arena/default.webp",
+          cardBackImage: getCardBackImage("default_card_back"),
+          variantImages: getVariantCardImages(),
+          variantSelection: null
+        },
+        moveSync: {
+          hostSubmitted: false,
+          guestSubmitted: false,
+          submittedCount: 0,
+          bothSubmitted: false,
+          updatedAt: null
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.doesNotMatch(html, /Time to choose:/);
+  assert.doesNotMatch(html, /data-online-turn-timer-label=/);
+});
+
 test("ui: online play screen bind delegates move button clicks to submitMove", async () => {
   const previousDocument = global.document;
   const calls = [];

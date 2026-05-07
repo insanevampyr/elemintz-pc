@@ -146,6 +146,7 @@ export class AppController {
     this.onlineReconnectReminder = null;
     this.onlineReconnectReminderDismissedKey = null;
     this.onlineReconnectUiTimerId = null;
+    this.onlineMoveSubmitPromise = null;
     this.matchTaunts = [];
     this.matchTauntPanelOpen = false;
     this.matchTauntSequence = 0;
@@ -756,6 +757,148 @@ export class AppController {
       clearInterval(this.onlineReconnectUiTimerId);
       this.onlineReconnectUiTimerId = null;
     }
+  }
+
+  getOnlineRoleLabelFromState(state = this.onlinePlayState) {
+    const room = state?.room ?? null;
+    const socketId = state?.socketId ?? null;
+
+    if (!room || !socketId) {
+      return null;
+    }
+
+    if (room.host?.socketId === socketId) {
+      return "Host";
+    }
+
+    if (room.guest?.socketId === socketId) {
+      return "Guest";
+    }
+
+    return null;
+  }
+
+  getOnlineMoveSyncFromState(state = this.onlinePlayState) {
+    const room = state?.room ?? null;
+    const roleLabel = this.getOnlineRoleLabelFromState(state);
+    const sync =
+      room?.moveSync ??
+      (room?.status === "full"
+        ? {
+            hostSubmitted: false,
+            guestSubmitted: false,
+            submittedCount: 0,
+            bothSubmitted: false,
+            updatedAt: null
+          }
+        : null);
+
+    if (!room || room.status !== "full" || !sync) {
+      return null;
+    }
+
+    const ownSubmitted =
+      roleLabel === "Host"
+        ? Boolean(sync.hostSubmitted)
+        : roleLabel === "Guest"
+          ? Boolean(sync.guestSubmitted)
+          : false;
+
+    return {
+      submittedCount: Number(sync.submittedCount ?? 0),
+      bothSubmitted: Boolean(sync.bothSubmitted),
+      hostSubmitted: Boolean(sync.hostSubmitted),
+      guestSubmitted: Boolean(sync.guestSubmitted),
+      ownSubmitted
+    };
+  }
+
+  getOnlineSelectableElementsFromState(state = this.onlinePlayState) {
+    const room = state?.room ?? null;
+    const roleLabel = this.getOnlineRoleLabelFromState(state);
+    const hand =
+      roleLabel === "Host"
+        ? room?.hostHand ?? null
+        : roleLabel === "Guest"
+          ? room?.guestHand ?? null
+          : null;
+
+    if (!hand) {
+      return [];
+    }
+
+    return ["fire", "earth", "wind", "water"].filter(
+      (element) => Math.max(0, Number(hand?.[element] ?? 0) || 0) > 0
+    );
+  }
+
+  canSubmitOnlineMoveFromState(state = this.onlinePlayState) {
+    const room = state?.room ?? null;
+    const sync = this.getOnlineMoveSyncFromState(state);
+
+    if (String(state?.connectionStatus ?? "").trim().toLowerCase() !== "connected") {
+      return false;
+    }
+
+    if (!room || room.status !== "full" || room.matchComplete) {
+      return false;
+    }
+
+    if (room.disconnectState?.active || room.status === "paused" || room.status === "closing" || room.status === "expired") {
+      return false;
+    }
+
+    if (!sync || sync.ownSubmitted || sync.bothSubmitted) {
+      return false;
+    }
+
+    return this.getOnlineSelectableElementsFromState(state).length > 0;
+  }
+
+  async submitOnlineMove(move, { source = "manual" } = {}) {
+    if (!window.elemintz?.multiplayer?.submitMove) {
+      return null;
+    }
+
+    const safeMove = String(move ?? "").trim().toLowerCase();
+    const legalMoves = this.getOnlineSelectableElementsFromState(this.onlinePlayState);
+
+    if (!this.canSubmitOnlineMoveFromState(this.onlinePlayState) || !legalMoves.includes(safeMove)) {
+      console.info("[OnlinePlay][Renderer] move ignored before submit bridge", {
+        source,
+        move: safeMove,
+        legalMoves
+      });
+      return null;
+    }
+
+    if (this.onlineMoveSubmitPromise) {
+      return this.onlineMoveSubmitPromise;
+    }
+
+    this.onlineMoveSubmitPromise = (async () => {
+      try {
+        console.info("[OnlinePlay][Renderer] AppController submitMove entered", {
+          move: safeMove,
+          source
+        });
+        const previousState = this.onlinePlayState;
+        const nextState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.submitMove({ move: safeMove }));
+        this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+        if (this.onlinePlayState?.latestRoundResult) {
+          console.info("[OnlinePlay][Renderer] latest round result stored in renderer state", this.onlinePlayState.latestRoundResult);
+        }
+        if (this.onlinePlayState?.room?.matchComplete) {
+          await this.refreshOnlineSettlementStateFromServer(this.onlinePlayState);
+        }
+        this.ensureOnlineReconnectUiTimer();
+        this.renderOnlinePlayScreen();
+      } finally {
+        this.onlineMoveSubmitPromise = null;
+      }
+    })();
+
+    return this.onlineMoveSubmitPromise;
   }
 
   getConfiguredTurnSeconds() {
@@ -3416,24 +3559,7 @@ export class AppController {
           this.renderOnlinePlayScreen();
         },
         submitMove: async (move) => {
-          if (!window.elemintz?.multiplayer?.submitMove) {
-            return;
-          }
-
-          console.info("[OnlinePlay][Renderer] AppController submitMove entered", {
-            move
-          });
-          const previousState = this.onlinePlayState;
-          const nextState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.submitMove({ move }));
-          this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
-          if (this.onlinePlayState?.latestRoundResult) {
-            console.info("[OnlinePlay][Renderer] latest round result stored in renderer state", this.onlinePlayState.latestRoundResult);
-          }
-          if (this.onlinePlayState?.room?.matchComplete) {
-            await this.refreshOnlineSettlementStateFromServer(this.onlinePlayState);
-          }
-          this.ensureOnlineReconnectUiTimer();
-          this.renderOnlinePlayScreen();
+          await this.submitOnlineMove(move, { source: "ui" });
         },
         toggleTauntsPanel: async () => {
           this.toggleMatchTauntPanel();
