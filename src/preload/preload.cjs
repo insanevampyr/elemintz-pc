@@ -11,8 +11,26 @@ try {
 }
 
 function resolveAppVersion({
+  ipcRendererRef = ipcRenderer,
+  env = process?.env ?? {},
   fallback = "unknown"
 } = {}) {
+  const npmVersion = String(env?.npm_package_version ?? "").trim();
+  if (npmVersion) {
+    return npmVersion;
+  }
+
+  if (ipcRendererRef?.sendSync) {
+    try {
+      const runtimeVersion = String(ipcRendererRef.sendSync("app:getVersionSync") ?? "").trim();
+      if (runtimeVersion && runtimeVersion.toLowerCase() !== "unknown") {
+        return runtimeVersion;
+      }
+    } catch {
+      // Fall through to the safe fallback below.
+    }
+  }
+
   return fallback;
 }
 
@@ -106,7 +124,7 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
 }
 
 if (contextBridge?.exposeInMainWorld && ipcRenderer?.invoke) {
-  const APP_VERSION = resolveAppVersion();
+  const APP_VERSION = resolveAppVersion({ ipcRendererRef: ipcRenderer });
   contextBridge.exposeInMainWorld(
     "elemintz",
     buildElemintzBridge(ipcRenderer, {

@@ -6,12 +6,22 @@ function escapeAttribute(value) {
     .replaceAll(">", "&gt;");
 }
 
+function formatVersionLabel(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized || normalized.toLowerCase() === "unknown") {
+    return "";
+  }
+
+  return normalized.startsWith("v") ? normalized : `v${normalized}`;
+}
+
 export const loginScreen = {
   render(context = {}) {
     const defaults = context.defaults ?? {};
     const selectedMode = context.mode === "register" ? "register" : "login";
     const errorMessage = String(context.errorMessage ?? "").trim();
     const statusMessage = String(context.statusMessage ?? "").trim();
+    const versionLabel = formatVersionLabel(context.version);
     return `
       <section class="screen screen-login">
         <div class="panel hero-panel">
@@ -69,6 +79,7 @@ export const loginScreen = {
               >Create Account</button>
             </div>
           </form>
+          ${versionLabel ? `<span class="login-version-badge" aria-hidden="true">${escapeAttribute(versionLabel)}</span>` : ""}
         </div>
       </section>
     `;

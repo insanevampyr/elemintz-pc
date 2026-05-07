@@ -280,6 +280,13 @@ input[type="number"] {
   color: #d4e7f5;
 }
 
+.round-result-detail {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: #bdd8ea;
+}
+
 .hud-summary {
   min-width: 0;
 }

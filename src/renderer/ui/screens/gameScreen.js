@@ -183,36 +183,99 @@ function outcomeClass(vm) {
   return "no-effect";
 }
 
+function getPerspectiveNames(vm, context, names) {
+  if (vm.mode === "local_pvp") {
+    return {
+      left: names.p1,
+      right: names.p2
+    };
+  }
+
+  return {
+    left: context.playerDisplay?.name ?? "You",
+    right: context.opponentDisplay?.name ?? "Opponent"
+  };
+}
+
 function roundOutcomeLabel(vm, names) {
+  const result = vm.lastRound?.result ?? null;
   if (vm.mode !== "local_pvp") {
     if (vm.warActive) {
-      return "WAR triggered";
+      return "WAR is active";
     }
 
-    return vm.roundOutcome?.label ?? "No effect";
+    if (result === "p1") {
+      return "You won the clash";
+    }
+
+    if (result === "p2") {
+      return "Opponent won the clash";
+    }
+
+    return vm.roundOutcome?.label ?? "Round resolved";
   }
 
   if (!vm.lastRound) {
     if (vm.warActive) {
-      return "WAR triggered";
+      return "WAR is active";
     }
 
-    return "No effect";
+    return "Round resolved";
   }
 
   if (vm.roundOutcome?.key === "war_triggered" || vm.warActive) {
-    return "WAR triggered";
+    return "WAR is active";
   }
 
-  if (vm.lastRound.result === "p1") {
+  if (result === "p1") {
     return `${escapeHtml(names.p1)} wins`;
   }
 
-  if (vm.lastRound.result === "p2") {
+  if (result === "p2") {
     return `${escapeHtml(names.p2)} wins`;
   }
 
-  return "No effect";
+  return "Round resolved";
+}
+
+function buildRoundReasonLine(vm) {
+  const reason = String(vm.roundResult ?? "").trim();
+
+  if (reason) {
+    return reason;
+  }
+
+  if (vm.warActive || vm.roundOutcome?.key === "war_triggered") {
+    return "The cards tied, so the WAR pile carries into the next clash.";
+  }
+
+  return "Cards were resolved and the match state has been updated.";
+}
+
+function buildRoundChangeLine(vm, labels) {
+  const capturedCards = Math.max(0, Number(vm.lastRound?.capturedCards ?? 0) || 0);
+  const warClashes = Math.max(0, Number(vm.lastRound?.warClashes ?? 0) || 0);
+  const winner =
+    vm.lastRound?.result === "p1"
+      ? labels.left
+      : vm.lastRound?.result === "p2"
+        ? labels.right
+        : "";
+
+  if (vm.warActive || vm.roundOutcome?.key === "war_triggered") {
+    const pileCount = Math.max(0, Number(vm.pileCount ?? 0) || 0);
+    return `The WAR pile now holds ${pileCount} card${pileCount === 1 ? "" : "s"} for the next reveal.`;
+  }
+
+  if (winner && capturedCards > 0) {
+    const clashSuffix =
+      warClashes > 0
+        ? ` after ${warClashes} WAR clash${warClashes === 1 ? "" : "es"}`
+        : "";
+    return `${winner} captured ${capturedCards} card${capturedCards === 1 ? "" : "s"}${clashSuffix}.`;
+  }
+
+  return `Captured totals are now ${labels.left} ${vm.captured.p1} and ${labels.right} ${vm.captured.p2}.`;
 }
 
 function renderHands(vm, context, phase, names) {
@@ -303,10 +366,11 @@ export const gameScreen = {
       const emphasizePlayed = phase === "reveal" || phase === "result";
       const hands = renderHands(vm, context, phase, names);
       const opponentCardVariantImages = getVariantCardImages(context.opponentCardVariants ?? null);
-      const playedVariantRarities = {
-        p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
-        p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
+    const playedVariantRarities = {
+      p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
+      p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
     };
+    const labels = getPerspectiveNames(vm, context, names);
     const hotseatBusyReveal = vm.mode === "local_pvp" && phase === "reveal" && (context.presentation?.busy ?? false);
     const resultBannerActive = phase === "result" || phase === "reveal";
     const clashWinnerClass =
@@ -318,18 +382,20 @@ export const gameScreen = {
             : "clash-winner-neutral"
         : "";
 
-    let roundMessage = vm.roundResult;
+    let roundMessage = buildRoundReasonLine(vm);
     if (!context.reducedMotion && phase === "reveal") {
       roundMessage = "Resolving clash...";
     }
+    const roundChangeMessage = buildRoundChangeLine(vm, labels);
 
     const compactTurnLabel = escapeHtml(context.hotseat?.turnLabel ?? "Player Turn");
-    const capturedLeftName = escapeHtml(context.playerDisplay?.name ?? names.p1);
-    const capturedRightName = escapeHtml(context.opponentDisplay?.name ?? names.p2);
-    const warStatus = vm.pileCount > 0 || vm.totalWarClashes > 0
-      ? `WAR Pile: ${vm.pileCount} | Clashes: ${vm.totalWarClashes}`
-      : "WAR Pile: 0 | Clashes: 0";
-    const capturedStatus = `Captured: ${capturedLeftName} • ${vm.captured.p1} | ${capturedRightName} • ${vm.captured.p2}`;
+    const capturedLeftName = escapeHtml(labels.left);
+    const capturedRightName = escapeHtml(labels.right);
+    const warStatus =
+      vm.warActive || vm.pileCount > 0 || vm.totalWarClashes > 0
+        ? `WAR status: ${vm.pileCount} card${vm.pileCount === 1 ? "" : "s"} in the pile across ${vm.totalWarClashes} clash${vm.totalWarClashes === 1 ? "" : "es"}.`
+        : "WAR status: No active WAR pile.";
+    const capturedStatus = `Captured totals: ${capturedLeftName} ${vm.captured.p1} | ${capturedRightName} ${vm.captured.p2}`;
 
     return `
       <section class="screen screen-game phase-${phase}" data-game-live-update-signature="${escapeHtml(buildGameLiveUpdateSignature(context))}">
@@ -391,10 +457,11 @@ export const gameScreen = {
                 <div class="round-result-banner ${outcomeClass(vm)} ${resultBannerActive ? "is-active is-emphasized" : ""}">
                   <strong>${roundOutcomeLabel(vm, names)}</strong>
                 </div>
-                <p class="round-result-text">Result: ${roundMessage}</p>
+                <p class="round-result-text"><strong>Why:</strong> ${escapeHtml(roundMessage)}</p>
+                <p class="round-result-detail"><strong>What changed:</strong> ${escapeHtml(roundChangeMessage)}</p>
                 <p class="round-status-line">${warStatus}</p>
                 <p class="round-status-line">${capturedStatus}</p>
-                ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR Progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
+                ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
               </div>
                 <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
                  ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}

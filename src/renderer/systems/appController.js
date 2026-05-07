@@ -169,8 +169,112 @@ export class AppController {
       this.updateCoordinatorState = buildUpdateCoordinatorState();
       this.updateLifecycleUnsubscribe = null;
 
-      this.registerScreens();
+    this.registerScreens();
+  }
+
+  cloneOnlineBattleLogResult(result) {
+    if (!result) {
+      return null;
     }
+
+    return {
+      outcomeType: result.outcomeType ?? null,
+      hostMove: result.hostMove ?? null,
+      guestMove: result.guestMove ?? null,
+      hostResult: result.hostResult ?? null,
+      guestResult: result.guestResult ?? null,
+      roundNumber: Number(result.roundNumber ?? 0) || null,
+      matchComplete: Boolean(result.matchComplete)
+    };
+  }
+
+  buildOnlineBattleLogResultFromRoundEntry(entry, fallback = {}) {
+    if (!entry) {
+      return null;
+    }
+
+    const outcomeType = String(entry?.outcomeType ?? fallback?.outcomeType ?? "").trim().toLowerCase();
+    if (!outcomeType || !["resolved", "no_effect", "war", "war_resolved"].includes(outcomeType)) {
+      return null;
+    }
+
+    return this.cloneOnlineBattleLogResult({
+      outcomeType,
+      hostMove: entry?.hostMove ?? fallback?.hostMove ?? null,
+      guestMove: entry?.guestMove ?? fallback?.guestMove ?? null,
+      hostResult: entry?.hostResult ?? fallback?.hostResult ?? null,
+      guestResult: entry?.guestResult ?? fallback?.guestResult ?? null,
+      roundNumber: entry?.round ?? fallback?.roundNumber ?? null,
+      matchComplete: Boolean(entry?.matchComplete ?? fallback?.matchComplete)
+    });
+  }
+
+  extractCompletedOnlineBattleLogResultFromRoom(state) {
+    const room = state?.room ?? null;
+    if (!room) {
+      return null;
+    }
+
+    const lastOutcomeType = String(room?.lastOutcomeType ?? "").trim().toLowerCase();
+    const roundHistory = Array.isArray(room?.roundHistory) ? room.roundHistory : [];
+    const warRounds = Array.isArray(room?.warRounds) ? room.warRounds : [];
+    const latestRoundHistoryEntry = roundHistory.at(-1) ?? null;
+    const latestWarRoundEntry = warRounds.at(-1) ?? null;
+
+    if (lastOutcomeType === "resolved" || lastOutcomeType === "war_resolved") {
+      const matchingHistoryEntry =
+        [...roundHistory].reverse().find((entry) => String(entry?.outcomeType ?? "").trim().toLowerCase() === lastOutcomeType) ??
+        latestRoundHistoryEntry;
+      return this.buildOnlineBattleLogResultFromRoundEntry(matchingHistoryEntry, {
+        outcomeType: lastOutcomeType,
+        matchComplete: room?.matchComplete
+      });
+    }
+
+    if (lastOutcomeType === "no_effect" || lastOutcomeType === "war") {
+      const matchingWarEntry =
+        [...warRounds].reverse().find((entry) => String(entry?.outcomeType ?? "").trim().toLowerCase() === lastOutcomeType) ??
+        [...roundHistory].reverse().find((entry) => String(entry?.outcomeType ?? "").trim().toLowerCase() === lastOutcomeType) ??
+        latestWarRoundEntry ??
+        latestRoundHistoryEntry;
+      return this.buildOnlineBattleLogResultFromRoundEntry(matchingWarEntry, {
+        outcomeType: lastOutcomeType,
+        hostResult: lastOutcomeType === "war" ? "war" : "no_effect",
+        guestResult: lastOutcomeType === "war" ? "war" : "no_effect",
+        matchComplete: room?.matchComplete
+      });
+    }
+
+    return this.buildOnlineBattleLogResultFromRoundEntry(latestRoundHistoryEntry, {
+      matchComplete: room?.matchComplete
+    });
+  }
+
+  extractCompletedOnlineBattleLogResult(state) {
+    const authoritativeResult = state?.latestAuthoritativeRoundResult ?? null;
+    const roundResult = authoritativeResult?.roundResult ?? state?.latestRoundResult ?? null;
+    const outcomeType = String(authoritativeResult?.outcomeType ?? roundResult?.outcomeType ?? "").trim().toLowerCase();
+
+    const fromLiveResult =
+      roundResult && outcomeType
+        ? this.buildOnlineBattleLogResultFromRoundEntry(
+            {
+              ...roundResult,
+              outcomeType,
+              hostMove: authoritativeResult?.submittedCards?.host ?? roundResult?.hostMove ?? null,
+              guestMove: authoritativeResult?.submittedCards?.guest ?? roundResult?.guestMove ?? null,
+              round: roundResult?.roundNumber ?? state?.room?.roundNumber ?? null,
+              matchComplete: Boolean(roundResult?.matchComplete ?? state?.room?.matchComplete)
+            },
+            {
+              outcomeType,
+              matchComplete: state?.room?.matchComplete
+            }
+          )
+        : null;
+
+    return fromLiveResult ?? this.extractCompletedOnlineBattleLogResultFromRoom(state);
+  }
 
   resetDailyLoginAutoClaimGuard() {
     this.dailyLoginAutoClaimKey = null;
@@ -1767,11 +1871,17 @@ export class AppController {
       return this.profile;
     }
 
-    const localProfile = window.elemintz?.state?.getProfile
-      ? await window.elemintz.state.getProfile(safeUsername)
-      : null;
-
     const onlineConnected = String(onlineState?.connectionStatus ?? "").toLowerCase() === "connected";
+    const activeProfileMatches =
+      String(this.profile?.username ?? "").trim().toLowerCase() === safeUsername.toLowerCase();
+    const localProfile = onlineConnected && activeProfileMatches
+      ? this.profile
+      : (
+        window.elemintz?.state?.getProfile
+          ? await window.elemintz.state.getProfile(safeUsername)
+          : null
+      );
+
     if (onlineConnected && window.elemintz?.multiplayer?.getProfile) {
       const serverProfile = await window.elemintz.multiplayer.getProfile({ username: safeUsername });
       const nextProfile = this.applyServerProfileSnapshot(serverProfile, {
@@ -2424,10 +2534,18 @@ export class AppController {
       socketId: null,
       room: null,
       latestRoundResult: null,
+      lastCompletedBattleResult: null,
       pendingAdminGrantNotices: [],
       lastError: null,
       statusMessage: "Offline. Open Online Play to connect."
     };
+    const previousRoomCode = String(this.onlinePlayState?.room?.roomCode ?? "").trim();
+    const nextRoomCode = String(normalizedRoom?.roomCode ?? state?.room?.roomCode ?? "").trim();
+    const extractedCompletedBattleResult = this.extractCompletedOnlineBattleLogResult(state);
+    const preservedBattleLogResult =
+      previousRoomCode && nextRoomCode && previousRoomCode === nextRoomCode
+        ? this.cloneOnlineBattleLogResult(this.onlinePlayState?.lastCompletedBattleResult)
+        : null;
 
     return {
       ...fallback,
@@ -2471,7 +2589,10 @@ export class AppController {
               : null,
             syncSource: state.latestAuthoritativeRoundResult.syncSource ?? null
           }
-        : null
+        : null,
+      lastCompletedBattleResult: state?.lastCompletedBattleResult
+        ? this.cloneOnlineBattleLogResult(state.lastCompletedBattleResult)
+        : extractedCompletedBattleResult ?? preservedBattleLogResult
     };
   }
 
@@ -2515,6 +2636,71 @@ export class AppController {
     }
 
     return parts.join(" | ");
+  }
+
+  formatPlayerFacingMessage(message, fallbackMessage = "Something went wrong. Please try again.") {
+    const raw = String(message ?? "").trim();
+    if (!raw) {
+      return fallbackMessage;
+    }
+
+    const primary = raw
+      .split("|")
+      .map((entry) => entry.trim())
+      .find(Boolean) ?? raw;
+
+    const normalized = primary
+      .replace(/serverUrl=.*$/i, "")
+      .replace(/description=.*$/i, "")
+      .replace(/context=.*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return normalized || fallbackMessage;
+  }
+
+  formatPlayerFacingMultiplayerError(error, fallbackMessage = "Online Play is unavailable right now. Please try again.") {
+    const rawMessage = this.formatMultiplayerErrorMessage(error, fallbackMessage);
+    const normalized = String(rawMessage ?? "").trim();
+    const lowercase = normalized.toLowerCase();
+
+    if (!normalized) {
+      return "";
+    }
+
+    if (lowercase.includes("session expired")) {
+      return "Your session expired. Please sign in again.";
+    }
+
+    if (
+      lowercase.includes("econnrefused") ||
+      lowercase.includes("network") ||
+      lowercase.includes("socket hang up") ||
+      lowercase.includes("fetch failed") ||
+      lowercase.includes("timed out")
+    ) {
+      return "We could not reach EleMintz Online. Please try again in a moment.";
+    }
+
+    if (
+      lowercase.includes("unable to authenticate") ||
+      lowercase.includes("invalid credentials") ||
+      lowercase.includes("auth required") ||
+      lowercase.includes("unauthorized")
+    ) {
+      return "Sign-in failed. Double-check your account details and try again.";
+    }
+
+    return this.formatPlayerFacingMessage(normalized, fallbackMessage);
+  }
+
+  getAppVersionDisplay() {
+    const version = String(globalThis.window?.elemintz?.version ?? "").trim();
+    if (!version || version.toLowerCase() === "unknown") {
+      return "";
+    }
+
+    return version.startsWith("v") ? version : `v${version}`;
   }
 
   getPendingAdminGrantNotice(state = this.onlinePlayState) {
@@ -3072,34 +3258,52 @@ export class AppController {
     const hasLatestRoundResult = Boolean(nextState?.latestRoundResult);
     const isSnapshotResync =
       String(nextState?.latestAuthoritativeRoundResult?.syncSource ?? "").trim() === "room_snapshot";
+    const previousRoomCode = String(previousState?.room?.roomCode ?? "").trim();
+    const nextRoomCode = String(nextState?.room?.roomCode ?? "").trim();
+    const preservedBattleLogResult =
+      previousRoomCode && nextRoomCode && previousRoomCode === nextRoomCode
+        ? this.cloneOnlineBattleLogResult(previousState?.lastCompletedBattleResult)
+        : null;
+    const startedNextRound = previousSubmittedCount >= 2 && nextSubmittedCount === 0;
+    const enteredHalfSubmittedState = previousSubmittedCount === 0 && nextSubmittedCount > 0;
+    const shouldIgnoreLiveRoundResultForBattleLog = startedNextRound || enteredHalfSubmittedState;
+    const nextCompletedBattleLogResult = shouldIgnoreLiveRoundResultForBattleLog
+      ? null
+      : this.extractCompletedOnlineBattleLogResult(nextState);
+    const stateWithBattleLog = this.normalizeOnlinePlayState({
+      ...nextState,
+      lastCompletedBattleResult: nextCompletedBattleLogResult ?? preservedBattleLogResult
+    });
 
     if (!hasLatestRoundResult) {
-      return nextState;
+      return stateWithBattleLog;
     }
 
     if (isSnapshotResync) {
-      return nextState;
+      return stateWithBattleLog;
     }
 
-    if (previousSubmittedCount >= 2 && nextSubmittedCount === 0) {
+    if (startedNextRound) {
       console.info("[OnlinePlay][Renderer] new round detected, clearing round result");
       return this.normalizeOnlinePlayState({
         ...nextState,
         latestRoundResult: null,
-        latestAuthoritativeRoundResult: null
+        latestAuthoritativeRoundResult: null,
+        lastCompletedBattleResult: preservedBattleLogResult
       });
     }
 
-    if (previousSubmittedCount === 0 && nextSubmittedCount > 0) {
+    if (enteredHalfSubmittedState) {
       console.info("[OnlinePlay][Renderer] new round detected, clearing round result");
       return this.normalizeOnlinePlayState({
         ...nextState,
         latestRoundResult: null,
-        latestAuthoritativeRoundResult: null
+        latestAuthoritativeRoundResult: null,
+        lastCompletedBattleResult: preservedBattleLogResult
       });
     }
 
-    return nextState;
+    return stateWithBattleLog;
   }
 
   async syncOnlinePlayState() {
@@ -3166,7 +3370,7 @@ export class AppController {
     const tauntHud = this.getCurrentTauntHudState();
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
-      formattedErrorMessage: this.formatMultiplayerErrorMessage(this.onlinePlayState?.lastError),
+      formattedErrorMessage: this.formatPlayerFacingMultiplayerError(this.onlinePlayState?.lastError, ""),
       onlineChallengeSummary: this.onlinePlayChallengeSummary,
       profile: this.profile,
       username: this.profile?.username ?? this.username,
@@ -3467,11 +3671,16 @@ export class AppController {
             ? "No effect"
             : "Draw";
 
-    return `Last Round: ${resultLabel}. ${this.buildResolvedCaptureSummary(vm.lastRound, {
+    const captureSummary = this.buildResolvedCaptureSummary(vm.lastRound, {
       p1Label: names.p1,
       p2Label: names.p2,
       useSecondPersonForP1: false
-    })}`;
+    }).replace(new RegExp(`^${names.p1.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`, "u"), "");
+    const normalizedCaptureSummary = captureSummary
+      ? `${captureSummary.charAt(0).toUpperCase()}${captureSummary.slice(1)}`
+      : captureSummary;
+
+    return `Last Round: ${resultLabel}. ${normalizedCaptureSummary}`;
   }
 
   getResolvedOpponentCardsCaptured(round) {
@@ -3612,7 +3821,20 @@ export class AppController {
     };
   }
 
+  shouldSuppressSharedResolutionPopup(result, mode = MATCH_MODE.PVE) {
+    if (mode !== MATCH_MODE.PVE) {
+      return false;
+    }
+
+    return result?.status === "round_resolved" || result?.status === "war_continues";
+  }
+
   async showSharedResolutionPopup(result, mode = MATCH_MODE.PVE, { onShown = null } = {}) {
+    if (this.shouldSuppressSharedResolutionPopup(result, mode)) {
+      await onShown?.();
+      return;
+    }
+
     const content = this.buildResolutionPopupContent(result, mode);
     await this.showPassScreen({
       message: content.message,
@@ -3819,8 +4041,8 @@ export class AppController {
       }
       const restoreFailureMessage =
         restoreResult?.invalid
-          ? this.formatMultiplayerErrorMessage(
-              restoreResult?.error,
+          ? this.formatPlayerFacingMessage(
+              restoreResult?.error?.message,
               "Saved session expired. Please sign in again."
             )
           : "";
@@ -3838,6 +4060,7 @@ export class AppController {
     this.screenManager.show("login", {
       errorMessage,
       statusMessage,
+      version: this.getAppVersionDisplay(),
       defaults,
       mode,
       actions: {
@@ -3873,7 +4096,7 @@ export class AppController {
               if (!authResult?.ok) {
                 console.error("[OnlinePlay][Renderer] authentication failed", authResult?.error ?? null);
                 throw new Error(
-                  this.formatMultiplayerErrorMessage(
+                  this.formatPlayerFacingMultiplayerError(
                     authResult?.error,
                     "Unable to authenticate this account."
                   )
@@ -3908,7 +4131,10 @@ export class AppController {
             console.error("LOGIN ERROR:", err);
             console.error("STACK:", err?.stack);
             this.showLogin({
-              errorMessage: String(err?.message ?? "Unable to load profile. Check console for details and try again."),
+              errorMessage: this.formatPlayerFacingMultiplayerError(
+                err,
+                "Unable to sign in right now. Please try again."
+              ),
               defaults: {
                 username,
                 email
@@ -4033,7 +4259,10 @@ export class AppController {
             this.startGame(MATCH_MODE.LOCAL_PVP);
           } catch (error) {
             this.showLocalSetup({
-              errorMessage: String(error?.message ?? "Both players must authenticate before starting Local 2-Player."),
+              errorMessage: this.formatPlayerFacingMessage(
+                error?.message,
+                "Both players must be signed in before Local 2-Player can start."
+              ),
               setupDefaults: setup
             });
           }
@@ -4224,7 +4453,8 @@ export class AppController {
   }
 
   refreshActiveGameHudInPlace() {
-    if (this.screenFlow !== "game" || typeof document?.querySelector !== "function") {
+    const doc = globalThis.document;
+    if (this.screenFlow !== "game" || typeof doc?.querySelector !== "function") {
       return false;
     }
 
@@ -4233,8 +4463,8 @@ export class AppController {
       return false;
     }
 
-    const root = document.querySelector(".screen-game");
-    const hudLine = document.getElementById?.("game-hud-primary-line") ?? null;
+    const root = doc.querySelector(".screen-game");
+    const hudLine = doc.getElementById?.("game-hud-primary-line") ?? null;
     if (!root || !hudLine) {
       return false;
     }

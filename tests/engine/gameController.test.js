@@ -3186,6 +3186,15 @@ test("appController: online play update preserves latest round result for the on
       hostResult: "lose",
       guestResult: "win"
     });
+    assert.deepEqual(onlinePlayContext.multiplayer.lastCompletedBattleResult, {
+      outcomeType: "resolved",
+      hostMove: "fire",
+      guestMove: "water",
+      hostResult: "lose",
+      guestResult: "win",
+      roundNumber: 2,
+      matchComplete: false
+    });
     assert.equal(onlinePlayContext.multiplayer.room.hostScore, 0);
     assert.equal(onlinePlayContext.multiplayer.room.guestScore, 1);
     assert.equal(onlinePlayContext.multiplayer.room.roundNumber, 2);
@@ -3344,6 +3353,15 @@ test("appController: online play clears previous round result when the next roun
 
     const onlinePlayContext = shownScreens.at(-1).context;
     assert.equal(onlinePlayContext.multiplayer.latestRoundResult, null);
+    assert.deepEqual(onlinePlayContext.multiplayer.lastCompletedBattleResult, {
+      outcomeType: "resolved",
+      hostMove: "fire",
+      guestMove: "water",
+      hostResult: "lose",
+      guestResult: "win",
+      roundNumber: 2,
+      matchComplete: false
+    });
   } finally {
     globalThis.window = originalWindow;
   }
@@ -3476,9 +3494,271 @@ test("appController: online play submit responses cannot resurrect a stale round
     const onlinePlayContext = shownScreens.at(-1).context;
     assert.equal(onlinePlayContext.multiplayer.room.moveSync.submittedCount, 1);
     assert.equal(onlinePlayContext.multiplayer.latestRoundResult, null);
+    assert.equal(onlinePlayContext.multiplayer.lastCompletedBattleResult, null);
   } finally {
     globalThis.window = originalWindow;
   }
+});
+
+test("appController: online play replaces the preserved battle log only when a newer completed result arrives", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const updateListeners = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          onUpdate: (listener) => {
+            updateListeners.push(listener);
+            return () => {};
+          },
+          getState: async () => ({
+            connectionStatus: "connected",
+            socketId: "guest-1",
+            room: {
+              roomCode: "ABC123",
+              createdAt: "2026-03-19T12:00:00.000Z",
+              status: "full",
+              host: { socketId: "host-1" },
+              guest: { socketId: "guest-1" },
+              hostScore: 0,
+              guestScore: 0,
+              roundNumber: 1,
+              lastOutcomeType: null,
+              warActive: false,
+              warDepth: 0,
+              warRounds: [],
+              roundHistory: [],
+              moveSync: {
+                hostSubmitted: false,
+                guestSubmitted: false,
+                submittedCount: 0,
+                bothSubmitted: false,
+                updatedAt: null
+              }
+            },
+            latestRoundResult: null,
+            lastError: null,
+            statusMessage: "Room ABC123 is full."
+          }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "guest-1",
+            room: {
+              roomCode: "ABC123",
+              createdAt: "2026-03-19T12:00:00.000Z",
+              status: "full",
+              host: { socketId: "host-1" },
+              guest: { socketId: "guest-1" },
+              hostScore: 0,
+              guestScore: 0,
+              roundNumber: 1,
+              lastOutcomeType: null,
+              warActive: false,
+              warDepth: 0,
+              warRounds: [],
+              roundHistory: [],
+              moveSync: {
+                hostSubmitted: false,
+                guestSubmitted: false,
+                submittedCount: 0,
+                bothSubmitted: false,
+                updatedAt: null
+              }
+            },
+            latestRoundResult: null,
+            lastError: null,
+            statusMessage: "Room ABC123 is full."
+          }),
+          createRoom: async () => ({}),
+          joinRoom: async () => ({}),
+          submitMove: async () => ({}),
+          disconnect: async () => ({})
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    app.bindOnlinePlayUpdates();
+    await app.showOnlinePlay();
+
+    updateListeners[0]({
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 1,
+        roundNumber: 2,
+        lastOutcomeType: "resolved",
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      },
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "fire",
+        guestMove: "water",
+        outcomeType: "resolved",
+        hostResult: "lose",
+        guestResult: "win"
+      },
+      lastError: null,
+      statusMessage: "You Win Room ABC123"
+    });
+
+    updateListeners[0]({
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 1,
+        guestScore: 1,
+        roundNumber: 3,
+        lastOutcomeType: "resolved",
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:01:05.000Z"
+        }
+      },
+      latestRoundResult: {
+        roomCode: "ABC123",
+        hostMove: "earth",
+        guestMove: "wind",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      },
+      lastError: null,
+      statusMessage: "You Lose Room ABC123"
+    });
+
+    const onlinePlayContext = shownScreens.at(-1).context;
+    assert.deepEqual(onlinePlayContext.multiplayer.lastCompletedBattleResult, {
+      outcomeType: "resolved",
+      hostMove: "earth",
+      guestMove: "wind",
+      hostResult: "win",
+      guestResult: "lose",
+      roundNumber: 3,
+      matchComplete: false
+    });
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online play keeps the preserved battle log during a 2/2 to 0/2 next-round reset", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const previousState = app.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      roundNumber: 2,
+      moveSync: {
+        hostSubmitted: true,
+        guestSubmitted: true,
+        submittedCount: 2,
+        bothSubmitted: true,
+        updatedAt: "2026-03-19T12:00:05.000Z"
+      }
+    },
+    latestRoundResult: {
+      roomCode: "ABC123",
+      hostMove: "fire",
+      guestMove: "water",
+      outcomeType: "resolved",
+      hostResult: "lose",
+      guestResult: "win"
+    },
+    lastCompletedBattleResult: {
+      outcomeType: "resolved",
+      hostMove: "fire",
+      guestMove: "water",
+      hostResult: "lose",
+      guestResult: "win",
+      roundNumber: 2,
+      matchComplete: false
+    }
+  });
+
+  const nextState = app.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      roundNumber: 3,
+      moveSync: {
+        hostSubmitted: false,
+        guestSubmitted: false,
+        submittedCount: 0,
+        bothSubmitted: false,
+        updatedAt: null
+      }
+    },
+    latestRoundResult: {
+      roomCode: "ABC123",
+      hostMove: "fire",
+      guestMove: "water",
+      outcomeType: "resolved",
+      hostResult: "lose",
+      guestResult: "win"
+    }
+  });
+
+  const reconciledState = app.reconcileOnlinePlayRoundState(previousState, nextState);
+  assert.equal(reconciledState.latestRoundResult, null);
+  assert.deepEqual(reconciledState.lastCompletedBattleResult, {
+    outcomeType: "resolved",
+    hostMove: "fire",
+    guestMove: "water",
+    hostResult: "lose",
+    guestResult: "win",
+    roundNumber: 2,
+    matchComplete: false
+  });
 });
 
 test("appController: online play update preserves war state for the online play screen", async () => {
@@ -3645,9 +3925,192 @@ test("appController: online play update preserves war state for the online play 
         outcomeType: "no_effect"
       }
     ]);
+    assert.deepEqual(onlinePlayContext.multiplayer.lastCompletedBattleResult, {
+      outcomeType: "no_effect",
+      hostMove: "wind",
+      guestMove: "fire",
+      hostResult: "no_effect",
+      guestResult: "no_effect",
+      roundNumber: 2,
+      matchComplete: false
+    });
   } finally {
     globalThis.window = originalWindow;
   }
+});
+
+test("appController: online play room snapshot resolved result updates lastCompletedBattleResult without a live latestRoundResult payload", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const normalized = app.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      roundNumber: 5,
+      lastOutcomeType: "resolved",
+      warActive: false,
+      warDepth: 0,
+      warRounds: [],
+      roundHistory: [
+        {
+          round: 4,
+          hostMove: "earth",
+          guestMove: "fire",
+          outcomeType: "resolved",
+          hostResult: "lose",
+          guestResult: "win"
+        }
+      ],
+      moveSync: {
+        hostSubmitted: false,
+        guestSubmitted: false,
+        submittedCount: 0,
+        bothSubmitted: false,
+        updatedAt: null
+      }
+    },
+    latestRoundResult: null
+  });
+
+  assert.deepEqual(normalized.lastCompletedBattleResult, {
+    outcomeType: "resolved",
+    hostMove: "earth",
+    guestMove: "fire",
+    hostResult: "lose",
+    guestResult: "win",
+    roundNumber: 4,
+    matchComplete: false
+  });
+});
+
+test("appController: online play room snapshot war started result updates lastCompletedBattleResult without a live latestRoundResult payload", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const normalized = app.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      roundNumber: 4,
+      lastOutcomeType: "war",
+      warActive: true,
+      warDepth: 1,
+      warRounds: [
+        {
+          round: 3,
+          hostMove: "earth",
+          guestMove: "earth",
+          outcomeType: "war"
+        }
+      ],
+      roundHistory: [],
+      moveSync: {
+        hostSubmitted: false,
+        guestSubmitted: false,
+        submittedCount: 0,
+        bothSubmitted: false,
+        updatedAt: null
+      }
+    },
+    latestRoundResult: null
+  });
+
+  assert.deepEqual(normalized.lastCompletedBattleResult, {
+    outcomeType: "war",
+    hostMove: "earth",
+    guestMove: "earth",
+    hostResult: "war",
+    guestResult: "war",
+    roundNumber: 3,
+    matchComplete: false
+  });
+});
+
+test("appController: online play room snapshot war resolved result replaces the preserved battle log without a live latestRoundResult payload", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.onlinePlayState = app.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      roundNumber: 4,
+      moveSync: {
+        hostSubmitted: false,
+        guestSubmitted: false,
+        submittedCount: 0,
+        bothSubmitted: false,
+        updatedAt: null
+      }
+    },
+    lastCompletedBattleResult: {
+      outcomeType: "war",
+      hostMove: "earth",
+      guestMove: "earth",
+      hostResult: "war",
+      guestResult: "war",
+      roundNumber: 3,
+      matchComplete: false
+    }
+  });
+
+  const normalized = app.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      roundNumber: 5,
+      lastOutcomeType: "war_resolved",
+      warActive: false,
+      warDepth: 0,
+      warRounds: [],
+      roundHistory: [
+        {
+          round: 4,
+          hostMove: "water",
+          guestMove: "fire",
+          outcomeType: "war_resolved",
+          hostResult: "lose",
+          guestResult: "win"
+        }
+      ],
+      moveSync: {
+        hostSubmitted: false,
+        guestSubmitted: false,
+        submittedCount: 0,
+        bothSubmitted: false,
+        updatedAt: null
+      }
+    },
+    latestRoundResult: null
+  });
+
+  assert.deepEqual(normalized.lastCompletedBattleResult, {
+    outcomeType: "war_resolved",
+    hostMove: "water",
+    guestMove: "fire",
+    hostResult: "lose",
+    guestResult: "win",
+    roundNumber: 4,
+    matchComplete: false
+  });
 });
 
 test("appController: reveal sounds are mode-aware and war start only plays when war begins", () => {
@@ -6588,7 +7051,35 @@ test("appController: local hotseat WAR resolution popup uses named winner-safe w
   assert.equal(p2Content.summary, "WAR resolved. Player 2 captured 2 of Player 1's card(s).");
 });
 
-test("appController: shared resolution popup uses 3-second skippable pass screen", async () => {
+test("appController: PvE shared resolution popup is suppressed when the same round result is already shown in-game", async () => {
+  let captured = null;
+  let onShownCalls = 0;
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.showPassScreen = async (options) => {
+    captured = options;
+  };
+
+  await app.showSharedResolutionPopup(
+    { status: "round_resolved", round: { result: "p1", warClashes: 0, capturedOpponentCards: 1 } },
+    MATCH_MODE.PVE,
+    {
+      onShown: async () => {
+        onShownCalls += 1;
+      }
+    }
+  );
+
+  assert.equal(captured, null);
+  assert.equal(onShownCalls, 1);
+});
+
+test("appController: local hotseat shared resolution popup still uses 3-second skippable pass screen", async () => {
   let captured = null;
 
   const app = new AppController({
@@ -6603,7 +7094,7 @@ test("appController: shared resolution popup uses 3-second skippable pass screen
 
   await app.showSharedResolutionPopup(
     { status: "round_resolved", round: { result: "p1", warClashes: 0, capturedOpponentCards: 1 } },
-    MATCH_MODE.PVE
+    MATCH_MODE.LOCAL_PVP
   );
 
   assert.equal(captured.secondsLeft, 3);

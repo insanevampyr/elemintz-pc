@@ -8525,10 +8525,11 @@ test("ui: online play screen renders round result from the local player perspect
     actions: {}
   });
 
-  assert.match(html, /Round Result/);
-  assert.match(html, /Host Move:<\/strong> Fire/);
-  assert.match(html, /Guest Move:<\/strong> Water/);
-  assert.match(html, /Result:<\/strong> You Win/);
+  assert.match(html, /data-online-shared-battle-result="true"/);
+  assert.match(html, /Battle Result/);
+  assert.match(html, /Round 2 - You Win/);
+  assert.match(html, /Why:<\/strong> Host played Fire and Guest played Water\./);
+  assert.match(html, /Changed:<\/strong> The round result has been applied to the online match score and captured-card state\./);
 });
 
 test("ui: online play screen keeps settled guest rewards after host migration", () => {
@@ -11013,16 +11014,169 @@ test("ui: online play screen renders no effect and war result labels", () => {
     actions: {}
   });
 
-  assert.match(noEffectHtml, /Host Move:<\/strong> Fire/);
-  assert.match(noEffectHtml, /Guest Move:<\/strong> Wind/);
-  assert.match(noEffectHtml, /Result:<\/strong> No Effect/);
-  assert.match(warHtml, /Host Move:<\/strong> Fire/);
-  assert.match(warHtml, /Guest Move:<\/strong> Fire/);
-  assert.match(warHtml, /Result:<\/strong> WAR Continues/);
-  assert.match(warHtml, /WAR Status/);
-  assert.match(warHtml, /WAR Active:<\/strong> Yes/);
-  assert.match(warHtml, /WAR Depth:<\/strong> 1/);
-  assert.match(warHtml, /Round 1: Fire vs Fire - WAR/);
+  assert.match(noEffectHtml, /Battle Result/);
+  assert.match(noEffectHtml, /No Effect/);
+  assert.match(noEffectHtml, /Why:<\/strong> Host played Fire and Guest played Wind, so neither card overpowered the other\./);
+  assert.match(noEffectHtml, /Changed:<\/strong> No cards changed sides and both players kept control of the round\./);
+  assert.match(warHtml, /Battle Result/);
+  assert.match(warHtml, /WAR started/);
+  assert.match(warHtml, /Why:<\/strong> Host played Fire and Guest played Fire, so neither side broke the tie\./);
+  assert.match(warHtml, /Changed:<\/strong> The tied cards rolled into WAR and both players must resolve the next clash\./);
+});
+
+test("ui: online play screen keeps rendering the preserved battle log after live sync fields clear", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "1/2 move submission received for room ABC123.",
+      lastError: null,
+      latestRoundResult: null,
+      latestAuthoritativeRoundResult: null,
+      lastCompletedBattleResult: {
+        outcomeType: "resolved",
+        hostMove: "fire",
+        guestMove: "water",
+        hostResult: "lose",
+        guestResult: "win",
+        roundNumber: 2,
+        matchComplete: false
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 0,
+        guestScore: 1,
+        roundNumber: 3,
+        lastOutcomeType: "resolved",
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: false,
+          submittedCount: 1,
+          bothSubmitted: false,
+          updatedAt: "2026-03-19T12:01:00.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Battle Result/);
+  assert.match(html, /Round 2 - You Win/);
+  assert.match(html, /Why:<\/strong> Host played Fire and Guest played Water\./);
+  assert.match(html, /Changed:<\/strong> The round result has been applied to the online match score and captured-card state\./);
+  assert.doesNotMatch(html, /Battle log will appear here\./);
+});
+
+test("ui: online play screen keeps rendering a preserved no-effect battle log after live sync fields clear", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "1/2 move submission received for room ABC123.",
+      lastError: null,
+      latestRoundResult: null,
+      latestAuthoritativeRoundResult: null,
+      lastCompletedBattleResult: {
+        outcomeType: "no_effect",
+        hostMove: "fire",
+        guestMove: "wind",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        roundNumber: 4,
+        matchComplete: false
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 1,
+        guestScore: 1,
+        roundNumber: 5,
+        lastOutcomeType: "no_effect",
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: false,
+          submittedCount: 1,
+          bothSubmitted: false,
+          updatedAt: "2026-03-19T12:01:00.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /No Effect/);
+  assert.match(html, /Why:<\/strong> Host played Fire and Guest played Wind, so neither card overpowered the other\./);
+  assert.doesNotMatch(html, /Battle log will appear here\./);
+});
+
+test("ui: online play screen keeps rendering a preserved war resolved battle log after live sync fields clear", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "1/2 move submission received for room ABC123.",
+      lastError: null,
+      latestRoundResult: null,
+      latestAuthoritativeRoundResult: null,
+      lastCompletedBattleResult: {
+        outcomeType: "war_resolved",
+        hostMove: "water",
+        guestMove: "fire",
+        hostResult: "win",
+        guestResult: "lose",
+        roundNumber: 7,
+        matchComplete: false
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 2,
+        guestScore: 1,
+        roundNumber: 8,
+        lastOutcomeType: "war_resolved",
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: false,
+          submittedCount: 1,
+          bothSubmitted: false,
+          updatedAt: "2026-03-19T12:01:00.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /WAR Lost/);
+  assert.match(html, /Why:<\/strong> WAR resolved after Host played Water and Guest played Fire\./);
+  assert.doesNotMatch(html, /Battle log will appear here\./);
 });
 
 test("ui: online play screen renders taunts feed for active rooms", () => {
@@ -11130,6 +11284,12 @@ test("ui: online play screen still shows move controls for full rooms when moveS
     actions: {}
   });
 
+  assert.match(html, /data-online-shared-battle-result="true"/);
+  assert.match(html, /Battle Result/);
+  assert.match(html, /Battle log will appear here\./);
+  assert.doesNotMatch(html, /Why:<\/strong>/);
+  assert.doesNotMatch(html, /Changed:<\/strong>/);
+  assert.match(html, /1 Fire · 2 Earth · 3 Wind · 4 Water/);
   assert.match(html, /Sync:<\/strong> 0\/2 submitted\./);
   assert.match(html, /Choose your move for the current round\./);
   assert.match(html, /Round 1 \| Host 0 - Guest 0/);
@@ -11214,8 +11374,10 @@ test("ui: online play screen renders war resolved result from player perspective
     actions: {}
   });
 
-  assert.match(html, /Result:<\/strong> WAR Won/);
-  assert.match(html, /Round 2: Water vs Fire - WAR RESOLVED/);
+  assert.match(html, /Battle Result/);
+  assert.match(html, /WAR Won/);
+  assert.match(html, /Why:<\/strong> WAR resolved after Host played Water and Guest played Fire\./);
+  assert.match(html, /Changed:<\/strong> The WAR pile was awarded and the round score has been updated\./);
 });
 
 test("ui: online play screen bind delegates move button clicks to submitMove", async () => {
@@ -11296,6 +11458,164 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
 
     assert.deepEqual(calls, ["fire"]);
     assert.deepEqual(tauntCalls, ["toggle", "Your move."]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: online play screen keyboard shortcuts delegate to the existing submit path only when legal", async () => {
+  const previousDocument = global.document;
+  const calls = [];
+  const listeners = {};
+  const fireButton = createFakeElement();
+  fireButton.getAttribute = (name) => {
+    if (name === "data-move") return "fire";
+    return null;
+  };
+  fireButton.hasAttribute = (name) => name === "disabled" ? false : false;
+  fireButton.classList = { contains: (value) => value === "online-move-btn" };
+
+  const earthButton = createFakeElement();
+  earthButton.getAttribute = (name) => {
+    if (name === "data-move") return "earth";
+    return null;
+  };
+  earthButton.hasAttribute = () => true;
+  earthButton.classList = { contains: (value) => value === "online-move-btn" };
+
+  global.document = {
+    activeElement: { tagName: "BODY", isContentEditable: false },
+    addEventListener(type, handler) {
+      listeners[type] = handler;
+    },
+    removeEventListener(type, handler) {
+      if (listeners[type] === handler) {
+        delete listeners[type];
+      }
+    },
+    getElementById: (id) => {
+      if (id === "online-create-room-btn" || id === "online-play-back-btn") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "online-join-room-form") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "online-move-actions") {
+        return { addEventListener: () => {} };
+      }
+      return null;
+    },
+    querySelector: () => null,
+    querySelectorAll: (selector) => {
+      if (selector === "[data-taunt-line]") {
+        return [];
+      }
+      if (selector === ".online-move-btn") {
+        return [fireButton, earthButton];
+      }
+      return [];
+    }
+  };
+
+  try {
+    onlinePlayScreen.bind({
+      actions: {
+        createRoom: async () => {},
+        back: async () => {},
+        joinRoom: async () => {},
+        toggleTauntsPanel: async () => {},
+        sendTaunt: async () => {},
+        submitMove: async (move) => {
+          calls.push(move);
+        }
+      }
+    });
+
+    await listeners.keydown({
+      key: "1",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    await listeners.keydown({
+      key: "2",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    assert.deepEqual(calls, ["fire"]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: online play screen keyboard shortcuts are ignored for editable targets and open modals", async () => {
+  const previousDocument = global.document;
+  const calls = [];
+  const listeners = {};
+  const fireButton = createFakeElement();
+  fireButton.getAttribute = (name) => {
+    if (name === "data-move") return "fire";
+    return null;
+  };
+  fireButton.hasAttribute = () => false;
+  fireButton.classList = { contains: (value) => value === "online-move-btn" };
+
+  global.document = {
+    activeElement: { tagName: "INPUT", isContentEditable: false },
+    addEventListener(type, handler) {
+      listeners[type] = handler;
+    },
+    removeEventListener(type, handler) {
+      if (listeners[type] === handler) {
+        delete listeners[type];
+      }
+    },
+    getElementById: (id) => {
+      if (id === "online-create-room-btn" || id === "online-play-back-btn") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "online-join-room-form") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "online-move-actions") {
+        return { addEventListener: () => {} };
+      }
+      return null;
+    },
+    querySelector: (selector) => (selector === ".modal-overlay" ? {} : null),
+    querySelectorAll: (selector) => {
+      if (selector === "[data-taunt-line]") {
+        return [];
+      }
+      if (selector === ".online-move-btn") {
+        return [fireButton];
+      }
+      return [];
+    }
+  };
+
+  try {
+    onlinePlayScreen.bind({
+      actions: {
+        createRoom: async () => {},
+        back: async () => {},
+        joinRoom: async () => {},
+        toggleTauntsPanel: async () => {},
+        sendTaunt: async () => {},
+        submitMove: async (move) => {
+          calls.push(move);
+        }
+      }
+    });
+
+    await listeners.keydown({
+      key: "1",
+      target: { tagName: "INPUT", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    assert.deepEqual(calls, []);
   } finally {
     global.document = previousDocument;
   }

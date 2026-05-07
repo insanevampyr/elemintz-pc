@@ -10,14 +10,19 @@ function createFakeIpcRenderer() {
   const invocations = [];
   const listeners = new Map();
   const sends = [];
+  const syncResponses = new Map();
 
   return {
     invocations,
     listeners,
     sends,
+    syncResponses,
     invoke(channel, payload) {
       invocations.push({ channel, payload });
       return Promise.resolve({ channel, payload });
+    },
+    sendSync(channel) {
+      return syncResponses.get(channel);
     },
     on(channel, listener) {
       listeners.set(channel, listener);
@@ -45,28 +50,33 @@ test("preload.cjs is self-contained and does not require sibling helper preload 
 
 test("preload version resolver falls back safely when package metadata is unavailable", () => {
   const version = resolveAppVersion({
-    baseDir: "C:\\missing\\preload",
-    fsModule: {
-      readFileSync() {
-        throw new Error("missing");
-      }
-    },
+    ipcRendererRef: null,
+    env: {},
     fallback: "unknown"
   });
 
   assert.equal(version, "unknown");
 });
 
+test("preload version resolver prefers runtime app version from the preload bridge", () => {
+  const ipcRenderer = createFakeIpcRenderer();
+  ipcRenderer.syncResponses.set("app:getVersionSync", "2.0.4");
+
+  const version = resolveAppVersion({
+    ipcRendererRef: ipcRenderer,
+    env: {},
+    fallback: "unknown"
+  });
+
+  assert.equal(version, "2.0.4");
+});
+
 test("preload bridge remains available when version falls back", async () => {
   const ipcRenderer = createFakeIpcRenderer();
   const bridge = buildElemintzBridge(ipcRenderer, {
     appVersion: resolveAppVersion({
-      baseDir: "C:\\missing\\preload",
-      fsModule: {
-        readFileSync() {
-          throw new Error("missing");
-        }
-      },
+      ipcRendererRef: null,
+      env: {},
       fallback: "unknown"
     })
   });

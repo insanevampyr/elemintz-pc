@@ -26,6 +26,7 @@ const DEFAULT_ONLINE_EQUIPPED_COSMETICS = Object.freeze({
   title: "Initiate",
   badge: "none"
 });
+let detachOnlineKeyboardHandler = null;
 
 function findMoveButtonFromEvent(event) {
   const path = typeof event?.composedPath === "function" ? event.composedPath() : [];
@@ -128,9 +129,26 @@ function formatMoveLabel(move) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-function deriveRoundResultView(context) {
+function resolveBattleLogResultSource(context) {
+  const persistedResult = context.multiplayer?.lastCompletedBattleResult ?? null;
+  if (persistedResult) {
+    return {
+      authoritativeResult: null,
+      result: persistedResult
+    };
+  }
+
   const authoritativeResult = context.multiplayer?.latestAuthoritativeRoundResult ?? null;
-  const result = authoritativeResult?.roundResult ?? context.multiplayer?.latestRoundResult;
+  const result = authoritativeResult?.roundResult ?? context.multiplayer?.latestRoundResult ?? null;
+
+  return {
+    authoritativeResult,
+    result
+  };
+}
+
+function deriveRoundResultView(context) {
+  const { authoritativeResult, result } = resolveBattleLogResultSource(context);
   const roleLabel =
     result?.matchComplete || context.multiplayer?.room?.matchComplete
       ? deriveSettledRoleLabel(context)
@@ -164,10 +182,78 @@ function deriveRoundResultView(context) {
   }
 
   return {
+    outcomeType: authoritativeResult?.outcomeType ?? result.outcomeType ?? null,
     hostMove: formatMoveLabel(authoritativeResult?.submittedCards?.host ?? result.hostMove),
     guestMove: formatMoveLabel(authoritativeResult?.submittedCards?.guest ?? result.guestMove),
+    roundNumber: Number(result.roundNumber ?? 0) || null,
     perspectiveLabel
   };
+}
+
+function deriveSharedBattleResultView(context) {
+  const roundResult = deriveRoundResultView(context);
+  const room = context.multiplayer?.room ?? null;
+
+  if (roundResult) {
+    const hostMoveText = roundResult.hostMove || "Unknown";
+    const guestMoveText = roundResult.guestMove || "Unknown";
+    const outcomeType = String(roundResult.outcomeType ?? "").trim().toLowerCase();
+
+    if (outcomeType === "war_resolved") {
+      return {
+        tone: "war",
+        headline: roundResult.perspectiveLabel,
+        why: `WAR resolved after Host played ${hostMoveText} and Guest played ${guestMoveText}.`,
+        changed: "The WAR pile was awarded and the round score has been updated."
+      };
+    }
+
+    if (outcomeType === "war") {
+      return {
+        tone: "war",
+        headline: "WAR started",
+        why: `Host played ${hostMoveText} and Guest played ${guestMoveText}, so neither side broke the tie.`,
+        changed: "The tied cards rolled into WAR and both players must resolve the next clash."
+      };
+    }
+
+    if (outcomeType === "no_effect" || roundResult.perspectiveLabel === "No Effect") {
+      return {
+        tone: "neutral",
+        headline: "No Effect",
+        why: `Host played ${hostMoveText} and Guest played ${guestMoveText}, so neither card overpowered the other.`,
+        changed: "No cards changed sides and both players kept control of the round."
+      };
+    }
+
+    return {
+      tone: roundResult.perspectiveLabel === "You Lose" ? "loss" : "win",
+      headline: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))} - ${roundResult.perspectiveLabel}`,
+      why: `Host played ${hostMoveText} and Guest played ${guestMoveText}.`,
+      changed: "The round result has been applied to the online match score and captured-card state."
+    };
+  }
+
+  if (room?.warActive) {
+    const warDepth = Math.max(1, Number(room?.warDepth ?? 1));
+    return {
+      tone: "war",
+      headline: "WAR active",
+      why: `The last clash stayed tied, so the match is still in WAR at depth ${warDepth}.`,
+        changed: "The WAR pile is still contested and the next submitted moves will decide whether it continues or resolves."
+    };
+  }
+
+  if (room?.status === "full") {
+    return {
+      tone: "placeholder",
+      headline: "Battle log will appear here.",
+      why: "",
+      changed: ""
+    };
+  }
+
+  return null;
 }
 
 function deriveMatchStatusView(context) {
@@ -325,7 +411,33 @@ function renderOnlineOpponentVariantTracker(opponentCardVariants) {
   `;
 }
 
+function renderSharedBattleResultPanel(battleResultView) {
+  const placeholder = Boolean(battleResultView?.tone === "placeholder");
+  return `
+    <article
+      class="panel online-shared-battle-result-panel online-shared-battle-result-panel-${escapeHtml(battleResultView?.tone ?? "neutral")}"
+      data-online-shared-battle-result="true"
+    >
+      <div class="online-shared-battle-result-meta">
+        <p class="online-shared-battle-result-kicker">Battle Result</p>
+        <h3 class="online-shared-battle-result-headline">${escapeHtml(battleResultView?.headline ?? "Round ready")}</h3>
+        ${
+          placeholder
+            ? ""
+            : `<p class="online-shared-battle-result-line"><strong>Why:</strong> ${escapeHtml(battleResultView?.why ?? "")}</p>`
+        }
+        ${
+          placeholder
+            ? ""
+            : `<p class="online-shared-battle-result-line"><strong>Changed:</strong> ${escapeHtml(battleResultView?.changed ?? "")}</p>`
+        }
+      </div>
+    </article>
+  `;
+}
+
 function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLabel, roomLifecycle) {
+  const battleResultView = boardView.battleResultView ?? null;
   const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
   const localCardBackRarity = getCardBackRarity(boardView.localIdentity.cardBackId);
   const remoteCardBackRarity = getCardBackRarity(boardView.remoteIdentity.cardBackId);
@@ -349,7 +461,9 @@ function renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLa
                 isDisabled: ({ isAvailable }) => !(boardView.selectable && isAvailable && !boardView.ownSubmitted)
               })}
             </div>
+            <p class="keyboard-hint">1 Fire · 2 Earth · 3 Wind · 4 Water</p>
           </div>
+          ${renderSharedBattleResultPanel(battleResultView)}
         </div>
       </article>
 
@@ -661,6 +775,57 @@ function deriveMatchCompleteView(context) {
   };
 }
 
+function deriveConnectionBannerView(context) {
+  const room = context.multiplayer?.room ?? null;
+  const connectionStatus = String(context.multiplayer?.connectionStatus ?? "disconnected").trim().toLowerCase();
+
+  if (connectionStatus === "connecting") {
+    return {
+      tone: "connecting",
+      label: "Connecting",
+      detail: "Reaching the EleMintz online service now."
+    };
+  }
+
+  if (connectionStatus !== "connected") {
+    return {
+      tone: "offline",
+      label: "Offline",
+      detail: "Not connected to EleMintz Online. Reconnect before creating or joining a room."
+    };
+  }
+
+  if (room?.status === "paused") {
+    return {
+      tone: "warning",
+      label: "Connected - Match Paused",
+      detail: "The room is connected, but the match is paused while a player reconnects."
+    };
+  }
+
+  if (room?.status === "full") {
+    return {
+      tone: "online",
+      label: "Connected - Match Live",
+      detail: "Online Play is connected and ready to resolve moves."
+    };
+  }
+
+  if (room?.status === "waiting") {
+    return {
+      tone: "online",
+      label: "Connected - Waiting Room",
+      detail: "Your room is live. Share the code and wait for the opponent to join."
+    };
+  }
+
+  return {
+    tone: "online",
+    label: "Connected",
+    detail: "Connected to EleMintz Online. You can create a room or join an existing code."
+  };
+}
+
 function getChallengeBucketSummary(bucket) {
   const challenges = Array.isArray(bucket?.challenges) ? bucket.challenges : [];
   const completed = challenges.filter((challenge) => challenge?.completed).length;
@@ -809,9 +974,11 @@ export const onlinePlayScreen = {
     const handStatus = deriveHandStatusView(context);
     const matchComplete = deriveMatchCompleteView(context);
     const warStatus = deriveWarStatusView(context);
-    const playersView = derivePlayersView(context);
-    const boardView = deriveOnlineBoardView(context);
-    const roomStateView = deriveRoomStateView(context);
+  const playersView = derivePlayersView(context);
+  const boardView = deriveOnlineBoardView(context);
+  const roomStateView = deriveRoomStateView(context);
+  const battleResultView = deriveSharedBattleResultView(context);
+  const connectionBanner = deriveConnectionBannerView(context);
     const joinCode = escapeHtml(context.joinCode ?? "");
     const isBusy = multiplayer?.connectionStatus === "connecting";
     const errorMessage = String(context.formattedErrorMessage ?? "").trim()
@@ -853,12 +1020,16 @@ export const onlinePlayScreen = {
           }
           <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
               <div class="panel themed-screen-panel stack-sm">
+              <section class="online-connection-banner online-connection-banner-${escapeHtml(connectionBanner.tone)}" aria-live="polite">
+                <strong class="online-connection-banner-label">${escapeHtml(connectionBanner.label)}</strong>
+                <span class="online-connection-banner-detail">${escapeHtml(connectionBanner.detail)}</span>
+              </section>
               ${
                 room
                 ? `
                   <section class="stack-sm">
                     <p><strong>Room Code:</strong> ${roomCode}</p>
-                    <p><strong>State:</strong> ${escapeHtml(roomStateView.label)}</p>
+                    <p><strong>Match State:</strong> ${escapeHtml(roomStateView.label)}</p>
                     ${safeRoleLabel ? `<p><strong>Role:</strong> ${safeRoleLabel}</p>` : ""}
                     ${moveSyncLabel && activeBoardVisible ? `<p><strong>Sync:</strong> ${escapeHtml(moveSyncLabel)}</p>` : ""}
                     ${
@@ -874,7 +1045,7 @@ export const onlinePlayScreen = {
                 `
                 : `
                   <p><strong>Connection:</strong> ${safeConnectionStatus}</p>
-                  <p><strong>State:</strong> ${escapeHtml(roomStateView.label)}</p>
+                  <p><strong>Match State:</strong> ${escapeHtml(roomStateView.label)}</p>
                   <p>${escapeHtml(multiplayer?.statusMessage ?? "Offline. Open Online Play to connect.")}</p>
                   <div class="stack-sm">
                     <button id="online-create-room-btn" class="btn" ${isBusy ? "disabled" : ""}>Create Room</button>
@@ -893,7 +1064,7 @@ export const onlinePlayScreen = {
                   </div>
                 `
             }
-            ${errorMessage ? `<p><strong>Error:</strong> ${errorMessage}</p>` : ""}
+            ${errorMessage ? `<p class="online-player-message"><strong>Notice:</strong> ${errorMessage}</p>` : ""}
             ${
               waitingPreviewVisible
                 ? renderWaitingBoardPreview(localWaitingHostIdentity, roomCode, context.backgroundImage)
@@ -901,16 +1072,26 @@ export const onlinePlayScreen = {
             }
             ${
               activeBoardVisible
-                ? renderOnlineLiveBoard(boardView, roomStateView, matchStatus, moveSyncLabel, roomLifecycle)
+                ? renderOnlineLiveBoard(
+                    {
+                      ...boardView,
+                      battleResultView
+                    },
+                    roomStateView,
+                    matchStatus,
+                    moveSyncLabel,
+                    roomLifecycle
+                  )
                 : ""
             }
+            ${battleResultView && !activeBoardVisible && room?.status === "full" && !matchComplete ? renderSharedBattleResultPanel(battleResultView) : ""}
             ${
               matchComplete
                 ? `
                   <section class="panel stack-sm">
                     <h3 class="section-title">Match Complete</h3>
                     <p><strong>Winner:</strong> ${escapeHtml(matchComplete.winnerLabel)}</p>
-                    ${matchComplete.winReason ? `<p><strong>Reason:</strong> ${escapeHtml(String(matchComplete.winReason).toUpperCase())}</p>` : ""}
+                    ${matchComplete.winReason ? `<p><strong>Why:</strong> ${escapeHtml(String(matchComplete.winReason).replaceAll("_", " "))}</p>` : ""}
                     <p><strong>Host Ready:</strong> ${matchComplete.hostReady ? "Yes" : "No"}</p>
                     <p><strong>Guest Ready:</strong> ${matchComplete.guestReady ? "Yes" : "No"}</p>
                     ${
@@ -933,50 +1114,15 @@ export const onlinePlayScreen = {
                 `
                 : ""
             }
-            ${
-              warStatus && !activeBoardVisible
-                ? `
-                  <section class="panel stack-sm">
-                    <h3 class="section-title">WAR Status</h3>
-                    <p><strong>WAR Active:</strong> Yes</p>
-                    <p><strong>WAR Depth:</strong> ${escapeHtml(String(warStatus.warDepth))}</p>
-                    ${
-                      warStatus.warRounds.length > 0
-                        ? `
-                          <div class="stack-sm">
-                            ${warStatus.warRounds
-                              .map(
-                                (entry) => `
-                                  <p>Round ${escapeHtml(String(entry.round))}: ${escapeHtml(entry.hostMove)} vs ${escapeHtml(entry.guestMove)} - ${escapeHtml(entry.outcomeTypeLabel)}</p>
-                                `
-                              )
-                              .join("")}
-                          </div>
-                        `
-                        : ""
-                    }
-                  </section>
-                `
-                : ""
-            }
-            ${
-              roundResult && !activeBoardVisible
-                ? `
-                  <section class="panel stack-sm">
-                    <h3 class="section-title">Round Result</h3>
-                    <p><strong>Host Move:</strong> ${escapeHtml(roundResult.hostMove)}</p>
-                    <p><strong>Guest Move:</strong> ${escapeHtml(roundResult.guestMove)}</p>
-                    <p><strong>Result:</strong> ${escapeHtml(roundResult.perspectiveLabel)}</p>
-                  </section>
-                `
-                : ""
-            }
           </div>
         </section>
       </section>
     `;
   },
   bind(context) {
+    detachOnlineKeyboardHandler?.();
+    detachOnlineKeyboardHandler = null;
+
     bindCosmeticHoverPreview({
       root: (typeof document.querySelector === "function" ? document.querySelector(".screen-online-play") : null) ?? document,
       documentRef: document
@@ -994,6 +1140,33 @@ export const onlinePlayScreen = {
     });
 
     const moveActions = document.getElementById("online-move-actions");
+    const resolveOnlineMoveButton = (element) => {
+      if (!element) {
+        return null;
+      }
+
+      const moveButtons = Array.from(document.querySelectorAll?.(".online-move-btn") ?? []);
+      return moveButtons.find((button) => {
+        if (button?.hasAttribute?.("disabled")) {
+          return false;
+        }
+
+        return String(button?.getAttribute?.("data-move") ?? "").trim().toLowerCase() === element;
+      }) ?? null;
+    };
+
+    const submitOnlineMoveButton = async (button) => {
+      if (!button || button.hasAttribute("disabled")) {
+        return;
+      }
+
+      const move = button.getAttribute("data-move") ?? "";
+      console.info("[OnlinePlay][Renderer] move extracted from button", {
+        move
+      });
+      await context.actions.submitMove(move);
+    };
+
     if (moveActions) {
       moveActions.addEventListener("click", async (event) => {
         console.info("[OnlinePlay][Renderer] move button click received", {
@@ -1001,16 +1174,60 @@ export const onlinePlayScreen = {
         });
 
         const button = findMoveButtonFromEvent(event);
-        if (!button || button.hasAttribute("disabled")) {
-          return;
-        }
-
-        const move = button.getAttribute("data-move") ?? "";
-        console.info("[OnlinePlay][Renderer] move extracted from button", {
-          move
-        });
-        await context.actions.submitMove(move);
+        await submitOnlineMoveButton(button);
       });
+    }
+
+    const keyToElement = {
+      "1": "fire",
+      "2": "earth",
+      "3": "wind",
+      "4": "water"
+    };
+
+    const isEditableTarget = (target) => {
+      const tagName = String(target?.tagName ?? target?.nodeName ?? "").trim().toUpperCase();
+      if (target?.isContentEditable) {
+        return true;
+      }
+
+      if (tagName === "TEXTAREA") {
+        return true;
+      }
+
+      if (tagName === "INPUT") {
+        return true;
+      }
+
+      return false;
+    };
+
+    const hasOpenModal = () => Boolean(document.querySelector?.(".modal-overlay"));
+
+    const keydownHandler = async (event) => {
+      const element = keyToElement[event?.key];
+      if (!element || hasOpenModal()) {
+        return;
+      }
+
+      if (isEditableTarget(event?.target) || isEditableTarget(document.activeElement)) {
+        return;
+      }
+
+      const button = resolveOnlineMoveButton(element);
+      if (!button) {
+        return;
+      }
+
+      event.preventDefault?.();
+      await submitOnlineMoveButton(button);
+    };
+
+    if (typeof document.addEventListener === "function") {
+      document.addEventListener("keydown", keydownHandler);
+      detachOnlineKeyboardHandler = () => {
+        document.removeEventListener?.("keydown", keydownHandler);
+      };
     }
 
     const joinForm = document.getElementById("online-join-room-form");

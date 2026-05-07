@@ -162,6 +162,9 @@ app.whenReady().then(() => {
     hasPublishConfiguration: hasRuntimePublishConfiguration(RUNTIME_PUBLISH_CONFIGURATION),
     publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
   });
+  ipcMain.on("app:getVersionSync", (event) => {
+    event.returnValue = app.getVersion();
+  });
 
   console.info("[Startup] Electron userData", {
     appData: appDataPath,
