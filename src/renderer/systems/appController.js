@@ -111,6 +111,7 @@ export class AppController {
     this.sound = new SoundManager();
     this.localPlayers = null;
     this.localProfiles = null;
+    this.localPlayerAuthorities = null;
     this.profileSearchQuery = "";
     this.viewedProfileUsername = null;
     this.passTimerId = null;
@@ -1314,6 +1315,7 @@ export class AppController {
     this.dailyChallenges = null;
     this.localPlayers = null;
     this.localProfiles = null;
+    this.localPlayerAuthorities = null;
     this.onlinePlayChallengeSummary = null;
     this.onlinePlayChallengeSummaryKey = null;
     this.onlinePlayProfileRefreshKey = null;
@@ -1687,6 +1689,121 @@ export class AppController {
     return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
   }
 
+  buildLocalMatchSettlementKey(match, { mode = null, names = [] } = {}) {
+    const safeMode = String(mode ?? match?.mode ?? "local_match").trim() || "local_match";
+    const safeMatchId =
+      String(match?.id ?? "").trim() ||
+      String(match?.meta?.startedAt ?? "").trim() ||
+      "match";
+    const safeStartedAt = String(match?.meta?.startedAt ?? "").trim() || "started";
+    const safeEndedAt = String(match?.meta?.endedAt ?? "").trim() || "ended";
+    const safeWinner = String(match?.winner ?? "none").trim() || "none";
+    const safeRounds = Math.max(0, Number(match?.round ?? 0) || 0);
+    const participants = (Array.isArray(names) ? names : [])
+      .map((entry) => String(entry ?? "").trim())
+      .filter(Boolean)
+      .sort()
+      .join("|");
+
+    return [safeMode, safeMatchId, safeStartedAt, safeEndedAt, safeWinner, String(safeRounds), participants]
+      .filter(Boolean)
+      .join("::");
+  }
+
+  async settleLocalMatchResultForIdentity({
+    mode,
+    username,
+    perspective = "p1",
+    match,
+    authority = null
+  } = {}) {
+    const safeUsername = String(username ?? "").trim();
+    const multiplayerSettle = globalThis.window?.elemintz?.multiplayer?.applyLocalMatchResult;
+    const localRecord = globalThis.window?.elemintz?.state?.recordMatchResult;
+    const sessionToken = String(authority?.sessionToken ?? "").trim() || null;
+    const accountId =
+      String(
+        authority?.accountId ??
+          (perspective === "p1" ? this.onlinePlayState?.session?.accountId : "") ??
+          ""
+      ).trim() || null;
+    const settlementKey = this.buildLocalMatchSettlementKey(match, {
+      mode,
+      names:
+        mode === MATCH_MODE.LOCAL_PVP
+          ? [this.getLocalNames().p1, this.getLocalNames().p2]
+          : [safeUsername]
+    });
+    const matchSummary = {
+      winner: String(match?.winner ?? "").trim() || null,
+      endReason: String(match?.endReason ?? "").trim() || null,
+      round: Math.max(0, Number(match?.round ?? 0) || 0)
+    };
+    const canUseServer =
+      typeof multiplayerSettle === "function" &&
+      (Boolean(sessionToken) || this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, safeUsername));
+
+    console.info("[MatchSettlement][Renderer] attempt", {
+      mode,
+      username: safeUsername,
+      accountId,
+      perspective,
+      ...matchSummary,
+      settlementKey,
+      usingServerAuthority: canUseServer
+    });
+
+    if (canUseServer) {
+      try {
+        const result = await multiplayerSettle({
+          username: safeUsername,
+          perspective,
+          matchState: match,
+          settlementKey,
+          ...(sessionToken ? { sessionToken } : {})
+        });
+        console.info("[MatchSettlement][Renderer] authoritative success", {
+          mode,
+          username: safeUsername,
+          accountId,
+          perspective,
+          duplicate: Boolean(result?.duplicate),
+          fallbackUsed: false
+        });
+        return result;
+      } catch (error) {
+        console.error("[MatchSettlement][Renderer] authoritative failure", {
+          mode,
+          username: safeUsername,
+          accountId,
+          perspective,
+          fallbackUsed: typeof localRecord === "function",
+          message: error?.message,
+          stack: error?.stack
+        });
+      }
+    }
+
+    if (typeof localRecord !== "function") {
+      return null;
+    }
+
+    const result = await localRecord({
+      username: safeUsername,
+      perspective,
+      matchState: match,
+      settlementKey
+    });
+    console.info("[MatchSettlement][Renderer] local fallback success", {
+      mode,
+      username: safeUsername,
+      accountId,
+      perspective,
+      fallbackUsed: true
+    });
+    return result;
+  }
+
   showLegacyLocalAuthorityDisabledModal(body) {
     this.modalManager.show({
       title: "Online Authority Only",
@@ -2007,6 +2124,7 @@ export class AppController {
     return {
       account: result.account ?? null,
       session: result.session ?? null,
+      accountId: result.session?.accountId ?? result.account?.accountId ?? null,
       profile,
       snapshot: result.profile ?? null
     };
@@ -2025,6 +2143,11 @@ export class AppController {
       this.username = profile.username;
       return {
         accountId: this.onlinePlayState?.session?.accountId ?? null,
+        session: {
+          token: null,
+          username: profile.username ?? this.username ?? null,
+          authenticated: Boolean(this.onlinePlayState?.session?.authenticated)
+        },
         profile
       };
     }
@@ -2066,6 +2189,7 @@ export class AppController {
 
     return {
       accountId: authResult?.session?.accountId ?? authResult?.account?.accountId ?? null,
+      session: authResult?.session ?? null,
       profile: this.profile
     };
   }
@@ -2088,7 +2212,19 @@ export class AppController {
 
     return {
       p1: playerOne.profile,
-      p2: playerTwo.profile
+      p2: playerTwo.profile,
+      authorities: {
+        p1: {
+          username: playerOne.profile.username ?? null,
+          accountId: playerOne.accountId ?? null,
+          sessionToken: playerOne.session?.token ?? null
+        },
+        p2: {
+          username: playerTwo.profile.username ?? null,
+          accountId: playerTwo.accountId ?? playerTwo.account?.accountId ?? null,
+          sessionToken: playerTwo.session?.token ?? null
+        }
+      }
     };
   }
 
@@ -4369,6 +4505,7 @@ export class AppController {
     this.screenFlow = "menu";
     this.localPlayers = null;
     this.localProfiles = null;
+    this.localPlayerAuthorities = null;
 
     this.renderMenuScreen();
     this.updateOnlineReconnectReminderModal();
@@ -4471,6 +4608,7 @@ export class AppController {
               p1: resolvedPlayers.p1,
               p2: resolvedPlayers.p2
             };
+            this.localPlayerAuthorities = resolvedPlayers.authorities ?? null;
 
             this.startGame(MATCH_MODE.LOCAL_PVP);
           } catch (error) {
@@ -4518,19 +4656,26 @@ export class AppController {
 
   async persistLocalPvpResult(match) {
     const names = this.getLocalNames();
+    const authorities = this.localPlayerAuthorities ?? {};
 
-    const persistFor = async (username, perspective) => {
+    const persistFor = async (username, perspective, authority) => {
       try {
-        return await window.elemintz.state.recordMatchResult({ username, perspective, matchState: match });
+        return await this.settleLocalMatchResultForIdentity({
+          mode: MATCH_MODE.LOCAL_PVP,
+          username,
+          perspective,
+          match,
+          authority
+        });
       } catch (error) {
-        console.error("Failed to persist local profile", { username, perspective, error });
+        console.error("Failed to persist local PvP profile", { username, perspective, error });
         return null;
       }
     };
 
     // Commit local PvP results sequentially to avoid stale read-modify-write overlap.
-    const p1Result = await persistFor(names.p1, "p1");
-    const p2Result = await persistFor(names.p2, "p2");
+    const p1Result = await persistFor(names.p1, "p1", authorities.p1 ?? null);
+    const p2Result = await persistFor(names.p2, "p2", authorities.p2 ?? null);
 
     return {
       mode: MATCH_MODE.LOCAL_PVP,
@@ -4539,6 +4684,20 @@ export class AppController {
       p1: p1Result,
       p2: p2Result
     };
+  }
+
+  async persistPveResult(match) {
+    return this.settleLocalMatchResultForIdentity({
+      mode: MATCH_MODE.PVE,
+      username: this.username,
+      perspective: "p1",
+      match,
+      authority: {
+        username: this.username,
+        accountId: this.onlinePlayState?.session?.accountId ?? null,
+        sessionToken: null
+      }
+    });
   }
 
   startGame(mode = MATCH_MODE.PVE) {
@@ -4564,6 +4723,8 @@ export class AppController {
       aiDifficulty: mode === MATCH_MODE.PVE ? this.getConfiguredAiDifficulty() : FALLBACK_SETTINGS.aiDifficulty,
       mode,
       persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP,
+      persistMatchResult:
+        mode === MATCH_MODE.PVE ? async (match) => this.persistPveResult(match) : null,
       onRoundResolved: (round) => {
         if (mode === MATCH_MODE.PVE && this.deferPveOutcomeSound) {
           this.deferredPveRoundSound = round;
@@ -4594,6 +4755,9 @@ export class AppController {
         let finalPersisted = persisted;
         if (mode === MATCH_MODE.LOCAL_PVP) {
           finalPersisted = await this.persistLocalPvpResult(match);
+        } else if (persisted?.snapshot) {
+          this.profile =
+            this.buildProfileFromServerSnapshot(persisted.snapshot) ?? persisted.profile ?? this.profile;
         } else if (persisted?.profile) {
           this.profile = persisted.profile;
         }
@@ -4889,11 +5053,11 @@ export class AppController {
       this.screenFlow = "idle";
     }
 
-      if (this.gameController.getViewModel()?.status === "active") {
-        this.gameController?.rearmActiveRoundPresentation?.();
-        this.enterHotseatTurn();
-        return;
-      }
+    if (this.gameController.getViewModel()?.status === "active") {
+      this.gameController?.rearmActiveRoundPresentation?.();
+      await this.showPlayer1TurnPass(true);
+      return;
+    }
 
     this.flushPendingMatchCompleteModal();
   }

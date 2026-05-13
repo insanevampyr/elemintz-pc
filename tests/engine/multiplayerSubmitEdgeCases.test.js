@@ -210,8 +210,8 @@ test("online submit edge cases: rapid repeat submits count only the first move b
       message: "This player already submitted a move."
     });
     assert.deepEqual(guestErrors[0], {
-      code: "MOVE_ALREADY_SUBMITTED",
-      message: "This player already submitted a move."
+      code: "MOVE_STEP_RESOLVED",
+      message: "This resolution step already completed on the server."
     });
     assert.equal(hostRoundResults.length, 1);
     assert.equal(guestRoundResults.length, 1);

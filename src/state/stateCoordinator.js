@@ -408,7 +408,7 @@ export class StateCoordinator {
     };
   }
 
-  async recordMatchResult({ username, matchState, perspective = "p1" }) {
+  async recordMatchResult({ username, matchState, perspective = "p1", settlementKey = null }) {
     return this.runMatchPersistence(async () => {
       if (!username) {
         throw new Error("username is required to record match results.");
@@ -428,6 +428,47 @@ export class StateCoordinator {
       });
       const matchStats = statWrite.matchStats;
       const mode = statWrite.mode ?? "pve";
+      const effectiveSettlementKey = normalizeSettlementKey(settlementKey);
+      const existingSaves = await this.saves.listMatchResults();
+      const duplicateSave = effectiveSettlementKey
+        ? existingSaves.find(
+            (entry) =>
+              entry?.username === username &&
+              entry?.mode === mode &&
+              entry?.settlementKey === effectiveSettlementKey
+          ) ?? null
+        : null;
+      if (duplicateSave) {
+        if (
+          duplicateSave.winner !== safeMatchState.winner ||
+          safeRuntimeCount(duplicateSave.rounds, 0) !== safeRuntimeCount(safeMatchState.round, 0)
+        ) {
+          console.warn("[RuntimeEdgeGuard] contained stale runtime payload");
+        }
+        console.warn("[RuntimeEdgeGuard] skipped duplicate stat/result application");
+        const committedProfile = await this.profiles.ensureProfile(username);
+        return {
+          duplicate: true,
+          profile: committedProfile,
+          save: duplicateSave,
+          stats: duplicateSave.stats ?? matchStats,
+          dailyChallenges: getDailyChallengesView(committedProfile).view.daily,
+          weeklyChallenges: getDailyChallengesView(committedProfile).view.weekly,
+          xp: getLevelProgress(committedProfile),
+          dailyRewards: [],
+          weeklyRewards: [],
+          tokenDelta: 0,
+          matchTokenDelta: 0,
+          challengeTokenDelta: 0,
+          challengeXpDelta: 0,
+          xpDelta: 0,
+          xpBreakdown: { lines: [], total: 0 },
+          levelBefore: committedProfile.playerLevel ?? 1,
+          levelAfter: committedProfile.playerLevel ?? 1,
+          levelRewards: [],
+          levelRewardTokenDelta: 0
+        };
+      }
       const achievementsDisabledForMatch =
         mode === "pve" && String(safeMatchState.difficulty ?? "") === "easy";
 
@@ -542,6 +583,7 @@ export class StateCoordinator {
         username,
         perspective,
         mode,
+        settlementKey: effectiveSettlementKey,
         winner: safeMatchState.winner,
         rounds: safeMatchState.round,
         endReason: safeMatchState.endReason ?? null,

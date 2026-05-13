@@ -773,6 +773,18 @@ input[type="number"] {
   align-content: start;
 }
 
+.online-status-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.online-status-header-row .round-result-banner {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
 .round-status-line {
   margin: 0;
   color: #cfe4f5;
@@ -1014,6 +1026,20 @@ input[type="number"] {
 
   .match-status-panel {
     grid-template-columns: 1fr;
+  }
+
+  .online-status-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .online-turn-timer-shell {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .online-turn-timer-label {
+    text-align: left;
   }
 }
 

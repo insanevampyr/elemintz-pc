@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
 
-const PHASE_LABEL = "Opponent Variant Display + External Tester Stabilization";
+const PHASE_LABEL = "Unified Server Progression + Tester Stabilization";
 const ENVIRONMENT_LABEL = process.env.NODE_ENV === "production" ? "Production" : "Development";
 const logger = createTimestampedLogger(console);
 

@@ -207,6 +207,11 @@ test("ui: settings screen renders PvE AI difficulty and style options with easy 
   });
 
   assert.match(html, /AI Difficulty/);
+  assert.match(html, /Adjusts PvE and local PvP turn timing only\./);
+  assert.match(
+    html,
+    /Online Play always uses a server-controlled 20-second turn timer and is not affected by local timer or speed settings\./
+  );
   assert.match(html, /Random AI card selection/);
   assert.match(html, /Achievements disabled on Easy difficulty/);
   assert.match(html, /AI Opponent Style/);
@@ -1106,10 +1111,15 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 
   function createSection(items) {
+    const grid = {
+      querySelectorAll: (selector) => (selector === "[data-store-item]" ? items : []),
+      appendChild: () => {}
+    };
     return {
       hidden: false,
       style: {},
       classList: createClassList(),
+      querySelector: (selector) => (selector === ".cosmetic-grid" ? grid : null),
       querySelectorAll: (selector) => (selector === "[data-store-item]" ? items : [])
     };
   }
@@ -1253,7 +1263,7 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 });
 
-test("ui: appController gates store purchases behind confirmation and refreshes the sticky banner token balance after confirm yes", async () => {
+test("ui: appController keeps local-only store purchase actions blocked behind the authority-only modal", async () => {
   const previousWindow = global.window;
   const shown = [];
   const modalCalls = [];
@@ -1308,7 +1318,7 @@ test("ui: appController gates store purchases behind confirmation and refreshes 
       }
     },
     {
-      tokens: 125,
+      tokens: 200,
       supporterPass: false,
       catalog: {
         avatar: [],
@@ -1320,7 +1330,7 @@ test("ui: appController gates store purchases behind confirmation and refreshes 
       }
     },
     {
-      tokens: 125,
+      tokens: 200,
       supporterPass: false,
       catalog: {
         avatar: [],
@@ -1373,34 +1383,26 @@ test("ui: appController gates store purchases behind confirmation and refreshes 
     await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
 
     assert.equal(buyCalls, 0);
-    assert.equal(modalCalls.length, 1);
-    assert.equal(modalCalls[0].title, "Confirm Purchase");
-    assert.match(modalCalls[0].body, /Buy this item for 75 tokens\?/);
+    assert.equal(modalCalls.length, 2);
+    assert.equal(modalCalls[0].title, "Online Authority Only");
+    assert.match(modalCalls[0].body, /Local store purchases are unavailable/);
 
-    await modalCalls[0].actions[1].onClick();
+    await modalCalls[0].actions[0].onClick();
 
-    assert.equal(buyCalls, 0);
     assert.equal(shown.length, 1);
     assert.equal(hiddenModals.length, 1);
 
-    await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
+    const afterBlockedBuy = shown.at(-1).viewState;
 
-    assert.equal(modalCalls.length, 2);
-    assert.equal(modalCalls[1].title, "Confirm Purchase");
-
-    await modalCalls[1].actions[0].onClick();
-    const afterBuy = shown.at(-1).viewState;
-
-    assert.equal(buyCalls, 1);
-    assert.equal(shown.at(-1).store.tokens, 125);
-    assert.equal(afterBuy.searchText, "fire");
-    assert.deepEqual([...afterBuy.categories], ["avatar", "background"]);
-    assert.deepEqual([...afterBuy.rarities], ["Common", "Rare"]);
+    assert.equal(shown.at(-1).store.tokens, 200);
+    assert.equal(afterBlockedBuy.searchText, "fire");
+    assert.deepEqual([...afterBlockedBuy.categories], ["avatar", "background"]);
+    assert.deepEqual([...afterBlockedBuy.rarities], ["Common", "Rare"]);
 
     await shown.at(-1).actions.equip("background", "default_background");
     const afterEquip = shown.at(-1).viewState;
 
-    assert.equal(shown.at(-1).store.tokens, 125);
+    assert.equal(shown.at(-1).store.tokens, 200);
     assert.equal(afterEquip.searchText, "fire");
     assert.deepEqual([...afterEquip.categories], ["avatar", "background"]);
     assert.deepEqual([...afterEquip.rarities], ["Common", "Rare"]);
@@ -1409,7 +1411,7 @@ test("ui: appController gates store purchases behind confirmation and refreshes 
   }
 });
 
-test("ui: appController keeps the sticky shop banner token balance unchanged when a purchase fails", async () => {
+test("ui: appController keeps the sticky shop banner token balance unchanged when local-only purchase authority is unavailable", async () => {
   const previousWindow = global.window;
   const shown = [];
   const modalCalls = [];
@@ -1495,16 +1497,11 @@ test("ui: appController keeps the sticky shop banner token balance unchanged whe
 
     await shown[0].actions.buy("avatar", "fire_avatar_f");
     assert.equal(modalCalls.length, 1);
-    assert.equal(modalCalls[0].title, "Confirm Purchase");
-    assert.match(modalCalls[0].body, /Buy this item for 150 tokens\?/);
-
-    await modalCalls[0].actions[0].onClick();
+    assert.equal(modalCalls[0].title, "Online Authority Only");
+    assert.match(modalCalls[0].body, /Local store purchases are unavailable/);
 
     assert.equal(shown.length, 1);
     assert.equal(shown[0].store.tokens, 200);
-    assert.equal(modalCalls.length, 2);
-    assert.equal(modalCalls[1].title, "Purchase Failed");
-    assert.match(modalCalls[1].body, /Not enough tokens/);
   } finally {
     global.window = previousWindow;
   }
@@ -1544,9 +1541,7 @@ test("ui: appController shows one-time loadout unlock notice with next unlock me
   try {
     app.username = "LoadoutHero";
     app.profile = { username: "LoadoutHero", playerLevel: 10 };
-    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
-    await Promise.resolve();
-    await Promise.resolve();
+    await app.maybeShowLoadoutUnlockNotice();
     assert.equal(modalCalls.length, 1);
     assert.equal(modalCalls[0].title, "New Loadout Slot Unlocked!");
     assert.equal(modalCalls[0].body, undefined);
@@ -2459,9 +2454,9 @@ test("ui: game screen uses provided variant card images", () => {
 
   assert.match(html, /assets\/customFire\.jpg/);
   assert.match(html, /Round 1 \| Turn: 20s \| Match: 05:00 \| Player Turn/);
-  assert.match(html, /Result: No effect\./);
-  assert.match(html, /WAR Pile: 0 \| Clashes: 0/);
-  assert.match(html, /Captured: Hero • 0 \| Elemental AI • 0/);
+  assert.match(html, /Why:<\/strong> No effect\./);
+  assert.match(html, /WAR status: No active WAR pile\./);
+  assert.match(html, /Captured totals: Hero 0 \| Elemental AI 0/);
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
   assert.match(html, /class="hand-zone hand-zone-player"/);
   assert.match(html, /class="hand-summary-grid" id="left-hand"/);
@@ -6352,7 +6347,7 @@ test("ui: first visible local PvP WAR uses warActive to render the shared WAR im
 
   assert.match(html, /match-status-panel war-triggered[\s\S]*war-impact/);
   assert.match(html, /class="war-impact-ring"/);
-  assert.match(html, /<strong>WAR triggered<\/strong>/);
+  assert.match(html, /<strong>WAR is active<\/strong>/);
 });
 
 test("ui: bind arms WAR impact on the first PvE WAR render", () => {
@@ -7057,7 +7052,7 @@ test("ui: hidden hand remains hidden while WAR pile is face-up", () => {
   assert.match(html, /assets\/customFire\.jpg/);
   assert.match(html, /Hidden opponent hand: 2 cards/);
   assert.doesNotMatch(html, /class="card-rail"/);
-  assert.match(html, /Captured: P1 • 0 \| P2 • 0/);
+  assert.match(html, /Captured totals: P1 0 \| P2 0/);
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
 });
 
@@ -7912,8 +7907,8 @@ test("ui: online play screen renders room flow status and room details", () => {
   });
 
   assert.match(html, /Online Play/);
-  assert.match(html, /State:<\/strong> Waiting for Opponent/);
-  assert.match(html, /Error:<\/strong> Previous error/);
+  assert.match(html, /Match State:<\/strong> Waiting for Opponent/);
+  assert.match(html, /Notice:<\/strong> Previous error/);
   assert.match(html, /Room Code:<\/strong> ABC123/);
   assert.match(html, /Role:<\/strong> Host/);
   assert.doesNotMatch(html, /Connection:<\/strong>/);
@@ -8241,7 +8236,7 @@ test("ui: online play screen renders match complete and rematch readiness state"
   assert.match(html, /State:<\/strong> Match Complete/);
   assert.match(html, /Match Complete/);
   assert.match(html, /Winner:<\/strong> You Lose/);
-  assert.match(html, /Reason:<\/strong> HAND_EXHAUSTION/);
+  assert.match(html, /Why:<\/strong> hand exhaustion/);
   assert.match(html, /Host Ready:<\/strong> Yes/);
   assert.match(html, /Guest Ready:<\/strong> No/);
   assert.match(html, /Rewards Granted/);
@@ -11451,6 +11446,7 @@ test("ui: online play screen renders a server-authoritative turn timer label in 
   });
 
   assert.match(html, /Time to choose: 20s/);
+  assert.match(html, /online-status-header-row/);
   assert.match(html, /data-online-turn-timer-label="true"/);
   assert.match(html, /data-online-turn-timer-shell="true"/);
 });
@@ -11712,7 +11708,7 @@ test("ui: profile screen uses a chest count bubble and subtle empty helper text 
   assert.match(html, /class="chest-count-bubble"[^>]*>0</);
   assert.match(html, /class="chest-open-trigger"/);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-common" data-basic-chest-label="true">No Basic Chests available<\/p>/);
-  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Rare Chest<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Milestone Chest<\/p>/);
   assert.match(html, /data-epic-chest-image="true"/);
   assert.match(html, /data-legendary-chest-image="true"/);
   assert.doesNotMatch(html, /No Chests available/);
@@ -11736,7 +11732,7 @@ test("ui: profile screen enables open chest button when player has a basic chest
   assert.match(html, /data-milestone-chest-image="true"/);
   assert.match(html, /aria-label="Milestone Chest count">3</);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-common" data-basic-chest-label="true">Basic Chest<\/p>/);
-  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Rare Chest<\/p>/);
+  assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-rare" data-milestone-chest-label="true">Milestone Chest<\/p>/);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-epic" data-epic-chest-label="true">Epic Chest<\/p>/);
   assert.match(html, /class="text-muted chest-open-helper cosmetic-rarity-label rarity-legendary" data-legendary-chest-label="true">Legendary Chest<\/p>/);
   assert.match(html, /aria-label="Epic Chest count">1</);

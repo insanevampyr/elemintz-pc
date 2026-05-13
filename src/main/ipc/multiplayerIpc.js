@@ -84,6 +84,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.claimDailyLoginReward(payload);
   });
 
+  ipcMain.handle("multiplayer:applyLocalMatchResult", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.applyLocalMatchResult(payload);
+  });
+
   ipcMain.handle("multiplayer:buyStoreItem", async (event, payload) => {
     subscribers.add(event.sender);
     return client.buyStoreItem(payload);

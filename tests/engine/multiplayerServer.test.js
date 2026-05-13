@@ -77,6 +77,47 @@ async function loginAccount(socket, { email, password }) {
   });
 }
 
+async function registerAccount(socket, { username, email, password }) {
+  return new Promise((resolve) => {
+    socket.emit("auth:register", { username, email, password }, resolve);
+  });
+}
+
+function createCompletedLocalMatchState({
+  mode = "pve",
+  winner = "p1",
+  endReason = null,
+  round = 3
+} = {}) {
+  return {
+    status: "completed",
+    mode,
+    winner,
+    endReason,
+    round,
+    history: [
+      {
+        round: 1,
+        result: winner === "draw" ? "none" : winner,
+        p1Card: "fire",
+        p2Card: "earth",
+        warClashes: 0,
+        capturedCards: winner === "draw" ? 0 : 2,
+        capturedOpponentCards: winner === "draw" ? 0 : 1
+      }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: {
+      totalCards: 8,
+      startedAt: "2026-05-12T12:00:00.000Z",
+      endedAt: "2026-05-12T12:03:00.000Z"
+    }
+  };
+}
+
 async function createFullRoom(host, guest) {
   const createdPromise = waitForEvent(host, "room:created");
   host.emit("room:create");
@@ -3063,6 +3104,8 @@ test("multiplayer rooms: unmatched move pairs resolve to no_effect for both play
       warActive: false,
       warDepth: 0,
       warRounds: [],
+      capturedCards: 0,
+      capturedOpponentCards: 0,
       hostResult: "no_effect",
       guestResult: "no_effect"
     });
@@ -3138,6 +3181,8 @@ test("multiplayer rooms: same move pairs resolve to war for both players", async
           outcomeType: "war"
         }
       ],
+      capturedCards: 0,
+      capturedOpponentCards: 0,
       hostResult: "war",
       guestResult: "war"
     });
@@ -3233,6 +3278,8 @@ test("multiplayer rooms: match state scores and round history persist across mul
       warActive: false,
       warDepth: 0,
       warRounds: [],
+      capturedCards: 0,
+      capturedOpponentCards: 0,
       hostResult: "no_effect",
       guestResult: "no_effect"
     });
@@ -3430,6 +3477,8 @@ test("multiplayer rooms: repeated same-card rounds increase war depth", async ()
           outcomeType: "war"
         }
       ],
+      capturedCards: 0,
+      capturedOpponentCards: 0,
       hostResult: "war",
       guestResult: "war"
     });
@@ -3529,6 +3578,8 @@ test("multiplayer rooms: no_effect during war keeps war active without changing 
           outcomeType: "no_effect"
         }
       ],
+      capturedCards: 0,
+      capturedOpponentCards: 0,
       hostResult: "no_effect",
       guestResult: "no_effect"
     });
@@ -3614,6 +3665,8 @@ test("multiplayer rooms: decisive win during war resolves war and awards one sco
       warActive: false,
       warDepth: 0,
       warRounds: [],
+      capturedCards: 4,
+      capturedOpponentCards: 2,
       hostResult: "win",
       guestResult: "lose"
     });
@@ -3679,6 +3732,8 @@ test("multiplayer rooms: reaching 5 points alone does not end the match if cards
       warActive: false,
       warDepth: 0,
       warRounds: [],
+      capturedCards: 2,
+      capturedOpponentCards: 1,
       hostResult: "win",
       guestResult: "lose"
     });
@@ -4544,6 +4599,155 @@ test("multiplayer rewards: settlementKey prevents duplicate persisted reward gra
     assert.equal(profile.chests.basic, 1);
     assert.deepEqual(profile.onlineRewardSettlements?.appliedSettlementKeys, ["ROOM99:match:1"]);
   } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer profile authority: authenticated PvE settlement updates the server profile and stays idempotent", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    }),
+    adminGrantStore: new AdminGrantStore({ dataDir })
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+    const auth = await registerAccount(client, {
+      username: "AuthoritativePveUser",
+      email: "authoritative-pve@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(auth?.ok, true);
+
+    const first = await new Promise((resolve) => {
+      client.emit(
+        "profile:applyLocalMatchResult",
+        {
+          perspective: "p1",
+          matchState: createCompletedLocalMatchState({ mode: "pve", winner: "p1" }),
+          settlementKey: "PVE:server:1"
+        },
+        resolve
+      );
+    });
+    const second = await new Promise((resolve) => {
+      client.emit(
+        "profile:applyLocalMatchResult",
+        {
+          perspective: "p1",
+          matchState: createCompletedLocalMatchState({ mode: "pve", winner: "p1" }),
+          settlementKey: "PVE:server:1"
+        },
+        resolve
+      );
+    });
+
+    const profile = await coordinator.profiles.getProfile("AuthoritativePveUser");
+
+    assert.equal(first?.ok, true);
+    assert.equal(first?.result?.duplicate, false);
+    assert.equal(second?.ok, true);
+    assert.equal(second?.result?.duplicate, true);
+    assert.equal(profile.gamesPlayed, 1);
+    assert.equal(profile.wins, 1);
+    assert.ok(profile.playerXP > 0);
+    assert.ok(profile.tokens > 200);
+    assert.equal(profile.modeStats.pve.gamesPlayed, 1);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer profile authority: authenticated local PvP settlement updates both server profiles with their own perspectives", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    }),
+    adminGrantStore: new AdminGrantStore({ dataDir })
+  });
+  let p1 = null;
+  let p2 = null;
+
+  try {
+    const port = await foundation.start();
+    p1 = await connectClient(port);
+    p2 = await connectClient(port);
+
+    const hostAuth = await registerAccount(p1, {
+      username: "AuthoritativeHotseatHost",
+      email: "authoritative-hotseat-host@example.com",
+      password: "PlayerPass123"
+    });
+    const guestAuth = await registerAccount(p2, {
+      username: "AuthoritativeHotseatGuest",
+      email: "authoritative-hotseat-guest@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(hostAuth?.ok, true);
+    assert.equal(guestAuth?.ok, true);
+
+    const matchState = createCompletedLocalMatchState({ mode: "local_pvp", winner: "p1" });
+    const p1Result = await new Promise((resolve) => {
+      p1.emit(
+        "profile:applyLocalMatchResult",
+        {
+          perspective: "p1",
+          matchState,
+          settlementKey: "LPVP:server:1"
+        },
+        resolve
+      );
+    });
+    const p2Result = await new Promise((resolve) => {
+      p2.emit(
+        "profile:applyLocalMatchResult",
+        {
+          perspective: "p2",
+          matchState,
+          settlementKey: "LPVP:server:1"
+        },
+        resolve
+      );
+    });
+
+    const hostProfile = await coordinator.profiles.getProfile("AuthoritativeHotseatHost");
+    const guestProfile = await coordinator.profiles.getProfile("AuthoritativeHotseatGuest");
+
+    assert.equal(p1Result?.ok, true);
+    assert.equal(p2Result?.ok, true);
+    assert.equal(hostProfile.gamesPlayed, 1);
+    assert.equal(hostProfile.wins, 1);
+    assert.equal(hostProfile.modeStats.local_pvp.wins, 1);
+    assert.equal(guestProfile.gamesPlayed, 1);
+    assert.equal(guestProfile.losses, 1);
+    assert.equal(guestProfile.modeStats.local_pvp.losses, 1);
+  } finally {
+    p1?.disconnect();
+    p2?.disconnect();
+    await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

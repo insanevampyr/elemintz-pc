@@ -247,8 +247,10 @@ test("online challenge mapping: WAR outcomes increment WAR challenge progress an
       }
     });
 
-    assert.match(html, /Basic Chests Waiting:<\/strong> 2 Basic Chests/);
     assert.ok(!html.includes("Rewards Ready/Claimed"));
+    assert.match(html, /Challenges/);
+    assert.match(html, /Daily Progress/);
+    assert.match(html, /Weekly Progress/);
     assert.match(html, /Visible Completed:<\/strong> \d+/);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });

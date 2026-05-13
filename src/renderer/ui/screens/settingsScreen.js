@@ -28,6 +28,12 @@ export const settingsScreen = {
             <div class="settings-group">
               <label for="timer-seconds">Round Timer (seconds)</label>
               <input id="timer-seconds" name="timerSeconds" type="number" min="5" max="120" value="${settings.gameplay.timerSeconds}" />
+              <span class="settings-option-description text-muted">
+                Adjusts PvE and local PvP turn timing only.
+              </span>
+              <span class="settings-option-description text-muted">
+                Online Play always uses a server-controlled 20-second turn timer and is not affected by local timer or speed settings.
+              </span>
             </div>
 
             <div class="settings-group">

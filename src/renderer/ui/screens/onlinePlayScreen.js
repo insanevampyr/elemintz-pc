@@ -490,18 +490,20 @@ function renderOnlineLiveBoard(
       </article>
 
       <article class="panel match-status-panel online-play-status-panel">
-        <div
-          class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
-          data-online-turn-timer-shell="true"
-          aria-live="polite"
-        >
-          <span class="online-turn-timer-label" data-online-turn-timer-label="true">
-            ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
-          </span>
-        </div>
         <div class="status-meta">
-          <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
-            <strong>${escapeHtml(roomStateView.label)}</strong>
+          <div class="online-status-header-row">
+            <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
+              <strong>${escapeHtml(roomStateView.label)}</strong>
+            </div>
+            <div
+              class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
+              data-online-turn-timer-shell="true"
+              aria-live="polite"
+            >
+              <span class="online-turn-timer-label" data-online-turn-timer-label="true">
+                ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
+              </span>
+            </div>
           </div>
           <p class="round-result-text">${escapeHtml(roomStateView.detail)}</p>
           ${matchStatus ? `<p class="round-status-line">Round ${escapeHtml(String(matchStatus.roundNumber))} | Host ${escapeHtml(String(matchStatus.hostScore))} - Guest ${escapeHtml(String(matchStatus.guestScore))}</p>` : ""}

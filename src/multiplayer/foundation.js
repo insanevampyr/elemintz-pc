@@ -17,7 +17,7 @@ const ONLINE_TURN_TIMER_DURATION_MS_DEFAULT = ONLINE_TURN_TIMER_DURATION_MS;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 export const MULTIPLAYER_FOUNDATION_PHASE = 22;
-const DEVELOPMENT_PHASE_LABEL = "Opponent Variant Display + External Tester Stabilization";
+const DEVELOPMENT_PHASE_LABEL = "Unified Server Progression + Tester Stabilization";
 
 function logRoomEvent(logger, message, details = {}) {
   logger.info("[Multiplayer] " + message, details);
@@ -1562,6 +1562,49 @@ export function createMultiplayerFoundation({
         });
         }
       });
+
+    socket.on("profile:applyLocalMatchResult", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.applyLocalMatchResult !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.applyLocalMatchResult({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          result: payload?.matchState ?? null,
+          perspective: payload?.perspective ?? "p1",
+          settlementKey: payload?.settlementKey ?? null
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_LOCAL_MATCH_WRITE_FAILED",
+            message: String(
+              error?.message ?? "Unable to complete authoritative local match settlement."
+            )
+          }
+        });
+      }
+    });
 
     socket.on("admin:lookupUser", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);

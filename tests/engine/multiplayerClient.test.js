@@ -206,6 +206,41 @@ function createRewardSettlement({
   };
 }
 
+function createCompletedLocalMatch({
+  mode = "pve",
+  winner = "p1",
+  endReason = null,
+  round = 3
+} = {}) {
+  return {
+    status: "completed",
+    mode,
+    winner,
+    endReason,
+    round,
+    history: [
+      {
+        round: 1,
+        result: winner === "draw" ? "none" : winner,
+        p1Card: "fire",
+        p2Card: "earth",
+        warClashes: 0,
+        capturedCards: winner === "draw" ? 0 : 2,
+        capturedOpponentCards: winner === "draw" ? 0 : 1
+      }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    },
+    meta: {
+      totalCards: 8,
+      startedAt: "2026-05-12T12:00:00.000Z",
+      endedAt: "2026-05-12T12:03:00.000Z"
+    }
+  };
+}
+
 function createAppController() {
   const screenCalls = [];
   return new AppController({
@@ -556,6 +591,56 @@ class FakeSocket {
                 equippedCosmetics: createEquippedCosmetics()
               },
               progression: {}
+            }
+          }
+        });
+      });
+    }
+
+    if (eventName === "profile:applyLocalMatchResult") {
+      queueMicrotask(() => {
+        const username = this.sessionUsername ?? payload?.username ?? null;
+        ack?.({
+          ok: true,
+          result: {
+            duplicate: false,
+            matchResult: {
+              profile: {
+                username,
+                tokens: 225,
+                playerXP: 20,
+                playerLevel: 1
+              },
+              stats: {
+                gamesPlayed: 1
+              },
+              dailyChallenges: {
+                challenges: []
+              },
+              weeklyChallenges: {
+                challenges: []
+              }
+            },
+            snapshot: {
+              authority: "server",
+              source: "multiplayer",
+              profile: {
+                username,
+                tokens: 225,
+                playerXP: 20,
+                playerLevel: 1,
+                equippedCosmetics: createEquippedCosmetics(),
+                ownedCosmetics: {}
+              },
+              progression: {
+                xp: {
+                  playerXP: 20,
+                  playerLevel: 1
+                },
+                dailyChallenges: { challenges: [] },
+                weeklyChallenges: { challenges: [] },
+                dailyLogin: { eligible: false }
+              }
             }
           }
         });
@@ -1256,6 +1341,81 @@ test("multiplayer client: hotseat identity authentication uses an isolated accou
     "profile:get",
     "session:logout"
   ]);
+});
+
+test("multiplayer client: authoritative local match settlement uses the primary session when no hotseat token is supplied", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} },
+    persistSession: false
+  });
+
+  const matchState = createCompletedLocalMatch({ mode: "pve", winner: "p1" });
+  await client.login({
+    email: "player@example.com",
+    password: "password123"
+  });
+
+  const result = await client.applyLocalMatchResult({
+    username: "RegisteredUser",
+    perspective: "p1",
+    matchState,
+    settlementKey: "PVE:server:1"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:applyLocalMatchResult",
+    payload: {
+      perspective: "p1",
+      matchState,
+      settlementKey: "PVE:server:1"
+    }
+  });
+  assert.equal(result.snapshot?.profile?.username, "RegisteredUser");
+});
+
+test("multiplayer client: authoritative local hotseat settlement uses an isolated session token without replacing the primary session", async () => {
+  const sockets = [];
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
+    },
+    logger: { info: () => {}, error: () => {} },
+    persistSession: false
+  });
+
+  const matchState = createCompletedLocalMatch({ mode: "local_pvp", winner: "p1" });
+  await client.login({
+    email: "player@example.com",
+    password: "password123"
+  });
+
+  const result = await client.applyLocalMatchResult({
+    username: "HotseatGuest",
+    perspective: "p2",
+    matchState,
+    settlementKey: "LPVP:server:1",
+    sessionToken: "hotseat-session-token"
+  });
+
+  assert.equal(sockets.length, 2);
+  assert.deepEqual(sockets[1].sentEvents.at(0), {
+    eventName: "profile:applyLocalMatchResult",
+    payload: {
+      sessionToken: "hotseat-session-token",
+      perspective: "p2",
+      matchState,
+      settlementKey: "LPVP:server:1"
+    }
+  });
+  assert.equal(client.getState().session?.username, "RegisteredUser");
+  assert.equal(result.snapshot?.profile?.username, null);
 });
 
 test("multiplayer client: authenticated session restores from persisted storage on app restart", async () => {
@@ -2791,6 +2951,187 @@ test("app controller: online settlement refresh reuses one authoritative server 
     challenges: [{ id: "weekly-play" }]
   });
   assert.equal(controller.profile?.tokens, 225);
+});
+
+test("app controller: authenticated PvE settlement uses server authority before local fallback", async () => {
+  const originalWindow = globalThis.window;
+  const controller = createAppController();
+  controller.username = "AuthorityPveUser";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "AuthorityPveUser",
+      accountId: "account-id-1"
+    }
+  };
+
+  const serverCalls = [];
+  const fallbackCalls = [];
+  const match = createCompletedLocalMatch({ mode: "pve", winner: "p1" });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => null,
+          applyLocalMatchResult: async (payload) => {
+            serverCalls.push(payload);
+            return {
+              profile: { username: payload.username },
+              snapshot: {
+                profile: {
+                  username: payload.username,
+                  tokens: 225,
+                  playerXP: 20,
+                  playerLevel: 1
+                }
+              }
+            };
+          }
+        },
+        state: {
+          recordMatchResult: async (payload) => {
+            fallbackCalls.push(payload);
+            return { profile: { username: payload.username } };
+          }
+        }
+      }
+    };
+
+    const result = await controller.persistPveResult(match);
+
+    assert.equal(serverCalls.length, 1);
+    assert.equal(fallbackCalls.length, 0);
+    assert.equal(serverCalls[0].username, "AuthorityPveUser");
+    assert.equal(serverCalls[0].perspective, "p1");
+    assert.equal(serverCalls[0].matchState, match);
+    assert.ok(serverCalls[0].settlementKey);
+    assert.equal(result.snapshot?.profile?.username, "AuthorityPveUser");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("app controller: authenticated local PvP settlement updates both players through server authority", async () => {
+  const originalWindow = globalThis.window;
+  const controller = createAppController();
+  controller.localPlayers = {
+    p1: "HotseatHost",
+    p2: "HotseatGuest"
+  };
+  controller.localPlayerAuthorities = {
+    p1: {
+      username: "HotseatHost",
+      accountId: "host-account",
+      sessionToken: null
+    },
+    p2: {
+      username: "HotseatGuest",
+      accountId: "guest-account",
+      sessionToken: "guest-session-token"
+    }
+  };
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "HotseatHost",
+      accountId: "host-account"
+    }
+  };
+
+  const serverCalls = [];
+  const fallbackCalls = [];
+  const match = createCompletedLocalMatch({ mode: "local_pvp", winner: "p1" });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => null,
+          applyLocalMatchResult: async (payload) => {
+            serverCalls.push(payload);
+            return {
+              profile: { username: payload.username ?? "HotseatGuest" },
+              snapshot: {
+                profile: {
+                  username: payload.username ?? "HotseatGuest"
+                }
+              }
+            };
+          }
+        },
+        state: {
+          recordMatchResult: async (payload) => {
+            fallbackCalls.push(payload);
+            return { profile: { username: payload.username } };
+          }
+        }
+      }
+    };
+
+    const result = await controller.persistLocalPvpResult(match);
+
+    assert.equal(serverCalls.length, 2);
+    assert.equal(fallbackCalls.length, 0);
+    assert.equal(serverCalls[0].username, "HotseatHost");
+    assert.equal(serverCalls[0].perspective, "p1");
+    assert.equal(serverCalls[1].sessionToken, "guest-session-token");
+    assert.equal(serverCalls[1].perspective, "p2");
+    assert.equal(result.p1?.snapshot?.profile?.username, "HotseatHost");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("app controller: authoritative local settlement falls back to local persistence when the server write fails", async () => {
+  const originalWindow = globalThis.window;
+  const controller = createAppController();
+  controller.username = "FallbackPveUser";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "FallbackPveUser",
+      accountId: "account-id-1"
+    }
+  };
+
+  const fallbackCalls = [];
+  const match = createCompletedLocalMatch({ mode: "pve", winner: "p1" });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => null,
+          applyLocalMatchResult: async () => {
+            throw new Error("server unavailable");
+          }
+        },
+        state: {
+          recordMatchResult: async (payload) => {
+            fallbackCalls.push(payload);
+            return {
+              profile: { username: payload.username },
+              duplicate: false
+            };
+          }
+        }
+      }
+    };
+
+    const result = await controller.persistPveResult(match);
+
+    assert.equal(fallbackCalls.length, 1);
+    assert.equal(fallbackCalls[0].username, "FallbackPveUser");
+    assert.equal(fallbackCalls[0].perspective, "p1");
+    assert.ok(fallbackCalls[0].settlementKey);
+    assert.equal(result.profile?.username, "FallbackPveUser");
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });
 
 test("online play screen: match rewards render from authoritative decision instead of legacy summary", () => {

@@ -511,6 +511,7 @@ export class GameController {
     this.aiDifficulty = difficultyFromSettings(options.aiDifficulty);
     this.mode = options.mode ?? MATCH_MODE.PVE;
     this.persistMatchResults = options.persistMatchResults ?? true;
+    this.persistMatchResult = typeof options.persistMatchResult === "function" ? options.persistMatchResult : null;
     this.localAuthorityStoreFactory = options.localAuthorityStoreFactory ?? (() => createRoomStore());
     this.localPlayerNames = options.localPlayerNames ?? null;
 
@@ -871,11 +872,13 @@ export class GameController {
     let persisted = null;
     if (this.persistMatchResults) {
       try {
-        persisted = await window.elemintz.state.recordMatchResult({
-          username: this.username,
-          perspective: "p1",
-          matchState: this.match
-        });
+        persisted = this.persistMatchResult
+          ? await this.persistMatchResult(this.match)
+          : await window.elemintz.state.recordMatchResult({
+              username: this.username,
+              perspective: "p1",
+              matchState: this.match
+            });
       } catch (error) {
         console.error("Failed to persist match results", error);
       }

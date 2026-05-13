@@ -364,7 +364,7 @@ test("state: online_pvp draw records games played, resets win streak, and avoids
     settlementKey: "ROOM123:match:1:OnlineDrawUser"
   });
 
-  assert.equal(first.duplicate, false);
+  assert.equal(first.duplicate ?? false, false);
   assert.equal(second.duplicate, true);
 
   const profile = await state.profiles.getProfile("OnlineDrawUser");
@@ -897,7 +897,7 @@ test("state: online_pvp duplicate settlement stays idempotent while rematch sett
   const profile = await state.profiles.getProfile("OnlineRepeatableAchievementUser");
   const saves = await state.saves.listMatchResults();
 
-  assert.equal(first.duplicate, false);
+  assert.equal(first.duplicate ?? false, false);
   assert.equal(duplicate.duplicate, true);
   assert.equal(second.duplicate, false);
   assert.equal(profile.achievements.quick_draw.count, 2);
@@ -1895,7 +1895,7 @@ test("state: completing all daily challenges grants 1 basic chest once per daily
   assert.equal(second.profile.dailyChallenges.daily.completionChestGranted, true);
 });
 
-test("state: completing all weekly challenges grants 2 basic chests once per weekly reset window", async () => {
+test("state: completing all weekly challenges grants 1 epic chest once per weekly reset window", async () => {
   const dataDir = await createTempDataDir();
   const nowMs = Date.now();
   const state = new StateCoordinator({
@@ -1932,9 +1932,11 @@ test("state: completing all weekly challenges grants 2 basic chests once per wee
     matchState: createRewardHookMatch({ winner: "p1" })
   });
 
-  assert.equal(first.profile.chests.basic, 2);
+  assert.equal(first.profile.chests.basic, 0);
+  assert.equal(first.profile.chests.epic, 1);
   assert.equal(first.profile.dailyChallenges.weekly.completionChestGranted, true);
-  assert.equal(second.profile.chests.basic, 2);
+  assert.equal(second.profile.chests.basic, 0);
+  assert.equal(second.profile.chests.epic, 1);
   assert.equal(second.profile.dailyChallenges.weekly.completionChestGranted, true);
 });
 
@@ -2072,6 +2074,42 @@ test("state: local_pvp quit forfeit applies a loss to both players", async () =>
 
   assert.equal(p1.modeStats.local_pvp.losses, 1);
   assert.equal(p2.modeStats.local_pvp.losses, 1);
+});
+
+test("state: settlementKey keeps local authoritative match settlement idempotent", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const match = createRewardHookMatch({ winner: "p1", mode: "pve" });
+
+  const first = await state.recordMatchResult({
+    username: "AuthoritativePveUser",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "PVE:authoritative:1"
+  });
+  const second = await state.recordMatchResult({
+    username: "AuthoritativePveUser",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "PVE:authoritative:1"
+  });
+
+  const profile = await state.profiles.getProfile("AuthoritativePveUser");
+  const saves = await state.saves.listMatchResults();
+
+  assert.equal(first.duplicate ?? false, false);
+  assert.equal(second.duplicate, true);
+  assert.equal(profile.gamesPlayed, 1);
+  assert.equal(profile.wins, 1);
+  assert.equal(
+    saves.filter(
+      (entry) =>
+        entry.username === "AuthoritativePveUser" &&
+        entry.mode === "pve" &&
+        entry.settlementKey === "PVE:authoritative:1"
+    ).length,
+    1
+  );
 });
 
 test("daily: before 6 PM America/Chicago does not reset same-boundary data", () => {

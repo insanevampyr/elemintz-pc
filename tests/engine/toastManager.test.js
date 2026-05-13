@@ -227,7 +227,7 @@ test("toast: chest open rewards render xp, tokens, and cosmetic messages", () =>
   assert.equal(appended.length, 3);
   assert.match(appended[0].innerHTML, /\+5 XP/);
   assert.match(appended[1].innerHTML, /\+10 Tokens/);
-  assert.match(appended[2].innerHTML, /New Common Cosmetic: Ember Crest/);
+  assert.match(appended[2].innerHTML, /Cosmetic: <strong>Ember Crest<\/strong>/);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;

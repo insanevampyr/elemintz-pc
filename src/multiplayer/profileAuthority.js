@@ -271,6 +271,34 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async applyLocalMatchResult({
+    username,
+    result,
+    perspective = "p1",
+    settlementKey = null
+  }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative local match application.");
+    }
+
+    const outcome = summarizeMatchOutcome(result, perspective);
+    this.logger.info?.(`[ProfileAuthority] applyLocalMatchResult -> ${safeUsername} (${outcome})`);
+
+    const matchResult = await this.coordinator.recordMatchResult({
+      username: safeUsername,
+      perspective,
+      matchState: result,
+      settlementKey
+    });
+
+    return {
+      duplicate: Boolean(matchResult?.duplicate),
+      matchResult,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
   async getCosmetics(username) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

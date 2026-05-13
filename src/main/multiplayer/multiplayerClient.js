@@ -1397,6 +1397,23 @@ export class MultiplayerClient {
     });
   }
 
+  async runIsolatedServerRequest(eventName, payload = {}, { serverUrl } = {}) {
+    const connection = await this.connectIsolatedSocket({ serverUrl });
+    if (!connection?.ok || !connection.socket) {
+      return {
+        ok: false,
+        error: connection?.error ?? buildConnectionFailure(null, this.normalizeServerUrl(serverUrl))
+      };
+    }
+
+    const socket = connection.socket;
+    try {
+      return (await this.emitIsolatedRequest(socket, eventName, payload)) ?? null;
+    } finally {
+      socket.disconnect();
+    }
+  }
+
   async ensureSession({ username, serverUrl } = {}) {
     const connected = await this.ensureConnected({ serverUrl });
     if (!connected || !this.socket) {
@@ -2036,6 +2053,53 @@ export class MultiplayerClient {
     }
 
     return response.result ?? null;
+  }
+
+  async applyLocalMatchResult({
+    username,
+    perspective = "p1",
+    matchState,
+    settlementKey = null,
+    sessionToken = null,
+    serverUrl
+  } = {}) {
+    const safeSessionToken = String(sessionToken ?? "").trim() || null;
+    const response = safeSessionToken
+      ? await this.runIsolatedServerRequest(
+          "profile:applyLocalMatchResult",
+          {
+            sessionToken: safeSessionToken,
+            perspective,
+            matchState,
+            settlementKey
+          },
+          { serverUrl }
+        )
+      : await this.runServerRequest(
+          "profile:applyLocalMatchResult",
+          {
+            username,
+            perspective,
+            matchState,
+            settlementKey
+          },
+          { serverUrl }
+        );
+
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to apply authoritative local match result.");
+    }
+
+    const result = response.result ?? null;
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ...(result.matchResult ?? {}),
+      duplicate: Boolean(result.duplicate),
+      snapshot: result.snapshot ?? null
+    };
   }
 
   async buyStoreItem({ username, type, cosmeticId, serverUrl } = {}) {
