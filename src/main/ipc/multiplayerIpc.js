@@ -59,6 +59,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.createRoom(payload);
   });
 
+  ipcMain.handle("multiplayer:listPublicRooms", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.listPublicRooms(payload);
+  });
+
   ipcMain.handle("multiplayer:joinRoom", async (event, payload) => {
     subscribers.add(event.sender);
     return client.joinRoom(payload);

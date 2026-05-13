@@ -107,6 +107,7 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
       login: (payload) => ipcRendererRef.invoke("multiplayer:login", payload),
       authenticateHotseatIdentity: (payload) => ipcRendererRef.invoke("multiplayer:authenticateHotseatIdentity", payload),
       createRoom: (payload) => ipcRendererRef.invoke("multiplayer:createRoom", payload),
+      listPublicRooms: (payload) => ipcRendererRef.invoke("multiplayer:listPublicRooms", payload),
       joinRoom: (payload) => ipcRendererRef.invoke("multiplayer:joinRoom", payload),
       submitMove: (payload) => {
         console.info("[OnlinePlay][Preload] submitMove called", {

@@ -87,13 +87,16 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.updates.requestCheck, "function");
   assert.equal(typeof bridge.updates.requestInstall, "function");
   assert.equal(typeof bridge.multiplayer.getState, "function");
+  assert.equal(typeof bridge.multiplayer.listPublicRooms, "function");
 
   await bridge.state.getSettings();
   await bridge.updates.getState();
+  await bridge.multiplayer.listPublicRooms({ username: "VampyrLee" });
 
-  assert.deepEqual(ipcRenderer.invocations.slice(0, 2), [
+  assert.deepEqual(ipcRenderer.invocations.slice(0, 3), [
     { channel: "state:getSettings", payload: undefined },
-    { channel: "updates:getState", payload: undefined }
+    { channel: "updates:getState", payload: undefined },
+    { channel: "multiplayer:listPublicRooms", payload: { username: "VampyrLee" } }
   ]);
 });
 

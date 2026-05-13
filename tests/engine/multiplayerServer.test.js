@@ -16,7 +16,7 @@ import {
 import { createTimestampedLogger } from "../../src/multiplayer/logger.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
-import { getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
+import { createRoomStore, getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
@@ -57,6 +57,10 @@ function waitForEvents(socket, eventName, count) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createStoreSocket(id) {
+  return { id };
 }
 
 async function bootstrapSession(socket, username) {
@@ -247,6 +251,239 @@ test("multiplayer foundation: health endpoint responds for deployment checks", a
     });
     assert.equal(logEntries.length, 0);
     assert.equal(typeof foundation.io.on, "function");
+  } finally {
+    await foundation.stop();
+  }
+});
+
+test("multiplayer rooms: invalid or missing visibility defaults rooms to private and keeps them out of the public list", () => {
+  const store = createRoomStore({
+    random: (() => {
+      const values = [0, 0, 0, 0, 0, 0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1];
+      let index = 0;
+      return () => values[index++] ?? 0;
+    })()
+  });
+
+  const hostOne = createStoreSocket("host-private-default");
+  const hostTwo = createStoreSocket("host-private-invalid");
+  const firstRoom = store.createRoom(hostOne, { username: "DefaultPrivateHost" });
+  const secondRoom = store.createRoom(hostTwo, {
+    username: "InvalidPrivateHost",
+    visibility: "friends_only"
+  });
+
+  assert.equal(firstRoom.ok, true);
+  assert.equal(secondRoom.ok, true);
+  assert.equal(firstRoom.room.visibility, "private");
+  assert.equal(secondRoom.room.visibility, "private");
+  assert.deepEqual(store.listPublicRooms(), []);
+});
+
+test("multiplayer rooms: public room list includes only safe waiting public rooms", () => {
+  const store = createRoomStore({
+    random: (() => {
+      const values = [
+        0, 0, 0, 0, 0, 0,
+        0.1, 0.1, 0.1, 0.1, 0.1, 0.1,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+        0.3, 0.3, 0.3, 0.3, 0.3, 0.3,
+        0.4, 0.4, 0.4, 0.4, 0.4, 0.4,
+        0.5, 0.5, 0.5, 0.5, 0.5, 0.5
+      ];
+      let index = 0;
+      return () => values[index++] ?? 0.6;
+    })()
+  });
+
+  const waitingHost = createStoreSocket("waiting-host");
+  const fullHost = createStoreSocket("full-host");
+  const fullGuest = createStoreSocket("full-guest");
+  const pausedHost = createStoreSocket("paused-host");
+  const pausedGuest = createStoreSocket("paused-guest");
+  const expiredHost = createStoreSocket("expired-host");
+  const expiredGuest = createStoreSocket("expired-guest");
+  const closingHost = createStoreSocket("closing-host");
+  const closingGuest = createStoreSocket("closing-guest");
+  const completeHost = createStoreSocket("complete-host");
+  const completeGuest = createStoreSocket("complete-guest");
+  const privateHost = createStoreSocket("private-host");
+
+  const waitingRoom = store.createRoom(waitingHost, {
+    username: "WaitingHost",
+    visibility: "public",
+    equippedCosmetics: {
+      avatar: "avatar_crystal_soul",
+      background: "bg_verdant_shrine"
+    }
+  });
+  const fullRoom = store.createRoom(fullHost, { username: "FullHost", visibility: "public" });
+  const pausedRoom = store.createRoom(pausedHost, { username: "PausedHost", visibility: "public" });
+  const expiredRoom = store.createRoom(expiredHost, { username: "ExpiredHost", visibility: "public" });
+  const closingRoom = store.createRoom(closingHost, { username: "ClosingHost", visibility: "public" });
+  const completeRoom = store.createRoom(completeHost, { username: "CompleteHost", visibility: "public" });
+  const privateRoom = store.createRoom(privateHost, { username: "PrivateHost", visibility: "private" });
+
+  store.joinRoom(fullGuest, fullRoom.room.roomCode, { username: "FullGuest" });
+  store.joinRoom(pausedGuest, pausedRoom.room.roomCode, { username: "PausedGuest" });
+  store.joinRoom(expiredGuest, expiredRoom.room.roomCode, { username: "ExpiredGuest" });
+  store.joinRoom(closingGuest, closingRoom.room.roomCode, { username: "ClosingGuest" });
+  store.joinRoom(completeGuest, completeRoom.room.roomCode, { username: "CompleteGuest" });
+
+  store.submitMove(pausedHost.id, "fire");
+  store.submitMove(expiredHost.id, "fire");
+  store.removeSocket(pausedHost.id);
+  store.removeSocket(expiredHost.id);
+  store.expireDisconnectedRoom(expiredRoom.room.roomCode);
+  store.completeMatch(closingHost.id, { winner: "host", reason: "manual" });
+  store.removeSocket(closingHost.id);
+  store.completeMatch(completeHost.id, { winner: "host", reason: "manual" });
+
+  assert.equal(waitingRoom.room.visibility, "public");
+  assert.equal(waitingRoom.room.status, "waiting");
+  assert.equal(waitingRoom.room.guest, null);
+  assert.equal(privateRoom.room.visibility, "private");
+  assert.deepEqual(store.listPublicRooms(), [
+    {
+      roomCode: waitingRoom.room.roomCode,
+      createdAt: waitingRoom.room.createdAt,
+      hostUsername: "WaitingHost",
+      hostCosmetics: {
+        avatar: "avatar_crystal_soul",
+        background: "bg_verdant_shrine",
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        title: "Initiate",
+        badge: "none"
+      },
+      visibility: "public",
+      status: "waiting"
+    }
+  ]);
+});
+
+test("multiplayer foundation: room:listPublic returns summarized waiting public rooms only", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const host = await connectClient(port);
+    const guest = await connectClient(port);
+    const browser = await connectClient(port);
+
+    try {
+      await bootstrapSession(host, "PublicHost");
+      await bootstrapSession(guest, "GuestPlayer");
+      await bootstrapSession(browser, "BrowserUser");
+
+      const createdPromise = waitForEvent(host, "room:created");
+      host.emit("room:create", { visibility: "public" });
+      const room = await createdPromise;
+
+      const waitingList = await new Promise((resolve) => {
+        browser.emit("room:listPublic", {}, resolve);
+      });
+
+      assert.deepEqual(waitingList, {
+        ok: true,
+        rooms: [
+          {
+            roomCode: room.roomCode,
+            createdAt: room.createdAt,
+            hostUsername: "PublicHost",
+            hostCosmetics: room.host.equippedCosmetics,
+            visibility: "public",
+            status: "waiting"
+          }
+        ]
+      });
+
+      const joinedPromise = waitForEvent(guest, "room:joined");
+      const hostUpdatePromise = waitForEvent(host, "room:update");
+      guest.emit("room:join", { roomCode: room.roomCode });
+      await joinedPromise;
+      await hostUpdatePromise;
+
+      const fullList = await new Promise((resolve) => {
+        browser.emit("room:listPublic", {}, resolve);
+      });
+
+      assert.deepEqual(fullList, {
+        ok: true,
+        rooms: []
+      });
+    } finally {
+      host.disconnect();
+      guest.disconnect();
+      browser.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: room:listPublic returns ok true with an empty rooms array when nothing is public", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const browser = await connectClient(port);
+
+    try {
+      await bootstrapSession(browser, "BrowserUser");
+
+      const response = await new Promise((resolve) => {
+        browser.emit("room:listPublic", {}, resolve);
+      });
+
+      assert.deepEqual(response, {
+        ok: true,
+        rooms: []
+      });
+    } finally {
+      browser.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: room:listPublic always acks a readable auth failure", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const browser = await connectClient(port);
+
+    try {
+      const response = await new Promise((resolve) => {
+        browser.emit("room:listPublic", { sessionToken: "missing-token" }, resolve);
+      });
+
+      assert.deepEqual(response, {
+        ok: false,
+        error: {
+          code: "SESSION_NOT_FOUND",
+          message: "This online session is no longer valid."
+        }
+      });
+    } finally {
+      browser.disconnect();
+    }
   } finally {
     await foundation.stop();
   }

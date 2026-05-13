@@ -8,10 +8,11 @@ import { MultiplayerClient } from "../../src/main/multiplayer/multiplayerClient.
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
 
-function createMockRoom({ roomCode, host, guest = null, status = "waiting" }) {
+function createMockRoom({ roomCode, host, guest = null, status = "waiting", visibility = "private" }) {
   return {
     roomCode,
     createdAt: "2026-03-20T12:00:00.000Z",
+    visibility,
     host,
     guest,
     status,
@@ -373,6 +374,7 @@ class FakeSocket {
           "room:created",
           createMockRoom({
             roomCode: "ABC123",
+            visibility: payload?.visibility ?? "private",
             host: {
               socketId: this.id,
               username: this.sessionUsername ?? payload?.username ?? null,
@@ -380,6 +382,26 @@ class FakeSocket {
             }
           })
         );
+      });
+    }
+
+    if (eventName === "room:listPublic") {
+      queueMicrotask(() => {
+        const payload = {
+          ok: true,
+          rooms: [
+            {
+              roomCode: "PUB123",
+              createdAt: "2026-03-20T12:00:00.000Z",
+              hostUsername: "OpenHost",
+              hostCosmetics: createEquippedCosmetics(),
+              visibility: "public",
+              status: "waiting"
+            }
+          ]
+        };
+        ack?.(payload);
+        this.serverEmit("room:publicList", payload);
       });
     }
 
@@ -846,6 +868,50 @@ class SilentRoomActionSocket extends FakeSocket {
   }
 }
 
+class PublicRoomFailureSocket extends FakeSocket {
+  emit(eventName, payload, ack) {
+    if (eventName === "room:listPublic") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: false,
+          error: {
+            code: "SESSION_REQUIRED",
+            message: "A session is required to browse public rooms."
+          }
+        });
+      });
+      return true;
+    }
+
+    return super.emit(eventName, payload, ack);
+  }
+}
+
+class PublicRoomEventOnlySocket extends FakeSocket {
+  emit(eventName, payload, ack) {
+    if (eventName === "room:listPublic") {
+      queueMicrotask(() => {
+        this.serverEmit("room:publicList", {
+          ok: true,
+          rooms: [
+            {
+              roomCode: "PUB123",
+              createdAt: "2026-03-20T12:00:00.000Z",
+              hostUsername: "OpenHost",
+              hostCosmetics: createEquippedCosmetics(),
+              visibility: "public",
+              status: "waiting"
+            }
+          ]
+        });
+      });
+      return true;
+    }
+
+    return super.emit(eventName, payload, ack);
+  }
+}
+
 class LateAuthoritativeRoundSocket extends FakeSocket {
   emit(eventName, payload, ack) {
     if (eventName === "room:submitMove") {
@@ -920,6 +986,31 @@ test("multiplayer client: room create emits equipped cosmetics in the socket pay
   assert.deepEqual(client.getState().room?.host?.equippedCosmetics, equippedCosmetics);
 });
 
+test("multiplayer client: room create forwards public visibility when requested", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  await client.createRoom({
+    username: "VampyrLee",
+    visibility: "public"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "room:create",
+    payload: {
+      visibility: "public"
+    }
+  });
+
+  assert.equal(client.getState().room?.visibility, "public");
+});
+
 test("multiplayer client: room join emits equipped cosmetics in the socket payload", async () => {
   let lastSocket = null;
   const client = new MultiplayerClient({
@@ -953,6 +1044,84 @@ test("multiplayer client: room join emits equipped cosmetics in the socket paylo
   });
 
   assert.deepEqual(client.getState().room?.guest?.equippedCosmetics, equippedCosmetics);
+});
+
+test("multiplayer client: public room list request returns summarized waiting rooms", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const rooms = await client.listPublicRooms({
+    username: "VampyrLee"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "VampyrLee"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "room:listPublic",
+    payload: {}
+  });
+
+  assert.deepEqual(rooms, [
+    {
+      roomCode: "PUB123",
+      createdAt: "2026-03-20T12:00:00.000Z",
+      hostUsername: "OpenHost",
+      hostCosmetics: createEquippedCosmetics(),
+      visibility: "public",
+      status: "waiting"
+    }
+  ]);
+});
+
+test("multiplayer client: public room list request surfaces readable auth failure without timing out", async () => {
+  const client = new MultiplayerClient({
+    socketFactory: () => new PublicRoomFailureSocket(),
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const rooms = await client.listPublicRooms({
+    username: "VampyrLee"
+  });
+
+  assert.equal(rooms, null);
+  assert.equal(client.getState().lastError?.code, "SESSION_REQUIRED");
+  assert.equal(client.getState().lastError?.message, "A session is required to browse public rooms.");
+  assert.equal(client.getState().statusMessage, "A session is required to browse public rooms.");
+});
+
+test("multiplayer client: public room list request can resolve from the room:publicList event when ack is missing", async () => {
+  const client = new MultiplayerClient({
+    socketFactory: () => new PublicRoomEventOnlySocket(),
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const rooms = await client.listPublicRooms({
+    username: "VampyrLee"
+  });
+
+  assert.deepEqual(rooms, [
+    {
+      roomCode: "PUB123",
+      createdAt: "2026-03-20T12:00:00.000Z",
+      hostUsername: "OpenHost",
+      hostCosmetics: createEquippedCosmetics(),
+      visibility: "public",
+      status: "waiting"
+    }
+  ]);
+  assert.equal(client.getState().lastError, null);
+  assert.equal(client.getState().statusMessage, "Loaded 1 public room.");
 });
 
 test("multiplayer client: server profile requests return authoritative snapshots", async () => {

@@ -371,6 +371,7 @@ function cloneRoom(room) {
     ? {
         roomCode: room.roomCode,
         createdAt: room.createdAt,
+        visibility: room.visibility ?? "private",
         host: clonePlayer(room.host),
         guest: clonePlayer(room.guest),
         status: room.status,
@@ -1884,10 +1885,18 @@ export class MultiplayerClient {
     return response;
   }
 
-  async createRoom({ serverUrl, username, equippedCosmetics } = {}) {
+  async createRoom({ serverUrl, username, equippedCosmetics, visibility } = {}) {
+    const payload = { username };
+    if (equippedCosmetics !== undefined) {
+      payload.equippedCosmetics = equippedCosmetics;
+    }
+    if (visibility !== undefined) {
+      payload.visibility = visibility;
+    }
+
     return this.runRoomAction(
       "room:create",
-      { username, equippedCosmetics },
+      payload,
       "room:created",
       { serverUrl }
     );
@@ -1916,6 +1925,93 @@ export class MultiplayerClient {
       "room:joined",
       { serverUrl }
     );
+  }
+
+  async listPublicRooms({ serverUrl, username } = {}) {
+    const connected = await this.ensureConnected({ serverUrl });
+    if (!connected || !this.socket) {
+      return null;
+    }
+
+    const session = await this.ensureSession({
+      username,
+      serverUrl
+    });
+    if (!session || !this.socket) {
+      return null;
+    }
+
+    const socket = this.socket;
+    const response = await new Promise((resolve) => {
+      let settled = false;
+      const timeoutId = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        socket.off("room:publicList", handleEventResponse);
+        resolve(null);
+      }, ROOM_ACTION_TIMEOUT_MS);
+
+      const finish = (value) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timeoutId);
+        socket.off("room:publicList", handleEventResponse);
+        resolve(value ?? null);
+      };
+
+      const handleEventResponse = (eventPayload) => {
+        finish(eventPayload);
+      };
+
+      socket.on("room:publicList", handleEventResponse);
+      this.logger.info?.("[OnlinePlay][MainClient] socket request", {
+        eventName: "room:listPublic",
+        payload: {}
+      });
+      socket.emit("room:listPublic", {}, (ackPayload) => {
+        finish(ackPayload);
+      });
+    });
+
+    if (!response) {
+      this.updateState({
+        lastError: {
+          code: "ROOM_LIST_TIMEOUT",
+          message: "Public room lookup timed out."
+        },
+        statusMessage: "Public room lookup timed out."
+      });
+      return null;
+    }
+
+    if (!response.ok) {
+      this.updateState({
+        lastError: response?.error
+          ? {
+              code: String(response.error.code ?? "ROOM_LIST_ERROR"),
+              message: String(response.error.message ?? "Unable to load public rooms.")
+            }
+          : {
+              code: "ROOM_LIST_ERROR",
+              message: "Unable to load public rooms."
+            },
+        statusMessage: response?.error?.message ?? "Unable to load public rooms."
+      });
+      return null;
+    }
+
+    const rooms = Array.isArray(response?.rooms) ? response.rooms : [];
+    this.updateState({
+      lastError: null,
+      statusMessage: `Loaded ${rooms.length} public room${rooms.length === 1 ? "" : "s"}.`
+    });
+    return rooms;
   }
 
   async submitMove({ move, serverUrl } = {}) {

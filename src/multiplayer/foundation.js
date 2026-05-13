@@ -1297,6 +1297,66 @@ export function createMultiplayerFoundation({
       })();
     });
 
+    socket.on("room:listPublic", (payload = {}, respond = () => {}) => {
+      void (async () => {
+        respond = toAckCallback(respond);
+        logRoomEvent(logger, "Public room list requested", {
+          socketId: socket.id ?? null,
+          username: payload?.username ?? null
+        });
+
+        try {
+          const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+          if (!sessionResult?.ok) {
+            const failurePayload = {
+              ok: false,
+              error: sessionResult.error ?? {
+                code: "SESSION_REQUIRED",
+                message: "A session is required to browse public rooms."
+              }
+            };
+            socket.emit("room:publicList", failurePayload);
+            respond(failurePayload);
+            logRoomEvent(logger, "Public room list denied", {
+              socketId: socket.id ?? null,
+              errorCode: failurePayload.error?.code ?? null,
+              sessionOk: false
+            });
+            return;
+          }
+
+          const rooms = roomStore.listPublicRooms();
+          const successPayload = {
+            ok: true,
+            rooms
+          };
+          socket.emit("room:publicList", successPayload);
+          respond(successPayload);
+          logRoomEvent(logger, "Public rooms listed", {
+            username: sessionResult.session?.username ?? null,
+            count: rooms.length,
+            sessionId: sessionResult.session?.sessionId ?? null,
+            ackCalled: true,
+            emitCalled: true
+          });
+        } catch (error) {
+          const failurePayload = {
+            ok: false,
+            error: {
+              code: "ROOM_LIST_ERROR",
+              message: "Unable to load public rooms."
+            }
+          };
+          socket.emit("room:publicList", failurePayload);
+          respond(failurePayload);
+          logger?.error?.("[Multiplayer] Public room list failed", {
+            socketId: socket.id ?? null,
+            message: error?.message ?? String(error)
+          });
+        }
+      })();
+    });
+
     socket.on("session:bootstrap", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const result = await ensureSocketSession(socket, payload, { allowBootstrap: true });

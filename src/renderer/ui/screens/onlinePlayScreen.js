@@ -436,6 +436,91 @@ function renderSharedBattleResultPanel(battleResultView) {
   `;
 }
 
+function formatPublicRoomAge(createdAt, now = Date.now()) {
+  const createdAtMs = Date.parse(createdAt ?? "");
+  if (!Number.isFinite(createdAtMs)) {
+    return null;
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((now - createdAtMs) / 1000));
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds}s ago`;
+  }
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes}m ago`;
+  }
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  return `${elapsedHours}h ago`;
+}
+
+function renderPublicRoomBrowser(context = {}) {
+  const rooms = Array.isArray(context.onlinePublicRooms) ? context.onlinePublicRooms : [];
+  const status = String(context.onlinePublicRoomsStatus ?? "idle").trim().toLowerCase();
+  const error = String(context.onlinePublicRoomsError ?? "").trim();
+  const isLoading = status === "loading";
+
+  let bodyMarkup = `<p class="online-public-room-empty">Browse waiting public rooms when you want a faster join path without sharing a code first.</p>`;
+
+  if (isLoading) {
+    bodyMarkup = `<p class="online-public-room-empty">Refreshing public rooms...</p>`;
+  } else if (status === "error" && error) {
+    bodyMarkup = `<p class="online-player-message"><strong>Notice:</strong> ${escapeHtml(error)}</p>`;
+  } else if (status === "ready" && rooms.length === 0) {
+    bodyMarkup = `<p class="online-public-room-empty">No public rooms available.</p>`;
+  } else if (rooms.length > 0) {
+    bodyMarkup = `
+      <div class="online-public-room-list">
+        ${rooms
+          .map((room) => {
+            const roomCode = escapeHtml(String(room?.roomCode ?? "").trim().toUpperCase());
+            const createdLabel = formatPublicRoomAge(room?.createdAt, context.now) ?? "Just now";
+            return `
+              <article class="online-public-room-card" data-public-room-card="${roomCode}">
+                <div class="online-public-room-copy">
+                  <h3 class="online-public-room-host">${escapeHtml(room?.hostUsername ?? "Waiting Host")}</h3>
+                  <p class="online-public-room-meta"><strong>Room Code:</strong> ${roomCode}</p>
+                  <p class="online-public-room-meta"><strong>Status:</strong> ${escapeHtml(room?.status ?? "waiting")}</p>
+                  <p class="online-public-room-meta"><strong>Created:</strong> ${escapeHtml(createdLabel)}</p>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  data-online-public-room-join="${roomCode}"
+                >
+                  Join
+                </button>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  return `
+    <section class="panel online-public-room-browser stack-sm">
+      <div class="online-public-room-header">
+        <div>
+          <h3 class="section-title">Browse Public Rooms</h3>
+          <p class="online-public-room-subtitle">Public rooms are listed only while they are still waiting for an opponent.</p>
+        </div>
+        <button
+          id="online-refresh-public-rooms-btn"
+          type="button"
+          class="btn btn-secondary"
+          ${isLoading ? "disabled" : ""}
+        >
+          ${isLoading ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+      ${bodyMarkup}
+    </section>
+  `;
+}
+
 function renderOnlineLiveBoard(
   boardView,
   roomStateView,
@@ -992,17 +1077,23 @@ export const onlinePlayScreen = {
     const handStatus = deriveHandStatusView(context);
     const matchComplete = deriveMatchCompleteView(context);
     const warStatus = deriveWarStatusView(context);
-  const playersView = derivePlayersView(context);
-  const boardView = deriveOnlineBoardView(context);
-  const roomStateView = deriveRoomStateView(context);
-  const battleResultView = deriveSharedBattleResultView(context);
-  const connectionBanner = deriveConnectionBannerView(context);
+    const playersView = derivePlayersView(context);
+    const boardView = deriveOnlineBoardView(context);
+    const roomStateView = deriveRoomStateView(context);
+    const battleResultView = deriveSharedBattleResultView(context);
+    const connectionBanner = deriveConnectionBannerView(context);
     const onlineTurnTimer = context.onlineTurnTimer ?? { visible: false, label: "", lowTime: false };
+    const selectedVisibility =
+      String(context.onlineCreateRoomVisibility ?? "").trim().toLowerCase() === "public"
+        ? "public"
+        : "private";
     const joinCode = escapeHtml(context.joinCode ?? "");
     const isBusy = multiplayer?.connectionStatus === "connecting";
     const errorMessage = String(context.formattedErrorMessage ?? "").trim()
       ? escapeHtml(context.formattedErrorMessage)
       : "";
+    const publicRoomBrowserStatus = String(context.onlinePublicRoomsStatus ?? "idle").trim().toLowerCase();
+    const showGeneralPreRoomNotice = errorMessage && publicRoomBrowserStatus === "idle";
     const roomCode = escapeHtml(room?.roomCode ?? "");
     const safeConnectionStatus = escapeHtml(multiplayer?.connectionStatus ?? "disconnected");
     const safeRoleLabel = roleLabel ? escapeHtml(roleLabel) : "";
@@ -1067,7 +1158,35 @@ export const onlinePlayScreen = {
                   <p><strong>Match State:</strong> ${escapeHtml(roomStateView.label)}</p>
                   <p>${escapeHtml(multiplayer?.statusMessage ?? "Offline. Open Online Play to connect.")}</p>
                   <div class="stack-sm">
-                    <button id="online-create-room-btn" class="btn" ${isBusy ? "disabled" : ""}>Create Room</button>
+                    <section class="online-room-visibility-panel stack-sm">
+                      <div class="online-room-visibility-header">
+                        <h3 class="section-title">Create Room</h3>
+                        <p class="online-room-visibility-copy">Choose whether this room stays code-only or appears in the public room browser.</p>
+                      </div>
+                      <div class="online-room-visibility-toggle" role="group" aria-label="Room visibility">
+                        <button
+                          id="online-room-visibility-private-btn"
+                          type="button"
+                          class="btn btn-secondary ${selectedVisibility === "private" ? "is-selected" : ""}"
+                          data-online-room-visibility="private"
+                          aria-pressed="${selectedVisibility === "private" ? "true" : "false"}"
+                          ${isBusy ? "disabled" : ""}
+                        >
+                          Private / code only
+                        </button>
+                        <button
+                          id="online-room-visibility-public-btn"
+                          type="button"
+                          class="btn btn-secondary ${selectedVisibility === "public" ? "is-selected" : ""}"
+                          data-online-room-visibility="public"
+                          aria-pressed="${selectedVisibility === "public" ? "true" : "false"}"
+                          ${isBusy ? "disabled" : ""}
+                        >
+                          Public / listed
+                        </button>
+                      </div>
+                      <button id="online-create-room-btn" class="btn" ${isBusy ? "disabled" : ""}>Create Room</button>
+                    </section>
                     <form id="online-join-room-form" class="stack-sm">
                       <label for="online-room-code-input">Join Room Code</label>
                       <input
@@ -1080,10 +1199,11 @@ export const onlinePlayScreen = {
                       />
                       <button id="online-join-room-btn" type="submit" class="btn" ${isBusy ? "disabled" : ""}>Join Room</button>
                     </form>
+                    ${renderPublicRoomBrowser(context)}
                   </div>
                 `
             }
-            ${errorMessage ? `<p class="online-player-message"><strong>Notice:</strong> ${errorMessage}</p>` : ""}
+            ${showGeneralPreRoomNotice ? `<p class="online-player-message"><strong>Notice:</strong> ${errorMessage}</p>` : ""}
             ${
               waitingPreviewVisible
                 ? renderWaitingBoardPreview(localWaitingHostIdentity, roomCode, context.backgroundImage)
@@ -1151,6 +1271,13 @@ export const onlinePlayScreen = {
     document.getElementById("online-create-room-btn")?.addEventListener("click", context.actions.createRoom);
     document.getElementById("online-play-back-btn")?.addEventListener("click", context.actions.back);
     document.getElementById("online-ready-rematch-btn")?.addEventListener("click", context.actions.readyRematch);
+    document.getElementById("online-refresh-public-rooms-btn")?.addEventListener("click", context.actions.browsePublicRooms);
+    document.getElementById("online-room-visibility-private-btn")?.addEventListener("click", () =>
+      context.actions.setCreateRoomVisibility?.("private")
+    );
+    document.getElementById("online-room-visibility-public-btn")?.addEventListener("click", () =>
+      context.actions.setCreateRoomVisibility?.("public")
+    );
     document.getElementById("online-taunts-toggle-btn")?.addEventListener("click", context.actions.toggleTauntsPanel);
     document.querySelectorAll("[data-taunt-line]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -1256,6 +1383,13 @@ export const onlinePlayScreen = {
       const formData = new FormData(event.currentTarget);
       const roomCode = String(formData.get("roomCode") ?? "").trim();
       await context.actions.joinRoom(roomCode);
+    });
+
+    document.querySelectorAll("[data-online-public-room-join]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const roomCode = String(button.getAttribute("data-online-public-room-join") ?? "").trim();
+        await context.actions.joinRoom(roomCode);
+      });
     });
   }
 };

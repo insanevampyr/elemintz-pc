@@ -2506,6 +2506,7 @@ test("appController: online play create join submit-move and ready-rematch actio
   const shownScreens = [];
   const calls = {
     createRoom: [],
+    listPublicRooms: [],
     joinRoom: [],
     submitMove: [],
     readyRematch: 0
@@ -2600,6 +2601,18 @@ test("appController: online play create join submit-move and ready-rematch actio
             calls.createRoom.push(payload);
             return playableOnlineState;
           },
+          listPublicRooms: async (payload) => {
+            calls.listPublicRooms.push(payload);
+            return [
+              {
+                roomCode: "PUB123",
+                createdAt: "2026-05-12T12:00:00.000Z",
+                hostUsername: "PublicHost",
+                visibility: "public",
+                status: "waiting"
+              }
+            ];
+          },
           joinRoom: async (payload) => {
             calls.joinRoom.push(payload);
             return playableOnlineState;
@@ -2622,6 +2635,19 @@ test("appController: online play create join submit-move and ready-rematch actio
     await app.showOnlinePlay();
 
     await shownScreens.at(-1).context.actions.createRoom();
+    await shownScreens.at(-1).context.actions.setCreateRoomVisibility("public");
+    await shownScreens.at(-1).context.actions.createRoom();
+    await shownScreens.at(-1).context.actions.browsePublicRooms();
+    assert.equal(app.onlinePublicRoomsStatus, "ready");
+    assert.deepEqual(app.onlinePublicRooms, [
+      {
+        roomCode: "PUB123",
+        createdAt: "2026-05-12T12:00:00.000Z",
+        hostUsername: "PublicHost",
+        visibility: "public",
+        status: "waiting"
+      }
+    ]);
     await shownScreens.at(-1).context.actions.joinRoom("abc123");
     await shownScreens.at(-1).context.actions.submitMove("fire");
     await shownScreens.at(-1).context.actions.readyRematch();
@@ -2643,7 +2669,11 @@ test("appController: online play create join submit-move and ready-rematch actio
       }
     };
 
-    assert.deepEqual(calls.createRoom, [expectedIdentityPayload]);
+    assert.deepEqual(calls.createRoom, [
+      { ...expectedIdentityPayload, visibility: "private" },
+      { ...expectedIdentityPayload, visibility: "public" }
+    ]);
+    assert.deepEqual(calls.listPublicRooms, [{ username: "SignedInUser-Canonical" }]);
     assert.deepEqual(calls.joinRoom, [{ roomCode: "ABC123", ...expectedIdentityPayload }]);
     assert.deepEqual(calls.submitMove, ["fire"]);
     assert.equal(calls.readyRematch, 1);

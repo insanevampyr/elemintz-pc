@@ -38,6 +38,10 @@ const MAX_USERNAME_LENGTH = 32;
 const MAX_COSMETIC_ID_LENGTH = 128;
 export const ONLINE_TURN_TIMER_DURATION_MS = 20000;
 
+function normalizeRoomVisibility(value) {
+  return String(value ?? "").trim().toLowerCase() === "public" ? "public" : "private";
+}
+
 function randomChar(source, random) {
   const index = Math.floor(random() * source.length);
   return source[index] ?? source[0];
@@ -1735,6 +1739,7 @@ function cloneRoom(room) {
   return {
     roomCode: room.roomCode,
     createdAt: room.createdAt,
+    visibility: normalizeRoomVisibility(room.visibility),
     host: room.host ? { ...room.host } : null,
     guest: room.guest ? { ...room.guest } : null,
     status: room.status,
@@ -1815,6 +1820,45 @@ function cloneRoom(room) {
   };
 }
 
+function buildPublicRoomSummary(room) {
+  return {
+    roomCode: room?.roomCode ?? null,
+    createdAt: room?.createdAt ?? null,
+    hostUsername: room?.host?.username ?? null,
+    hostCosmetics: room?.host?.equippedCosmetics
+      ? normalizeEquippedCosmetics(room.host.equippedCosmetics)
+      : null,
+    visibility: normalizeRoomVisibility(room?.visibility),
+    status: room?.status ?? "waiting"
+  };
+}
+
+function hasJoinedGuest(room) {
+  const guest = room?.guest;
+  if (!guest || typeof guest !== "object") {
+    return false;
+  }
+
+  return Boolean(
+    normalizeUsername(guest.username) ||
+      String(guest.socketId ?? "").trim() ||
+      String(guest.sessionId ?? "").trim()
+  );
+}
+
+function isRoomPubliclyListable(room) {
+  return (
+    normalizeRoomVisibility(room?.visibility) === "public" &&
+    room?.status === "waiting" &&
+    !hasJoinedGuest(room) &&
+    !room?.matchComplete &&
+    room?.status !== "paused" &&
+    room?.status !== "closing" &&
+    room?.status !== "expired" &&
+    !Boolean(room?.disconnectState?.active)
+  );
+}
+
 export function createRoomStore({ random = Math.random } = {}) {
   const rooms = new Map();
   const socketToRoom = new Map();
@@ -1851,6 +1895,7 @@ export function createRoomStore({ random = Math.random } = {}) {
       const room = {
         roomCode,
         createdAt: new Date().toISOString(),
+        visibility: normalizeRoomVisibility(payload?.visibility),
         host: buildPlayer(socket, payload, identity),
         guest: null,
         status: "waiting",
@@ -2215,6 +2260,13 @@ export function createRoomStore({ random = Math.random } = {}) {
         removedRoomCode: null,
         room: cloneRoom(room)
       };
+    },
+
+    listPublicRooms() {
+      return [...rooms.values()]
+        .filter((room) => isRoomPubliclyListable(room))
+        .sort((left, right) => Date.parse(left?.createdAt ?? 0) - Date.parse(right?.createdAt ?? 0))
+        .map((room) => buildPublicRoomSummary(room));
     },
 
     getRoom(roomCode) {

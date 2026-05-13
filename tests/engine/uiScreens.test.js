@@ -7917,6 +7917,133 @@ test("ui: online play screen renders room flow status and room details", () => {
   assert.doesNotMatch(html, /value="abc123"/);
 });
 
+test("ui: online play screen renders public room controls in the pre-room state", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    onlineCreateRoomVisibility: "private",
+    onlinePublicRoomsStatus: "idle",
+    onlinePublicRooms: [],
+    formattedErrorMessage: "",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      statusMessage: "Connected. Create a room or join one.",
+      lastError: null,
+      room: null
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Private \/ code only/);
+  assert.match(html, /Public \/ listed/);
+  assert.match(html, /data-online-room-visibility="private"/);
+  assert.match(html, /aria-pressed="true"/);
+  assert.match(html, /Browse Public Rooms/);
+  assert.match(html, /Browse waiting public rooms when you want a faster join path without sharing a code first\./);
+  assert.match(html, /id="online-refresh-public-rooms-btn"/);
+  assert.match(html, /id="online-join-room-form"/);
+});
+
+test("ui: online play screen renders public room cards and empty\/error states", () => {
+  const listHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    onlineCreateRoomVisibility: "public",
+    onlinePublicRoomsStatus: "ready",
+    onlinePublicRooms: [
+      {
+        roomCode: "PUB123",
+        createdAt: "2026-05-13T12:00:00.000Z",
+        hostUsername: "PublicHost",
+        visibility: "public",
+        status: "waiting"
+      }
+    ],
+    now: Date.parse("2026-05-13T12:00:45.000Z"),
+    formattedErrorMessage: "",
+    multiplayer: {
+      connectionStatus: "connected",
+      statusMessage: "Connected. Create a room or join one.",
+      lastError: null,
+      room: null
+    },
+    actions: {}
+  });
+
+  assert.match(listHtml, /PublicHost/);
+  assert.match(listHtml, /Room Code:<\/strong> PUB123/);
+  assert.match(listHtml, /Created:<\/strong> 45s ago/);
+  assert.match(listHtml, /data-online-public-room-join="PUB123"/);
+
+  const emptyHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    onlineCreateRoomVisibility: "private",
+    onlinePublicRoomsStatus: "ready",
+    onlinePublicRooms: [],
+    formattedErrorMessage: "",
+    multiplayer: {
+      connectionStatus: "connected",
+      statusMessage: "Connected. Create a room or join one.",
+      lastError: null,
+      room: null
+    },
+    actions: {}
+  });
+
+  assert.match(emptyHtml, /No public rooms available\./);
+
+  const errorHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    onlineCreateRoomVisibility: "private",
+    onlinePublicRoomsStatus: "error",
+    onlinePublicRoomsError: "Unable to load public rooms.",
+    onlinePublicRooms: [],
+    formattedErrorMessage: "",
+    multiplayer: {
+      connectionStatus: "connected",
+      statusMessage: "Connected. Create a room or join one.",
+      lastError: null,
+      room: null
+    },
+    actions: {}
+  });
+
+  assert.match(errorHtml, /Notice:<\/strong> Unable to load public rooms\./);
+});
+
+test("ui: online play screen keeps returned public room cards visible even when a generic pre-room notice exists", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    onlineCreateRoomVisibility: "public",
+    onlinePublicRoomsStatus: "ready",
+    onlinePublicRooms: [
+      {
+        roomCode: "PUB123",
+        createdAt: "2026-05-13T12:00:00.000Z",
+        hostUsername: "PublicHost",
+        visibility: "public",
+        status: "waiting"
+      }
+    ],
+    now: Date.parse("2026-05-13T12:00:45.000Z"),
+    formattedErrorMessage: "Generic signed-in notice",
+    multiplayer: {
+      connectionStatus: "connected",
+      statusMessage: "Connected. Create a room or join one.",
+      lastError: null,
+      room: null
+    },
+    actions: {}
+  });
+
+  assert.match(html, /PublicHost/);
+  assert.doesNotMatch(html, /Generic signed-in notice/);
+});
+
 test("ui: online play waiting host state shows the host's equipped cosmetics cleanly before join", () => {
   const hostResolvedIdentity = {
     slotLabel: "Host",
@@ -10140,6 +10267,7 @@ test("ui: appController online room identity payload reads nested cosmetics.equi
     assert.equal(createRoomCalls.length, 1);
     assert.deepEqual(createRoomCalls[0], {
       username: "LocalUser",
+      visibility: "private",
       equippedCosmetics: {
         avatar: "avatar_fourfold_lord",
         background: "bg_elemental_throne",
@@ -11453,10 +11581,27 @@ test("ui: online play screen renders a server-authoritative turn timer label in 
 
 test("ui: online play screen bind delegates move button clicks to submitMove", async () => {
   const previousDocument = global.document;
+  const previousFormData = global.FormData;
   const calls = [];
+  const joinCalls = [];
+  const visibilityCalls = [];
+  let refreshHandler = null;
+  let joinSubmitHandler = null;
+  let publicJoinHandler = null;
   let moveClickHandler = null;
   const tauntCalls = [];
   const tauntToggleButton = createFakeElement();
+  const refreshButton = createFakeElement();
+  const privateVisibilityButton = createFakeElement();
+  const publicVisibilityButton = createFakeElement();
+  const publicJoinButton = {
+    getAttribute: (name) => (name === "data-online-public-room-join" ? "PUB123" : null),
+    addEventListener(type, handler) {
+      if (type === "click") {
+        publicJoinHandler = handler;
+      }
+    }
+  };
   const tauntOptionButton = {
     listeners: new Map(),
     getAttribute: (name) => (name === "data-taunt-line" ? "Your move." : null),
@@ -11477,6 +11622,30 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
         return { addEventListener: () => {} };
       }
 
+      if (id === "online-refresh-public-rooms-btn") {
+        return {
+          addEventListener: (_type, handler) => {
+            refreshHandler = handler;
+          }
+        };
+      }
+
+      if (id === "online-room-visibility-private-btn") {
+        return {
+          addEventListener: (_type, handler) => {
+            privateVisibilityButton.handler = handler;
+          }
+        };
+      }
+
+      if (id === "online-room-visibility-public-btn") {
+        return {
+          addEventListener: (_type, handler) => {
+            publicVisibilityButton.handler = handler;
+          }
+        };
+      }
+
       if (id === "online-taunts-toggle-btn") {
         return tauntToggleButton;
       }
@@ -11486,12 +11655,33 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
       }
 
       if (id === "online-join-room-form") {
-        return { addEventListener: () => {} };
+        return {
+          addEventListener: (_type, handler) => {
+            joinSubmitHandler = handler;
+          }
+        };
       }
 
       return null;
     },
-    querySelectorAll: (selector) => (selector === "[data-taunt-line]" ? [tauntOptionButton] : [])
+    querySelectorAll: (selector) => {
+      if (selector === "[data-taunt-line]") {
+        return [tauntOptionButton];
+      }
+      if (selector === "[data-online-public-room-join]") {
+        return [publicJoinButton];
+      }
+      return [];
+    }
+  };
+  global.FormData = class FakeFormData {
+    constructor(target) {
+      this.target = target;
+    }
+
+    get(name) {
+      return this.target?.[name] ?? "";
+    }
   };
 
   try {
@@ -11499,7 +11689,15 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
       actions: {
         createRoom: async () => {},
         back: async () => {},
-        joinRoom: async () => {},
+        joinRoom: async (roomCode) => {
+          joinCalls.push(roomCode);
+        },
+        browsePublicRooms: async () => {
+          joinCalls.push("browse");
+        },
+        setCreateRoomVisibility: async (visibility) => {
+          visibilityCalls.push(visibility);
+        },
         toggleTauntsPanel: async () => {
           tauntCalls.push("toggle");
         },
@@ -11524,13 +11722,26 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
       },
       composedPath: () => []
     });
+    await refreshHandler();
+    await privateVisibilityButton.handler();
+    await publicVisibilityButton.handler();
+    await publicJoinHandler();
+    await joinSubmitHandler({
+      preventDefault: () => {},
+      currentTarget: {
+        roomCode: "ROOM42"
+      }
+    });
     await tauntToggleButton.listeners.get("click")();
     await tauntOptionButton.listeners.get("click")();
 
     assert.deepEqual(calls, ["fire"]);
     assert.deepEqual(tauntCalls, ["toggle", "Your move."]);
+    assert.deepEqual(visibilityCalls, ["private", "public"]);
+    assert.deepEqual(joinCalls, ["browse", "PUB123", "ROOM42"]);
   } finally {
     global.document = previousDocument;
+    global.FormData = previousFormData;
   }
 });
 
