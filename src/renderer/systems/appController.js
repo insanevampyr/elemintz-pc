@@ -1693,6 +1693,19 @@ export class AppController {
     return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
   }
 
+  hasAuthenticatedMultiplayerSessionForUsername(
+    username = this.username,
+    onlineState = this.onlinePlayState
+  ) {
+    if (!onlineState?.session?.authenticated) {
+      return false;
+    }
+
+    const requestedUsername = String(username ?? "").trim();
+    const sessionUsername = String(onlineState?.session?.username ?? "").trim();
+    return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
+  }
+
   buildLocalMatchSettlementKey(match, { mode = null, names = [] } = {}) {
     const safeMode = String(mode ?? match?.mode ?? "local_match").trim() || "local_match";
     const safeMatchId =
@@ -2724,10 +2737,15 @@ export class AppController {
       return;
     }
 
+    const multiplayerOpenChest = globalThis.window?.elemintz?.multiplayer?.openChest;
     const openWithMultiplayer =
-      this.hasMultiplayerProfileAccess() && globalThis.window?.elemintz?.multiplayer?.openChest;
+      typeof multiplayerOpenChest === "function" &&
+      (
+        this.hasMultiplayerProfileAccess() ||
+        this.hasAuthenticatedMultiplayerSessionForUsername(this.username)
+      );
     const openAuthority = openWithMultiplayer
-      ? globalThis.window.elemintz.multiplayer.openChest
+      ? multiplayerOpenChest
       : globalThis.window?.elemintz?.state?.openChest;
 
     if (typeof openAuthority !== "function") {

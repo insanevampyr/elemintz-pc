@@ -6577,6 +6577,242 @@ test("appController: authenticated online profile chest opening uses multiplayer
   }
 });
 
+test("appController: authenticated profile chest opening still uses multiplayer authority when local chest IPC is blocked", async () => {
+  const originalWindow = globalThis.window;
+  const originalSetTimeout = globalThis.setTimeout;
+  const shownScreens = [];
+  const modalCalls = [];
+  const multiplayerOpenCalls = [];
+  const localOpenCalls = [];
+  let localProfileReads = 0;
+
+  const initialProfile = {
+    username: "BlockedLocalChestUser",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 200,
+    playerXP: 0,
+    playerLevel: 1,
+    supporterPass: false,
+    chests: { basic: 1, milestone: 0, epic: 0, legendary: 0 },
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 }, online_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
+    ownedCosmetics: {}
+  };
+  const openedProfile = {
+    ...initialProfile,
+    tokens: 245,
+    playerXP: 11,
+    chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+  };
+  const openedSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: openedProfile,
+    progression: {}
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {}
+    },
+    toastManager: {
+      showChestOpenReward: () => {}
+    }
+  });
+
+  try {
+    globalThis.setTimeout = (callback) => {
+      callback();
+      return 0;
+    };
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => {
+            localProfileReads += 1;
+            return localProfileReads === 1 ? initialProfile : openedProfile;
+          },
+          getCosmetics: async () => ({
+            equipped: initialProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
+          getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+          listProfiles: async () => [],
+          openChest: async (payload) => {
+            localOpenCalls.push(payload);
+            throw new Error("Legacy local authority path 'state:openChest' is disabled for authenticated online profiles.");
+          }
+        },
+        multiplayer: {
+          openChest: async (payload) => {
+            multiplayerOpenCalls.push(payload);
+            return {
+              chestType: "basic",
+              consumed: 1,
+              remaining: 0,
+              rewards: { xp: 11, tokens: 45, cosmetic: null },
+              snapshot: openedSnapshot
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "BlockedLocalChestUser";
+    app.profile = initialProfile;
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "disconnected",
+      session: {
+        active: true,
+        username: "BlockedLocalChestUser",
+        sessionId: "session-blocked",
+        accountId: "account-blocked",
+        profileKey: "BlockedLocalChestUser",
+        authenticated: true
+      }
+    });
+
+    await app.showProfile();
+    await shownScreens.at(-1).context.actions.openBasicChest();
+
+    assert.deepEqual(multiplayerOpenCalls, [{ username: "BlockedLocalChestUser", chestType: "basic" }]);
+    assert.deepEqual(localOpenCalls, []);
+    assert.equal(modalCalls.length, 0);
+    assert.equal(shownScreens.at(-1).context.profile.chests.basic, 0);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test("appController: authenticated profile chest opening shows readable server error without falling back to local IPC", async () => {
+  const originalWindow = globalThis.window;
+  const originalSetTimeout = globalThis.setTimeout;
+  const shownScreens = [];
+  const modalCalls = [];
+  const multiplayerOpenCalls = [];
+  const localOpenCalls = [];
+
+  const initialProfile = {
+    username: "OnlineChestErrorUser",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 200,
+    playerXP: 0,
+    playerLevel: 1,
+    supporterPass: false,
+    chests: { basic: 1, milestone: 0, epic: 0, legendary: 0 },
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 }, online_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
+    ownedCosmetics: {}
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {}
+    },
+    toastManager: {
+      showChestOpenReward: () => {}
+    }
+  });
+
+  try {
+    globalThis.setTimeout = (callback) => {
+      callback();
+      return 0;
+    };
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => initialProfile,
+          getCosmetics: async () => ({
+            equipped: initialProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
+          getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+          listProfiles: async () => [],
+          openChest: async (payload) => {
+            localOpenCalls.push(payload);
+            return {};
+          }
+        },
+        multiplayer: {
+          openChest: async (payload) => {
+            multiplayerOpenCalls.push(payload);
+            throw new Error("Unable to open authoritative chest.");
+          }
+        }
+      }
+    };
+
+    app.username = "OnlineChestErrorUser";
+    app.profile = initialProfile;
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "disconnected",
+      session: {
+        active: true,
+        username: "OnlineChestErrorUser",
+        sessionId: "session-error",
+        accountId: "account-error",
+        profileKey: "OnlineChestErrorUser",
+        authenticated: true
+      }
+    });
+
+    await app.showProfile();
+    await shownScreens.at(-1).context.actions.openBasicChest();
+
+    assert.deepEqual(multiplayerOpenCalls, [{ username: "OnlineChestErrorUser", chestType: "basic" }]);
+    assert.deepEqual(localOpenCalls, []);
+    assert.equal(modalCalls.at(-1)?.title, "Chest Open Failed");
+    assert.equal(modalCalls.at(-1)?.body, "Unable to open authoritative chest.");
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
 test("appController: summary and turn flow update only after resolved hotseat round", async () => {
   const originalWindow = globalThis.window;
   const originalAudio = globalThis.Audio;
