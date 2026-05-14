@@ -13,6 +13,11 @@ export function registerUpdateIpcHandlers(
     publishConfiguration = null
   } = {}
 ) {
+  const ALLOWED_PROMPT_EVENT_TYPES = new Set([
+    "install_prompt_shown",
+    "user_chose_restart_now",
+    "user_chose_later"
+  ]);
   const subscribers = new Set();
   let adapter = updaterAdapter;
   let startupCheckScheduled = false;
@@ -93,6 +98,19 @@ export function registerUpdateIpcHandlers(
   ipcMain.handle("updates:requestInstallWhenSafe", async () =>
     store.markInstallDeferred("Update install requested. Waiting for a safe restart window.")
   );
+
+  ipcMain.handle("updates:reportPromptEvent", async (_event, payload = {}) => {
+    const eventType = String(payload?.type ?? "").trim();
+    if (!ALLOWED_PROMPT_EVENT_TYPES.has(eventType)) {
+      return false;
+    }
+
+    logger.info?.(`[Updater] ${eventType}`, {
+      version: payload?.version ?? null,
+      source: payload?.source ?? "renderer"
+    });
+    return true;
+  });
 
   ipcMain.handle("updates:cancelDeferredInstall", async () =>
     store.clearDeferredInstall("Deferred update install cleared.")

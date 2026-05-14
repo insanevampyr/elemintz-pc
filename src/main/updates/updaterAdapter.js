@@ -23,6 +23,7 @@ export class UpdaterAdapter {
     this.bound = false;
     this.downloadInFlight = false;
     this.installInFlight = false;
+    this.lastLoggedDownloadPercent = null;
 
     this.configureUpdater();
     this.bindUpdaterEvents();
@@ -69,6 +70,13 @@ export class UpdaterAdapter {
         version: updateInfo?.version ?? null
       });
       this.store.markUpdateAvailable(updateInfo, "Update available.");
+      Promise.resolve(this.requestDownload({ source: "auto-update-available" })).catch((error) => {
+        const normalizedError = normalizeUpdaterError(error);
+        this.logError("auto-download failed", {
+          code: normalizedError.code ?? null,
+          message: normalizedError.message
+        });
+      });
     });
 
     this.updater.on("update-not-available", (updateInfo) => {
@@ -85,11 +93,30 @@ export class UpdaterAdapter {
     });
 
     this.updater.on("download-progress", (progress) => {
+      const nextPercent = Number(progress?.percent ?? 0);
+      const roundedPercent = Number.isFinite(nextPercent) ? Math.max(0, Math.min(100, Math.round(nextPercent))) : null;
+      const shouldLogProgress =
+        roundedPercent != null &&
+        (
+          this.lastLoggedDownloadPercent == null ||
+          roundedPercent === 100 ||
+          roundedPercent >= this.lastLoggedDownloadPercent + 10
+        );
+      if (shouldLogProgress) {
+        this.lastLoggedDownloadPercent = roundedPercent;
+        this.logInfo("download progress", {
+          percent: roundedPercent,
+          transferred: Number(progress?.transferred ?? 0) || 0,
+          total: Number(progress?.total ?? 0) || 0,
+          bytesPerSecond: Number(progress?.bytesPerSecond ?? 0) || 0
+        });
+      }
       this.store.markDownloading(progress, "Update download in progress.");
     });
 
     this.updater.on("update-downloaded", (updateInfo) => {
       this.downloadInFlight = false;
+      this.lastLoggedDownloadPercent = 100;
       this.logInfo("update downloaded", {
         version: updateInfo?.version ?? null
       });
@@ -98,6 +125,7 @@ export class UpdaterAdapter {
 
     this.updater.on("error", (error) => {
       this.downloadInFlight = false;
+      this.lastLoggedDownloadPercent = null;
       const normalizedError = normalizeUpdaterError(error);
       this.logError("error", {
         code: normalizedError.code ?? null,
@@ -155,10 +183,15 @@ export class UpdaterAdapter {
     }
   }
 
-  async requestDownload() {
+  async requestDownload({ source = "manual" } = {}) {
     const currentState = this.store.getState();
 
     if (!this.isPackaged) {
+      this.logInfo("download skipped", {
+        source,
+        reason: "dev_or_unpackaged",
+        isPackaged: this.isPackaged
+      });
       return this.store.setState({
         message: "Update downloads are disabled in dev/unpackaged builds.",
         error: null
@@ -166,6 +199,10 @@ export class UpdaterAdapter {
     }
 
     if (!this.hasPublishConfiguration) {
+      this.logError("download skipped", {
+        source,
+        reason: "publish_configuration_missing"
+      });
       return this.store.markError(
         {
           message: "Update publish configuration is missing.",
@@ -176,6 +213,10 @@ export class UpdaterAdapter {
     }
 
     if (this.downloadInFlight || currentState.status === "downloading") {
+      this.logInfo("download skipped", {
+        source,
+        reason: "already_in_progress"
+      });
       return this.store.setState({
         message: "Update download already in progress.",
         error: null
@@ -183,6 +224,11 @@ export class UpdaterAdapter {
     }
 
     if (currentState.status !== "available") {
+      this.logInfo("download skipped", {
+        source,
+        reason: "no_available_update",
+        status: currentState.status ?? null
+      });
       return this.store.markError(
         {
           message: "No available update to download.",
@@ -193,6 +239,10 @@ export class UpdaterAdapter {
     }
 
     if (typeof this.updater?.downloadUpdate !== "function") {
+      this.logError("download skipped", {
+        source,
+        reason: "download_unavailable"
+      });
       return this.store.markError(
         {
           message: "Updater download is unavailable in this runtime.",
@@ -204,12 +254,23 @@ export class UpdaterAdapter {
 
     try {
       this.downloadInFlight = true;
+      this.lastLoggedDownloadPercent = null;
+      this.logInfo("download started", {
+        source,
+        version: currentState.updateInfo?.version ?? null
+      });
       this.store.markDownloading(currentState.downloadProgress, "Starting update download...");
       await this.updater.downloadUpdate();
       return this.store.getState();
     } catch (error) {
       this.downloadInFlight = false;
+      this.lastLoggedDownloadPercent = null;
       const normalizedError = normalizeUpdaterError(error);
+      this.logError("download failed", {
+        source,
+        code: normalizedError.code ?? null,
+        message: normalizedError.message
+      });
       return this.store.markError(normalizedError, normalizedError.message);
     }
   }
@@ -230,6 +291,10 @@ export class UpdaterAdapter {
           };
 
     if (!["downloaded", "deferred", "readyToInstall"].includes(currentState.status)) {
+      this.logInfo("requestInstall blocked", {
+        reason: "no_downloaded_update",
+        status: currentState.status ?? null
+      });
       return this.store.markError(
         {
           message: "No downloaded update is ready to install.",
@@ -240,6 +305,9 @@ export class UpdaterAdapter {
     }
 
     if (this.installInFlight) {
+      this.logInfo("requestInstall skipped", {
+        reason: "install_already_requested"
+      });
       return this.store.setState({
         message: "Update install already requested.",
         error: null
@@ -247,6 +315,10 @@ export class UpdaterAdapter {
     }
 
     if (!normalizedSafetyState.safe) {
+      this.logInfo("requestInstall blocked", {
+        reason: "unsafe_restart_window",
+        safetyReasons: normalizedSafetyState.reasons
+      });
       if (currentState.deferredUntilSafe) {
         return this.store.setState({
           message: "Update install already deferred until the app is safe.",
@@ -260,6 +332,9 @@ export class UpdaterAdapter {
     }
 
     if (typeof this.updater?.quitAndInstall !== "function") {
+      this.logError("requestInstall blocked", {
+        reason: "install_unavailable"
+      });
       return this.store.markError(
         {
           message: "Updater install is unavailable in this runtime.",
@@ -277,6 +352,9 @@ export class UpdaterAdapter {
         error: null,
         restartRequested: true,
         deferredUntilSafe: false
+      });
+      this.logInfo("quitAndInstall invoked", {
+        version: currentState.updateInfo?.version ?? nextState.updateInfo?.version ?? null
       });
       this.updater.quitAndInstall();
       return nextState;

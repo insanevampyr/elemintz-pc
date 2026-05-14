@@ -112,6 +112,23 @@ function createUpdateSafetyController() {
   });
 }
 
+function createModalCapture() {
+  const shows = [];
+  return {
+    shows,
+    hidden: 0,
+    show(config) {
+      shows.push(config);
+    },
+    hide() {
+      this.hidden += 1;
+    },
+    clearStaleOverlay() {
+      return false;
+    }
+  };
+}
+
 function createFakeDomElement(overrides = {}) {
   const listeners = new Map();
   return {
@@ -135,6 +152,7 @@ function createMockUpdateBridge(initialState = {}) {
   const calls = {
     requestCheck: 0,
     requestInstall: 0,
+    reportPromptEvent: [],
     devMarkDownloaded: 0,
     requestInstallWhenSafe: 0,
     cancelDeferredInstall: 0,
@@ -233,6 +251,10 @@ function createMockUpdateBridge(initialState = {}) {
       calls.quitAndInstall += 1;
       emit();
       return { ...state };
+    },
+    async reportPromptEvent(payload) {
+      calls.reportPromptEvent.push(payload);
+      return true;
     },
     async devMarkDownloaded(payload = {}) {
       calls.devMarkDownloaded += 1;
@@ -597,6 +619,143 @@ test("appController: dev update lifecycle subscription updates coordinator from 
     assert.equal(coordinator.lifecycleState.updateInfo?.version, "subscription-flow-1");
     assert.equal(coordinator.installAllowedNow, false);
     assert.equal(coordinator.deferredUntilSafe, false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: downloaded update shows an Update Ready prompt and Later does not install", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge();
+  const modalManager = createModalCapture();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager,
+      toastManager: { show: () => {} }
+    });
+    app.screenFlow = "menu";
+    app.bindUpdateLifecycleUpdates();
+
+    await app.devSimulateDownloadedUpdate({ version: "2.1.5" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalManager.shows.length, 1);
+    const prompt = modalManager.shows[0];
+    assert.equal(prompt.title, "Update Ready");
+    assert.match(prompt.body, /downloaded/i);
+    assert.deepEqual(updateBridge.calls.reportPromptEvent, [
+      {
+        type: "install_prompt_shown",
+        version: "2.1.5",
+        source: "renderer-update-modal"
+      }
+    ]);
+
+    await prompt.actions[1].onClick();
+
+    assert.equal(updateBridge.calls.requestInstall, 0);
+    assert.deepEqual(updateBridge.calls.reportPromptEvent.at(-1), {
+      type: "user_chose_later",
+      version: "2.1.5",
+      source: "renderer-update-modal"
+    });
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: downloaded update Restart Now uses safe install and does not show a blocker modal", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge();
+  const modalManager = createModalCapture();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager,
+      toastManager: { show: () => {} }
+    });
+    app.screenFlow = "menu";
+    app.bindUpdateLifecycleUpdates();
+
+    await app.devSimulateDownloadedUpdate({ version: "2.1.5" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const prompt = modalManager.shows[0];
+    await prompt.actions[0].onClick();
+
+    assert.equal(updateBridge.calls.requestInstall, 1);
+    assert.equal(updateBridge.calls.quitAndInstall, 1);
+    assert.deepEqual(updateBridge.calls.reportPromptEvent.at(-1), {
+      type: "user_chose_restart_now",
+      version: "2.1.5",
+      source: "renderer-update-modal"
+    });
+    assert.equal(modalManager.shows.length, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: downloaded update Restart Now stays blocked safely during an active match", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge();
+  const modalManager = createModalCapture();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const app = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager,
+      toastManager: { show: () => {} }
+    });
+    app.screenFlow = "game";
+    app.roundPresentation = {
+      phase: "reveal",
+      busy: true,
+      selectedCardIndex: 0
+    };
+    app.gameController = {
+      getViewModel: () => ({
+        status: "active",
+        warActive: true
+      })
+    };
+    app.bindUpdateLifecycleUpdates();
+
+    await app.devSimulateDownloadedUpdate({ version: "2.1.5" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const prompt = modalManager.shows[0];
+    await prompt.actions[0].onClick();
+
+    assert.equal(updateBridge.calls.requestInstall, 1);
+    assert.equal(updateBridge.calls.quitAndInstall, 0);
+    assert.equal(modalManager.shows.length, 2);
+    assert.equal(modalManager.shows[1].title, "Update Not Safe Yet");
+    assert.match(modalManager.shows[1].body, /cannot restart/i);
   } finally {
     globalThis.window = originalWindow;
   }

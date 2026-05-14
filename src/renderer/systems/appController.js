@@ -186,6 +186,8 @@ export class AppController {
       this.screenFlow = "idle";
       this.updateCoordinatorState = buildUpdateCoordinatorState();
       this.updateLifecycleUnsubscribe = null;
+      this.updateReadyPromptVersion = null;
+      this.updateReadyPromptVisible = false;
 
     this.registerScreens();
   }
@@ -2039,6 +2041,142 @@ export class AppController {
     return this.updateCoordinatorState;
   }
 
+  getUpdateReadyPromptVersionKey(lifecycleState = null) {
+    const version = String(lifecycleState?.updateInfo?.version ?? "").trim();
+    if (version) {
+      return version;
+    }
+
+    return String(lifecycleState?.updatedAt ?? "");
+  }
+
+  async reportUpdatePromptEvent(type, details = {}) {
+    const updates = globalThis.window?.elemintz?.updates ?? null;
+    if (!updates?.reportPromptEvent) {
+      return false;
+    }
+
+    try {
+      return await updates.reportPromptEvent({
+        type,
+        ...details
+      });
+    } catch (error) {
+      console.error("[Updates][PromptEvent] failed", {
+        type,
+        message: String(error?.message ?? error ?? "Unknown prompt event reporting failure.")
+      });
+      return false;
+    }
+  }
+
+  buildUpdateInstallBlockedMessage(blockedReasons = []) {
+    const reasons = Array.isArray(blockedReasons) ? blockedReasons : [];
+    if (reasons.length === 0) {
+      return "EleMintz is not in a safe state to restart right now. Please finish your current flow and try again.";
+    }
+
+    const labels = {
+      active_match: "a local match is active",
+      active_online_match: "an online match is active",
+      active_war: "a WAR sequence is still active",
+      round_presentation_busy: "a round reveal is still playing",
+      pending_match_complete_flow: "match rewards or results are still being presented",
+      chest_open_in_flight: "a chest is opening",
+      milestone_chest_notice_open: "a chest reward notice is open",
+      reconnect_paused_or_reminder_active: "an online reconnect flow is active",
+      pending_online_room_action: "an online room action is still pending",
+      pending_reward_settlement: "match rewards are still settling",
+      daily_login_claim_in_flight: "daily login rewards are still being claimed",
+      online_profile_refresh_in_flight: "the online profile is still refreshing",
+      pending_admin_grant_notice: "an admin grant notice is still pending",
+      quit_confirmation_modal_active: "a quit confirmation is open",
+      match_complete_modal_active: "the match complete dialog is open"
+    };
+
+    const readableReasons = reasons.map((reason) => labels[reason] ?? reason.replaceAll("_", " "));
+    if (readableReasons.length === 1) {
+      return `EleMintz cannot restart to install the update yet because ${readableReasons[0]}.`;
+    }
+
+    return `EleMintz cannot restart to install the update yet because ${readableReasons
+      .slice(0, -1)
+      .join(", ")} and ${readableReasons.at(-1)}.`;
+  }
+
+  async showUpdateReadyPrompt(lifecycleState) {
+    const version = lifecycleState?.updateInfo?.version ?? "the latest version";
+    this.updateReadyPromptVisible = true;
+    await this.reportUpdatePromptEvent("install_prompt_shown", {
+      version,
+      source: "renderer-update-modal"
+    });
+
+    this.modalManager.show({
+      title: "Update Ready",
+      body: "A new EleMintz update has been downloaded. Restart now to install?",
+      actions: [
+        {
+          label: "Restart Now",
+          onClick: async () => {
+            this.updateReadyPromptVisible = false;
+            this.modalManager.hide();
+            await this.reportUpdatePromptEvent("user_chose_restart_now", {
+              version,
+              source: "renderer-update-modal"
+            });
+            const coordinator = await this.requestUpdateInstall();
+            const diagnostics = this.getUpdateDiagnostics();
+            if (coordinator?.lifecycleState?.status === "error") {
+              this.modalManager.show({
+                title: "Update Install Failed",
+                body:
+                  diagnostics.message ||
+                  "EleMintz could not start the update install right now.",
+                actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+              });
+              return;
+            }
+
+            if (!coordinator?.installAllowedNow) {
+              this.modalManager.show({
+                title: "Update Not Safe Yet",
+                body: this.buildUpdateInstallBlockedMessage(coordinator?.blockedReasons ?? []),
+                actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+              });
+            }
+          }
+        },
+        {
+          label: "Later",
+          onClick: async () => {
+            this.updateReadyPromptVisible = false;
+            this.modalManager.hide();
+            await this.reportUpdatePromptEvent("user_chose_later", {
+              version,
+              source: "renderer-update-modal"
+            });
+          }
+        }
+      ]
+    });
+  }
+
+  async maybeHandleDownloadedUpdateLifecycle(lifecycleState) {
+    const status = String(lifecycleState?.status ?? "").trim();
+    if (status !== "downloaded") {
+      return;
+    }
+
+    const promptVersionKey = this.getUpdateReadyPromptVersionKey(lifecycleState);
+    if (!promptVersionKey || promptVersionKey === this.updateReadyPromptVersion || this.updateReadyPromptVisible) {
+      return;
+    }
+
+    this.updateReadyPromptVersion = promptVersionKey;
+    await this.showUpdateReadyPrompt(lifecycleState);
+  }
+
   bindUpdateLifecycleUpdates() {
     if (this.updateLifecycleUnsubscribe || !globalThis.window?.elemintz?.updates?.onStateChanged) {
       return;
@@ -2052,6 +2190,7 @@ export class AppController {
       });
 
       console.info("[Updates][Coordinator]", this.getUpdateDiagnostics());
+      void this.maybeHandleDownloadedUpdateLifecycle(lifecycleState);
     });
   }
 

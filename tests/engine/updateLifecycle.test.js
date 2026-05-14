@@ -81,6 +81,11 @@ function createFakeUpdater() {
   };
 }
 
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 test("update lifecycle: initial state is idle", () => {
   const store = createUpdateLifecycleStore();
   const state = store.getState();
@@ -219,9 +224,11 @@ test("update adapter: real updater events map into lifecycle state without insta
   assert.equal(updater.autoInstallOnAppQuit, false);
 
   updater.emit("update-available", { version: "0.1.7" });
+  await flushMicrotasks();
   let state = store.getState();
-  assert.equal(state.status, "available");
+  assert.equal(state.status, "downloading");
   assert.equal(state.updateInfo?.version, "0.1.7");
+  assert.equal(calls.downloadUpdate, 1);
 
   updater.emit("download-progress", { percent: 42, transferred: 420, total: 1000, bytesPerSecond: 8 });
   state = store.getState();
@@ -514,6 +521,66 @@ test("update IPC: requestCheck uses the real adapter in packaged builds without 
   assert.equal(response.deferredUntilSafe, false);
 });
 
+test("update IPC: update-available auto-triggers requestDownload and logs the download lifecycle", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  const { updater, calls } = createFakeUpdater();
+  const logger = createFakeLogger();
+  updater.checkForUpdates = async () => {
+    calls.checkForUpdates += 1;
+    updater.emit("checking-for-update");
+    updater.emit("update-available", { version: "2.1.5" });
+    return { cancellationToken: null };
+  };
+  updater.downloadUpdate = async () => {
+    calls.downloadUpdate += 1;
+    updater.emit("download-progress", {
+      percent: 50,
+      transferred: 500,
+      total: 1000,
+      bytesPerSecond: 250
+    });
+    updater.emit("update-downloaded", { version: "2.1.5", files: ["EleMintz_Setup_2.1.5.exe"] });
+    return ["EleMintz_Setup_2.1.5.exe"];
+  };
+  registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      logger,
+      isPackaged: true,
+      hasPublishConfiguration: true,
+      publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+    }),
+    logger,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  await ipcMain.handlers.get("updates:requestCheck")();
+  await flushMicrotasks();
+
+  const state = store.getState();
+  assert.equal(calls.checkForUpdates, 1);
+  assert.equal(calls.downloadUpdate, 1);
+  assert.equal(state.status, "downloaded");
+  assert.equal(state.updateInfo?.version, "2.1.5");
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] download started"),
+    true
+  );
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] download progress"),
+    true
+  );
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] update downloaded"),
+    true
+  );
+});
+
 test("update IPC: packaged startup schedules a one-time updater check", async () => {
   const ipcMain = createFakeIpcMain();
   const store = createUpdateLifecycleStore();
@@ -576,6 +643,37 @@ test("update IPC: packaged startup schedules a one-time updater check", async ()
   );
   assert.equal(
     logger.entries.some((entry) => entry.message === "[Updater] update not available"),
+    true
+  );
+});
+
+test("update IPC: prompt events are logged for startup.log visibility", async () => {
+  const ipcMain = createFakeIpcMain();
+  const logger = createFakeLogger();
+  registerUpdateIpcHandlers(ipcMain, {
+    logger
+  });
+
+  assert.equal(
+    await ipcMain.handlers.get("updates:reportPromptEvent")(null, {
+      type: "install_prompt_shown",
+      version: "2.1.5"
+    }),
+    true
+  );
+  assert.equal(
+    await ipcMain.handlers.get("updates:reportPromptEvent")(null, {
+      type: "user_chose_later",
+      version: "2.1.5"
+    }),
+    true
+  );
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] install_prompt_shown"),
+    true
+  );
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] user_chose_later"),
     true
   );
 });
