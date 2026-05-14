@@ -212,8 +212,10 @@ test("ui: settings screen renders PvE AI difficulty and style options with easy 
     html,
     /Online Play always uses a server-controlled 20-second turn timer and is not affected by local timer or speed settings\./
   );
-  assert.match(html, /Random AI card selection/);
-  assert.match(html, /Achievements disabled on Easy difficulty/);
+  assert.match(html, /Practice Mode\. No rewards, stats, achievements, or challenge progress\./);
+  assert.match(html, /Easy AI is practice-only and grants no XP, tokens, or chest drops\./);
+  assert.match(html, /Standard rewards and progression\./);
+  assert.match(html, /Smarter AI\. Win for \+5 XP, \+5 tokens, and improved basic chest chance\./);
   assert.match(html, /AI Opponent Style/);
   assert.match(html, /Randomize AI avatar, title, and card back from the global cosmetic pool each PvE match/);
 });

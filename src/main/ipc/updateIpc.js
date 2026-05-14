@@ -14,6 +14,7 @@ export function registerUpdateIpcHandlers(
 ) {
   const subscribers = new Set();
   let adapter = updaterAdapter;
+  let startupCheckScheduled = false;
   const getUpdaterAdapter = () => {
     if (!adapter) {
       adapter = createUpdaterAdapter({
@@ -24,6 +25,38 @@ export function registerUpdateIpcHandlers(
       });
     }
     return adapter;
+  };
+
+  const scheduleStartupUpdateCheck = ({
+    delayMs = 1500,
+    timer = globalThis.setTimeout
+  } = {}) => {
+    if (!isPackaged) {
+      console.info("[Updater] auto-check skipped on startup because app is not packaged", {
+        isPackaged
+      });
+      return false;
+    }
+
+    if (startupCheckScheduled) {
+      console.info("[Updater] auto-check already scheduled");
+      return false;
+    }
+
+    startupCheckScheduled = true;
+    console.info("[Updater] auto-check scheduled", {
+      delayMs
+    });
+
+    timer(() => {
+      Promise.resolve(getUpdaterAdapter().requestCheck()).catch((error) => {
+        console.error("[Updater] startup auto-check failed", {
+          message: error?.message ?? String(error)
+        });
+      });
+    }, delayMs);
+
+    return true;
   };
 
   const broadcast = (state) => {
@@ -70,6 +103,7 @@ export function registerUpdateIpcHandlers(
 
   return {
     store,
-    updaterAdapter: getUpdaterAdapter
+    updaterAdapter: getUpdaterAdapter,
+    scheduleStartupUpdateCheck
   };
 }

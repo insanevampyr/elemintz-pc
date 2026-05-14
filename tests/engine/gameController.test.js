@@ -806,6 +806,89 @@ test("gameController: AI selection is independent from player's current card", a
   }
 });
 
+test("gameController: non-authoritative PvE passes visible hand counts and recent moves into Hard AI", async () => {
+  const originalWindow = globalThis.window;
+  const originalRandom = Math.random;
+  const controller = new GameController({
+    username: "HardAiContextUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "hard",
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    Math.random = () => 0;
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    controller.localAuthority = null;
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.PVE),
+      players: {
+        p1: {
+          hand: ["fire", "fire", "earth"],
+          wonRounds: 0
+        },
+        p2: {
+          hand: ["earth", "water", "wind"],
+          wonRounds: 0
+        }
+      },
+      history: [
+        {
+          round: 1,
+          p1Card: "fire",
+          p2Card: "earth",
+          result: "p1",
+          warClashes: 0,
+          capturedCards: 2,
+          capturedOpponentCards: 1
+        }
+      ],
+      currentPile: [],
+      war: {
+        active: false,
+        clashes: 0
+      }
+    };
+    controller.captured = { p1: 1, p2: 0 };
+
+    let capturedFinalizeCall = null;
+    controller.finalizeRound = async ({ p1CardIndex, p2CardIndex }) => {
+      capturedFinalizeCall = {
+        p1CardIndex,
+        p2CardIndex
+      };
+      return {
+        status: "resolved",
+        round: {
+          result: "p1",
+          p1Card: "fire",
+          p2Card: "water",
+          capturedOpponentCards: 1
+        }
+      };
+    };
+
+    const result = await controller.playCard(0);
+
+    assert.equal(capturedFinalizeCall?.p2CardIndex, 1);
+    assert.equal(result.revealedCards.p2Card, "water");
+  } finally {
+    Math.random = originalRandom;
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("gameController: completed PvE rounds wait for async match-complete handling before the trailing update", async () => {
   const originalWindow = globalThis.window;
   let releaseMatchComplete;

@@ -26,6 +26,14 @@ export class UpdaterAdapter {
     this.bindUpdaterEvents();
   }
 
+  logInfo(message, details = {}) {
+    console.info(`[Updater] ${message}`, details);
+  }
+
+  logError(message, details = {}) {
+    console.error(`[Updater] ${message}`, details);
+  }
+
   configureUpdater() {
     if (!this.updater || typeof this.updater !== "object") {
       return;
@@ -48,15 +56,24 @@ export class UpdaterAdapter {
     this.bound = true;
 
     this.updater.on("checking-for-update", () => {
+      this.logInfo("check started", {
+        isPackaged: this.isPackaged
+      });
       this.store.markChecking("Checking for updates...");
     });
 
     this.updater.on("update-available", (updateInfo) => {
+      this.logInfo("update available", {
+        version: updateInfo?.version ?? null
+      });
       this.store.markUpdateAvailable(updateInfo, "Update available.");
     });
 
     this.updater.on("update-not-available", (updateInfo) => {
       this.downloadInFlight = false;
+      this.logInfo("update not available", {
+        version: updateInfo?.version ?? null
+      });
       this.store.markNoUpdateAvailable("No updates available.");
       if (updateInfo) {
         this.store.setState({
@@ -71,12 +88,19 @@ export class UpdaterAdapter {
 
     this.updater.on("update-downloaded", (updateInfo) => {
       this.downloadInFlight = false;
+      this.logInfo("update downloaded", {
+        version: updateInfo?.version ?? null
+      });
       this.store.markDownloaded(updateInfo, null, "Update downloaded and waiting for a safe install window.");
     });
 
     this.updater.on("error", (error) => {
       this.downloadInFlight = false;
       const normalizedError = normalizeUpdaterError(error);
+      this.logError("error", {
+        code: normalizedError.code ?? null,
+        message: normalizedError.message
+      });
       this.store.markError(normalizedError, normalizedError.message);
     });
   }
@@ -87,6 +111,9 @@ export class UpdaterAdapter {
 
   async requestCheck() {
     if (!this.isPackaged) {
+      this.logInfo("startup/manual check skipped in dev or unpackaged mode", {
+        isPackaged: this.isPackaged
+      });
       return this.store.setState({
         status: "idle",
         message: "Update checks are disabled in dev/unpackaged builds.",
@@ -96,6 +123,7 @@ export class UpdaterAdapter {
     }
 
     if (!this.hasPublishConfiguration) {
+      this.logError("check failed: publish configuration missing");
       return this.store.markError(
         {
           message: "Update publish configuration is missing.",
@@ -106,6 +134,9 @@ export class UpdaterAdapter {
     }
 
     try {
+      this.logInfo("requestCheck invoked", {
+        hasPublishConfiguration: this.hasPublishConfiguration
+      });
       this.store.markChecking("Checking for updates...");
       if (this.publishConfiguration && typeof this.updater?.setFeedURL === "function") {
         this.updater.setFeedURL(this.publishConfiguration);
@@ -114,6 +145,10 @@ export class UpdaterAdapter {
       return this.store.getState();
     } catch (error) {
       const normalizedError = normalizeUpdaterError(error);
+      this.logError("check failed", {
+        code: normalizedError.code ?? null,
+        message: normalizedError.message
+      });
       return this.store.markError(normalizedError, normalizedError.message);
     }
   }

@@ -17,6 +17,35 @@ const MATCH_MODE = Object.freeze({
 });
 const LOCAL_AUTHORITY_ELEMENT_ORDER = Object.freeze(["fire", "water", "earth", "wind"]);
 
+function buildElementCountsFromCards(cards = []) {
+  const counts = {
+    fire: 0,
+    water: 0,
+    earth: 0,
+    wind: 0
+  };
+
+  for (const card of Array.isArray(cards) ? cards : []) {
+    const element = String(card ?? "").trim().toLowerCase();
+    if (Object.hasOwn(counts, element)) {
+      counts[element] += 1;
+    }
+  }
+
+  return counts;
+}
+
+function getRecentHistoryMoves(history = [], key) {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history
+    .map((entry) => String(entry?.[key] ?? "").trim().toLowerCase())
+    .filter((move) => move === "fire" || move === "water" || move === "earth" || move === "wind")
+    .slice(-6);
+}
+
 function createLocalAuthoritySocket(label) {
   return {
     id: `local-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -281,7 +310,12 @@ function buildLocalRoundFromAuthoritativeResult(roundResult, room) {
   };
 }
 
-function buildLocalMatchFromAuthoritativeRoom(room, existingMatch = null, mode = MATCH_MODE.LOCAL_PVP) {
+function buildLocalMatchFromAuthoritativeRoom(
+  room,
+  existingMatch = null,
+  mode = MATCH_MODE.LOCAL_PVP,
+  aiDifficulty = AI_DIFFICULTY.NORMAL
+) {
   const matchId =
     room?.serverMatchState?.matchId ??
     room?.roomCode ??
@@ -303,7 +337,7 @@ function buildLocalMatchFromAuthoritativeRoom(room, existingMatch = null, mode =
     mode,
     difficulty:
       existingMatch?.difficulty ??
-      (mode === MATCH_MODE.PVE ? AI_DIFFICULTY.NORMAL : "authoritative_local_pvp"),
+      (mode === MATCH_MODE.PVE ? aiDifficulty : "authoritative_local_pvp"),
     winner: room?.matchComplete ? resolveLocalWinnerFromRoomWinner(room?.winner) : null,
     endReason: room?.matchComplete ? room?.winReason ?? null : null,
     currentPile,
@@ -590,7 +624,12 @@ export class GameController {
       guestSocket
     };
 
-    this.match = buildLocalMatchFromAuthoritativeRoom(joinResult.room, this.match, this.mode);
+    this.match = buildLocalMatchFromAuthoritativeRoom(
+      joinResult.room,
+      this.match,
+      this.mode,
+      this.aiDifficulty
+    );
   }
 
   syncLocalAuthorityState(room, roundResult = null) {
@@ -610,7 +649,12 @@ export class GameController {
       };
     }
 
-    this.match = buildLocalMatchFromAuthoritativeRoom(effectiveRoom, this.match, this.mode);
+    this.match = buildLocalMatchFromAuthoritativeRoom(
+      effectiveRoom,
+      this.match,
+      this.mode,
+      this.aiDifficulty
+    );
     if (roundResult && (roundResult.outcomeType !== "war" || room.matchComplete)) {
       this.lastRound = buildLocalRoundFromAuthoritativeResult(roundResult, room);
       this.roundResultText = formatRoundResult(this.lastRound);
@@ -1052,6 +1096,8 @@ export class GameController {
         publicState: {
           aiCardsRemaining: this.match.players.p2.hand.length,
           playerCardsRemaining: this.match.players.p1.hand.length,
+          playerElementCounts: buildElementCountsFromCards(this.match.players.p1.hand),
+          recentPlayerMoves: getRecentHistoryMoves(this.match.history, "p1Card"),
           aiCaptured: this.captured.p2,
           playerCaptured: this.captured.p1,
           warActive: Boolean(this.match.war?.active),

@@ -220,6 +220,105 @@ test("state: easy PvE difficulty disables achievement unlocks while normal allow
   assert.equal(normalResult.profile.achievements.first_flame.count, 1);
 });
 
+test("state: easy PvE practice mode suppresses rewards, stats, chests, challenges, and achievements on win", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.0)
+  });
+
+  const profileBefore = await state.profiles.ensureProfile("EasyPracticeWinUser");
+  const beforeChallenges = await state.getDailyChallenges("EasyPracticeWinUser");
+  const result = await state.recordMatchResult({
+    username: "EasyPracticeWinUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "easy" })
+  });
+  const afterChallenges = await state.getDailyChallenges("EasyPracticeWinUser");
+
+  assert.equal(result.tokenDelta, 0);
+  assert.equal(result.matchTokenDelta, 0);
+  assert.equal(result.challengeTokenDelta, 0);
+  assert.equal(result.challengeXpDelta, 0);
+  assert.equal(result.xpDelta, 0);
+  assert.equal(result.profile.tokens, profileBefore.tokens);
+  assert.equal(result.profile.playerXP, profileBefore.playerXP);
+  assert.equal(result.profile.wins, 0);
+  assert.equal(result.profile.losses, 0);
+  assert.equal(result.profile.gamesPlayed, 0);
+  assert.equal(result.profile.modeStats.pve.wins, 0);
+  assert.equal(result.profile.modeStats.pve.losses, 0);
+  assert.equal(result.profile.modeStats.pve.gamesPlayed, 0);
+  assert.equal(result.profile.chests.basic, 0);
+  assert.equal(result.profile.chests.epic, 0);
+  assert.equal(result.unlockedAchievements.length, 0);
+  assert.equal(result.profile.achievements?.first_flame?.count ?? 0, 0);
+  assert.deepEqual(result.levelRewards, []);
+  assert.deepEqual(result.dailyRewards, []);
+  assert.deepEqual(result.weeklyRewards, []);
+  assert.deepEqual(result.stats, {
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    matchesUsingAllElements: 0,
+    quickWins: 0,
+    timeLimitWins: 0
+  });
+  assert.deepEqual(
+    afterChallenges.daily.challenges.map((item) => item.progress),
+    beforeChallenges.daily.challenges.map((item) => item.progress)
+  );
+  assert.deepEqual(
+    afterChallenges.weekly.challenges.map((item) => item.progress),
+    beforeChallenges.weekly.challenges.map((item) => item.progress)
+  );
+});
+
+test("state: easy PvE practice mode suppresses progression on loss and draw", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.0)
+  });
+
+  const lossProfileBefore = await state.profiles.ensureProfile("EasyPracticeLossUser");
+  const drawProfileBefore = await state.profiles.ensureProfile("EasyPracticeDrawUser");
+  const lossResult = await state.recordMatchResult({
+    username: "EasyPracticeLossUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p2", difficulty: "easy" })
+  });
+  const drawResult = await state.recordMatchResult({
+    username: "EasyPracticeDrawUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "draw", difficulty: "easy" })
+  });
+
+  for (const [result, profileBefore] of [
+    [lossResult, lossProfileBefore],
+    [drawResult, drawProfileBefore]
+  ]) {
+    assert.equal(result.tokenDelta, 0);
+    assert.equal(result.xpDelta, 0);
+    assert.equal(result.profile.tokens, profileBefore.tokens);
+    assert.equal(result.profile.playerXP, profileBefore.playerXP);
+    assert.equal(result.profile.wins, 0);
+    assert.equal(result.profile.losses, 0);
+    assert.equal(result.profile.gamesPlayed, 0);
+    assert.equal(result.profile.modeStats.pve.wins, 0);
+    assert.equal(result.profile.modeStats.pve.losses, 0);
+    assert.equal(result.profile.modeStats.pve.gamesPlayed, 0);
+    assert.equal(result.profile.chests.basic, 0);
+    assert.deepEqual(result.dailyRewards, []);
+    assert.deepEqual(result.weeklyRewards, []);
+    assert.equal(result.unlockedAchievements.length, 0);
+  }
+});
+
 test("state: store background catalog includes all registered background assets with preserved rarity pricing", () => {
   const store = getStoreViewForProfile({ username: "BackgroundShopUser" });
   const backgroundById = new Map(store.catalog.background.map((item) => [item.id, item]));
@@ -2014,6 +2113,105 @@ test("state: easy PvE disables chest drops for all outcomes", async () => {
   assert.equal(winResult.profile.chests.basic, 0);
   assert.equal(lossResult.profile.chests.basic, 0);
   assert.equal(drawResult.profile.chests.basic, 0);
+});
+
+test("state: hard PvE win grants +5 XP and +5 tokens over normal PvE", async () => {
+  const normalDataDir = await createTempDataDir();
+  const hardDataDir = await createTempDataDir();
+  const normalState = new StateCoordinator({
+    dataDir: normalDataDir,
+    random: constantRandom(0.99)
+  });
+  const hardState = new StateCoordinator({
+    dataDir: hardDataDir,
+    random: constantRandom(0.99)
+  });
+
+  const normalResult = await normalState.recordMatchResult({
+    username: "NormalRewardUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "normal" })
+  });
+  const hardResult = await hardState.recordMatchResult({
+    username: "HardRewardUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(hardResult.matchTokenDelta, normalResult.matchTokenDelta + 5);
+  assert.equal(hardResult.tokenDelta, normalResult.tokenDelta + 5);
+  assert.equal(hardResult.xpDelta, normalResult.xpDelta + 5);
+  assert.ok(hardResult.xpBreakdown.lines.some((line) => line.label === "Hard AI Victory Bonus" && line.amount === 5));
+  assert.ok(normalResult.xpBreakdown.lines.every((line) => line.label !== "Hard AI Victory Bonus"));
+});
+
+test("state: hard PvE win has a slightly better basic chest chance than normal PvE", async () => {
+  const normalDataDir = await createTempDataDir();
+  const hardDataDir = await createTempDataDir();
+  const normalState = new StateCoordinator({
+    dataDir: normalDataDir,
+    random: constantRandom(0.12)
+  });
+  const hardState = new StateCoordinator({
+    dataDir: hardDataDir,
+    random: constantRandom(0.12)
+  });
+
+  const normalResult = await normalState.recordMatchResult({
+    username: "NormalChestChanceUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "normal" })
+  });
+  const hardResult = await hardState.recordMatchResult({
+    username: "HardChestChanceUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(normalResult.profile.chests.basic, 0);
+  assert.equal(hardResult.profile.chests.basic, 1);
+});
+
+test("state: hard PvE loss and draw do not receive the hard-mode win bonus", async () => {
+  const normalLossDataDir = await createTempDataDir();
+  const hardLossDataDir = await createTempDataDir();
+  const normalDrawDataDir = await createTempDataDir();
+  const hardDrawDataDir = await createTempDataDir();
+
+  const normalLossState = new StateCoordinator({ dataDir: normalLossDataDir, random: constantRandom(0.99) });
+  const hardLossState = new StateCoordinator({ dataDir: hardLossDataDir, random: constantRandom(0.99) });
+  const normalDrawState = new StateCoordinator({ dataDir: normalDrawDataDir, random: constantRandom(0.99) });
+  const hardDrawState = new StateCoordinator({ dataDir: hardDrawDataDir, random: constantRandom(0.99) });
+
+  const normalLoss = await normalLossState.recordMatchResult({
+    username: "NormalLossRewardUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p2", difficulty: "normal" })
+  });
+  const hardLoss = await hardLossState.recordMatchResult({
+    username: "HardLossRewardUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p2", difficulty: "hard" })
+  });
+  const normalDraw = await normalDrawState.recordMatchResult({
+    username: "NormalDrawRewardUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "draw", difficulty: "normal" })
+  });
+  const hardDraw = await hardDrawState.recordMatchResult({
+    username: "HardDrawRewardUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "draw", difficulty: "hard" })
+  });
+
+  assert.equal(hardLoss.matchTokenDelta, normalLoss.matchTokenDelta);
+  assert.equal(hardLoss.tokenDelta, normalLoss.tokenDelta);
+  assert.equal(hardLoss.xpDelta, normalLoss.xpDelta);
+  assert.equal(hardDraw.matchTokenDelta, normalDraw.matchTokenDelta);
+  assert.equal(hardDraw.tokenDelta, normalDraw.tokenDelta);
+  assert.equal(hardDraw.xpDelta, normalDraw.xpDelta);
+  assert.ok(hardLoss.xpBreakdown.lines.every((line) => line.label !== "Hard AI Victory Bonus"));
+  assert.ok(hardDraw.xpBreakdown.lines.every((line) => line.label !== "Hard AI Victory Bonus"));
 });
 
 test("state: local_pvp draw chest chance can grant one basic chest", async () => {

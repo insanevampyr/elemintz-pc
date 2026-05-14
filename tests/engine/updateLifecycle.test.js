@@ -501,6 +501,77 @@ test("update IPC: requestCheck uses the real adapter in packaged builds without 
   assert.equal(response.deferredUntilSafe, false);
 });
 
+test("update IPC: packaged startup schedules a one-time updater check", async () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  const { updater, calls } = createFakeUpdater();
+  const adapter = createUpdaterAdapter({
+    store,
+    updater,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  const scheduled = [];
+  const registration = registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: adapter,
+    isPackaged: true,
+    hasPublishConfiguration: true,
+    publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
+  });
+
+  assert.equal(
+    registration.scheduleStartupUpdateCheck({
+      delayMs: 250,
+      timer: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 1;
+      }
+    }),
+    true
+  );
+  assert.equal(registration.scheduleStartupUpdateCheck(), false);
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delayMs, 250);
+  assert.equal(calls.checkForUpdates, 0);
+
+  await scheduled[0].callback();
+
+  assert.equal(calls.checkForUpdates, 1);
+});
+
+test("update IPC: startup auto-check is skipped safely in dev/unpackaged mode", () => {
+  const ipcMain = createFakeIpcMain();
+  const store = createUpdateLifecycleStore();
+  const { updater, calls } = createFakeUpdater();
+  const registration = registerUpdateIpcHandlers(ipcMain, {
+    store,
+    updaterAdapter: createUpdaterAdapter({
+      store,
+      updater,
+      isPackaged: false,
+      hasPublishConfiguration: true
+    }),
+    isPackaged: false,
+    hasPublishConfiguration: true
+  });
+
+  const scheduled = [];
+  assert.equal(
+    registration.scheduleStartupUpdateCheck({
+      timer: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 1;
+      }
+    }),
+    false
+  );
+  assert.equal(scheduled.length, 0);
+  assert.equal(calls.checkForUpdates, 0);
+});
+
 test("update IPC: requestCheck reports a safe error when publish config is missing", async () => {
   const ipcMain = createFakeIpcMain();
   const store = createUpdateLifecycleStore();

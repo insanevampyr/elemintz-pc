@@ -5,6 +5,8 @@ const RESET_TIME_ZONE = "America/Chicago";
 const RESET_HOUR = 18;
 const DAILY_COMPLETION_CHEST_AMOUNT = 1;
 const WEEKLY_COMPLETION_CHEST_AMOUNT = 1;
+const HARD_PVE_WIN_TOKEN_BONUS = 5;
+const HARD_PVE_WIN_XP_BONUS = 5;
 
 const WEEKDAY_INDEX = Object.freeze({
   Mon: 1,
@@ -207,6 +209,31 @@ function getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) {
   }
 
   return 1;
+}
+
+function isEasyPvePracticeMode(matchState) {
+  return (
+    String(matchState?.mode ?? "").trim().toLowerCase() === "pve" &&
+    String(matchState?.difficulty ?? "").trim().toLowerCase() === "easy"
+  );
+}
+
+function getHardPveWinBonus(matchState, didWin) {
+  const isHardPve =
+    String(matchState?.mode ?? "").trim().toLowerCase() === "pve" &&
+    String(matchState?.difficulty ?? "").trim().toLowerCase() === "hard";
+
+  if (!isHardPve || !didWin) {
+    return {
+      tokenBonus: 0,
+      xpBonus: 0
+    };
+  }
+
+  return {
+    tokenBonus: HARD_PVE_WIN_TOKEN_BONUS,
+    xpBonus: HARD_PVE_WIN_XP_BONUS
+  };
 }
 
 function buildProgressDefaults() {
@@ -636,6 +663,7 @@ export function applyDailyChallengesForMatch({
   const isCompleted = matchState?.status === "completed";
   const isQuit = String(matchState?.endReason ?? "") === "quit_forfeit";
   const includeMatchRewards = options.includeMatchRewards !== false;
+  const practiceMode = options.practiceMode === true || isEasyPvePracticeMode(matchState);
 
   let dailyState = ensured.challenges.daily;
   let weeklyState = ensured.challenges.weekly;
@@ -648,8 +676,9 @@ export function applyDailyChallengesForMatch({
   const didWin = matchState.winner === perspective;
   const didDraw = matchState.winner === "draw";
   const playedElements = extractPlayedElements(matchState, perspective);
+  const hardPveWinBonus = getHardPveWinBonus(matchState, didWin);
 
-  if (isCompleted && !isQuit) {
+  if (isCompleted && !isQuit && !practiceMode) {
     const metrics = {
       matchesPlayed: 1,
       matchesWon: didWin ? 1 : 0,
@@ -687,7 +716,7 @@ export function applyDailyChallengesForMatch({
     0
   );
   const matchTokenDelta = includeMatchRewards
-    ? getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw })
+    ? getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) + hardPveWinBonus.tokenBonus
     : 0;
   const tokenDelta = matchTokenDelta + challengeTokenDelta;
 
@@ -705,9 +734,19 @@ export function applyDailyChallengesForMatch({
       label: `${reward.name} Challenge`,
       amount: Number(reward.rewardXp)
     }));
+  const hardBonusXpLines =
+    hardPveWinBonus.xpBonus > 0
+      ? [
+          {
+            key: "hard_pve_victory_bonus",
+            label: "Hard AI Victory Bonus",
+            amount: hardPveWinBonus.xpBonus
+          }
+        ]
+      : [];
   const xpBreakdown = {
-    lines: [...matchXpBreakdown.lines, ...challengeXpLines],
-    total: matchXpBreakdown.total + challengeXpDelta
+    lines: [...matchXpBreakdown.lines, ...hardBonusXpLines, ...challengeXpLines],
+    total: matchXpBreakdown.total + hardPveWinBonus.xpBonus + challengeXpDelta
   };
   const xpDelta = xpBreakdown.total;
   const nextXp = previousXp + xpDelta;

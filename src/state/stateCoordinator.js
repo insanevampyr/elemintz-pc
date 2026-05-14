@@ -94,6 +94,24 @@ function appendBoundedTimestamp(list, timestamp, limit = 10) {
   return next.slice(-limit);
 }
 
+function createZeroMatchStats(matchStats = {}) {
+  return {
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    matchesUsingAllElements: 0,
+    quickWins: 0,
+    timeLimitWins: 0,
+    ...Object.fromEntries(
+      Object.keys(matchStats ?? {}).map((key) => [key, 0])
+    )
+  };
+}
+
 function normalizeSettlementKey(settlementKey) {
   const normalized = String(settlementKey ?? "").trim();
   return normalized.length > 0 ? normalized : null;
@@ -421,10 +439,13 @@ export class StateCoordinator {
       const safeMatchState = containRuntimeMatchSummaryState(matchState).value;
       const profileBefore = await this.profiles.ensureProfile(username);
       const derivedMatchStats = deriveMatchStats(safeMatchState, perspective);
+      const practiceMode =
+        String(safeMatchState.mode ?? "") === "pve" &&
+        String(safeMatchState.difficulty ?? "").trim().toLowerCase() === "easy";
       const statWrite = guardRuntimeStatWritePayload({
         mode: safeMatchState.mode,
         fallbackMode: "pve",
-        matchStats: derivedMatchStats
+        matchStats: practiceMode ? createZeroMatchStats(derivedMatchStats) : derivedMatchStats
       });
       const matchStats = statWrite.matchStats;
       const mode = statWrite.mode ?? "pve";
@@ -469,8 +490,7 @@ export class StateCoordinator {
           levelRewardTokenDelta: 0
         };
       }
-      const achievementsDisabledForMatch =
-        mode === "pve" && String(safeMatchState.difficulty ?? "") === "easy";
+      const achievementsDisabledForMatch = practiceMode;
 
       console.info("[StateCoordinator] recordMatchResult:before", {
         mode,
@@ -478,7 +498,9 @@ export class StateCoordinator {
         ...profileCommitSnapshot(profileBefore)
       });
 
-      const profileWithStats = statWrite.skipped
+      const profileWithStats = practiceMode
+        ? profileBefore
+        : statWrite.skipped
         ? (console.warn("[RuntimeGuard] skipped stat write due to unresolved mode"),
           profileBefore)
         : await this.profiles.applyMatchStats(username, matchStats, mode, {
@@ -498,19 +520,27 @@ export class StateCoordinator {
         profile: profileWithStats,
         matchState: safeMatchState,
         perspective,
-        matchStats
+        matchStats,
+        options: {
+          includeMatchRewards: !practiceMode,
+          practiceMode
+        }
       });
 
       let workingProfile = challengeResult.profile;
-      const streakChestGrantResult = applyWinStreakChestGrants(workingProfile, {
-        previousWinStreak: profileBefore?.winStreak ?? 0,
-        nextWinStreak: profileWithStats?.winStreak ?? workingProfile?.winStreak ?? 0
-      });
+      const streakChestGrantResult = practiceMode
+        ? { profile: workingProfile }
+        : applyWinStreakChestGrants(workingProfile, {
+            previousWinStreak: profileBefore?.winStreak ?? 0,
+            nextWinStreak: profileWithStats?.winStreak ?? workingProfile?.winStreak ?? 0
+          });
       workingProfile = streakChestGrantResult.profile;
-      const levelRewardResult = applyLevelRewardsForLevelChange(workingProfile, {
-        fromLevel: challengeResult.levelBefore,
-        toLevel: challengeResult.levelAfter
-      });
+      const levelRewardResult = practiceMode
+        ? { profile: workingProfile, grantedRewards: [], tokenDelta: 0 }
+        : applyLevelRewardsForLevelChange(workingProfile, {
+            fromLevel: challengeResult.levelBefore,
+            toLevel: challengeResult.levelAfter
+          });
       workingProfile = levelRewardResult.profile;
 
       const matchOutcome =
@@ -523,6 +553,7 @@ export class StateCoordinator {
               : null;
 
       if (
+        !practiceMode &&
         rollBasicChest(matchOutcome, {
           mode,
           difficulty: safeMatchState.difficulty,

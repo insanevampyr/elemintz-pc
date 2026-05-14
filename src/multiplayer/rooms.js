@@ -493,13 +493,35 @@ function expandHandCounts(hand) {
   return cards;
 }
 
-function chooseAuthoritativeBotMove(room) {
+function cloneHandCountsForPublicState(hand) {
+  return {
+    fire: safeRuntimeCount(hand?.fire, 0),
+    water: safeRuntimeCount(hand?.water, 0),
+    earth: safeRuntimeCount(hand?.earth, 0),
+    wind: safeRuntimeCount(hand?.wind, 0)
+  };
+}
+
+function getRecentRoundMoves(roundHistory = [], moveKey) {
+  if (!Array.isArray(roundHistory)) {
+    return [];
+  }
+
+  return roundHistory
+    .map((entry) => String(entry?.[moveKey] ?? "").trim().toLowerCase())
+    .filter((move) => Object.hasOwn(INITIAL_HAND_COUNTS, move))
+    .slice(-6);
+}
+
+function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
   const aiHand = expandHandCounts(room?.guestHand);
   const aiIndex = chooseAiCardIndex(aiHand, {
     difficulty: normalizeAiDifficulty(room?.guest?.aiDifficulty),
     publicState: {
       aiCardsRemaining: aiHand.length,
       playerCardsRemaining: getTotalCardsInHand(room?.hostHand),
+      ...(playerElementCounts ? { playerElementCounts: cloneHandCountsForPublicState(playerElementCounts) } : {}),
+      recentPlayerMoves: getRecentRoundMoves(room?.roundHistory, "hostMove"),
       aiCaptured: safeRuntimeCount(room?.guestScore, 0),
       playerCaptured: safeRuntimeCount(room?.hostScore, 0),
       warActive: Boolean(room?.warActive),
@@ -2596,6 +2618,14 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
+      const safeVisibleHostHand =
+        room.guest?.bot &&
+        moveKey === "hostMove" &&
+        room.moves.guestMove === null &&
+        !room.matchComplete
+          ? cloneHandCountsForPublicState(room.hostHand)
+          : null;
+
       if (room.moves.hostMove !== null && room.moves.guestMove !== null && room.latestRoundResult) {
         return {
           ok: false,
@@ -2631,7 +2661,9 @@ export function createRoomStore({ random = Math.random } = {}) {
         room.moves.guestMove === null &&
         !room.matchComplete
       ) {
-        const botMove = chooseAuthoritativeBotMove(room);
+        const botMove = chooseAuthoritativeBotMove(room, {
+          playerElementCounts: safeVisibleHostHand
+        });
         if (!botMove || safeRuntimeCount(room.guestHand?.[botMove], 0) <= 0) {
           return {
             ok: false,

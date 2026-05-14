@@ -44,8 +44,8 @@ export const settingsScreen = {
                 value: "easy",
                 checked: aiDifficulty === "easy",
                 title: "Easy",
-                subtitle: "Random AI card selection",
-                warning: "Achievements disabled on Easy difficulty"
+                subtitle: "Practice Mode. No rewards, stats, achievements, or challenge progress.",
+                warning: "Easy AI is practice-only and grants no XP, tokens, or chest drops."
               })}
               ${renderRadioOption({
                 name: "aiDifficulty",
@@ -53,7 +53,7 @@ export const settingsScreen = {
                 value: "normal",
                 checked: aiDifficulty === "normal",
                 title: "Normal",
-                subtitle: "Fair light heuristic using public match state only"
+                subtitle: "Standard rewards and progression."
               })}
               ${renderRadioOption({
                 name: "aiDifficulty",
@@ -61,7 +61,7 @@ export const settingsScreen = {
                 value: "hard",
                 checked: aiDifficulty === "hard",
                 title: "Hard",
-                subtitle: "Advanced AI with smarter risk and WAR management"
+                subtitle: "Smarter AI. Win for +5 XP, +5 tokens, and improved basic chest chance."
               })}
             </div>
 

@@ -1,4 +1,5 @@
 const WIN_CHEST_DROP_CHANCE = 0.1;
+const HARD_PVE_WIN_CHEST_DROP_CHANCE = 0.15;
 const LOSS_CHEST_DROP_CHANCE = 0.02;
 const DRAW_CHEST_DROP_CHANCE = 0.02;
 
@@ -20,6 +21,10 @@ export function getBasicChestDropChance(outcome, context = {}) {
   }
 
   if (normalizedOutcome === "win") {
+    if (mode === "pve" && difficulty === "hard") {
+      return HARD_PVE_WIN_CHEST_DROP_CHANCE;
+    }
+
     return WIN_CHEST_DROP_CHANCE;
   }
 
@@ -42,6 +47,7 @@ export function rollBasicChest(outcome, context = {}) {
 
 export {
   WIN_CHEST_DROP_CHANCE,
+  HARD_PVE_WIN_CHEST_DROP_CHANCE,
   LOSS_CHEST_DROP_CHANCE,
   DRAW_CHEST_DROP_CHANCE
 };

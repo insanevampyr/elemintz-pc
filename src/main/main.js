@@ -156,7 +156,7 @@ app.whenReady().then(() => {
     dataDir,
     getOnlineAuthorityState: () => multiplayerIpc?.client?.getState?.() ?? null
   });
-  registerUpdateIpcHandlers(ipcMain, {
+  const updateIpc = registerUpdateIpcHandlers(ipcMain, {
     allowDevSimulation: !app.isPackaged,
     isPackaged: app.isPackaged,
     hasPublishConfiguration: hasRuntimePublishConfiguration(RUNTIME_PUBLISH_CONFIGURATION),
@@ -173,6 +173,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  updateIpc.scheduleStartupUpdateCheck();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
