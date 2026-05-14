@@ -15,7 +15,7 @@ export const settingsScreen = {
   render(context) {
     const settings = context.settings;
     const aiDifficulty = settings.aiDifficulty ?? "normal";
-    const aiOpponentStyle = settings.aiOpponentStyle ?? "default";
+    const aiOpponentStyle = settings.aiOpponentStyle ?? "random";
 
     return `
       <section class="screen screen-settings">
@@ -27,7 +27,7 @@ export const settingsScreen = {
           <form id="settings-form" class="stack-sm">
             <div class="settings-group">
               <label for="timer-seconds">Round Timer (seconds)</label>
-              <input id="timer-seconds" name="timerSeconds" type="number" min="5" max="120" value="${settings.gameplay.timerSeconds}" />
+              <input id="timer-seconds" name="timerSeconds" type="number" min="5" max="120" value="${settings.gameplay.timerSeconds ?? 20}" />
               <span class="settings-option-description text-muted">
                 Adjusts PvE and local PvP turn timing only.
               </span>
@@ -107,11 +107,11 @@ export const settingsScreen = {
     document.getElementById("settings-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
-      const timerSeconds = Number(formData.get("timerSeconds") ?? 30);
+      const timerSeconds = Number(formData.get("timerSeconds") ?? 20);
       const reducedMotion = formData.get("reducedMotion") === "on";
       const soundEnabled = formData.get("soundEnabled") === "on";
       const aiDifficulty = String(formData.get("aiDifficulty") ?? "normal");
-      const aiOpponentStyle = String(formData.get("aiOpponentStyle") ?? "default");
+      const aiOpponentStyle = String(formData.get("aiOpponentStyle") ?? "random");
 
       await context.actions.save({
         gameplay: { timerSeconds },

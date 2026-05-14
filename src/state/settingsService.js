@@ -8,10 +8,10 @@ const DEFAULT_SETTINGS = {
     sfx: 0.9
   },
   gameplay: {
-    timerSeconds: 30
+    timerSeconds: 20
   },
   aiDifficulty: "normal",
-  aiOpponentStyle: "default",
+  aiOpponentStyle: "random",
   ui: {
     reducedMotion: false,
     showRoundHistory: true
@@ -40,7 +40,14 @@ export class SettingsService {
   }
 
   async getSettings() {
-    return this.store.read(DEFAULT_SETTINGS);
+    const stored = await this.store.read(DEFAULT_SETTINGS);
+    const merged = mergeDeep(DEFAULT_SETTINGS, stored);
+
+    if (JSON.stringify(stored) !== JSON.stringify(merged)) {
+      await this.store.write(merged);
+    }
+
+    return merged;
   }
 
   async updateSettings(patch) {

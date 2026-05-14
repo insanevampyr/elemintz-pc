@@ -160,9 +160,9 @@ test("state: updates and reads settings", async () => {
   const state = new StateCoordinator({ dataDir });
 
   const initial = await state.settings.getSettings();
-  assert.equal(initial.gameplay.timerSeconds, 30);
+  assert.equal(initial.gameplay.timerSeconds, 20);
   assert.equal(initial.aiDifficulty, "normal");
-  assert.equal(initial.aiOpponentStyle, "default");
+  assert.equal(initial.aiOpponentStyle, "random");
 
   const updated = await state.settings.updateSettings({
     gameplay: { timerSeconds: 45 },
@@ -175,6 +175,34 @@ test("state: updates and reads settings", async () => {
   assert.equal(updated.aiDifficulty, "hard");
   assert.equal(updated.aiOpponentStyle, "random");
   assert.equal(updated.ui.reducedMotion, true);
+});
+
+test("state: settings backfill missing fields without overwriting existing saved choices", async () => {
+  const dataDir = await createTempDataDir();
+  const settingsPath = path.join(dataDir, "settings.json");
+  const partialSettings = {
+    gameplay: { timerSeconds: 33 },
+    ui: { reducedMotion: true }
+  };
+
+  await fs.writeFile(settingsPath, JSON.stringify(partialSettings, null, 2), "utf8");
+
+  const state = new StateCoordinator({ dataDir });
+  const merged = await state.settings.getSettings();
+
+  assert.equal(merged.gameplay.timerSeconds, 33);
+  assert.equal(merged.aiDifficulty, "normal");
+  assert.equal(merged.aiOpponentStyle, "random");
+  assert.equal(merged.ui.reducedMotion, true);
+  assert.equal(merged.ui.showRoundHistory, true);
+  assert.equal(merged.audio.enabled, true);
+
+  const persisted = JSON.parse(await fs.readFile(settingsPath, "utf8"));
+  assert.equal(persisted.gameplay.timerSeconds, 33);
+  assert.equal(persisted.aiDifficulty, "normal");
+  assert.equal(persisted.aiOpponentStyle, "random");
+  assert.equal(persisted.ui.reducedMotion, true);
+  assert.equal(persisted.ui.showRoundHistory, true);
 });
 
 test("state: easy PvE difficulty disables achievement unlocks while normal allows them", async () => {

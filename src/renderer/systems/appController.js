@@ -33,9 +33,9 @@ import {
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
-  gameplay: { timerSeconds: 30 },
+  gameplay: { timerSeconds: 20 },
   aiDifficulty: "normal",
-  aiOpponentStyle: "default",
+  aiOpponentStyle: "random",
   ui: { reducedMotion: false }
 };
 

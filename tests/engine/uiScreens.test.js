@@ -198,9 +198,9 @@ function createFakeGrid(items) {
 test("ui: settings screen renders PvE AI difficulty and style options with easy warning", () => {
   const html = settingsScreen.render({
     settings: {
-      gameplay: { timerSeconds: 30 },
+      gameplay: { timerSeconds: 20 },
       aiDifficulty: "normal",
-      aiOpponentStyle: "default",
+      aiOpponentStyle: "random",
       ui: { reducedMotion: false },
       audio: { enabled: true }
     }
@@ -282,6 +282,20 @@ test("ui: settings screen persists AI difficulty and opponent style selections",
     global.document = previousDocument;
     global.FormData = previousFormData;
   }
+});
+
+test("ui: settings screen defaults to normal AI, random cosmetics, and a 20 second timer when fields are missing", () => {
+  const html = settingsScreen.render({
+    settings: {
+      gameplay: {},
+      ui: { reducedMotion: false },
+      audio: { enabled: true }
+    }
+  });
+
+  assert.match(html, /value="20"/);
+  assert.match(html, /id="ai-difficulty-normal"[^>]*checked/);
+  assert.match(html, /id="ai-style-random"[^>]*checked/);
 });
 
 test("ui: achievements screen renders locked and unlocked states", () => {
