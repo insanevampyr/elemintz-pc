@@ -5,6 +5,7 @@ export class UpdaterAdapter {
   constructor({
     store,
     updater = null,
+    logger = console,
     isPackaged = false,
     hasPublishConfiguration = false,
     publishConfiguration = null
@@ -15,6 +16,7 @@ export class UpdaterAdapter {
 
     this.store = store;
     this.updater = updater ?? electronUpdater.autoUpdater;
+    this.logger = logger ?? console;
     this.isPackaged = Boolean(isPackaged);
     this.hasPublishConfiguration = Boolean(hasPublishConfiguration);
     this.publishConfiguration = publishConfiguration && typeof publishConfiguration === "object" ? { ...publishConfiguration } : null;
@@ -27,11 +29,11 @@ export class UpdaterAdapter {
   }
 
   logInfo(message, details = {}) {
-    console.info(`[Updater] ${message}`, details);
+    this.logger.info?.(`[Updater] ${message}`, details);
   }
 
   logError(message, details = {}) {
-    console.error(`[Updater] ${message}`, details);
+    this.logger.error?.(`[Updater] ${message}`, details);
   }
 
   configureUpdater() {

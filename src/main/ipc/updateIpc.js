@@ -6,6 +6,7 @@ export function registerUpdateIpcHandlers(
   {
     store = createUpdateLifecycleStore(),
     updaterAdapter = null,
+    logger = console,
     allowDevSimulation = process.env.NODE_ENV !== "production",
     isPackaged = false,
     hasPublishConfiguration = false,
@@ -19,6 +20,7 @@ export function registerUpdateIpcHandlers(
     if (!adapter) {
       adapter = createUpdaterAdapter({
         store,
+        logger,
         isPackaged,
         hasPublishConfiguration,
         publishConfiguration
@@ -32,25 +34,28 @@ export function registerUpdateIpcHandlers(
     timer = globalThis.setTimeout
   } = {}) => {
     if (!isPackaged) {
-      console.info("[Updater] auto-check skipped on startup because app is not packaged", {
+      logger.info?.("[Updater] auto-check skipped on startup because app is not packaged", {
         isPackaged
       });
       return false;
     }
 
     if (startupCheckScheduled) {
-      console.info("[Updater] auto-check already scheduled");
+      logger.info?.("[Updater] auto-check already scheduled");
       return false;
     }
 
     startupCheckScheduled = true;
-    console.info("[Updater] auto-check scheduled", {
+    logger.info?.("[Updater] auto-check scheduled", {
       delayMs
     });
 
     timer(() => {
+      logger.info?.("[Updater] updater check started", {
+        source: "startup-auto-check"
+      });
       Promise.resolve(getUpdaterAdapter().requestCheck()).catch((error) => {
-        console.error("[Updater] startup auto-check failed", {
+        logger.error?.("[Updater] startup auto-check failed", {
           message: error?.message ?? String(error)
         });
       });

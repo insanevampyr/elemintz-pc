@@ -35,6 +35,19 @@ function createFakeSender() {
   };
 }
 
+function createFakeLogger() {
+  const entries = [];
+  return {
+    entries,
+    info(message, details = {}) {
+      entries.push({ level: "info", message, details });
+    },
+    error(message, details = {}) {
+      entries.push({ level: "error", message, details });
+    }
+  };
+}
+
 function createFakeUpdater() {
   const emitter = new EventEmitter();
   const calls = {
@@ -505,9 +518,17 @@ test("update IPC: packaged startup schedules a one-time updater check", async ()
   const ipcMain = createFakeIpcMain();
   const store = createUpdateLifecycleStore();
   const { updater, calls } = createFakeUpdater();
+  const logger = createFakeLogger();
+  updater.checkForUpdates = async () => {
+    calls.checkForUpdates += 1;
+    updater.emit("checking-for-update");
+    updater.emit("update-not-available", { version: "2.1.3" });
+    return { cancellationToken: null };
+  };
   const adapter = createUpdaterAdapter({
     store,
     updater,
+    logger,
     isPackaged: true,
     hasPublishConfiguration: true,
     publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
@@ -517,6 +538,7 @@ test("update IPC: packaged startup schedules a one-time updater check", async ()
   const registration = registerUpdateIpcHandlers(ipcMain, {
     store,
     updaterAdapter: adapter,
+    logger,
     isPackaged: true,
     hasPublishConfiguration: true,
     publishConfiguration: RUNTIME_PUBLISH_CONFIGURATION
@@ -540,20 +562,39 @@ test("update IPC: packaged startup schedules a one-time updater check", async ()
   await scheduled[0].callback();
 
   assert.equal(calls.checkForUpdates, 1);
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] auto-check scheduled"),
+    true
+  );
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] updater check started"),
+    true
+  );
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] check started"),
+    true
+  );
+  assert.equal(
+    logger.entries.some((entry) => entry.message === "[Updater] update not available"),
+    true
+  );
 });
 
 test("update IPC: startup auto-check is skipped safely in dev/unpackaged mode", () => {
   const ipcMain = createFakeIpcMain();
   const store = createUpdateLifecycleStore();
   const { updater, calls } = createFakeUpdater();
+  const logger = createFakeLogger();
   const registration = registerUpdateIpcHandlers(ipcMain, {
     store,
     updaterAdapter: createUpdaterAdapter({
       store,
       updater,
+      logger,
       isPackaged: false,
       hasPublishConfiguration: true
     }),
+    logger,
     isPackaged: false,
     hasPublishConfiguration: true
   });
@@ -570,6 +611,13 @@ test("update IPC: startup auto-check is skipped safely in dev/unpackaged mode", 
   );
   assert.equal(scheduled.length, 0);
   assert.equal(calls.checkForUpdates, 0);
+  assert.equal(
+    logger.entries.some(
+      (entry) =>
+        entry.message === "[Updater] auto-check skipped on startup because app is not packaged"
+    ),
+    true
+  );
 });
 
 test("update IPC: requestCheck reports a safe error when publish config is missing", async () => {

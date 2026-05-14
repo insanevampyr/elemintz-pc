@@ -29,6 +29,39 @@ function writeStartupLogLine({
   );
 }
 
+function appendStartupLogEntry(startupLogPath, level, message, details = null) {
+  if (!startupLogPath) {
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  const serializedDetails =
+    details && typeof details === "object" && Object.keys(details).length > 0
+      ? ` | ${JSON.stringify(details)}`
+      : details != null
+        ? ` | ${String(details)}`
+        : "";
+  fs.mkdirSync(path.dirname(startupLogPath), { recursive: true });
+  fs.appendFileSync(
+    startupLogPath,
+    `${timestamp} ${String(level ?? "INFO").toUpperCase()} ${message}${serializedDetails}\n`,
+    "utf8"
+  );
+}
+
+function createStartupLogger(startupLogPath) {
+  return {
+    info(message, details = {}) {
+      console.info(message, details);
+      appendStartupLogEntry(startupLogPath, "INFO", message, details);
+    },
+    error(message, details = {}) {
+      console.error(message, details);
+      appendStartupLogEntry(startupLogPath, "ERROR", message, details);
+    }
+  };
+}
+
 process.on("uncaughtException", (error) => {
   console.error("[Main] uncaughtException", {
     message: error?.message,
@@ -148,6 +181,7 @@ app.whenReady().then(() => {
     startupLogPath,
     multiplayerClientLogPath
   });
+  const startupLogger = createStartupLogger(startupLogPath);
   configurePermissionDenials(session.defaultSession);
 
   const dataDir = path.join(userDataPath, "elemintz-data");
@@ -157,6 +191,7 @@ app.whenReady().then(() => {
     getOnlineAuthorityState: () => multiplayerIpc?.client?.getState?.() ?? null
   });
   const updateIpc = registerUpdateIpcHandlers(ipcMain, {
+    logger: startupLogger,
     allowDevSimulation: !app.isPackaged,
     isPackaged: app.isPackaged,
     hasPublishConfiguration: hasRuntimePublishConfiguration(RUNTIME_PUBLISH_CONFIGURATION),
