@@ -1593,6 +1593,7 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     "cosmetics-btn": createFakeElement(),
     "store-btn": createFakeElement(),
     "settings-btn": createFakeElement(),
+    "feedback-btn": createFakeElement(),
     "logout-btn": createFakeElement(),
     "switch-account-btn": createFakeElement()
   };
@@ -6024,6 +6025,7 @@ test("ui: menu renders buttons in requested order without standalone challenges 
     "store-btn",
     "achievements-btn",
     "settings-btn",
+    "feedback-btn",
     "logout-btn"
   ];
 
@@ -6062,6 +6064,7 @@ test("ui: menu action buttons use menu tile artwork backgrounds", () => {
   assert.match(html, /id="store-btn"[\s\S]*menu_tiles\/tile_store\.png/);
   assert.match(html, /id="achievements-btn"[\s\S]*menu_tiles\/tile_achievements\.png/);
   assert.match(html, /id="settings-btn"[\s\S]*menu_tiles\/tile_settings\.png/);
+  assert.match(html, /id="feedback-btn"[\s\S]*menu_tiles\/tile_settings\.png/);
   assert.match(html, /id="logout-btn"[\s\S]*menu_tiles\/tile_logout\.png/);
   assert.match(html, /menu-tile__veil/);
   assert.match(html, /menu-tile__label/);

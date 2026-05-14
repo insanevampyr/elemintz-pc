@@ -99,6 +99,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.buyStoreItem(payload);
   });
 
+  ipcMain.handle("multiplayer:submitFeedback", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.submitFeedback(payload);
+  });
+
   ipcMain.handle("multiplayer:openChest", async (event, payload) => {
     subscribers.add(event.sender);
     return client.openChest(payload);

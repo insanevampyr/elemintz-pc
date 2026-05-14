@@ -615,7 +615,8 @@ export function createMultiplayerFoundation({
   rewardPersister = null,
   profileAuthority = null,
   accountStore = null,
-  adminGrantStore = null
+  adminGrantStore = null,
+  feedbackStore = null
 } = {}) {
   const app = express();
   const httpServer = http.createServer(app);
@@ -1355,6 +1356,57 @@ export function createMultiplayerFoundation({
           });
         }
       })();
+    });
+
+    socket.on("feedback:submit", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond({
+          ok: false,
+          error: sessionResult.error ?? {
+            code: "SESSION_REQUIRED",
+            message: "A session is required to send feedback."
+          }
+        });
+        return;
+      }
+
+      if (typeof feedbackStore?.appendFeedback !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "FEEDBACK_UNAVAILABLE",
+            message: "Feedback submission is unavailable right now."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await feedbackStore.appendFeedback({
+          category: payload?.category,
+          message: payload?.message,
+          includeDebugInfo: payload?.includeDebugInfo !== false,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username ?? null,
+          clientContext: payload?.clientContext ?? null
+        });
+        respond({
+          ok: true,
+          result: {
+            feedbackId: result?.feedbackId ?? null,
+            storedAt: result?.storedAt ?? null
+          }
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: String(error?.code ?? "FEEDBACK_WRITE_FAILED"),
+            message: String(error?.message ?? "Unable to save feedback.")
+          }
+        });
+      }
     });
 
     socket.on("session:bootstrap", async (payload = {}, respond = () => {}) => {

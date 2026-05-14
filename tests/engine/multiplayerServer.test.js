@@ -15,6 +15,7 @@ import {
 } from "../../src/multiplayer/foundation.js";
 import { createTimestampedLogger } from "../../src/multiplayer/logger.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
+import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { createRoomStore, getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
@@ -487,6 +488,190 @@ test("multiplayer foundation: room:listPublic always acks a readable auth failur
   } finally {
     await foundation.stop();
   }
+});
+
+test("multiplayer foundation: feedback:submit appends a JSONL line without sensitive fields", async () => {
+  const dataDir = await createTempDataDir();
+  const feedbackStore = new FeedbackStore({
+    dataDir,
+    logger: { warn: () => {} },
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    feedbackStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "FeedbackUser");
+      const response = await new Promise((resolve) => {
+        client.emit(
+          "feedback:submit",
+          {
+            username: "ImposterUser",
+            category: "Bug / Error",
+            message: "Public rooms did not appear in the browser.",
+            includeDebugInfo: true,
+            password: "secret-password",
+            email: "hidden@example.com",
+            sessionToken: "do-not-store",
+            clientContext: {
+              screen: "online_play",
+              connectionStatus: "connected",
+              roomCode: "ROOM123",
+              recentErrorMessage: "Timed out."
+            }
+          },
+          resolve
+        );
+      });
+
+      assert.equal(response?.ok, true);
+      assert.equal(typeof response?.result?.feedbackId, "string");
+
+      const feedbackPath = path.join(dataDir, "server-data", "feedback.jsonl");
+      const raw = await fs.readFile(feedbackPath, "utf8");
+      const lines = raw.trim().split("\n");
+      assert.equal(lines.length, 1);
+
+      const entry = JSON.parse(lines[0]);
+      assert.equal(entry.category, "Bug / Error");
+      assert.equal(entry.message, "Public rooms did not appear in the browser.");
+      assert.equal(entry.user?.username, "FeedbackUser");
+      assert.equal(entry.client?.screen, "online_play");
+      assert.equal(entry.client?.roomCode, "ROOM123");
+      assert.equal(entry.server?.source, "multiplayer");
+      assert.equal("password" in entry, false);
+      assert.equal("email" in entry, false);
+      assert.equal(raw.includes("secret-password"), false);
+      assert.equal(raw.includes("hidden@example.com"), false);
+      assert.equal(raw.includes("do-not-store"), false);
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: feedback:submit rejects invalid categories, oversized messages, and write failures readably", async () => {
+  const invalidCategoryStore = {
+    appendFeedback: async (payload) => {
+      const store = new FeedbackStore({
+        dataDir: path.join(os.tmpdir(), "feedback-validation-probe"),
+        logger: { warn: () => {} },
+        random: () => 0
+      });
+      return store.appendFeedback(payload);
+    }
+  };
+  const failingStore = {
+    appendFeedback: async () => {
+      const error = new Error("Feedback file is unavailable.");
+      error.code = "FEEDBACK_WRITE_FAILED";
+      throw error;
+    }
+  };
+
+  const invalidCategoryFoundation = createMultiplayerFoundation({
+    port: 0,
+    feedbackStore: invalidCategoryStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+  const failingFoundation = createMultiplayerFoundation({
+    port: 0,
+    feedbackStore: failingStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  try {
+    const invalidPort = await invalidCategoryFoundation.start();
+    const invalidClient = await connectClient(invalidPort);
+
+    try {
+      await bootstrapSession(invalidClient, "FeedbackUser");
+      const invalidResponse = await new Promise((resolve) => {
+        invalidClient.emit(
+          "feedback:submit",
+          {
+            category: "Unknown Category",
+            message: "A real message."
+          },
+          resolve
+        );
+      });
+
+      assert.deepEqual(invalidResponse, {
+        ok: false,
+        error: {
+          code: "FEEDBACK_CATEGORY_INVALID",
+          message: "Please choose a valid feedback category."
+        }
+      });
+
+      const longResponse = await new Promise((resolve) => {
+        invalidClient.emit(
+          "feedback:submit",
+          {
+            category: "Suggestion",
+            message: "x".repeat(2001)
+          },
+          resolve
+        );
+      });
+
+      assert.deepEqual(longResponse, {
+        ok: false,
+        error: {
+          code: "FEEDBACK_MESSAGE_TOO_LONG",
+          message: "Feedback messages must be 2000 characters or fewer."
+        }
+      });
+    } finally {
+      invalidClient.disconnect();
+    }
+
+    const failingPort = await failingFoundation.start();
+    const failingClient = await connectClient(failingPort);
+
+    try {
+      await bootstrapSession(failingClient, "FeedbackUser");
+      const failingResponse = await new Promise((resolve) => {
+        failingClient.emit(
+          "feedback:submit",
+          {
+            category: "Suggestion",
+            message: "Add more filters."
+          },
+          resolve
+        );
+      });
+
+      assert.deepEqual(failingResponse, {
+        ok: false,
+        error: {
+          code: "FEEDBACK_WRITE_FAILED",
+          message: "Feedback file is unavailable."
+        }
+      });
+    } finally {
+      failingClient.disconnect();
+    }
+  } finally {
+    await invalidCategoryFoundation.stop();
+    await failingFoundation.stop();
+  }
+});
+
+test("multiplayer foundation: server-data directory is gitignored", async () => {
+  const gitignorePath = path.join(process.cwd(), ".gitignore");
+  const gitignore = await fs.readFile(gitignorePath, "utf8");
+  assert.match(gitignore, /^server-data\/$/m);
 });
 
 test("multiplayer logging: timestamped logger prefixes server log messages", () => {

@@ -2233,6 +2233,33 @@ export class MultiplayerClient {
     }
   }
 
+  async submitFeedback({
+    username,
+    category,
+    message,
+    includeDebugInfo = true,
+    clientContext = null,
+    serverUrl
+  } = {}) {
+    const response = await this.runServerRequest(
+      "feedback:submit",
+      {
+        username,
+        category,
+        message,
+        includeDebugInfo,
+        clientContext
+      },
+      { serverUrl }
+    );
+
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to send feedback.");
+    }
+
+    return response.result ?? null;
+  }
+
   async confirmAdminGrantNotice({ transactionId, serverUrl } = {}) {
     const safeTransactionId = String(transactionId ?? "").trim();
     if (!safeTransactionId) {

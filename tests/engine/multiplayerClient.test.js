@@ -405,6 +405,18 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "feedback:submit") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            feedbackId: "fb_mock",
+            storedAt: "2026-05-13T12:00:00.000Z"
+          }
+        });
+      });
+    }
+
     if (eventName === "room:join") {
       queueMicrotask(() => {
         this.serverEmit(
@@ -1282,6 +1294,48 @@ test("multiplayer client: server-authoritative legendary chest opening returns u
   assert.equal(result?.chestType, "legendary");
   assert.equal(result?.rewards?.tokens, 80);
   assert.equal(result?.snapshot?.profile?.chests?.legendary, 0);
+});
+
+test("multiplayer client: feedback submission uses the authoritative feedback route", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.submitFeedback({
+    username: "FeedbackAuthorityUser",
+    category: "Bug / Error",
+    message: "The room browser did not refresh for me.",
+    includeDebugInfo: true,
+    clientContext: {
+      screen: "menu",
+      connectionStatus: "connected"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "FeedbackAuthorityUser"
+    }
+  });
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "feedback:submit",
+    payload: {
+      category: "Bug / Error",
+      message: "The room browser did not refresh for me.",
+      includeDebugInfo: true,
+      clientContext: {
+        screen: "menu",
+        connectionStatus: "connected"
+      }
+    }
+  });
+  assert.equal(result?.feedbackId, "fb_mock");
 });
 
 test("multiplayer client: rejects concurrent chest opens while a request is already in flight", async () => {

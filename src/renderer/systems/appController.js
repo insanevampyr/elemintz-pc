@@ -79,6 +79,17 @@ const NEW_COSMETICS_ANNOUNCEMENT_KEY = "cosmetics_v0.1.6";
 const NEW_COSMETICS_ANNOUNCEMENT_TITLE = "New Cosmetics Added!";
 const NEW_COSMETICS_ANNOUNCEMENT_BODY =
   "26 new titles and avatars are now available in the Store.";
+const FEEDBACK_CATEGORIES = Object.freeze([
+  "Bug / Error",
+  "Balance Issue",
+  "AI Too Easy/Hard",
+  "Reward / Chest Issue",
+  "Online Room Issue",
+  "Login / Profile Issue",
+  "Suggestion",
+  "Other"
+]);
+const FEEDBACK_MAX_MESSAGE_LENGTH = 2000;
 const PVE_AI_TAUNT_LINES = Object.freeze({
   match_start: Object.freeze(["Your move.", "Let's finish this.", "I saw that coming."]),
   player_win: Object.freeze(["Interesting.", "Not bad.", "Bold choice."]),
@@ -1307,8 +1318,171 @@ export class AppController {
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
         openSettings: async () => this.showSettings(),
+        openFeedback: () => this.showFeedbackModal(),
         switchAccount: async () => this.logoutToLogin({ noticeMessage: "Signed out. Sign in with another account." }),
         logout: async () => this.logoutToLogin({ noticeMessage: "Signed out." })
+      }
+    });
+  }
+
+  buildFeedbackModalHtml({
+    category = FEEDBACK_CATEGORIES[0],
+    message = "",
+    includeDebugInfo = true,
+    errorMessage = ""
+  } = {}) {
+    const normalizedCategory = FEEDBACK_CATEGORIES.includes(category) ? category : FEEDBACK_CATEGORIES[0];
+    const safeMessage = escapeHtml(String(message ?? "").slice(0, FEEDBACK_MAX_MESSAGE_LENGTH));
+    const safeErrorMessage = escapeHtml(String(errorMessage ?? "").trim());
+
+    return `
+      <div class="stack-sm">
+        <p class="muted">Send feedback, bugs, or suggestions directly to the EleMintz server team.</p>
+        <label class="stack-xs">
+          <span><strong>Category</strong></span>
+          <select id="feedback-category-select" class="input">
+            ${FEEDBACK_CATEGORIES.map((entry) => `
+              <option value="${escapeHtml(entry)}"${entry === normalizedCategory ? " selected" : ""}>${escapeHtml(entry)}</option>
+            `).join("")}
+          </select>
+        </label>
+        <label class="stack-xs">
+          <span><strong>Message</strong></span>
+          <textarea
+            id="feedback-message-textarea"
+            class="input"
+            rows="6"
+            maxlength="${FEEDBACK_MAX_MESSAGE_LENGTH}"
+            placeholder="Tell us what happened, what felt off, or what you'd like to see."
+          >${safeMessage}</textarea>
+        </label>
+        <label class="inline-actions">
+          <input id="feedback-include-debug-checkbox" type="checkbox"${includeDebugInfo ? " checked" : ""} />
+          <span>Include debug info</span>
+        </label>
+        <p id="feedback-modal-error" class="muted"${safeErrorMessage ? "" : ' hidden="hidden"'}>${safeErrorMessage}</p>
+        <div class="inline-actions">
+          <button id="feedback-submit-btn" class="btn" type="button">Submit</button>
+          <button id="feedback-cancel-btn" class="btn btn-secondary" type="button">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  getFeedbackConnectionStatus() {
+    if (this.onlinePlayState?.connectionStatus) {
+      return this.onlinePlayState.connectionStatus;
+    }
+
+    if (window.elemintz?.multiplayer) {
+      return "available";
+    }
+
+    return "offline";
+  }
+
+  buildFeedbackClientContext() {
+    const activeMode = this.gameController?.getViewModel?.()?.mode ?? null;
+    const pveDifficulty =
+      activeMode === MATCH_MODE.PVE
+        ? this.gameController?.aiDifficulty ?? this.settings?.aiDifficulty ?? null
+        : null;
+
+    return {
+      appVersion: window.elemintz?.version ?? null,
+      platform: globalThis.navigator?.platform ?? null,
+      screen: this.screenFlow ?? null,
+      connectionStatus: this.getFeedbackConnectionStatus(),
+      mode: activeMode ?? (this.onlinePlayState?.room ? "online" : null),
+      pveDifficulty,
+      roomCode: this.onlinePlayState?.room?.roomCode ?? null,
+      recentErrorMessage: this.onlinePlayState?.lastError?.message ?? null
+    };
+  }
+
+  showFeedbackValidationError(message) {
+    const errorNode = document.getElementById("feedback-modal-error");
+    if (!errorNode) {
+      return;
+    }
+
+    errorNode.hidden = false;
+    errorNode.textContent = String(message ?? "").trim();
+  }
+
+  showFeedbackModal({ category, message, includeDebugInfo = true, errorMessage = "" } = {}) {
+    this.modalManager.show({
+      title: "Send Feedback",
+      bodyHtml: this.buildFeedbackModalHtml({
+        category,
+        message,
+        includeDebugInfo,
+        errorMessage
+      }),
+      actions: []
+    });
+
+    const categorySelect = document.getElementById("feedback-category-select");
+    const messageTextarea = document.getElementById("feedback-message-textarea");
+    const includeDebugCheckbox = document.getElementById("feedback-include-debug-checkbox");
+    const submitButton = document.getElementById("feedback-submit-btn");
+    const cancelButton = document.getElementById("feedback-cancel-btn");
+
+    cancelButton?.addEventListener("click", () => this.modalManager.hide());
+    submitButton?.addEventListener("click", async () => {
+      const selectedCategory = String(categorySelect?.value ?? FEEDBACK_CATEGORIES[0]).trim();
+      const nextMessage = String(messageTextarea?.value ?? "");
+      const nextIncludeDebugInfo = includeDebugCheckbox?.checked !== false;
+      const trimmedMessage = nextMessage.trim();
+
+      if (!FEEDBACK_CATEGORIES.includes(selectedCategory)) {
+        this.showFeedbackValidationError("Please choose a valid feedback category.");
+        return;
+      }
+
+      if (!trimmedMessage) {
+        this.showFeedbackValidationError("Please enter a feedback message.");
+        return;
+      }
+
+      if (trimmedMessage.length > FEEDBACK_MAX_MESSAGE_LENGTH) {
+        this.showFeedbackValidationError(
+          `Feedback messages must be ${FEEDBACK_MAX_MESSAGE_LENGTH} characters or fewer.`
+        );
+        return;
+      }
+
+      submitButton.disabled = true;
+      submitButton.textContent = "Sending...";
+
+      try {
+        if (!window.elemintz?.multiplayer?.submitFeedback) {
+          throw new Error("Feedback submission is unavailable right now.");
+        }
+
+        await window.elemintz.multiplayer.submitFeedback({
+          username: this.username,
+          category: selectedCategory,
+          message: trimmedMessage,
+          includeDebugInfo: nextIncludeDebugInfo,
+          clientContext: nextIncludeDebugInfo ? this.buildFeedbackClientContext() : null
+        });
+
+        this.modalManager.hide();
+        this.modalManager.show({
+          title: "Feedback Sent",
+          body: "Feedback sent. Thank you.",
+          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+        });
+      } catch (error) {
+        this.modalManager.show({
+          title: "Feedback Failed",
+          body: String(error?.message ?? "Unable to send feedback."),
+          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+        });
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Submit";
       }
     });
   }

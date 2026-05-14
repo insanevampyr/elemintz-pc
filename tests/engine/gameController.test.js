@@ -112,6 +112,21 @@ function createUpdateSafetyController() {
   });
 }
 
+function createFakeDomElement(overrides = {}) {
+  const listeners = new Map();
+  return {
+    value: "",
+    checked: false,
+    disabled: false,
+    hidden: false,
+    textContent: "",
+    innerHTML: "",
+    listeners,
+    addEventListener: (type, handler) => listeners.set(type, handler),
+    ...overrides
+  };
+}
+
 function createMockUpdateBridge(initialState = {}) {
   let listener = null;
   const requestCheckResponses = Array.isArray(initialState.requestCheckResponses)
@@ -2767,6 +2782,156 @@ test("appController: online play create join submit-move and ready-rematch actio
     assert.equal(app.profile.equippedCosmetics.background, "bg_crystal_nexus");
   } finally {
     globalThis.window = originalWindow;
+  }
+});
+
+test("appController: feedback modal validates empty messages and submits through the multiplayer bridge", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const shownScreens = [];
+  const modalCalls = [];
+  const feedbackCalls = [];
+  const modalState = { hidden: false };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, context) => shownScreens.push({ screen, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {
+        modalState.hidden = true;
+      }
+    },
+    toastManager: { show: () => {} }
+  });
+
+  const elements = {
+    "feedback-category-select": createFakeDomElement({ value: "Bug / Error" }),
+    "feedback-message-textarea": createFakeDomElement({ value: "   " }),
+    "feedback-include-debug-checkbox": createFakeDomElement({ checked: true }),
+    "feedback-submit-btn": createFakeDomElement(),
+    "feedback-cancel-btn": createFakeDomElement(),
+    "feedback-modal-error": createFakeDomElement({ hidden: true })
+  };
+
+  globalThis.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelector: () => null
+  };
+
+  globalThis.window = {
+    elemintz: {
+      version: "2.1.3",
+      multiplayer: {
+        submitFeedback: async (payload) => {
+          feedbackCalls.push(payload);
+          return {
+            feedbackId: "fb_test",
+            storedAt: "2026-05-13T12:00:00.000Z"
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "FeedbackUser";
+    app.screenFlow = "menu";
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      room: { roomCode: "ROOM123" },
+      lastError: { message: "Recent error" }
+    };
+    app.renderMenuScreen();
+
+    shownScreens.at(-1).context.actions.openFeedback();
+    assert.equal(modalCalls.at(-1)?.title, "Send Feedback");
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /feedback-category-select/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /feedback-message-textarea/);
+
+    await elements["feedback-submit-btn"].listeners.get("click")?.();
+    assert.equal(feedbackCalls.length, 0);
+    assert.equal(elements["feedback-modal-error"].hidden, false);
+    assert.match(elements["feedback-modal-error"].textContent, /Please enter a feedback message\./);
+
+    elements["feedback-message-textarea"].value = "Public rooms were hard to find.";
+    elements["feedback-category-select"].value = "Online Room Issue";
+    await elements["feedback-submit-btn"].listeners.get("click")?.();
+
+    assert.equal(feedbackCalls.length, 1);
+    assert.deepEqual(feedbackCalls[0], {
+      username: "FeedbackUser",
+      category: "Online Room Issue",
+      message: "Public rooms were hard to find.",
+      includeDebugInfo: true,
+      clientContext: {
+        appVersion: "2.1.3",
+        platform: globalThis.navigator?.platform ?? null,
+        screen: "menu",
+        connectionStatus: "connected",
+        mode: "online",
+        pveDifficulty: null,
+        roomCode: "ROOM123",
+        recentErrorMessage: "Recent error"
+      }
+    });
+    assert.equal(modalState.hidden, true);
+    assert.equal(modalCalls.at(-1)?.title, "Feedback Sent");
+    assert.equal(modalCalls.at(-1)?.body, "Feedback sent. Thank you.");
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  }
+});
+
+test("appController: feedback submission failure shows a readable error modal", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const modalCalls = [];
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  const elements = {
+    "feedback-category-select": createFakeDomElement({ value: "Suggestion" }),
+    "feedback-message-textarea": createFakeDomElement({ value: "Add more room browser filters." }),
+    "feedback-include-debug-checkbox": createFakeDomElement({ checked: false }),
+    "feedback-submit-btn": createFakeDomElement(),
+    "feedback-cancel-btn": createFakeDomElement(),
+    "feedback-modal-error": createFakeDomElement({ hidden: true })
+  };
+
+  globalThis.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelector: () => null
+  };
+
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        submitFeedback: async () => {
+          throw new Error("Server feedback log is unavailable.");
+        }
+      }
+    }
+  };
+
+  try {
+    app.showFeedbackModal();
+    await elements["feedback-submit-btn"].listeners.get("click")?.();
+    assert.equal(modalCalls.at(-1)?.title, "Feedback Failed");
+    assert.equal(modalCalls.at(-1)?.body, "Server feedback log is unavailable.");
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
   }
 });
 

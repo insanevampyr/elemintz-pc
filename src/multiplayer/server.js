@@ -4,6 +4,7 @@ import { MultiplayerProfileAuthority } from "./profileAuthority.js";
 import { MultiplayerAccountStore } from "./accountStore.js";
 import { AdminGrantStore } from "../state/adminGrantStore.js";
 import { createTimestampedLogger } from "./logger.js";
+import { FeedbackStore } from "./feedbackStore.js";
 import os from "node:os";
 import path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
@@ -40,6 +41,10 @@ const accountStore = new MultiplayerAccountStore({
 });
 const adminGrantStore = new AdminGrantStore({
   dataDir: resolveStandaloneDataDir()
+});
+const feedbackStore = new FeedbackStore({
+  dataDir: resolveStandaloneDataDir(),
+  logger
 });
 
 async function rewardPersister({ room, summary, decision, settlementKey }) {
@@ -109,6 +114,7 @@ const server = createMultiplayerFoundation({
   profileAuthority,
   accountStore,
   adminGrantStore,
+  feedbackStore,
   logger
 });
 let shuttingDown = false;
