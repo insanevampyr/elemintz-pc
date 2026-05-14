@@ -1336,32 +1336,32 @@ export class AppController {
     const safeErrorMessage = escapeHtml(String(errorMessage ?? "").trim());
 
     return `
-      <div class="stack-sm">
+      <div class="stack-sm feedback-modal">
         <p class="muted">Send feedback, bugs, or suggestions directly to the EleMintz server team.</p>
-        <label class="stack-xs">
-          <span><strong>Category</strong></span>
-          <select id="feedback-category-select" class="input">
+        <label class="stack-xs feedback-modal__field">
+          <span class="feedback-modal__label"><strong>Category</strong></span>
+          <select id="feedback-category-select" class="input feedback-modal__input">
             ${FEEDBACK_CATEGORIES.map((entry) => `
               <option value="${escapeHtml(entry)}"${entry === normalizedCategory ? " selected" : ""}>${escapeHtml(entry)}</option>
             `).join("")}
           </select>
         </label>
-        <label class="stack-xs">
-          <span><strong>Message</strong></span>
+        <label class="stack-xs feedback-modal__field">
+          <span class="feedback-modal__label"><strong>Message</strong></span>
           <textarea
             id="feedback-message-textarea"
-            class="input"
+            class="input feedback-modal__input feedback-modal__textarea"
             rows="6"
             maxlength="${FEEDBACK_MAX_MESSAGE_LENGTH}"
             placeholder="Tell us what happened, what felt off, or what you'd like to see."
           >${safeMessage}</textarea>
         </label>
-        <label class="inline-actions">
+        <label class="inline-actions feedback-modal__checkbox-row">
           <input id="feedback-include-debug-checkbox" type="checkbox"${includeDebugInfo ? " checked" : ""} />
           <span>Include debug info</span>
         </label>
-        <p id="feedback-modal-error" class="muted"${safeErrorMessage ? "" : ' hidden="hidden"'}>${safeErrorMessage}</p>
-        <div class="inline-actions">
+        <p id="feedback-modal-error" class="muted feedback-modal__error"${safeErrorMessage ? "" : ' hidden="hidden"'}>${safeErrorMessage}</p>
+        <div class="inline-actions feedback-modal__actions">
           <button id="feedback-submit-btn" class="btn" type="button">Submit</button>
           <button id="feedback-cancel-btn" class="btn btn-secondary" type="button">Cancel</button>
         </div>

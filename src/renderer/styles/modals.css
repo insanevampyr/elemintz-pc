@@ -10,6 +10,8 @@
 
 .modal {
   width: min(460px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
   background: linear-gradient(160deg, rgba(19, 42, 63, 0.98), rgba(13, 31, 48, 0.98));
   border: 1px solid #3f627f;
   border-radius: 14px;
