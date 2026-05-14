@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { createMatch, playRound } from "../../src/engine/index.js";
+import { HARD_PVE_WIN_CHEST_DROP_CHANCE } from "../../src/shared/basicChestDrop.js";
 import {
   DAILY_CHALLENGE_DEFINITIONS,
   WEEKLY_CHALLENGE_DEFINITIONS,
@@ -2146,15 +2147,17 @@ test("state: hard PvE win grants +5 XP and +5 tokens over normal PvE", async () 
 });
 
 test("state: hard PvE win has a slightly better basic chest chance than normal PvE", async () => {
+  assert.equal(HARD_PVE_WIN_CHEST_DROP_CHANCE, 0.12);
+
   const normalDataDir = await createTempDataDir();
   const hardDataDir = await createTempDataDir();
   const normalState = new StateCoordinator({
     dataDir: normalDataDir,
-    random: constantRandom(0.12)
+    random: constantRandom(0.11)
   });
   const hardState = new StateCoordinator({
     dataDir: hardDataDir,
-    random: constantRandom(0.12)
+    random: constantRandom(0.11)
   });
 
   const normalResult = await normalState.recordMatchResult({

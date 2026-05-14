@@ -4153,6 +4153,72 @@ export class AppController {
     }
   }
 
+  getMatchCompleteCapturedTotals(mode, match, finalPersisted) {
+    const isLocalPvp = mode === MATCH_MODE.LOCAL_PVP;
+    const leftStats = isLocalPvp ? finalPersisted?.p1?.stats : finalPersisted?.stats;
+    const rightStats = isLocalPvp ? finalPersisted?.p2?.stats : null;
+    const leftDerivedStats = this.getMatchPerspectiveStats(match, "p1");
+    const rightDerivedStats = this.getMatchPerspectiveStats(match, "p2");
+    const liveCaptured = this.gameController?.captured ?? null;
+    const safeNumber = (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+    };
+
+    if (isLocalPvp) {
+      return {
+        left: safeNumber(leftStats?.cardsCaptured) ?? safeNumber(liveCaptured?.p1) ?? safeNumber(leftDerivedStats?.cardsCaptured) ?? 0,
+        right: safeNumber(rightStats?.cardsCaptured) ?? safeNumber(liveCaptured?.p2) ?? safeNumber(rightDerivedStats?.cardsCaptured) ?? 0
+      };
+    }
+
+    return {
+      left: safeNumber(liveCaptured?.p1) ?? safeNumber(leftStats?.cardsCaptured) ?? safeNumber(leftDerivedStats?.cardsCaptured) ?? 0,
+      right: safeNumber(liveCaptured?.p2) ?? safeNumber(rightDerivedStats?.cardsCaptured) ?? 0
+    };
+  }
+
+  buildMatchCompleteRewardSummary(mode, match, finalPersisted) {
+    if (mode !== MATCH_MODE.PVE) {
+      return "";
+    }
+
+    const difficulty = String(match?.difficulty ?? "normal").trim().toLowerCase();
+    const xpDelta = Math.max(0, Number(finalPersisted?.xpDelta ?? 0));
+    const tokenDelta = Math.max(0, Number(finalPersisted?.tokenDelta ?? 0));
+    const xpLines = Array.isArray(finalPersisted?.xpBreakdown?.lines) ? finalPersisted.xpBreakdown.lines : [];
+    const hasHardBonus = xpLines.some((line) => line?.label === "Hard AI Victory Bonus");
+
+    if (difficulty === "easy") {
+      return `
+        <section class="match-complete-meta match-complete-rewards">
+          <p><strong>Difficulty:</strong> Easy / Practice Mode</p>
+          <p>No rewards, stats, achievements, or challenge progress.</p>
+        </section>
+      `;
+    }
+
+    const difficultyLabel = difficulty === "hard" ? "Hard" : "Normal";
+    const bonusLine =
+      difficulty === "hard" && hasHardBonus
+        ? `<p><strong>Hard AI Victory Bonus:</strong> +5 XP / +5 tokens</p>`
+        : "";
+    const chestLine =
+      difficulty === "hard"
+        ? `<p><strong>Basic Chest Win Chance:</strong> 12%</p>`
+        : `<p><strong>Basic Chest Win Chance:</strong> 10%</p>`;
+
+    return `
+      <section class="match-complete-meta match-complete-rewards">
+        <p><strong>Difficulty:</strong> ${escapeHtml(difficultyLabel)}</p>
+        <p><strong>XP Gained:</strong> ${xpDelta}</p>
+        <p><strong>Tokens Gained:</strong> ${tokenDelta}</p>
+        ${bonusLine}
+        ${chestLine}
+      </section>
+    `;
+  }
+
   playRoundRevealSounds(result, mode = MATCH_MODE.PVE, { warWasActive = false } = {}) {
     if (!result) {
       return false;
@@ -4283,15 +4349,10 @@ export class AppController {
 
     const leftStats = isLocalPvp ? finalPersisted?.p1?.stats : finalPersisted?.stats;
     const rightStats = isLocalPvp ? finalPersisted?.p2?.stats : null;
-    const leftDerivedStats = this.getMatchPerspectiveStats(match, "p1");
-    const rightDerivedStats = this.getMatchPerspectiveStats(match, "p2");
+    const capturedTotals = this.getMatchCompleteCapturedTotals(mode, match, finalPersisted);
 
-    const leftCaptured = isLocalPvp
-      ? safeValue(leftStats?.cardsCaptured)
-      : safeValue(leftDerivedStats?.cardsCaptured);
-    const rightCaptured = isLocalPvp
-      ? safeValue(rightStats?.cardsCaptured)
-      : safeValue(rightDerivedStats?.cardsCaptured);
+    const leftCaptured = safeValue(capturedTotals.left);
+    const rightCaptured = safeValue(capturedTotals.right);
 
     const warsEntered = isLocalPvp
       ? `${safeValue(leftStats?.warsEntered)} | ${safeValue(rightStats?.warsEntered)}`
@@ -4299,6 +4360,9 @@ export class AppController {
     const longestWar = isLocalPvp
       ? `${safeValue(leftStats?.longestWar)} | ${safeValue(rightStats?.longestWar)}`
       : safeValue(leftStats?.longestWar);
+    const leftFinalHand = safeValue(match?.players?.p1?.hand?.length);
+    const rightFinalHand = safeValue(match?.players?.p2?.hand?.length);
+    const rewardSummary = this.buildMatchCompleteRewardSummary(mode, match, finalPersisted);
 
     const outcomeLabel =
       match.winner === "draw"
@@ -4327,10 +4391,11 @@ export class AppController {
           <p class="match-complete-subtitle">${outcomeSubtitle}</p>
           <p class="match-complete-captured">${escapeHtml(leftName)} • ${leftCaptured} | ${escapeHtml(rightName)} • ${rightCaptured}</p>
         </header>
+        <p class="match-complete-helper">Captured totals reflect opponent cards won across the full match.</p>
 
         <section class="match-complete-stats">
           <div class="match-complete-stat">
-            <span class="match-complete-stat-label">Captures</span>
+            <span class="match-complete-stat-label">Captured Opponent Cards</span>
             <strong class="match-complete-stat-value">${leftCaptured} | ${rightCaptured}</strong>
           </div>
           <div class="match-complete-stat">
@@ -4345,12 +4410,18 @@ export class AppController {
             <span class="match-complete-stat-label">Rounds Played</span>
             <strong class="match-complete-stat-value">${roundsPlayed}</strong>
           </div>
+          <div class="match-complete-stat">
+            <span class="match-complete-stat-label">Final Hands</span>
+            <strong class="match-complete-stat-value">${leftFinalHand} | ${rightFinalHand}</strong>
+          </div>
         </section>
 
         <section class="match-complete-meta">
           <p><strong>Mode:</strong> ${escapeHtml(mode)}</p>
           <p><strong>End Reason:</strong> ${escapeHtml(match.endReason ?? "normal")}</p>
         </section>
+
+        ${rewardSummary}
 
         <div class="match-complete-actions">
           <button id="match-complete-play-again" class="btn btn-primary">Play Again</button>

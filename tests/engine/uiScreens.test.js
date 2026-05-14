@@ -212,6 +212,7 @@ test("ui: settings screen renders PvE AI difficulty and style options with easy 
     html,
     /Online Play always uses a server-controlled 20-second turn timer and is not affected by local timer or speed settings\./
   );
+
   assert.match(html, /Practice Mode\. No rewards, stats, achievements, or challenge progress\./);
   assert.match(html, /Easy AI is practice-only and grants no XP, tokens, or chest drops\./);
   assert.match(html, /Standard rewards and progression\./);
@@ -13651,18 +13652,24 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   const controller = createRendererController();
   controller.username = "VampyrLee";
   controller.profile = { username: "VampyrLee" };
+  controller.gameController = { captured: { p1: 4, p2: 3 } };
 
   const payload = controller.buildMatchCompleteModalPayload(
     "pve",
     {
       winner: "p1",
       endReason: "normal",
+      difficulty: "normal",
       history: [
         { result: "p1", capturedCards: 2, capturedOpponentCards: 1 },
         { result: "p2", capturedCards: 6, capturedOpponentCards: 3 },
         { result: "none", capturedCards: 0, capturedOpponentCards: 0 },
         { result: "p1", capturedCards: 6, capturedOpponentCards: 3 }
-      ]
+      ],
+      players: {
+        p1: { hand: ["fire", "water"] },
+        p2: { hand: [] }
+      }
     },
     {
       stats: {
@@ -13677,43 +13684,104 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   assert.match(payload.bodyHtml, /<h4 class="match-complete-outcome">Victory<\/h4>/);
   assert.match(payload.bodyHtml, /VampyrLee defeated Elemental AI\./);
   assert.match(payload.bodyHtml, /VampyrLee • 4 \| Elemental AI • 3/);
-  assert.match(payload.bodyHtml, /Captures/);
+  assert.match(payload.bodyHtml, /Captured Opponent Cards/);
+  assert.match(payload.bodyHtml, /Captured totals reflect opponent cards won across the full match\./);
   assert.match(payload.bodyHtml, /WARs Entered/);
   assert.match(payload.bodyHtml, /Longest WAR/);
   assert.match(payload.bodyHtml, /Rounds Played/);
+  assert.match(payload.bodyHtml, /Final Hands/);
+  assert.match(payload.bodyHtml, /<strong>Difficulty:<\/strong> Normal/);
+  assert.match(payload.bodyHtml, /<strong>XP Gained:<\/strong> 0/);
+  assert.match(payload.bodyHtml, /<strong>Tokens Gained:<\/strong> 0/);
   assert.match(payload.bodyHtml, /id="match-complete-play-again"/);
   assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
 });
 
-test("ui: PvE match complete payload uses derived match stats for both player and AI captures", () => {
+test("ui: PvE match complete payload prefers authoritative live capture totals over trimmed history", () => {
   const controller = createRendererController();
   controller.username = "VampyrLee";
   controller.profile = { username: "VampyrLee" };
+  controller.gameController = { captured: { p1: 8, p2: 0 } };
 
   const payload = controller.buildMatchCompleteModalPayload(
     "pve",
     {
       winner: "p1",
-      endReason: "normal",
+      endReason: "hand_exhaustion",
       mode: "pve",
+      difficulty: "hard",
       history: [
         { result: "p1", capturedCards: 2, capturedOpponentCards: 1, warClashes: 0 },
         { result: "p2", capturedCards: 6, capturedOpponentCards: 3, warClashes: 2 },
         { result: "none", capturedCards: 0, capturedOpponentCards: 0, warClashes: 0 },
         { result: "p1", capturedCards: 6, capturedOpponentCards: 3, warClashes: 2 }
-      ]
+      ],
+      players: {
+        p1: { hand: ["fire", "water", "earth", "wind", "fire", "water", "earth", "wind"] },
+        p2: { hand: [] }
+      }
     },
     {
       stats: {
         cardsCaptured: 8,
         warsEntered: 2,
         longestWar: 4
+      },
+      xpDelta: 17,
+      tokenDelta: 12,
+      xpBreakdown: {
+        lines: [
+          { label: "Match Win", amount: 6 },
+          { label: "WAR Winner", amount: 6 },
+          { label: "Hard AI Victory Bonus", amount: 5 }
+        ],
+        total: 17
       }
     }
   );
 
-  assert.match(payload.bodyHtml, /VampyrLee • 4 \| Elemental AI • 3/);
-  assert.match(payload.bodyHtml, /<strong class="match-complete-stat-value">4 \| 3<\/strong>/);
+  assert.match(payload.bodyHtml, /VampyrLee.*8 \| Elemental AI.*0/);
+  assert.match(payload.bodyHtml, /<strong class="match-complete-stat-value">8 \| 0<\/strong>/);
+  assert.match(payload.bodyHtml, /<strong>End Reason:<\/strong> hand_exhaustion/);
+  assert.match(payload.bodyHtml, /<strong>Difficulty:<\/strong> Hard/);
+  assert.match(payload.bodyHtml, /<strong>XP Gained:<\/strong> 17/);
+  assert.match(payload.bodyHtml, /<strong>Tokens Gained:<\/strong> 12/);
+  assert.match(payload.bodyHtml, /<strong>Hard AI Victory Bonus:<\/strong> \+5 XP \/ \+5 tokens/);
+  assert.match(payload.bodyHtml, /<strong>Basic Chest Win Chance:<\/strong> 12%/);
+});
+
+test("ui: easy PvE match complete payload shows practice-mode reward suppression clarity", () => {
+  const controller = createRendererController();
+  controller.username = "test";
+  controller.profile = { username: "test" };
+  controller.gameController = { captured: { p1: 0, p2: 0 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p2",
+      endReason: "hand_exhaustion",
+      mode: "pve",
+      difficulty: "easy",
+      history: [],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: ["fire", "water"] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 0,
+        warsEntered: 0,
+        longestWar: 0
+      },
+      xpDelta: 0,
+      tokenDelta: 0
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<strong>Difficulty:<\/strong> Easy \/ Practice Mode/);
+  assert.match(payload.bodyHtml, /No rewards, stats, achievements, or challenge progress\./);
 });
 
 test("ui: match complete payload renders polished local PvP naming and draw state", () => {
