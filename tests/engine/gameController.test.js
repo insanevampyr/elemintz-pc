@@ -5703,6 +5703,138 @@ test("appController: showOnlinePlay refreshes the active profile from the multip
   }
 });
 
+test("appController: daily login auto-claim promise clears after a successful claim settles", async () => {
+  const originalWindow = globalThis.window;
+  const app = createUpdateSafetyController();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          claimDailyLoginReward: async (username) => ({
+            granted: true,
+            profile: { username, tokens: 120, playerXP: 5, playerLevel: 1, equippedCosmetics: {} },
+            dailyLoginStatus: {
+              eligible: false,
+              loginDayKey: "2026-05-14T00:00:00.000Z",
+              lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z",
+              msUntilReset: 3600000
+            }
+          })
+        }
+      }
+    };
+
+    app.username = "DailySuccessUser";
+    app.profile = { username: "DailySuccessUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+
+    assert.equal(app.dailyLoginAutoClaimPromise, null);
+    await app.ensureDailyLoginAutoClaim({ showToasts: false, requestKey: "menu:DailySuccessUser" });
+    assert.equal(app.dailyLoginAutoClaimPromise, null);
+    assert.equal(app.getUpdateSafetyState().reasons.includes("daily_login_claim_in_flight"), false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: daily login auto-claim promise clears after an ineligible result settles", async () => {
+  const originalWindow = globalThis.window;
+  const app = createUpdateSafetyController();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          claimDailyLoginReward: async (username) => ({
+            granted: false,
+            profile: { username, tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+            dailyLoginStatus: {
+              eligible: false,
+              loginDayKey: "2026-05-14T00:00:00.000Z",
+              lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z",
+              msUntilReset: 3600000
+            }
+          })
+        }
+      }
+    };
+
+    app.username = "DailyNoGrantUser";
+    app.profile = { username: "DailyNoGrantUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+
+    await app.ensureDailyLoginAutoClaim({ showToasts: false, requestKey: "menu:DailyNoGrantUser" });
+    assert.equal(app.dailyLoginAutoClaimPromise, null);
+    assert.equal(app.getUpdateSafetyState().safe, true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: daily login auto-claim promise clears after a failed claim rejects", async () => {
+  const originalWindow = globalThis.window;
+  const app = createUpdateSafetyController();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          claimDailyLoginReward: async () => {
+            throw new Error("daily login offline");
+          }
+        }
+      }
+    };
+
+    app.username = "DailyFailUser";
+    app.profile = { username: "DailyFailUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+
+    await assert.rejects(
+      app.ensureDailyLoginAutoClaim({ showToasts: false, requestKey: "menu:DailyFailUser" }),
+      /daily login offline/i
+    );
+    assert.equal(app.dailyLoginAutoClaimPromise, null);
+    assert.equal(app.getUpdateSafetyState().reasons.includes("daily_login_claim_in_flight"), false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: idle menu after completed daily login claim is updater-safe", async () => {
+  const originalWindow = globalThis.window;
+  const app = createUpdateSafetyController();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          claimDailyLoginReward: async (username) => ({
+            granted: false,
+            profile: { username, tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+            dailyLoginStatus: {
+              eligible: false,
+              loginDayKey: "2026-05-14T00:00:00.000Z",
+              lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z",
+              msUntilReset: 3600000
+            }
+          })
+        }
+      }
+    };
+
+    app.screenFlow = "menu";
+    app.username = "IdleMenuUser";
+    app.profile = { username: "IdleMenuUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+
+    await app.ensureDailyLoginAutoClaim({ showToasts: false, requestKey: "menu:IdleMenuUser" });
+
+    const safety = app.getUpdateSafetyState();
+    assert.equal(safety.safe, true);
+    assert.equal(safety.reasons.includes("daily_login_claim_in_flight"), false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online profile load keeps local fallback when multiplayer snapshot is unavailable", async () => {
   const originalWindow = globalThis.window;
   const calls = {

@@ -1254,8 +1254,20 @@ export class AppController {
     }
 
     this.dailyLoginAutoClaimKey = effectiveKey;
-    this.dailyLoginAutoClaimPromise = this.claimDailyLoginRewardFor(this.username, { showToasts });
-    const reward = await this.dailyLoginAutoClaimPromise;
+    const claimPromise = this.claimDailyLoginRewardFor(this.username, { showToasts });
+    this.dailyLoginAutoClaimPromise = claimPromise;
+    let reward = null;
+
+    try {
+      reward = await claimPromise;
+    } finally {
+      if (
+        this.dailyLoginAutoClaimKey === effectiveKey &&
+        this.dailyLoginAutoClaimPromise === claimPromise
+      ) {
+        this.dailyLoginAutoClaimPromise = null;
+      }
+    }
 
     if (reward?.profile) {
       const nextRewardProfile =
