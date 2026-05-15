@@ -323,6 +323,25 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async acknowledgeMilestoneChestReward({ username, level = null }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative milestone reward acknowledgement.");
+    }
+
+    this.logger.info?.(
+      `[ProfileAuthority] acknowledgeMilestoneChestReward -> ${safeUsername} (${String(level ?? "pending")})`
+    );
+    const result = await this.coordinator.acknowledgeMilestoneChestReward({
+      username: safeUsername,
+      level
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
   async buyStoreItem({ username, type, cosmeticId }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

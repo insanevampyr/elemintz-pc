@@ -3135,11 +3135,16 @@ export class AppController {
   }
 
   async maybeShowMilestoneChestRewardNotice() {
+    const localAcknowledge = globalThis.window?.elemintz?.state?.acknowledgeMilestoneChestReward;
+    const multiplayerAcknowledge =
+      globalThis.window?.elemintz?.multiplayer?.acknowledgeMilestoneChestReward;
+    const useMultiplayerAuthority =
+      this.isAuthenticatedOnlineProfileFlow() && typeof multiplayerAcknowledge === "function";
     if (
       this.screenFlow !== "profile" ||
       this.profileMilestoneChestNoticeOpen ||
       !this.username ||
-      !globalThis.window?.elemintz?.state?.acknowledgeMilestoneChestReward
+      (!useMultiplayerAuthority && typeof localAcknowledge !== "function")
     ) {
       return;
     }
@@ -3161,11 +3166,18 @@ export class AppController {
             onClick: async () => {
               this.modalManager.hide();
               try {
-                const result = await globalThis.window.elemintz.state.acknowledgeMilestoneChestReward({
-                  username: this.username,
-                  level: pendingLevel
-                });
-                this.profile = result?.profile ?? this.profile;
+                const result = useMultiplayerAuthority
+                  ? await multiplayerAcknowledge({
+                      username: this.username,
+                      level: pendingLevel
+                    })
+                  : await localAcknowledge({
+                      username: this.username,
+                      level: pendingLevel
+                    });
+                this.profile = result?.snapshot
+                  ? this.buildProfileFromServerSnapshot(result.snapshot)
+                  : result?.profile ?? this.profile;
               } catch (error) {
                 console.error("Failed to acknowledge milestone chest reward", error);
               } finally {

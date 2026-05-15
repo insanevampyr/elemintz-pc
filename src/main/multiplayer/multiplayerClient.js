@@ -2138,6 +2138,21 @@ export class MultiplayerClient {
     return response.result ?? null;
   }
 
+  async acknowledgeMilestoneChestReward({ username, level, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:acknowledgeMilestoneChestReward",
+      { username, level },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(
+        response?.error?.message ?? "Unable to acknowledge the milestone chest reward notice."
+      );
+    }
+
+    return response.result ?? null;
+  }
+
   async claimDailyLoginReward({ username, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:claimDailyLoginReward",

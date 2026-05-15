@@ -1852,6 +1852,53 @@ test("multiplayer foundation: server-authoritative daily login claim grants once
   }
 });
 
+test("multiplayer foundation: authoritative milestone reward acknowledgement clears the pending level server-side", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("MilestoneAuthorityUser", (current) => ({
+      ...current,
+      playerLevel: 5,
+      chests: {
+        ...(current?.chests ?? {}),
+        milestone: 1
+      },
+      pendingMilestoneChestRewardLevel: 5
+    }));
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "MilestoneAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const acknowledged = await new Promise((resolve) => {
+      client.emit("profile:acknowledgeMilestoneChestReward", { level: 5 }, resolve);
+    });
+    const profileAfterAcknowledge = await coordinator.profiles.getProfile("MilestoneAuthorityUser");
+
+    assert.equal(acknowledged?.ok, true);
+    assert.equal(acknowledged?.result?.pendingMilestoneChestRewardLevel, null);
+    assert.equal(acknowledged?.result?.snapshot?.profile?.pendingMilestoneChestRewardLevel, null);
+    assert.equal(profileAfterAcknowledge?.pendingMilestoneChestRewardLevel, null);
+    assert.equal(profileAfterAcknowledge?.chests?.milestone, 1);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: server-authoritative chest opening decrements inventory and persists rewards", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({

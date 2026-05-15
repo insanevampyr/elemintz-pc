@@ -535,6 +535,36 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "profile:acknowledgeMilestoneChestReward") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            pendingMilestoneChestRewardLevel: null,
+            snapshot: {
+              authority: "server",
+              source: "multiplayer",
+              username: this.sessionUsername ?? payload?.username ?? null,
+              profile: {
+                username: this.sessionUsername ?? payload?.username ?? null,
+                playerLevel: Number(payload?.level ?? 5) || 5,
+                pendingMilestoneChestRewardLevel: null,
+                chests: {
+                  basic: 0,
+                  milestone: 1,
+                  epic: 0,
+                  legendary: 0
+                },
+                equippedCosmetics: createEquippedCosmetics(),
+                ownedCosmetics: {}
+              },
+              progression: {}
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:buyStoreItem") {
       queueMicrotask(() => {
         ack?.({
@@ -1195,6 +1225,38 @@ test("multiplayer client: authoritative daily login claims return updated server
   assert.equal(result?.rewardTokens, 5);
   assert.equal(result?.snapshot?.profile?.tokens, 230);
   assert.equal(result?.snapshot?.progression?.dailyLogin?.eligible, false);
+});
+
+test("multiplayer client: authoritative milestone reward acknowledgement returns updated server profile state", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.acknowledgeMilestoneChestReward({
+    username: "RewardAuthorityUser",
+    level: 5
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "RewardAuthorityUser"
+    }
+  });
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:acknowledgeMilestoneChestReward",
+    payload: {
+      level: 5
+    }
+  });
+  assert.equal(result?.pendingMilestoneChestRewardLevel, null);
+  assert.equal(result?.snapshot?.profile?.pendingMilestoneChestRewardLevel, null);
+  assert.equal(result?.snapshot?.profile?.chests?.milestone, 1);
 });
 
 test("multiplayer client: server-authoritative store purchases return updated profile state", async () => {

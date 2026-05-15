@@ -12198,6 +12198,134 @@ test("ui: profile shows the new milestone chest popup with the exact grant messa
   }
 });
 
+test("ui: authenticated profile milestone reward popup uses multiplayer acknowledgement and does not reopen after refresh or re-entry", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const localAckCalls = [];
+  const multiplayerAckCalls = [];
+  let liveServerProfile = {
+    authority: "server",
+    username: "Enab",
+    profile: {
+      ...createProfileScreenContext().profile,
+      username: "Enab",
+      playerLevel: 5,
+      chests: { basic: 0, milestone: 1 },
+      pendingMilestoneChestRewardLevel: 5
+    },
+    progression: {
+      xp: {}
+    }
+  };
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => liveServerProfile,
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        acknowledgeMilestoneChestReward: async ({ username, level }) => {
+          multiplayerAckCalls.push({ username, level });
+          liveServerProfile = {
+            ...liveServerProfile,
+            profile: {
+              ...liveServerProfile.profile,
+              pendingMilestoneChestRewardLevel: null
+            }
+          };
+          return {
+            pendingMilestoneChestRewardLevel: null,
+            snapshot: liveServerProfile
+          };
+        }
+      },
+      state: {
+        getProfile: async () => {
+          throw new Error("local profile read should not be used for authenticated profile refresh");
+        },
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [liveServerProfile.profile],
+        acknowledgeMilestoneChestReward: async ({ username, level }) => {
+          localAckCalls.push({ username, level });
+          return {
+            profile: {
+              ...liveServerProfile.profile,
+              pendingMilestoneChestRewardLevel: null
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "Enab";
+    app.profile = {
+      username: "Enab",
+      pendingMilestoneChestRewardLevel: 5
+    };
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "Enab"
+      }
+    };
+
+    await app.showProfile();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Level Reward Available");
+
+    await modalCalls[0].actions[0].onClick();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(multiplayerAckCalls, [{ username: "Enab", level: 5 }]);
+    assert.deepEqual(localAckCalls, []);
+    assert.equal(shown.at(-1).profile.pendingMilestoneChestRewardLevel, null);
+    assert.equal(modalCalls.length, 1);
+
+    await app.showProfile();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 1);
+
+    liveServerProfile = {
+      ...liveServerProfile,
+      profile: {
+        ...liveServerProfile.profile,
+        playerLevel: 10,
+        pendingMilestoneChestRewardLevel: 10
+      }
+    };
+
+    await app.showProfile();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(modalCalls.length, 2);
+    assert.equal(modalCalls.at(-1)?.body, "Congrats Enab on level 10, a FREE Token Reward is now Available");
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: opening a milestone chest reuses the profile chest open flow and updates tokens immediately", async () => {
   const previousWindow = global.window;
   const previousSetTimeout = global.setTimeout;

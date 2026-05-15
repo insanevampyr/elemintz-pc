@@ -89,19 +89,22 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.updates.reportPromptEvent, "function");
   assert.equal(typeof bridge.multiplayer.getState, "function");
   assert.equal(typeof bridge.multiplayer.listPublicRooms, "function");
+  assert.equal(typeof bridge.multiplayer.acknowledgeMilestoneChestReward, "function");
   assert.equal(typeof bridge.multiplayer.submitFeedback, "function");
 
   await bridge.state.getSettings();
   await bridge.updates.getState();
   await bridge.updates.reportPromptEvent({ type: "install_prompt_shown", version: "2.1.5" });
   await bridge.multiplayer.listPublicRooms({ username: "VampyrLee" });
+  await bridge.multiplayer.acknowledgeMilestoneChestReward({ username: "RewardHero", level: 5 });
   await bridge.multiplayer.submitFeedback({ category: "Bug / Error", message: "Hello" });
 
-  assert.deepEqual(ipcRenderer.invocations.slice(0, 5), [
+  assert.deepEqual(ipcRenderer.invocations.slice(0, 6), [
     { channel: "state:getSettings", payload: undefined },
     { channel: "updates:getState", payload: undefined },
     { channel: "updates:reportPromptEvent", payload: { type: "install_prompt_shown", version: "2.1.5" } },
     { channel: "multiplayer:listPublicRooms", payload: { username: "VampyrLee" } },
+    { channel: "multiplayer:acknowledgeMilestoneChestReward", payload: { username: "RewardHero", level: 5 } },
     { channel: "multiplayer:submitFeedback", payload: { category: "Bug / Error", message: "Hello" } }
   ]);
 });

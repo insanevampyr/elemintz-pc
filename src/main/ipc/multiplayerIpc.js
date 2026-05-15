@@ -84,6 +84,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.acknowledgeAnnouncement(payload);
   });
 
+  ipcMain.handle("multiplayer:acknowledgeMilestoneChestReward", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.acknowledgeMilestoneChestReward(payload);
+  });
+
   ipcMain.handle("multiplayer:claimDailyLoginReward", async (event, payload) => {
     subscribers.add(event.sender);
     return client.claimDailyLoginReward(payload);

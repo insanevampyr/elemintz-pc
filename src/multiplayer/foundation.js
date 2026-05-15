@@ -2315,6 +2315,47 @@ export function createMultiplayerFoundation({
         }
       });
 
+      socket.on("profile:acknowledgeMilestoneChestReward", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof profileAuthority?.acknowledgeMilestoneChestReward !== "function") {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            }
+          });
+          return;
+        }
+
+        try {
+          const result = await profileAuthority.acknowledgeMilestoneChestReward({
+            ...payload,
+            username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+          });
+          respond({
+            ok: true,
+            result
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_MILESTONE_REWARD_WRITE_FAILED",
+              message: String(
+                error?.message ?? "Unable to acknowledge the milestone reward notice."
+              )
+            }
+          });
+        }
+      });
+
       socket.on("profile:buyStoreItem", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
