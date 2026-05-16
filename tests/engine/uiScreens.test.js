@@ -6713,6 +6713,7 @@ test("ui: menu renders buttons in requested order without standalone challenges 
   });
 
   const expectedOrder = [
+    "how-to-play-btn",
     "start-pve-btn",
     "start-local-btn",
     "online-play-btn",
@@ -6721,7 +6722,6 @@ test("ui: menu renders buttons in requested order without standalone challenges 
     "store-btn",
     "achievements-btn",
     "settings-btn",
-    "how-to-play-btn",
     "feedback-btn",
     "logout-btn"
   ];

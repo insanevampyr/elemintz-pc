@@ -169,6 +169,7 @@ export const menuScreen = {
             </div>
             <div class="grid two-col">
               <div class="grid two-col menu-action-grid">
+                ${renderMenuTile("how-to-play-btn", "How to Play")}
                 ${renderMenuTile("start-pve-btn", "Play vs AI")}
                 ${renderMenuTile("start-local-btn", "Local 2-Player")}
                 ${renderMenuTile("online-play-btn", "Online Play")}
@@ -177,7 +178,6 @@ export const menuScreen = {
                 ${renderMenuTile("store-btn", "Store")}
                 ${renderMenuTile("achievements-btn", "Achievements")}
                 ${renderMenuTile("settings-btn", "Settings")}
-                ${renderMenuTile("how-to-play-btn", "How to Play")}
                 ${renderMenuTile("feedback-btn", "Feedback")}
                 ${renderMenuTile("logout-btn", "Logout")}
               </div>
