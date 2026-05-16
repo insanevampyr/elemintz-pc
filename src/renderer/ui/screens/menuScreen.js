@@ -9,8 +9,8 @@ const MENU_TILE_IMAGE_MAP = Object.freeze({
   "store-btn": "menu_tiles/tile_store.png",
   "achievements-btn": "menu_tiles/tile_achievements.png",
   "settings-btn": "menu_tiles/tile_settings.png",
-  "how-to-play-btn": "menu_tiles/tile_settings.png",
-  "feedback-btn": "menu_tiles/tile_settings.png",
+  "how-to-play-btn": "menu_tiles/tile_how_to_play.png",
+  "feedback-btn": "menu_tiles/tile_feedback.png",
   "logout-btn": "menu_tiles/tile_logout.png"
 });
 
