@@ -1,6 +1,6 @@
 {
   "name": "elemintz-pc",
-  "version": "2.1.10",
+  "version": "2.1.11",
   "description": "EleMintz desktop card game",
   "private": true,
   "type": "module",
