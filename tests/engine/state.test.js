@@ -349,8 +349,8 @@ test("state: easy PvE practice mode suppresses progression on loss and draw", as
 });
 
 test("state: store background catalog includes all registered background assets with preserved rarity pricing", () => {
-  const store = getStoreViewForProfile({ username: "BackgroundShopUser" });
-  const backgroundById = new Map(store.catalog.background.map((item) => [item.id, item]));
+  const cosmetics = getCosmeticCatalogForProfile({ username: "BackgroundShopUser" });
+  const backgroundById = new Map(cosmetics.background.map((item) => [item.id, item]));
 
   const expectedIds = [
     "fire_background",
@@ -389,15 +389,28 @@ test("state: store background catalog includes all registered background assets 
 
 test("state: rotationOnly cosmetics stay out of the normal store catalog by default", () => {
   const store = getStoreViewForProfile({ username: "RotationStoreUser" });
+  const approvedRotationOnlyIds = {
+    avatar: [
+      "avatar_voidbound_entity",
+      "avatar_inferno_crown_f",
+      "avatar_inferno_crown_m",
+      "avatar_golden_menace",
+      "avatar_astral_archon"
+    ],
+    cardBack: ["void_card_back", "elemental_chest_cardback"],
+    background: ["void_altar_background", "lava_throne_background", "bg_celestial_observatory"],
+    elementCardVariant: ["fire_variant_crownfire"]
+  };
 
-  assert.equal(
-    store.catalog.avatar.some((item) => item.id === "avatar_voidbound_entity"),
-    false
-  );
-  assert.equal(
-    store.catalog.cardBack.some((item) => item.id === "void_card_back"),
-    false
-  );
+  for (const [type, ids] of Object.entries(approvedRotationOnlyIds)) {
+    for (const id of ids) {
+      assert.equal(
+        store.catalog[type].some((item) => item.id === id),
+        false,
+        `${type}:${id} should stay out of the normal store catalog`
+      );
+    }
+  }
 });
 
 test("state: featured rotation catalog can expose approved rotationOnly items while keeping storeHidden items blocked", () => {
@@ -414,16 +427,35 @@ test("state: featured rotation catalog can expose approved rotationOnly items wh
       }
     },
     {
-      allowLimitedCosmeticIds: ["avatar_voidbound_entity", "void_card_back", "supporter_card_back"]
+      allowLimitedCosmeticIds: [
+        "avatar_voidbound_entity",
+        "void_card_back",
+        "void_altar_background",
+        "avatar_inferno_crown_f",
+        "avatar_inferno_crown_m",
+        "fire_variant_crownfire",
+        "lava_throne_background",
+        "avatar_golden_menace",
+        "avatar_astral_archon",
+        "bg_celestial_observatory",
+        "elemental_chest_cardback",
+        "supporter_card_back"
+      ]
     }
   );
 
+  assert.equal(featuredCatalog.avatar.some((item) => item.id === "avatar_voidbound_entity"), true);
+  assert.equal(featuredCatalog.avatar.some((item) => item.id === "avatar_inferno_crown_f"), true);
+  assert.equal(featuredCatalog.avatar.some((item) => item.id === "avatar_inferno_crown_m"), true);
+  assert.equal(featuredCatalog.avatar.some((item) => item.id === "avatar_golden_menace"), true);
+  assert.equal(featuredCatalog.avatar.some((item) => item.id === "avatar_astral_archon"), true);
+  assert.equal(featuredCatalog.cardBack.some((item) => item.id === "void_card_back"), true);
+  assert.equal(featuredCatalog.cardBack.some((item) => item.id === "elemental_chest_cardback"), true);
+  assert.equal(featuredCatalog.background.some((item) => item.id === "void_altar_background"), true);
+  assert.equal(featuredCatalog.background.some((item) => item.id === "lava_throne_background"), true);
+  assert.equal(featuredCatalog.background.some((item) => item.id === "bg_celestial_observatory"), true);
   assert.equal(
-    featuredCatalog.avatar.some((item) => item.id === "avatar_voidbound_entity"),
-    true
-  );
-  assert.equal(
-    featuredCatalog.cardBack.some((item) => item.id === "void_card_back"),
+    featuredCatalog.elementCardVariant.some((item) => item.id === "fire_variant_crownfire"),
     true
   );
   assert.equal(
@@ -432,23 +464,54 @@ test("state: featured rotation catalog can expose approved rotationOnly items wh
   );
 });
 
+test("state: Founder Pack, Level Rewards, Achievement Rewards, and Starter Set remain non-rotationOnly", () => {
+  const starterAndProtectedIds = [
+    ["avatar", "default_avatar"],
+    ["cardBack", "default_card_back"],
+    ["background", "default_background"],
+    ["elementCardVariant", "default_fire_card"],
+    ["badge", "none"],
+    ["title", "Initiate"],
+    ["cardBack", "founder_deluxe_card_back"],
+    ["badge", "supporter_badge"],
+    ["title", "Arena Founder"],
+    ["title", "title_apprentice"],
+    ["avatar", "avatar_novice_mage"],
+    ["badge", "badge_element_initiate"],
+    ["badge", "war_machine_badge"],
+    ["title", "Flame Vanguard"]
+  ];
+
+  for (const [type, id] of starterAndProtectedIds) {
+    const entry = COSMETIC_CATALOG[type].find((item) => item.id === id);
+    assert.ok(entry, `expected protected catalog entry for ${type}:${id}`);
+    assert.equal(entry.rotationOnly ?? false, false, `${type}:${id} should not be rotationOnly`);
+  }
+});
+
 test("state: owned rotationOnly cosmetics remain visible in the owned cosmetics catalog", () => {
   const cosmetics = getCosmeticCatalogForProfile({
     username: "RotationOwner",
     ownedCosmetics: {
-      avatar: ["default_avatar", "avatar_voidbound_entity"],
-      background: ["default_background"],
-      cardBack: ["default_card_back", "void_card_back"],
-      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      avatar: ["default_avatar", "avatar_voidbound_entity", "avatar_inferno_crown_f"],
+      background: ["default_background", "void_altar_background"],
+      cardBack: ["default_card_back", "void_card_back", "elemental_chest_cardback"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card",
+        "fire_variant_crownfire"
+      ],
       badge: ["none"],
       title: ["Initiate"]
     },
     equippedCosmetics: {
       avatar: "avatar_voidbound_entity",
-      background: "default_background",
+      background: "void_altar_background",
       cardBack: "void_card_back",
       elementCardVariant: {
-        fire: "default_fire_card",
+        fire: "fire_variant_crownfire",
         water: "default_water_card",
         earth: "default_earth_card",
         wind: "default_wind_card"
@@ -472,6 +535,26 @@ test("state: owned rotationOnly cosmetics remain visible in the owned cosmetics 
   );
   assert.equal(
     cosmetics.cardBack.find((item) => item.id === "void_card_back")?.equipped,
+    true
+  );
+  assert.equal(
+    cosmetics.background.find((item) => item.id === "void_altar_background")?.owned,
+    true
+  );
+  assert.equal(
+    cosmetics.background.find((item) => item.id === "void_altar_background")?.equipped,
+    true
+  );
+  assert.equal(
+    cosmetics.cardBack.find((item) => item.id === "elemental_chest_cardback")?.owned,
+    true
+  );
+  assert.equal(
+    cosmetics.elementCardVariant.find((item) => item.id === "fire_variant_crownfire")?.owned,
+    true
+  );
+  assert.equal(
+    cosmetics.elementCardVariant.find((item) => item.id === "fire_variant_crownfire")?.equipped,
     true
   );
 });

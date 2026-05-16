@@ -701,7 +701,7 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.match(html, /Fairy Prince/);
   assert.match(html, /Fairy Princess/);
   assert.match(html, /Infernal Rift/);
-  assert.match(html, /Celestial Observatory/);
+  assert.doesNotMatch(html, /Celestial Observatory/);
   assert.match(html, /Verdant Overgrowth/);
   assert.match(html, /cosmetic-item-cardBack cosmetic-item-framed rarity-epic/);
   assert.match(html, /cosmetic-item-avatar cosmetic-item-framed rarity-epic/);

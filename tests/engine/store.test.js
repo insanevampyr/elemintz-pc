@@ -463,14 +463,19 @@ test("store: rarity metadata and stage 2 prices are set correctly", async () => 
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const store = await state.getStore("RarityUser");
+  const cosmetics = await state.getCosmetics("RarityUser");
 
   const byType = (type) => new Map((store.catalog[type] ?? []).map((item) => [item.id, item]));
+  const cosmeticByType = (type) => new Map((cosmetics.catalog[type] ?? []).map((item) => [item.id, item]));
   const avatars = byType("avatar");
   const backs = byType("cardBack");
   const backgrounds = byType("background");
   const variants = byType("elementCardVariant");
   const titles = byType("title");
   const badges = byType("badge");
+  const cosmeticAvatars = cosmeticByType("avatar");
+  const cosmeticBackgrounds = cosmeticByType("background");
+  const cosmeticVariants = cosmeticByType("elementCardVariant");
 
   assert.equal(avatars.get("fire_avatar_m")?.rarity, "Rare");
   assert.equal(avatars.get("fire_avatar_m")?.price, 300);
@@ -504,14 +509,16 @@ test("store: rarity metadata and stage 2 prices are set correctly", async () => 
   assert.ok(!backs.has("supporter_card_back"));
   assert.equal(backs.get("default_card_back")?.image, "card_backs/default_back.jpg");
 
-  assert.equal(backgrounds.get("lava_throne_background")?.rarity, "Epic");
-  assert.equal(backgrounds.get("lava_throne_background")?.price, 700);
+  assert.ok(!backgrounds.has("lava_throne_background"));
+  assert.equal(cosmeticBackgrounds.get("lava_throne_background")?.rarity, "Epic");
+  assert.equal(cosmeticBackgrounds.get("lava_throne_background")?.price, 700);
   assert.equal(backgrounds.get("frozen_temple_background")?.rarity, "Rare");
   assert.equal(backgrounds.get("frozen_temple_background")?.price, 350);
   assert.equal(backgrounds.get("ruin_arena_background")?.rarity, "Common");
   assert.equal(backgrounds.get("ruin_arena_background")?.price, 90);
-  assert.equal(backgrounds.get("void_altar_background")?.rarity, "Legendary");
-  assert.equal(backgrounds.get("void_altar_background")?.price, 1000);
+  assert.ok(!backgrounds.has("void_altar_background"));
+  assert.equal(cosmeticBackgrounds.get("void_altar_background")?.rarity, "Legendary");
+  assert.equal(cosmeticBackgrounds.get("void_altar_background")?.price, 1000);
 
   assert.equal(avatars.get("avatar_battle_adept")?.rarity, "Rare");
   assert.equal(avatars.get("avatar_battle_adept")?.price, 300);
@@ -547,8 +554,9 @@ test("store: rarity metadata and stage 2 prices are set correctly", async () => 
   assert.equal(variants.get("earth_variant_titan")?.price, 450);
   assert.equal(variants.get("fire_variant_blue_inferno")?.rarity, "Epic");
   assert.equal(variants.get("fire_variant_blue_inferno")?.price, 450);
-  assert.equal(variants.get("fire_variant_crownfire")?.rarity, "Legendary");
-  assert.equal(variants.get("fire_variant_crownfire")?.price, 700);
+  assert.ok(!variants.has("fire_variant_crownfire"));
+  assert.equal(cosmeticVariants.get("fire_variant_crownfire")?.rarity, "Legendary");
+  assert.equal(cosmeticVariants.get("fire_variant_crownfire")?.price, 700);
   assert.equal(variants.get("fire_variant_ember_core")?.rarity, "Epic");
   assert.equal(variants.get("fire_variant_ember_core")?.price, 450);
   assert.equal(variants.get("fire_variant_transparent_flame")?.rarity, "Legendary");
@@ -602,9 +610,11 @@ test("store: new avatar and title cosmetics are purchasable and visible with exa
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const store = await state.getStore("NewCosmeticsStoreUser");
+  const cosmetics = await state.getCosmetics("NewCosmeticsStoreUser");
 
   const titles = new Map((store.catalog.title ?? []).map((item) => [item.id, item]));
   const avatars = new Map((store.catalog.avatar ?? []).map((item) => [item.id, item]));
+  const cosmeticAvatars = new Map((cosmetics.catalog.avatar ?? []).map((item) => [item.id, item]));
 
   for (const [id, rarity, price] of NEW_TITLE_EXPECTATIONS) {
     const item = titles.get(id);
@@ -618,13 +628,24 @@ test("store: new avatar and title cosmetics are purchasable and visible with exa
   }
 
   for (const [id, rarity, price] of NEW_AVATAR_EXPECTATIONS) {
-    const item = avatars.get(id);
-    assert.ok(item, `missing store avatar ${id}`);
-    assert.equal(item.purchasable, true);
-    assert.equal(item.owned, false);
-    assert.equal(item.rarity, rarity);
-    assert.equal(item.price, price);
-    assert.equal(item.releaseTag, "v0.1.6");
-    assert.equal(item.isNew, true);
+    const visibleStoreItem = avatars.get(id);
+    const catalogItem = cosmeticAvatars.get(id);
+    assert.ok(catalogItem, `missing cosmetic catalog avatar ${id}`);
+    assert.equal(catalogItem.purchasable, true);
+    assert.equal(catalogItem.owned, false);
+    assert.equal(catalogItem.rarity, rarity);
+    assert.equal(catalogItem.price, price);
+    assert.equal(catalogItem.releaseTag, "v0.1.6");
+    assert.equal(catalogItem.isNew, true);
+
+    if (id === "avatar_golden_menace") {
+      assert.equal(visibleStoreItem, undefined);
+      assert.equal(catalogItem.rotationOnly, true);
+      continue;
+    }
+
+    assert.ok(visibleStoreItem, `missing store avatar ${id}`);
+    assert.equal(visibleStoreItem.rarity, rarity);
+    assert.equal(visibleStoreItem.price, price);
   }
 });

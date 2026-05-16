@@ -329,6 +329,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: AVATAR_RARITY_PRICING.Epic
     },
     {
@@ -338,6 +339,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: AVATAR_RARITY_PRICING.Epic
     },
     {
@@ -420,6 +422,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: AVATAR_RARITY_PRICING.Legendary
     },
     {
@@ -659,6 +662,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: AVATAR_RARITY_PRICING.Legendary
     },
     {
@@ -864,6 +868,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: CARD_BACK_RARITY_PRICING.Epic
     },
     {
@@ -1118,6 +1123,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: 700
     },
     {
@@ -1163,6 +1169,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: 1000
     },
     {
@@ -1298,6 +1305,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: BACKGROUND_RARITY_PRICING.Legendary
     },
     {
@@ -1551,6 +1559,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
     },
     {

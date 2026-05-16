@@ -52,6 +52,23 @@ Important:
 - it must not remove items from the owned Cosmetics screen
 - it must not break profile display or equipped cosmetics
 
+## Currently Approved Rotation-Only Items
+The current approved `rotationOnly` list is:
+
+- `avatar_voidbound_entity`
+- `void_card_back`
+- `void_altar_background`
+- `avatar_inferno_crown_f`
+- `avatar_inferno_crown_m`
+- `fire_variant_crownfire`
+- `lava_throne_background`
+- `avatar_golden_menace`
+- `avatar_astral_archon`
+- `bg_celestial_observatory`
+- `elemental_chest_cardback`
+
+Changes to this list should remain manual business/design decisions.
+
 ## Difference Between Collection, Featured Rotation, Limited / Rotation-Only, and Announcement
 
 ### Collection
