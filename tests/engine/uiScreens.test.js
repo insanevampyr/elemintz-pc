@@ -6109,6 +6109,112 @@ test("ui: menu shows Daily Login section above the Challenges heading", () => {
   assert.ok(html.indexOf("Daily Login Reward") < html.indexOf("<h3 class=\"section-title\">Challenges</h3>"));
 });
 
+test("ui: menu renders the highest-priority announcement card above daily login", () => {
+  const html = menuScreen.render({
+    username: "AnnouncementUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: {
+      id: "patch-2-1-9",
+      title: "v2.1.9 Patch Live",
+      message: "Fixed the Profile reward popup loop reported by Bane.",
+      type: "patch",
+      dismissible: true
+    },
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-menu-announcement-card="true"/);
+  assert.match(html, /Announcement/);
+  assert.match(html, /v2\.1\.9 Patch Live/);
+  assert.match(html, /Fixed the Profile reward popup loop reported by Bane\./);
+  assert.match(html, /menu-announcement-card__type">patch</);
+  assert.match(html, /id="dismiss-announcement-btn"/);
+  assert.ok(html.indexOf('data-menu-announcement-card="true"') < html.indexOf('data-menu-daily-login-panel="true"'));
+});
+
+test("ui: menu renders no empty announcement shell when there is no active announcement", () => {
+  const html = menuScreen.render({
+    username: "AnnouncementUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: null,
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.doesNotMatch(html, /data-menu-announcement-card="true"/);
+});
+
+test("ui: menu announcement dismiss button binds to the dismiss action with the announcement id", async () => {
+  const previousDocument = global.document;
+  const dismissCalls = [];
+  const elements = {
+    "start-pve-btn": createFakeElement(),
+    "start-local-btn": createFakeElement(),
+    "online-play-btn": createFakeElement(),
+    "profile-btn": createFakeElement(),
+    "achievements-btn": createFakeElement(),
+    "open-daily-challenges-btn": createFakeElement(),
+    "cosmetics-btn": createFakeElement(),
+    "store-btn": createFakeElement(),
+    "settings-btn": createFakeElement(),
+    "feedback-btn": createFakeElement(),
+    "logout-btn": createFakeElement(),
+    "switch-account-btn": createFakeElement(),
+    "dismiss-announcement-btn": {
+      dataset: { announcementId: "patch-2-1-9" },
+      listeners: new Map(),
+      addEventListener(type, handler) {
+        this.listeners.set(type, handler);
+      }
+    }
+  };
+
+  global.document = {
+    getElementById: (id) => elements[id] ?? null
+  };
+
+  try {
+    menuScreen.bind({
+      actions: {
+        startPveGame: () => {},
+        startLocalGame: () => {},
+        openOnlinePlay: async () => {},
+        openProfile: async () => {},
+        openAchievements: async () => {},
+        openDailyChallenges: async () => {},
+        openCosmetics: async () => {},
+        openStore: async () => {},
+        openSettings: async () => {},
+        openFeedback: () => {},
+        logout: () => {},
+        switchAccount: () => {},
+        dismissAnnouncement: async (id) => dismissCalls.push(id)
+      }
+    });
+
+    await elements["dismiss-announcement-btn"].listeners.get("click")();
+
+    assert.deepEqual(dismissCalls, ["patch-2-1-9"]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: daily challenges screen shows weekly reset with day format", () => {
   const html = dailyChallengesScreen.render({
     tokens: 5,

@@ -15,6 +15,7 @@ import {
 } from "../../src/multiplayer/foundation.js";
 import { createTimestampedLogger } from "../../src/multiplayer/logger.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
+import { AnnouncementStore } from "../../src/multiplayer/announcementStore.js";
 import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { createRoomStore, getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
@@ -487,6 +488,264 @@ test("multiplayer foundation: room:listPublic always acks a readable auth failur
     }
   } finally {
     await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: announcements:list returns an empty list safely when announcements.json is missing", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const announcementStore = new AnnouncementStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} },
+    announcementStore
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "AnnouncementUser");
+
+      const response = await new Promise((resolve) => {
+        client.emit("announcements:list", {}, resolve);
+      });
+
+      assert.equal(response?.ok, true);
+      assert.deepEqual(response?.result?.announcements, []);
+      assert.deepEqual(response?.result?.snapshot?.profile?.seenAnnouncements ?? {}, {});
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: announcements:list ignores malformed JSON and filters active announcements by priority", async () => {
+  const dataDir = await createTempDataDir();
+  const malformedPath = path.join(dataDir, "server-data", "announcements.json");
+  await fs.mkdir(path.dirname(malformedPath), { recursive: true });
+  await fs.writeFile(malformedPath, "{not-json", "utf8");
+
+  const coordinator = new StateCoordinator({ dataDir });
+  const announcementStore = new AnnouncementStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} },
+    announcementStore
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "AnnouncementUser");
+
+      const malformedResponse = await new Promise((resolve) => {
+        client.emit("announcements:list", {}, resolve);
+      });
+
+      assert.equal(malformedResponse?.ok, true);
+      assert.deepEqual(malformedResponse?.result?.announcements, []);
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+  }
+
+  await fs.writeFile(
+    malformedPath,
+    JSON.stringify([
+      {
+        id: "patch-low",
+        title: "Patch Low",
+        message: "Lower priority active announcement.",
+        type: "patch",
+        priority: 1,
+        active: true,
+        dismissible: true,
+        startsAt: null,
+        endsAt: null
+      },
+      {
+        id: "patch-top",
+        title: "Patch Top",
+        message: "Highest priority visible announcement.",
+        type: "patch",
+        priority: 10,
+        active: true,
+        dismissible: true,
+        startsAt: null,
+        endsAt: null
+      },
+      {
+        id: "inactive",
+        title: "Inactive",
+        message: "Should not render.",
+        active: false
+      },
+      {
+        id: "future",
+        title: "Future",
+        message: "Starts later.",
+        active: true,
+        startsAt: "2099-01-01T00:00:00.000Z"
+      },
+      {
+        id: "expired",
+        title: "Expired",
+        message: "Already ended.",
+        active: true,
+        endsAt: "2020-01-01T00:00:00.000Z"
+      }
+    ]),
+    "utf8"
+  );
+
+  const filteredCoordinator = new StateCoordinator({ dataDir });
+  await filteredCoordinator.profiles.updateProfile("DismissedUser", (current) => ({
+    ...current,
+    username: "DismissedUser",
+    seenAnnouncements: {
+      ...(current?.seenAnnouncements ?? {}),
+      "announcement:patch-top": true
+    }
+  }));
+  const filteredAuthority = new MultiplayerProfileAuthority({
+    coordinator: filteredCoordinator,
+    logger: { info: () => {} },
+    announcementStore: new AnnouncementStore({
+      dataDir,
+      logger: { warn: () => {} }
+    })
+  });
+  const filteredFoundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority: filteredAuthority,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await filteredFoundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "DismissedUser");
+
+      const response = await new Promise((resolve) => {
+        client.emit("announcements:list", {}, resolve);
+      });
+
+      assert.equal(response?.ok, true);
+      assert.deepEqual(
+        response?.result?.announcements?.map((announcement) => announcement.id),
+        ["patch-low"]
+      );
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await filteredFoundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: announcements:dismiss persists seenAnnouncements and hides the dismissed announcement", async () => {
+  const dataDir = await createTempDataDir();
+  const announcementsPath = path.join(dataDir, "server-data", "announcements.json");
+  await fs.mkdir(path.dirname(announcementsPath), { recursive: true });
+  await fs.writeFile(
+    announcementsPath,
+    JSON.stringify([
+      {
+        id: "patch-2-1-9",
+        title: "v2.1.9 Patch Live",
+        message: "Fixed the Profile reward popup loop reported by Bane.",
+        type: "patch",
+        priority: 10,
+        active: true,
+        dismissible: true,
+        startsAt: null,
+        endsAt: null
+      }
+    ]),
+    "utf8"
+  );
+
+  const coordinator = new StateCoordinator({ dataDir });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} },
+    announcementStore: new AnnouncementStore({
+      dataDir,
+      logger: { warn: () => {} }
+    })
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "AnnouncementUser");
+
+      const beforeDismiss = await new Promise((resolve) => {
+        client.emit("announcements:list", {}, resolve);
+      });
+      assert.deepEqual(
+        beforeDismiss?.result?.announcements?.map((announcement) => announcement.id),
+        ["patch-2-1-9"]
+      );
+
+      const dismissResponse = await new Promise((resolve) => {
+        client.emit("announcements:dismiss", { id: "patch-2-1-9" }, resolve);
+      });
+
+      assert.equal(dismissResponse?.ok, true);
+      assert.equal(
+        dismissResponse?.result?.snapshot?.profile?.seenAnnouncements?.["announcement:patch-2-1-9"],
+        true
+      );
+      assert.deepEqual(dismissResponse?.result?.announcements, []);
+
+      const afterDismiss = await new Promise((resolve) => {
+        client.emit("announcements:list", {}, resolve);
+      });
+
+      assert.equal(afterDismiss?.ok, true);
+      assert.deepEqual(afterDismiss?.result?.announcements, []);
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
 

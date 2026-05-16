@@ -1276,6 +1276,57 @@ body {
   gap: 6px;
 }
 
+.menu-announcement-card {
+  border: 1px solid rgba(155, 203, 237, 0.28);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(20, 45, 68, 0.88), rgba(11, 28, 44, 0.92));
+  padding: 12px 13px;
+  display: grid;
+  gap: 8px;
+}
+
+.menu-announcement-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.menu-announcement-card__label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #f8d58d;
+}
+
+.menu-announcement-card__type {
+  border: 1px solid rgba(155, 203, 237, 0.28);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #d7edff;
+  background: rgba(9, 22, 36, 0.35);
+}
+
+.menu-announcement-card__title {
+  margin: 0;
+}
+
+.menu-announcement-card__message {
+  margin: 0;
+  color: #d7edff;
+  overflow-wrap: anywhere;
+}
+
+.menu-announcement-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .menu-daily-login p {
   margin: 0;
   color: #d7edff;

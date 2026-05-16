@@ -87,9 +87,10 @@ function buildProfileSnapshot({ profile, challenges }) {
 }
 
 export class MultiplayerProfileAuthority {
-  constructor({ coordinator = null, logger = console, ...options } = {}) {
+  constructor({ coordinator = null, logger = console, announcementStore = null, ...options } = {}) {
     this.coordinator = coordinator ?? new StateCoordinator(options);
     this.logger = logger;
+    this.announcementStore = announcementStore;
     this.founderGrantFlights = new Map();
   }
 
@@ -217,6 +218,55 @@ export class MultiplayerProfileAuthority {
       key: safeKey,
       seen: Boolean(snapshot?.profile?.seenAnnouncements?.[safeKey]),
       snapshot
+    };
+  }
+
+  async listAnnouncements(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative announcement access.");
+    }
+    if (!this.announcementStore) {
+      throw new Error("Server announcement store is not available.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] listAnnouncements -> ${safeUsername}`);
+    const snapshot = await this.getProfile(safeUsername);
+    const announcements = await this.announcementStore.listActiveAnnouncements({
+      seenAnnouncements: snapshot?.profile?.seenAnnouncements ?? {}
+    });
+    return {
+      announcements,
+      snapshot
+    };
+  }
+
+  async dismissAnnouncement({ username, id }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    const safeId = String(id ?? "").trim();
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative announcement dismissal.");
+    }
+    if (!safeId) {
+      throw new Error("announcement id is required for server-authoritative dismissal.");
+    }
+    if (!this.announcementStore) {
+      throw new Error("Server announcement store is not available.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] dismissAnnouncement -> ${safeUsername} (${safeId})`);
+    const result = await this.acknowledgeAnnouncement({
+      username: safeUsername,
+      key: `announcement:${safeId}`
+    });
+    const snapshot = result?.snapshot ?? (await this.getProfile(safeUsername));
+    const announcements = await this.announcementStore.listActiveAnnouncements({
+      seenAnnouncements: snapshot?.profile?.seenAnnouncements ?? {}
+    });
+    return {
+      id: safeId,
+      snapshot,
+      announcements
     };
   }
 

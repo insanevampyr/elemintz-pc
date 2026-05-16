@@ -5,6 +5,7 @@ import { MultiplayerAccountStore } from "./accountStore.js";
 import { AdminGrantStore } from "../state/adminGrantStore.js";
 import { createTimestampedLogger } from "./logger.js";
 import { FeedbackStore } from "./feedbackStore.js";
+import { AnnouncementStore } from "./announcementStore.js";
 import os from "node:os";
 import path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
@@ -31,9 +32,14 @@ function resolveStandaloneDataDir() {
 const stateCoordinator = new StateCoordinator({
   dataDir: resolveStandaloneDataDir()
 });
+const announcementStore = new AnnouncementStore({
+  dataDir: resolveStandaloneDataDir(),
+  logger
+});
 const profileAuthority = new MultiplayerProfileAuthority({
   coordinator: stateCoordinator,
-  logger
+  logger,
+  announcementStore
 });
 const accountStore = new MultiplayerAccountStore({
   dataDir: resolveStandaloneDataDir(),

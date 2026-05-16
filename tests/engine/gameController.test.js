@@ -2758,6 +2758,118 @@ test("appController: menu online play action opens the online play screen", asyn
   }
 });
 
+test("appController: menu announcements fetch and dismiss through the multiplayer profile path", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    listAnnouncements: [],
+    dismissAnnouncement: []
+  };
+  let renderCount = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async ({ username }) => ({
+            authority: "server",
+            source: "multiplayer",
+            profile: {
+              username,
+              equippedCosmetics: {}
+            },
+            progression: {}
+          }),
+          listAnnouncements: async ({ username }) => {
+            calls.listAnnouncements.push({ username });
+            return {
+              announcements: [
+                {
+                  id: "patch-2-1-9",
+                  title: "v2.1.9 Patch Live",
+                  message: "Fixed the Profile reward popup loop reported by Bane.",
+                  type: "patch",
+                  priority: 10,
+                  dismissible: true
+                }
+              ],
+              snapshot: {
+                authority: "server",
+                source: "multiplayer",
+                profile: {
+                  username,
+                  seenAnnouncements: {}
+                },
+                progression: {}
+              }
+            };
+          },
+          dismissAnnouncement: async ({ username, id }) => {
+            calls.dismissAnnouncement.push({ username, id });
+            return {
+              announcements: [],
+              snapshot: {
+                authority: "server",
+                source: "multiplayer",
+                profile: {
+                  username,
+                  seenAnnouncements: {
+                    [`announcement:${id}`]: true
+                  }
+                },
+                progression: {}
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "AnnouncementUser";
+    app.profile = {
+      username: "AnnouncementUser",
+      equippedCosmetics: { background: "default_background" },
+      seenAnnouncements: {}
+    };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "AnnouncementUser"
+      }
+    });
+    app.screenFlow = "menu";
+    app.renderMenuScreen = () => {
+      renderCount += 1;
+    };
+
+    await app.refreshMenuAnnouncement();
+
+    assert.deepEqual(calls.listAnnouncements, [{ username: "AnnouncementUser" }]);
+    assert.equal(app.menuAnnouncement?.id, "patch-2-1-9");
+    assert.equal(renderCount, 1);
+
+    await app.dismissMenuAnnouncement("patch-2-1-9");
+
+    assert.deepEqual(calls.dismissAnnouncement, [
+      { username: "AnnouncementUser", id: "patch-2-1-9" }
+    ]);
+    assert.equal(app.menuAnnouncement, null);
+    assert.equal(app.profile?.seenAnnouncements?.["announcement:patch-2-1-9"], true);
+    assert.equal(renderCount, 2);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online play create join submit-move and ready-rematch actions use the multiplayer bridge", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];

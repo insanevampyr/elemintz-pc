@@ -13,6 +13,15 @@ const MENU_TILE_IMAGE_MAP = Object.freeze({
   "logout-btn": "menu_tiles/tile_logout.png"
 });
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderChallengeLine(item, iconText) {
   const progress = Math.max(0, Number(item?.progress ?? 0));
   const goal = Math.max(1, Number(item?.goal ?? 1));
@@ -112,6 +121,40 @@ export function renderMenuDailyLoginStatus(status) {
   `;
 }
 
+function renderMenuAnnouncementCard(announcement) {
+  if (!announcement) {
+    return "";
+  }
+
+  const type = String(announcement.type ?? "").trim();
+  return `
+    <section class="menu-announcement-card" data-menu-announcement-card="true">
+      <div class="menu-announcement-card__header">
+        <span class="menu-announcement-card__label">Announcement</span>
+        ${type ? `<span class="menu-announcement-card__type">${escapeHtml(type)}</span>` : ""}
+      </div>
+      <div class="stack-xs">
+        <h3 class="section-title menu-announcement-card__title">${escapeHtml(announcement.title)}</h3>
+        <p class="menu-announcement-card__message">${escapeHtml(announcement.message)}</p>
+      </div>
+      ${
+        announcement.dismissible !== false
+          ? `<div class="menu-announcement-card__actions">
+              <button
+                id="dismiss-announcement-btn"
+                class="btn btn-secondary"
+                type="button"
+                data-announcement-id="${escapeHtml(announcement.id)}"
+              >
+                Dismiss
+              </button>
+            </div>`
+          : ""
+      }
+    </section>
+  `;
+}
+
 export const menuScreen = {
   render(context) {
     return `
@@ -137,6 +180,7 @@ export const menuScreen = {
                 ${renderMenuTile("logout-btn", "Logout")}
               </div>
               <aside class="panel stack-sm daily-panel">
+                ${renderMenuAnnouncementCard(context.announcement)}
                 <div data-menu-daily-login-panel="true">
                   ${renderMenuDailyLoginStatus(context.dailyChallenges?.dailyLogin)}
                 </div>
@@ -176,5 +220,11 @@ export const menuScreen = {
     document.getElementById("feedback-btn").addEventListener("click", context.actions.openFeedback);
     document.getElementById("switch-account-btn").addEventListener("click", context.actions.switchAccount);
     document.getElementById("logout-btn").addEventListener("click", context.actions.logout);
+    const dismissAnnouncementButton = document.getElementById("dismiss-announcement-btn");
+    if (dismissAnnouncementButton) {
+      dismissAnnouncementButton.addEventListener("click", () =>
+        context.actions.dismissAnnouncement(dismissAnnouncementButton.dataset.announcementId)
+      );
+    }
   }
 };

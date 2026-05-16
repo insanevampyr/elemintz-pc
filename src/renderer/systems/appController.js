@@ -173,6 +173,7 @@ export class AppController {
     this.aiLastTauntEventKey = null;
     this.activeAnnouncementKey = null;
     this.seenAnnouncementSessionFlags = new Set();
+    this.menuAnnouncement = null;
     this.tauntRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
     this.storeViewState = this.createDefaultStoreViewState();
@@ -1309,6 +1310,7 @@ export class AppController {
     this.screenManager.show("menu", {
       username: this.username,
       backgroundImage: this.getBackgroundFromProfile(this.profile),
+      announcement: this.menuAnnouncement,
       dailyChallenges: this.dailyChallenges
         ? {
             dailyLogin,
@@ -1333,10 +1335,70 @@ export class AppController {
         openStore: async () => this.showStore(),
         openSettings: async () => this.showSettings(),
         openFeedback: () => this.showFeedbackModal(),
+        dismissAnnouncement: async (id) => this.dismissMenuAnnouncement(id),
         switchAccount: async () => this.logoutToLogin({ noticeMessage: "Signed out. Sign in with another account." }),
         logout: async () => this.logoutToLogin({ noticeMessage: "Signed out." })
       }
     });
+  }
+
+  async refreshMenuAnnouncement() {
+    if (!this.username || !this.hasMultiplayerProfileAccess() || !window.elemintz?.multiplayer?.listAnnouncements) {
+      const changed = this.menuAnnouncement !== null;
+      this.menuAnnouncement = null;
+      if (changed && this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+      return null;
+    }
+
+    try {
+      const result = await window.elemintz.multiplayer.listAnnouncements({
+        username: this.username
+      });
+      const snapshot = result?.snapshot ?? null;
+      if (snapshot) {
+        this.profile = this.mergeServerOwnedProfileDomains(this.profile ?? {}, snapshot);
+      }
+
+      const announcement = Array.isArray(result?.announcements) ? result.announcements[0] ?? null : null;
+      this.menuAnnouncement = announcement;
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+      return announcement;
+    } catch (error) {
+      console.warn("[Announcements] Failed to refresh menu announcement", {
+        username: this.username,
+        message: error?.message,
+        stack: error?.stack
+      });
+      this.menuAnnouncement = null;
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+      return null;
+    }
+  }
+
+  async dismissMenuAnnouncement(id) {
+    const safeId = String(id ?? "").trim();
+    if (!safeId || !this.username || !this.hasMultiplayerProfileAccess() || !window.elemintz?.multiplayer?.dismissAnnouncement) {
+      return null;
+    }
+
+    const result = await window.elemintz.multiplayer.dismissAnnouncement({
+      username: this.username,
+      id: safeId
+    });
+    if (result?.snapshot) {
+      this.profile = this.mergeServerOwnedProfileDomains(this.profile ?? {}, result.snapshot);
+    }
+    this.menuAnnouncement = Array.isArray(result?.announcements) ? result.announcements[0] ?? null : null;
+    if (this.screenFlow === "menu") {
+      this.renderMenuScreen();
+    }
+    return result;
   }
 
   buildFeedbackModalHtml({
@@ -4991,6 +5053,7 @@ export class AppController {
     this.renderMenuScreen();
     this.updateOnlineReconnectReminderModal();
     this.refreshDailyChallengesForMenu();
+    this.refreshMenuAnnouncement();
     Promise.resolve().then(() => this.releaseQueuedAdminGrantNotice(this.onlinePlayState));
     Promise.resolve().then(async () => {
       await this.maybeShowLoadoutUnlockNotice();

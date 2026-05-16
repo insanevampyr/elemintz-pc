@@ -480,6 +480,62 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "announcements:list") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            announcements: [
+              {
+                id: "patch-2-1-9",
+                title: "v2.1.9 Patch Live",
+                message: "Fixed the Profile reward popup loop reported by Bane.",
+                type: "patch",
+                priority: 10,
+                active: true,
+                dismissible: true,
+                startsAt: null,
+                endsAt: null
+              }
+            ],
+            snapshot: {
+              authority: "server",
+              source: "multiplayer",
+              profile: {
+                username: this.sessionUsername ?? payload?.username ?? null,
+                seenAnnouncements: {}
+              },
+              progression: {}
+            }
+          }
+        });
+      });
+    }
+
+    if (eventName === "announcements:dismiss") {
+      queueMicrotask(() => {
+        const dismissedId = payload?.id ?? "patch-2-1-9";
+        ack?.({
+          ok: true,
+          result: {
+            id: dismissedId,
+            announcements: [],
+            snapshot: {
+              authority: "server",
+              source: "multiplayer",
+              profile: {
+                username: this.sessionUsername ?? payload?.username ?? null,
+                seenAnnouncements: {
+                  [`announcement:${dismissedId}`]: true
+                }
+              },
+              progression: {}
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:claimDailyLoginReward") {
       queueMicrotask(() => {
         ack?.({
@@ -1194,6 +1250,67 @@ test("multiplayer client: server profile requests return authoritative snapshots
   assert.equal(snapshot?.authority, "server");
   assert.equal(snapshot?.profile?.username, "ServerOwnedUser");
   assert.equal(snapshot?.progression?.xp?.playerXP, 18);
+});
+
+test("multiplayer client: announcements list returns active server announcements", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.listAnnouncements({
+    username: "AnnouncementUser"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "AnnouncementUser"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "announcements:list",
+    payload: {}
+  });
+  assert.equal(result?.announcements?.[0]?.id, "patch-2-1-9");
+  assert.equal(result?.snapshot?.profile?.username, "AnnouncementUser");
+});
+
+test("multiplayer client: announcement dismiss returns updated seen state and next announcement list", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.dismissAnnouncement({
+    username: "AnnouncementUser",
+    id: "patch-2-1-9"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "AnnouncementUser"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "announcements:dismiss",
+    payload: {
+      id: "patch-2-1-9"
+    }
+  });
+  assert.equal(result?.snapshot?.profile?.seenAnnouncements?.["announcement:patch-2-1-9"], true);
+  assert.deepEqual(result?.announcements, []);
 });
 
 test("multiplayer client: authoritative daily login claims return updated server profile state", async () => {

@@ -89,6 +89,8 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.updates.reportPromptEvent, "function");
   assert.equal(typeof bridge.multiplayer.getState, "function");
   assert.equal(typeof bridge.multiplayer.listPublicRooms, "function");
+  assert.equal(typeof bridge.multiplayer.listAnnouncements, "function");
+  assert.equal(typeof bridge.multiplayer.dismissAnnouncement, "function");
   assert.equal(typeof bridge.multiplayer.acknowledgeMilestoneChestReward, "function");
   assert.equal(typeof bridge.multiplayer.submitFeedback, "function");
 
@@ -96,14 +98,18 @@ test("preload bridge remains available when version falls back", async () => {
   await bridge.updates.getState();
   await bridge.updates.reportPromptEvent({ type: "install_prompt_shown", version: "2.1.5" });
   await bridge.multiplayer.listPublicRooms({ username: "VampyrLee" });
+  await bridge.multiplayer.listAnnouncements({ username: "VampyrLee" });
+  await bridge.multiplayer.dismissAnnouncement({ username: "VampyrLee", id: "patch-2-1-9" });
   await bridge.multiplayer.acknowledgeMilestoneChestReward({ username: "RewardHero", level: 5 });
   await bridge.multiplayer.submitFeedback({ category: "Bug / Error", message: "Hello" });
 
-  assert.deepEqual(ipcRenderer.invocations.slice(0, 6), [
+  assert.deepEqual(ipcRenderer.invocations.slice(0, 8), [
     { channel: "state:getSettings", payload: undefined },
     { channel: "updates:getState", payload: undefined },
     { channel: "updates:reportPromptEvent", payload: { type: "install_prompt_shown", version: "2.1.5" } },
     { channel: "multiplayer:listPublicRooms", payload: { username: "VampyrLee" } },
+    { channel: "multiplayer:listAnnouncements", payload: { username: "VampyrLee" } },
+    { channel: "multiplayer:dismissAnnouncement", payload: { username: "VampyrLee", id: "patch-2-1-9" } },
     { channel: "multiplayer:acknowledgeMilestoneChestReward", payload: { username: "RewardHero", level: 5 } },
     { channel: "multiplayer:submitFeedback", payload: { category: "Bug / Error", message: "Hello" } }
   ]);

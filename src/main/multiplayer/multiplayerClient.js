@@ -2116,6 +2116,24 @@ export class MultiplayerClient {
     return response.profile ?? null;
   }
 
+  async listAnnouncements({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("announcements:list", { username }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load announcements.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async dismissAnnouncement({ username, id, serverUrl } = {}) {
+    const response = await this.runServerRequest("announcements:dismiss", { username, id }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to dismiss the announcement.");
+    }
+
+    return response.result ?? null;
+  }
+
   async getCosmetics({ username, serverUrl } = {}) {
     const response = await this.runServerRequest("profile:getCosmetics", { username }, { serverUrl });
     if (!response?.ok) {

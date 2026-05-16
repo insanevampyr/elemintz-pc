@@ -2277,6 +2277,83 @@ export function createMultiplayerFoundation({
         }
       });
 
+      socket.on("announcements:list", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof profileAuthority?.listAnnouncements !== "function") {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            }
+          });
+          return;
+        }
+
+        try {
+          const result = await profileAuthority.listAnnouncements(
+            sessionResult.session?.profileKey ?? sessionResult.session?.username
+          );
+          respond({
+            ok: true,
+            result
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "ANNOUNCEMENTS_LIST_FAILED",
+              message: String(error?.message ?? "Unable to load announcements.")
+            }
+          });
+        }
+      });
+
+      socket.on("announcements:dismiss", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof profileAuthority?.dismissAnnouncement !== "function") {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            }
+          });
+          return;
+        }
+
+        try {
+          const result = await profileAuthority.dismissAnnouncement({
+            ...payload,
+            username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+          });
+          respond({
+            ok: true,
+            result
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "ANNOUNCEMENT_DISMISS_FAILED",
+              message: String(error?.message ?? "Unable to dismiss the announcement.")
+            }
+          });
+        }
+      });
+
       socket.on("profile:claimDailyLoginReward", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
         const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });

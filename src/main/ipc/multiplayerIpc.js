@@ -74,6 +74,16 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getProfile(payload);
   });
 
+  ipcMain.handle("multiplayer:listAnnouncements", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.listAnnouncements(payload);
+  });
+
+  ipcMain.handle("multiplayer:dismissAnnouncement", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.dismissAnnouncement(payload);
+  });
+
   ipcMain.handle("multiplayer:getCosmetics", async (event, payload) => {
     subscribers.add(event.sender);
     return client.getCosmetics(payload);
