@@ -403,6 +403,19 @@ test("ui: store screen renders a featured rotation section above filters when ac
   assert.ok(html.indexOf("data-store-featured-section") < html.indexOf("store-toolbar"));
 });
 
+test("ui: featured rotation strip styling keeps the featured row horizontal and non-wrapping", () => {
+  const layoutCss = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\layout.css",
+    "utf8"
+  );
+
+  assert.match(layoutCss, /\.store-featured-rotation \.cosmetic-grid-featured \{/);
+  assert.match(layoutCss, /flex-wrap:\s*nowrap;/);
+  assert.match(layoutCss, /overflow-x:\s*auto;/);
+  assert.match(layoutCss, /\.store-featured-rotation \.cosmetic-grid-featured > \.cosmetic-item \{/);
+  assert.match(layoutCss, /flex:\s*0 0 clamp\(236px,\s*24vw,\s*290px\);/);
+});
+
 test("ui: cosmetics screen renders collection chips for mapped owned items and omits them for unmapped items", () => {
   const html = cosmeticsScreen.render({
     cosmetics: {
