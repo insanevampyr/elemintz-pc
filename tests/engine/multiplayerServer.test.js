@@ -772,6 +772,13 @@ test("multiplayer foundation: shopRotation:getActive parses UTF-8 BOM JSON, skip
         "cardback_void_tease",
         "missing_cosmetic_id",
         "void_card_back"
+      ],
+      allowLimitedCosmeticIds: [
+        "avatar_voidbound_entity",
+        "avatar_voidbound_entity",
+        "supporter_card_back",
+        "missing_cosmetic_id",
+        "void_card_back"
       ]
     })}`,
     "utf8"
@@ -807,6 +814,10 @@ test("multiplayer foundation: shopRotation:getActive parses UTF-8 BOM JSON, skip
         featuredCosmeticIds: [
           "avatar_voidbound_entity",
           "cardback_void_tease",
+          "void_card_back"
+        ],
+        allowLimitedCosmeticIds: [
+          "avatar_voidbound_entity",
           "void_card_back"
         ]
       });

@@ -15,12 +15,12 @@ import {
   getXpThresholds,
   normalizeProfileDailyChallenges
 } from "../../src/state/dailyChallengesSystem.js";
-import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
+import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { applyLevelRewardsForLevelChange, buildXpBreakdown, deriveLevelFromXp } from "../../src/state/levelRewardsSystem.js";
 import { MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
-import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
+import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
 
 async function createTempDataDir() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-state-"));
@@ -385,6 +385,95 @@ test("state: store background catalog includes all registered background assets 
   assert.equal(backgroundById.get("lava_throne_background").price, 700);
   assert.equal(backgroundById.get("void_altar_background").rarity, "Legendary");
   assert.equal(backgroundById.get("void_altar_background").price, 1000);
+});
+
+test("state: rotationOnly cosmetics stay out of the normal store catalog by default", () => {
+  const store = getStoreViewForProfile({ username: "RotationStoreUser" });
+
+  assert.equal(
+    store.catalog.avatar.some((item) => item.id === "avatar_voidbound_entity"),
+    false
+  );
+  assert.equal(
+    store.catalog.cardBack.some((item) => item.id === "void_card_back"),
+    false
+  );
+});
+
+test("state: featured rotation catalog can expose approved rotationOnly items while keeping storeHidden items blocked", () => {
+  const featuredCatalog = buildFeaturedRotationCatalog(
+    {
+      username: "RotationFeaturedUser",
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        background: ["default_background"],
+        cardBack: ["default_card_back"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none"],
+        title: ["Initiate"]
+      }
+    },
+    {
+      allowLimitedCosmeticIds: ["avatar_voidbound_entity", "void_card_back", "supporter_card_back"]
+    }
+  );
+
+  assert.equal(
+    featuredCatalog.avatar.some((item) => item.id === "avatar_voidbound_entity"),
+    true
+  );
+  assert.equal(
+    featuredCatalog.cardBack.some((item) => item.id === "void_card_back"),
+    true
+  );
+  assert.equal(
+    featuredCatalog.cardBack.some((item) => item.id === "supporter_card_back"),
+    false
+  );
+});
+
+test("state: owned rotationOnly cosmetics remain visible in the owned cosmetics catalog", () => {
+  const cosmetics = getCosmeticCatalogForProfile({
+    username: "RotationOwner",
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_voidbound_entity"],
+      background: ["default_background"],
+      cardBack: ["default_card_back", "void_card_back"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    equippedCosmetics: {
+      avatar: "avatar_voidbound_entity",
+      background: "default_background",
+      cardBack: "void_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "Initiate"
+    }
+  });
+
+  assert.equal(
+    cosmetics.avatar.find((item) => item.id === "avatar_voidbound_entity")?.owned,
+    true
+  );
+  assert.equal(
+    cosmetics.avatar.find((item) => item.id === "avatar_voidbound_entity")?.equipped,
+    true
+  );
+  assert.equal(
+    cosmetics.cardBack.find((item) => item.id === "void_card_back")?.owned,
+    true
+  );
+  assert.equal(
+    cosmetics.cardBack.find((item) => item.id === "void_card_back")?.equipped,
+    true
+  );
 });
 
 test("state: cosmetic catalog covers all completed on-disk avatar, background, card back, and card variant assets", async () => {

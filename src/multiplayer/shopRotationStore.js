@@ -54,7 +54,8 @@ function buildCatalogIdMap() {
       index.set(id, {
         type,
         id,
-        storeHidden: Boolean(item?.storeHidden)
+        storeHidden: Boolean(item?.storeHidden),
+        rotationOnly: Boolean(item?.rotationOnly)
       });
     }
   }
@@ -64,7 +65,7 @@ function buildCatalogIdMap() {
 
 const CATALOG_ID_MAP = buildCatalogIdMap();
 
-function normalizeFeaturedCosmeticIds(ids, logger) {
+function normalizeCosmeticIds(ids, logger, { reasonLabel = "cosmetic id" } = {}) {
   const seen = new Set();
   const normalized = [];
 
@@ -77,12 +78,12 @@ function normalizeFeaturedCosmeticIds(ids, logger) {
     seen.add(id);
     const catalogEntry = CATALOG_ID_MAP.get(id);
     if (!catalogEntry) {
-      logger?.warn?.("[ShopRotation] skipping unknown cosmetic id", { id });
+      logger?.warn?.(`[ShopRotation] skipping unknown ${reasonLabel}`, { id });
       continue;
     }
 
     if (catalogEntry.storeHidden) {
-      logger?.warn?.("[ShopRotation] skipping storeHidden cosmetic id", { id });
+      logger?.warn?.(`[ShopRotation] skipping storeHidden ${reasonLabel}`, { id });
       continue;
     }
 
@@ -95,6 +96,14 @@ function normalizeFeaturedCosmeticIds(ids, logger) {
   return normalized;
 }
 
+function normalizeFeaturedCosmeticIds(ids, logger) {
+  return normalizeCosmeticIds(ids, logger, { reasonLabel: "featured cosmetic id" });
+}
+
+function normalizeLimitedCosmeticIds(ids, logger) {
+  return normalizeCosmeticIds(ids, logger, { reasonLabel: "limited cosmetic id" });
+}
+
 function normalizeRotation(entry, logger) {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
     return null;
@@ -103,6 +112,7 @@ function normalizeRotation(entry, logger) {
   const activeRotationId = sanitizeText(entry.activeRotationId, MAX_ID_LENGTH);
   const title = sanitizeText(entry.title, MAX_TITLE_LENGTH);
   const featuredCosmeticIds = normalizeFeaturedCosmeticIds(entry.featuredCosmeticIds, logger);
+  const allowLimitedCosmeticIds = normalizeLimitedCosmeticIds(entry.allowLimitedCosmeticIds, logger);
 
   if (!activeRotationId || !SAFE_ID_PATTERN.test(activeRotationId) || !title || featuredCosmeticIds.length === 0) {
     return null;
@@ -114,7 +124,8 @@ function normalizeRotation(entry, logger) {
     message: sanitizeText(entry.message, MAX_MESSAGE_LENGTH),
     startsAt: normalizeTimestamp(entry.startsAt),
     endsAt: normalizeTimestamp(entry.endsAt),
-    featuredCosmeticIds
+    featuredCosmeticIds,
+    allowLimitedCosmeticIds
   };
 }
 
@@ -205,7 +216,8 @@ export class ShopRotationStore {
       message: rotation.message,
       startsAt: rotation.startsAt,
       endsAt: rotation.endsAt,
-      featuredCosmeticIds: [...rotation.featuredCosmeticIds]
+      featuredCosmeticIds: [...rotation.featuredCosmeticIds],
+      allowLimitedCosmeticIds: [...rotation.allowLimitedCosmeticIds]
     };
   }
 }

@@ -17,7 +17,7 @@ import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
-import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
+import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 
 function createClassList() {
@@ -403,6 +403,44 @@ test("ui: store screen renders a featured rotation section above filters when ac
   assert.ok(html.indexOf("data-store-featured-section") < html.indexOf("store-toolbar"));
 });
 
+test("ui: cosmetics screen keeps owned rotationOnly cosmetics visible and equippable", () => {
+  const html = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: getCosmeticCatalogForProfile({
+        username: "RotationOwner",
+        ownedCosmetics: {
+          avatar: ["default_avatar", "avatar_voidbound_entity"],
+          background: ["default_background"],
+          cardBack: ["default_card_back", "void_card_back"],
+          elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+          badge: ["none"],
+          title: ["Initiate"]
+        },
+        equippedCosmetics: {
+          avatar: "avatar_voidbound_entity",
+          background: "default_background",
+          cardBack: "void_card_back",
+          elementCardVariant: {
+            fire: "default_fire_card",
+            water: "default_water_card",
+            earth: "default_earth_card",
+            wind: "default_wind_card"
+          },
+          badge: "none",
+          title: "Initiate"
+        }
+      })
+    },
+    viewState: {}
+  });
+
+  assert.match(html, /Voidbound Entity/);
+  assert.match(html, /Void Card Back/);
+  assert.match(html, /Equipped: Yes/);
+});
+
 test("ui: featured rotation strip styling keeps the featured row horizontal and non-wrapping", () => {
   const layoutCss = fs.readFileSync(
     "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\layout.css",
@@ -658,7 +696,7 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.ok(getCardBackImage("cardback_lucky_you").includes("cardback_lucky_you.png"));
   assert.ok(getCardBackImage("cardback_king_energy").includes("cardback_king_energy.png"));
   assert.match(html, /Magma Warlord/);
-  assert.match(html, /Voidbound Entity/);
+  assert.doesNotMatch(html, /Voidbound Entity/);
   assert.match(html, /Arcane Gambler/);
   assert.match(html, /Fairy Prince/);
   assert.match(html, /Fairy Princess/);
@@ -12943,7 +12981,8 @@ test("ui: appController fetches authenticated featured shop rotation and passes 
           message: "Void Collection cosmetics are featured this week.",
           startsAt: null,
           endsAt: null,
-          featuredCosmeticIds: ["avatar_voidbound_entity", "cardback_void_tease"]
+          featuredCosmeticIds: ["avatar_voidbound_entity", "cardback_void_tease"],
+          allowLimitedCosmeticIds: ["avatar_voidbound_entity"]
         }),
         buyStoreItem: async () => {
           throw new Error("Unexpected test purchase.");
@@ -12983,12 +13022,121 @@ test("ui: appController fetches authenticated featured shop rotation and passes 
     await controller.showStore();
 
     assert.equal(shown.length, 1);
+    assert.equal(shown[0].store.catalog.avatar.some((item) => item.id === "avatar_voidbound_entity"), false);
     assert.equal(shown[0].featuredRotation?.activeRotationId, "void-week-01");
     assert.equal(shown[0].featuredRotation?.featuredItems?.length, 2);
     assert.deepEqual(
       shown[0].featuredRotation?.featuredItems?.map((entry) => entry.id),
       ["avatar_voidbound_entity", "cardback_void_tease"]
     );
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: rotationOnly featured ids require allowLimitedCosmeticIds while normal featured items still render", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const profileSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      username: "RotationRules",
+      tokens: 225,
+      playerXP: 18,
+      playerLevel: 1,
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        background: "default_background",
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        background: ["default_background"],
+        cardBack: ["default_card_back"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none"],
+        title: ["Initiate"]
+      }
+    },
+    progression: {
+      xp: { playerXP: 18, playerLevel: 1 },
+      dailyChallenges: { challenges: [] },
+      weeklyChallenges: { challenges: [] },
+      dailyLogin: { eligible: false }
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => {
+          throw new Error("local store should not be used for authenticated rotation test");
+        }
+      },
+      multiplayer: {
+        getProfile: async () => profileSnapshot,
+        getActiveShopRotation: async () => ({
+          activeRotationId: "mixed-week-01",
+          title: "Mixed Week",
+          message: "A mixed featured set is live.",
+          startsAt: null,
+          endsAt: null,
+          featuredCosmeticIds: ["avatar_voidbound_entity", "cardback_void_tease"],
+          allowLimitedCosmeticIds: []
+        }),
+        buyStoreItem: async () => {
+          throw new Error("Unexpected test purchase.");
+        },
+        equipCosmetic: async () => {
+          throw new Error("Unexpected test equip.");
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "RotationRules";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        authenticated: true,
+        username: "RotationRules",
+        profileKey: "RotationRules",
+        accountId: "account-id-2"
+      }
+    };
+
+    await controller.showStore();
+
+    assert.equal(shown.length, 1);
+    assert.deepEqual(
+      shown[0].featuredRotation?.featuredItems?.map((entry) => entry.id),
+      ["cardback_void_tease"]
+    );
+    assert.equal(shown[0].store.catalog.avatar.some((item) => item.id === "avatar_voidbound_entity"), false);
+    assert.equal(shown[0].store.catalog.cardBack.some((item) => item.id === "cardback_void_tease"), true);
   } finally {
     global.window = previousWindow;
   }

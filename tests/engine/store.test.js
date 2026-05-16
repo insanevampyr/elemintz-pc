@@ -492,8 +492,7 @@ test("store: rarity metadata and stage 2 prices are set correctly", async () => 
   assert.equal(backs.get("crystal_card_back")?.price, 250);
   assert.equal(backs.get("storm_sigil_card_back")?.rarity, "Common");
   assert.equal(backs.get("storm_sigil_card_back")?.price, 120);
-  assert.equal(backs.get("void_card_back")?.rarity, "Epic");
-  assert.equal(backs.get("void_card_back")?.price, 500);
+  assert.ok(!backs.has("void_card_back"));
   assert.equal(backs.get("cardback_lava_core")?.rarity, "Epic");
   assert.equal(backs.get("cardback_lava_core")?.price, 500);
   assert.equal(backs.get("cardback_obsidian_halo")?.rarity, "Rare");

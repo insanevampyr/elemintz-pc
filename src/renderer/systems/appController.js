@@ -20,7 +20,7 @@ import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
 import { buildAchievementCatalog } from "../../state/achievementSystem.js";
 import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
-import { getStoreViewForProfile } from "../../state/storeSystem.js";
+import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../state/storeSystem.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS, renderMatchTauntHudContents } from "../ui/shared/playSurfaceShared.js";
@@ -1064,13 +1064,18 @@ export class AppController {
     return this.storeViewState;
   }
 
-  buildFeaturedStoreRotationContext(rotation, store) {
+  buildFeaturedStoreRotationContext(rotation, store, profileForFeaturedCatalog = null) {
     if (!rotation || !store?.catalog) {
       return null;
     }
 
+    const featuredCatalog = profileForFeaturedCatalog
+      ? buildFeaturedRotationCatalog(profileForFeaturedCatalog, {
+          allowLimitedCosmeticIds: rotation.allowLimitedCosmeticIds ?? []
+        })
+      : store.catalog;
     const catalogEntriesById = new Map();
-    for (const [type, items] of Object.entries(store.catalog ?? {})) {
+    for (const [type, items] of Object.entries(featuredCatalog ?? {})) {
       for (const item of items ?? []) {
         const id = String(item?.id ?? "").trim();
         if (!id || catalogEntriesById.has(id)) {
@@ -1104,6 +1109,9 @@ export class AppController {
       message: String(rotation.message ?? "").trim() || "",
       startsAt: rotation.startsAt ?? null,
       endsAt: rotation.endsAt ?? null,
+      allowLimitedCosmeticIds: Array.isArray(rotation.allowLimitedCosmeticIds)
+        ? rotation.allowLimitedCosmeticIds.map((id) => String(id ?? "").trim()).filter(Boolean)
+        : [],
       featuredItems
     };
   }
@@ -6295,14 +6303,15 @@ export class AppController {
     const serverProfile = this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
       : null;
+    const profileForStore =
+      this.buildProfileFromServerSnapshot(serverProfile) ?? serverProfile?.profile ?? this.profile ?? {};
     const store = serverProfile
-      ? getStoreViewForProfile(
-          this.buildProfileFromServerSnapshot(serverProfile) ?? serverProfile.profile ?? this.profile ?? {}
-        )
+      ? getStoreViewForProfile(profileForStore)
       : await window.elemintz.state.getStore(this.username);
     const featuredRotation = this.buildFeaturedStoreRotationContext(
       await this.loadFeaturedStoreRotation(),
-      store
+      store,
+      profileForStore
     );
     let purchaseConfirmOpen = false;
     let purchasePending = false;

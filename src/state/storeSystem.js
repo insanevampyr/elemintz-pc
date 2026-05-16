@@ -124,7 +124,27 @@ export function buildStoreCatalog(profile) {
   const normalized = normalizeProfileStore(profile);
   const catalog = getCosmeticCatalogForProfile(normalized);
   return Object.fromEntries(
-    Object.entries(catalog).map(([type, items]) => [type, items.filter((item) => !item.storeHidden)])
+    Object.entries(catalog).map(([type, items]) => [
+      type,
+      items.filter((item) => !item.storeHidden && !item.rotationOnly)
+    ])
+  );
+}
+
+export function buildFeaturedRotationCatalog(profile, { allowLimitedCosmeticIds = [] } = {}) {
+  const normalized = normalizeProfileStore(profile);
+  const catalog = getCosmeticCatalogForProfile(normalized);
+  const allowedLimitedIds = new Set(
+    (Array.isArray(allowLimitedCosmeticIds) ? allowLimitedCosmeticIds : [])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean)
+  );
+
+  return Object.fromEntries(
+    Object.entries(catalog).map(([type, items]) => [
+      type,
+      items.filter((item) => !item.storeHidden && (!item.rotationOnly || allowedLimitedIds.has(item.id)))
+    ])
   );
 }
 

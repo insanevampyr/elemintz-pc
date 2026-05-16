@@ -410,6 +410,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: AVATAR_RARITY_PRICING.Legendary
     },
     {
@@ -745,6 +746,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
+      rotationOnly: true,
       price: 500
     },
     {
