@@ -18,6 +18,7 @@ import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { AnnouncementStore } from "../../src/multiplayer/announcementStore.js";
 import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
+import { ShopRotationStore } from "../../src/multiplayer/shopRotationStore.js";
 import { createRoomStore, getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
@@ -712,6 +713,239 @@ test("multiplayer foundation: announcements:list ignores malformed JSON without 
     }
   } finally {
     await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: shopRotation:getActive returns no active rotation safely when shop-rotation.json is missing", async () => {
+  const dataDir = await createTempDataDir();
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    shopRotationStore: new ShopRotationStore({
+      dataDir,
+      logger: { warn: () => {} }
+    }),
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "RotationUser");
+
+      const response = await new Promise((resolve) => {
+        client.emit("shopRotation:getActive", {}, resolve);
+      });
+
+      assert.deepEqual(response, {
+        ok: true,
+        result: {
+          rotation: null
+        }
+      });
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: shopRotation:getActive parses UTF-8 BOM JSON, skips duplicates and unknown ids, and returns active featured ids", async () => {
+  const dataDir = await createTempDataDir();
+  const rotationPath = path.join(dataDir, "server-data", "shop-rotation.json");
+  await fs.mkdir(path.dirname(rotationPath), { recursive: true });
+  await fs.writeFile(
+    rotationPath,
+    `\ufeff${JSON.stringify({
+      activeRotationId: "void-week-01",
+      title: "Void Week",
+      message: "Void Collection cosmetics are featured this week.",
+      startsAt: null,
+      endsAt: null,
+      featuredCosmeticIds: [
+        "avatar_voidbound_entity",
+        "cardback_void_tease",
+        "cardback_void_tease",
+        "missing_cosmetic_id",
+        "void_card_back"
+      ]
+    })}`,
+    "utf8"
+  );
+
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    shopRotationStore: new ShopRotationStore({
+      dataDir,
+      logger: { warn: () => {} }
+    }),
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "RotationUser");
+
+      const response = await new Promise((resolve) => {
+        client.emit("shopRotation:getActive", {}, resolve);
+      });
+
+      assert.equal(response?.ok, true);
+      assert.deepEqual(response?.result?.rotation, {
+        activeRotationId: "void-week-01",
+        title: "Void Week",
+        message: "Void Collection cosmetics are featured this week.",
+        startsAt: null,
+        endsAt: null,
+        featuredCosmeticIds: [
+          "avatar_voidbound_entity",
+          "cardback_void_tease",
+          "void_card_back"
+        ]
+      });
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: shopRotation:getActive ignores malformed, future, and expired rotations without crashing", async () => {
+  const dataDir = await createTempDataDir();
+  const rotationPath = path.join(dataDir, "server-data", "shop-rotation.json");
+  await fs.mkdir(path.dirname(rotationPath), { recursive: true });
+  await fs.writeFile(rotationPath, "{ nope", "utf8");
+
+  const malformedFoundation = createMultiplayerFoundation({
+    port: 0,
+    shopRotationStore: new ShopRotationStore({
+      dataDir,
+      logger: { warn: () => {} }
+    }),
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await malformedFoundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "RotationUser");
+
+      const malformedResponse = await new Promise((resolve) => {
+        client.emit("shopRotation:getActive", {}, resolve);
+      });
+
+      assert.deepEqual(malformedResponse, {
+        ok: true,
+        result: {
+          rotation: null
+        }
+      });
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await malformedFoundation.stop();
+  }
+
+  await fs.writeFile(
+    rotationPath,
+    JSON.stringify({
+      activeRotationId: "future-rotation",
+      title: "Future Rotation",
+      startsAt: "2099-01-01T00:00:00.000Z",
+      endsAt: null,
+      featuredCosmeticIds: ["avatar_voidbound_entity"]
+    }),
+    "utf8"
+  );
+
+  const futureFoundation = createMultiplayerFoundation({
+    port: 0,
+    shopRotationStore: new ShopRotationStore({
+      dataDir,
+      logger: { warn: () => {} }
+    }),
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await futureFoundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "RotationUser");
+
+      const futureResponse = await new Promise((resolve) => {
+        client.emit("shopRotation:getActive", {}, resolve);
+      });
+
+      assert.deepEqual(futureResponse, {
+        ok: true,
+        result: {
+          rotation: null
+        }
+      });
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await futureFoundation.stop();
+  }
+
+  await fs.writeFile(
+    rotationPath,
+    JSON.stringify({
+      activeRotationId: "expired-rotation",
+      title: "Expired Rotation",
+      startsAt: null,
+      endsAt: "2020-01-01T00:00:00.000Z",
+      featuredCosmeticIds: ["avatar_voidbound_entity"]
+    }),
+    "utf8"
+  );
+
+  const expiredFoundation = createMultiplayerFoundation({
+    port: 0,
+    shopRotationStore: new ShopRotationStore({
+      dataDir,
+      logger: { warn: () => {} }
+    }),
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await expiredFoundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "RotationUser");
+
+      const expiredResponse = await new Promise((resolve) => {
+        client.emit("shopRotation:getActive", {}, resolve);
+      });
+
+      assert.deepEqual(expiredResponse, {
+        ok: true,
+        result: {
+          rotation: null
+        }
+      });
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await expiredFoundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

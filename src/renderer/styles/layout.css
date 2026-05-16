@@ -235,6 +235,54 @@ body {
   margin-inline: auto;
 }
 
+.store-featured-rotation {
+  margin: 0 0 18px;
+  padding: 16px 18px 18px;
+  border: 1px solid rgba(123, 201, 255, 0.24);
+  background:
+    radial-gradient(circle at top left, rgba(63, 125, 184, 0.16), rgba(63, 125, 184, 0) 36%),
+    linear-gradient(155deg, rgba(20, 42, 66, 0.96), rgba(14, 31, 48, 0.98));
+}
+
+.store-featured-rotation-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.store-featured-rotation-eyebrow {
+  margin: 0 0 6px;
+  color: #95d3ff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.store-featured-rotation-title {
+  margin: 0 0 6px;
+  color: #f7fbff;
+}
+
+.store-featured-rotation-copy {
+  margin: 0;
+  color: #d6e7f7;
+  line-height: 1.5;
+}
+
+.store-featured-rotation-timing {
+  margin: 8px 0 0;
+  color: #9ed5ff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.cosmetic-grid-featured {
+  gap: 14px;
+}
+
 .chest-row {
   display: flex;
   justify-content: flex-start;

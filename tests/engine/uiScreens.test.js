@@ -343,6 +343,64 @@ test("ui: store screen renders collection chips for mapped items and omits them 
   assert.match(html, /Rarity: <span class="cosmetic-rarity-label[^"]*">Common<\/span>/);
 });
 
+test("ui: store screen renders a featured rotation section above filters when active featured items exist", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_voidbound_entity",
+            name: "Voidbound Entity",
+            image: "avatars/avatar_voidbound_entity.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            collection: "Void"
+          }
+        ],
+        title: [],
+        badge: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: []
+      }
+    },
+    featuredRotation: {
+      activeRotationId: "void-week-01",
+      title: "Void Week",
+      message: "Void Collection cosmetics are featured this week.",
+      endsAt: "2026-05-20T18:00:00.000Z",
+      featuredItems: [
+        {
+          id: "avatar_voidbound_entity",
+          type: "avatar",
+          item: {
+            id: "avatar_voidbound_entity",
+            name: "Voidbound Entity",
+            image: "avatars/avatar_voidbound_entity.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            collection: "Void"
+          }
+        }
+      ]
+    },
+    viewState: {}
+  });
+
+  assert.match(html, /data-store-featured-section/);
+  assert.match(html, /Featured Rotation/);
+  assert.match(html, /Void Week/);
+  assert.match(html, /Void Collection cosmetics are featured this week\./);
+  assert.match(html, /Ends:/);
+  assert.match(html, /Voidbound Entity/);
+});
+
 test("ui: cosmetics screen renders collection chips for mapped owned items and omits them for unmapped items", () => {
   const html = cosmeticsScreen.render({
     cosmetics: {
@@ -1544,6 +1602,142 @@ test("ui: store collection filters combine with search category and rarity while
     rarityCommon.trigger("change");
     assert.equal(emberAvatar.hidden, true);
     assert.equal(emptyState.hidden, false);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: featured store rotation respects category rarity collection and search filters, and collapses when no featured items match", () => {
+  const previousDocument = global.document;
+
+  const featuredVoidCard = createSortableItem({
+    "data-store-name": "voidbound entity",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Legendary",
+    "data-store-collection": "Void",
+    "data-store-is-new": "false",
+    "data-store-original-index": "0"
+  });
+  const featuredUngroupedCard = createSortableItem({
+    "data-store-name": "fire avatar classic",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Common",
+    "data-store-collection": "",
+    "data-store-is-new": "false",
+    "data-store-original-index": "1"
+  });
+  const mainVoidCard = createSortableItem({
+    "data-store-name": "void tease",
+    "data-store-type": "cardBack",
+    "data-store-rarity": "Epic",
+    "data-store-collection": "Void",
+    "data-store-is-new": "true",
+    "data-store-original-index": "0"
+  });
+  const featuredGrid = createFakeGrid([featuredVoidCard, featuredUngroupedCard]);
+  const mainGrid = createFakeGrid([mainVoidCard]);
+  const featuredSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? featuredGrid : null),
+    querySelectorAll: (selector) => (selector === "[data-store-item]" ? featuredGrid.items : []),
+    getAttribute: () => "featured"
+  };
+  const mainSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? mainGrid : null),
+    querySelectorAll: (selector) => (selector === "[data-store-item]" ? mainGrid.items : []),
+    getAttribute: () => "cardBack"
+  };
+  const categoryAvatar = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "avatar" } });
+  const categoryCardBack = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "cardBack" } });
+  const rarityCommon = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Common" } });
+  const rarityLegendary = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Legendary" } });
+  const rarityEpic = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Epic" } });
+  const collectionVoid = createFakeCheckbox({ checked: false, attributeMap: { "data-store-collection-filter": "Void" } });
+  const searchInput = createFakeElement();
+  const showNewFirstInput = createFakeCheckbox({ checked: true });
+  const backButton = { addEventListener() {} };
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+  const root = {
+    querySelector(selector) {
+      if (selector === "[data-store-featured-section]") return featuredSection;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-store-item]") return [...featuredGrid.items, ...mainGrid.items];
+      if (selector === "[data-store-section]") return [mainSection];
+      if (selector === "[data-store-category-filter]") return [categoryAvatar, categoryCardBack];
+      if (selector === "[data-store-rarity-filter]") return [rarityCommon, rarityLegendary, rarityEpic];
+      if (selector === "[data-store-collection-filter]") return [collectionVoid];
+      if (selector === "[data-buy-type]" || selector === "[data-equip-type]") return [];
+      return [];
+    }
+  };
+
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-store" ? root : null),
+    getElementById: (id) => {
+      if (id === "store-search-input") return searchInput;
+      if (id === "store-show-new-first") return showNewFirstInput;
+      if (id === "store-back-btn") return backButton;
+      if (id === "store-empty-state") return emptyState;
+      return null;
+    }
+  };
+
+  try {
+    storeScreen.bind({
+      viewState: {
+        searchText: "",
+        categories: new Set(["avatar", "cardBack"]),
+        rarities: new Set(["Common", "Legendary", "Epic"]),
+        collections: new Set(),
+        showNewFirst: true
+      },
+      actions: { back: () => {}, buy: async () => {}, equip: async () => {} }
+    });
+
+    assert.equal(featuredSection.hidden, false);
+    assert.equal(featuredVoidCard.hidden, false);
+    assert.equal(featuredUngroupedCard.hidden, false);
+
+    collectionVoid.checked = true;
+    collectionVoid.trigger("change");
+
+    assert.equal(featuredVoidCard.hidden, false);
+    assert.equal(featuredUngroupedCard.hidden, true);
+    assert.equal(mainVoidCard.hidden, false);
+    assert.equal(featuredSection.hidden, false);
+
+    searchInput.value = "tease";
+    searchInput.listeners.get("input")();
+
+    assert.equal(featuredVoidCard.hidden, true);
+    assert.equal(mainVoidCard.hidden, false);
+    assert.equal(featuredSection.hidden, true);
+    assert.equal(featuredSection.style.display, "none");
+
+    searchInput.value = "";
+    searchInput.listeners.get("input")();
+    categoryAvatar.checked = false;
+    categoryAvatar.trigger("change");
+
+    assert.equal(featuredVoidCard.hidden, true);
+    assert.equal(mainVoidCard.hidden, false);
+    assert.equal(featuredSection.hidden, true);
+
+    categoryAvatar.checked = true;
+    categoryAvatar.trigger("change");
+    rarityLegendary.checked = false;
+    rarityLegendary.trigger("change");
+
+    assert.equal(featuredVoidCard.hidden, true);
+    assert.equal(featuredSection.hidden, true);
+    assert.equal(mainVoidCard.hidden, false);
   } finally {
     global.document = previousDocument;
   }
@@ -12664,6 +12858,122 @@ test("ui: profile shows the new milestone chest popup with the exact grant messa
     await modalCalls[0].actions[0].onClick();
     assert.deepEqual(acknowledged, [{ username: "RewardHero", level: 10 }]);
     assert.equal(shown.at(-1).profile.pendingMilestoneChestRewardLevel, null);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController fetches authenticated featured shop rotation and passes it into the store screen", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const profileSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      username: "StoreKeeper",
+      tokens: 225,
+      playerXP: 18,
+      playerLevel: 1,
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        background: "default_background",
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        background: ["default_background"],
+        cardBack: ["default_card_back"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none"],
+        title: ["Initiate"]
+      }
+    },
+    progression: {
+      xp: { playerXP: 18, playerLevel: 1 },
+      dailyChallenges: { challenges: [] },
+      weeklyChallenges: { challenges: [] },
+      dailyLogin: { eligible: false }
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => ({
+          tokens: 225,
+          supporterPass: false,
+          catalog: {
+            avatar: [],
+            title: [],
+            badge: [],
+            cardBack: [],
+            background: [],
+            elementCardVariant: []
+          }
+        })
+      },
+      multiplayer: {
+        getProfile: async () => profileSnapshot,
+        getActiveShopRotation: async () => ({
+          activeRotationId: "void-week-01",
+          title: "Void Week",
+          message: "Void Collection cosmetics are featured this week.",
+          startsAt: null,
+          endsAt: null,
+          featuredCosmeticIds: ["avatar_voidbound_entity", "cardback_void_tease"]
+        }),
+        buyStoreItem: async () => {
+          throw new Error("Unexpected test purchase.");
+        },
+        equipCosmetic: async () => {
+          throw new Error("Unexpected test equip.");
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "StoreKeeper";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        authenticated: true,
+        username: "StoreKeeper",
+        profileKey: "StoreKeeper",
+        accountId: "account-id-1"
+      }
+    };
+
+    await controller.showStore();
+
+    assert.equal(shown.length, 1);
+    assert.equal(shown[0].featuredRotation?.activeRotationId, "void-week-01");
+    assert.equal(shown[0].featuredRotation?.featuredItems?.length, 2);
+    assert.deepEqual(
+      shown[0].featuredRotation?.featuredItems?.map((entry) => entry.id),
+      ["avatar_voidbound_entity", "cardback_void_tease"]
+    );
   } finally {
     global.window = previousWindow;
   }

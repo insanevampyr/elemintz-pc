@@ -119,6 +119,24 @@ function renderCollectionChip(collection) {
   return `<p><span class="cosmetic-collection-chip">${collection} Collection</span></p>`;
 }
 
+function formatFeaturedRotationEndsAt(endsAt) {
+  if (!endsAt) {
+    return "";
+  }
+
+  const parsed = new Date(endsAt);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 function normalizeCollectionKey(collection) {
   return String(collection ?? "").trim();
 }
@@ -272,6 +290,39 @@ function renderStoreItem(type, item, originalIndex) {
   `;
 }
 
+function renderFeaturedRotationSection(featuredRotation) {
+  if (!featuredRotation?.featuredItems?.length) {
+    return "";
+  }
+
+  const endsAtLabel = formatFeaturedRotationEndsAt(featuredRotation.endsAt);
+  return `
+    <section class="store-featured-rotation panel" data-store-featured-section>
+      <div class="store-featured-rotation-header">
+        <div>
+          <p class="store-featured-rotation-eyebrow">Featured Rotation</p>
+          <h3 class="store-featured-rotation-title">${featuredRotation.title}</h3>
+          ${
+            featuredRotation.message
+              ? `<p class="store-featured-rotation-copy">${featuredRotation.message}</p>`
+              : ""
+          }
+          ${
+            endsAtLabel
+              ? `<p class="store-featured-rotation-timing">Ends: ${endsAtLabel}</p>`
+              : ""
+          }
+        </div>
+      </div>
+      <div class="cosmetic-grid cosmetic-grid-featured">
+        ${featuredRotation.featuredItems
+          .map(({ type, item }, index) => renderStoreItem(type, item, index))
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
 function getRenderableStoreItems(store, type) {
   return (store?.catalog?.[type] ?? []).filter((item) => !item?.owned);
 }
@@ -306,6 +357,7 @@ export const storeScreen = {
           </section>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
           <p>Badges are gameplay/achievement rewards and cannot be purchased.</p>
+          ${renderFeaturedRotationSection(context.featuredRotation)}
           <section class="store-toolbar panel">
             <div class="store-search-group">
               <label class="store-search-label" for="store-search-input">Search Cosmetics</label>
@@ -407,6 +459,7 @@ export const storeScreen = {
     const applyFilters = () => {
       const items = Array.from(root.querySelectorAll("[data-store-item]"));
       const sections = Array.from(root.querySelectorAll("[data-store-section]"));
+      const featuredSection = root.querySelector?.("[data-store-featured-section]") ?? null;
       const categoriesEnabled = viewState.categories.size > 0;
       const raritiesEnabled = viewState.rarities.size > 0;
       const collectionsEnabled = viewState.collections.size > 0;
@@ -449,6 +502,31 @@ export const storeScreen = {
           section.style.display = isVisible ? "" : "none";
         }
         if (visibleItems.length > 0) {
+          anyVisible = true;
+        }
+      }
+
+      if (featuredSection) {
+        const grid = featuredSection.querySelector?.(".cosmetic-grid");
+        if (grid) {
+          sortSectionItemsByNewness(
+            Array.from(grid.querySelectorAll("[data-store-item]")),
+            viewState.showNewFirst
+          ).forEach((item) => {
+            grid.appendChild(item);
+          });
+        }
+
+        const visibleFeaturedItems = Array.from(
+          featuredSection.querySelectorAll?.("[data-store-item]") ?? []
+        ).filter((item) => !item.hidden);
+        const isFeaturedVisible = visibleFeaturedItems.length > 0;
+        featuredSection.hidden = !isFeaturedVisible;
+        featuredSection.classList?.toggle("is-filtered-out", !isFeaturedVisible);
+        if (featuredSection.style) {
+          featuredSection.style.display = isFeaturedVisible ? "" : "none";
+        }
+        if (isFeaturedVisible) {
           anyVisible = true;
         }
       }

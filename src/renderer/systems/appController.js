@@ -1064,6 +1064,68 @@ export class AppController {
     return this.storeViewState;
   }
 
+  buildFeaturedStoreRotationContext(rotation, store) {
+    if (!rotation || !store?.catalog) {
+      return null;
+    }
+
+    const catalogEntriesById = new Map();
+    for (const [type, items] of Object.entries(store.catalog ?? {})) {
+      for (const item of items ?? []) {
+        const id = String(item?.id ?? "").trim();
+        if (!id || catalogEntriesById.has(id)) {
+          continue;
+        }
+        catalogEntriesById.set(id, { type, item });
+      }
+    }
+
+    const featuredItems = [];
+    for (const featuredId of Array.isArray(rotation.featuredCosmeticIds) ? rotation.featuredCosmeticIds : []) {
+      const match = catalogEntriesById.get(String(featuredId ?? "").trim());
+      if (!match) {
+        continue;
+      }
+
+      featuredItems.push({
+        id: String(featuredId ?? "").trim(),
+        type: match.type,
+        item: match.item
+      });
+    }
+
+    if (featuredItems.length === 0) {
+      return null;
+    }
+
+    return {
+      activeRotationId: String(rotation.activeRotationId ?? "").trim() || null,
+      title: String(rotation.title ?? "").trim() || "Featured Rotation",
+      message: String(rotation.message ?? "").trim() || "",
+      startsAt: rotation.startsAt ?? null,
+      endsAt: rotation.endsAt ?? null,
+      featuredItems
+    };
+  }
+
+  async loadFeaturedStoreRotation() {
+    if (!this.hasMultiplayerProfileAccess() || !window.elemintz?.multiplayer?.getActiveShopRotation) {
+      return null;
+    }
+
+    try {
+      return await window.elemintz.multiplayer.getActiveShopRotation({
+        username: this.username
+      });
+    } catch (error) {
+      console.warn("[Store][Renderer] featured rotation load failed", {
+        username: this.username,
+        message: error?.message ?? String(error)
+      });
+      return null;
+    }
+  }
+
   ensureCosmeticsViewState() {
     if (!this.cosmeticsViewState) {
       this.cosmeticsViewState = createDefaultCategoryViewState();
@@ -6238,11 +6300,16 @@ export class AppController {
           this.buildProfileFromServerSnapshot(serverProfile) ?? serverProfile.profile ?? this.profile ?? {}
         )
       : await window.elemintz.state.getStore(this.username);
+    const featuredRotation = this.buildFeaturedStoreRotationContext(
+      await this.loadFeaturedStoreRotation(),
+      store
+    );
     let purchaseConfirmOpen = false;
     let purchasePending = false;
 
     this.screenManager.show("store", {
       store,
+      featuredRotation,
       viewState,
       actions: {
         buy: async (type, cosmeticId) => {

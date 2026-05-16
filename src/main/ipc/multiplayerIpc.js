@@ -84,6 +84,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.dismissAnnouncement(payload);
   });
 
+  ipcMain.handle("multiplayer:getActiveShopRotation", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getActiveShopRotation(payload);
+  });
+
   ipcMain.handle("multiplayer:getCosmetics", async (event, payload) => {
     subscribers.add(event.sender);
     return client.getCosmetics(payload);

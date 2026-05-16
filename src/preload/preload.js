@@ -82,6 +82,7 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
       getProfile: (payload) => ipcRendererRef.invoke("multiplayer:getProfile", payload),
       listAnnouncements: (payload) => ipcRendererRef.invoke("multiplayer:listAnnouncements", payload),
       dismissAnnouncement: (payload) => ipcRendererRef.invoke("multiplayer:dismissAnnouncement", payload),
+      getActiveShopRotation: (payload) => ipcRendererRef.invoke("multiplayer:getActiveShopRotation", payload),
       getCosmetics: (payload) => ipcRendererRef.invoke("multiplayer:getCosmetics", payload),
       acknowledgeAnnouncement: (payload) => ipcRendererRef.invoke("multiplayer:acknowledgeAnnouncement", payload),
       acknowledgeMilestoneChestReward: (payload) =>

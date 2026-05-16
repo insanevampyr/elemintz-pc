@@ -6,6 +6,7 @@ import { AdminGrantStore } from "../state/adminGrantStore.js";
 import { createTimestampedLogger } from "./logger.js";
 import { FeedbackStore } from "./feedbackStore.js";
 import { AnnouncementStore } from "./announcementStore.js";
+import { ShopRotationStore } from "./shopRotationStore.js";
 import os from "node:os";
 import path from "node:path";
 import packageJson from "../../package.json" with { type: "json" };
@@ -49,6 +50,10 @@ const adminGrantStore = new AdminGrantStore({
   dataDir: resolveStandaloneDataDir()
 });
 const feedbackStore = new FeedbackStore({
+  dataDir: resolveStandaloneDataDir(),
+  logger
+});
+const shopRotationStore = new ShopRotationStore({
   dataDir: resolveStandaloneDataDir(),
   logger
 });
@@ -121,6 +126,7 @@ const server = createMultiplayerFoundation({
   accountStore,
   adminGrantStore,
   feedbackStore,
+  shopRotationStore,
   logger
 });
 let shuttingDown = false;

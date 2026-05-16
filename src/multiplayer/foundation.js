@@ -616,7 +616,8 @@ export function createMultiplayerFoundation({
   profileAuthority = null,
   accountStore = null,
   adminGrantStore = null,
-  feedbackStore = null
+  feedbackStore = null,
+  shopRotationStore = null
 } = {}) {
   const app = express();
   const httpServer = http.createServer(app);
@@ -2349,6 +2350,43 @@ export function createMultiplayerFoundation({
             error: {
               code: "ANNOUNCEMENT_DISMISS_FAILED",
               message: String(error?.message ?? "Unable to dismiss the announcement.")
+            }
+          });
+        }
+      });
+
+      socket.on("shopRotation:getActive", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof shopRotationStore?.getActiveRotation !== "function") {
+          respond({
+            ok: true,
+            result: {
+              rotation: null
+            }
+          });
+          return;
+        }
+
+        try {
+          const rotation = await shopRotationStore.getActiveRotation();
+          respond({
+            ok: true,
+            result: {
+              rotation
+            }
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "SHOP_ROTATION_READ_FAILED",
+              message: String(error?.message ?? "Unable to load the featured shop rotation.")
             }
           });
         }

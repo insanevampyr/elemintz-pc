@@ -536,6 +536,30 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "shopRotation:getActive") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            rotation: {
+              activeRotationId: "void-week-01",
+              title: "Void Week",
+              message: "Void Collection cosmetics are featured this week.",
+              startsAt: null,
+              endsAt: null,
+              featuredCosmeticIds: [
+                "avatar_voidbound_entity",
+                "cardback_void_tease",
+                "void_card_back",
+                "void_altar_background",
+                "title_void_doll"
+              ]
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:claimDailyLoginReward") {
       queueMicrotask(() => {
         ack?.({
@@ -1311,6 +1335,41 @@ test("multiplayer client: announcement dismiss returns updated seen state and ne
   });
   assert.equal(result?.snapshot?.profile?.seenAnnouncements?.["announcement:patch-2-1-9"], true);
   assert.deepEqual(result?.announcements, []);
+});
+
+test("multiplayer client: active shop rotation returns the sanitized featured rotation payload", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.getActiveShopRotation({
+    username: "AnnouncementUser"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "AnnouncementUser"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "shopRotation:getActive",
+    payload: {}
+  });
+  assert.equal(result?.activeRotationId, "void-week-01");
+  assert.deepEqual(result?.featuredCosmeticIds, [
+    "avatar_voidbound_entity",
+    "cardback_void_tease",
+    "void_card_back",
+    "void_altar_background",
+    "title_void_doll"
+  ]);
 });
 
 test("multiplayer client: authoritative daily login claims return updated server profile state", async () => {

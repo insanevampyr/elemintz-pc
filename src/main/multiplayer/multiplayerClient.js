@@ -2134,6 +2134,15 @@ export class MultiplayerClient {
     return response.result ?? null;
   }
 
+  async getActiveShopRotation({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("shopRotation:getActive", { username }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load the featured shop rotation.");
+    }
+
+    return response.result?.rotation ?? null;
+  }
+
   async getCosmetics({ username, serverUrl } = {}) {
     const response = await this.runServerRequest("profile:getCosmetics", { username }, { serverUrl });
     if (!response?.ok) {
