@@ -532,51 +532,13 @@ test("multiplayer foundation: announcements:list returns an empty list safely wh
   }
 });
 
-test("multiplayer foundation: announcements:list ignores malformed JSON and filters active announcements by priority", async () => {
+test("multiplayer foundation: announcements:list parses UTF-8 BOM JSON and still filters active announcements by priority", async () => {
   const dataDir = await createTempDataDir();
-  const malformedPath = path.join(dataDir, "server-data", "announcements.json");
-  await fs.mkdir(path.dirname(malformedPath), { recursive: true });
-  await fs.writeFile(malformedPath, "{not-json", "utf8");
-
-  const coordinator = new StateCoordinator({ dataDir });
-  const announcementStore = new AnnouncementStore({
-    dataDir,
-    logger: { warn: () => {} }
-  });
-  const profileAuthority = new MultiplayerProfileAuthority({
-    coordinator,
-    logger: { info: () => {} },
-    announcementStore
-  });
-  const foundation = createMultiplayerFoundation({
-    port: 0,
-    profileAuthority,
-    logger: { info: () => {}, warn: () => {}, error: () => {} }
-  });
-
-  try {
-    const port = await foundation.start();
-    const client = await connectClient(port);
-
-    try {
-      await bootstrapSession(client, "AnnouncementUser");
-
-      const malformedResponse = await new Promise((resolve) => {
-        client.emit("announcements:list", {}, resolve);
-      });
-
-      assert.equal(malformedResponse?.ok, true);
-      assert.deepEqual(malformedResponse?.result?.announcements, []);
-    } finally {
-      client.disconnect();
-    }
-  } finally {
-    await foundation.stop();
-  }
-
+  const announcementsPath = path.join(dataDir, "server-data", "announcements.json");
+  await fs.mkdir(path.dirname(announcementsPath), { recursive: true });
   await fs.writeFile(
-    malformedPath,
-    JSON.stringify([
+    announcementsPath,
+    `\ufeff${JSON.stringify([
       {
         id: "patch-low",
         title: "Patch Low",
@@ -619,9 +581,48 @@ test("multiplayer foundation: announcements:list ignores malformed JSON and filt
         active: true,
         endsAt: "2020-01-01T00:00:00.000Z"
       }
-    ]),
+    ])}`,
     "utf8"
   );
+
+  const coordinator = new StateCoordinator({ dataDir });
+  const announcementStore = new AnnouncementStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} },
+    announcementStore
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "AnnouncementUser");
+
+      const bomResponse = await new Promise((resolve) => {
+        client.emit("announcements:list", {}, resolve);
+      });
+
+      assert.equal(bomResponse?.ok, true);
+      assert.deepEqual(
+        bomResponse?.result?.announcements?.map((announcement) => announcement.id),
+        ["patch-top", "patch-low"]
+      );
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+  }
 
   const filteredCoordinator = new StateCoordinator({ dataDir });
   await filteredCoordinator.profiles.updateProfile("DismissedUser", (current) => ({
@@ -667,6 +668,50 @@ test("multiplayer foundation: announcements:list ignores malformed JSON and filt
     }
   } finally {
     await filteredFoundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: announcements:list ignores malformed JSON without crashing", async () => {
+  const dataDir = await createTempDataDir();
+  const malformedPath = path.join(dataDir, "server-data", "announcements.json");
+  await fs.mkdir(path.dirname(malformedPath), { recursive: true });
+  await fs.writeFile(malformedPath, "{not-json", "utf8");
+
+  const coordinator = new StateCoordinator({ dataDir });
+  const announcementStore = new AnnouncementStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} },
+    announcementStore
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "AnnouncementUser");
+
+      const malformedResponse = await new Promise((resolve) => {
+        client.emit("announcements:list", {}, resolve);
+      });
+
+      assert.equal(malformedResponse?.ok, true);
+      assert.deepEqual(malformedResponse?.result?.announcements, []);
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

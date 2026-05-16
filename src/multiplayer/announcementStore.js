@@ -15,6 +15,11 @@ function sanitizeText(value, maxLength) {
   return normalized.slice(0, maxLength);
 }
 
+function stripUtf8Bom(value) {
+  const source = String(value ?? "");
+  return source.charCodeAt(0) === 0xfeff ? source.slice(1) : source;
+}
+
 function normalizeTimestamp(value) {
   if (value == null) {
     return null;
@@ -155,7 +160,7 @@ export class AnnouncementStore {
 
     let parsed = [];
     try {
-      parsed = JSON.parse(source);
+      parsed = JSON.parse(stripUtf8Bom(source));
     } catch (error) {
       this.logger.warn?.("[Announcements] invalid announcements.json; returning empty list", {
         message: error?.message ?? String(error),
