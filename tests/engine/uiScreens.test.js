@@ -339,6 +339,7 @@ test("ui: store screen renders collection chips for mapped items and omits them 
 
   assert.match(html, /cosmetic-collection-chip">Ember Collection<\/span>/);
   assert.equal(html.match(/cosmetic-collection-chip/g)?.length ?? 0, 1);
+  assert.match(html, /Type: Avatar/);
   assert.match(html, /Price: 150 Tokens/);
   assert.match(html, /Rarity: <span class="cosmetic-rarity-label[^"]*">Common<\/span>/);
 });
@@ -399,6 +400,7 @@ test("ui: store screen renders a featured rotation section above filters when ac
   assert.match(html, /Void Collection cosmetics are featured this week\./);
   assert.match(html, /Ends:/);
   assert.match(html, /Voidbound Entity/);
+  assert.match(html, /Type: Avatar/);
   assert.match(html, /cosmetic-grid cosmetic-grid-featured/);
   assert.ok(html.indexOf("data-store-featured-section") < html.indexOf("store-toolbar"));
 });
@@ -438,6 +440,8 @@ test("ui: cosmetics screen keeps owned rotationOnly cosmetics visible and equipp
 
   assert.match(html, /Voidbound Entity/);
   assert.match(html, /Void Card Back/);
+  assert.match(html, /Type: Avatar/);
+  assert.match(html, /Type: Card Back/);
   assert.match(html, /Equipped: Yes/);
 });
 
@@ -491,8 +495,71 @@ test("ui: cosmetics screen renders collection chips for mapped owned items and o
 
   assert.match(html, /cosmetic-collection-chip">Velvet (&amp;|&) Rose Collection<\/span>/);
   assert.equal(html.match(/cosmetic-collection-chip/g)?.length ?? 0, 1);
+  assert.match(html, /Type: Avatar/);
   assert.match(html, /Equipped: Yes/);
   assert.match(html, /cosmetic-rarity-label rarity-legendary/);
+});
+
+test("ui: store and cosmetics render element-specific variant type labels when the element is known", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        title: [],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_crownfire",
+            name: "Crownfire",
+            image: "cards/fire_variant_crownfire.png",
+            rarity: "Legendary",
+            price: 700,
+            purchasable: true,
+            owned: false,
+            element: "fire",
+            collection: "Flame King"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        title: [],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_crownfire",
+            name: "Crownfire",
+            image: "cards/fire_variant_crownfire.png",
+            rarity: "Legendary",
+            owned: true,
+            equipped: true,
+            element: "fire",
+            collection: "Flame King"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(storeHtml, /Type: Fire Variant/);
+  assert.match(cosmeticsHtml, /Type: Fire Variant/);
+  assert.match(storeHtml, /Price: 700 Tokens/);
+  assert.match(cosmeticsHtml, /Equipped: Yes/);
 });
 
 test("ui: store and cosmetics render short collection filter labels when collection items exist", () => {

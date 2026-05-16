@@ -42,6 +42,39 @@ function renderCollectionChip(collection) {
   return `<p><span class="cosmetic-collection-chip">${collection} Collection</span></p>`;
 }
 
+function getCosmeticTypeLabel(type, item) {
+  if (type === "avatar") {
+    return "Avatar";
+  }
+
+  if (type === "cardBack") {
+    return "Card Back";
+  }
+
+  if (type === "background") {
+    return "Background";
+  }
+
+  if (type === "title") {
+    return "Title";
+  }
+
+  if (type === "badge") {
+    return "Badge";
+  }
+
+  if (type === "elementCardVariant") {
+    const element = String(item?.element ?? "").trim().toLowerCase();
+    if (["fire", "water", "earth", "wind"].includes(element)) {
+      return `${element[0].toUpperCase()}${element.slice(1)} Variant`;
+    }
+
+    return "Card Variant";
+  }
+
+  return "Cosmetic";
+}
+
 function normalizeCollectionKey(collection) {
   return String(collection ?? "").trim();
 }
@@ -157,6 +190,7 @@ function renderItem(type, item) {
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
         ${renderCollectionChip(item.collection)}
+        <p>Type: ${getCosmeticTypeLabel(type, item)}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
         <p>Equipped: ${item.equipped ? "Yes" : "No"}</p>
         ${variantHint}
