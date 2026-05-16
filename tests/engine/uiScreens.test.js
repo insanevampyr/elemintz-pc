@@ -399,6 +399,8 @@ test("ui: store screen renders a featured rotation section above filters when ac
   assert.match(html, /Void Collection cosmetics are featured this week\./);
   assert.match(html, /Ends:/);
   assert.match(html, /Voidbound Entity/);
+  assert.match(html, /cosmetic-grid cosmetic-grid-featured/);
+  assert.ok(html.indexOf("data-store-featured-section") < html.indexOf("store-toolbar"));
 });
 
 test("ui: cosmetics screen renders collection chips for mapped owned items and omits them for unmapped items", () => {

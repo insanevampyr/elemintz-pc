@@ -237,7 +237,7 @@ body {
 
 .store-featured-rotation {
   margin: 0 0 18px;
-  padding: 16px 18px 18px;
+  padding: 14px 16px 16px;
   border: 1px solid rgba(123, 201, 255, 0.24);
   background:
     radial-gradient(circle at top left, rgba(63, 125, 184, 0.16), rgba(63, 125, 184, 0) 36%),
@@ -249,7 +249,7 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .store-featured-rotation-eyebrow {
@@ -270,6 +270,7 @@ body {
   margin: 0;
   color: #d6e7f7;
   line-height: 1.5;
+  max-width: 60ch;
 }
 
 .store-featured-rotation-timing {
@@ -280,7 +281,74 @@ body {
 }
 
 .cosmetic-grid-featured {
+  display: flex;
   gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 8px;
+  margin: 0 -2px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(132, 195, 240, 0.45) rgba(8, 19, 30, 0.2);
+}
+
+.cosmetic-grid-featured::-webkit-scrollbar {
+  height: 10px;
+}
+
+.cosmetic-grid-featured::-webkit-scrollbar-track {
+  background: rgba(8, 19, 30, 0.22);
+  border-radius: 999px;
+}
+
+.cosmetic-grid-featured::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, rgba(115, 181, 228, 0.7), rgba(76, 136, 182, 0.7));
+  border-radius: 999px;
+}
+
+.cosmetic-grid-featured > .cosmetic-item {
+  flex: 0 0 clamp(236px, 24vw, 290px);
+  min-width: 236px;
+  max-width: 290px;
+  scroll-snap-align: start;
+}
+
+.store-featured-rotation .cosmetic-item {
+  margin-bottom: 0;
+}
+
+.store-featured-rotation .cosmetic-meta {
+  align-content: start;
+}
+
+.store-featured-rotation .store-actions {
+  align-items: end;
+}
+
+@media (max-width: 960px) {
+  .cosmetic-grid-featured > .cosmetic-item {
+    flex-basis: min(280px, 78vw);
+    min-width: min(280px, 78vw);
+  }
+}
+
+@media (max-width: 640px) {
+  .store-featured-rotation {
+    padding: 12px 12px 14px;
+  }
+
+  .store-featured-rotation-header {
+    margin-bottom: 10px;
+  }
+
+  .cosmetic-grid-featured {
+    gap: 12px;
+  }
+
+  .cosmetic-grid-featured > .cosmetic-item {
+    flex-basis: min(250px, 82vw);
+    min-width: min(250px, 82vw);
+  }
 }
 
 .chest-row {
