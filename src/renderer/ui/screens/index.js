@@ -10,3 +10,4 @@ export * from "./storeScreen.js";
 export * from "./settingsScreen.js";
 export * from "./dailyChallengesScreen.js";
 export * from "./onlinePlayScreen.js";
+export * from "./howToPlayScreen.js";

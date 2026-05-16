@@ -3,6 +3,7 @@ import {
   cosmeticsScreen,
   dailyChallengesScreen,
   gameScreen,
+  howToPlayScreen,
   localSetupScreen,
   loginScreen,
   menuScreen,
@@ -745,6 +746,7 @@ export class AppController {
     this.screenManager.register("store", storeScreen);
     this.screenManager.register("settings", settingsScreen);
     this.screenManager.register("onlinePlay", onlinePlayScreen);
+    this.screenManager.register("howToPlay", howToPlayScreen);
   }
 
   clearPassTimer({ settle = true, result = { reason: "cancelled" } } = {}) {
@@ -1413,6 +1415,7 @@ export class AppController {
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
         openSettings: async () => this.showSettings(),
+        openHowToPlay: () => this.showHowToPlay(),
         openFeedback: () => this.showFeedbackModal(),
         dismissAnnouncement: async (id) => this.dismissMenuAnnouncement(id),
         switchAccount: async () => this.logoutToLogin({ noticeMessage: "Signed out. Sign in with another account." }),
@@ -6399,6 +6402,17 @@ export class AppController {
           });
           this.showSettings({ preserveModal: true });
         },
+        back: () => this.showMenu()
+      }
+    });
+    this.updateOnlineReconnectReminderModal();
+  }
+
+  showHowToPlay({ preserveModal = false } = {}) {
+    this.clearTransientUiBeforeScreenTransition({ preserveModal });
+    this.screenFlow = "howToPlay";
+    this.screenManager.show("howToPlay", {
+      actions: {
         back: () => this.showMenu()
       }
     });

@@ -9,6 +9,7 @@ const MENU_TILE_IMAGE_MAP = Object.freeze({
   "store-btn": "menu_tiles/tile_store.png",
   "achievements-btn": "menu_tiles/tile_achievements.png",
   "settings-btn": "menu_tiles/tile_settings.png",
+  "how-to-play-btn": "menu_tiles/tile_settings.png",
   "feedback-btn": "menu_tiles/tile_settings.png",
   "logout-btn": "menu_tiles/tile_logout.png"
 });
@@ -176,6 +177,7 @@ export const menuScreen = {
                 ${renderMenuTile("store-btn", "Store")}
                 ${renderMenuTile("achievements-btn", "Achievements")}
                 ${renderMenuTile("settings-btn", "Settings")}
+                ${renderMenuTile("how-to-play-btn", "How to Play")}
                 ${renderMenuTile("feedback-btn", "Feedback")}
                 ${renderMenuTile("logout-btn", "Logout")}
               </div>
@@ -217,6 +219,7 @@ export const menuScreen = {
     document.getElementById("cosmetics-btn").addEventListener("click", context.actions.openCosmetics);
     document.getElementById("store-btn").addEventListener("click", context.actions.openStore);
     document.getElementById("settings-btn").addEventListener("click", context.actions.openSettings);
+    document.getElementById("how-to-play-btn").addEventListener("click", context.actions.openHowToPlay);
     document.getElementById("feedback-btn").addEventListener("click", context.actions.openFeedback);
     document.getElementById("switch-account-btn").addEventListener("click", context.actions.switchAccount);
     document.getElementById("logout-btn").addEventListener("click", context.actions.logout);

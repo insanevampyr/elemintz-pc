@@ -6,6 +6,7 @@ import { achievementsScreen } from "../../src/renderer/ui/screens/achievementsSc
 import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.js";
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature, gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
+import { howToPlayScreen } from "../../src/renderer/ui/screens/howToPlayScreen.js";
 import { localSetupScreen } from "../../src/renderer/ui/screens/localSetupScreen.js";
 import { menuScreen } from "../../src/renderer/ui/screens/menuScreen.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
@@ -2286,6 +2287,7 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     "cosmetics-btn": createFakeElement(),
     "store-btn": createFakeElement(),
     "settings-btn": createFakeElement(),
+    "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
     "logout-btn": createFakeElement(),
     "switch-account-btn": createFakeElement()
@@ -2357,6 +2359,7 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
         openCosmetics: async () => {},
         openStore: async () => {},
         openSettings: async () => {},
+        openHowToPlay: () => {},
         logout: () => {},
         switchAccount: () => {}
       }
@@ -6718,6 +6721,7 @@ test("ui: menu renders buttons in requested order without standalone challenges 
     "store-btn",
     "achievements-btn",
     "settings-btn",
+    "how-to-play-btn",
     "feedback-btn",
     "logout-btn"
   ];
@@ -6757,6 +6761,7 @@ test("ui: menu action buttons use menu tile artwork backgrounds", () => {
   assert.match(html, /id="store-btn"[\s\S]*menu_tiles\/tile_store\.png/);
   assert.match(html, /id="achievements-btn"[\s\S]*menu_tiles\/tile_achievements\.png/);
   assert.match(html, /id="settings-btn"[\s\S]*menu_tiles\/tile_settings\.png/);
+  assert.match(html, /id="how-to-play-btn"[\s\S]*menu_tiles\/tile_settings\.png/);
   assert.match(html, /id="feedback-btn"[\s\S]*menu_tiles\/tile_settings\.png/);
   assert.match(html, /id="logout-btn"[\s\S]*menu_tiles\/tile_logout\.png/);
   assert.match(html, /menu-tile__veil/);
@@ -6851,6 +6856,7 @@ test("ui: menu announcement dismiss button binds to the dismiss action with the 
     "cosmetics-btn": createFakeElement(),
     "store-btn": createFakeElement(),
     "settings-btn": createFakeElement(),
+    "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
     "logout-btn": createFakeElement(),
     "switch-account-btn": createFakeElement(),
@@ -6879,6 +6885,7 @@ test("ui: menu announcement dismiss button binds to the dismiss action with the 
         openCosmetics: async () => {},
         openStore: async () => {},
         openSettings: async () => {},
+        openHowToPlay: async () => {},
         openFeedback: () => {},
         logout: () => {},
         switchAccount: () => {},
@@ -6892,6 +6899,157 @@ test("ui: menu announcement dismiss button binds to the dismiss action with the 
   } finally {
     global.document = previousDocument;
   }
+});
+
+test("ui: menu renders a How to Play button and keeps existing buttons", () => {
+  const html = menuScreen.render({
+    username: "HelpUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /id="how-to-play-btn"/);
+  assert.match(html, />How to Play</);
+  assert.match(html, /id="store-btn"/);
+  assert.match(html, /id="settings-btn"/);
+  assert.match(html, /id="feedback-btn"/);
+});
+
+test("ui: how to play screen renders the major gameplay help sections", () => {
+  const html = howToPlayScreen.render({
+    actions: { back: () => {} }
+  });
+
+  assert.match(html, /How to Play EleMintz/);
+  assert.match(html, /Basic Goal/);
+  assert.match(html, /Element Rules/);
+  assert.match(html, /WAR/);
+  assert.match(html, /Winning the Match/);
+  assert.match(html, /XP, Tokens, and Chests/);
+  assert.match(html, /Cosmetics/);
+  assert.match(html, /Store and Featured Rotation/);
+  assert.match(html, /Quick Tips/);
+  assert.match(html, /Fire<\/strong> beats Earth/);
+  assert.match(html, /If you already own a limited cosmetic, it stays yours and remains usable even when it leaves the Store rotation\./);
+});
+
+test("ui: how to play screen back button binds to the provided action", () => {
+  const previousDocument = global.document;
+  let backCalls = 0;
+  const backButton = createFakeElement();
+
+  global.document = {
+    getElementById: (id) => (id === "how-to-play-back-btn" ? backButton : null)
+  };
+
+  try {
+    howToPlayScreen.bind({
+      actions: {
+        back: () => {
+          backCalls += 1;
+        }
+      }
+    });
+
+    backButton.listeners.get("click")();
+
+    assert.equal(backCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: menu how to play button binds to the provided action", () => {
+  const previousDocument = global.document;
+  let howToPlayCalls = 0;
+  const elements = {
+    "start-pve-btn": createFakeElement(),
+    "start-local-btn": createFakeElement(),
+    "online-play-btn": createFakeElement(),
+    "profile-btn": createFakeElement(),
+    "achievements-btn": createFakeElement(),
+    "open-daily-challenges-btn": createFakeElement(),
+    "cosmetics-btn": createFakeElement(),
+    "store-btn": createFakeElement(),
+    "settings-btn": createFakeElement(),
+    "how-to-play-btn": createFakeElement(),
+    "feedback-btn": createFakeElement(),
+    "logout-btn": createFakeElement(),
+    "switch-account-btn": createFakeElement()
+  };
+
+  global.document = {
+    getElementById: (id) => elements[id] ?? null
+  };
+
+  try {
+    menuScreen.bind({
+      actions: {
+        startPveGame: () => {},
+        startLocalGame: () => {},
+        openOnlinePlay: async () => {},
+        openProfile: async () => {},
+        openAchievements: async () => {},
+        openDailyChallenges: async () => {},
+        openCosmetics: async () => {},
+        openStore: async () => {},
+        openSettings: async () => {},
+        openHowToPlay: () => {
+          howToPlayCalls += 1;
+        },
+        openFeedback: () => {},
+        logout: () => {},
+        switchAccount: () => {},
+        dismissAnnouncement: async () => {}
+      }
+    });
+
+    elements["how-to-play-btn"].listeners.get("click")();
+
+    assert.equal(howToPlayCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController showHowToPlay opens the help screen and back returns to menu", () => {
+  const shown = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => {
+        shown.push({ screenId, context });
+      }
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  controller.showMenu = () => {
+    shown.push({ screenId: "menu", context: null });
+  };
+
+  controller.showHowToPlay();
+
+  assert.equal(shown.at(-1).screenId, "howToPlay");
+
+  shown.at(-1).context.actions.back();
+
+  assert.equal(shown.at(-1).screenId, "menu");
 });
 
 test("ui: daily challenges screen shows weekly reset with day format", () => {
