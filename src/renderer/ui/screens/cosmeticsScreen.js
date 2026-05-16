@@ -39,7 +39,32 @@ function renderCollectionChip(collection) {
     return "";
   }
 
-  return `<p><span class="cosmetic-collection-chip">${collection}</span></p>`;
+  return `<p><span class="cosmetic-collection-chip">${collection} Collection</span></p>`;
+}
+
+function normalizeCollectionKey(collection) {
+  return String(collection ?? "").trim();
+}
+
+function getOwnedCollectionOptions(cosmetics) {
+  const seen = new Set();
+  const options = [];
+
+  for (const [, items] of Object.entries(cosmetics?.catalog ?? {})) {
+    for (const item of items ?? []) {
+      if (!item?.owned) {
+        continue;
+      }
+      const collection = normalizeCollectionKey(item?.collection);
+      if (!collection || seen.has(collection)) {
+        continue;
+      }
+      seen.add(collection);
+      options.push(collection);
+    }
+  }
+
+  return options.sort((left, right) => left.localeCompare(right));
 }
 
 function supportsHoverPreview(type, hasRenderableImage) {
@@ -126,7 +151,7 @@ function renderItem(type, item) {
   const newBadge = item.isNew ? '<span class="store-item-badge store-item-badge-new">NEW</span>' : "";
 
   return `
-    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}" data-cosmetic-is-new="${item.isNew ? "true" : "false"}" data-cosmetic-original-index="${item.originalIndex ?? 0}">
+    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}" data-cosmetic-collection="${normalizeCollectionKey(item.collection).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}" data-cosmetic-is-new="${item.isNew ? "true" : "false"}" data-cosmetic-original-index="${item.originalIndex ?? 0}">
       ${newBadge}
       ${preview(type, item)}
       <div class="cosmetic-meta">
@@ -293,9 +318,11 @@ export const cosmeticsScreen = {
     const cosmetics = context.cosmetics;
     const loadouts = Array.isArray(cosmetics.loadouts) ? cosmetics.loadouts : [];
     const viewState = normalizeCategoryViewState(context.viewState);
+    const collectionOptions = getOwnedCollectionOptions(cosmetics);
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.collections = viewState.collections;
       context.viewState.showNewFirst = viewState.showNewFirst;
     }
 
@@ -346,6 +373,25 @@ export const cosmeticsScreen = {
                   ).join("")}
                 </div>
               </fieldset>
+              ${
+                collectionOptions.length
+                  ? `<fieldset class="store-filter-group">
+                <legend>Collections</legend>
+                <div class="store-filter-options">
+                  ${collectionOptions
+                    .map(
+                      (collection) => `
+                      <label class="store-filter-option">
+                        <input type="checkbox" data-cosmetic-collection-filter="${escapeAttribute(collection)}" ${viewState.collections.has(collection) ? "checked" : ""} />
+                        <span>${collection}</span>
+                      </label>
+                    `
+                    )
+                    .join("")}
+                </div>
+              </fieldset>`
+                  : ""
+              }
               <fieldset class="store-filter-group">
                 <legend>Order</legend>
                 <div class="store-filter-options">
@@ -389,6 +435,7 @@ export const cosmeticsScreen = {
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.collections = viewState.collections;
       context.viewState.showNewFirst = viewState.showNewFirst;
     }
 
@@ -396,26 +443,31 @@ export const cosmeticsScreen = {
       const sections = Array.from(scope.querySelectorAll("[data-cosmetic-section]"));
       const categoriesEnabled = viewState.categories.size > 0;
       const raritiesEnabled = viewState.rarities.size > 0;
-        let anyVisible = false;
+      const collectionsEnabled = viewState.collections.size > 0;
+      let anyVisible = false;
 
-        for (const section of sections) {
-          const type = section.getAttribute("data-cosmetic-section");
-          const grid = section.querySelector(".cosmetic-grid");
-          if (grid) {
-            sortRenderedCosmeticItems(
-              Array.from(grid.querySelectorAll(".cosmetic-item")),
-              viewState.showNewFirst
-            ).forEach((item) => {
-              grid.appendChild(item);
-            });
-          }
-          const items = Array.from(section.querySelectorAll(".cosmetic-item"));
-          const categoryVisible = categoriesEnabled && viewState.categories.has(type);
+      for (const section of sections) {
+        const type = section.getAttribute("data-cosmetic-section");
+        const grid = section.querySelector(".cosmetic-grid");
+        if (grid) {
+          sortRenderedCosmeticItems(
+            Array.from(grid.querySelectorAll(".cosmetic-item")),
+            viewState.showNewFirst
+          ).forEach((item) => {
+            grid.appendChild(item);
+          });
+        }
+        const items = Array.from(section.querySelectorAll(".cosmetic-item"));
+        const categoryVisible = categoriesEnabled && viewState.categories.has(type);
         let hasVisibleItem = false;
 
         for (const item of items) {
           const rarity = item.getAttribute("data-cosmetic-rarity") ?? "Common";
-          const itemVisible = categoryVisible && raritiesEnabled && viewState.rarities.has(rarity);
+          const collection = normalizeCollectionKey(item.getAttribute("data-cosmetic-collection"));
+          const matchesCollection =
+            !collectionsEnabled || (collection && viewState.collections.has(collection));
+          const itemVisible =
+            categoryVisible && raritiesEnabled && viewState.rarities.has(rarity) && matchesCollection;
           item.hidden = !itemVisible;
           item.classList?.toggle("is-filtered-out", !itemVisible);
           if (item.style) {
@@ -478,22 +530,38 @@ export const cosmeticsScreen = {
       });
     });
 
-      scope.querySelectorAll("[data-cosmetic-rarity-filter]").forEach((input) => {
-        input.addEventListener("change", () => {
-          const rarity = input.getAttribute("data-cosmetic-rarity-filter");
+    scope.querySelectorAll("[data-cosmetic-rarity-filter]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const rarity = input.getAttribute("data-cosmetic-rarity-filter");
         if (input.checked) {
           viewState.rarities.add(rarity);
         } else {
           viewState.rarities.delete(rarity);
         }
         applyFilters();
-        });
       });
+    });
 
-      document.getElementById("cosmetics-show-new-first")?.addEventListener("change", (event) => {
-        viewState.showNewFirst = Boolean(event?.target?.checked);
+    scope.querySelectorAll("[data-cosmetic-collection-filter]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const collection = normalizeCollectionKey(input.getAttribute("data-cosmetic-collection-filter"));
+        if (!collection) {
+          applyFilters();
+          return;
+        }
+        if (input.checked) {
+          viewState.collections.add(collection);
+        } else {
+          viewState.collections.delete(collection);
+        }
         applyFilters();
       });
+    });
+
+    document.getElementById("cosmetics-show-new-first")?.addEventListener("change", (event) => {
+      viewState.showNewFirst = Boolean(event?.target?.checked);
+      applyFilters();
+    });
 
     document.querySelectorAll("[data-equip-type]").forEach((button) => {
       button.addEventListener("click", async () => {

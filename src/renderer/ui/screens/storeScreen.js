@@ -29,6 +29,7 @@ function createDefaultViewState() {
     searchText: "",
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
     rarities: new Set(FILTERABLE_RARITIES),
+    collections: new Set(),
     showNewFirst: true
   };
 }
@@ -45,6 +46,10 @@ function normalizeViewState(viewState) {
       viewState?.rarities instanceof Set
         ? viewState.rarities
         : new Set(viewState?.rarities ?? defaults.rarities),
+    collections:
+      viewState?.collections instanceof Set
+        ? viewState.collections
+        : new Set(viewState?.collections ?? defaults.collections),
     showNewFirst:
       typeof viewState?.showNewFirst === "boolean"
         ? viewState.showNewFirst
@@ -111,7 +116,32 @@ function renderCollectionChip(collection) {
     return "";
   }
 
-  return `<p><span class="cosmetic-collection-chip">${collection}</span></p>`;
+  return `<p><span class="cosmetic-collection-chip">${collection} Collection</span></p>`;
+}
+
+function normalizeCollectionKey(collection) {
+  return String(collection ?? "").trim();
+}
+
+function getStoreCollectionOptions(store) {
+  const seen = new Set();
+  const options = [];
+
+  for (const [, items] of Object.entries(store?.catalog ?? {})) {
+    for (const item of items ?? []) {
+      if (item?.owned) {
+        continue;
+      }
+      const collection = normalizeCollectionKey(item?.collection);
+      if (!collection || seen.has(collection)) {
+        continue;
+      }
+      seen.add(collection);
+      options.push(collection);
+    }
+  }
+
+  return options.sort((left, right) => left.localeCompare(right));
 }
 
 function usesRarityFrame(type) {
@@ -222,6 +252,7 @@ function renderStoreItem(type, item, originalIndex) {
       data-store-type="${type}"
       data-store-rarity="${normalizeRarity(item.rarity)}"
       data-store-name="${normalizeFilterText(item.name)}"
+      data-store-collection="${escapeAttribute(normalizeCollectionKey(item.collection))}"
       data-store-is-new="${item.isNew ? "true" : "false"}"
       data-store-original-index="${originalIndex}"
     >
@@ -249,6 +280,7 @@ export const storeScreen = {
   render(context) {
     const store = context.store;
     const viewState = normalizeViewState(context.viewState);
+    const collectionOptions = getStoreCollectionOptions(store);
 
     return `
       <section class="screen screen-store">
@@ -313,6 +345,25 @@ export const storeScreen = {
                   ).join("")}
                 </div>
               </fieldset>
+              ${
+                collectionOptions.length
+                  ? `<fieldset class="store-filter-group">
+                <legend>Collections</legend>
+                <div class="store-filter-options">
+                  ${collectionOptions
+                    .map(
+                      (collection) => `
+                      <label class="store-filter-option">
+                        <input type="checkbox" data-store-collection-filter="${escapeAttribute(collection)}" ${viewState.collections.has(collection) ? "checked" : ""} />
+                        <span>${collection}</span>
+                      </label>
+                    `
+                    )
+                    .join("")}
+                </div>
+              </fieldset>`
+                  : ""
+              }
               <fieldset class="store-filter-group">
                 <legend>Order</legend>
                 <div class="store-filter-options">
@@ -349,6 +400,7 @@ export const storeScreen = {
       context.viewState.searchText = viewState.searchText;
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.collections = viewState.collections;
       context.viewState.showNewFirst = viewState.showNewFirst;
     }
 
@@ -357,16 +409,20 @@ export const storeScreen = {
       const sections = Array.from(root.querySelectorAll("[data-store-section]"));
       const categoriesEnabled = viewState.categories.size > 0;
       const raritiesEnabled = viewState.rarities.size > 0;
+      const collectionsEnabled = viewState.collections.size > 0;
       const normalizedSearchText = normalizeFilterText(viewState.searchText);
 
       for (const item of items) {
         const name = normalizeFilterText(item.getAttribute("data-store-name"));
         const type = item.getAttribute("data-store-type");
         const rarity = item.getAttribute("data-store-rarity") ?? "Common";
+        const collection = normalizeCollectionKey(item.getAttribute("data-store-collection"));
         const matchesSearch = !normalizedSearchText || name.includes(normalizedSearchText);
         const matchesCategory = categoriesEnabled && viewState.categories.has(type);
         const matchesRarity = raritiesEnabled && viewState.rarities.has(rarity);
-        const isVisible = matchesSearch && matchesCategory && matchesRarity;
+        const matchesCollection =
+          !collectionsEnabled || (collection && viewState.collections.has(collection));
+        const isVisible = matchesSearch && matchesCategory && matchesRarity && matchesCollection;
         item.hidden = !isVisible;
         item.classList?.toggle("is-filtered-out", !isVisible);
         if (item.style) {
@@ -458,6 +514,22 @@ export const storeScreen = {
           viewState.rarities.add(rarity);
         } else {
           viewState.rarities.delete(rarity);
+        }
+        applyFilters();
+      });
+    });
+
+    root.querySelectorAll("[data-store-collection-filter]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const collection = normalizeCollectionKey(input.getAttribute("data-store-collection-filter"));
+        if (!collection) {
+          applyFilters();
+          return;
+        }
+        if (input.checked) {
+          viewState.collections.add(collection);
+        } else {
+          viewState.collections.delete(collection);
         }
         applyFilters();
       });

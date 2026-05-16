@@ -29,6 +29,7 @@ export function createDefaultCategoryViewState() {
   return {
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
     rarities: new Set(FILTERABLE_RARITIES),
+    collections: new Set(),
     showNewFirst: true
   };
 }
@@ -44,6 +45,10 @@ export function normalizeCategoryViewState(viewState) {
       viewState?.rarities instanceof Set
         ? viewState.rarities
         : new Set(viewState?.rarities ?? defaults.rarities),
+    collections:
+      viewState?.collections instanceof Set
+        ? viewState.collections
+        : new Set(viewState?.collections ?? defaults.collections),
     showNewFirst:
       typeof viewState?.showNewFirst === "boolean"
         ? viewState.showNewFirst

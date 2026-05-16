@@ -1033,6 +1033,7 @@ export class AppController {
       searchText: "",
       categories: new Set(["avatar", "background", "cardBack", "elementCardVariant", "title", "badge"]),
       rarities: new Set(["Common", "Rare", "Epic", "Legendary"]),
+      collections: new Set(),
       showNewFirst: true
     };
   }
@@ -1051,6 +1052,10 @@ export class AppController {
       this.storeViewState.rarities instanceof Set
         ? this.storeViewState.rarities
         : new Set(this.storeViewState.rarities ?? this.createDefaultStoreViewState().rarities);
+    this.storeViewState.collections =
+      this.storeViewState.collections instanceof Set
+        ? this.storeViewState.collections
+        : new Set(this.storeViewState.collections ?? this.createDefaultStoreViewState().collections);
     this.storeViewState.showNewFirst =
       typeof this.storeViewState.showNewFirst === "boolean"
         ? this.storeViewState.showNewFirst
@@ -1073,6 +1078,10 @@ export class AppController {
       this.cosmeticsViewState.rarities instanceof Set
         ? this.cosmeticsViewState.rarities
         : new Set(this.cosmeticsViewState.rarities ?? defaults.rarities);
+    this.cosmeticsViewState.collections =
+      this.cosmeticsViewState.collections instanceof Set
+        ? this.cosmeticsViewState.collections
+        : new Set(this.cosmeticsViewState.collections ?? defaults.collections);
     this.cosmeticsViewState.showNewFirst =
       typeof this.cosmeticsViewState.showNewFirst === "boolean"
         ? this.cosmeticsViewState.showNewFirst

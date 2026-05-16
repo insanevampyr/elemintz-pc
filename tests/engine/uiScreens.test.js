@@ -337,7 +337,7 @@ test("ui: store screen renders collection chips for mapped items and omits them 
     viewState: {}
   });
 
-  assert.match(html, /cosmetic-collection-chip">Ember<\/span>/);
+  assert.match(html, /cosmetic-collection-chip">Ember Collection<\/span>/);
   assert.equal(html.match(/cosmetic-collection-chip/g)?.length ?? 0, 1);
   assert.match(html, /Price: 150 Tokens/);
   assert.match(html, /Rarity: <span class="cosmetic-rarity-label[^"]*">Common<\/span>/);
@@ -378,10 +378,74 @@ test("ui: cosmetics screen renders collection chips for mapped owned items and o
     viewState: {}
   });
 
-  assert.match(html, /cosmetic-collection-chip">Velvet (&amp;|&) Rose<\/span>/);
+  assert.match(html, /cosmetic-collection-chip">Velvet (&amp;|&) Rose Collection<\/span>/);
   assert.equal(html.match(/cosmetic-collection-chip/g)?.length ?? 0, 1);
   assert.match(html, /Equipped: Yes/);
   assert.match(html, /cosmetic-rarity-label rarity-legendary/);
+});
+
+test("ui: store and cosmetics render short collection filter labels when collection items exist", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_astral_archon",
+            name: "Astral Archon",
+            image: "avatars/avatar_astral_archon.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            collection: "Celestial"
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    viewState: {}
+  });
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_astral_archon",
+            name: "Astral Archon",
+            image: "avatars/avatar_astral_archon.png",
+            rarity: "Legendary",
+            owned: true,
+            equipped: false,
+            collection: "Celestial"
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(storeHtml, /<legend>Collections<\/legend>/);
+  assert.match(storeHtml, /data-store-collection-filter="Celestial"/);
+  assert.match(storeHtml, /<span>Celestial<\/span>/);
+  assert.doesNotMatch(storeHtml, /Celestial Collection<\/span><\/label>/);
+
+  assert.match(cosmeticsHtml, /<legend>Collections<\/legend>/);
+  assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Celestial"/);
+  assert.match(cosmeticsHtml, /<span>Celestial<\/span>/);
+  assert.doesNotMatch(cosmeticsHtml, /Celestial Collection<\/span><\/label>/);
 });
 
 test("ui: settings screen defaults to normal AI, random cosmetics, and a 20 second timer when fields are missing", () => {
@@ -1375,6 +1439,207 @@ test("ui: store search and filters update visible cosmetics without mutating cat
     assert.equal(badgeItem.hidden, true);
     assert.equal(emptyState.hidden, false);
     assert.equal(emptyState.style.display, "");
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: store collection filters combine with search category and rarity while hiding unmapped items when active", () => {
+  const previousDocument = global.document;
+
+  const emberAvatar = createSortableItem({
+    "data-store-name": "smirk ember",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Common",
+    "data-store-collection": "Ember",
+    "data-store-is-new": "true",
+    "data-store-original-index": "0"
+  });
+  const celestialAvatar = createSortableItem({
+    "data-store-name": "astral archon",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Legendary",
+    "data-store-collection": "Celestial",
+    "data-store-is-new": "false",
+    "data-store-original-index": "1"
+  });
+  const ungroupedAvatar = createSortableItem({
+    "data-store-name": "fire avatar classic",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Common",
+    "data-store-collection": "",
+    "data-store-is-new": "false",
+    "data-store-original-index": "2"
+  });
+  const grid = createFakeGrid([emberAvatar, celestialAvatar, ungroupedAvatar]);
+  const section = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? grid : null),
+    querySelectorAll: (selector) => (selector === "[data-store-item]" ? grid.items : []),
+    getAttribute: () => "avatar"
+  };
+  const categoryInput = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "avatar" } });
+  const rarityCommon = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Common" } });
+  const rarityLegendary = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Legendary" } });
+  const collectionEmber = createFakeCheckbox({ checked: false, attributeMap: { "data-store-collection-filter": "Ember" } });
+  const collectionCelestial = createFakeCheckbox({ checked: false, attributeMap: { "data-store-collection-filter": "Celestial" } });
+  const searchInput = createFakeElement();
+  const showNewFirstInput = createFakeCheckbox({ checked: true });
+  const backButton = { addEventListener() {} };
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+  const root = {
+    querySelectorAll(selector) {
+      if (selector === "[data-store-item]") return grid.items;
+      if (selector === "[data-store-section]") return [section];
+      if (selector === "[data-store-category-filter]") return [categoryInput];
+      if (selector === "[data-store-rarity-filter]") return [rarityCommon, rarityLegendary];
+      if (selector === "[data-store-collection-filter]") return [collectionEmber, collectionCelestial];
+      if (selector === "[data-buy-type]" || selector === "[data-equip-type]") return [];
+      return [];
+    }
+  };
+
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-store" ? root : null),
+    getElementById: (id) => {
+      if (id === "store-search-input") return searchInput;
+      if (id === "store-show-new-first") return showNewFirstInput;
+      if (id === "store-back-btn") return backButton;
+      if (id === "store-empty-state") return emptyState;
+      return null;
+    }
+  };
+
+  try {
+    const viewState = {
+      searchText: "",
+      categories: new Set(["avatar"]),
+      rarities: new Set(["Common", "Legendary"]),
+      collections: new Set(),
+      showNewFirst: true
+    };
+    storeScreen.bind({
+      viewState,
+      actions: { back: () => {}, buy: async () => {}, equip: async () => {} }
+    });
+
+    assert.equal(emberAvatar.hidden, false);
+    assert.equal(celestialAvatar.hidden, false);
+    assert.equal(ungroupedAvatar.hidden, false);
+
+    collectionEmber.checked = true;
+    collectionEmber.trigger("change");
+
+    assert.equal(emberAvatar.hidden, false);
+    assert.equal(celestialAvatar.hidden, true);
+    assert.equal(ungroupedAvatar.hidden, true);
+
+    searchInput.value = "smirk";
+    searchInput.listeners.get("input")();
+    assert.equal(emberAvatar.hidden, false);
+
+    rarityCommon.checked = false;
+    rarityCommon.trigger("change");
+    assert.equal(emberAvatar.hidden, true);
+    assert.equal(emptyState.hidden, false);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: cosmetics collection filters hide no-collection items only when a specific collection is selected", () => {
+  const previousDocument = global.document;
+
+  const defaultAvatar = createSortableItem({
+    "data-cosmetic-rarity": "Common",
+    "data-cosmetic-collection": "",
+    "data-cosmetic-is-new": "false",
+    "data-cosmetic-original-index": "0"
+  });
+  const roseAvatar = createSortableItem({
+    "data-cosmetic-rarity": "Legendary",
+    "data-cosmetic-collection": "Velvet & Rose",
+    "data-cosmetic-is-new": "false",
+    "data-cosmetic-original-index": "1"
+  });
+  const grid = createFakeGrid([defaultAvatar, roseAvatar]);
+  const section = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? grid : null),
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? grid.items : []),
+    getAttribute: () => "avatar"
+  };
+  const categoryInput = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-category-filter": "avatar" } });
+  const rarityCommon = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-rarity-filter": "Common" } });
+  const rarityLegendary = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-rarity-filter": "Legendary" } });
+  const collectionRose = createFakeCheckbox({ checked: false, attributeMap: { "data-cosmetic-collection-filter": "Velvet & Rose" } });
+  const showNewFirstInput = createFakeCheckbox({ checked: true });
+  const backButton = { addEventListener() {} };
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+
+  global.document = {
+    querySelector: (selector) =>
+      selector === ".screen-cosmetics"
+        ? {
+            querySelectorAll(innerSelector) {
+              if (innerSelector === "[data-cosmetic-section]") return [section];
+              if (innerSelector === "[data-cosmetic-category-filter]") return [categoryInput];
+              if (innerSelector === "[data-cosmetic-rarity-filter]") return [rarityCommon, rarityLegendary];
+              if (innerSelector === "[data-cosmetic-collection-filter]") return [collectionRose];
+              if (
+                innerSelector === "[data-randomize-after-match]" ||
+                innerSelector === "[data-equip-type]" ||
+                innerSelector === "[data-loadout-save]" ||
+                innerSelector === "[data-loadout-apply]" ||
+                innerSelector === "[data-loadout-rename]"
+              ) {
+                return [];
+              }
+              return [];
+            }
+          }
+        : null,
+    getElementById: (id) => {
+      if (id === "cosmetics-show-new-first") return showNewFirstInput;
+      if (id === "cosmetics-back-btn") return backButton;
+      if (id === "cosmetics-empty-state") return emptyState;
+      return null;
+    },
+    querySelectorAll: () => []
+  };
+
+  try {
+    const viewState = {
+      categories: new Set(["avatar"]),
+      rarities: new Set(["Common", "Legendary"]),
+      collections: new Set(),
+      showNewFirst: true
+    };
+    cosmeticsScreen.bind({
+      viewState,
+      actions: {
+        back: () => {},
+        updateRandomizationPreferences: async () => {},
+        randomizeNow: async () => {},
+        equip: async () => {},
+        saveLoadout: async () => {},
+        applyLoadout: async () => {},
+        renameLoadout: async () => {}
+      }
+    });
+
+    assert.equal(defaultAvatar.hidden, false);
+    assert.equal(roseAvatar.hidden, false);
+
+    collectionRose.checked = true;
+    collectionRose.trigger("change");
+
+    assert.equal(defaultAvatar.hidden, true);
+    assert.equal(roseAvatar.hidden, false);
   } finally {
     global.document = previousDocument;
   }
