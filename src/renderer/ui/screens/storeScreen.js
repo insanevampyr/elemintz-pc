@@ -106,6 +106,14 @@ function rarityClassName(rarity) {
   return `rarity-${normalizeRarity(rarity).toLowerCase()}`;
 }
 
+function renderCollectionChip(collection) {
+  if (!collection) {
+    return "";
+  }
+
+  return `<p><span class="cosmetic-collection-chip">${collection}</span></p>`;
+}
+
 function usesRarityFrame(type) {
   return Boolean(type);
 }
@@ -221,6 +229,7 @@ function renderStoreItem(type, item, originalIndex) {
       ${renderPreview(type, item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
+        ${renderCollectionChip(item.collection)}
         <p>Status: ${item.owned ? "Owned" : "Not Owned"}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
         <p>Price: ${item.purchasable ? `${item.price} Tokens` : "Not Purchasable"}</p>

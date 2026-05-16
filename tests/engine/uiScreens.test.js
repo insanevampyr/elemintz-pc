@@ -17,6 +17,7 @@ import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
+import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 
 function createClassList() {
@@ -282,6 +283,105 @@ test("ui: settings screen persists AI difficulty and opponent style selections",
     global.document = previousDocument;
     global.FormData = previousFormData;
   }
+});
+
+test("ui: cosmetic catalog preserves approved collection labels for mapped entries only", () => {
+  assert.equal(
+    COSMETIC_CATALOG.cardBack.find((item) => item.id === "cardback_founder_ember")?.collection,
+    "Ember"
+  );
+  assert.equal(
+    COSMETIC_CATALOG.title.find((item) => item.id === "title_pretty_problem")?.collection,
+    "Cutesy"
+  );
+  assert.equal(
+    COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF")?.collection,
+    undefined
+  );
+});
+
+test("ui: store screen renders collection chips for mapped items and omits them for unmapped items", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_smirk_ember",
+            name: "Smirk Ember",
+            image: "avatars/avatar_smirk_ember.png",
+            rarity: "Common",
+            price: 150,
+            purchasable: true,
+            owned: false,
+            collection: "Ember"
+          },
+          {
+            id: "fireavatarF",
+            name: "Fire Avatar Classic (F)",
+            image: "avatars/fireavatarF.png",
+            rarity: "Common",
+            price: 150,
+            purchasable: true,
+            owned: false
+          }
+        ],
+        title: [],
+        badge: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: []
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(html, /cosmetic-collection-chip">Ember<\/span>/);
+  assert.equal(html.match(/cosmetic-collection-chip/g)?.length ?? 0, 1);
+  assert.match(html, /Price: 150 Tokens/);
+  assert.match(html, /Rarity: <span class="cosmetic-rarity-label[^"]*">Common<\/span>/);
+});
+
+test("ui: cosmetics screen renders collection chips for mapped owned items and omits them for unmapped items", () => {
+  const html = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_rose_riot",
+            name: "Rose Riot",
+            image: "avatars/avatar_rose_riot.png",
+            owned: true,
+            equipped: false,
+            rarity: "Legendary",
+            collection: "Velvet & Rose"
+          },
+          {
+            id: "default_avatar",
+            name: "Default Avatar",
+            image: "avatars/default.png",
+            owned: true,
+            equipped: true,
+            rarity: "Common"
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(html, /cosmetic-collection-chip">Velvet (&amp;|&) Rose<\/span>/);
+  assert.equal(html.match(/cosmetic-collection-chip/g)?.length ?? 0, 1);
+  assert.match(html, /Equipped: Yes/);
+  assert.match(html, /cosmetic-rarity-label rarity-legendary/);
 });
 
 test("ui: settings screen defaults to normal AI, random cosmetics, and a 20 second timer when fields are missing", () => {

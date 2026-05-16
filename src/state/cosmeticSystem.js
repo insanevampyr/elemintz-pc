@@ -96,7 +96,7 @@ const LEGACY_ELEMENT_VARIANT_BUNDLES = Object.freeze({
   }
 });
 
-export const COSMETIC_CATALOG = Object.freeze({
+const RAW_COSMETIC_CATALOG = Object.freeze({
   avatar: Object.freeze([
     {
       id: "default_avatar",
@@ -2027,6 +2027,110 @@ export const COSMETIC_CATALOG = Object.freeze({
     }
   ])
 });
+
+const COSMETIC_COLLECTION_BY_KEY = Object.freeze({
+  "avatar:default_avatar": "Starter Set",
+  "cardBack:default_card_back": "Starter Set",
+  "background:default_background": "Starter Set",
+  "elementCardVariant:default_fire_card": "Starter Set",
+  "elementCardVariant:default_water_card": "Starter Set",
+  "elementCardVariant:default_earth_card": "Starter Set",
+  "elementCardVariant:default_wind_card": "Starter Set",
+  "badge:none": "Starter Set",
+  "title:Initiate": "Starter Set",
+  "cardBack:founder_deluxe_card_back": "Founder Pack",
+  "badge:supporter_badge": "Founder Pack",
+  "title:Arena Founder": "Founder Pack",
+  "cardBack:supporter_card_back": "Founder Pack",
+  "title:title_apprentice": "Level Rewards",
+  "avatar:avatar_novice_mage": "Level Rewards",
+  "badge:badge_element_initiate": "Level Rewards",
+  "elementCardVariant:fire_variant_ember": "Level Rewards",
+  "background:background_ancient_arena": "Level Rewards",
+  "title:title_elementalist": "Level Rewards",
+  "avatar:avatar_battle_adept": "Level Rewards",
+  "badge:badge_arena_challenger": "Level Rewards",
+  "elementCardVariant:water_variant_crystal": "Level Rewards",
+  "background:background_storm_citadel": "Level Rewards",
+  "title:title_war_master": "Level Rewards",
+  "avatar:avatar_veteran_champion": "Level Rewards",
+  "badge:badge_element_veteran": "Level Rewards",
+  "elementCardVariant:earth_variant_titan": "Level Rewards",
+  "background:background_sky_temple": "Level Rewards",
+  "title:title_element_sovereign": "Level Rewards",
+  "avatar:avatar_grand_archmage": "Level Rewards",
+  "badge:badge_arena_legend": "Level Rewards",
+  "title:title_master_elemintz": "Level Rewards",
+  "badge:war_machine_badge": "Achievement Rewards",
+  "title:Flame Vanguard": "Achievement Rewards",
+  "title:Storm Breaker": "Achievement Rewards",
+  "title:Last Card Legend": "Achievement Rewards",
+  "avatar:avatar_inferno_crown_f": "Flame King",
+  "avatar:avatar_inferno_crown_m": "Flame King",
+  "cardBack:cardback_flame_tyrant": "Flame King",
+  "background:lava_throne_background": "Flame King",
+  "elementCardVariant:fire_variant_crownfire": "Flame King",
+  "title:title_crownless_king": "Flame King",
+  "avatar:avatar_voidbound_entity": "Void",
+  "cardBack:cardback_void_tease": "Void",
+  "cardBack:void_card_back": "Void",
+  "background:void_altar_background": "Void",
+  "title:title_void_doll": "Void",
+  "avatar:avatar_smirk_ember": "Ember",
+  "cardBack:ember_card_back": "Ember",
+  "cardBack:cardback_founder_ember": "Ember",
+  "elementCardVariant:fire_variant_ember_core": "Ember",
+  "background:bg_ember_arena": "Ember",
+  "avatar:avatar_riot_halo": "Celestial",
+  "avatar:avatar_golden_menace": "Celestial",
+  "avatar:avatar_astral_archon": "Celestial",
+  "background:celestial_void_background": "Celestial",
+  "background:celestial_chamber_background": "Celestial",
+  "background:bg_celestial_observatory": "Celestial",
+  "title:title_divine_menace": "Celestial",
+  "avatar:avatar_bubble_brat": "Cutesy",
+  "avatar:avatar_moss_mood": "Cutesy",
+  "avatar:avatar_neon_puff": "Cutesy",
+  "avatar:avatar_stone_cold_cutie": "Cutesy",
+  "avatar:avatar_storm_brat": "Cutesy",
+  "cardBack:outplayed_too_easy_cardback": "Cutesy",
+  "cardBack:cry_about_it_cardback": "Cutesy",
+  "cardBack:dreamscape_cardback": "Cutesy",
+  "cardBack:charmed_heart_cardback": "Cutesy",
+  "cardBack:cardback_sweet_but_deadly": "Cutesy",
+  "elementCardVariant:earth_variant_mountain_heart": "Cutesy",
+  "title:title_pretty_problem": "Cutesy",
+  "avatar:avatar_rose_riot": "Velvet & Rose",
+  "title:title_velvet_villain": "Velvet & Rose",
+  "avatar:avatar_corrupt_cherub": "Gothic Corruption",
+  "cardBack:gothic_heart_cardback": "Gothic Corruption",
+  "title:title_soft_doom": "Gothic Corruption",
+  "title:title_glitch_royalty": "Gothic Corruption",
+  "avatar:avatar_arcane_gambler": "Lucky",
+  "avatar:avatar_mimic_entity": "Lucky",
+  "cardBack:elemental_chest_cardback": "Lucky",
+  "cardBack:cardback_lucky_you": "Lucky"
+});
+
+function applyCosmeticCollections(catalog) {
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(catalog).map(([type, items]) => [
+        type,
+        Object.freeze(
+          items.map((item) => ({
+            ...item,
+            ...(COSMETIC_COLLECTION_BY_KEY[`${type}:${item.id}`]
+              ? { collection: COSMETIC_COLLECTION_BY_KEY[`${type}:${item.id}`] }
+              : {})
+          }))
+        )
+      ])
+    )
+  );
+}
+
+export const COSMETIC_CATALOG = applyCosmeticCollections(RAW_COSMETIC_CATALOG);
 
 const ACHIEVEMENT_COSMETIC_REWARDS = Object.freeze({
   first_flame: [{ type: "title", id: "Flame Vanguard" }],

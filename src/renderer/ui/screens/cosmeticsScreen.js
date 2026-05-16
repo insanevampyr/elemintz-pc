@@ -34,6 +34,14 @@ function usesRarityFrame(type) {
   return Boolean(type);
 }
 
+function renderCollectionChip(collection) {
+  if (!collection) {
+    return "";
+  }
+
+  return `<p><span class="cosmetic-collection-chip">${collection}</span></p>`;
+}
+
 function supportsHoverPreview(type, hasRenderableImage) {
   return hasRenderableImage || type === "title" || type === "badge";
 }
@@ -123,6 +131,7 @@ function renderItem(type, item) {
       ${preview(type, item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
+        ${renderCollectionChip(item.collection)}
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
         <p>Equipped: ${item.equipped ? "Yes" : "No"}</p>
         ${variantHint}
