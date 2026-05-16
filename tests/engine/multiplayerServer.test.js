@@ -961,6 +961,277 @@ test("multiplayer foundation: shopRotation:getActive ignores malformed, future, 
   }
 });
 
+test("shop rotation store: missing schedule file creates a disabled default and falls back to manual rotation", async () => {
+  const dataDir = await createTempDataDir();
+  const rotationPath = path.join(dataDir, "server-data", "shop-rotation.json");
+  const schedulePath = path.join(dataDir, "server-data", "shop-rotation-schedule.json");
+  await fs.mkdir(path.dirname(rotationPath), { recursive: true });
+  await fs.writeFile(
+    rotationPath,
+    JSON.stringify({
+      activeRotationId: "manual-void",
+      title: "Manual Void",
+      message: "Manual fallback rotation.",
+      featuredCosmeticIds: ["avatar_voidbound_entity"],
+      allowLimitedCosmeticIds: ["avatar_voidbound_entity"]
+    }),
+    "utf8"
+  );
+
+  const store = new ShopRotationStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+
+  try {
+    const rotation = await store.getActiveRotation({ now: new Date("2026-05-16T12:00:00.000Z") });
+    const scheduleJson = JSON.parse(await fs.readFile(schedulePath, "utf8"));
+
+    assert.deepEqual(rotation, {
+      activeRotationId: "manual-void",
+      title: "Manual Void",
+      message: "Manual fallback rotation.",
+      startsAt: null,
+      endsAt: null,
+      featuredCosmeticIds: ["avatar_voidbound_entity"],
+      allowLimitedCosmeticIds: ["avatar_voidbound_entity"]
+    });
+    assert.deepEqual(scheduleJson, {
+      enabled: false,
+      mode: "weekly",
+      rotationLengthDays: 7,
+      anchorDate: null,
+      rotationOrder: [],
+      rotations: {}
+    });
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("shop rotation store: malformed schedule falls back safely to manual rotation", async () => {
+  const dataDir = await createTempDataDir();
+  const serverDataDir = path.join(dataDir, "server-data");
+  const rotationPath = path.join(serverDataDir, "shop-rotation.json");
+  const schedulePath = path.join(serverDataDir, "shop-rotation-schedule.json");
+  await fs.mkdir(serverDataDir, { recursive: true });
+  await fs.writeFile(
+    rotationPath,
+    JSON.stringify({
+      activeRotationId: "manual-flame",
+      title: "Manual Flame",
+      featuredCosmeticIds: ["avatar_inferno_crown_f"]
+    }),
+    "utf8"
+  );
+  await fs.writeFile(schedulePath, "{ nope", "utf8");
+
+  const store = new ShopRotationStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+
+  try {
+    const rotation = await store.getActiveRotation({ now: new Date("2026-05-16T12:00:00.000Z") });
+    assert.deepEqual(rotation, {
+      activeRotationId: "manual-flame",
+      title: "Manual Flame",
+      message: null,
+      startsAt: null,
+      endsAt: null,
+      featuredCosmeticIds: ["avatar_inferno_crown_f"],
+      allowLimitedCosmeticIds: []
+    });
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("shop rotation store: disabled and future-dated schedules fall back safely to manual rotation", async () => {
+  const dataDir = await createTempDataDir();
+  const serverDataDir = path.join(dataDir, "server-data");
+  const rotationPath = path.join(serverDataDir, "shop-rotation.json");
+  const schedulePath = path.join(serverDataDir, "shop-rotation-schedule.json");
+  await fs.mkdir(serverDataDir, { recursive: true });
+  await fs.writeFile(
+    rotationPath,
+    JSON.stringify({
+      activeRotationId: "manual-lucky",
+      title: "Manual Lucky",
+      featuredCosmeticIds: ["avatar_arcane_gambler"]
+    }),
+    "utf8"
+  );
+
+  const store = new ShopRotationStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+
+  try {
+    await fs.writeFile(
+      schedulePath,
+      JSON.stringify({
+        enabled: false,
+        mode: "weekly",
+        rotationLengthDays: 7,
+        anchorDate: "2026-05-18T00:00:00.000Z",
+        rotationOrder: ["void-week-01"],
+        rotations: {
+          "void-week-01": {
+            title: "Void Week",
+            featuredCosmeticIds: ["avatar_voidbound_entity"]
+          }
+        }
+      }),
+      "utf8"
+    );
+
+    const disabledRotation = await store.getActiveRotation({ now: new Date("2026-05-16T12:00:00.000Z") });
+    assert.equal(disabledRotation?.activeRotationId, "manual-lucky");
+
+    await fs.writeFile(
+      schedulePath,
+      JSON.stringify({
+        enabled: true,
+        mode: "weekly",
+        rotationLengthDays: 7,
+        anchorDate: "2099-01-01T00:00:00.000Z",
+        rotationOrder: ["void-week-01"],
+        rotations: {
+          "void-week-01": {
+            title: "Void Week",
+            featuredCosmeticIds: ["avatar_voidbound_entity"]
+          }
+        }
+      }),
+      "utf8"
+    );
+
+    const futureRotation = await store.getActiveRotation({ now: new Date("2026-05-16T12:00:00.000Z") });
+    assert.equal(futureRotation?.activeRotationId, "manual-lucky");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("shop rotation store: valid weekly schedule resolves modulo rotation windows and preserves hardening", async () => {
+  const dataDir = await createTempDataDir();
+  const serverDataDir = path.join(dataDir, "server-data");
+  const schedulePath = path.join(serverDataDir, "shop-rotation-schedule.json");
+  await fs.mkdir(serverDataDir, { recursive: true });
+  await fs.writeFile(
+    schedulePath,
+    `\ufeff${JSON.stringify({
+      enabled: true,
+      mode: "weekly",
+      rotationLengthDays: 7,
+      anchorDate: "2026-05-18T00:00:00.000Z",
+      rotationOrder: ["void-week-01", "flame-king-weekend-01"],
+      rotations: {
+        "void-week-01": {
+          title: "Void Week",
+          message: "Void Collection cosmetics are featured this week.",
+          featuredCosmeticIds: [
+            "avatar_voidbound_entity",
+            "avatar_voidbound_entity",
+            "supporter_card_back",
+            "missing_cosmetic_id",
+            "void_card_back"
+          ]
+        },
+        "flame-king-weekend-01": {
+          title: "Flame King Weekend",
+          featuredCosmeticIds: ["avatar_inferno_crown_f"],
+          allowLimitedCosmeticIds: [
+            "avatar_voidbound_entity",
+            "avatar_voidbound_entity",
+            "supporter_card_back",
+            "missing_cosmetic_id",
+            "void_card_back"
+          ]
+        }
+      }
+    })}`,
+    "utf8"
+  );
+
+  const store = new ShopRotationStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+
+  try {
+    const rotation = await store.getActiveRotation({ now: new Date("2026-06-05T12:00:00.000Z") });
+
+    assert.deepEqual(rotation, {
+      activeRotationId: "void-week-01",
+      title: "Void Week",
+      message: "Void Collection cosmetics are featured this week.",
+      startsAt: "2026-06-01T00:00:00.000Z",
+      endsAt: "2026-06-08T00:00:00.000Z",
+      featuredCosmeticIds: ["avatar_voidbound_entity", "void_card_back"],
+      allowLimitedCosmeticIds: []
+    });
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("shop rotation store: unknown rotation keys in schedule order fall back safely to manual rotation", async () => {
+  const dataDir = await createTempDataDir();
+  const serverDataDir = path.join(dataDir, "server-data");
+  const rotationPath = path.join(serverDataDir, "shop-rotation.json");
+  const schedulePath = path.join(serverDataDir, "shop-rotation-schedule.json");
+  await fs.mkdir(serverDataDir, { recursive: true });
+  await fs.writeFile(
+    rotationPath,
+    JSON.stringify({
+      activeRotationId: "manual-celestial",
+      title: "Manual Celestial",
+      featuredCosmeticIds: ["avatar_astral_archon"]
+    }),
+    "utf8"
+  );
+  await fs.writeFile(
+    schedulePath,
+    JSON.stringify({
+      enabled: true,
+      mode: "weekly",
+      rotationLengthDays: 7,
+      anchorDate: "2026-05-18T00:00:00.000Z",
+      rotationOrder: ["missing-rotation-key"],
+      rotations: {
+        "void-week-01": {
+          title: "Void Week",
+          featuredCosmeticIds: ["avatar_voidbound_entity"]
+        }
+      }
+    }),
+    "utf8"
+  );
+
+  const store = new ShopRotationStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+
+  try {
+    const rotation = await store.getActiveRotation({ now: new Date("2026-05-20T12:00:00.000Z") });
+    assert.deepEqual(rotation, {
+      activeRotationId: "manual-celestial",
+      title: "Manual Celestial",
+      message: null,
+      startsAt: null,
+      endsAt: null,
+      featuredCosmeticIds: ["avatar_astral_archon"],
+      allowLimitedCosmeticIds: []
+    });
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: announcements:dismiss persists seenAnnouncements and hides the dismissed announcement", async () => {
   const dataDir = await createTempDataDir();
   const announcementsPath = path.join(dataDir, "server-data", "announcements.json");
