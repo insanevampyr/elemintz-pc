@@ -581,6 +581,17 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "presence:getOnlineCount") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            onlineNow: 3
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:claimDailyLoginReward") {
       queueMicrotask(() => {
         ack?.({
@@ -1421,6 +1432,34 @@ test("multiplayer client: active boost event returns the current server event", 
   assert.equal(result?.title, "Online Players X2 XP Weekend");
   assert.equal(result?.scope, "online");
   assert.equal(result?.xpMultiplier, 2);
+});
+
+test("multiplayer client: online count returns the authenticated online player count", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.getOnlineCount({
+    username: "AnnouncementUser"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "AnnouncementUser"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "presence:getOnlineCount",
+    payload: {}
+  });
+  assert.equal(result, 3);
 });
 
 test("multiplayer client: authoritative daily login claims return updated server profile state", async () => {

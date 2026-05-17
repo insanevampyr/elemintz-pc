@@ -456,6 +456,30 @@ function formatPublicRoomAge(createdAt, now = Date.now()) {
   return `${elapsedHours}h ago`;
 }
 
+function renderOnlinePresenceSummary(context = {}) {
+  const onlinePlayerCount = Number(context.onlinePlayerCount);
+  const onlineNowLabel = Number.isFinite(onlinePlayerCount) && onlinePlayerCount >= 0
+    ? `${onlinePlayerCount} player${onlinePlayerCount === 1 ? "" : "s"}`
+    : "—";
+  const roomCount =
+    String(context.onlinePublicRoomsStatus ?? "").trim().toLowerCase() === "ready"
+      ? Array.isArray(context.onlinePublicRooms)
+        ? context.onlinePublicRooms.length
+        : 0
+      : null;
+
+  return `
+    <section class="online-presence-summary" aria-live="polite">
+      <p><strong>Online Now:</strong> ${escapeHtml(onlineNowLabel)}</p>
+      ${
+        roomCount === null
+          ? ""
+          : `<p><strong>Public Rooms:</strong> ${escapeHtml(String(roomCount))} waiting</p>`
+      }
+    </section>
+  `;
+}
+
 function renderPublicRoomBrowser(context = {}) {
   const rooms = Array.isArray(context.onlinePublicRooms) ? context.onlinePublicRooms : [];
   const status = String(context.onlinePublicRoomsStatus ?? "idle").trim().toLowerCase();
@@ -1134,6 +1158,7 @@ export const onlinePlayScreen = {
                 <strong class="online-connection-banner-label">${escapeHtml(connectionBanner.label)}</strong>
                 <span class="online-connection-banner-detail">${escapeHtml(connectionBanner.detail)}</span>
               </section>
+              ${renderOnlinePresenceSummary(context)}
               ${
                 room
                 ? `

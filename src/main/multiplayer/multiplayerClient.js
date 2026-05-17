@@ -2152,6 +2152,16 @@ export class MultiplayerClient {
     return response.result?.boostEvent ?? null;
   }
 
+  async getOnlineCount({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("presence:getOnlineCount", { username }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load the current online player count.");
+    }
+
+    const onlineNow = Number(response?.result?.onlineNow);
+    return Number.isFinite(onlineNow) && onlineNow >= 0 ? onlineNow : null;
+  }
+
   async getCosmetics({ username, serverUrl } = {}) {
     const response = await this.runServerRequest("profile:getCosmetics", { username }, { serverUrl });
     if (!response?.ok) {

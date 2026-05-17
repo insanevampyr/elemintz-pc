@@ -94,6 +94,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getActiveBoostEvent(payload);
   });
 
+  ipcMain.handle("multiplayer:getOnlineCount", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getOnlineCount(payload);
+  });
+
   ipcMain.handle("multiplayer:getCosmetics", async (event, payload) => {
     subscribers.add(event.sender);
     return client.getCosmetics(payload);

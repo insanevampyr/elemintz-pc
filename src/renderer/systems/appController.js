@@ -155,6 +155,7 @@ export class AppController {
     this.onlinePublicRooms = [];
     this.onlinePublicRoomsStatus = "idle";
     this.onlinePublicRoomsError = "";
+    this.onlinePlayerCount = null;
     this.onlinePlayUnsubscribe = null;
     this.onlinePlayChallengeSummary = null;
     this.onlinePlayChallengeSummaryKey = null;
@@ -4308,6 +4309,7 @@ export class AppController {
       username: this.profile?.username ?? this.username,
       joinCode: this.onlinePlayJoinCode,
       onlineCreateRoomVisibility: this.onlineCreateRoomVisibility,
+      onlinePlayerCount: Number.isFinite(this.onlinePlayerCount) ? this.onlinePlayerCount : null,
       onlinePublicRooms: Array.isArray(this.onlinePublicRooms) ? this.onlinePublicRooms.map((room) => ({ ...room })) : [],
       onlinePublicRoomsStatus: this.onlinePublicRoomsStatus,
       onlinePublicRoomsError: this.onlinePublicRoomsError,
@@ -4375,6 +4377,8 @@ export class AppController {
               this.onlinePlayState?.statusMessage ?? "Unable to load public rooms."
             );
           }
+
+          await this.refreshOnlinePlayerCount({ shouldRender: false });
 
           this.renderOnlinePlayScreen();
         },
@@ -5252,6 +5256,35 @@ export class AppController {
     }
   }
 
+  async refreshOnlinePlayerCount({ shouldRender = true } = {}) {
+    if (!window.elemintz?.multiplayer?.getOnlineCount) {
+      this.onlinePlayerCount = null;
+      if (shouldRender && this.screenFlow === "onlinePlay") {
+        this.renderOnlinePlayScreen();
+      }
+      return null;
+    }
+
+    try {
+      const nextCount = await window.elemintz.multiplayer.getOnlineCount({
+        username: this.profile?.username ?? this.username
+      });
+      this.onlinePlayerCount = Number.isFinite(nextCount) && nextCount >= 0 ? nextCount : null;
+    } catch (error) {
+      this.onlinePlayerCount = null;
+      console.warn("[OnlinePlay][Renderer] failed to refresh online player count", {
+        username: this.profile?.username ?? this.username ?? null,
+        message: error?.message ?? String(error)
+      });
+    }
+
+    if (shouldRender && this.screenFlow === "onlinePlay") {
+      this.renderOnlinePlayScreen();
+    }
+
+    return this.onlinePlayerCount;
+  }
+
   async showOnlinePlay() {
     this.clearPassTimer();
     this.clearTransientUiBeforeScreenTransition();
@@ -5267,6 +5300,7 @@ export class AppController {
     this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();
     this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
+    void this.refreshOnlinePlayerCount();
 
     if (!window.elemintz?.multiplayer?.connect) {
       return;
@@ -5282,6 +5316,7 @@ export class AppController {
     this.ensureOnlineReconnectUiTimer();
     this.renderOnlinePlayScreen();
     this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
+    void this.refreshOnlinePlayerCount();
   }
 
   showLocalSetup({ errorMessage = "", setupDefaults = null } = {}) {

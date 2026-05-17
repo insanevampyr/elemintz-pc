@@ -19,6 +19,7 @@ import { AnnouncementStore } from "../../src/multiplayer/announcementStore.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
 import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
+import { createSessionStore } from "../../src/multiplayer/sessionStore.js";
 import { ShopRotationStore } from "../../src/multiplayer/shopRotationStore.js";
 import { createRoomStore, getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
@@ -490,6 +491,97 @@ test("multiplayer foundation: room:listPublic always acks a readable auth failur
     }
   } finally {
     await foundation.stop();
+  }
+});
+
+test("session store: authenticated connected username count ignores unauthenticated, disconnected, and duplicate usernames", () => {
+  const store = createSessionStore({
+    logger: { info: () => {} }
+  });
+
+  const firstSession = store.issueSession({
+    username: "CountedUser",
+    socketId: "socket-1",
+    authenticated: true
+  });
+  const unauthenticatedSession = store.issueSession({
+    username: "GuestUser",
+    socketId: "socket-2",
+    authenticated: false
+  });
+  const disconnectedSession = store.issueSession({
+    username: "DisconnectedUser",
+    socketId: "socket-3",
+    authenticated: true
+  });
+
+  assert.equal(firstSession.ok, true);
+  assert.equal(unauthenticatedSession.ok, true);
+  assert.equal(disconnectedSession.ok, true);
+  store.disconnectSocket("socket-3");
+
+  const duplicateAttempt = store.issueSession({
+    username: "CountedUser",
+    socketId: "socket-4",
+    authenticated: true
+  });
+
+  assert.equal(duplicateAttempt.ok, false);
+  assert.equal(store.getAuthenticatedConnectedUsernameCount(), 1);
+});
+
+test("multiplayer foundation: presence:getOnlineCount returns only authenticated connected usernames", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({ dataDir });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    accountStore,
+    profileAuthority,
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const authOne = await connectClient(port);
+    const authTwo = await connectClient(port);
+    const unauthenticated = await connectClient(port);
+
+    try {
+      await registerAccount(authOne, {
+        username: "CountPlayerOne",
+        email: "count-one@example.com",
+        password: "password123"
+      });
+      await registerAccount(authTwo, {
+        username: "CountPlayerTwo",
+        email: "count-two@example.com",
+        password: "password123"
+      });
+      await bootstrapSession(unauthenticated, "BrowserOnly");
+
+      const response = await new Promise((resolve) => {
+        authOne.emit("presence:getOnlineCount", {}, resolve);
+      });
+
+      assert.deepEqual(response, {
+        ok: true,
+        result: {
+          onlineNow: 2
+        }
+      });
+    } finally {
+      authOne.disconnect();
+      authTwo.disconnect();
+      unauthenticated.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
 

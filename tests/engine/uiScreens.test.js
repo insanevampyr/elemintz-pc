@@ -8944,6 +8944,7 @@ test("ui: online play screen renders public room controls in the pre-room state"
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "",
     onlineCreateRoomVisibility: "private",
+    onlinePlayerCount: 3,
     onlinePublicRoomsStatus: "idle",
     onlinePublicRooms: [],
     formattedErrorMessage: "",
@@ -8961,6 +8962,7 @@ test("ui: online play screen renders public room controls in the pre-room state"
   assert.match(html, /Public \/ listed/);
   assert.match(html, /data-online-room-visibility="private"/);
   assert.match(html, /aria-pressed="true"/);
+  assert.match(html, /Online Now:<\/strong> 3 players/);
   assert.match(html, /Browse Public Rooms/);
   assert.match(html, /Browse waiting public rooms when you want a faster join path without sharing a code first\./);
   assert.match(html, /id="online-refresh-public-rooms-btn"/);
@@ -8972,6 +8974,7 @@ test("ui: online play screen renders public room cards and empty\/error states",
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "",
     onlineCreateRoomVisibility: "public",
+    onlinePlayerCount: 4,
     onlinePublicRoomsStatus: "ready",
     onlinePublicRooms: [
       {
@@ -8994,6 +8997,8 @@ test("ui: online play screen renders public room cards and empty\/error states",
   });
 
   assert.match(listHtml, /PublicHost/);
+  assert.match(listHtml, /Online Now:<\/strong> 4 players/);
+  assert.match(listHtml, /Public Rooms:<\/strong> 1 waiting/);
   assert.match(listHtml, /Room Code:<\/strong> PUB123/);
   assert.match(listHtml, /Created:<\/strong> 45s ago/);
   assert.match(listHtml, /data-online-public-room-join="PUB123"/);

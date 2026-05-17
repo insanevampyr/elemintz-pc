@@ -3157,12 +3157,13 @@ test("appController: returning to menu after a match refreshes the boost event a
 test("appController: online play create join submit-move and ready-rematch actions use the multiplayer bridge", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
-  const calls = {
-    createRoom: [],
-    listPublicRooms: [],
-    joinRoom: [],
-    submitMove: [],
-    readyRematch: 0
+    const calls = {
+      createRoom: [],
+      listPublicRooms: [],
+      getOnlineCount: [],
+      joinRoom: [],
+      submitMove: [],
+      readyRematch: 0
   };
   const playableOnlineState = {
     connectionStatus: "connected",
@@ -3266,6 +3267,10 @@ test("appController: online play create join submit-move and ready-rematch actio
               }
             ];
           },
+          getOnlineCount: async (payload) => {
+            calls.getOnlineCount.push(payload);
+            return 3;
+          },
           joinRoom: async (payload) => {
             calls.joinRoom.push(payload);
             return playableOnlineState;
@@ -3327,10 +3332,16 @@ test("appController: online play create join submit-move and ready-rematch actio
       { ...expectedIdentityPayload, visibility: "public" }
     ]);
     assert.deepEqual(calls.listPublicRooms, [{ username: "SignedInUser-Canonical" }]);
+    assert.deepEqual(calls.getOnlineCount, [
+      { username: "SignedInUser-Canonical" },
+      { username: "SignedInUser-Canonical" },
+      { username: "SignedInUser-Canonical" }
+    ]);
     assert.deepEqual(calls.joinRoom, [{ roomCode: "ABC123", ...expectedIdentityPayload }]);
     assert.deepEqual(calls.submitMove, ["fire"]);
     assert.equal(calls.readyRematch, 1);
     assert.equal(app.onlinePlayJoinCode, "ABC123");
+    assert.equal(app.onlinePlayerCount, 3);
     assert.equal(app.username, "SignedInUser-Canonical");
     assert.equal(app.profile.tokens, 415);
     assert.equal(app.profile.wins, 9);

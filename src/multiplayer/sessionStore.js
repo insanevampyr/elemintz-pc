@@ -326,6 +326,23 @@ export function createSessionStore({
     return toPublicSession(session);
   }
 
+  function getAuthenticatedConnectedUsernameCount() {
+    const connectedUsernames = new Set();
+
+    for (const session of sessionsByToken.values()) {
+      if (!session?.connected || !session?.authenticated) {
+        continue;
+      }
+
+      const safeUsername = normalizeUsername(session.username);
+      if (safeUsername) {
+        connectedUsernames.add(safeUsername);
+      }
+    }
+
+    return connectedUsernames.size;
+  }
+
   return {
     issueSession,
     resumeSession,
@@ -335,6 +352,7 @@ export function createSessionStore({
     getSocketIdByUsername,
     disconnectSocket,
     destroySession,
+    getAuthenticatedConnectedUsernameCount,
     toPublicSession
   };
 }

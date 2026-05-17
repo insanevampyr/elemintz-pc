@@ -1401,6 +1401,25 @@ export function createMultiplayerFoundation({
       })();
     });
 
+    socket.on("presence:getOnlineCount", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      respond({
+        ok: true,
+        result: {
+          onlineNow:
+            typeof sessionStore?.getAuthenticatedConnectedUsernameCount === "function"
+              ? sessionStore.getAuthenticatedConnectedUsernameCount()
+              : 0
+        }
+      });
+    });
+
     socket.on("feedback:submit", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
