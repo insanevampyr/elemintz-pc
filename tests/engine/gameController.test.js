@@ -3331,7 +3331,11 @@ test("appController: online play create join submit-move and ready-rematch actio
       { ...expectedIdentityPayload, visibility: "private" },
       { ...expectedIdentityPayload, visibility: "public" }
     ]);
-    assert.deepEqual(calls.listPublicRooms, [{ username: "SignedInUser-Canonical" }]);
+    assert.deepEqual(calls.listPublicRooms, [
+      { username: "SignedInUser-Canonical" },
+      { username: "SignedInUser-Canonical" },
+      { username: "SignedInUser-Canonical" }
+    ]);
     assert.deepEqual(calls.getOnlineCount, [
       { username: "SignedInUser-Canonical" },
       { username: "SignedInUser-Canonical" },
@@ -3346,6 +3350,231 @@ test("appController: online play create join submit-move and ready-rematch actio
     assert.equal(app.profile.tokens, 415);
     assert.equal(app.profile.wins, 9);
     assert.equal(app.profile.equippedCosmetics.background, "bg_crystal_nexus");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: entering online play auto-refreshes public rooms and online count", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    listPublicRooms: [],
+    getOnlineCount: []
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, context) => shownScreens.push({ screen, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => ({
+            username: "SignedInUser-Canonical",
+            equippedCosmetics: {}
+          }),
+          getDailyChallengesSummary: async () => null
+        },
+        multiplayer: {
+          getState: async () => ({ connectionStatus: "disconnected" }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "socket-1",
+            session: {
+              authenticated: true,
+              username: "SignedInUser-Canonical"
+            }
+          }),
+          getProfile: async () => ({
+            username: "SignedInUser-Canonical",
+            equippedCosmetics: {}
+          }),
+          listPublicRooms: async (payload) => {
+            calls.listPublicRooms.push(payload);
+            return [];
+          },
+          getOnlineCount: async (payload) => {
+            calls.getOnlineCount.push(payload);
+            return 3;
+          }
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    await app.showOnlinePlay();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(shownScreens.at(-1).screen, "onlinePlay");
+    assert.deepEqual(calls.listPublicRooms, [
+      { username: "SignedInUser-Canonical" },
+      { username: "SignedInUser-Canonical" }
+    ]);
+    assert.deepEqual(calls.getOnlineCount, [
+      { username: "SignedInUser-Canonical" },
+      { username: "SignedInUser-Canonical" }
+    ]);
+    assert.equal(app.onlinePublicRoomsStatus, "ready");
+    assert.equal(app.onlinePlayerCount, 3);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online play manual refresh reuses in-flight lobby refresh requests", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    listPublicRooms: 0,
+    getOnlineCount: 0
+  };
+  let resolveRooms;
+  let resolveCount;
+  const roomsPromise = new Promise((resolve) => {
+    resolveRooms = resolve;
+  });
+  const countPromise = new Promise((resolve) => {
+    resolveCount = resolve;
+  });
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, context) => shownScreens.push({ screen, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => ({
+            username: "SignedInUser-Canonical",
+            equippedCosmetics: {}
+          }),
+          getDailyChallengesSummary: async () => null
+        },
+        multiplayer: {
+          getState: async () => ({ connectionStatus: "disconnected" }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "socket-1",
+            session: {
+              authenticated: true,
+              username: "SignedInUser-Canonical"
+            }
+          }),
+          getProfile: async () => ({
+            username: "SignedInUser-Canonical",
+            equippedCosmetics: {}
+          }),
+          listPublicRooms: async () => {
+            calls.listPublicRooms += 1;
+            return roomsPromise;
+          },
+          getOnlineCount: async () => {
+            calls.getOnlineCount += 1;
+            return countPromise;
+          }
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    const showPromise = app.showOnlinePlay();
+    await showPromise;
+    const manualRefreshPromise = shownScreens.at(-1).context.actions.browsePublicRooms();
+
+    assert.equal(calls.listPublicRooms, 1);
+    assert.equal(calls.getOnlineCount, 1);
+    assert.equal(app.onlinePublicRoomsStatus, "loading");
+    assert.equal(app.onlinePlayerCountStatus, "loading");
+
+    resolveRooms([]);
+    resolveCount(2);
+    await manualRefreshPromise;
+
+    assert.equal(calls.listPublicRooms, 1);
+    assert.equal(calls.getOnlineCount, 1);
+    assert.equal(app.onlinePublicRoomsStatus, "ready");
+    assert.equal(app.onlinePlayerCount, 2);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online play survives failed auto-refresh for count and public rooms", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, context) => shownScreens.push({ screen, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => ({
+            username: "SignedInUser-Canonical",
+            equippedCosmetics: {}
+          }),
+          getDailyChallengesSummary: async () => null
+        },
+        multiplayer: {
+          getState: async () => ({
+            connectionStatus: "connected",
+            lastError: "rooms_failed",
+            statusMessage: "Unable to load public rooms."
+          }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "socket-1",
+            session: {
+              authenticated: true,
+              username: "SignedInUser-Canonical"
+            }
+          }),
+          getProfile: async () => ({
+            username: "SignedInUser-Canonical",
+            equippedCosmetics: {}
+          }),
+          listPublicRooms: async () => null,
+          getOnlineCount: async () => {
+            throw new Error("count failed");
+          }
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.profile = { username: "SignedInUser", equippedCosmetics: {} };
+    await app.showOnlinePlay();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(shownScreens.at(-1).screen, "onlinePlay");
+    assert.equal(app.onlinePlayerCount, null);
+    assert.equal(app.onlinePlayerCountStatus, "error");
+    assert.equal(app.onlinePublicRoomsStatus, "error");
+    assert.match(app.onlinePublicRoomsError, /Unable to load public rooms/i);
   } finally {
     globalThis.window = originalWindow;
   }

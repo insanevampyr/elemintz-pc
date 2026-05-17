@@ -457,24 +457,33 @@ function formatPublicRoomAge(createdAt, now = Date.now()) {
 }
 
 function renderOnlinePresenceSummary(context = {}) {
+  const onlinePlayerCountStatus = String(context.onlinePlayerCountStatus ?? "idle").trim().toLowerCase();
   const onlinePlayerCount = Number(context.onlinePlayerCount);
-  const onlineNowLabel = Number.isFinite(onlinePlayerCount) && onlinePlayerCount >= 0
-    ? `${onlinePlayerCount} player${onlinePlayerCount === 1 ? "" : "s"}`
-    : "—";
+  const onlineNowLabel = onlinePlayerCountStatus === "loading"
+    ? "loading..."
+    : Number.isFinite(onlinePlayerCount) && onlinePlayerCount >= 0
+      ? `${onlinePlayerCount} player${onlinePlayerCount === 1 ? "" : "s"}`
+      : "—";
   const roomCount =
     String(context.onlinePublicRoomsStatus ?? "").trim().toLowerCase() === "ready"
       ? Array.isArray(context.onlinePublicRooms)
         ? context.onlinePublicRooms.length
         : 0
       : null;
+  const publicRoomsLabel =
+    String(context.onlinePublicRoomsStatus ?? "").trim().toLowerCase() === "loading"
+      ? "loading..."
+      : roomCount === null
+        ? null
+        : `${roomCount} waiting`;
 
   return `
     <section class="online-presence-summary" aria-live="polite">
       <p><strong>Online Now:</strong> ${escapeHtml(onlineNowLabel)}</p>
       ${
-        roomCount === null
+        publicRoomsLabel === null
           ? ""
-          : `<p><strong>Public Rooms:</strong> ${escapeHtml(String(roomCount))} waiting</p>`
+          : `<p><strong>Public Rooms:</strong> ${escapeHtml(publicRoomsLabel)}</p>`
       }
     </section>
   `;

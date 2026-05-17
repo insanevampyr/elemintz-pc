@@ -9041,6 +9041,30 @@ test("ui: online play screen renders public room cards and empty\/error states",
   assert.match(errorHtml, /Notice:<\/strong> Unable to load public rooms\./);
 });
 
+test("ui: online play screen renders loading labels for presence and public rooms", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "",
+    onlineCreateRoomVisibility: "private",
+    onlinePlayerCount: null,
+    onlinePlayerCountStatus: "loading",
+    onlinePublicRoomsStatus: "loading",
+    onlinePublicRooms: [],
+    formattedErrorMessage: "",
+    multiplayer: {
+      connectionStatus: "connected",
+      statusMessage: "Connected. Create a room or join one.",
+      lastError: null,
+      room: null
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Online Now:<\/strong> loading\.\.\./);
+  assert.match(html, /Public Rooms:<\/strong> loading\.\.\./);
+  assert.match(html, /Refreshing public rooms\.\.\./);
+});
+
 test("ui: online play screen keeps returned public room cards visible even when a generic pre-room notice exists", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
