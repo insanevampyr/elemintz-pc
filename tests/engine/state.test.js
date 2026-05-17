@@ -7,8 +7,12 @@ import path from "node:path";
 import { createMatch, playRound } from "../../src/engine/index.js";
 import { HARD_PVE_WIN_CHEST_DROP_CHANCE } from "../../src/shared/basicChestDrop.js";
 import {
+  DAILY_BONUS_CHALLENGE_POOL,
   DAILY_CHALLENGE_DEFINITIONS,
+  DAILY_FIXED_CORE_CHALLENGE_DEFINITIONS,
+  WEEKLY_BONUS_CHALLENGE_POOL,
   WEEKLY_CHALLENGE_DEFINITIONS,
+  WEEKLY_FIXED_CORE_CHALLENGE_DEFINITIONS,
   applyDailyChallengesForMatch,
   createDefaultDailyChallenges,
   getDailyChallengesView,
@@ -55,6 +59,20 @@ function markAllChallengeRewardsConsumed(challenges) {
     challenges.weekly.completed[def.id] = true;
     challenges.weekly.rewarded[def.id] = true;
   }
+  return challenges;
+}
+
+function withSelectedBonusChallenges(challenges, { daily = null, weekly = null } = {}) {
+  if (Array.isArray(daily)) {
+    challenges.daily.selectedBonusChallengeIds = [...daily];
+    challenges.daily.setVersion = "core_bonus_v1";
+  }
+
+  if (Array.isArray(weekly)) {
+    challenges.weekly.selectedBonusChallengeIds = [...weekly];
+    challenges.weekly.setVersion = "core_bonus_v1";
+  }
+
   return challenges;
 }
 
@@ -911,11 +929,20 @@ test("state: online_pvp rematch can settle the next completed match once and WAR
 test("state: online_pvp reaches shared daily and weekly challenge hooks while also evaluating shared achievements", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
-  const challenges = createDefaultDailyChallenges(Date.now());
+  const challenges = withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+    daily: ["daily_online_match_1", "daily_online_win_1", "daily_no_quit_3"],
+    weekly: ["weekly_online_matches_5", "weekly_online_wins_3", "weekly_no_quit_10"]
+  });
+  challenges.daily.progress.completedNoQuitMatch = 2;
   challenges.daily.progress.matchesWon = 1;
-  challenges.weekly.progress.matchesWon = 19;
-  challenges.weekly.progress.warsWon = 14;
-  challenges.weekly.progress.usedAllElementsInMatch = 9;
+  challenges.weekly.progress.matchesPlayed = 14;
+  challenges.weekly.progress.matchesWon = 9;
+  challenges.weekly.progress.warsWon = 8;
+  challenges.weekly.progress.cardsCaptured = 63;
+  challenges.weekly.progress.usedAllElementsInMatch = 4;
+  challenges.weekly.progress.completedOnlineMatch = 4;
+  challenges.weekly.progress.wonOnlineMatch = 2;
+  challenges.weekly.progress.completedNoQuitMatch = 9;
 
   await state.profiles.updateProfile("OnlineChallengeUser", {
     winStreak: 2,
@@ -960,23 +987,28 @@ test("state: online_pvp reaches shared daily and weekly challenge hooks while al
 
   assert.ok(dailyRewardIds.includes("daily_win_2_matches"));
   assert.ok(dailyRewardIds.includes("daily_win_1_war"));
-  assert.ok(dailyRewardIds.includes("daily_win_2_wars"));
-  assert.ok(dailyRewardIds.includes("daily_trigger_2_wars_one_match"));
   assert.ok(dailyRewardIds.includes("daily_capture_16_cards"));
-  assert.ok(dailyRewardIds.includes("daily_capture_24_cards"));
   assert.ok(dailyRewardIds.includes("daily_use_all_4_elements"));
-  assert.ok(weeklyRewardIds.includes("weekly_win_20_matches"));
-  assert.ok(weeklyRewardIds.includes("weekly_win_15_wars"));
+  assert.ok(dailyRewardIds.includes("daily_online_match_1"));
+  assert.ok(dailyRewardIds.includes("daily_online_win_1"));
+  assert.ok(dailyRewardIds.includes("daily_no_quit_3"));
+  assert.ok(weeklyRewardIds.includes("weekly_play_15_matches"));
+  assert.ok(weeklyRewardIds.includes("weekly_win_10_matches"));
+  assert.ok(weeklyRewardIds.includes("weekly_win_9_wars"));
+  assert.ok(weeklyRewardIds.includes("weekly_capture_64_cards"));
   assert.ok(weeklyRewardIds.includes("weekly_win_streak_3"));
-  assert.ok(weeklyRewardIds.includes("weekly_use_all_4_elements_10x"));
+  assert.ok(weeklyRewardIds.includes("weekly_use_all_4_elements_5x"));
   assert.ok(weeklyRewardIds.includes("weekly_longest_war_5"));
+  assert.ok(weeklyRewardIds.includes("weekly_online_matches_5"));
+  assert.ok(weeklyRewardIds.includes("weekly_online_wins_3"));
+  assert.ok(weeklyRewardIds.includes("weekly_no_quit_10"));
   assert.equal(result.challengeTokenDelta, result.tokenDelta);
   assert.ok(result.challengeTokenDelta > 0);
   assert.ok(result.challengeXpDelta > 0);
   assert.equal(result.save.matchTokenDelta, 0);
   assert.equal(result.save.challengeTokenDelta, result.challengeTokenDelta);
   assert.equal(dailyById.daily_play_5_matches.progress, 1);
-  assert.equal(weeklyById.weekly_play_15_matches.progress, 1);
+  assert.equal(weeklyById.weekly_play_15_matches.progress, 15);
   assert.equal(profile.achievements.first_flame.count, 1);
   assert.equal(profile.achievements.flawless_victory.count, 1);
   assert.equal(profile.achievements.comeback_win.count, 5);
@@ -2193,7 +2225,9 @@ test("state: completing all daily challenges grants 1 basic chest once per daily
     random: constantRandom(0.5)
   });
 
-  const seededChallenges = createDefaultDailyChallenges(nowMs);
+  const seededChallenges = withSelectedBonusChallenges(createDefaultDailyChallenges(nowMs), {
+    daily: ["daily_hard_ai_win_1", "daily_no_quit_3", "daily_win_with_fire"]
+  });
   seededChallenges.daily.progress = {
     ...seededChallenges.daily.progress,
     matchesPlayed: 4,
@@ -2201,7 +2235,7 @@ test("state: completing all daily challenges grants 1 basic chest once per daily
     warsWon: 1,
     cardsCaptured: 23,
     usedAllElementsInMatch: 0,
-    triggeredTwoWarsInMatch: 0
+    completedNoQuitMatch: 2
   };
 
   await state.profiles.updateProfile("DailyChestUser", (current) => ({
@@ -2212,12 +2246,12 @@ test("state: completing all daily challenges grants 1 basic chest once per daily
   const first = await state.recordMatchResult({
     username: "DailyChestUser",
     perspective: "p1",
-    matchState: createRewardHookMatch({ winner: "p1" })
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
   });
   const second = await state.recordMatchResult({
     username: "DailyChestUser",
     perspective: "p1",
-    matchState: createRewardHookMatch({ winner: "p1" })
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
   });
 
   assert.equal(first.profile.chests.basic, 1);
@@ -2234,16 +2268,21 @@ test("state: completing all weekly challenges grants 1 epic chest once per weekl
     random: constantRandom(0.5)
   });
 
-  const seededChallenges = createDefaultDailyChallenges(nowMs);
+  const seededChallenges = withSelectedBonusChallenges(createDefaultDailyChallenges(nowMs), {
+    weekly: ["weekly_hard_ai_wins_5", "weekly_no_quit_10", "weekly_element_master_fire"]
+  });
   seededChallenges.weekly.progress = {
     ...seededChallenges.weekly.progress,
     matchesPlayed: 14,
-    matchesWon: 19,
-    warsWon: 14,
+    matchesWon: 9,
+    warsWon: 8,
     cardsCaptured: 63,
-    usedAllElementsInMatch: 9,
+    usedAllElementsInMatch: 4,
     reachedWinStreak3: 0,
-    survivedLongestWar5: 0
+    survivedLongestWar5: 0,
+    wonHardPveMatch: 4,
+    completedNoQuitMatch: 9,
+    wonRoundWithFire: 4
   };
 
   await state.profiles.updateProfile("WeeklyChestUser", (current) => ({
@@ -2255,12 +2294,12 @@ test("state: completing all weekly challenges grants 1 epic chest once per weekl
   const first = await state.recordMatchResult({
     username: "WeeklyChestUser",
     perspective: "p1",
-    matchState: createRewardHookMatch({ winner: "p1" })
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
   });
   const second = await state.recordMatchResult({
     username: "WeeklyChestUser",
     perspective: "p1",
-    matchState: createRewardHookMatch({ winner: "p1" })
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
   });
 
   assert.equal(first.profile.chests.basic, 0);
@@ -2751,10 +2790,7 @@ test("daily: before 6 PM America/Chicago does not reset same-boundary data", () 
   assert.equal(progressById.daily_win_1_match, 1);
   assert.equal(progressById.daily_win_2_matches, 1);
   assert.equal(progressById.daily_win_1_war, 1);
-  assert.equal(progressById.daily_win_2_wars, 1);
-  assert.equal(progressById.daily_trigger_2_wars_one_match, 0);
   assert.equal(progressById.daily_capture_16_cards, 6);
-  assert.equal(progressById.daily_capture_24_cards, 6);
   assert.equal(progressById.daily_play_5_matches, 2);
   assert.equal(progressById.daily_use_all_4_elements, 0);
 });
@@ -2927,7 +2963,6 @@ test("state: local_pvp Player 2 receives daily and weekly challenge progress fro
   assert.equal(recorded.profile.modeStats.local_pvp.wins, 1);
   assert.equal(dailyById.daily_win_1_match.progress, 1);
   assert.equal(dailyById.daily_win_1_war.progress, 1);
-  assert.equal(dailyById.daily_win_2_wars.progress, 2);
   assert.equal(dailyById.daily_use_all_4_elements.progress, 1);
   assert.equal(weeklyById.weekly_win_9_wars.progress, 2);
   assert.equal(weeklyById.weekly_use_all_4_elements_5x.progress, 1);
@@ -3120,15 +3155,22 @@ test("economy: daily and weekly challenge rewards include stage1 token+xp values
       Object.entries(byDailyId).map(([id, item]) => [id, [item.rewardTokens, item.rewardXp]])
     ),
     {
+      daily_play_5_matches: [3, 6],
       daily_win_1_match: [2, 5],
       daily_win_2_matches: [3, 7],
       daily_win_1_war: [2, 5],
-      daily_win_2_wars: [3, 7],
-      daily_trigger_2_wars_one_match: [4, 8],
       daily_capture_16_cards: [3, 6],
-      daily_capture_24_cards: [4, 8],
-      daily_play_5_matches: [3, 6],
-      daily_use_all_4_elements: [3, 6]
+      daily_use_all_4_elements: [3, 6],
+      daily_online_match_1: [4, 8],
+      daily_online_win_1: [5, 10],
+      daily_hard_ai_win_1: [4, 9],
+      daily_local_pvp_match_1: [3, 7],
+      daily_comeback_win: [4, 8],
+      daily_no_quit_3: [3, 6],
+      daily_win_with_fire: [3, 6],
+      daily_win_with_water: [3, 6],
+      daily_win_with_earth: [3, 6],
+      daily_win_with_wind: [3, 6]
     }
   );
 
@@ -3137,22 +3179,204 @@ test("economy: daily and weekly challenge rewards include stage1 token+xp values
       Object.entries(byWeeklyId).map(([id, item]) => [id, [item.rewardTokens, item.rewardXp]])
     ),
     {
-      weekly_win_10_matches: [5, 15],
-      weekly_win_20_matches: [10, 22],
-      weekly_win_9_wars: [8, 18],
-      weekly_win_15_wars: [10, 25],
-      weekly_capture_64_cards: [8, 18],
       weekly_play_15_matches: [5, 15],
+      weekly_win_10_matches: [5, 15],
+      weekly_win_9_wars: [8, 18],
+      weekly_capture_64_cards: [8, 18],
       weekly_win_streak_3: [10, 25],
       weekly_use_all_4_elements_5x: [8, 18],
-      weekly_use_all_4_elements_10x: [10, 25],
-      weekly_longest_war_5: [12, 30]
+      weekly_longest_war_5: [12, 30],
+      weekly_online_matches_5: [12, 28],
+      weekly_online_wins_3: [15, 35],
+      weekly_hard_ai_wins_5: [12, 30],
+      weekly_local_pvp_matches_5: [10, 25],
+      weekly_comeback_wins_5: [12, 30],
+      weekly_no_quit_10: [10, 25],
+      weekly_element_master_fire: [10, 25],
+      weekly_element_master_water: [10, 25],
+      weekly_element_master_earth: [10, 25],
+      weekly_element_master_wind: [10, 25]
     }
   );
 });
 
-test("daily: new approved daily challenges unlock from the configured thresholds", () => {
-  const challenges = createDefaultDailyChallenges(Date.now());
+test("daily: active challenge count remains 9 with 6 fixed core and 3 selected bonus quests", () => {
+  const view = getDailyChallengesView({
+    username: "DailyActiveCountUser",
+    dailyChallenges: createDefaultDailyChallenges(Date.now())
+  });
+
+  assert.equal(view.view.daily.challenges.length, 9);
+  assert.deepEqual(
+    view.view.daily.challenges
+      .map((item) => item.id)
+      .filter((id) => DAILY_FIXED_CORE_CHALLENGE_DEFINITIONS.some((def) => def.id === id)).length,
+    6
+  );
+});
+
+test("weekly: active challenge count remains 10 with 7 fixed core and 3 selected bonus quests", () => {
+  const view = getDailyChallengesView({
+    username: "WeeklyActiveCountUser",
+    dailyChallenges: createDefaultDailyChallenges(Date.now())
+  });
+
+  assert.equal(view.view.weekly.challenges.length, 10);
+  assert.deepEqual(
+    view.view.weekly.challenges
+      .map((item) => item.id)
+      .filter((id) => WEEKLY_FIXED_CORE_CHALLENGE_DEFINITIONS.some((def) => def.id === id)).length,
+    7
+  );
+});
+
+test("daily: selected bonus IDs are unique and include at most one elemental quest", () => {
+  const selected = createDefaultDailyChallenges(Date.now()).daily.selectedBonusChallengeIds;
+  const elementalIds = new Set(
+    DAILY_BONUS_CHALLENGE_POOL.filter((item) => item.bonusFamily === "elemental").map((item) => item.id)
+  );
+
+  assert.equal(selected.length, 3);
+  assert.equal(new Set(selected).size, 3);
+  assert.ok(selected.filter((id) => elementalIds.has(id)).length <= 1);
+});
+
+test("weekly: selected bonus IDs are unique and include at most one elemental quest", () => {
+  const selected = createDefaultDailyChallenges(Date.now()).weekly.selectedBonusChallengeIds;
+  const elementalIds = new Set(
+    WEEKLY_BONUS_CHALLENGE_POOL.filter((item) => item.bonusFamily === "elemental").map((item) => item.id)
+  );
+
+  assert.equal(selected.length, 3);
+  assert.equal(new Set(selected).size, 3);
+  assert.ok(selected.filter((id) => elementalIds.has(id)).length <= 1);
+});
+
+test("daily: selection persists through the reset window and does not reroll on read/login", () => {
+  const nowMs = Date.parse("2026-01-15T20:00:00.000Z");
+  const normalized = normalizeProfileDailyChallenges({
+    username: "DailySelectionPersistUser",
+    dailyChallenges: createDefaultDailyChallenges(nowMs)
+  }, nowMs);
+
+  const firstIds = normalized.dailyChallenges.daily.selectedBonusChallengeIds;
+  const firstView = getDailyChallengesView(normalized, nowMs);
+  const secondView = getDailyChallengesView(firstView.profile, nowMs + 60_000);
+
+  assert.deepEqual(firstView.profile.dailyChallenges.daily.selectedBonusChallengeIds, firstIds);
+  assert.deepEqual(secondView.profile.dailyChallenges.daily.selectedBonusChallengeIds, firstIds);
+  assert.equal(firstView.view.daily.challenges.length, 9);
+});
+
+test("weekly: selection persists through the reset window and rerolls only at the reset boundary", () => {
+  const beforeBoundary = Date.parse("2026-01-19T23:30:00.000Z");
+  const afterBoundary = Date.parse("2026-01-20T00:30:00.000Z");
+  const beforeProfile = normalizeProfileDailyChallenges({
+    username: "WeeklySelectionBoundaryUser",
+    dailyChallenges: createDefaultDailyChallenges(beforeBoundary)
+  }, beforeBoundary);
+  const beforeIds = beforeProfile.dailyChallenges.weekly.selectedBonusChallengeIds;
+  const sameWindowIds = getDailyChallengesView(beforeProfile, beforeBoundary + 60_000).profile.dailyChallenges.weekly.selectedBonusChallengeIds;
+  const afterProfile = normalizeProfileDailyChallenges(beforeProfile, afterBoundary);
+
+  assert.deepEqual(sameWindowIds, beforeIds);
+  assert.equal(afterProfile.dailyChallenges.weekly.selectedBonusChallengeIds.length, 3);
+  assert.notDeepEqual(afterProfile.dailyChallenges.weekly.selectedBonusChallengeIds, beforeIds);
+});
+
+test("daily: missing or invalid selected bonus IDs are repaired once and remain stable after repair", () => {
+  const nowMs = Date.parse("2026-01-15T20:00:00.000Z");
+  const normalized = normalizeProfileDailyChallenges({
+    username: "DailySelectionRepairUser",
+    dailyChallenges: {
+      daily: {
+        lastReset: new Date(nowMs).toISOString(),
+        selectedBonusChallengeIds: ["daily_win_with_fire", "daily_win_with_fire", "missing_bonus"],
+        progress: {},
+        completed: {},
+        rewarded: {}
+      }
+    }
+  }, nowMs);
+  const repairedIds = normalized.dailyChallenges.daily.selectedBonusChallengeIds;
+  const second = normalizeProfileDailyChallenges(normalized, nowMs);
+
+  assert.equal(repairedIds.length, 3);
+  assert.equal(new Set(repairedIds).size, 3);
+  assert.deepEqual(second.dailyChallenges.daily.selectedBonusChallengeIds, repairedIds);
+});
+
+test("daily: legacy challenge windows normalize selected bonus ids and exclude retired quests from the active view", () => {
+  const nowMs = Date.now();
+  const legacyProfile = {
+    username: "LegacyQuestUiUser",
+    dailyChallenges: {
+      daily: {
+        lastReset: new Date(nowMs).toISOString(),
+        progress: {},
+        completed: {
+          daily_win_1_match: false,
+          daily_win_2_matches: false,
+          daily_win_1_war: false,
+          daily_win_2_wars: false,
+          daily_trigger_2_wars_one_match: false,
+          daily_capture_16_cards: false,
+          daily_capture_24_cards: false,
+          daily_play_5_matches: false,
+          daily_use_all_4_elements: false
+        },
+        rewarded: {},
+        completionChestGranted: false
+      },
+      weekly: {
+        lastReset: new Date(nowMs).toISOString(),
+        progress: {},
+        completed: {
+          weekly_win_10_matches: false,
+          weekly_win_20_matches: false,
+          weekly_win_9_wars: false,
+          weekly_win_15_wars: false,
+          weekly_capture_64_cards: false,
+          weekly_play_15_matches: false,
+          weekly_win_streak_3: false,
+          weekly_use_all_4_elements_5x: false,
+          weekly_use_all_4_elements_10x: false,
+          weekly_longest_war_5: false
+        },
+        rewarded: {},
+        completionChestGranted: false
+      }
+    }
+  };
+
+  const normalized = normalizeProfileDailyChallenges(legacyProfile, nowMs);
+  const view = getDailyChallengesView(legacyProfile, nowMs);
+  const dailyIds = view.view.daily.challenges.map((challenge) => challenge.id);
+  const weeklyIds = view.view.weekly.challenges.map((challenge) => challenge.id);
+
+  assert.equal(normalized.dailyChallenges.daily.setVersion, "core_bonus_v1");
+  assert.equal(normalized.dailyChallenges.weekly.setVersion, "core_bonus_v1");
+  assert.equal(normalized.dailyChallenges.daily.selectedBonusChallengeIds.length, 3);
+  assert.equal(normalized.dailyChallenges.weekly.selectedBonusChallengeIds.length, 3);
+  assert.ok(dailyIds.includes("daily_online_match_1"));
+  assert.ok(dailyIds.includes("daily_no_quit_3"));
+  assert.ok(dailyIds.includes("daily_win_with_water"));
+  assert.ok(weeklyIds.includes("weekly_hard_ai_wins_5"));
+  assert.ok(weeklyIds.includes("weekly_online_matches_5"));
+  assert.ok(weeklyIds.includes("weekly_online_wins_3"));
+  assert.equal(dailyIds.includes("daily_win_2_wars"), false);
+  assert.equal(dailyIds.includes("daily_trigger_2_wars_one_match"), false);
+  assert.equal(dailyIds.includes("daily_capture_24_cards"), false);
+  assert.equal(weeklyIds.includes("weekly_win_20_matches"), false);
+  assert.equal(weeklyIds.includes("weekly_win_15_wars"), false);
+  assert.equal(weeklyIds.includes("weekly_use_all_4_elements_10x"), false);
+});
+
+test("daily: new fixed core and bonus challenges unlock from the configured thresholds", () => {
+  const challenges = withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+    daily: ["daily_comeback_win", "daily_no_quit_3", "daily_win_with_fire"]
+  });
+  challenges.daily.progress.matchesPlayed = 4;
   challenges.daily.progress.matchesWon = 1;
   const baseProfile = {
     username: "ExpandedDailyUser",
@@ -3170,11 +3394,14 @@ test("daily: new approved daily challenges unlock from the configured thresholds
       endReason: null,
       winner: "p1",
       history: [
-        { p1Card: "fire" },
-        { p1Card: "water" },
-        { p1Card: "earth" },
-        { p1Card: "wind" }
+        { p1Card: "fire", result: "p2" },
+        { p1Card: "water", result: "p1" },
+        { p1Card: "earth", result: "p1" },
+        { p1Card: "wind", result: "p1" },
+        { p1Card: "fire", result: "p1" }
       ],
+      mode: "pve",
+      difficulty: "normal",
       players: { p1: { hand: [] }, p2: { hand: [] } },
       meta: { totalCards: 16 }
     },
@@ -3189,21 +3416,28 @@ test("daily: new approved daily challenges unlock from the configured thresholds
   });
 
   const rewardIds = result.rewards.daily.map((item) => item.id);
+  assert.ok(rewardIds.includes("daily_play_5_matches"));
   assert.ok(rewardIds.includes("daily_win_1_match"));
   assert.ok(rewardIds.includes("daily_win_2_matches"));
   assert.ok(rewardIds.includes("daily_win_1_war"));
-  assert.ok(rewardIds.includes("daily_win_2_wars"));
-  assert.ok(rewardIds.includes("daily_trigger_2_wars_one_match"));
   assert.ok(rewardIds.includes("daily_capture_16_cards"));
-  assert.ok(rewardIds.includes("daily_capture_24_cards"));
   assert.ok(rewardIds.includes("daily_use_all_4_elements"));
+  assert.ok(rewardIds.includes("daily_comeback_win"));
+  assert.ok(rewardIds.includes("daily_win_with_fire"));
 });
 
-test("weekly: new approved weekly challenges unlock from the configured thresholds", () => {
-  const challenges = createDefaultDailyChallenges(Date.now());
-  challenges.weekly.progress.matchesWon = 19;
-  challenges.weekly.progress.warsWon = 14;
-  challenges.weekly.progress.usedAllElementsInMatch = 9;
+test("weekly: new fixed core and bonus challenges unlock from the configured thresholds", () => {
+  const challenges = withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+    weekly: ["weekly_online_wins_3", "weekly_comeback_wins_5", "weekly_element_master_fire"]
+  });
+  challenges.weekly.progress.matchesPlayed = 14;
+  challenges.weekly.progress.matchesWon = 9;
+  challenges.weekly.progress.warsWon = 8;
+  challenges.weekly.progress.cardsCaptured = 63;
+  challenges.weekly.progress.usedAllElementsInMatch = 4;
+  challenges.weekly.progress.comebackWin = 4;
+  challenges.weekly.progress.wonOnlineMatch = 2;
+  challenges.weekly.progress.wonRoundWithFire = 4;
 
   const baseProfile = {
     username: "ExpandedWeeklyUser",
@@ -3220,11 +3454,13 @@ test("weekly: new approved weekly challenges unlock from the configured threshol
       status: "completed",
       endReason: null,
       winner: "p1",
+      mode: "online_pvp",
       history: [
-        { p1Card: "fire" },
-        { p1Card: "water" },
-        { p1Card: "earth" },
-        { p1Card: "wind" }
+        { p1Card: "fire", result: "p2" },
+        { p1Card: "water", result: "p1" },
+        { p1Card: "earth", result: "p1" },
+        { p1Card: "wind", result: "p1" },
+        { p1Card: "fire", result: "p1" }
       ],
       players: { p1: { hand: [] }, p2: { hand: [] } },
       meta: { totalCards: 16 }
@@ -3240,14 +3476,19 @@ test("weekly: new approved weekly challenges unlock from the configured threshol
   });
 
   const rewardIds = result.rewards.weekly.map((item) => item.id);
-  assert.ok(rewardIds.includes("weekly_win_20_matches"));
-  assert.ok(rewardIds.includes("weekly_win_15_wars"));
+  assert.ok(rewardIds.includes("weekly_play_15_matches"));
+  assert.ok(rewardIds.includes("weekly_win_10_matches"));
+  assert.ok(rewardIds.includes("weekly_win_9_wars"));
+  assert.ok(rewardIds.includes("weekly_capture_64_cards"));
   assert.ok(rewardIds.includes("weekly_win_streak_3"));
-  assert.ok(rewardIds.includes("weekly_use_all_4_elements_10x"));
+  assert.ok(rewardIds.includes("weekly_use_all_4_elements_5x"));
   assert.ok(rewardIds.includes("weekly_longest_war_5"));
+  assert.ok(rewardIds.includes("weekly_online_wins_3"));
+  assert.ok(rewardIds.includes("weekly_comeback_wins_5"));
+  assert.ok(rewardIds.includes("weekly_element_master_fire"));
 });
 
-test("daily: new challenge rewards are granted only once per reset window", () => {
+test("daily: reward-once behavior remains intact for rotating bonus challenges", () => {
   const nowMs = Date.now();
   const baseProfile = {
     username: "SingleRewardUser",
@@ -3255,14 +3496,23 @@ test("daily: new challenge rewards are granted only once per reset window", () =
     playerXP: 0,
     playerLevel: 1,
     winStreak: 3,
-    dailyChallenges: createDefaultDailyChallenges(nowMs)
+    dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(nowMs), {
+      daily: ["daily_comeback_win", "daily_no_quit_3", "daily_win_with_fire"]
+    })
   };
 
   const matchState = {
     status: "completed",
     endReason: null,
     winner: "p1",
-    history: [{ p1Card: "fire" }, { p1Card: "water" }, { p1Card: "earth" }, { p1Card: "wind" }],
+    mode: "pve",
+    history: [
+      { p1Card: "fire", result: "p2" },
+      { p1Card: "water", result: "p1" },
+      { p1Card: "earth", result: "p1" },
+      { p1Card: "wind", result: "p1" },
+      { p1Card: "fire", result: "p1" }
+    ],
     players: { p1: { hand: [] }, p2: { hand: [] } },
     meta: { totalCards: 16 }
   };
@@ -3288,8 +3538,191 @@ test("daily: new challenge rewards are granted only once per reset window", () =
     nowMs
   });
 
-  assert.ok(first.rewards.daily.some((item) => item.id === "daily_trigger_2_wars_one_match"));
-  assert.ok(second.rewards.daily.every((item) => item.id !== "daily_trigger_2_wars_one_match"));
+  assert.ok(first.rewards.daily.some((item) => item.id === "daily_comeback_win"));
+  assert.ok(second.rewards.daily.every((item) => item.id !== "daily_comeback_win"));
+});
+
+test("daily: completion chest uses the active set only and retired ids do not count toward active completion", () => {
+  const nowMs = Date.now();
+  const challenges = withSelectedBonusChallenges(createDefaultDailyChallenges(nowMs), {
+    daily: ["daily_online_match_1", "daily_no_quit_3", "daily_win_with_fire"]
+  });
+  for (const definition of DAILY_FIXED_CORE_CHALLENGE_DEFINITIONS) {
+    challenges.daily.completed[definition.id] = true;
+  }
+  challenges.daily.completed.daily_online_match_1 = true;
+  challenges.daily.completed.daily_no_quit_3 = true;
+  challenges.daily.completed.daily_trigger_2_wars_one_match = true;
+  challenges.daily.completed.daily_capture_24_cards = true;
+  challenges.daily.rewarded.daily_trigger_2_wars_one_match = true;
+  challenges.daily.rewarded.daily_capture_24_cards = true;
+
+  const result = applyDailyChallengesForMatch({
+    profile: {
+      username: "ActiveChestSetUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: challenges
+    },
+    matchState: {
+      status: "completed",
+      endReason: null,
+      winner: "p1",
+      mode: "online_pvp",
+      history: [
+        { p1Card: "fire", result: "p1" },
+        { p1Card: "water", result: "p1" },
+        { p1Card: "earth", result: "p1" },
+        { p1Card: "wind", result: "p1" }
+      ],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    perspective: "p1",
+    matchStats: {
+      warsEntered: 0,
+      warsWon: 0,
+      cardsCaptured: 0,
+      longestWar: 0
+    },
+    nowMs
+  });
+
+  assert.equal(result.dailyChestDelta, 1);
+  assert.equal(result.profile.chests.basic, 1);
+});
+
+test("daily: online bonus quests progress correctly", () => {
+  const result = applyDailyChallengesForMatch({
+    profile: {
+      username: "OnlineBonusQuestUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+        daily: ["daily_online_match_1", "daily_online_win_1", "daily_no_quit_3"]
+      })
+    },
+    matchState: createRewardHookMatch({ winner: "p1", mode: "online_pvp" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 }
+  });
+
+  const rewardIds = result.rewards.daily.map((item) => item.id);
+  assert.ok(rewardIds.includes("daily_online_match_1"));
+  assert.ok(rewardIds.includes("daily_online_win_1"));
+});
+
+test("daily: hard AI bonus quests progress correctly", () => {
+  const result = applyDailyChallengesForMatch({
+    profile: {
+      username: "HardAiBonusQuestUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+        daily: ["daily_hard_ai_win_1", "daily_no_quit_3", "daily_win_with_fire"]
+      })
+    },
+    matchState: createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "hard" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 }
+  });
+
+  assert.ok(result.rewards.daily.some((item) => item.id === "daily_hard_ai_win_1"));
+});
+
+test("daily: local PvP bonus quests progress correctly", () => {
+  const result = applyDailyChallengesForMatch({
+    profile: {
+      username: "LocalBonusQuestUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+        daily: ["daily_local_pvp_match_1", "daily_no_quit_3", "daily_win_with_fire"]
+      })
+    },
+    matchState: createRewardHookMatch({ winner: "p1", mode: "local_pvp" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 }
+  });
+
+  assert.ok(result.rewards.daily.some((item) => item.id === "daily_local_pvp_match_1"));
+});
+
+test("daily: comeback, element, and no-quit bonus quests progress correctly", () => {
+  const result = applyDailyChallengesForMatch({
+    profile: {
+      username: "DerivedBonusQuestUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+        daily: ["daily_comeback_win", "daily_no_quit_3", "daily_win_with_fire"]
+      })
+    },
+    matchState: {
+      status: "completed",
+      endReason: null,
+      winner: "p1",
+      mode: "pve",
+      difficulty: "normal",
+      history: [
+        { p1Card: "fire", result: "p2", warClashes: 0, capturedOpponentCards: 0 },
+        { p1Card: "water", result: "p1", warClashes: 0, capturedOpponentCards: 1 },
+        { p1Card: "fire", result: "p1", warClashes: 0, capturedOpponentCards: 1 }
+      ],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    perspective: "p1",
+    matchStats: { warsEntered: 0, warsWon: 0, cardsCaptured: 2, longestWar: 0 }
+  });
+
+  const rewardIds = result.rewards.daily.map((item) => item.id);
+  assert.ok(rewardIds.includes("daily_comeback_win"));
+  assert.ok(rewardIds.includes("daily_no_quit_3") === false);
+  assert.ok(rewardIds.includes("daily_win_with_fire"));
+  assert.equal(result.profile.dailyChallenges.daily.progress.completedNoQuitMatch, 1);
+});
+
+test("weekly: online, hard AI, local PvP, comeback, element, and no-quit bonus quests progress correctly", () => {
+  const challenges = withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+    weekly: ["weekly_online_matches_5", "weekly_online_wins_3", "weekly_element_master_fire"]
+  });
+  challenges.weekly.progress.completedOnlineMatch = 4;
+  challenges.weekly.progress.wonOnlineMatch = 2;
+  challenges.weekly.progress.wonRoundWithFire = 4;
+
+  const result = applyDailyChallengesForMatch({
+    profile: {
+      username: "WeeklyDerivedBonusQuestUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: challenges
+    },
+    matchState: {
+      status: "completed",
+      endReason: null,
+      winner: "p1",
+      mode: "online_pvp",
+      history: [
+        { p1Card: "fire", result: "p1", warClashes: 0, capturedOpponentCards: 1 }
+      ],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    perspective: "p1",
+    matchStats: { warsEntered: 0, warsWon: 0, cardsCaptured: 1, longestWar: 0 }
+  });
+
+  const rewardIds = result.rewards.weekly.map((item) => item.id);
+  assert.ok(rewardIds.includes("weekly_online_matches_5"));
+  assert.ok(rewardIds.includes("weekly_online_wins_3"));
+  assert.ok(rewardIds.includes("weekly_element_master_fire"));
 });
 
 test("daily: quit forfeits do not count toward new daily and weekly challenges", () => {
@@ -3371,12 +3804,16 @@ test("daily: hydration marks newly added challenges completed when stored progre
     dailyChallenges: {
       daily: {
         lastReset: new Date().toISOString(),
+        selectedBonusChallengeIds: ["daily_online_match_1", "daily_no_quit_3", "daily_win_with_fire"],
         progress: {
           matchesPlayed: 5,
           matchesWon: 2,
           warsWon: 2,
           cardsCaptured: 24,
-          usedAllElementsInMatch: 1
+          usedAllElementsInMatch: 1,
+          completedOnlineMatch: 1,
+          completedNoQuitMatch: 3,
+          wonRoundWithFire: 1
         },
         completed: {
           daily_win_1_match: true,
@@ -3394,8 +3831,9 @@ test("daily: hydration marks newly added challenges completed when stored progre
   const byId = Object.fromEntries(view.view.daily.challenges.map((item) => [item.id, item]));
 
   assert.equal(byId.daily_win_2_matches.completed, true);
-  assert.equal(byId.daily_win_2_wars.completed, true);
-  assert.equal(byId.daily_capture_24_cards.completed, true);
+  assert.equal(byId.daily_online_match_1.completed, true);
+  assert.equal(byId.daily_no_quit_3.completed, true);
+  assert.equal(byId.daily_win_with_fire.completed, true);
 });
 
 test("daily: hydration completion sync does not duplicate already-granted rewards", () => {
@@ -3407,17 +3845,21 @@ test("daily: hydration completion sync does not duplicate already-granted reward
     dailyChallenges: {
       daily: {
         lastReset: new Date().toISOString(),
+        selectedBonusChallengeIds: ["daily_online_match_1", "daily_no_quit_3", "daily_win_with_fire"],
         progress: {
           matchesPlayed: 2,
           matchesWon: 2,
           warsWon: 2,
           cardsCaptured: 24,
-          usedAllElementsInMatch: 1
+          usedAllElementsInMatch: 1,
+          completedOnlineMatch: 1,
+          completedNoQuitMatch: 3,
+          wonRoundWithFire: 1
         },
         completed: {},
         rewarded: {
           daily_win_2_matches: true,
-          daily_win_2_wars: true
+          daily_online_match_1: true
         }
       }
     }
@@ -3428,9 +3870,9 @@ test("daily: hydration completion sync does not duplicate already-granted reward
   const byId = Object.fromEntries(secondView.view.daily.challenges.map((item) => [item.id, item]));
 
   assert.equal(byId.daily_win_2_matches.completed, true);
-  assert.equal(byId.daily_win_2_wars.completed, true);
+  assert.equal(byId.daily_online_match_1.completed, true);
   assert.equal(secondView.profile.dailyChallenges.daily.rewarded.daily_win_2_matches, true);
-  assert.equal(secondView.profile.dailyChallenges.daily.rewarded.daily_win_2_wars, true);
+  assert.equal(secondView.profile.dailyChallenges.daily.rewarded.daily_online_match_1, true);
 });
 
 test("xp: level threshold table scales through level 100", () => {

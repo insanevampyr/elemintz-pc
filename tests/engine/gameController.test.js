@@ -2501,6 +2501,7 @@ test("appController: switch account clears authenticated state and returns to lo
     app.username = "SignedInUser";
     app.profile = { username: "SignedInUser", tokens: 250 };
     app.dailyChallenges = { daily: { challenges: [] }, weekly: { challenges: [] } };
+    app.menuBoostEvent = { title: "Active Boost" };
     app.onlinePlayState = app.normalizeOnlinePlayState({
       connectionStatus: "connected",
       session: {
@@ -2520,6 +2521,7 @@ test("appController: switch account clears authenticated state and returns to lo
     assert.equal(calls.getState, 1);
     assert.equal(app.username, null);
     assert.equal(app.profile, null);
+    assert.equal(app.menuBoostEvent, null);
     assert.equal(shownScreens.at(-1).name, "login");
     assert.equal(shownScreens.at(-1).context.statusMessage, "Signed out. Sign in with another account.");
   } finally {
@@ -2991,9 +2993,8 @@ test("appController: menu boost event refresh keeps an existing banner when the 
     }
   });
 
-test("appController: menu boost event refresh clears when the multiplayer boost bridge is unavailable", async () => {
+test("appController: menu boost event refresh preserves an existing banner when the multiplayer boost bridge is unavailable", async () => {
   const originalWindow = globalThis.window;
-  let renderCount = 0;
 
   const app = new AppController({
     screenManager: {
@@ -3024,6 +3025,94 @@ test("appController: menu boost event refresh clears when the multiplayer boost 
         username: "BoostUser"
       }
     });
+
+    const result = await app.refreshMenuBoostEvent();
+
+    assert.equal(result, null);
+    assert.deepEqual(app.menuBoostEvent, {
+      title: "Old Boost"
+    });
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: menu boost event refresh preserves an existing banner when multiplayer access is temporarily unavailable", async () => {
+  const originalWindow = globalThis.window;
+  let renderCount = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {}
+      }
+    };
+    app.username = "BoostUser";
+    app.profile = { username: "BoostUser", equippedCosmetics: {} };
+    app.menuBoostEvent = { title: "Old Boost" };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "disconnected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+    app.screenFlow = "menu";
+    app.renderMenuScreen = () => {
+      renderCount += 1;
+    };
+
+    const result = await app.refreshMenuBoostEvent();
+
+    assert.equal(result, null);
+    assert.deepEqual(app.menuBoostEvent, { title: "Old Boost" });
+    assert.equal(renderCount, 0);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: menu boost event refresh clears an existing banner when the server returns no active event", async () => {
+  const originalWindow = globalThis.window;
+  let renderCount = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({}),
+          getActiveBoostEvent: async () => null
+        }
+      }
+    };
+    app.username = "BoostUser";
+    app.profile = { username: "BoostUser", equippedCosmetics: {} };
+    app.menuBoostEvent = { title: "Old Boost" };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
     app.screenFlow = "menu";
     app.renderMenuScreen = () => {
       renderCount += 1;
@@ -3034,6 +3123,75 @@ test("appController: menu boost event refresh clears when the multiplayer boost 
     assert.equal(result, null);
     assert.equal(app.menuBoostEvent, null);
     assert.equal(renderCount, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: boost banner survives online play return to menu when boost refresh is temporarily unavailable", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({}),
+          getState: async () => ({ connectionStatus: "disconnected" }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            socketId: "socket-1",
+            session: {
+              authenticated: true,
+              username: "BoostUser"
+            }
+          }),
+          listPublicRooms: async () => [],
+          getOnlineCount: async () => 2
+        }
+      }
+    };
+
+    app.username = "BoostUser";
+    app.profile = { username: "BoostUser", equippedCosmetics: {} };
+    app.menuBoostEvent = { title: "Persisted Boost" };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.refreshMenuAnnouncement = async () => {};
+
+    await app.showOnlinePlay();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "disconnected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(shownScreens.at(-1)?.name, "menu");
+    assert.deepEqual(app.menuBoostEvent, { title: "Persisted Boost" });
   } finally {
     globalThis.window = originalWindow;
   }
@@ -3986,6 +4144,92 @@ test("appController: online daily challenges screen prefers the multiplayer prof
     assert.equal(shownScreens.at(-1).name, "dailyChallenges");
     assert.equal(shownScreens.at(-1).context.tokens, 415);
     assert.equal(shownScreens.at(-1).context.daily.challenges[0].id, "daily-online");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: daily challenge screen payload carries rotating bonus quests and excludes retired legacy ids", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async ({ username }) => ({
+            username,
+            profile: { username, tokens: 415, equippedCosmetics: {} },
+            currency: { tokens: 415 },
+            progression: {
+              dailyChallenges: {
+                challenges: [
+                  { id: "daily_play_5_matches" },
+                  { id: "daily_win_1_match" },
+                  { id: "daily_win_2_matches" },
+                  { id: "daily_win_1_war" },
+                  { id: "daily_capture_16_cards" },
+                  { id: "daily_use_all_4_elements" },
+                  { id: "daily_online_match_1" },
+                  { id: "daily_no_quit_3" },
+                  { id: "daily_win_with_water" }
+                ],
+                msUntilReset: 3600000
+              },
+              weeklyChallenges: {
+                challenges: [
+                  { id: "weekly_play_15_matches" },
+                  { id: "weekly_win_10_matches" },
+                  { id: "weekly_win_9_wars" },
+                  { id: "weekly_capture_64_cards" },
+                  { id: "weekly_win_streak_3" },
+                  { id: "weekly_use_all_4_elements_5x" },
+                  { id: "weekly_longest_war_5" },
+                  { id: "weekly_hard_ai_wins_5" },
+                  { id: "weekly_online_matches_5" },
+                  { id: "weekly_online_wins_3" }
+                ],
+                msUntilReset: 7200000
+              }
+            }
+          })
+        },
+        state: {
+          getDailyChallenges: async () => {
+            throw new Error("local fallback should not be used in this test");
+          }
+        }
+      }
+    };
+
+    app.username = "DailyOnlineUser";
+    app.onlinePlayState = { connectionStatus: "connected" };
+    await app.showDailyChallenges();
+
+    const dailyIds = shownScreens.at(-1).context.daily.challenges.map((challenge) => challenge.id);
+    const weeklyIds = shownScreens.at(-1).context.weekly.challenges.map((challenge) => challenge.id);
+
+    assert.ok(dailyIds.includes("daily_online_match_1"));
+    assert.ok(dailyIds.includes("daily_no_quit_3"));
+    assert.ok(dailyIds.includes("daily_win_with_water"));
+    assert.ok(weeklyIds.includes("weekly_hard_ai_wins_5"));
+    assert.ok(weeklyIds.includes("weekly_online_matches_5"));
+    assert.ok(weeklyIds.includes("weekly_online_wins_3"));
+    assert.equal(dailyIds.includes("daily_win_2_wars"), false);
+    assert.equal(dailyIds.includes("daily_trigger_2_wars_one_match"), false);
+    assert.equal(dailyIds.includes("daily_capture_24_cards"), false);
+    assert.equal(weeklyIds.includes("weekly_win_20_matches"), false);
+    assert.equal(weeklyIds.includes("weekly_win_15_wars"), false);
+    assert.equal(weeklyIds.includes("weekly_use_all_4_elements_10x"), false);
   } finally {
     globalThis.window = originalWindow;
   }

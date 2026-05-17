@@ -162,7 +162,7 @@ test("online challenge mapping: completed online match using all four elements i
       1
     );
     assert.equal(
-      hostChallenges.weekly.challenges.find((item) => item.id === "weekly_use_all_4_elements_10x")?.progress ?? 0,
+      hostChallenges.weekly.challenges.find((item) => item.id === "weekly_use_all_4_elements_5x")?.progress ?? 0,
       1
     );
     assert.equal(foundation.roomStore.getRoom(room.roomCode)?.matchComplete ?? false, true);

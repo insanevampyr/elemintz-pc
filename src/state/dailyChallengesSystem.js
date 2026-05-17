@@ -8,6 +8,13 @@ const DAILY_COMPLETION_CHEST_AMOUNT = 1;
 const WEEKLY_COMPLETION_CHEST_AMOUNT = 1;
 const HARD_PVE_WIN_TOKEN_BONUS = 5;
 const HARD_PVE_WIN_XP_BONUS = 5;
+const CHALLENGE_SET_VERSION = "core_bonus_v1";
+const ACTIVE_DAILY_CHALLENGE_COUNT = 9;
+const ACTIVE_WEEKLY_CHALLENGE_COUNT = 10;
+const DAILY_FIXED_CORE_COUNT = 6;
+const WEEKLY_FIXED_CORE_COUNT = 7;
+const DAILY_BONUS_SELECTION_COUNT = ACTIVE_DAILY_CHALLENGE_COUNT - DAILY_FIXED_CORE_COUNT;
+const WEEKLY_BONUS_SELECTION_COUNT = ACTIVE_WEEKLY_CHALLENGE_COUNT - WEEKLY_FIXED_CORE_COUNT;
 
 const WEEKDAY_INDEX = Object.freeze({
   Mon: 1,
@@ -19,7 +26,16 @@ const WEEKDAY_INDEX = Object.freeze({
   Sun: 7
 });
 
-export const DAILY_CHALLENGE_DEFINITIONS = Object.freeze([
+export const DAILY_FIXED_CORE_CHALLENGE_DEFINITIONS = Object.freeze([
+  {
+    id: "daily_play_5_matches",
+    name: "Play 5 Matches",
+    description: "Complete 5 matches.",
+    rewardTokens: 3,
+    rewardXp: 6,
+    goal: 5,
+    progressKey: "matchesPlayed"
+  },
   {
     id: "daily_win_1_match",
     name: "Win 1 Match",
@@ -48,24 +64,6 @@ export const DAILY_CHALLENGE_DEFINITIONS = Object.freeze([
     progressKey: "warsWon"
   },
   {
-    id: "daily_win_2_wars",
-    name: "Win 2 WARs",
-    description: "Win 2 WARs across completed matches in one day.",
-    rewardTokens: 3,
-    rewardXp: 7,
-    goal: 2,
-    progressKey: "warsWon"
-  },
-  {
-    id: "daily_trigger_2_wars_one_match",
-    name: "Trigger 2 WARs In One Match",
-    description: "In one completed match, trigger 2 WARs.",
-    rewardTokens: 4,
-    rewardXp: 8,
-    goal: 1,
-    progressKey: "triggeredTwoWarsInMatch"
-  },
-  {
     id: "daily_capture_16_cards",
     name: "Capture 16 Cards Total In One Day",
     description: "Capture 16 opponent cards across completed matches in the same day.",
@@ -73,24 +71,6 @@ export const DAILY_CHALLENGE_DEFINITIONS = Object.freeze([
     rewardXp: 6,
     goal: 16,
     progressKey: "cardsCaptured"
-  },
-  {
-    id: "daily_capture_24_cards",
-    name: "Capture 24 Cards In One Day",
-    description: "Capture 24 opponent cards across completed matches in one day.",
-    rewardTokens: 4,
-    rewardXp: 8,
-    goal: 24,
-    progressKey: "cardsCaptured"
-  },
-  {
-    id: "daily_play_5_matches",
-    name: "Play 5 Matches",
-    description: "Complete 5 matches.",
-    rewardTokens: 3,
-    rewardXp: 6,
-    goal: 5,
-    progressKey: "matchesPlayed"
   },
   {
     id: "daily_use_all_4_elements",
@@ -103,7 +83,118 @@ export const DAILY_CHALLENGE_DEFINITIONS = Object.freeze([
   }
 ].filter((item) => Number(item.rewardTokens) > 0));
 
-export const WEEKLY_CHALLENGE_DEFINITIONS = Object.freeze([
+export const DAILY_BONUS_CHALLENGE_POOL = Object.freeze([
+  {
+    id: "daily_online_match_1",
+    name: "Complete 1 Online Match",
+    description: "Complete 1 Online match.",
+    rewardTokens: 4,
+    rewardXp: 8,
+    goal: 1,
+    progressKey: "completedOnlineMatch"
+  },
+  {
+    id: "daily_online_win_1",
+    name: "Win 1 Online Match",
+    description: "Win 1 Online match.",
+    rewardTokens: 5,
+    rewardXp: 10,
+    goal: 1,
+    progressKey: "wonOnlineMatch"
+  },
+  {
+    id: "daily_hard_ai_win_1",
+    name: "Win 1 Match Against Hard AI",
+    description: "Win 1 match against Hard AI.",
+    rewardTokens: 4,
+    rewardXp: 9,
+    goal: 1,
+    progressKey: "wonHardPveMatch"
+  },
+  {
+    id: "daily_local_pvp_match_1",
+    name: "Complete 1 Local 2-Player Match",
+    description: "Complete 1 Local 2-Player match.",
+    rewardTokens: 3,
+    rewardXp: 7,
+    goal: 1,
+    progressKey: "completedLocalPvpMatch"
+  },
+  {
+    id: "daily_comeback_win",
+    name: "Complete a Comeback Win",
+    description: "Win a match after losing at least 1 round.",
+    rewardTokens: 4,
+    rewardXp: 8,
+    goal: 1,
+    progressKey: "comebackWin"
+  },
+  {
+    id: "daily_no_quit_3",
+    name: "Complete 3 Matches Without Quitting",
+    description: "Complete 3 matches without quitting.",
+    rewardTokens: 3,
+    rewardXp: 6,
+    goal: 3,
+    progressKey: "completedNoQuitMatch"
+  },
+  {
+    id: "daily_win_with_fire",
+    name: "Win With Fire",
+    description: "Win a completed match where Fire wins at least one round.",
+    rewardTokens: 3,
+    rewardXp: 6,
+    goal: 1,
+    progressKey: "wonRoundWithFire",
+    bonusFamily: "elemental"
+  },
+  {
+    id: "daily_win_with_water",
+    name: "Win With Water",
+    description: "Win a completed match where Water wins at least one round.",
+    rewardTokens: 3,
+    rewardXp: 6,
+    goal: 1,
+    progressKey: "wonRoundWithWater",
+    bonusFamily: "elemental"
+  },
+  {
+    id: "daily_win_with_earth",
+    name: "Win With Earth",
+    description: "Win a completed match where Earth wins at least one round.",
+    rewardTokens: 3,
+    rewardXp: 6,
+    goal: 1,
+    progressKey: "wonRoundWithEarth",
+    bonusFamily: "elemental"
+  },
+  {
+    id: "daily_win_with_wind",
+    name: "Win With Wind",
+    description: "Win a completed match where Wind wins at least one round.",
+    rewardTokens: 3,
+    rewardXp: 6,
+    goal: 1,
+    progressKey: "wonRoundWithWind",
+    bonusFamily: "elemental"
+  }
+].filter((item) => Number(item.rewardTokens) > 0));
+
+export const DAILY_CHALLENGE_DEFINITIONS = Object.freeze([
+  ...DAILY_FIXED_CORE_CHALLENGE_DEFINITIONS,
+  ...DAILY_BONUS_CHALLENGE_POOL
+]);
+
+export const WEEKLY_FIXED_CORE_CHALLENGE_DEFINITIONS = Object.freeze([
+  {
+    id: "weekly_play_15_matches",
+    name: "Play 15 Matches",
+    description: "Complete 15 matches.",
+    rewardTokens: 5,
+    rewardXp: 15,
+    goal: 15,
+    progressKey: "matchesPlayed"
+  },
   {
     id: "weekly_win_10_matches",
     name: "Win 10 Matches",
@@ -111,15 +202,6 @@ export const WEEKLY_CHALLENGE_DEFINITIONS = Object.freeze([
     rewardTokens: 5,
     rewardXp: 15,
     goal: 10,
-    progressKey: "matchesWon"
-  },
-  {
-    id: "weekly_win_20_matches",
-    name: "Win 20 Matches",
-    description: "Win 20 completed matches in one week.",
-    rewardTokens: 10,
-    rewardXp: 22,
-    goal: 20,
     progressKey: "matchesWon"
   },
   {
@@ -132,15 +214,6 @@ export const WEEKLY_CHALLENGE_DEFINITIONS = Object.freeze([
     progressKey: "warsWon"
   },
   {
-    id: "weekly_win_15_wars",
-    name: "Win 15 WARs",
-    description: "Win 15 WARs across completed matches in one week.",
-    rewardTokens: 10,
-    rewardXp: 25,
-    goal: 15,
-    progressKey: "warsWon"
-  },
-  {
     id: "weekly_capture_64_cards",
     name: "Capture 64 Cards Total",
     description: "Capture 64 opponent cards across completed matches.",
@@ -148,15 +221,6 @@ export const WEEKLY_CHALLENGE_DEFINITIONS = Object.freeze([
     rewardXp: 18,
     goal: 64,
     progressKey: "cardsCaptured"
-  },
-  {
-    id: "weekly_play_15_matches",
-    name: "Play 15 Matches",
-    description: "Complete 15 matches.",
-    rewardTokens: 5,
-    rewardXp: 15,
-    goal: 15,
-    progressKey: "matchesPlayed"
   },
   {
     id: "weekly_win_streak_3",
@@ -177,15 +241,6 @@ export const WEEKLY_CHALLENGE_DEFINITIONS = Object.freeze([
     progressKey: "usedAllElementsInMatch"
   },
   {
-    id: "weekly_use_all_4_elements_10x",
-    name: "Use All 4 Elements In 10 Different Matches",
-    description: "In 10 completed matches, play Fire, Water, Earth, and Wind at least once.",
-    rewardTokens: 10,
-    rewardXp: 25,
-    goal: 10,
-    progressKey: "usedAllElementsInMatch"
-  },
-  {
     id: "weekly_longest_war_5",
     name: "Survive A WAR Of 5 Clashes",
     description: "In any completed match during the week, be part of a WAR that lasts 5 clashes.",
@@ -195,6 +250,115 @@ export const WEEKLY_CHALLENGE_DEFINITIONS = Object.freeze([
     progressKey: "survivedLongestWar5"
   }
 ].filter((item) => Number(item.rewardTokens) > 0));
+
+export const WEEKLY_BONUS_CHALLENGE_POOL = Object.freeze([
+  {
+    id: "weekly_online_matches_5",
+    name: "Complete 5 Online Matches",
+    description: "Complete 5 Online matches.",
+    rewardTokens: 12,
+    rewardXp: 28,
+    goal: 5,
+    progressKey: "completedOnlineMatch"
+  },
+  {
+    id: "weekly_online_wins_3",
+    name: "Win 3 Online Matches",
+    description: "Win 3 Online matches.",
+    rewardTokens: 15,
+    rewardXp: 35,
+    goal: 3,
+    progressKey: "wonOnlineMatch"
+  },
+  {
+    id: "weekly_hard_ai_wins_5",
+    name: "Win 5 Matches Against Hard AI",
+    description: "Win 5 matches against Hard AI.",
+    rewardTokens: 12,
+    rewardXp: 30,
+    goal: 5,
+    progressKey: "wonHardPveMatch"
+  },
+  {
+    id: "weekly_local_pvp_matches_5",
+    name: "Complete 5 Local 2-Player Matches",
+    description: "Complete 5 Local 2-Player matches.",
+    rewardTokens: 10,
+    rewardXp: 25,
+    goal: 5,
+    progressKey: "completedLocalPvpMatch"
+  },
+  {
+    id: "weekly_comeback_wins_5",
+    name: "Complete 5 Comeback Wins",
+    description: "Win 5 matches after losing at least 1 round.",
+    rewardTokens: 12,
+    rewardXp: 30,
+    goal: 5,
+    progressKey: "comebackWin"
+  },
+  {
+    id: "weekly_no_quit_10",
+    name: "Complete 10 Matches Without Quitting",
+    description: "Complete 10 matches without quitting.",
+    rewardTokens: 10,
+    rewardXp: 25,
+    goal: 10,
+    progressKey: "completedNoQuitMatch"
+  },
+  {
+    id: "weekly_element_master_fire",
+    name: "Element Master: Fire",
+    description: "Win 5 matches where Fire wins at least one round.",
+    rewardTokens: 10,
+    rewardXp: 25,
+    goal: 5,
+    progressKey: "wonRoundWithFire",
+    bonusFamily: "elemental"
+  },
+  {
+    id: "weekly_element_master_water",
+    name: "Element Master: Water",
+    description: "Win 5 matches where Water wins at least one round.",
+    rewardTokens: 10,
+    rewardXp: 25,
+    goal: 5,
+    progressKey: "wonRoundWithWater",
+    bonusFamily: "elemental"
+  },
+  {
+    id: "weekly_element_master_earth",
+    name: "Element Master: Earth",
+    description: "Win 5 matches where Earth wins at least one round.",
+    rewardTokens: 10,
+    rewardXp: 25,
+    goal: 5,
+    progressKey: "wonRoundWithEarth",
+    bonusFamily: "elemental"
+  },
+  {
+    id: "weekly_element_master_wind",
+    name: "Element Master: Wind",
+    description: "Win 5 matches where Wind wins at least one round.",
+    rewardTokens: 10,
+    rewardXp: 25,
+    goal: 5,
+    progressKey: "wonRoundWithWind",
+    bonusFamily: "elemental"
+  }
+].filter((item) => Number(item.rewardTokens) > 0));
+
+export const WEEKLY_CHALLENGE_DEFINITIONS = Object.freeze([
+  ...WEEKLY_FIXED_CORE_CHALLENGE_DEFINITIONS,
+  ...WEEKLY_BONUS_CHALLENGE_POOL
+]);
+
+const DAILY_BONUS_POOL_BY_ID = Object.freeze(
+  Object.fromEntries(DAILY_BONUS_CHALLENGE_POOL.map((item) => [item.id, item]))
+);
+const WEEKLY_BONUS_POOL_BY_ID = Object.freeze(
+  Object.fromEntries(WEEKLY_BONUS_CHALLENGE_POOL.map((item) => [item.id, item]))
+);
 
 function getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) {
   if (!isCompleted || isQuit) {
@@ -246,7 +410,17 @@ function buildProgressDefaults() {
     usedAllElementsInMatch: 0,
     triggeredTwoWarsInMatch: 0,
     reachedWinStreak3: 0,
-    survivedLongestWar5: 0
+    survivedLongestWar5: 0,
+    completedOnlineMatch: 0,
+    wonOnlineMatch: 0,
+    wonHardPveMatch: 0,
+    completedLocalPvpMatch: 0,
+    completedNoQuitMatch: 0,
+    comebackWin: 0,
+    wonRoundWithFire: 0,
+    wonRoundWithWater: 0,
+    wonRoundWithEarth: 0,
+    wonRoundWithWind: 0
   };
 }
 
@@ -287,14 +461,34 @@ function normalizeProgress(value) {
     survivedLongestWar5: Math.max(
       0,
       Number(incoming.survivedLongestWar5 ?? defaults.survivedLongestWar5) || 0
-    )
+    ),
+    completedOnlineMatch: Math.max(0, Number(incoming.completedOnlineMatch ?? defaults.completedOnlineMatch) || 0),
+    wonOnlineMatch: Math.max(0, Number(incoming.wonOnlineMatch ?? defaults.wonOnlineMatch) || 0),
+    wonHardPveMatch: Math.max(0, Number(incoming.wonHardPveMatch ?? defaults.wonHardPveMatch) || 0),
+    completedLocalPvpMatch: Math.max(
+      0,
+      Number(incoming.completedLocalPvpMatch ?? defaults.completedLocalPvpMatch) || 0
+    ),
+    completedNoQuitMatch: Math.max(
+      0,
+      Number(incoming.completedNoQuitMatch ?? defaults.completedNoQuitMatch) || 0
+    ),
+    comebackWin: Math.max(0, Number(incoming.comebackWin ?? defaults.comebackWin) || 0),
+    wonRoundWithFire: Math.max(0, Number(incoming.wonRoundWithFire ?? defaults.wonRoundWithFire) || 0),
+    wonRoundWithWater: Math.max(0, Number(incoming.wonRoundWithWater ?? defaults.wonRoundWithWater) || 0),
+    wonRoundWithEarth: Math.max(0, Number(incoming.wonRoundWithEarth ?? defaults.wonRoundWithEarth) || 0),
+    wonRoundWithWind: Math.max(0, Number(incoming.wonRoundWithWind ?? defaults.wonRoundWithWind) || 0)
   };
 }
 
 function normalizeFlags(value, definitions, defaultValue = false) {
   const incoming = value ?? {};
   const defaults = buildBooleanMap(definitions, defaultValue);
-  const next = {};
+  const next = Object.fromEntries(
+    Object.keys(incoming)
+      .filter((key) => typeof key === "string" && key.trim().length > 0)
+      .map((key) => [key, Boolean(incoming[key])])
+  );
 
   for (const key of Object.keys(defaults)) {
     next[key] = Boolean(incoming[key] ?? defaults[key]);
@@ -304,7 +498,7 @@ function normalizeFlags(value, definitions, defaultValue = false) {
 }
 
 function normalizeCompletedFlags(progress, completed, rewarded, definitions) {
-  const next = {};
+  const next = { ...(completed ?? {}) };
 
   for (const challenge of definitions) {
     const progressValue = challengeProgressValue(challenge, progress);
@@ -316,6 +510,119 @@ function normalizeCompletedFlags(progress, completed, rewarded, definitions) {
   }
 
   return next;
+}
+
+function isElementalBonusChallenge(challenge) {
+  return String(challenge?.bonusFamily ?? "").trim().toLowerCase() === "elemental";
+}
+
+function hashSelectionSeed(seed) {
+  let hash = 2166136261;
+  for (const char of String(seed)) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function selectBonusChallengeIds(pool, count, seedKey) {
+  const ordered = [...pool].sort((left, right) => {
+    const leftHash = hashSelectionSeed(`${seedKey}:${left.id}`);
+    const rightHash = hashSelectionSeed(`${seedKey}:${right.id}`);
+    if (leftHash !== rightHash) {
+      return leftHash - rightHash;
+    }
+    return left.id.localeCompare(right.id);
+  });
+
+  const selected = [];
+  let elementalCount = 0;
+  for (const challenge of ordered) {
+    if (selected.length >= count) {
+      break;
+    }
+    if (isElementalBonusChallenge(challenge) && elementalCount >= 1) {
+      continue;
+    }
+    selected.push(challenge.id);
+    if (isElementalBonusChallenge(challenge)) {
+      elementalCount += 1;
+    }
+  }
+
+  if (selected.length < count) {
+    for (const challenge of ordered) {
+      if (selected.length >= count) {
+        break;
+      }
+      if (selected.includes(challenge.id)) {
+        continue;
+      }
+      selected.push(challenge.id);
+    }
+  }
+
+  return selected.slice(0, count);
+}
+
+function normalizeSelectedBonusChallengeIds(selectedIds, pool, count, seedKey) {
+  const poolIds = new Set(pool.map((item) => item.id));
+  const incoming = Array.isArray(selectedIds)
+    ? selectedIds
+        .map((item) => String(item ?? "").trim())
+        .filter((item) => item.length > 0)
+    : [];
+  const uniqueIncoming = [...new Set(incoming)];
+  const validIncoming = uniqueIncoming.filter((id) => poolIds.has(id));
+  const elementalSelections = validIncoming.filter((id) => isElementalBonusChallenge(pool.find((item) => item.id === id)));
+  const isValid =
+    validIncoming.length === count &&
+    uniqueIncoming.length === count &&
+    elementalSelections.length <= 1;
+
+  if (isValid) {
+    return {
+      ids: validIncoming,
+      didChange: false
+    };
+  }
+
+  return {
+    ids: selectBonusChallengeIds(pool, count, seedKey),
+    didChange: true
+  };
+}
+
+function resolveDailyBonusSelection(state, lastResetMs) {
+  return normalizeSelectedBonusChallengeIds(
+    state?.selectedBonusChallengeIds,
+    DAILY_BONUS_CHALLENGE_POOL,
+    DAILY_BONUS_SELECTION_COUNT,
+    `daily:${lastResetMs}`
+  );
+}
+
+function resolveWeeklyBonusSelection(state, lastResetMs) {
+  return normalizeSelectedBonusChallengeIds(
+    state?.selectedBonusChallengeIds,
+    WEEKLY_BONUS_CHALLENGE_POOL,
+    WEEKLY_BONUS_SELECTION_COUNT,
+    `weekly:${lastResetMs}`
+  );
+}
+
+function getDailyActiveDefinitions(state) {
+  return [
+    ...DAILY_FIXED_CORE_CHALLENGE_DEFINITIONS,
+    ...(state?.selectedBonusChallengeIds ?? []).map((id) => DAILY_BONUS_POOL_BY_ID[id]).filter(Boolean)
+  ];
+}
+
+function getWeeklyActiveDefinitions(state) {
+  return [
+    ...WEEKLY_FIXED_CORE_CHALLENGE_DEFINITIONS,
+    ...(state?.selectedBonusChallengeIds ?? []).map((id) => WEEKLY_BONUS_POOL_BY_ID[id]).filter(Boolean)
+  ];
 }
 
 function getZonedParts(ms, timeZone = RESET_TIME_ZONE) {
@@ -466,17 +773,19 @@ function getWeeklyResetWindow(nowMs = Date.now()) {
   };
 }
 
-function buildChallengeState(definitions, lastResetMs) {
+function buildChallengeState(definitions, lastResetMs, selectionState = {}) {
   return {
     lastReset: safeIsoFromMs(lastResetMs),
     progress: buildProgressDefaults(),
     completed: buildBooleanMap(definitions, false),
     rewarded: buildBooleanMap(definitions, false),
-    completionChestGranted: false
+    completionChestGranted: false,
+    selectedBonusChallengeIds: [...(selectionState.selectedBonusChallengeIds ?? [])],
+    setVersion: CHALLENGE_SET_VERSION
   };
 }
 
-function normalizeChallengeState(current, definitions, fallbackResetMs) {
+function normalizeChallengeState(current, definitions, fallbackResetMs, selectionState = {}) {
   const progress = normalizeProgress(current?.progress);
   const rewarded = normalizeFlags(current?.rewarded, definitions);
   const completed = normalizeCompletedFlags(
@@ -491,14 +800,24 @@ function normalizeChallengeState(current, definitions, fallbackResetMs) {
     progress,
     completed,
     rewarded,
-    completionChestGranted: Boolean(current?.completionChestGranted)
+    completionChestGranted: Boolean(current?.completionChestGranted),
+    selectedBonusChallengeIds: [...(selectionState.selectedBonusChallengeIds ?? [])],
+    setVersion: CHALLENGE_SET_VERSION
   };
 }
 
 function buildDefaultState(nowMs = Date.now()) {
+  const dailyResetMs = getDailyResetWindow(nowMs).lastResetMs;
+  const weeklyResetMs = getWeeklyResetWindow(nowMs).lastResetMs;
+  const dailySelection = resolveDailyBonusSelection({}, dailyResetMs);
+  const weeklySelection = resolveWeeklyBonusSelection({}, weeklyResetMs);
   return {
-    daily: buildChallengeState(DAILY_CHALLENGE_DEFINITIONS, getDailyResetWindow(nowMs).lastResetMs),
-    weekly: buildChallengeState(WEEKLY_CHALLENGE_DEFINITIONS, getWeeklyResetWindow(nowMs).lastResetMs)
+    daily: buildChallengeState(DAILY_CHALLENGE_DEFINITIONS, dailyResetMs, {
+      selectedBonusChallengeIds: dailySelection.ids
+    }),
+    weekly: buildChallengeState(WEEKLY_CHALLENGE_DEFINITIONS, weeklyResetMs, {
+      selectedBonusChallengeIds: weeklySelection.ids
+    })
   };
 }
 
@@ -516,18 +835,46 @@ function extractPlayedElements(matchState, perspective) {
   return played;
 }
 
-function ensureChallengeWindow(state, definitions, resetWindow) {
+function extractWonRoundElements(matchState, perspective) {
+  const won = new Set();
+  const cardKey = perspective === "p2" ? "p2Card" : "p1Card";
+
+  for (const round of matchState.history ?? []) {
+    if (round?.result !== perspective) {
+      continue;
+    }
+    const card = String(round?.[cardKey] ?? "").toLowerCase();
+    if (["fire", "water", "earth", "wind"].includes(card)) {
+      won.add(card);
+    }
+  }
+
+  return won;
+}
+
+function didLoseAnyRound(matchState, perspective) {
+  const opponent = perspective === "p2" ? "p1" : "p2";
+  return (matchState.history ?? []).some((round) => round?.result === opponent);
+}
+
+function ensureChallengeWindow(state, definitions, resetWindow, selectionResolver) {
   const lastAppliedResetMs = toMs(state?.lastReset, 0);
   if (lastAppliedResetMs < resetWindow.lastResetMs) {
+    const selection = selectionResolver({}, resetWindow.lastResetMs);
     return {
-      state: buildChallengeState(definitions, resetWindow.lastResetMs),
+      state: buildChallengeState(definitions, resetWindow.lastResetMs, {
+        selectedBonusChallengeIds: selection.ids
+      }),
       didReset: true
     };
   }
 
+  const selection = selectionResolver(state, resetWindow.lastResetMs);
   return {
-    state: normalizeChallengeState(state, definitions, resetWindow.lastResetMs),
-    didReset: false
+    state: normalizeChallengeState(state, definitions, resetWindow.lastResetMs, {
+      selectedBonusChallengeIds: selection.ids
+    }),
+    didReset: selection.didChange
   };
 }
 
@@ -549,12 +896,14 @@ function ensureChallengeState(profile, nowMs = Date.now()) {
   const ensuredDaily = ensureChallengeWindow(
     current.daily,
     DAILY_CHALLENGE_DEFINITIONS,
-    dailyResetWindow
+    dailyResetWindow,
+    resolveDailyBonusSelection
   );
   const ensuredWeekly = ensureChallengeWindow(
     current.weekly,
     WEEKLY_CHALLENGE_DEFINITIONS,
-    weeklyResetWindow
+    weeklyResetWindow,
+    resolveWeeklyBonusSelection
   );
 
   return {
@@ -612,6 +961,16 @@ function applyChallengeProgress({ definitions, state, metrics }) {
   next.progress.triggeredTwoWarsInMatch += metrics.triggeredTwoWarsInMatch;
   next.progress.reachedWinStreak3 += metrics.reachedWinStreak3;
   next.progress.survivedLongestWar5 += metrics.survivedLongestWar5;
+  next.progress.completedOnlineMatch += metrics.completedOnlineMatch;
+  next.progress.wonOnlineMatch += metrics.wonOnlineMatch;
+  next.progress.wonHardPveMatch += metrics.wonHardPveMatch;
+  next.progress.completedLocalPvpMatch += metrics.completedLocalPvpMatch;
+  next.progress.completedNoQuitMatch += metrics.completedNoQuitMatch;
+  next.progress.comebackWin += metrics.comebackWin;
+  next.progress.wonRoundWithFire += metrics.wonRoundWithFire;
+  next.progress.wonRoundWithWater += metrics.wonRoundWithWater;
+  next.progress.wonRoundWithEarth += metrics.wonRoundWithEarth;
+  next.progress.wonRoundWithWind += metrics.wonRoundWithWind;
 
   const rewards = [];
   for (const challenge of definitions) {
@@ -677,7 +1036,10 @@ export function applyDailyChallengesForMatch({
   const didWin = matchState.winner === perspective;
   const didDraw = matchState.winner === "draw";
   const playedElements = extractPlayedElements(matchState, perspective);
+  const wonRoundElements = extractWonRoundElements(matchState, perspective);
   const hardPveWinBonus = getHardPveWinBonus(matchState, didWin);
+  const dailyActiveDefinitions = getDailyActiveDefinitions(dailyState);
+  const weeklyActiveDefinitions = getWeeklyActiveDefinitions(weeklyState);
   const baseMatchTokenDelta = includeMatchRewards
     ? getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) + hardPveWinBonus.tokenBonus
     : 0;
@@ -704,11 +1066,27 @@ export function applyDailyChallengesForMatch({
       usedAllElementsInMatch: playedElements.size === 4 ? 1 : 0,
       triggeredTwoWarsInMatch: Number(matchStats?.warsEntered ?? 0) >= 2 ? 1 : 0,
       reachedWinStreak3: Number(profile?.winStreak ?? 0) >= 3 ? 1 : 0,
-      survivedLongestWar5: Number(matchStats?.longestWar ?? 0) >= 5 ? 1 : 0
+      survivedLongestWar5: Number(matchStats?.longestWar ?? 0) >= 5 ? 1 : 0,
+      completedOnlineMatch: String(matchState?.mode ?? "").trim().toLowerCase() === "online_pvp" ? 1 : 0,
+      wonOnlineMatch:
+        String(matchState?.mode ?? "").trim().toLowerCase() === "online_pvp" && didWin ? 1 : 0,
+      wonHardPveMatch:
+        String(matchState?.mode ?? "").trim().toLowerCase() === "pve" &&
+        String(matchState?.difficulty ?? "").trim().toLowerCase() === "hard" &&
+        didWin
+          ? 1
+          : 0,
+      completedLocalPvpMatch: String(matchState?.mode ?? "").trim().toLowerCase() === "local_pvp" ? 1 : 0,
+      completedNoQuitMatch: 1,
+      comebackWin: didWin && didLoseAnyRound(matchState, perspective) ? 1 : 0,
+      wonRoundWithFire: didWin && wonRoundElements.has("fire") ? 1 : 0,
+      wonRoundWithWater: didWin && wonRoundElements.has("water") ? 1 : 0,
+      wonRoundWithEarth: didWin && wonRoundElements.has("earth") ? 1 : 0,
+      wonRoundWithWind: didWin && wonRoundElements.has("wind") ? 1 : 0
     };
 
     const dailyApplied = applyChallengeProgress({
-      definitions: DAILY_CHALLENGE_DEFINITIONS,
+      definitions: dailyActiveDefinitions,
       state: dailyState,
       metrics
     });
@@ -716,7 +1094,7 @@ export function applyDailyChallengesForMatch({
     dailyRewards = dailyApplied.rewards;
 
     const weeklyApplied = applyChallengeProgress({
-      definitions: WEEKLY_CHALLENGE_DEFINITIONS,
+      definitions: weeklyActiveDefinitions,
       state: weeklyState,
       metrics
     });
@@ -783,7 +1161,7 @@ export function applyDailyChallengesForMatch({
     }
   };
 
-  if (areAllChallengesCompleted(DAILY_CHALLENGE_DEFINITIONS, dailyState) && !dailyState.completionChestGranted) {
+  if (areAllChallengesCompleted(dailyActiveDefinitions, dailyState) && !dailyState.completionChestGranted) {
     dailyState = {
       ...dailyState,
       completionChestGranted: true
@@ -801,7 +1179,7 @@ export function applyDailyChallengesForMatch({
     dailyChestDelta = DAILY_COMPLETION_CHEST_AMOUNT;
   }
 
-  if (areAllChallengesCompleted(WEEKLY_CHALLENGE_DEFINITIONS, weeklyState) && !weeklyState.completionChestGranted) {
+  if (areAllChallengesCompleted(weeklyActiveDefinitions, weeklyState) && !weeklyState.completionChestGranted) {
     weeklyState = {
       ...weeklyState,
       completionChestGranted: true
@@ -853,6 +1231,8 @@ export function applyDailyChallengesForMatch({
 
 export function getDailyChallengesView(profile, nowMs = Date.now()) {
   const ensured = ensureChallengeState(profile, nowMs);
+  const dailyActiveDefinitions = getDailyActiveDefinitions(ensured.challenges.daily);
+  const weeklyActiveDefinitions = getWeeklyActiveDefinitions(ensured.challenges.weekly);
   const normalizedProfile = {
     ...profile,
     dailyChallenges: ensured.challenges
@@ -863,14 +1243,14 @@ export function getDailyChallengesView(profile, nowMs = Date.now()) {
     didReset: ensured.didReset,
     view: {
       daily: buildChallengeView(
-        DAILY_CHALLENGE_DEFINITIONS,
+        dailyActiveDefinitions,
         ensured.challenges.daily,
         ensured.dailyResetWindow.nextResetMs,
         "\u2B50",
         nowMs
       ),
       weekly: buildChallengeView(
-        WEEKLY_CHALLENGE_DEFINITIONS,
+        weeklyActiveDefinitions,
         ensured.challenges.weekly,
         ensured.weeklyResetWindow.nextResetMs,
         "\uD83C\uDFC6",

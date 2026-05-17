@@ -1068,6 +1068,80 @@ test("ui: daily challenges screen renders completed status when hydrated progres
   assert.doesNotMatch(html, /In Progress/);
 });
 
+test("ui: daily challenges screen renders rotating bonus quest names from the active payload and not retired legacy quests", () => {
+  const html = dailyChallengesScreen.render({
+    tokens: 200,
+    daily: {
+      msUntilReset: 60_000,
+      challenges: [
+        {
+          id: "daily_play_5_matches",
+          name: "Complete 5 Matches",
+          description: "Complete 5 matches.",
+          rewardTokens: 3,
+          rewardXp: 6,
+          progress: 0,
+          goal: 5,
+          completed: false
+        },
+        {
+          id: "daily_online_match_1",
+          name: "Complete 1 Online Match",
+          description: "Complete 1 Online match.",
+          rewardTokens: 4,
+          rewardXp: 8,
+          progress: 0,
+          goal: 1,
+          completed: false
+        },
+        {
+          id: "daily_no_quit_3",
+          name: "Finish 3 Matches",
+          description: "Complete 3 matches without quitting.",
+          rewardTokens: 3,
+          rewardXp: 6,
+          progress: 0,
+          goal: 3,
+          completed: false
+        },
+        {
+          id: "daily_win_with_water",
+          name: "Water Takes the Round",
+          description: "Win a completed match where Water wins at least one round.",
+          rewardTokens: 3,
+          rewardXp: 6,
+          progress: 0,
+          goal: 1,
+          completed: false
+        }
+      ]
+    },
+    weekly: {
+      msUntilReset: 120_000,
+      challenges: [
+        {
+          id: "weekly_online_matches_5",
+          name: "Complete 5 Online Matches",
+          description: "Complete 5 Online matches.",
+          rewardTokens: 12,
+          rewardXp: 28,
+          progress: 0,
+          goal: 5,
+          completed: false
+        }
+      ]
+    }
+  });
+
+  assert.match(html, /Complete 1 Online Match/);
+  assert.match(html, /Finish 3 Matches/);
+  assert.match(html, /Water Takes the Round/);
+  assert.match(html, /Complete 5 Online Matches/);
+  assert.doesNotMatch(html, /Win 2 WARs/);
+  assert.doesNotMatch(html, /Trigger 2 WARs/);
+  assert.doesNotMatch(html, /Capture 24 opponent cards/);
+});
+
 test("ui: Store screen keeps the title left and renders the token balance in right-side topbar controls with buy/equip actions", () => {
   const html = storeScreen.render({
     store: {

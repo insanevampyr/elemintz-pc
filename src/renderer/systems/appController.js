@@ -1496,11 +1496,6 @@ export class AppController {
 
   async refreshMenuBoostEvent() {
     if (!this.username || !this.hasMultiplayerProfileAccess() || !window.elemintz?.multiplayer?.getActiveBoostEvent) {
-      const changed = this.menuBoostEvent !== null;
-      this.menuBoostEvent = null;
-      if (changed && this.screenFlow === "menu") {
-        this.renderMenuScreen();
-      }
       return null;
     }
 
@@ -1714,6 +1709,7 @@ export class AppController {
     this.username = null;
     this.profile = null;
     this.dailyChallenges = null;
+    this.menuBoostEvent = null;
     this.localPlayers = null;
     this.localProfiles = null;
     this.localPlayerAuthorities = null;

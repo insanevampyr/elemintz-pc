@@ -7674,6 +7674,11 @@ test("multiplayer online challenges: completed match updates progress exactly on
         ...seeded.dailyChallenges,
         daily: {
           ...seeded.dailyChallenges.daily,
+          selectedBonusChallengeIds: [
+            "daily_hard_ai_win_1",
+            "daily_local_pvp_match_1",
+            "daily_comeback_win"
+          ],
           progress: {
             ...seeded.dailyChallenges.daily.progress,
             matchesWon: 1
