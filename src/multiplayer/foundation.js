@@ -8,6 +8,7 @@ import { createSessionStore } from "./sessionStore.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
 import { getCosmeticDefinition } from "../state/cosmeticSystem.js";
+import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
 
 const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
@@ -279,7 +280,7 @@ function rollChestDrop({ random, outcome, role, logger }) {
   return awarded ? 1 : 0;
 }
 
-function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMESTAMPED_LOGGER } = {}) {
+function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMESTAMPED_LOGGER, boostEvent = null } = {}) {
   if (!room?.matchComplete || !room?.winner) {
     return null;
   }
@@ -299,12 +300,24 @@ function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMES
       role: "guest",
       logger
     });
+    const hostBoostedRewards = applyBoostEventToBaseMatchRewards({
+      boostEvent,
+      matchState: { mode: "online_pvp" },
+      xp: 10,
+      tokens: 10
+    });
+    const guestBoostedRewards = applyBoostEventToBaseMatchRewards({
+      boostEvent,
+      matchState: { mode: "online_pvp" },
+      xp: 10,
+      tokens: 10
+    });
     return {
       granted: true,
       winner: "draw",
       ...settledIdentity,
-      hostRewards: { tokens: 10, xp: 10, basicChests: hostChest },
-      guestRewards: { tokens: 10, xp: 10, basicChests: guestChest }
+      hostRewards: { tokens: hostBoostedRewards.tokens, xp: hostBoostedRewards.xp, basicChests: hostChest },
+      guestRewards: { tokens: guestBoostedRewards.tokens, xp: guestBoostedRewards.xp, basicChests: guestChest }
     };
   }
 
@@ -321,12 +334,24 @@ function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMES
       role: "guest",
       logger
     });
+    const hostBoostedRewards = applyBoostEventToBaseMatchRewards({
+      boostEvent,
+      matchState: { mode: "online_pvp" },
+      xp: 20,
+      tokens: 25
+    });
+    const guestBoostedRewards = applyBoostEventToBaseMatchRewards({
+      boostEvent,
+      matchState: { mode: "online_pvp" },
+      xp: 5,
+      tokens: 5
+    });
     return {
       granted: true,
       winner: "host",
       ...settledIdentity,
-      hostRewards: { tokens: 25, xp: 20, basicChests: hostChest },
-      guestRewards: { tokens: 5, xp: 5, basicChests: guestChest }
+      hostRewards: { tokens: hostBoostedRewards.tokens, xp: hostBoostedRewards.xp, basicChests: hostChest },
+      guestRewards: { tokens: guestBoostedRewards.tokens, xp: guestBoostedRewards.xp, basicChests: guestChest }
     };
   }
 
@@ -343,12 +368,24 @@ function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMES
       role: "guest",
       logger
     });
+    const hostBoostedRewards = applyBoostEventToBaseMatchRewards({
+      boostEvent,
+      matchState: { mode: "online_pvp" },
+      xp: 5,
+      tokens: 5
+    });
+    const guestBoostedRewards = applyBoostEventToBaseMatchRewards({
+      boostEvent,
+      matchState: { mode: "online_pvp" },
+      xp: 20,
+      tokens: 25
+    });
     return {
       granted: true,
       winner: "guest",
       ...settledIdentity,
-      hostRewards: { tokens: 5, xp: 5, basicChests: hostChest },
-      guestRewards: { tokens: 25, xp: 20, basicChests: guestChest }
+      hostRewards: { tokens: hostBoostedRewards.tokens, xp: hostBoostedRewards.xp, basicChests: hostChest },
+      guestRewards: { tokens: guestBoostedRewards.tokens, xp: guestBoostedRewards.xp, basicChests: guestChest }
     };
   }
 
@@ -617,6 +654,7 @@ export function createMultiplayerFoundation({
   accountStore = null,
   adminGrantStore = null,
   feedbackStore = null,
+  boostEventStore = null,
   shopRotationStore = null
 } = {}) {
   const app = express();
@@ -1106,7 +1144,11 @@ export function createMultiplayerFoundation({
         guest: authoritativeRoom?.guest ?? room.guest ?? null
       };
 
-      const summary = buildRewardSummary(settlementRoom, { random, logger });
+      const activeBoostEvent =
+        typeof boostEventStore?.getActiveEvent === "function"
+          ? await boostEventStore.getActiveEvent()
+          : null;
+      const summary = buildRewardSummary(settlementRoom, { random, logger, boostEvent: activeBoostEvent });
       if (!summary) {
         return room;
       }
@@ -2355,6 +2397,43 @@ export function createMultiplayerFoundation({
         }
       });
 
+      socket.on("boostEvent:getActive", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof boostEventStore?.getActiveEvent !== "function") {
+          respond({
+            ok: true,
+            result: {
+              boostEvent: null
+            }
+          });
+          return;
+        }
+
+        try {
+          const boostEvent = await boostEventStore.getActiveEvent();
+          respond({
+            ok: true,
+            result: {
+              boostEvent
+            }
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "BOOST_EVENT_READ_FAILED",
+              message: String(error?.message ?? "Unable to load the active boost event.")
+            }
+          });
+        }
+      });
+
       socket.on("shopRotation:getActive", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
         const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
@@ -2389,6 +2468,136 @@ export function createMultiplayerFoundation({
               message: String(error?.message ?? "Unable to load the featured shop rotation.")
             }
           });
+        }
+      });
+
+      socket.on("admin:getBoostEvent", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+        if (!sessionResult?.ok) {
+          respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+          return;
+        }
+
+        try {
+          assertAdminAccessForSession(sessionResult.session);
+        } catch (error) {
+          respond(buildAdminError(error, "ADMIN_AUTH_FAILED"));
+          return;
+        }
+
+        if (typeof boostEventStore?.readConfig !== "function" || typeof boostEventStore?.getActiveEvent !== "function") {
+          respond({
+            ok: true,
+            result: {
+              config: null,
+              activeEvent: null
+            }
+          });
+          return;
+        }
+
+        try {
+          const config = await boostEventStore.readConfig();
+          const activeEvent = await boostEventStore.getActiveEvent();
+          respond({
+            ok: true,
+            result: {
+              config,
+              activeEvent
+            }
+          });
+        } catch (error) {
+          respond(buildAdminError(error, "BOOST_EVENT_READ_FAILED"));
+        }
+      });
+
+      socket.on("admin:upsertBoostEvent", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+        if (!sessionResult?.ok) {
+          respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+          return;
+        }
+
+        try {
+          assertAdminAccessForSession(sessionResult.session);
+        } catch (error) {
+          respond(buildAdminError(error, "ADMIN_AUTH_FAILED"));
+          return;
+        }
+
+        if (typeof boostEventStore?.upsertConfig !== "function" || typeof boostEventStore?.getActiveEvent !== "function") {
+          respond(
+            buildAdminError(
+              {
+                code: "BOOST_EVENT_STORE_UNAVAILABLE",
+                message: "Boost event config storage is not available."
+              },
+              "BOOST_EVENT_STORE_UNAVAILABLE"
+            )
+          );
+          return;
+        }
+
+        try {
+          const config = await boostEventStore.upsertConfig(payload);
+          const activeEvent = await boostEventStore.getActiveEvent();
+          respond({
+            ok: true,
+            result: {
+              config,
+              activeEvent
+            }
+          });
+        } catch (error) {
+          respond(buildAdminError(error, error?.code ?? "BOOST_EVENT_WRITE_FAILED"));
+        }
+      });
+
+      socket.on("admin:clearBoostEvent", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+
+        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+        if (!sessionResult?.ok) {
+          respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+          return;
+        }
+
+        try {
+          assertAdminAccessForSession(sessionResult.session);
+        } catch (error) {
+          respond(buildAdminError(error, "ADMIN_AUTH_FAILED"));
+          return;
+        }
+
+        if (typeof boostEventStore?.clearConfig !== "function") {
+          respond(
+            buildAdminError(
+              {
+                code: "BOOST_EVENT_STORE_UNAVAILABLE",
+                message: "Boost event config storage is not available."
+              },
+              "BOOST_EVENT_STORE_UNAVAILABLE"
+            )
+          );
+          return;
+        }
+
+        try {
+          await boostEventStore.clearConfig();
+          respond({
+            ok: true,
+            result: {
+              cleared: true,
+              config: null,
+              activeEvent: null
+            }
+          });
+        } catch (error) {
+          respond(buildAdminError(error, "BOOST_EVENT_CLEAR_FAILED"));
         }
       });
 

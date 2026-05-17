@@ -175,6 +175,7 @@ export class AppController {
     this.activeAnnouncementKey = null;
     this.seenAnnouncementSessionFlags = new Set();
     this.menuAnnouncement = null;
+    this.menuBoostEvent = null;
     this.tauntRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
     this.storeViewState = this.createDefaultStoreViewState();
@@ -1392,6 +1393,7 @@ export class AppController {
       username: this.username,
       backgroundImage: this.getBackgroundFromProfile(this.profile),
       announcement: this.menuAnnouncement,
+      boostEvent: this.menuBoostEvent,
       dailyChallenges: this.dailyChallenges
         ? {
             dailyLogin,
@@ -1456,6 +1458,66 @@ export class AppController {
         stack: error?.stack
       });
       this.menuAnnouncement = null;
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+      return null;
+    }
+  }
+
+  formatMenuBoostEvent(boostEvent) {
+    if (!boostEvent) {
+      return null;
+    }
+
+    const endsAt = String(boostEvent.endsAt ?? "").trim();
+    let endsAtLabel = null;
+    if (endsAt) {
+      const parsedMs = Date.parse(endsAt);
+      if (Number.isFinite(parsedMs)) {
+        endsAtLabel = new Intl.DateTimeFormat(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit"
+        }).format(new Date(parsedMs));
+      }
+    }
+
+    return {
+      ...boostEvent,
+      endsAtLabel
+    };
+  }
+
+  async refreshMenuBoostEvent() {
+    if (!this.username || !this.hasMultiplayerProfileAccess() || !window.elemintz?.multiplayer?.getActiveBoostEvent) {
+      const changed = this.menuBoostEvent !== null;
+      this.menuBoostEvent = null;
+      if (changed && this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+      return null;
+    }
+
+    try {
+      const boostEvent = this.formatMenuBoostEvent(
+        await window.elemintz.multiplayer.getActiveBoostEvent({
+          username: this.username
+        })
+      );
+      this.menuBoostEvent = boostEvent;
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+      return boostEvent;
+    } catch (error) {
+      console.warn("[BoostEvent] Failed to refresh menu boost event", {
+        username: this.username,
+        message: error?.message,
+        stack: error?.stack
+      });
+      this.menuBoostEvent = null;
       if (this.screenFlow === "menu") {
         this.renderMenuScreen();
       }
@@ -4686,6 +4748,7 @@ export class AppController {
     const xpDelta = Math.max(0, Number(finalPersisted?.xpDelta ?? 0));
     const tokenDelta = Math.max(0, Number(finalPersisted?.tokenDelta ?? 0));
     const xpLines = Array.isArray(finalPersisted?.xpBreakdown?.lines) ? finalPersisted.xpBreakdown.lines : [];
+    const boostDisplay = finalPersisted?.boostDisplay ?? null;
     const hasHardBonus = xpLines.some((line) => line?.label === "Hard AI Victory Bonus");
 
     if (difficulty === "easy") {
@@ -4702,6 +4765,7 @@ export class AppController {
       difficulty === "hard" && hasHardBonus
         ? `<p><strong>Hard AI Victory Bonus:</strong> +5 XP / +5 tokens</p>`
         : "";
+    const boostLine = this.buildMatchCompleteBoostSummaryLine(boostDisplay);
     const chestLine =
       difficulty === "hard"
         ? `<p><strong>Basic Chest Win Chance:</strong> 12%</p>`
@@ -4713,9 +4777,30 @@ export class AppController {
         <p><strong>XP Gained:</strong> ${xpDelta}</p>
         <p><strong>Tokens Gained:</strong> ${tokenDelta}</p>
         ${bonusLine}
+        ${boostLine}
         ${chestLine}
       </section>
     `;
+  }
+
+  buildMatchCompleteBoostSummaryLine(boostDisplay) {
+    if (!boostDisplay || (!boostDisplay.xpApplied && !boostDisplay.tokenApplied)) {
+      return "";
+    }
+
+    const segments = [];
+    if (boostDisplay.xpApplied) {
+      segments.push(`${Number(boostDisplay.xpMultiplier ?? 1)}x XP`);
+    }
+    if (boostDisplay.tokenApplied) {
+      segments.push(`${Number(boostDisplay.tokenMultiplier ?? 1)}x Tokens`);
+    }
+
+    if (!segments.length) {
+      return "";
+    }
+
+    return `<p><strong>Boost Event:</strong> ${escapeHtml(segments.join(" / "))} applied</p>`;
   }
 
   playRoundRevealSounds(result, mode = MATCH_MODE.PVE, { warWasActive = false } = {}) {
@@ -5136,6 +5221,7 @@ export class AppController {
     this.updateOnlineReconnectReminderModal();
     this.refreshDailyChallengesForMenu();
     this.refreshMenuAnnouncement();
+    this.refreshMenuBoostEvent();
     Promise.resolve().then(() => this.releaseQueuedAdminGrantNotice(this.onlinePlayState));
     Promise.resolve().then(async () => {
       await this.maybeShowLoadoutUnlockNotice();

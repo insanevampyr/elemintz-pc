@@ -313,6 +313,10 @@ export class StateCoordinator {
     this.saves = new SaveSystem(options);
     this.settings = new SettingsService(options);
     this.random = typeof options.random === "function" ? options.random : Math.random;
+    this.getActiveBoostEvent =
+      typeof options.getActiveBoostEvent === "function"
+        ? options.getActiveBoostEvent
+        : async () => null;
     this.matchPersistenceQueue = Promise.resolve();
   }
 
@@ -481,6 +485,7 @@ export class StateCoordinator {
           tokenDelta: 0,
           matchTokenDelta: 0,
           challengeTokenDelta: 0,
+          matchXpDelta: 0,
           challengeXpDelta: 0,
           xpDelta: 0,
           xpBreakdown: { lines: [], total: 0 },
@@ -515,6 +520,7 @@ export class StateCoordinator {
       });
 
       const isQuitForfeit = String(safeMatchState.endReason ?? "") === "quit_forfeit";
+      const activeBoostEvent = await this.getActiveBoostEvent();
 
       const challengeResult = applyDailyChallengesForMatch({
         profile: profileWithStats,
@@ -523,7 +529,8 @@ export class StateCoordinator {
         matchStats,
         options: {
           includeMatchRewards: !practiceMode,
-          practiceMode
+          practiceMode,
+          boostEvent: activeBoostEvent
         }
       });
 
@@ -626,9 +633,11 @@ export class StateCoordinator {
         tokenDelta: challengeResult.tokenDelta,
         matchTokenDelta: challengeResult.matchTokenDelta,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
+        matchXpDelta: challengeResult.matchXpDelta,
         challengeXpDelta: challengeResult.challengeXpDelta,
         xpDelta: challengeResult.xpDelta,
         xpBreakdown: challengeResult.xpBreakdown,
+        boostDisplay: challengeResult.boostDisplay,
         levelRewards: levelRewardResult.grantedRewards,
         levelRewardTokenDelta: levelRewardResult.tokenDelta,
         history: safeMatchState.history
@@ -654,9 +663,11 @@ export class StateCoordinator {
         tokenDelta: challengeResult.tokenDelta,
         matchTokenDelta: challengeResult.matchTokenDelta,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
+        matchXpDelta: challengeResult.matchXpDelta,
         challengeXpDelta: challengeResult.challengeXpDelta,
         xpDelta: challengeResult.xpDelta,
         xpBreakdown: challengeResult.xpBreakdown,
+        boostDisplay: challengeResult.boostDisplay,
         levelBefore: challengeResult.levelBefore,
         levelAfter: challengeResult.levelAfter,
         levelRewards: levelRewardResult.grantedRewards,

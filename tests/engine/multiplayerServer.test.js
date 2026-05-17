@@ -16,6 +16,7 @@ import {
 import { createTimestampedLogger } from "../../src/multiplayer/logger.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { AnnouncementStore } from "../../src/multiplayer/announcementStore.js";
+import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
 import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { ShopRotationStore } from "../../src/multiplayer/shopRotationStore.js";
@@ -1228,6 +1229,429 @@ test("shop rotation store: unknown rotation keys in schedule order fall back saf
       allowLimitedCosmeticIds: []
     });
   } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("boost event store: missing file creates boost-event.json and returns null active event", async () => {
+  const dataDir = await createTempDataDir();
+  const store = new BoostEventStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+  const filePath = path.join(dataDir, "server-data", "boost-event.json");
+
+  try {
+    const activeEvent = await store.getActiveEvent({ now: new Date("2026-05-16T12:00:00.000Z") });
+    const fileContents = await fs.readFile(filePath, "utf8");
+
+    assert.equal(activeEvent, null);
+    assert.equal(fileContents, "{}\n");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("boost event store: disabled, future, expired, and malformed configs resolve to null safely", async () => {
+  const dataDir = await createTempDataDir();
+  const filePath = path.join(dataDir, "server-data", "boost-event.json");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const store = new BoostEventStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+
+  try {
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        enabled: false,
+        title: "Disabled Boost",
+        message: "Disabled boost message.",
+        startsAt: null,
+        endsAt: null,
+        scope: "online",
+        excludeDifficulties: [],
+        xpMultiplier: 2,
+        tokenMultiplier: 1
+      }),
+      "utf8"
+    );
+    assert.equal(await store.getActiveEvent({ now: new Date("2026-05-16T12:00:00.000Z") }), null);
+
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        enabled: true,
+        title: "Future Boost",
+        message: "Starts later.",
+        startsAt: "2099-01-01T00:00:00.000Z",
+        endsAt: null,
+        scope: "online",
+        excludeDifficulties: [],
+        xpMultiplier: 2,
+        tokenMultiplier: 1
+      }),
+      "utf8"
+    );
+    assert.equal(await store.getActiveEvent({ now: new Date("2026-05-16T12:00:00.000Z") }), null);
+
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        enabled: true,
+        title: "Expired Boost",
+        message: "Already ended.",
+        startsAt: null,
+        endsAt: "2020-01-01T00:00:00.000Z",
+        scope: "online",
+        excludeDifficulties: [],
+        xpMultiplier: 2,
+        tokenMultiplier: 1
+      }),
+      "utf8"
+    );
+    assert.equal(await store.getActiveEvent({ now: new Date("2026-05-16T12:00:00.000Z") }), null);
+
+    await fs.writeFile(filePath, "{ nope", "utf8");
+    assert.equal(await store.getActiveEvent({ now: new Date("2026-05-16T12:00:00.000Z") }), null);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("boost event store: valid active event returns normalized payload and invalid config reads as null", async () => {
+  const dataDir = await createTempDataDir();
+  const filePath = path.join(dataDir, "server-data", "boost-event.json");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const store = new BoostEventStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+
+  try {
+    await fs.writeFile(
+      filePath,
+      `\ufeff${JSON.stringify({
+        enabled: true,
+        title: " Online Players X2 XP Weekend ",
+        message: " Earn double XP in Online Play this weekend. ",
+        startsAt: "2026-05-15T18:00:00.000Z",
+        endsAt: "2026-05-25T06:00:00.000Z",
+        scope: "ONLINE",
+        excludeDifficulties: ["easy", "easy"],
+        xpMultiplier: 2,
+        tokenMultiplier: 1.5
+      })}`,
+      "utf8"
+    );
+
+    const activeEvent = await store.getActiveEvent({ now: new Date("2026-05-16T12:00:00.000Z") });
+    assert.deepEqual(activeEvent, {
+      enabled: true,
+      title: "Online Players X2 XP Weekend",
+      message: "Earn double XP in Online Play this weekend.",
+      startsAt: "2026-05-15T18:00:00.000Z",
+      endsAt: "2026-05-25T06:00:00.000Z",
+      scope: "online",
+      excludeDifficulties: ["easy"],
+      xpMultiplier: 2,
+      tokenMultiplier: 1.5
+    });
+
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        enabled: true,
+        title: "Invalid Multiplier",
+        message: "Bad config.",
+        startsAt: null,
+        endsAt: null,
+        scope: "online",
+        excludeDifficulties: [],
+        xpMultiplier: 11,
+        tokenMultiplier: 1
+      }),
+      "utf8"
+    );
+    assert.equal(await store.readConfig(), null);
+    assert.equal(await store.getActiveEvent({ now: new Date("2026-05-16T12:00:00.000Z") }), null);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: boostEvent:getActive returns null safely for invalid or inactive config", async () => {
+  const dataDir = await createTempDataDir();
+  const filePath = path.join(dataDir, "server-data", "boost-event.json");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(
+    filePath,
+    JSON.stringify({
+      enabled: true,
+      title: "Invalid Scope",
+      message: "Should not expose publicly.",
+      startsAt: null,
+      endsAt: null,
+      scope: "ranked_only",
+      excludeDifficulties: [],
+      xpMultiplier: 2,
+      tokenMultiplier: 1
+    }),
+    "utf8"
+  );
+
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    boostEventStore: new BoostEventStore({
+      dataDir,
+      logger: { warn: () => {} }
+    }),
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "BoostUser");
+
+      const response = await new Promise((resolve) => {
+        client.emit("boostEvent:getActive", {}, resolve);
+      });
+
+      assert.deepEqual(response, {
+        ok: true,
+        result: {
+          boostEvent: null
+        }
+      });
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin boost event routes validate, persist, read, and clear config", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const boostEventStore = new BoostEventStore({
+    dataDir,
+    logger: { warn: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    accountStore,
+    boostEventStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  const filePath = path.join(dataDir, "server-data", "boost-event.json");
+  let adminClient = null;
+  let playerClient = null;
+
+  try {
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "player@example.com",
+      password: "PlayerPass123",
+      username: "RegularPlayer"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "player@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(playerLogin?.ok, true);
+
+    const invalidMultiplierResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:upsertBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token,
+          enabled: true,
+          title: "Bad Multiplier",
+          message: "Nope.",
+          startsAt: null,
+          endsAt: null,
+          scope: "online",
+          excludeDifficulties: [],
+          xpMultiplier: 0.5,
+          tokenMultiplier: 1
+        },
+        resolve
+      );
+    });
+    assert.equal(invalidMultiplierResponse?.ok, false);
+    assert.equal(invalidMultiplierResponse?.error?.code, "BOOST_EVENT_XP_MULTIPLIER_INVALID");
+
+    const invalidScopeResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:upsertBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token,
+          enabled: true,
+          title: "Bad Scope",
+          message: "Nope.",
+          startsAt: null,
+          endsAt: null,
+          scope: "ranked_only",
+          excludeDifficulties: [],
+          xpMultiplier: 2,
+          tokenMultiplier: 1
+        },
+        resolve
+      );
+    });
+    assert.equal(invalidScopeResponse?.ok, false);
+    assert.equal(invalidScopeResponse?.error?.code, "BOOST_EVENT_SCOPE_INVALID");
+
+    const upsertResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:upsertBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token,
+          enabled: true,
+          title: "Elemental Boost Week",
+          message: "Earn 1.5x XP and Tokens in eligible modes this week.",
+          startsAt: "2026-05-10T00:00:00.000Z",
+          endsAt: "2026-05-29T00:00:00.000Z",
+          scope: "all",
+          excludeDifficulties: ["easy", "easy"],
+          xpMultiplier: 1.5,
+          tokenMultiplier: 1.5
+        },
+        resolve
+      );
+    });
+
+    assert.equal(upsertResponse?.ok, true);
+    assert.deepEqual(upsertResponse?.result?.config, {
+      enabled: true,
+      title: "Elemental Boost Week",
+      message: "Earn 1.5x XP and Tokens in eligible modes this week.",
+      startsAt: "2026-05-10T00:00:00.000Z",
+      endsAt: "2026-05-29T00:00:00.000Z",
+      scope: "all",
+      excludeDifficulties: ["easy"],
+      xpMultiplier: 1.5,
+      tokenMultiplier: 1.5
+    });
+    assert.deepEqual(upsertResponse?.result?.activeEvent, upsertResponse?.result?.config);
+
+    const storedJson = JSON.parse(await fs.readFile(filePath, "utf8"));
+    assert.deepEqual(storedJson, upsertResponse?.result?.config);
+
+    const adminReadResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:getBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token
+        },
+        resolve
+      );
+    });
+    assert.equal(adminReadResponse?.ok, true);
+    assert.deepEqual(adminReadResponse?.result?.config, upsertResponse?.result?.config);
+    assert.deepEqual(adminReadResponse?.result?.activeEvent, upsertResponse?.result?.config);
+
+    const publicReadResponse = await new Promise((resolve) => {
+      playerClient.emit(
+        "boostEvent:getActive",
+        {
+          sessionToken: playerLogin?.session?.token
+        },
+        resolve
+      );
+    });
+    assert.equal(publicReadResponse?.ok, true);
+    assert.deepEqual(publicReadResponse?.result?.boostEvent, upsertResponse?.result?.config);
+
+    const hiddenWhenMissingAllowlist = await new Promise((resolve) => {
+      playerClient.emit(
+        "admin:getBoostEvent",
+        {
+          sessionToken: playerLogin?.session?.token
+        },
+        resolve
+      );
+    });
+    assert.equal(hiddenWhenMissingAllowlist?.ok, false);
+    assert.equal(hiddenWhenMissingAllowlist?.error?.code, "ADMIN_ACCESS_DENIED");
+
+    const clearResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:clearBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token
+        },
+        resolve
+      );
+    });
+    assert.deepEqual(clearResponse, {
+      ok: true,
+      result: {
+        cleared: true,
+        config: null,
+        activeEvent: null
+      }
+    });
+
+    const adminReadAfterClear = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:getBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token
+        },
+        resolve
+      );
+    });
+    assert.deepEqual(adminReadAfterClear, {
+      ok: true,
+      result: {
+        config: null,
+        activeEvent: null
+      }
+    });
+
+    const publicReadAfterClear = await new Promise((resolve) => {
+      playerClient.emit(
+        "boostEvent:getActive",
+        {
+          sessionToken: playerLogin?.session?.token
+        },
+        resolve
+      );
+    });
+    assert.deepEqual(publicReadAfterClear, {
+      ok: true,
+      result: {
+        boostEvent: null
+      }
+    });
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -5724,6 +6148,96 @@ test("multiplayer rewards: draw chest uses the draw drop chance for both players
   );
 });
 
+test("multiplayer rewards: online boost scope can boost XP without changing tokens", () => {
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "host"
+      },
+      {
+        random: () => 0.5,
+        logger: { info: () => {} },
+        boostEvent: {
+          enabled: true,
+          scope: "online",
+          excludeDifficulties: [],
+          xpMultiplier: 2,
+          tokenMultiplier: 1
+        }
+      }
+    ),
+    {
+      granted: true,
+      winner: "host",
+      settledHostUsername: null,
+      settledGuestUsername: null,
+      hostRewards: { tokens: 25, xp: 40, basicChests: 0 },
+      guestRewards: { tokens: 5, xp: 10, basicChests: 0 }
+    }
+  );
+});
+
+test("multiplayer rewards: online boost scope can boost tokens without changing XP", () => {
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "draw"
+      },
+      {
+        random: () => 0.5,
+        logger: { info: () => {} },
+        boostEvent: {
+          enabled: true,
+          scope: "online",
+          excludeDifficulties: [],
+          xpMultiplier: 1,
+          tokenMultiplier: 1.5
+        }
+      }
+    ),
+    {
+      granted: true,
+      winner: "draw",
+      settledHostUsername: null,
+      settledGuestUsername: null,
+      hostRewards: { tokens: 15, xp: 10, basicChests: 0 },
+      guestRewards: { tokens: 15, xp: 10, basicChests: 0 }
+    }
+  );
+});
+
+test("multiplayer rewards: online boost uses floor rounding for both host and guest", () => {
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "host"
+      },
+      {
+        random: () => 0.5,
+        logger: { info: () => {} },
+        boostEvent: {
+          enabled: true,
+          scope: "online",
+          excludeDifficulties: [],
+          xpMultiplier: 1.5,
+          tokenMultiplier: 1.5
+        }
+      }
+    ),
+    {
+      granted: true,
+      winner: "host",
+      settledHostUsername: null,
+      settledGuestUsername: null,
+      hostRewards: { tokens: 37, xp: 30, basicChests: 0 },
+      guestRewards: { tokens: 7, xp: 7, basicChests: 0 }
+    }
+  );
+});
+
 test("multiplayer rewards: winner chest is chance-based and not guaranteed", () => {
   assert.deepEqual(
     buildRewardSummary(
@@ -5796,6 +6310,71 @@ test("multiplayer rewards: duplicate settled usernames disable reward persistenc
       guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
     }
   );
+});
+
+test("multiplayer rewards: boosted online settlement is not boosted again during persistence", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+
+  try {
+    const summary = buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "host"
+      },
+      {
+        random: () => 0.5,
+        logger: { info: () => {} },
+        boostEvent: {
+          enabled: true,
+          scope: "online",
+          excludeDifficulties: [],
+          xpMultiplier: 2,
+          tokenMultiplier: 2
+        }
+      }
+    );
+
+    const first = await coordinator.applyOnlineRewardSettlementDecision({
+      username: "BoostPersistHost",
+      settlementKey: "boost-settlement-1",
+      rewardDecision: {
+        participants: {
+          hostUsername: "BoostPersistHost"
+        },
+        rewards: {
+          host: summary.hostRewards
+        }
+      },
+      participantRole: "host"
+    });
+    const duplicate = await coordinator.applyOnlineRewardSettlementDecision({
+      username: "BoostPersistHost",
+      settlementKey: "boost-settlement-1",
+      rewardDecision: {
+        participants: {
+          hostUsername: "BoostPersistHost"
+        },
+        rewards: {
+          host: summary.hostRewards
+        }
+      },
+      participantRole: "host"
+    });
+
+    assert.equal(first.duplicate, false);
+    assert.equal(first.rewards.tokens, 50);
+    assert.equal(first.rewards.xp, 40);
+    assert.equal(first.profile.tokens, 250);
+    assert.equal(first.profile.playerXP, 40);
+    assert.equal(duplicate.duplicate, true);
+
+    const profile = await coordinator.profiles.getProfile("BoostPersistHost");
+    assert.equal(profile.tokens, 250);
+    assert.equal(profile.playerXP, 40);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
 });
 
 test("multiplayer rewards: reward decision payload is derived from authoritative server completion state", () => {

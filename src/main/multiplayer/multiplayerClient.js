@@ -2143,6 +2143,15 @@ export class MultiplayerClient {
     return response.result?.rotation ?? null;
   }
 
+  async getActiveBoostEvent({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("boostEvent:getActive", { username }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load the active boost event.");
+    }
+
+    return response.result?.boostEvent ?? null;
+  }
+
   async getCosmetics({ username, serverUrl } = {}) {
     const response = await this.runServerRequest("profile:getCosmetics", { username }, { serverUrl });
     if (!response?.ok) {

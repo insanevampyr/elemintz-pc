@@ -6,6 +6,7 @@ import { AdminGrantStore } from "../state/adminGrantStore.js";
 import { createTimestampedLogger } from "./logger.js";
 import { FeedbackStore } from "./feedbackStore.js";
 import { AnnouncementStore } from "./announcementStore.js";
+import { BoostEventStore } from "./boostEventStore.js";
 import { ShopRotationStore } from "./shopRotationStore.js";
 import os from "node:os";
 import path from "node:path";
@@ -30,12 +31,17 @@ function resolveStandaloneDataDir() {
   }
 }
 
-const stateCoordinator = new StateCoordinator({
-  dataDir: resolveStandaloneDataDir()
-});
 const announcementStore = new AnnouncementStore({
   dataDir: resolveStandaloneDataDir(),
   logger
+});
+const boostEventStore = new BoostEventStore({
+  dataDir: resolveStandaloneDataDir(),
+  logger
+});
+const stateCoordinator = new StateCoordinator({
+  dataDir: resolveStandaloneDataDir(),
+  getActiveBoostEvent: (options) => boostEventStore.getActiveEvent(options)
 });
 const profileAuthority = new MultiplayerProfileAuthority({
   coordinator: stateCoordinator,
@@ -126,6 +132,7 @@ const server = createMultiplayerFoundation({
   accountStore,
   adminGrantStore,
   feedbackStore,
+  boostEventStore,
   shopRotationStore,
   logger
 });

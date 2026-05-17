@@ -560,6 +560,27 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "boostEvent:getActive") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            boostEvent: {
+              enabled: true,
+              title: "Online Players X2 XP Weekend",
+              message: "Earn double XP in Online Play this weekend.",
+              startsAt: "2026-05-22T18:00:00.000Z",
+              endsAt: "2026-05-25T06:00:00.000Z",
+              scope: "online",
+              excludeDifficulties: [],
+              xpMultiplier: 2,
+              tokenMultiplier: 1
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:claimDailyLoginReward") {
       queueMicrotask(() => {
         ack?.({
@@ -1370,6 +1391,36 @@ test("multiplayer client: active shop rotation returns the sanitized featured ro
     "void_altar_background",
     "title_void_doll"
   ]);
+});
+
+test("multiplayer client: active boost event returns the current server event", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.getActiveBoostEvent({
+    username: "AnnouncementUser"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "AnnouncementUser"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "boostEvent:getActive",
+    payload: {}
+  });
+  assert.equal(result?.title, "Online Players X2 XP Weekend");
+  assert.equal(result?.scope, "online");
+  assert.equal(result?.xpMultiplier, 2);
 });
 
 test("multiplayer client: authoritative daily login claims return updated server profile state", async () => {

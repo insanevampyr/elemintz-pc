@@ -1,5 +1,6 @@
 import { buildXpBreakdown, deriveLevelFromXp, getLevelProgress, getXpThresholds } from "./levelRewardsSystem.js";
 import { EPIC_CHEST_TYPE, grantChest } from "./chestSystem.js";
+import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
 
 const RESET_TIME_ZONE = "America/Chicago";
 const RESET_HOUR = 18;
@@ -677,6 +678,22 @@ export function applyDailyChallengesForMatch({
   const didDraw = matchState.winner === "draw";
   const playedElements = extractPlayedElements(matchState, perspective);
   const hardPveWinBonus = getHardPveWinBonus(matchState, didWin);
+  const baseMatchTokenDelta = includeMatchRewards
+    ? getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) + hardPveWinBonus.tokenBonus
+    : 0;
+  const matchXpBreakdown = buildXpBreakdown({
+    isCompleted: includeMatchRewards ? isCompleted : false,
+    isQuit,
+    didWin,
+    warsWon: Number(matchStats?.warsWon ?? 0)
+  });
+  const baseMatchXpDelta = matchXpBreakdown.total + hardPveWinBonus.xpBonus;
+  const boostRewardResult = applyBoostEventToBaseMatchRewards({
+    boostEvent: options.boostEvent ?? null,
+    matchState,
+    xp: baseMatchXpDelta,
+    tokens: baseMatchTokenDelta
+  });
 
   if (isCompleted && !isQuit && !practiceMode) {
     const metrics = {
@@ -715,18 +732,10 @@ export function applyDailyChallengesForMatch({
     (sum, item) => sum + Math.max(0, Number(item.rewardXp ?? 0)),
     0
   );
-  const matchTokenDelta = includeMatchRewards
-    ? getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) + hardPveWinBonus.tokenBonus
-    : 0;
+  const matchTokenDelta = boostRewardResult.tokens;
   const tokenDelta = matchTokenDelta + challengeTokenDelta;
 
   const previousXp = Math.max(0, Number(profile.playerXP ?? 0));
-  const matchXpBreakdown = buildXpBreakdown({
-    isCompleted: includeMatchRewards ? isCompleted : false,
-    isQuit,
-    didWin,
-    warsWon: Number(matchStats?.warsWon ?? 0)
-  });
   const challengeXpLines = [...dailyRewards, ...weeklyRewards]
     .filter((reward) => Number(reward.rewardXp ?? 0) > 0)
     .map((reward) => ({
@@ -744,11 +753,22 @@ export function applyDailyChallengesForMatch({
           }
         ]
       : [];
+  const boostXpLines =
+    boostRewardResult.xpBonus > 0
+      ? [
+          {
+            key: "boost_event_match_xp_bonus",
+            label: "Boost Event Match XP Bonus",
+            amount: boostRewardResult.xpBonus
+          }
+        ]
+      : [];
   const xpBreakdown = {
-    lines: [...matchXpBreakdown.lines, ...hardBonusXpLines, ...challengeXpLines],
-    total: matchXpBreakdown.total + hardPveWinBonus.xpBonus + challengeXpDelta
+    lines: [...matchXpBreakdown.lines, ...hardBonusXpLines, ...boostXpLines, ...challengeXpLines],
+    total: boostRewardResult.xp + challengeXpDelta
   };
   const xpDelta = xpBreakdown.total;
+  const matchXpDelta = boostRewardResult.xp;
   const nextXp = previousXp + xpDelta;
   const nextLevel = deriveLevelFromXp(nextXp);
 
@@ -823,7 +843,9 @@ export function applyDailyChallengesForMatch({
     dailyChestDelta,
     weeklyChestDelta,
     xpDelta,
+    matchXpDelta,
     xpBreakdown,
+    boostDisplay: boostRewardResult.display,
     levelBefore: deriveLevelFromXp(previousXp),
     levelAfter: nextLevel
   };

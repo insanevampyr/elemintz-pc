@@ -1488,6 +1488,73 @@ body {
   justify-content: flex-end;
 }
 
+.menu-boost-card {
+  border: 1px solid rgba(238, 198, 109, 0.36);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(35, 52, 94, 0.92), rgba(14, 24, 52, 0.95));
+  box-shadow: inset 0 1px 0 rgba(255, 234, 173, 0.08);
+  padding: 12px 13px;
+  display: grid;
+  gap: 8px;
+}
+
+.menu-boost-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.menu-boost-card__label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #f7d06e;
+}
+
+.menu-boost-card__title {
+  margin: 0;
+}
+
+.menu-boost-card__message {
+  margin: 0;
+  color: #eef6ff;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.menu-boost-card__message-group {
+  display: grid;
+  gap: 6px;
+}
+
+.menu-boost-card__details {
+  display: grid;
+  gap: 7px;
+}
+
+.menu-boost-card__detail-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 228, 169, 0.12);
+}
+
+.menu-boost-card__detail-label {
+  font-size: 0.83rem;
+  color: rgba(231, 240, 255, 0.86);
+}
+
+.menu-boost-card__detail-value {
+  font-size: 0.86rem;
+  color: #fff3cb;
+  text-align: right;
+}
+
 .menu-daily-login p {
   margin: 0;
   color: #d7edff;

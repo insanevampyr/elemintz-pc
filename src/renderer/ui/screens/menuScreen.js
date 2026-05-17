@@ -156,6 +156,84 @@ function renderMenuAnnouncementCard(announcement) {
   `;
 }
 
+function formatBoostScopeLabel(scope) {
+  const safeScope = String(scope ?? "").trim().toLowerCase();
+  switch (safeScope) {
+    case "online":
+      return "Online Play";
+    case "pve":
+      return "PvE";
+    case "local_pvp":
+      return "Local 2-Player";
+    case "all":
+      return "All Eligible Modes";
+    default:
+      return "Eligible Modes";
+  }
+}
+
+function renderBoostDetailLine(label, value) {
+  return `
+    <div class="menu-boost-card__detail-line">
+      <span class="menu-boost-card__detail-label">${label}</span>
+      <strong class="menu-boost-card__detail-value">${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderEscapedParagraphBlock(value, className) {
+  const normalized = String(value ?? "").replace(/\r\n?/g, "\n").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p class="${className}">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function renderMenuBoostEventCard(boostEvent) {
+  if (!boostEvent) {
+    return "";
+  }
+
+  const xpMultiplier = Number(boostEvent.xpMultiplier ?? 1);
+  const tokenMultiplier = Number(boostEvent.tokenMultiplier ?? 1);
+  const detailLines = [
+    renderBoostDetailLine("Scope", formatBoostScopeLabel(boostEvent.scope))
+  ];
+
+  if (xpMultiplier > 1) {
+    detailLines.push(renderBoostDetailLine("XP Boost", `${xpMultiplier}x`));
+  }
+
+  if (tokenMultiplier > 1) {
+    detailLines.push(renderBoostDetailLine("Token Boost", `${tokenMultiplier}x`));
+  }
+
+  if (boostEvent.endsAtLabel) {
+    detailLines.push(renderBoostDetailLine("Ends", boostEvent.endsAtLabel));
+  }
+
+  return `
+    <section class="menu-boost-card" data-menu-boost-card="true">
+      <div class="menu-boost-card__header">
+        <span class="menu-boost-card__label">BOOST EVENT</span>
+      </div>
+      <div class="stack-xs">
+        <h3 class="section-title menu-boost-card__title">${escapeHtml(boostEvent.title)}</h3>
+        <div class="menu-boost-card__message-group">
+          ${renderEscapedParagraphBlock(boostEvent.message, "menu-boost-card__message")}
+        </div>
+      </div>
+      <div class="menu-boost-card__details">
+        ${detailLines.join("")}
+      </div>
+    </section>
+  `;
+}
+
 export const menuScreen = {
   render(context) {
     return `
@@ -183,6 +261,7 @@ export const menuScreen = {
               </div>
               <aside class="panel stack-sm daily-panel">
                 ${renderMenuAnnouncementCard(context.announcement)}
+                ${renderMenuBoostEventCard(context.boostEvent)}
                 <div data-menu-daily-login-panel="true">
                   ${renderMenuDailyLoginStatus(context.dailyChallenges?.dailyLogin)}
                 </div>

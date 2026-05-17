@@ -6824,6 +6824,65 @@ test("ui: menu renders the highest-priority announcement card above daily login"
   assert.ok(html.indexOf('data-menu-announcement-card="true"') < html.indexOf('data-menu-daily-login-panel="true"'));
 });
 
+test("ui: menu renders no boost event shell when there is no active boost event", () => {
+  const html = menuScreen.render({
+    username: "AnnouncementUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: null,
+    boostEvent: null,
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.doesNotMatch(html, /data-menu-boost-card="true"/);
+});
+
+test("ui: menu renders active boost event card above daily login with title, multiline message, multipliers, and scope", () => {
+  const html = menuScreen.render({
+    username: "BoostUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: null,
+    boostEvent: {
+      title: "Online Players X2 XP Weekend",
+      message: "Earn double XP in Online Play this weekend.\n\nBonus Tokens are live too.",
+      scope: "online",
+      xpMultiplier: 2,
+      tokenMultiplier: 1.5,
+      endsAtLabel: "May 25, 6:00 AM"
+    },
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-menu-boost-card="true"/);
+  assert.match(html, /BOOST EVENT/);
+  assert.match(html, /Online Players X2 XP Weekend/);
+  assert.match(html, /Earn double XP in Online Play this weekend\./);
+  assert.match(html, /Bonus Tokens are live too\./);
+  assert.match(html, /menu-boost-card__message-group/);
+  assert.match(html, /Online Play/);
+  assert.match(html, /XP Boost/);
+  assert.match(html, />2x</);
+  assert.match(html, /Token Boost/);
+  assert.match(html, />1\.5x</);
+  assert.match(html, /May 25, 6:00 AM/);
+  assert.ok(html.indexOf('data-menu-boost-card="true"') < html.indexOf('data-menu-daily-login-panel="true"'));
+});
+
 test("ui: menu renders no empty announcement shell when there is no active announcement", () => {
   const html = menuScreen.render({
     username: "AnnouncementUser",
@@ -14688,6 +14747,30 @@ test("ui: temporary announcement debug logs are removed from runtime source file
   assert.equal(profileAuthoritySource.includes("[AnnouncementDebug]"), false);
 });
 
+test("ui: renderer-shared state modules do not import the server-only boost event store or node-only server modules", () => {
+  const stateCoordinatorSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\stateCoordinator.js",
+    "utf8"
+  );
+  const dailyChallengesSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\dailyChallengesSystem.js",
+    "utf8"
+  );
+  const sharedBoostRulesSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\shared\\boostEventRules.js",
+    "utf8"
+  );
+
+  assert.equal(stateCoordinatorSource.includes("../multiplayer/boostEventStore.js"), false);
+  assert.equal(dailyChallengesSource.includes("../multiplayer/boostEventStore.js"), false);
+  assert.equal(stateCoordinatorSource.includes("node:path"), false);
+  assert.equal(stateCoordinatorSource.includes("fs/promises"), false);
+  assert.equal(dailyChallengesSource.includes("node:path"), false);
+  assert.equal(dailyChallengesSource.includes("fs/promises"), false);
+  assert.equal(sharedBoostRulesSource.includes("node:path"), false);
+  assert.equal(sharedBoostRulesSource.includes("fs/promises"), false);
+});
+
 test("ui: appController refreshes the open profile screen when an admin reward notice arrives", async () => {
   const previousWindow = global.window;
   const previousDocument = global.document;
@@ -15050,6 +15133,12 @@ test("ui: PvE match complete payload prefers authoritative live capture totals o
           { label: "Hard AI Victory Bonus", amount: 5 }
         ],
         total: 17
+      },
+      boostDisplay: {
+        xpApplied: true,
+        tokenApplied: true,
+        xpMultiplier: 2,
+        tokenMultiplier: 1.5
       }
     }
   );
@@ -15061,7 +15150,120 @@ test("ui: PvE match complete payload prefers authoritative live capture totals o
   assert.match(payload.bodyHtml, /<strong>XP Gained:<\/strong> 17/);
   assert.match(payload.bodyHtml, /<strong>Tokens Gained:<\/strong> 12/);
   assert.match(payload.bodyHtml, /<strong>Hard AI Victory Bonus:<\/strong> \+5 XP \/ \+5 tokens/);
+  assert.match(payload.bodyHtml, /<strong>Boost Event:<\/strong> 2x XP \/ 1\.5x Tokens applied/);
   assert.match(payload.bodyHtml, /<strong>Basic Chest Win Chance:<\/strong> 12%/);
+});
+
+test("ui: PvE match complete payload shows boost line when only XP boost applies", () => {
+  const controller = createRendererController();
+  controller.username = "BoostXPOnly";
+  controller.profile = { username: "BoostXPOnly" };
+  controller.gameController = { captured: { p1: 3, p2: 2 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      mode: "pve",
+      difficulty: "normal",
+      history: [{ result: "p1" }, { result: "p2" }, { result: "p1" }],
+      players: {
+        p1: { hand: ["fire"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 3,
+        warsEntered: 1,
+        longestWar: 2
+      },
+      xpDelta: 12,
+      tokenDelta: 8,
+      boostDisplay: {
+        xpApplied: true,
+        tokenApplied: false,
+        xpMultiplier: 2,
+        tokenMultiplier: 1
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<strong>Boost Event:<\/strong> 2x XP applied/);
+});
+
+test("ui: PvE match complete payload shows boost line when only token boost applies", () => {
+  const controller = createRendererController();
+  controller.username = "BoostTokenOnly";
+  controller.profile = { username: "BoostTokenOnly" };
+  controller.gameController = { captured: { p1: 3, p2: 2 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      mode: "pve",
+      difficulty: "normal",
+      history: [{ result: "p1" }, { result: "p2" }, { result: "p1" }],
+      players: {
+        p1: { hand: ["fire"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 3,
+        warsEntered: 1,
+        longestWar: 2
+      },
+      xpDelta: 9,
+      tokenDelta: 11,
+      boostDisplay: {
+        xpApplied: false,
+        tokenApplied: true,
+        xpMultiplier: 1,
+        tokenMultiplier: 1.5
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<strong>Boost Event:<\/strong> 1\.5x Tokens applied/);
+});
+
+test("ui: PvE match complete payload omits boost line when no boost applied", () => {
+  const controller = createRendererController();
+  controller.username = "NoBoost";
+  controller.profile = { username: "NoBoost" };
+  controller.gameController = { captured: { p1: 2, p2: 1 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      mode: "pve",
+      difficulty: "normal",
+      history: [{ result: "p1" }, { result: "p1" }],
+      players: {
+        p1: { hand: ["fire"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 2,
+        warsEntered: 0,
+        longestWar: 0
+      },
+      xpDelta: 6,
+      tokenDelta: 5,
+      boostDisplay: null
+    }
+  );
+
+  assert.doesNotMatch(payload.bodyHtml, /<strong>Boost Event:<\/strong>/);
 });
 
 test("ui: easy PvE match complete payload shows practice-mode reward suppression clarity", () => {

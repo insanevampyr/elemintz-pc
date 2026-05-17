@@ -2870,6 +2870,122 @@ test("appController: menu announcements fetch and dismiss through the multiplaye
   }
 });
 
+test("appController: menu boost event refreshes through the multiplayer profile path", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    getActiveBoostEvent: []
+  };
+  let renderCount = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({}),
+          getActiveBoostEvent: async ({ username }) => {
+            calls.getActiveBoostEvent.push({ username });
+            return {
+              enabled: true,
+              title: "Online Players X2 XP Weekend",
+              message: "Earn double XP in Online Play this weekend.",
+              startsAt: "2026-05-22T18:00:00.000Z",
+              endsAt: "2026-05-25T06:00:00.000Z",
+              scope: "online",
+              excludeDifficulties: [],
+              xpMultiplier: 2,
+              tokenMultiplier: 1
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "BoostUser";
+    app.profile = {
+      username: "BoostUser",
+      equippedCosmetics: { background: "default_background" }
+    };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+    app.screenFlow = "menu";
+    app.renderMenuScreen = () => {
+      renderCount += 1;
+    };
+
+    await app.refreshMenuBoostEvent();
+
+    assert.deepEqual(calls.getActiveBoostEvent, [{ username: "BoostUser" }]);
+    assert.equal(app.menuBoostEvent?.title, "Online Players X2 XP Weekend");
+    assert.equal(app.menuBoostEvent?.scope, "online");
+    assert.match(app.menuBoostEvent?.endsAtLabel ?? "", /\w{3}/);
+    assert.equal(renderCount, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: menu boost event refresh safely clears when the multiplayer boost bridge is unavailable", async () => {
+  const originalWindow = globalThis.window;
+  let renderCount = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({})
+        }
+      }
+    };
+
+    app.username = "BoostUser";
+    app.menuBoostEvent = {
+      title: "Old Boost"
+    };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+    app.screenFlow = "menu";
+    app.renderMenuScreen = () => {
+      renderCount += 1;
+    };
+
+    const result = await app.refreshMenuBoostEvent();
+
+    assert.equal(result, null);
+    assert.equal(app.menuBoostEvent, null);
+    assert.equal(renderCount, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online play create join submit-move and ready-rematch actions use the multiplayer bridge", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
