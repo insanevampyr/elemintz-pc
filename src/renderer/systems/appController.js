@@ -1517,8 +1517,7 @@ export class AppController {
         message: error?.message,
         stack: error?.stack
       });
-      this.menuBoostEvent = null;
-      if (this.screenFlow === "menu") {
+      if (this.screenFlow === "menu" && this.menuBoostEvent === null) {
         this.renderMenuScreen();
       }
       return null;

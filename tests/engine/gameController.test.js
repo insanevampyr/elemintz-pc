@@ -2938,7 +2938,60 @@ test("appController: menu boost event refreshes through the multiplayer profile 
   }
 });
 
-test("appController: menu boost event refresh safely clears when the multiplayer boost bridge is unavailable", async () => {
+test("appController: menu boost event refresh keeps an existing banner when the multiplayer request fails", async () => {
+  const originalWindow = globalThis.window;
+  let renderCount = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+    try {
+      globalThis.window = {
+        elemintz: {
+          multiplayer: {
+            getProfile: async () => ({}),
+            getActiveBoostEvent: async () => {
+              throw new Error("temporary offline");
+            }
+          }
+        }
+      };
+
+      app.username = "BoostUser";
+      app.menuBoostEvent = {
+        title: "Old Boost"
+      };
+      app.onlinePlayState = app.normalizeOnlinePlayState({
+        connectionStatus: "connected",
+        session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+    app.screenFlow = "menu";
+    app.renderMenuScreen = () => {
+      renderCount += 1;
+    };
+
+      const result = await app.refreshMenuBoostEvent();
+
+      assert.equal(result, null);
+      assert.deepEqual(app.menuBoostEvent, {
+        title: "Old Boost"
+      });
+      assert.equal(renderCount, 0);
+    } finally {
+      globalThis.window = originalWindow;
+    }
+  });
+
+test("appController: menu boost event refresh clears when the multiplayer boost bridge is unavailable", async () => {
   const originalWindow = globalThis.window;
   let renderCount = 0;
 
@@ -2981,6 +3034,121 @@ test("appController: menu boost event refresh safely clears when the multiplayer
     assert.equal(result, null);
     assert.equal(app.menuBoostEvent, null);
     assert.equal(renderCount, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: showMenu refreshes the boost event on entry", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({}),
+          getActiveBoostEvent: async ({ username }) => {
+            calls.push(username);
+            return {
+              enabled: true,
+              title: "Menu Boost",
+              message: "Boost is active.",
+              endsAt: "2026-05-25T06:00:00.000Z",
+              scope: "online",
+              xpMultiplier: 2,
+              tokenMultiplier: 1
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "BoostUser";
+    app.profile = { username: "BoostUser", equippedCosmetics: {} };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.refreshMenuAnnouncement = async () => {};
+
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(calls, ["BoostUser"]);
+    assert.equal(app.menuBoostEvent?.title, "Menu Boost");
+    assert.equal(shownScreens.at(-1)?.name, "menu");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: returning to menu after a match refreshes the boost event again", async () => {
+  const originalWindow = globalThis.window;
+  const calls = [];
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({}),
+          getActiveBoostEvent: async ({ username }) => {
+            calls.push(username);
+            return {
+              enabled: true,
+              title: `Boost ${calls.length}`,
+              message: "Refresh me.",
+              scope: "online",
+              xpMultiplier: 2,
+              tokenMultiplier: 1
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "BoostUser";
+    app.profile = { username: "BoostUser", equippedCosmetics: {} };
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "BoostUser"
+      }
+    });
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.refreshMenuAnnouncement = async () => {};
+
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(calls, ["BoostUser", "BoostUser"]);
+    assert.equal(app.menuBoostEvent?.title, "Boost 2");
   } finally {
     globalThis.window = originalWindow;
   }
