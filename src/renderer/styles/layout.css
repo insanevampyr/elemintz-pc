@@ -1390,6 +1390,7 @@ body {
 .screen-menu .themed-screen-panel > .grid.two-col {
   flex: 1;
   min-height: 0;
+  align-items: center;
 }
 
 .screen-profile .arena-board .themed-screen-panel {
@@ -1566,11 +1567,23 @@ body {
 }
 
 .menu-action-grid {
-  align-content: start;
+  align-content: center;
+  align-self: center;
   gap: 8px;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+@media (max-width: 900px) {
+  .screen-menu .themed-screen-panel > .grid.two-col {
+    align-items: start;
+  }
+
+  .menu-action-grid {
+    align-content: start;
+    align-self: stretch;
+  }
 }
 
 .menu-action-grid > .menu-tile:last-child:nth-child(odd) {
