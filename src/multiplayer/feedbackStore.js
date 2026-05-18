@@ -144,7 +144,9 @@ export class FeedbackStore {
   async enqueueWrite(entry) {
     const task = this.writeQueue.then(async () => {
       await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-      await fs.appendFile(this.filePath, `${JSON.stringify(entry)}\n`, "utf8");
+      const entries = await this.readFeedbackEntries();
+      entries.push(entry);
+      await fs.writeFile(this.filePath, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
       return {
         feedbackId: entry.feedbackId,
         storedAt: entry.server.receivedAt,
@@ -164,5 +166,44 @@ export class FeedbackStore {
     );
 
     return task;
+  }
+
+  async readFeedbackEntries() {
+    try {
+      const raw = await fs.readFile(this.filePath, "utf8");
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        return [];
+      }
+
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        try {
+          return this.parseLegacyJsonLines(await fs.readFile(this.filePath, "utf8"));
+        } catch (legacyError) {
+          throw legacyError;
+        }
+      } else {
+        return [];
+      }
+    }
+
+    return this.parseLegacyJsonLines(await fs.readFile(this.filePath, "utf8"));
+  }
+
+  parseLegacyJsonLines(raw) {
+    const trimmed = String(raw ?? "").trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    return trimmed
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
   }
 }

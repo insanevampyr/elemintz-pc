@@ -1484,6 +1484,27 @@ body {
   overflow-wrap: anywhere;
 }
 
+.menu-announcement-card__message-group {
+  display: grid;
+  gap: 6px;
+}
+
+.menu-announcement-card__message br {
+  content: "";
+}
+
+.menu-announcement-card__list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+  color: #d7edff;
+}
+
+.menu-announcement-card__list-item {
+  line-height: 1.35;
+}
+
 .menu-announcement-card__actions {
   display: flex;
   justify-content: flex-end;

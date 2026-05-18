@@ -1826,7 +1826,7 @@ test("multiplayer foundation: announcements:dismiss persists seenAnnouncements a
   }
 });
 
-test("multiplayer foundation: feedback:submit appends a JSONL line without sensitive fields", async () => {
+test("multiplayer foundation: feedback:submit writes readable JSON without sensitive fields", async () => {
   const dataDir = await createTempDataDir();
   const feedbackStore = new FeedbackStore({
     dataDir,
@@ -1872,10 +1872,11 @@ test("multiplayer foundation: feedback:submit appends a JSONL line without sensi
 
       const feedbackPath = path.join(dataDir, "server-data", "feedback.jsonl");
       const raw = await fs.readFile(feedbackPath, "utf8");
-      const lines = raw.trim().split("\n");
-      assert.equal(lines.length, 1);
+      const entries = JSON.parse(raw);
+      assert.equal(Array.isArray(entries), true);
+      assert.equal(entries.length, 1);
 
-      const entry = JSON.parse(lines[0]);
+      const entry = entries[0];
       assert.equal(entry.category, "Bug / Error");
       assert.equal(entry.message, "Public rooms did not appear in the browser.");
       assert.equal(entry.user?.username, "FeedbackUser");
@@ -1884,9 +1885,79 @@ test("multiplayer foundation: feedback:submit appends a JSONL line without sensi
       assert.equal(entry.server?.source, "multiplayer");
       assert.equal("password" in entry, false);
       assert.equal("email" in entry, false);
+      assert.match(raw, /^\[\n  \{/);
+      assert.match(raw, /\n  }\n\]\n?$/);
       assert.equal(raw.includes("secret-password"), false);
       assert.equal(raw.includes("hidden@example.com"), false);
       assert.equal(raw.includes("do-not-store"), false);
+    } finally {
+      client.disconnect();
+    }
+  } finally {
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: feedback:submit preserves fields and upgrades legacy JSONL files to pretty JSON", async () => {
+  const dataDir = await createTempDataDir();
+  const feedbackPath = path.join(dataDir, "server-data", "feedback.jsonl");
+  await fs.mkdir(path.dirname(feedbackPath), { recursive: true });
+  await fs.writeFile(
+    feedbackPath,
+    `${JSON.stringify({
+      feedbackId: "fb_legacy",
+      timestamp: "2026-05-01T00:00:00.000Z",
+      category: "Suggestion",
+      message: "Legacy entry.",
+      includeDebugInfo: false,
+      user: { username: "LegacyUser" },
+      server: {
+        receivedAt: "2026-05-01T00:00:00.000Z",
+        source: "multiplayer"
+      }
+    })}\n`,
+    "utf8"
+  );
+
+  const feedbackStore = new FeedbackStore({
+    dataDir,
+    logger: { warn: () => {} },
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    feedbackStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  try {
+    const port = await foundation.start();
+    const client = await connectClient(port);
+
+    try {
+      await bootstrapSession(client, "FeedbackUser");
+      const response = await new Promise((resolve) => {
+        client.emit(
+          "feedback:submit",
+          {
+            category: "Other",
+            message: "Pretty JSON please.",
+            includeDebugInfo: false
+          },
+          resolve
+        );
+      });
+
+      assert.equal(response?.ok, true);
+
+      const raw = await fs.readFile(feedbackPath, "utf8");
+      const entries = JSON.parse(raw);
+      assert.equal(entries.length, 2);
+      assert.equal(entries[0]?.feedbackId, "fb_legacy");
+      assert.equal(entries[0]?.message, "Legacy entry.");
+      assert.equal(entries[1]?.category, "Other");
+      assert.equal(entries[1]?.message, "Pretty JSON please.");
+      assert.equal(entries[1]?.includeDebugInfo, false);
     } finally {
       client.disconnect();
     }

@@ -6914,6 +6914,38 @@ test("ui: menu renders the highest-priority announcement card above daily login"
   assert.ok(html.indexOf('data-menu-announcement-card="true"') < html.indexOf('data-menu-daily-login-panel="true"'));
 });
 
+test("ui: menu announcement preserves multiline paragraphs and bullet lines safely", () => {
+  const html = menuScreen.render({
+    username: "AnnouncementUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: {
+      id: "patch-2-2-0",
+      title: "v2.2.0 Update",
+      message: "Fresh fixes this week.\n- Better menu spacing\n- Safer reconnect handling\n\n<script>alert('xss')</script>",
+      type: "patch",
+      dismissible: true
+    },
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /menu-announcement-card__message-group/);
+  assert.match(html, /Fresh fixes this week\./);
+  assert.match(html, /class="menu-announcement-card__list"/);
+  assert.match(html, /<li class="menu-announcement-card__list-item">Better menu spacing<\/li>/);
+  assert.match(html, /<li class="menu-announcement-card__list-item">Safer reconnect handling<\/li>/);
+  assert.match(html, /&lt;script&gt;alert\(&#39;xss&#39;\)&lt;\/script&gt;/);
+  assert.ok((html.match(/class="menu-announcement-card__message"/g) ?? []).length >= 2);
+  assert.match(html, /id="dismiss-announcement-btn"/);
+});
+
 test("ui: menu renders no boost event shell when there is no active boost event", () => {
   const html = menuScreen.render({
     username: "AnnouncementUser",

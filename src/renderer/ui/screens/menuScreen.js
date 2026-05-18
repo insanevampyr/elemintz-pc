@@ -136,7 +136,9 @@ function renderMenuAnnouncementCard(announcement) {
       </div>
       <div class="stack-xs">
         <h3 class="section-title menu-announcement-card__title">${escapeHtml(announcement.title)}</h3>
-        <p class="menu-announcement-card__message">${escapeHtml(announcement.message)}</p>
+        <div class="menu-announcement-card__message-group">
+          ${renderEscapedAnnouncementMessage(announcement.message)}
+        </div>
       </div>
       ${
         announcement.dismissible !== false
@@ -190,6 +192,48 @@ function renderEscapedParagraphBlock(value, className) {
   return normalized
     .split(/\n{2,}/)
     .map((paragraph) => `<p class="${className}">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function renderEscapedAnnouncementMessage(value) {
+  const normalized = String(value ?? "").replace(/\r\n?/g, "\n").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => {
+      const lines = paragraph
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const bulletLines = lines.filter((line) => /^[•*-]\s+/.test(line));
+
+      if (lines.length > 0 && bulletLines.length === lines.length) {
+        const items = lines
+          .map((line) => line.replace(/^[•*-]\s+/, ""))
+          .map((line) => `<li class="menu-announcement-card__list-item">${escapeHtml(line)}</li>`)
+          .join("");
+        return `<ul class="menu-announcement-card__list">${items}</ul>`;
+      }
+
+       if (
+        lines.length > 1 &&
+        !/^[•*-]\s+/.test(lines[0]) &&
+        lines.slice(1).every((line) => /^[•*-]\s+/.test(line))
+      ) {
+        const intro = `<p class="menu-announcement-card__message">${escapeHtml(lines[0])}</p>`;
+        const items = lines
+          .slice(1)
+          .map((line) => line.replace(/^[•*-]\s+/, ""))
+          .map((line) => `<li class="menu-announcement-card__list-item">${escapeHtml(line)}</li>`)
+          .join("");
+        return `${intro}<ul class="menu-announcement-card__list">${items}</ul>`;
+      }
+
+      return `<p class="menu-announcement-card__message">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`;
+    })
     .join("");
 }
 
