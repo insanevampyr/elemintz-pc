@@ -242,9 +242,6 @@ export const menuScreen = {
           <div class="panel themed-screen-panel">
             <h2 class="view-title">Main Menu</h2>
             <p>Signed in as <strong>${context.username}</strong></p>
-            <div class="inline-actions auth-session-actions">
-              <button id="switch-account-btn" class="btn btn-secondary" type="button">Switch Account</button>
-            </div>
             <div class="grid two-col">
               <div class="grid two-col menu-action-grid">
                 ${renderMenuTile("how-to-play-btn", "How to Play")}
@@ -300,7 +297,6 @@ export const menuScreen = {
     document.getElementById("settings-btn").addEventListener("click", context.actions.openSettings);
     document.getElementById("how-to-play-btn").addEventListener("click", context.actions.openHowToPlay);
     document.getElementById("feedback-btn").addEventListener("click", context.actions.openFeedback);
-    document.getElementById("switch-account-btn").addEventListener("click", context.actions.switchAccount);
     document.getElementById("logout-btn").addEventListener("click", context.actions.logout);
     const dismissAnnouncementButton = document.getElementById("dismiss-announcement-btn");
     if (dismissAnnouncementButton) {

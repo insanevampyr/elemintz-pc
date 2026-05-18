@@ -2381,8 +2381,7 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     "settings-btn": createFakeElement(),
     "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
-    "logout-btn": createFakeElement(),
-    "switch-account-btn": createFakeElement()
+    "logout-btn": createFakeElement()
   };
 
   global.window = {
@@ -2452,8 +2451,7 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
         openStore: async () => {},
         openSettings: async () => {},
         openHowToPlay: () => {},
-        logout: () => {},
-        switchAccount: () => {}
+        logout: () => {}
       }
     });
 
@@ -7010,7 +7008,6 @@ test("ui: menu announcement dismiss button binds to the dismiss action with the 
     "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
     "logout-btn": createFakeElement(),
-    "switch-account-btn": createFakeElement(),
     "dismiss-announcement-btn": {
       dataset: { announcementId: "patch-2-1-9" },
       listeners: new Map(),
@@ -7039,7 +7036,6 @@ test("ui: menu announcement dismiss button binds to the dismiss action with the 
         openHowToPlay: async () => {},
         openFeedback: () => {},
         logout: () => {},
-        switchAccount: () => {},
         dismissAnnouncement: async (id) => dismissCalls.push(id)
       }
     });
@@ -7133,8 +7129,7 @@ test("ui: menu how to play button binds to the provided action", () => {
     "settings-btn": createFakeElement(),
     "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
-    "logout-btn": createFakeElement(),
-    "switch-account-btn": createFakeElement()
+    "logout-btn": createFakeElement()
   };
 
   global.document = {
@@ -7158,7 +7153,6 @@ test("ui: menu how to play button binds to the provided action", () => {
         },
         openFeedback: () => {},
         logout: () => {},
-        switchAccount: () => {},
         dismissAnnouncement: async () => {}
       }
     });
