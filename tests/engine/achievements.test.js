@@ -105,6 +105,153 @@ test("achievement definitions include required badges", () => {
   assert.ok(ids.includes("win_streak_10"));
 });
 
+test("achievement catalog includes numeric progress metadata for safe locked achievements", () => {
+  const catalog = buildAchievementCatalog({
+    wins: 73,
+    gamesPlayed: 412,
+    cardsCaptured: 486,
+    warsEntered: 120,
+    warsWon: 86,
+    playerLevel: 38,
+    winStreak: 9,
+    longestWar: 6,
+    matchesUsingAllElements: 20,
+    modeStats: {
+      pve: { wins: 12, losses: 0 },
+      local_pvp: { wins: 18, losses: 0 },
+      online_pvp: { wins: 73, losses: 0 }
+    },
+    achievements: {
+      comeback_win: { count: 11 },
+      card_hoarder: { count: 3 }
+    }
+  });
+
+  assert.deepEqual(
+    catalog.find((item) => item.id === "matches_played_500")?.progress,
+    { current: 412, target: 500, label: "412 / 500", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "online_wins_50")?.progress,
+    { current: 50, target: 50, label: "50 / 50", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "level_50")?.progress,
+    { current: 38, target: 50, label: "38 / 50", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "comeback_win_25")?.progress,
+    { current: 11, target: 25, label: "11 / 25", kind: "numeric" }
+  );
+});
+
+test("achievement catalog progress clamps current to 0 minimum", () => {
+  const catalog = buildAchievementCatalog({
+    wins: -20,
+    gamesPlayed: -5,
+    cardsCaptured: -10,
+    warsEntered: -2,
+    warsWon: -1,
+    playerLevel: -4,
+    winStreak: -3,
+    longestWar: -7,
+    matchesUsingAllElements: -9,
+    modeStats: {
+      pve: { wins: -8 },
+      local_pvp: { wins: -6 },
+      online_pvp: { wins: -11 }
+    },
+    achievements: {
+      comeback_win: { count: -2 },
+      card_hoarder: { count: -1 }
+    }
+  });
+
+  assert.deepEqual(
+    catalog.find((item) => item.id === "matches_played_500")?.progress,
+    { current: 0, target: 500, label: "0 / 500", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "comeback_win_5")?.progress,
+    { current: 0, target: 5, label: "0 / 5", kind: "numeric" }
+  );
+});
+
+test("achievement catalog progress clamps current to target maximum", () => {
+  const catalog = buildAchievementCatalog({
+    wins: 9999,
+    gamesPlayed: 9999,
+    cardsCaptured: 9999,
+    warsEntered: 9999,
+    warsWon: 9999,
+    playerLevel: 999,
+    winStreak: 999,
+    longestWar: 999,
+    matchesUsingAllElements: 999,
+    modeStats: {
+      pve: { wins: 999 },
+      local_pvp: { wins: 999 },
+      online_pvp: { wins: 999 }
+    },
+    achievements: {
+      comeback_win: { count: 999 },
+      card_hoarder: { count: 999 }
+    }
+  });
+
+  assert.deepEqual(
+    catalog.find((item) => item.id === "wars_won_250")?.progress,
+    { current: 250, target: 250, label: "250 / 250", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "streak_lord")?.progress,
+    { current: 15, target: 15, label: "15 / 15", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "card_hoarder_elite")?.progress,
+    { current: 5, target: 5, label: "5 / 5", kind: "numeric" }
+  );
+});
+
+test("achievement catalog excludes special-condition achievements from numeric progress", () => {
+  const catalog = buildAchievementCatalog({
+    wins: 100,
+    losses: 1,
+    gamesPlayed: 100,
+    warsEntered: 50,
+    warsWon: 30,
+    cardsCaptured: 200,
+    playerLevel: 10,
+    winStreak: 7,
+    longestWar: 4,
+    matchesUsingAllElements: 20,
+    modeStats: {
+      pve: { wins: 50 },
+      local_pvp: { wins: 50 },
+      online_pvp: { wins: 50 }
+    },
+    achievements: {
+      comeback_win: { count: 3 },
+      card_hoarder: { count: 2 }
+    }
+  });
+
+  for (const excludedId of [
+    "first_flame",
+    "flawless_victory",
+    "quick_draw",
+    "quickdraw_master",
+    "card_hoarder",
+    "war_machine",
+    "perfect_warrior",
+    "overtime_champion",
+    "the_immortal",
+    "comeback_win"
+  ]) {
+    assert.equal(catalog.find((item) => item.id === excludedId)?.progress ?? null, null);
+  }
+});
+
 test("achievement evaluator: approved expansion achievements unlock at their configured thresholds", () => {
   const match = buildCompletedMatch({
     winner: "p1",

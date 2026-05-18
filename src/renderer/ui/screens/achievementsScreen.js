@@ -27,6 +27,7 @@ function renderAchievement(item) {
         <p><strong>${item.name}</strong></p>
         <p>${item.description}</p>
         <p>Status: ${item.unlocked ? "Unlocked" : "Locked"}</p>
+        ${!item.unlocked && item.progress?.kind === "numeric" ? `<p>Progress: ${item.progress.label}</p>` : ""}
         ${item.repeatable ? `<p>Repeat Count: ${item.count}</p>` : ""}
       </div>
     </article>

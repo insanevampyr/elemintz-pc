@@ -654,6 +654,21 @@ test("ui: achievements screen renders locked and unlocked states", () => {
         count: 1
       },
       {
+        id: "matches_played_500",
+        name: "Enduring Contender",
+        description: "Play 500 matches.",
+        image: "badges/marathonGamer.png",
+        repeatable: false,
+        unlocked: false,
+        count: 0,
+        progress: {
+          current: 412,
+          target: 500,
+          label: "412 / 500",
+          kind: "numeric"
+        }
+      },
+      {
         id: "war_machine",
         name: "War Machine",
         description: "Win 3 WARs in a single match.",
@@ -667,7 +682,10 @@ test("ui: achievements screen renders locked and unlocked states", () => {
 
   assert.match(html, /Status: Unlocked/);
   assert.match(html, /Status: Locked/);
+  assert.match(html, /Progress: 412 \/ 500/);
   assert.match(html, /assets\/badges\/firstFlame\.png/);
+  assert.doesNotMatch(html, /Progress: 1 \/ 1/);
+  assert.doesNotMatch(html, /War Machine[\s\S]*Progress:/);
 });
 
 test("ui: store screen uses cardback catalog names and rarities for wired shop entries", () => {

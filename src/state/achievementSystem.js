@@ -437,6 +437,63 @@ export const ACHIEVEMENT_DEFINITIONS = Object.freeze([
 
 const DEFINITION_MAP = new Map(ACHIEVEMENT_DEFINITIONS.map((item) => [item.id, item]));
 
+const NUMERIC_PROGRESS_RULES = Object.freeze({
+  marathon_gamer: { target: 25, current: (profile) => Number(profile?.gamesPlayed ?? 0) },
+  elemental_overlord: { target: 200, current: (profile) => Number(profile?.wins ?? 0) },
+  collector: { target: 25, current: (profile) => Number(profile?.cardsCaptured ?? 0) },
+  warrior: { target: 10, current: (profile) => Number(profile?.warsWon ?? 0) },
+  match_wins_25: { target: 25, current: (profile) => Number(profile?.wins ?? 0) },
+  match_wins_50: { target: 50, current: (profile) => Number(profile?.wins ?? 0) },
+  match_wins_100: { target: 100, current: (profile) => Number(profile?.wins ?? 0) },
+  match_wins_250: { target: 250, current: (profile) => Number(profile?.wins ?? 0) },
+  matches_played_50: { target: 50, current: (profile) => Number(profile?.gamesPlayed ?? 0) },
+  matches_played_100: { target: 100, current: (profile) => Number(profile?.gamesPlayed ?? 0) },
+  matches_played_250: { target: 250, current: (profile) => Number(profile?.gamesPlayed ?? 0) },
+  matches_played_500: { target: 500, current: (profile) => Number(profile?.gamesPlayed ?? 0) },
+  cards_captured_100: { target: 100, current: (profile) => Number(profile?.cardsCaptured ?? 0) },
+  cards_captured_250: { target: 250, current: (profile) => Number(profile?.cardsCaptured ?? 0) },
+  cards_captured_500: { target: 500, current: (profile) => Number(profile?.cardsCaptured ?? 0) },
+  cards_captured_1000: { target: 1000, current: (profile) => Number(profile?.cardsCaptured ?? 0) },
+  cards_captured_2000: { target: 2000, current: (profile) => Number(profile?.cardsCaptured ?? 0) },
+  wars_entered_25: { target: 25, current: (profile) => Number(profile?.warsEntered ?? 0) },
+  wars_entered_50: { target: 50, current: (profile) => Number(profile?.warsEntered ?? 0) },
+  wars_entered_100: { target: 100, current: (profile) => Number(profile?.warsEntered ?? 0) },
+  wars_entered_250: { target: 250, current: (profile) => Number(profile?.warsEntered ?? 0) },
+  wars_won_25: { target: 25, current: (profile) => Number(profile?.warsWon ?? 0) },
+  wars_won_50: { target: 50, current: (profile) => Number(profile?.warsWon ?? 0) },
+  wars_won_100: { target: 100, current: (profile) => Number(profile?.warsWon ?? 0) },
+  wars_won_250: { target: 250, current: (profile) => Number(profile?.warsWon ?? 0) },
+  level_5: { target: 5, current: (profile) => Number(profile?.playerLevel ?? 0) },
+  level_10: { target: 10, current: (profile) => Number(profile?.playerLevel ?? 0) },
+  level_25: { target: 25, current: (profile) => Number(profile?.playerLevel ?? 0) },
+  level_50: { target: 50, current: (profile) => Number(profile?.playerLevel ?? 0) },
+  local_pvp_wins_25: { target: 25, current: (profile) => getModeWins(profile, "local_pvp") },
+  local_pvp_wins_50: { target: 50, current: (profile) => getModeWins(profile, "local_pvp") },
+  pve_wins_25: { target: 25, current: (profile) => getModeWins(profile, "pve") },
+  pve_wins_50: { target: 50, current: (profile) => getModeWins(profile, "pve") },
+  online_wins_10: { target: 10, current: (profile) => getModeWins(profile, "online_pvp") },
+  online_wins_25: { target: 25, current: (profile) => getModeWins(profile, "online_pvp") },
+  online_wins_50: { target: 50, current: (profile) => getModeWins(profile, "online_pvp") },
+  all_elements_25: { target: 25, current: (profile) => Number(profile?.matchesUsingAllElements ?? 0) },
+  longest_war_5: { target: 5, current: (profile) => Number(profile?.longestWar ?? 0) },
+  longest_war_7: { target: 7, current: (profile) => Number(profile?.longestWar ?? 0) },
+  unbreakable_streak: { target: 5, current: (profile) => Number(profile?.winStreak ?? 0) },
+  win_streak_10: { target: 10, current: (profile) => Number(profile?.winStreak ?? 0) },
+  streak_lord: { target: 15, current: (profile) => Number(profile?.winStreak ?? 0) },
+  card_hoarder_elite: {
+    target: 5,
+    current: (profile) => getRepeatableAchievementCount(profile, "card_hoarder")
+  },
+  comeback_win_5: {
+    target: 5,
+    current: (profile) => getRepeatableAchievementCount(profile, "comeback_win")
+  },
+  comeback_win_25: {
+    target: 25,
+    current: (profile) => getRepeatableAchievementCount(profile, "comeback_win")
+  }
+});
+
 export function normalizeAchievementProgressEntry(entry) {
   if (entry === true) {
     return {
@@ -479,6 +536,32 @@ export function normalizeAchievementProgressMap(achievements) {
       .filter(([id]) => DEFINITION_MAP.has(id))
       .map(([id, entry]) => [id, normalizeAchievementProgressEntry(entry)])
   );
+}
+
+function clampAchievementProgress(current, target) {
+  const safeTarget = Math.max(0, Math.floor(Number(target ?? 0) || 0));
+  const safeCurrent = Math.max(0, Math.floor(Number(current ?? 0) || 0));
+  return Math.min(safeCurrent, safeTarget);
+}
+
+function buildAchievementProgress(profile, definitionId) {
+  const rule = NUMERIC_PROGRESS_RULES[definitionId];
+  if (!rule) {
+    return null;
+  }
+
+  const target = Math.max(0, Math.floor(Number(rule.target ?? 0) || 0));
+  if (target <= 0) {
+    return null;
+  }
+
+  const current = clampAchievementProgress(rule.current(profile), target);
+  return {
+    current,
+    target,
+    label: `${current} / ${target}`,
+    kind: "numeric"
+  };
 }
 
 function getMatchDurationMs(matchState) {
@@ -829,11 +912,13 @@ export function buildAchievementCatalog(profile) {
   return ACHIEVEMENT_DEFINITIONS.map((definition) => {
     const entry = progress[definition.id];
     const count = entry?.count ?? 0;
+    const numericProgress = buildAchievementProgress(profile, definition.id);
 
     return {
       ...definition,
       count,
       unlocked: count > 0,
+      progress: numericProgress,
       firstUnlockedAt: entry?.firstUnlockedAt ?? null,
       lastUnlockedAt: entry?.lastUnlockedAt ?? null
     };
