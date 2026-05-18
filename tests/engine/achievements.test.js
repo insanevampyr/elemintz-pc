@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   ACHIEVEMENT_DEFINITIONS,
+  applyAchievementTokenRewards,
   buildAchievementCatalog,
   evaluateAchievements
 } from "../../src/state/achievementSystem.js";
@@ -92,6 +93,16 @@ test("achievement definitions include required badges", () => {
   assert.ok(ids.includes("local_pvp_wins_25"));
   assert.ok(ids.includes("pve_wins_25"));
   assert.ok(ids.includes("all_elements_25"));
+  assert.ok(ids.includes("online_wins_10"));
+  assert.ok(ids.includes("online_wins_25"));
+  assert.ok(ids.includes("online_wins_50"));
+  assert.ok(ids.includes("local_pvp_wins_50"));
+  assert.ok(ids.includes("pve_wins_50"));
+  assert.ok(ids.includes("matches_played_500"));
+  assert.ok(ids.includes("cards_captured_2000"));
+  assert.ok(ids.includes("wars_entered_250"));
+  assert.ok(ids.includes("wars_won_250"));
+  assert.ok(ids.includes("win_streak_10"));
 });
 
 test("achievement evaluator: approved expansion achievements unlock at their configured thresholds", () => {
@@ -485,6 +496,133 @@ test("achievement evaluator: phase 1 tiered achievements do not unlock below thr
   assert.ok(!repeatIds.includes("level_5"));
 });
 
+test("achievement evaluator: first expansion batch unlocks at the configured thresholds", () => {
+  const match = buildCompletedMatch({
+    winner: "p1",
+    rounds: 8,
+    history: [{ result: "p1", warClashes: 2, capturedCards: 8 }],
+    mode: "online_pvp"
+  });
+
+  const unlocked = evaluateAchievements({
+    profileBefore: {
+      gamesPlayed: 499,
+      cardsCaptured: 1999,
+      warsEntered: 249,
+      warsWon: 249,
+      winStreak: 9,
+      achievements: {},
+      modeStats: {
+        online_pvp: { wins: 49, losses: 0 },
+        local_pvp: { wins: 49, losses: 0 },
+        pve: { wins: 49, losses: 0 }
+      }
+    },
+    profileAfter: {
+      gamesPlayed: 500,
+      cardsCaptured: 2000,
+      warsEntered: 250,
+      warsWon: 250,
+      winStreak: 10,
+      achievements: {},
+      modeStats: {
+        online_pvp: { wins: 50, losses: 0 },
+        local_pvp: { wins: 50, losses: 0 },
+        pve: { wins: 50, losses: 0 }
+      }
+    },
+    matchState: match,
+    perspective: "p1",
+    matchStats: { wins: 1, losses: 0, cardsCaptured: 8 }
+  });
+
+  const ids = unlocked.map((item) => item.id);
+  assert.ok(ids.includes("online_wins_10"));
+  assert.ok(ids.includes("online_wins_25"));
+  assert.ok(ids.includes("online_wins_50"));
+  assert.ok(ids.includes("local_pvp_wins_50"));
+  assert.ok(ids.includes("pve_wins_50"));
+  assert.ok(ids.includes("matches_played_500"));
+  assert.ok(ids.includes("cards_captured_2000"));
+  assert.ok(ids.includes("wars_entered_250"));
+  assert.ok(ids.includes("wars_won_250"));
+  assert.ok(ids.includes("win_streak_10"));
+});
+
+test("achievement evaluator: first expansion batch does not unlock below threshold", () => {
+  const match = buildCompletedMatch({
+    winner: "p1",
+    rounds: 5,
+    history: [{ result: "p1", warClashes: 1, capturedCards: 4 }],
+    mode: "online_pvp"
+  });
+
+  const unlocked = evaluateAchievements({
+    profileBefore: {
+      gamesPlayed: 498,
+      cardsCaptured: 1998,
+      warsEntered: 248,
+      warsWon: 248,
+      winStreak: 8,
+      achievements: {},
+      modeStats: {
+        online_pvp: { wins: 9, losses: 0 },
+        local_pvp: { wins: 49, losses: 0 },
+        pve: { wins: 49, losses: 0 }
+      }
+    },
+    profileAfter: {
+      gamesPlayed: 499,
+      cardsCaptured: 1999,
+      warsEntered: 249,
+      warsWon: 249,
+      winStreak: 9,
+      achievements: {},
+      modeStats: {
+        online_pvp: { wins: 9, losses: 0 },
+        local_pvp: { wins: 49, losses: 0 },
+        pve: { wins: 49, losses: 0 }
+      }
+    },
+    matchState: match,
+    perspective: "p1",
+    matchStats: { wins: 1, losses: 0, cardsCaptured: 4 }
+  });
+
+  const ids = unlocked.map((item) => item.id);
+  assert.ok(!ids.includes("online_wins_10"));
+  assert.ok(!ids.includes("online_wins_25"));
+  assert.ok(!ids.includes("online_wins_50"));
+  assert.ok(!ids.includes("local_pvp_wins_50"));
+  assert.ok(!ids.includes("pve_wins_50"));
+  assert.ok(!ids.includes("matches_played_500"));
+  assert.ok(!ids.includes("cards_captured_2000"));
+  assert.ok(!ids.includes("wars_entered_250"));
+  assert.ok(!ids.includes("wars_won_250"));
+  assert.ok(!ids.includes("win_streak_10"));
+});
+
+test("achievement token rewards: first expansion batch grants only the approved token payouts", () => {
+  const startingProfile = { tokens: 100 };
+  const rewarded = applyAchievementTokenRewards(startingProfile, [
+    { id: "online_wins_10" },
+    { id: "online_wins_25" },
+    { id: "online_wins_50" },
+    { id: "local_pvp_wins_50" },
+    { id: "pve_wins_50" },
+    { id: "win_streak_10" }
+  ]);
+  assert.equal(rewarded.profile.tokens, 160);
+
+  const unrewarded = applyAchievementTokenRewards({ tokens: 100 }, [
+    { id: "matches_played_500" },
+    { id: "cards_captured_2000" },
+    { id: "wars_entered_250" },
+    { id: "wars_won_250" }
+  ]);
+  assert.equal(unrewarded.profile.tokens, 100);
+});
+
 test("achievement evaluator: comeback win unlocks only for the eventual winner who dropped to three cards", () => {
   const match = buildCompletedMatch({
     winner: "p1",
@@ -643,6 +781,47 @@ test("state coordinator: PvE unlocks mode achievements through the shared author
   assert.equal(result.profile.achievements.pve_wins_25.count, 1);
 });
 
+test("state coordinator: PvE mode milestones grant one-time token rewards and do not duplicate on reload", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "PveFiftyUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    tokens: 100,
+    modeStats: {
+      ...profile.modeStats,
+      pve: {
+        ...(profile.modeStats?.pve ?? {}),
+        wins: 49,
+        losses: profile.modeStats?.pve?.losses ?? 0
+      }
+    }
+  });
+
+  const beforeMilestone = await state.profiles.getProfile(username);
+  assert.equal(beforeMilestone.achievements.pve_wins_25.count, 1);
+
+  const result = await state.recordMatchResult({
+    username,
+    perspective: "p1",
+    matchState: buildCompletedMatch({
+      mode: "pve",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "pve_wins_50"));
+  assert.equal(result.profile.achievements.pve_wins_50.count, 1);
+  assert.equal(result.profile.tokens - beforeMilestone.tokens, 14);
+
+  const reloaded = await state.profiles.getProfile(username);
+  assert.equal(reloaded.achievements.pve_wins_50.count, 1);
+  assert.equal(reloaded.tokens, result.profile.tokens);
+});
+
 test("state coordinator: local PvP unlocks mode achievements through the shared authoritative path", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -677,6 +856,43 @@ test("state coordinator: local PvP unlocks mode achievements through the shared 
   assert.equal(result.profile.achievements.local_pvp_wins_25.count, 1);
 });
 
+test("state coordinator: local PvP mode milestone grants one-time token reward", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "LocalFiftyUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    tokens: 100,
+    modeStats: {
+      ...profile.modeStats,
+      local_pvp: {
+        ...(profile.modeStats?.local_pvp ?? {}),
+        wins: 49,
+        losses: profile.modeStats?.local_pvp?.losses ?? 0
+      }
+    }
+  });
+
+  const beforeMilestone = await state.profiles.getProfile(username);
+  assert.equal(beforeMilestone.achievements.local_pvp_wins_25.count, 1);
+
+  const result = await state.recordMatchResult({
+    username,
+    perspective: "p1",
+    matchState: buildCompletedMatch({
+      mode: "local_pvp",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  assert.ok(result.unlockedAchievements.some((item) => item.id === "local_pvp_wins_50"));
+  assert.equal(result.profile.achievements.local_pvp_wins_50.count, 1);
+  assert.equal(result.profile.tokens - beforeMilestone.tokens, 14);
+});
+
 test("state coordinator: online PvP unlocks through recordOnlineMatchResult on the shared authoritative path", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -694,6 +910,205 @@ test("state coordinator: online PvP unlocks through recordOnlineMatchResult on t
 
   assert.ok(result.unlockedAchievements.some((item) => item.id === "first_flame"));
   assert.equal(result.profile.achievements.first_flame.count, 1);
+});
+
+test("state coordinator: online PvP milestones grant one-time token rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "OnlineMilestoneUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    tokens: 100,
+    modeStats: {
+      ...profile.modeStats,
+      online_pvp: {
+        ...(profile.modeStats?.online_pvp ?? {}),
+        wins: 9,
+        losses: profile.modeStats?.online_pvp?.losses ?? 0
+      }
+    }
+  });
+
+  const result = await state.recordOnlineMatchResult({
+    username,
+    perspective: "p1",
+    settlementKey: "achievement-online-milestone-1",
+    matchState: buildCompletedMatch({
+      mode: "online_pvp",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  const ids = result.unlockedAchievements.map((item) => item.id);
+  assert.ok(ids.includes("online_wins_10"));
+  assert.equal(result.profile.achievements.online_wins_10.count, 1);
+  assert.ok(!result.profile.achievements.online_wins_25);
+  assert.ok(!result.profile.achievements.online_wins_50);
+
+  const second = await state.recordOnlineMatchResult({
+    username,
+    perspective: "p1",
+    settlementKey: "achievement-online-milestone-2",
+    matchState: buildCompletedMatch({
+      mode: "online_pvp",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  const third = await state.recordOnlineMatchResult({
+    username,
+    perspective: "p1",
+    settlementKey: "achievement-online-milestone-3",
+    matchState: buildCompletedMatch({
+      mode: "online_pvp",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  assert.equal(second.profile.achievements.online_wins_10.count, 1);
+  assert.equal(third.profile.achievements.online_wins_10.count, 1);
+  assert.ok(!second.unlockedAchievements.some((item) => item.id === "online_wins_10"));
+  assert.ok(!third.unlockedAchievements.some((item) => item.id === "online_wins_10"));
+});
+
+test("state coordinator: win_streak_10 unlocks between existing streak milestones and grants tokens once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const username = "StreakCommanderUser";
+  const profile = await state.profiles.ensureProfile(username);
+
+  await state.profiles.updateProfile(username, {
+    ...profile,
+    tokens: 100,
+    wins: 9,
+    gamesPlayed: 9,
+    winStreak: 9
+  });
+
+  const result = await state.recordMatchResult({
+    username,
+    perspective: "p1",
+    matchState: buildCompletedMatch({
+      mode: "pve",
+      winner: "p1",
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    })
+  });
+
+  const ids = result.unlockedAchievements.map((item) => item.id);
+  assert.ok(ids.includes("win_streak_10"));
+  assert.ok(ids.includes("unbreakable_streak"));
+  assert.ok(!ids.includes("streak_lord"));
+  assert.equal(result.profile.achievements.win_streak_10.count, 1);
+  assert.ok(result.profile.tokens >= 110);
+});
+
+test("profile normalization retroactively unlocks first expansion batch from persisted stats and stays idempotent", async () => {
+  const dataDir = await createTempDataDir();
+  const profilesPath = path.join(dataDir, "profiles.json");
+  await fs.writeFile(
+    profilesPath,
+    JSON.stringify([
+      {
+        username: "RetroBatchUser",
+        tokens: 100,
+        wins: 300,
+        losses: 10,
+        gamesPlayed: 500,
+        warsEntered: 250,
+        warsWon: 250,
+        cardsCaptured: 2000,
+        winStreak: 10,
+        playerXP: 0,
+        playerLevel: 1,
+        modeStats: {
+          pve: { gamesPlayed: 60, wins: 50, losses: 10, warsEntered: 0, warsWon: 0, longestWar: 0, cardsCaptured: 0, quickWins: 0, timeLimitWins: 0 },
+          local_pvp: { gamesPlayed: 70, wins: 50, losses: 20, warsEntered: 0, warsWon: 0, longestWar: 0, cardsCaptured: 0, quickWins: 0, timeLimitWins: 0 },
+          online_pvp: { gamesPlayed: 80, wins: 50, losses: 30, warsEntered: 0, warsWon: 0, longestWar: 0, cardsCaptured: 0, quickWins: 0, timeLimitWins: 0 }
+        },
+        achievements: {},
+        ownedCosmetics: {
+          avatar: ["default_avatar"],
+          cardBack: ["default_card_back"],
+          background: ["default_background"],
+          elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+          badge: ["none"],
+          title: ["Initiate"]
+        },
+        equippedCosmetics: {
+          avatar: "default_avatar",
+          cardBack: "default_card_back",
+          background: "default_background",
+          elementCardVariant: {
+            fire: "default_fire_card",
+            water: "default_water_card",
+            earth: "default_earth_card",
+            wind: "default_wind_card"
+          },
+          badge: "none",
+          title: "Initiate"
+        },
+        cosmetics: {
+          avatar: "default_avatar",
+          cardBack: "default_card_back",
+          background: "default_background",
+          badge: "none"
+        },
+        dailyChallenges: {
+          daily: { lastReset: null, progress: {}, completed: {}, rewarded: {}, completionChestGranted: false },
+          weekly: { lastReset: null, progress: {}, completed: {}, rewarded: {}, completionChestGranted: false }
+        },
+        chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 },
+        levelRewardsClaimed: {},
+        cosmeticUnlockTracking: {
+          FIRST_AVATAR_PURCHASED: false,
+          FIRST_CARD_BACK_PURCHASED: false,
+          FIRST_BACKGROUND_PURCHASED: false,
+          FIRST_CARD_VARIANT_PURCHASED: false,
+          FIRST_TITLE_UNLOCKED: false,
+          FIRST_BADGE_UNLOCKED: false,
+          TOTAL_COSMETICS_OWNED: 9
+        },
+        onlineRewardSettlements: { appliedSettlementKeys: [] },
+        onlineDisconnectTracking: {
+          totalLiveMatchDisconnects: 0,
+          totalReconnectTimeoutExpirations: 0,
+          totalSuccessfulReconnectResumes: 0,
+          recentDisconnectTimestamps: [],
+          recentExpirationTimestamps: []
+        },
+        achievementCatalogVersion: 45,
+        schemaVersion: 1
+      }
+    ], null, 2)
+  );
+
+  const state = new StateCoordinator({ dataDir });
+  const firstLoad = await state.profiles.getProfile("RetroBatchUser");
+
+  assert.equal(firstLoad.achievements.online_wins_10.count, 1);
+  assert.equal(firstLoad.achievements.online_wins_25.count, 1);
+  assert.equal(firstLoad.achievements.online_wins_50.count, 1);
+  assert.equal(firstLoad.achievements.local_pvp_wins_50.count, 1);
+  assert.equal(firstLoad.achievements.pve_wins_50.count, 1);
+  assert.equal(firstLoad.achievements.matches_played_500.count, 1);
+  assert.equal(firstLoad.achievements.cards_captured_2000.count, 1);
+  assert.equal(firstLoad.achievements.wars_entered_250.count, 1);
+  assert.equal(firstLoad.achievements.wars_won_250.count, 1);
+  assert.equal(firstLoad.achievements.win_streak_10.count, 1);
+  assert.equal(firstLoad.achievements.local_pvp_wins_25.count, 1);
+  assert.equal(firstLoad.achievements.pve_wins_25.count, 1);
+  assert.equal(firstLoad.tokens, 170);
+
+  const secondLoad = await state.profiles.getProfile("RetroBatchUser");
+  assert.equal(secondLoad.achievements.online_wins_50.count, 1);
+  assert.equal(secondLoad.achievements.win_streak_10.count, 1);
+  assert.equal(secondLoad.tokens, 170);
 });
 
 test("state coordinator: already unlocked non-repeatable achievements do not persist twice", async () => {

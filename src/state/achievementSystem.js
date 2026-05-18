@@ -200,11 +200,90 @@ const APPROVED_EXPANSION_ACHIEVEMENTS = Object.freeze([
   }
 ]);
 
+const FIRST_EXPANSION_BATCH_ACHIEVEMENTS = Object.freeze([
+  {
+    id: "online_wins_10",
+    name: "Online Challenger",
+    description: "Win 10 Online matches.",
+    image: "badges/elementalConqueror.png",
+    repeatable: false
+  },
+  {
+    id: "online_wins_25",
+    name: "Online Contender",
+    description: "Win 25 Online matches.",
+    image: "badges/elementalMaster.png",
+    repeatable: false
+  },
+  {
+    id: "online_wins_50",
+    name: "Online Elite",
+    description: "Win 50 Online matches.",
+    image: "badges/elementalGrandmaster.png",
+    repeatable: false
+  },
+  {
+    id: "local_pvp_wins_50",
+    name: "Arena Rival",
+    description: "Win 50 local PvP matches.",
+    image: "badges/badge_local_pvp_wins_25.png",
+    repeatable: false
+  },
+  {
+    id: "pve_wins_50",
+    name: "AI Breaker",
+    description: "Win 50 PvE matches.",
+    image: "badges/badge_pve_wins_25.png",
+    repeatable: false
+  },
+  {
+    id: "matches_played_500",
+    name: "Enduring Contender",
+    description: "Play 500 matches.",
+    image: "badges/marathonGamer.png",
+    repeatable: false
+  },
+  {
+    id: "cards_captured_2000",
+    name: "Card Hoarder VI",
+    description: "Capture 2000 cards.",
+    image: "badges/cardHoarder.png",
+    repeatable: false
+  },
+  {
+    id: "wars_entered_250",
+    name: "War Eternal",
+    description: "Enter 250 WARs.",
+    image: "badges/warMachine.png",
+    repeatable: false
+  },
+  {
+    id: "wars_won_250",
+    name: "WAR Mythic",
+    description: "Win 250 WARs.",
+    image: "badges/warrior.png",
+    repeatable: false
+  },
+  {
+    id: "win_streak_10",
+    name: "Streak Commander",
+    description: "Reach a 10-match win streak.",
+    image: "badges/unbreakableStreak.png",
+    repeatable: false
+  }
+]);
+
 const ACHIEVEMENT_TOKEN_REWARDS = Object.freeze({
   comeback_win_5: 5,
   local_pvp_wins_25: 5,
   pve_wins_25: 5,
-  all_elements_25: 10
+  all_elements_25: 10,
+  online_wins_10: 5,
+  online_wins_25: 10,
+  online_wins_50: 15,
+  local_pvp_wins_50: 10,
+  pve_wins_50: 10,
+  win_streak_10: 10
 });
 
 const TIERED_UNLOCK_RULES = Object.freeze([
@@ -352,6 +431,7 @@ export const ACHIEVEMENT_DEFINITIONS = Object.freeze([
     repeatable: true
   },
   ...APPROVED_EXPANSION_ACHIEVEMENTS,
+  ...FIRST_EXPANSION_BATCH_ACHIEVEMENTS,
   ...PHASE_ONE_TIERED_ACHIEVEMENTS
 ]);
 
@@ -538,6 +618,48 @@ function applyApprovedExpansionUnlockRules(profileBefore, profileAfter, unlocks)
   }
 }
 
+function applyFirstExpansionBatchUnlockRules(profileAfter, unlocks) {
+  if (getModeWins(profileAfter, "online_pvp") >= 10) {
+    unlock("online_wins_10", unlocks);
+  }
+
+  if (getModeWins(profileAfter, "online_pvp") >= 25) {
+    unlock("online_wins_25", unlocks);
+  }
+
+  if (getModeWins(profileAfter, "online_pvp") >= 50) {
+    unlock("online_wins_50", unlocks);
+  }
+
+  if (getModeWins(profileAfter, "local_pvp") >= 50) {
+    unlock("local_pvp_wins_50", unlocks);
+  }
+
+  if (getModeWins(profileAfter, "pve") >= 50) {
+    unlock("pve_wins_50", unlocks);
+  }
+
+  if ((profileAfter.gamesPlayed ?? 0) >= 500) {
+    unlock("matches_played_500", unlocks);
+  }
+
+  if ((profileAfter.cardsCaptured ?? 0) >= 2000) {
+    unlock("cards_captured_2000", unlocks);
+  }
+
+  if ((profileAfter.warsEntered ?? 0) >= 250) {
+    unlock("wars_entered_250", unlocks);
+  }
+
+  if ((profileAfter.warsWon ?? 0) >= 250) {
+    unlock("wars_won_250", unlocks);
+  }
+
+  if ((profileAfter.winStreak ?? 0) >= 10) {
+    unlock("win_streak_10", unlocks);
+  }
+}
+
 export function evaluateAchievements({
   profileBefore,
   profileAfter,
@@ -631,6 +753,7 @@ export function evaluateAchievements({
   }
 
   applyApprovedExpansionUnlockRules(profileBefore, profileAfter, unlocks);
+  applyFirstExpansionBatchUnlockRules(profileAfter, unlocks);
   applyTieredUnlockRules(profileAfter, unlocks);
 
   return unlocks.filter((definition) => definition.repeatable || !hasUnlocked(profileBefore, definition.id));
@@ -644,6 +767,8 @@ export function evaluateRetroactiveAchievements(profile) {
   const unlocks = [];
 
   applyApprovedExpansionUnlockRules(normalizedProfile, normalizedProfile, unlocks);
+  applyFirstExpansionBatchUnlockRules(normalizedProfile, unlocks);
+  applyTieredUnlockRules(normalizedProfile, unlocks);
 
   return unlocks.filter((definition) => definition.repeatable || !hasUnlocked(normalizedProfile, definition.id));
 }

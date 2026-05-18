@@ -441,6 +441,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
     )
   );
 
+  let retroactiveMutated = false;
   if (applyRetroactive) {
     const retroactiveUnlocks = evaluateRetroactiveAchievements(normalized);
     if (retroactiveUnlocks.length > 0) {
@@ -448,6 +449,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
       const withTokens = applyAchievementTokenRewards(withAchievements.profile, withAchievements.unlockEvents);
       const withCosmetics = applyAchievementCosmeticRewards(withTokens.profile, withAchievements.unlockEvents);
       normalized = withCosmetics.profile;
+      retroactiveMutated = true;
     }
   }
 
@@ -474,6 +476,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   if (
     !mutated &&
     !migration.migrated &&
+    !retroactiveMutated &&
     !milestoneGrantMutated &&
     JSON.stringify(finalNormalizedProfile) !== JSON.stringify(validatedProfile)
   ) {
