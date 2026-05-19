@@ -8,6 +8,7 @@ import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.j
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature, gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
 import { howToPlayScreen } from "../../src/renderer/ui/screens/howToPlayScreen.js";
+import { loginScreen } from "../../src/renderer/ui/screens/loginScreen.js";
 import { localSetupScreen } from "../../src/renderer/ui/screens/localSetupScreen.js";
 import { menuScreen } from "../../src/renderer/ui/screens/menuScreen.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
@@ -1802,6 +1803,249 @@ test("ui: ai difficulty screen binds start and back actions", async () => {
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;
+  }
+});
+
+test("ui: auth choice screen renders Sign In, Create Account, and version badge", () => {
+  const html = loginScreen.render({
+    mode: "choice",
+    version: "2.1.20"
+  });
+
+  assert.match(html, /EleMintz Login/);
+  assert.match(html, />Sign In</);
+  assert.match(html, />Create Account</);
+  assert.match(html, />v2\.1\.20</);
+});
+
+test("ui: sign in screen renders Email and Password only", () => {
+  const html = loginScreen.render({
+    mode: "login",
+    defaults: { email: "player@example.com" }
+  });
+
+  assert.match(html, /<h2 class="view-title">Sign In<\/h2>/);
+  assert.match(html, /Sign in with your email and password\./);
+  assert.doesNotMatch(html, /Username/);
+  assert.match(html, /Email/);
+  assert.match(html, /Password/);
+});
+
+test("ui: create account screen renders Username, Email, and Password", () => {
+  const html = loginScreen.render({
+    mode: "register",
+    defaults: { username: "PlayerOne", email: "player@example.com" }
+  });
+
+  assert.match(html, /<h2 class="view-title">Create Account<\/h2>/);
+  assert.match(html, /Create your EleMintz account with a username, email, and password\./);
+  assert.match(html, /Username/);
+  assert.match(html, /Email/);
+  assert.match(html, /Password/);
+});
+
+test("ui: auth choice and form back buttons bind to the expected actions", () => {
+  const previousDocument = global.document;
+  const signInCalls = [];
+  const createAccountCalls = [];
+  let backCalls = 0;
+  const elements = new Map();
+
+  elements.set("auth-choice-sign-in-btn", {
+    addEventListener: (_type, handler) => {
+      elements.get("auth-choice-sign-in-btn").click = handler;
+    }
+  });
+  elements.set("auth-choice-create-account-btn", {
+    addEventListener: (_type, handler) => {
+      elements.get("auth-choice-create-account-btn").click = handler;
+    }
+  });
+  elements.set("login-form", { addEventListener: () => {} });
+  elements.set("email-input", { focus: () => {}, select: () => {} });
+  elements.set("password-input", {});
+  elements.set("login-back-btn", {
+    addEventListener: (_type, handler) => {
+      elements.get("login-back-btn").click = handler;
+    }
+  });
+
+  global.document = {
+    getElementById: (id) => elements.get(id)
+  };
+
+  const previousAnimationFrame = global.requestAnimationFrame;
+  global.requestAnimationFrame = (handler) => handler();
+
+  try {
+    loginScreen.bind({
+      mode: "choice",
+      actions: {
+        openSignIn: () => signInCalls.push("sign-in"),
+        openCreateAccount: () => createAccountCalls.push("create-account")
+      }
+    });
+
+    elements.get("auth-choice-sign-in-btn").click();
+    elements.get("auth-choice-create-account-btn").click();
+
+    loginScreen.bind({
+      mode: "login",
+      actions: {
+        back: () => {
+          backCalls += 1;
+        }
+      }
+    });
+
+    elements.get("login-back-btn").click();
+
+    assert.deepEqual(signInCalls, ["sign-in"]);
+    assert.deepEqual(createAccountCalls, ["create-account"]);
+    assert.equal(backCalls, 1);
+  } finally {
+    global.document = previousDocument;
+    global.requestAnimationFrame = previousAnimationFrame;
+  }
+});
+
+test("ui: sign in and create account validation show clear inline errors", async () => {
+  const previousDocument = global.document;
+  const previousAnimationFrame = global.requestAnimationFrame;
+  const errors = [];
+
+  global.requestAnimationFrame = (handler) => handler();
+
+  try {
+    let formSubmit = null;
+    global.document = {
+      getElementById: (id) => {
+        if (id === "login-form") {
+          return {
+            addEventListener: (_type, handler) => {
+              formSubmit = handler;
+            }
+          };
+        }
+        if (id === "email-input") {
+          return { value: "", focus: () => {}, select: () => {} };
+        }
+        if (id === "password-input") {
+          return { value: "" };
+        }
+        if (id === "login-back-btn") {
+          return { addEventListener: () => {} };
+        }
+        return null;
+      }
+    };
+
+    loginScreen.bind({
+      mode: "login",
+      actions: {
+        back: () => {},
+        showMode: ({ errorMessage }) => errors.push(errorMessage),
+        login: async () => {}
+      }
+    });
+
+    await formSubmit({ preventDefault: () => {} });
+
+    let registerSubmit = null;
+    global.document = {
+      getElementById: (id) => {
+        if (id === "login-form") {
+          return {
+            addEventListener: (_type, handler) => {
+              registerSubmit = handler;
+            }
+          };
+        }
+        if (id === "username-input") {
+          return { value: "A", focus: () => {}, select: () => {} };
+        }
+        if (id === "email-input") {
+          return { value: "new@example.com", focus: () => {}, select: () => {} };
+        }
+        if (id === "password-input") {
+          return { value: "password123" };
+        }
+        if (id === "register-back-btn") {
+          return { addEventListener: () => {} };
+        }
+        return null;
+      }
+    };
+
+    loginScreen.bind({
+      mode: "register",
+      actions: {
+        back: () => {},
+        showMode: ({ errorMessage }) => errors.push(errorMessage),
+        login: async () => {}
+      }
+    });
+
+    await registerSubmit({ preventDefault: () => {} });
+
+    assert.deepEqual(errors, [
+      "Email and password are required to sign in.",
+      "Username must be at least 2 characters long."
+    ]);
+  } finally {
+    global.document = previousDocument;
+    global.requestAnimationFrame = previousAnimationFrame;
+  }
+});
+
+test("ui: create account validation shows a clear inline error when required fields are missing", async () => {
+  const previousDocument = global.document;
+  const previousAnimationFrame = global.requestAnimationFrame;
+  const errors = [];
+  let registerSubmit = null;
+
+  global.requestAnimationFrame = (handler) => handler();
+  global.document = {
+    getElementById: (id) => {
+      if (id === "login-form") {
+        return {
+          addEventListener: (_type, handler) => {
+            registerSubmit = handler;
+          }
+        };
+      }
+      if (id === "username-input") {
+        return { value: "", focus: () => {}, select: () => {} };
+      }
+      if (id === "email-input") {
+        return { value: "" };
+      }
+      if (id === "password-input") {
+        return { value: "" };
+      }
+      if (id === "register-back-btn") {
+        return { addEventListener: () => {} };
+      }
+      return null;
+    }
+  };
+
+  try {
+    loginScreen.bind({
+      mode: "register",
+      actions: {
+        back: () => {},
+        showMode: ({ errorMessage }) => errors.push(errorMessage),
+        login: async () => {}
+      }
+    });
+
+    await registerSubmit({ preventDefault: () => {} });
+
+    assert.deepEqual(errors, ["Username, email, and password are required to create an account."]);
+  } finally {
+    global.document = previousDocument;
+    global.requestAnimationFrame = previousAnimationFrame;
   }
 });
 

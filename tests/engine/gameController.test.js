@@ -5614,6 +5614,32 @@ test("appController: removed offline login path is rejected cleanly", async () =
   }
 });
 
+test("appController: login starts on the auth choice screen and routes to sign in or create account views", () => {
+  const shownScreens = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.showLogin({ statusMessage: "Signed out." });
+  assert.equal(shownScreens.at(-1).name, "login");
+  assert.equal(shownScreens.at(-1).context.mode, "choice");
+  assert.equal(shownScreens.at(-1).context.statusMessage, "Signed out.");
+
+  shownScreens.at(-1).context.actions.openSignIn();
+  assert.equal(shownScreens.at(-1).context.mode, "login");
+
+  shownScreens.at(-1).context.actions.back();
+  assert.equal(shownScreens.at(-1).context.mode, "choice");
+
+  shownScreens.at(-1).context.actions.openCreateAccount();
+  assert.equal(shownScreens.at(-1).context.mode, "register");
+});
+
 test("appController: login prefers the multiplayer profile snapshot when the session is already online-connected", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
@@ -5907,7 +5933,6 @@ test("appController: account login uses the multiplayer auth path and hydrates t
 
     assert.deepEqual(calls.multiplayerLogin, [
       {
-        username: "",
         email: "player@example.com",
         password: "password123"
       }
@@ -5919,6 +5944,180 @@ test("appController: account login uses the multiplayer auth path and hydrates t
     assert.equal(calls.getDailyChallenges, 0);
     assert.equal(app.username, "AccountUser");
     assert.equal(app.profile.tokens, 260);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: account creation uses the multiplayer register path with username email and password", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    multiplayerRegister: [],
+    multiplayerGetState: 0,
+    multiplayerGetProfile: 0,
+    claimDailyLoginReward: 0
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getDailyChallenges: async () => ({
+            dailyLogin: { eligible: false, msUntilReset: 3600000 },
+            daily: { msUntilReset: 3600000, challenges: [] },
+            weekly: { msUntilReset: 7200000, challenges: [] }
+          })
+        },
+        multiplayer: {
+          register: async (payload) => {
+            calls.multiplayerRegister.push(payload);
+            return {
+              ok: true,
+              account: {
+                accountId: "new-account-1",
+                email: payload.email,
+                username: payload.username
+              },
+              session: {
+                token: "session-token-register-1",
+                sessionId: "session-id-register-1",
+                username: payload.username,
+                profileKey: payload.username,
+                accountId: "new-account-1",
+                authenticated: true
+              }
+            };
+          },
+          claimDailyLoginReward: async ({ username }) => {
+            calls.claimDailyLoginReward += 1;
+            return {
+              granted: false,
+              profile: { username, tokens: 200, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+              snapshot: {
+                profile: { username, tokens: 200, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+                progression: {
+                  dailyChallenges: { challenges: [] },
+                  weeklyChallenges: { challenges: [] },
+                  dailyLogin: { eligible: false, msUntilReset: 3600000 }
+                }
+              }
+            };
+          },
+          getState: async () => {
+            calls.multiplayerGetState += 1;
+            return {
+              connectionStatus: "connected",
+              session: {
+                active: true,
+                username: "NewPlayer",
+                sessionId: "session-id-register-1",
+                accountId: "new-account-1",
+                profileKey: "NewPlayer",
+                authenticated: true
+              },
+              room: null,
+              lastError: null,
+              statusMessage: "Signed in."
+            };
+          },
+          getProfile: async () => {
+            calls.multiplayerGetProfile += 1;
+            return {
+              username: "NewPlayer",
+              profile: {
+                username: "NewPlayer",
+                tokens: 200,
+                playerXP: 0,
+                playerLevel: 1,
+                equippedCosmetics: {}
+              },
+              cosmetics: { equipped: {}, owned: {} },
+              stats: { summary: { wins: 0, losses: 0, gamesPlayed: 0, warsEntered: 0, warsWon: 0, cardsCaptured: 0 }, modes: {} },
+              currency: { tokens: 200 },
+              progression: {
+                dailyChallenges: { challenges: [] },
+                weeklyChallenges: { challenges: [] },
+                dailyLogin: { eligible: false, msUntilReset: 3600000 }
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.showLogin({ mode: "register" });
+    await shownScreens.at(-1).context.actions.login({
+      mode: "register",
+      username: "NewPlayer",
+      email: "new@example.com",
+      password: "password123"
+    });
+
+    assert.deepEqual(calls.multiplayerRegister, [
+      {
+        username: "NewPlayer",
+        email: "new@example.com",
+        password: "password123"
+      }
+    ]);
+    assert.equal(calls.multiplayerGetState, 1);
+    assert.equal(calls.multiplayerGetProfile, 2);
+    assert.equal(calls.claimDailyLoginReward, 1);
+    assert.equal(app.username, "NewPlayer");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: auth failure rerenders the correct auth screen and clears the password", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          register: async () => ({
+            ok: false,
+            error: { message: "Email already in use." }
+          })
+        }
+      }
+    };
+
+    app.showLogin({ mode: "register" });
+    await shownScreens.at(-1).context.actions.login({
+      mode: "register",
+      username: "TakenName",
+      email: "taken@example.com",
+      password: "password123"
+    });
+
+    assert.equal(shownScreens.at(-1).name, "login");
+    assert.equal(shownScreens.at(-1).context.mode, "register");
+    assert.equal(shownScreens.at(-1).context.defaults.username, "TakenName");
+    assert.equal(shownScreens.at(-1).context.defaults.email, "taken@example.com");
+    assert.ok(!("password" in shownScreens.at(-1).context.defaults));
+    assert.match(shownScreens.at(-1).context.errorMessage, /Email already in use|Unable to authenticate this account/i);
   } finally {
     globalThis.window = originalWindow;
   }

@@ -5102,7 +5102,7 @@ export class AppController {
     return this.initPromise;
   }
 
-  showLogin({ errorMessage = "", statusMessage = "", defaults = {}, mode = "login" } = {}) {
+  showLogin({ errorMessage = "", statusMessage = "", defaults = {}, mode = "choice" } = {}) {
     this.clearPassTimer();
     this.screenFlow = "login";
     this.screenManager.show("login", {
@@ -5112,10 +5112,20 @@ export class AppController {
       defaults,
       mode,
       actions: {
+        openSignIn: () => this.showLogin({ defaults, statusMessage, mode: "login" }),
+        openCreateAccount: () => this.showLogin({ defaults, statusMessage, mode: "register" }),
+        back: () => this.showLogin({ statusMessage, mode: "choice" }),
+        showMode: ({ mode: nextMode = "choice", errorMessage: nextErrorMessage = "", defaults: nextDefaults = {} } = {}) =>
+          this.showLogin({
+            mode: nextMode,
+            errorMessage: nextErrorMessage,
+            statusMessage,
+            defaults: nextDefaults
+          }),
         login: async (request) => {
           let username = "";
           let email = "";
-          let mode = "login";
+          let mode = "choice";
           try {
             this.resetDailyLoginAutoClaimGuard();
             const loginRequest =
@@ -5136,11 +5146,11 @@ export class AppController {
                 throw new Error("Online account authentication is unavailable.");
               }
 
-              const authResult = await authAction({
-                username,
-                email,
-                password
-              });
+              const authPayload =
+                mode === "register"
+                  ? { username, email, password }
+                  : { email, password };
+              const authResult = await authAction(authPayload);
               if (!authResult?.ok) {
                 console.error("[OnlinePlay][Renderer] authentication failed", authResult?.error ?? null);
                 throw new Error(
