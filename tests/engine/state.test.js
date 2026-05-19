@@ -102,6 +102,18 @@ function createRewardHookMatch({ winner = "p1", endReason = null, mode = "pve", 
   };
 }
 
+function createCrownfireRewardMatch({
+  winner = "p1",
+  endReason = null,
+  difficulty = "hard"
+} = {}) {
+  return {
+    ...createRewardHookMatch({ winner, endReason, mode: "pve", difficulty }),
+    featuredRivalId: "crownfire_duelist",
+    meta: { totalCards: 20 }
+  };
+}
+
 test("state: records completed match into profile and saves", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
@@ -2485,6 +2497,303 @@ test("state: hard PvE loss and draw do not receive the hard-mode win bonus", asy
   assert.equal(hardDraw.xpDelta, normalDraw.xpDelta);
   assert.ok(hardLoss.xpBreakdown.lines.every((line) => line.label !== "Hard AI Victory Bonus"));
   assert.ok(hardDraw.xpBreakdown.lines.every((line) => line.label !== "Hard AI Victory Bonus"));
+});
+
+test("state: Crownfire first win of the day grants the featured rival daily bonus once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.99)
+  });
+
+  const first = await state.recordMatchResult({
+    username: "CrownfireDailyWinner",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1" })
+  });
+  const second = await state.recordMatchResult({
+    username: "CrownfireDailyWinner",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1" })
+  });
+
+  assert.equal(first.featuredRivalReward.granted, true);
+  assert.equal(first.featuredRivalReward.xpDelta, 30);
+  assert.equal(first.featuredRivalReward.tokenDelta, 15);
+  assert.equal(
+    first.profile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate,
+    first.featuredRivalReward.rewardDateKey
+  );
+  assert.ok(first.xpBreakdown.lines.some((line) => line.label === "Crownfire First Win Bonus" && line.amount === 30));
+  assert.equal(second.featuredRivalReward.granted, false);
+  assert.equal(second.featuredRivalReward.xpDelta, 0);
+  assert.equal(second.featuredRivalReward.tokenDelta, 0);
+  assert.ok(second.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
+});
+
+test("state: Crownfire loss and quit do not grant the featured rival daily bonus", async () => {
+  const lossDataDir = await createTempDataDir();
+  const quitDataDir = await createTempDataDir();
+  const lossState = new StateCoordinator({ dataDir: lossDataDir, random: constantRandom(0.99) });
+  const quitState = new StateCoordinator({ dataDir: quitDataDir, random: constantRandom(0.99) });
+
+  const lossResult = await lossState.recordMatchResult({
+    username: "CrownfireLossUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p2" })
+  });
+  const quitResult = await quitState.recordMatchResult({
+    username: "CrownfireQuitUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p2", endReason: "quit_forfeit" })
+  });
+
+  assert.equal(lossResult.featuredRivalReward.granted, false);
+  assert.equal(quitResult.featuredRivalReward.granted, false);
+  assert.ok(lossResult.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
+  assert.ok(quitResult.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
+});
+
+test("state: Crownfire reward lock survives reload and old profiles normalize safely", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.99)
+  });
+
+  const first = await state.recordMatchResult({
+    username: "CrownfireReloadUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1" })
+  });
+
+  const reloadedState = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.99)
+  });
+  const second = await reloadedState.recordMatchResult({
+    username: "CrownfireReloadUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1" })
+  });
+  const reloadedProfile = await reloadedState.profiles.getProfile("CrownfireReloadUser");
+
+  assert.equal(first.featuredRivalReward.granted, true);
+  assert.equal(second.featuredRivalReward.granted, false);
+  assert.equal(
+    reloadedProfile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate,
+    first.featuredRivalReward.rewardDateKey
+  );
+
+  const legacyDataDir = await createTempDataDir();
+  const legacyProfilesPath = path.join(legacyDataDir, "profiles.json");
+  await fs.writeFile(
+    legacyProfilesPath,
+    JSON.stringify(
+      [
+        {
+          username: "LegacyCrownfireUser",
+          wins: 0,
+          losses: 0,
+          gamesPlayed: 0,
+          tokens: 200,
+          playerXP: 0,
+          playerLevel: 1
+        }
+      ],
+      null,
+      2
+    ),
+    "utf8"
+  );
+  const legacyState = new StateCoordinator({ dataDir: legacyDataDir, random: constantRandom(0.99) });
+  const legacyProfile = await legacyState.profiles.ensureProfile("LegacyCrownfireUser");
+  assert.equal(legacyProfile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate, null);
+});
+
+test("state: normal PvE wins do not set the Crownfire daily reward lock", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.99)
+  });
+
+  const result = await state.recordMatchResult({
+    username: "NormalPveNoCrownfireLock",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(result.featuredRivalReward.granted, false);
+  assert.equal(result.profile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate, null);
+  assert.ok(result.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
+});
+
+test("boost events: Crownfire XP bonus stays fixed under an active PvE XP boost", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Double Crownfire XP Weekend",
+    message: "Boosted PvE XP.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    scope: "pve",
+    excludeDifficulties: [],
+    xpMultiplier: 2,
+    tokenMultiplier: 1
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+
+  const baseline = await baselineState.recordMatchResult({
+    username: "BaselineCrownfireXpBoostUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+  const boosted = await boostedState.recordMatchResult({
+    username: "BoostedCrownfireXpBoostUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(baseline.featuredRivalReward.granted, true);
+  assert.equal(boosted.featuredRivalReward.granted, true);
+  assert.equal(baseline.featuredRivalReward.xpDelta, 30);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
+  assert.equal(baseline.featuredRivalReward.tokenDelta, 15);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta);
+  assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
+  assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
+  assert.equal(boosted.xpDelta, boosted.matchXpDelta + boosted.challengeXpDelta + 30);
+  assert.ok(
+    boosted.xpBreakdown.lines.some((line) => line.label === "Crownfire First Win Bonus" && line.amount === 30)
+  );
+});
+
+test("boost events: Crownfire token bonus stays fixed under an active PvE token boost", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Double Crownfire Tokens Weekend",
+    message: "Boosted PvE tokens.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    scope: "pve",
+    excludeDifficulties: [],
+    xpMultiplier: 1,
+    tokenMultiplier: 2
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+
+  const baseline = await baselineState.recordMatchResult({
+    username: "BaselineCrownfireTokenBoostUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+  const boosted = await boostedState.recordMatchResult({
+    username: "BoostedCrownfireTokenBoostUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(boosted.featuredRivalReward.granted, true);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta);
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
+  assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
+  assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
+  assert.equal(
+    boosted.tokenDelta,
+    boosted.matchTokenDelta + boosted.challengeTokenDelta + boosted.featuredRivalReward.tokenDelta
+  );
+});
+
+test("boost events: all-scope boosts do not multiply the Crownfire first-win bonus", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Everything Weekend",
+    message: "All-mode reward boost.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    scope: "all",
+    excludeDifficulties: [],
+    xpMultiplier: 2,
+    tokenMultiplier: 2
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+
+  const baseline = await baselineState.recordMatchResult({
+    username: "BaselineCrownfireAllBoostUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+  const boosted = await boostedState.recordMatchResult({
+    username: "BoostedCrownfireAllBoostUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(boosted.featuredRivalReward.granted, true);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
+  assert.equal(boosted.xpDelta, boosted.matchXpDelta + boosted.challengeXpDelta + 30);
+  assert.equal(boosted.tokenDelta, boosted.matchTokenDelta + boosted.challengeTokenDelta + 15);
+});
+
+test("boost events: repeat Crownfire win does not regrant the daily bonus during an active boost", async () => {
+  const dataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(dataDir, {
+    enabled: true,
+    title: "Boosted Crownfire Day",
+    message: "PvE rewards are boosted today.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    scope: "pve",
+    excludeDifficulties: [],
+    xpMultiplier: 2,
+    tokenMultiplier: 2
+  });
+
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+
+  const first = await state.recordMatchResult({
+    username: "RepeatBoostedCrownfireUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+  const second = await state.recordMatchResult({
+    username: "RepeatBoostedCrownfireUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(first.featuredRivalReward.granted, true);
+  assert.equal(first.featuredRivalReward.xpDelta, 30);
+  assert.equal(first.featuredRivalReward.tokenDelta, 15);
+  assert.equal(second.featuredRivalReward.granted, false);
+  assert.equal(second.featuredRivalReward.xpDelta, 0);
+  assert.equal(second.featuredRivalReward.tokenDelta, 0);
+  assert.ok(second.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
+  assert.equal(second.matchXpDelta, first.matchXpDelta);
+  assert.equal(second.matchTokenDelta, first.matchTokenDelta);
 });
 
 test("state: local_pvp draw chest chance can grant one basic chest", async () => {

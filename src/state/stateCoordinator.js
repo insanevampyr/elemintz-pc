@@ -40,11 +40,18 @@ import {
   getDailyChallengesView,
   getDailyResetWindow
 } from "./dailyChallengesSystem.js";
-import { applyLevelRewardsForLevelChange, getLevelProgress } from "./levelRewardsSystem.js";
+import { applyLevelRewardsForLevelChange, deriveLevelFromXp, getLevelProgress } from "./levelRewardsSystem.js";
 import { rollBasicChest } from "../shared/basicChestDrop.js";
 
 const DAILY_LOGIN_TOKENS = 5;
 const DAILY_LOGIN_XP = 2;
+const FEATURED_RIVAL_DAILY_WIN_REWARD_CONFIGS = {
+  crownfire_duelist: {
+    xpDelta: 30,
+    tokenDelta: 15,
+    label: "Crownfire First Win Bonus"
+  }
+};
 const VALID_RUNTIME_MODES = new Set(["pve", "local_pvp", "online_pvp"]);
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 
@@ -70,6 +77,81 @@ function getDailyLoginStatus(profile, nowMs = Date.now()) {
     eligible,
     nextResetAt: new Date(resetWindow.nextResetMs).toISOString(),
     msUntilReset: Math.max(0, resetWindow.nextResetMs - nowMs)
+  };
+}
+
+function getFeaturedRivalDailyRewardDateKey(nowMs = Date.now()) {
+  const { lastResetMs } = getDailyResetWindow(nowMs);
+  return new Date(lastResetMs).toISOString();
+}
+
+function maybeApplyFeaturedRivalWinReward(profile, { matchState, perspective = "p1", nowMs = Date.now() } = {}) {
+  const rivalId = String(matchState?.featuredRivalId ?? "").trim().toLowerCase();
+  const rewardConfig = FEATURED_RIVAL_DAILY_WIN_REWARD_CONFIGS[rivalId] ?? null;
+  const didWin = matchState?.winner === perspective;
+  const isQuitForfeit = String(matchState?.endReason ?? "") === "quit_forfeit";
+
+  if (!rewardConfig || !didWin || isQuitForfeit) {
+    return {
+      profile,
+      reward: {
+        rivalId: rewardConfig ? rivalId : null,
+        granted: false,
+        xpDelta: 0,
+        tokenDelta: 0,
+        label: rewardConfig?.label ?? null,
+        rewardDateKey: rewardConfig ? getFeaturedRivalDailyRewardDateKey(nowMs) : null
+      }
+    };
+  }
+
+  const rewardDateKey = getFeaturedRivalDailyRewardDateKey(nowMs);
+  const existingRewardState = profile?.featuredRivalRewards?.[rivalId] ?? {};
+  const lastDailyWinRewardDate =
+    typeof existingRewardState.lastDailyWinRewardDate === "string" &&
+    existingRewardState.lastDailyWinRewardDate.trim()
+      ? existingRewardState.lastDailyWinRewardDate
+      : null;
+
+  if (lastDailyWinRewardDate === rewardDateKey) {
+    return {
+      profile,
+      reward: {
+        rivalId,
+        granted: false,
+        xpDelta: 0,
+        tokenDelta: 0,
+        label: rewardConfig.label,
+        rewardDateKey
+      }
+    };
+  }
+
+  const nextXp = Math.max(0, Number(profile?.playerXP ?? 0)) + rewardConfig.xpDelta;
+  const nextProfile = {
+    ...profile,
+    tokens: Math.max(0, Number(profile?.tokens ?? 0) + rewardConfig.tokenDelta),
+    playerXP: nextXp,
+    playerLevel: deriveLevelFromXp(nextXp),
+    featuredRivalRewards: {
+      ...(profile?.featuredRivalRewards ?? {}),
+      [rivalId]: {
+        ...existingRewardState,
+        lastDailyWinRewardDate: rewardDateKey
+      }
+    }
+  };
+
+  return {
+    profile: nextProfile,
+    reward: {
+      rivalId,
+      granted: true,
+      xpDelta: rewardConfig.xpDelta,
+      tokenDelta: rewardConfig.tokenDelta,
+      label: rewardConfig.label,
+      rewardDateKey
+    }
   };
 }
 
@@ -535,6 +617,43 @@ export class StateCoordinator {
       });
 
       let workingProfile = challengeResult.profile;
+      const featuredRivalRewardResult = practiceMode
+        ? {
+            profile: workingProfile,
+            reward: {
+              rivalId: null,
+              granted: false,
+              xpDelta: 0,
+              tokenDelta: 0,
+              label: null,
+              rewardDateKey: null
+            }
+          }
+        : maybeApplyFeaturedRivalWinReward(workingProfile, {
+            matchState: safeMatchState,
+            perspective
+          });
+      workingProfile = featuredRivalRewardResult.profile;
+      const featuredRivalReward = featuredRivalRewardResult.reward;
+      const featuredRivalXpDelta = Math.max(0, Number(featuredRivalReward.xpDelta ?? 0));
+      const featuredRivalTokenDelta = Math.max(0, Number(featuredRivalReward.tokenDelta ?? 0));
+      if (featuredRivalXpDelta > 0) {
+        challengeResult.xpBreakdown = {
+          ...challengeResult.xpBreakdown,
+          lines: [
+            ...challengeResult.xpBreakdown.lines,
+            {
+              key: `featured_rival_${featuredRivalReward.rivalId}_daily_win_bonus`,
+              label: featuredRivalReward.label,
+              amount: featuredRivalXpDelta
+            }
+          ],
+          total: Math.max(0, Number(challengeResult.xpBreakdown.total ?? 0)) + featuredRivalXpDelta
+        };
+      }
+      challengeResult.tokenDelta += featuredRivalTokenDelta;
+      challengeResult.xpDelta += featuredRivalXpDelta;
+      challengeResult.levelAfter = deriveLevelFromXp(Math.max(0, Number(workingProfile.playerXP ?? 0)));
       const streakChestGrantResult = practiceMode
         ? { profile: workingProfile }
         : applyWinStreakChestGrants(workingProfile, {
@@ -631,6 +750,7 @@ export class StateCoordinator {
         dailyRewards: challengeResult.rewards.daily,
         weeklyRewards: challengeResult.rewards.weekly,
         tokenDelta: challengeResult.tokenDelta,
+        featuredRivalReward,
         matchTokenDelta: challengeResult.matchTokenDelta,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
         matchXpDelta: challengeResult.matchXpDelta,
@@ -661,6 +781,7 @@ export class StateCoordinator {
         dailyRewards: challengeResult.rewards.daily,
         weeklyRewards: challengeResult.rewards.weekly,
         tokenDelta: challengeResult.tokenDelta,
+        featuredRivalReward,
         matchTokenDelta: challengeResult.matchTokenDelta,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
         matchXpDelta: challengeResult.matchXpDelta,

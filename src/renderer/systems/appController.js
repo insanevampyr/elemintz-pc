@@ -4807,6 +4807,7 @@ export class AppController {
     const xpLines = Array.isArray(finalPersisted?.xpBreakdown?.lines) ? finalPersisted.xpBreakdown.lines : [];
     const boostDisplay = finalPersisted?.boostDisplay ?? null;
     const hasHardBonus = xpLines.some((line) => line?.label === "Hard AI Victory Bonus");
+    const featuredRivalReward = finalPersisted?.featuredRivalReward ?? null;
 
     if (difficulty === "easy") {
       return `
@@ -4822,6 +4823,10 @@ export class AppController {
       difficulty === "hard" && hasHardBonus
         ? `<p><strong>Hard AI Victory Bonus:</strong> +5 XP / +5 tokens</p>`
         : "";
+    const featuredRivalBonusLine =
+      featuredRivalReward?.granted
+        ? `<p><strong>${escapeHtml(featuredRivalReward.label ?? "Featured Rival Bonus")}:</strong> +${Math.max(0, Number(featuredRivalReward.xpDelta ?? 0))} XP / +${Math.max(0, Number(featuredRivalReward.tokenDelta ?? 0))} tokens</p>`
+        : "";
     const boostLine = this.buildMatchCompleteBoostSummaryLine(boostDisplay);
     const chestLine =
       difficulty === "hard"
@@ -4834,6 +4839,7 @@ export class AppController {
         <p><strong>XP Gained:</strong> ${xpDelta}</p>
         <p><strong>Tokens Gained:</strong> ${tokenDelta}</p>
         ${bonusLine}
+        ${featuredRivalBonusLine}
         ${boostLine}
         ${chestLine}
       </section>

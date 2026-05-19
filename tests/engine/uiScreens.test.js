@@ -15681,6 +15681,95 @@ test("ui: featured rival match complete payload uses the rival name instead of E
   assert.deepEqual(payload.startOptions, { featuredRivalId: "crownfire_duelist" });
 });
 
+test("ui: featured rival match complete payload shows the Crownfire first-win bonus when earned", () => {
+  const controller = createRendererController();
+  controller.username = "VampyrLee";
+  controller.profile = { username: "VampyrLee" };
+  controller.gameController = { captured: { p1: 4, p2: 3 } };
+  controller.pveFeaturedRivalId = "crownfire_duelist";
+  controller.opponentDisplayName = "Crownfire Duelist";
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      difficulty: "hard",
+      history: [{ result: "p1" }],
+      players: {
+        p1: { hand: ["fire", "water"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 4,
+        warsEntered: 2,
+        longestWar: 4
+      },
+      xpDelta: 47,
+      tokenDelta: 27,
+      featuredRivalReward: {
+        rivalId: "crownfire_duelist",
+        granted: true,
+        xpDelta: 30,
+        tokenDelta: 15,
+        label: "Crownfire First Win Bonus"
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong> \+30 XP \/ \+15 tokens/);
+});
+
+test("ui: featured rival match complete payload keeps boost messaging separate from the Crownfire bonus", () => {
+  const controller = createRendererController();
+  controller.username = "VampyrLee";
+  controller.profile = { username: "VampyrLee" };
+  controller.gameController = { captured: { p1: 4, p2: 3 } };
+  controller.pveFeaturedRivalId = "crownfire_duelist";
+  controller.opponentDisplayName = "Crownfire Duelist";
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      difficulty: "hard",
+      history: [{ result: "p1" }],
+      players: {
+        p1: { hand: ["fire", "water"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 4,
+        warsEntered: 2,
+        longestWar: 4
+      },
+      xpDelta: 62,
+      tokenDelta: 39,
+      featuredRivalReward: {
+        rivalId: "crownfire_duelist",
+        granted: true,
+        xpDelta: 30,
+        tokenDelta: 15,
+        label: "Crownfire First Win Bonus"
+      },
+      boostDisplay: {
+        xpApplied: true,
+        tokenApplied: true,
+        xpMultiplier: 2,
+        tokenMultiplier: 2
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong> \+30 XP \/ \+15 tokens/);
+  assert.match(payload.bodyHtml, /<strong>Boost Event:<\/strong> 2x XP \/ 2x Tokens applied/);
+});
+
 test("ui: PvE match complete payload prefers authoritative live capture totals over trimmed history", () => {
   const controller = createRendererController();
   controller.username = "VampyrLee";
@@ -15739,6 +15828,7 @@ test("ui: PvE match complete payload prefers authoritative live capture totals o
   assert.match(payload.bodyHtml, /<strong>Hard AI Victory Bonus:<\/strong> \+5 XP \/ \+5 tokens/);
   assert.match(payload.bodyHtml, /<strong>Boost Event:<\/strong> 2x XP \/ 1\.5x Tokens applied/);
   assert.match(payload.bodyHtml, /<strong>Basic Chest Win Chance:<\/strong> 12%/);
+  assert.doesNotMatch(payload.bodyHtml, /Crownfire First Win Bonus/);
 });
 
 test("ui: PvE match complete payload shows boost line when only XP boost applies", () => {

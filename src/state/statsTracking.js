@@ -144,6 +144,11 @@ export function createDefaultProfile(username) {
     ...createDefaultEconomyState(),
     ...createDefaultChestState(),
     dailyChallenges: createDefaultDailyChallenges(),
+    featuredRivalRewards: {
+      crownfire_duelist: {
+        lastDailyWinRewardDate: null
+      }
+    },
     onlineRewardSettlements: {
       appliedSettlementKeys: []
     },

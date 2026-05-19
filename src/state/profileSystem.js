@@ -234,6 +234,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("equippedCosmetics", defaults.equippedCosmetics);
   repairObjectSection("cosmetics", defaults.cosmetics);
   repairObjectSection("seenAnnouncements", defaults.seenAnnouncements);
+  repairObjectSection("featuredRivalRewards", defaults.featuredRivalRewards);
   repairObjectSection("levelRewardsClaimed", defaults.levelRewardsClaimed);
   repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
   repairObjectSection("onlineRewardSettlements", defaults.onlineRewardSettlements);
@@ -331,6 +332,38 @@ function validateAndRepairProfile(profile) {
       "cosmetics.equipped",
       previousNestedCosmetics,
       nextEquippedSnapshot
+    );
+  }
+
+  const previousFeaturedRivalRewards = repairedProfile.featuredRivalRewards?.crownfire_duelist;
+  if (!isPlainObject(previousFeaturedRivalRewards)) {
+    const nextFeaturedRivalRewards = cloneValue(defaults.featuredRivalRewards.crownfire_duelist);
+    repairedProfile.featuredRivalRewards = {
+      ...repairedProfile.featuredRivalRewards,
+      crownfire_duelist: nextFeaturedRivalRewards
+    };
+    logSectionRepair(
+      "featuredRivalRewards.crownfire_duelist",
+      previousFeaturedRivalRewards,
+      nextFeaturedRivalRewards
+    );
+  } else if (
+    previousFeaturedRivalRewards.lastDailyWinRewardDate != null &&
+    (typeof previousFeaturedRivalRewards.lastDailyWinRewardDate !== "string" ||
+      !previousFeaturedRivalRewards.lastDailyWinRewardDate.trim())
+  ) {
+    const nextLastDailyWinRewardDate = defaults.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate;
+    repairedProfile.featuredRivalRewards = {
+      ...repairedProfile.featuredRivalRewards,
+      crownfire_duelist: {
+        ...previousFeaturedRivalRewards,
+        lastDailyWinRewardDate: nextLastDailyWinRewardDate
+      }
+    };
+    logFieldRepair(
+      "featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate",
+      previousFeaturedRivalRewards.lastDailyWinRewardDate,
+      nextLastDailyWinRewardDate
     );
   }
 
