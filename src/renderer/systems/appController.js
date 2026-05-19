@@ -1056,6 +1056,10 @@ export class AppController {
     return FEATURED_RIVAL_CONFIGS[normalizedId] ?? null;
   }
 
+  getCurrentPveOpponentName() {
+    return this.getFeaturedRivalConfig(this.pveFeaturedRivalId)?.name ?? this.opponentDisplayName ?? "Elemental AI";
+  }
+
   showAiDifficultySelect() {
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "aiDifficulty";
@@ -4982,7 +4986,7 @@ export class AppController {
     const isLocalPvp = mode === MATCH_MODE.LOCAL_PVP;
 
     const leftName = isLocalPvp ? names.p1 : (this.profile?.username ?? this.username ?? "Player");
-    const rightName = isLocalPvp ? names.p2 : "Elemental AI";
+    const rightName = isLocalPvp ? names.p2 : this.getCurrentPveOpponentName();
 
     const leftStats = isLocalPvp ? finalPersisted?.p1?.stats : finalPersisted?.stats;
     const rightStats = isLocalPvp ? finalPersisted?.p2?.stats : null;
@@ -5733,13 +5737,14 @@ export class AppController {
     }
 
     const names = this.getLocalNames();
+    const p2Name = vm.mode === MATCH_MODE.LOCAL_PVP ? names.p2 : this.getCurrentPveOpponentName();
     return {
       game: vm,
       hotseat: {
         enabled: vm.mode === MATCH_MODE.LOCAL_PVP,
         activePlayer: vm.mode === MATCH_MODE.LOCAL_PVP ? vm.hotseatTurn : "p1",
         p1Name: names.p1,
-        p2Name: names.p2,
+        p2Name,
         turnLabel:
           vm.mode === MATCH_MODE.LOCAL_PVP
             ? `${vm.hotseatTurn === "p1" ? names.p1 : names.p2} Turn`
@@ -6192,6 +6197,7 @@ export class AppController {
     const p1Profile = localPvp ? this.localProfiles?.p1 : this.profile;
     const p2Profile = localPvp ? this.localProfiles?.p2 : null;
     const pveOpponentStyle = localPvp ? null : this.resolvePveOpponentStyle();
+    const nonLocalOpponentName = pveOpponentStyle?.name ?? this.getCurrentPveOpponentName();
     const localViewerKey = localPvp && vm.hotseatTurn === "p2" ? "p2" : "p1";
     const localOpponentProfile =
       !localPvp
@@ -6209,8 +6215,8 @@ export class AppController {
     const opponentDisplay = localPvp
       ? this.buildPlayerDisplay(p2Profile, names.p2, "Initiate")
       : this.resolveIdentityDisplay({
-          name: pveOpponentStyle?.featuredRivalId ? "Crownfire Duelist" : "Elemental AI",
-          fallbackName: pveOpponentStyle?.featuredRivalId ? "Crownfire Duelist" : "Elemental AI",
+          name: nonLocalOpponentName,
+          fallbackName: nonLocalOpponentName,
           avatarId: pveOpponentStyle?.avatarId ?? "default_avatar",
           avatarPath: pveOpponentStyle?.avatarPath ?? null,
           titleId: pveOpponentStyle?.titleId ?? null,
@@ -6269,7 +6275,7 @@ export class AppController {
         enabled: localPvp,
         activePlayer: localPvp ? vm.hotseatTurn : "p1",
         p1Name: names.p1,
-        p2Name: names.p2,
+        p2Name: localPvp ? names.p2 : opponentDisplay?.name ?? nonLocalOpponentName,
         turnLabel: localPvp ? `${vm.hotseatTurn === "p1" ? names.p1 : names.p2} Turn` : "Player Turn"
       },
       taunts: {

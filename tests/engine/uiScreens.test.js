@@ -11497,7 +11497,7 @@ test("ui: game HUD timer updates patch the existing screen in place when live st
       enabled: false,
       activePlayer: "p1",
       p1Name: "Player 1",
-      p2Name: "Player 2",
+      p2Name: "Elemental AI",
       turnLabel: "Player Turn"
     },
     presentation: {
@@ -15640,6 +15640,44 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   assert.match(payload.bodyHtml, /<strong>Tokens Gained:<\/strong> 0/);
   assert.match(payload.bodyHtml, /id="match-complete-play-again"/);
   assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
+});
+
+test("ui: featured rival match complete payload uses the rival name instead of Elemental AI", () => {
+  const controller = createRendererController();
+  controller.username = "VampyrLee";
+  controller.profile = { username: "VampyrLee" };
+  controller.gameController = { captured: { p1: 4, p2: 3 } };
+  controller.pveFeaturedRivalId = "crownfire_duelist";
+  controller.opponentDisplayName = "Crownfire Duelist";
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      difficulty: "hard",
+      history: [
+        { result: "p1", capturedCards: 2, capturedOpponentCards: 1 },
+        { result: "p2", capturedCards: 6, capturedOpponentCards: 3 },
+        { result: "p1", capturedCards: 6, capturedOpponentCards: 3 }
+      ],
+      players: {
+        p1: { hand: ["fire", "water"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 4,
+        warsEntered: 2,
+        longestWar: 4
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /VampyrLee defeated Crownfire Duelist\./);
+  assert.match(payload.bodyHtml, /VampyrLee • 4 \| Crownfire Duelist • 3/);
+  assert.doesNotMatch(payload.bodyHtml, /Elemental AI/);
 });
 
 test("ui: PvE match complete payload prefers authoritative live capture totals over trimmed history", () => {

@@ -7814,6 +7814,7 @@ test("appController: Crownfire rival display uses fixed rival-only identity asse
     const payload = shownScreens.at(-1).context;
 
     assert.equal(payload.opponentDisplay.name, "Crownfire Duelist");
+    assert.equal(payload.hotseat.p2Name, "Crownfire Duelist");
     assert.equal(payload.opponentDisplay.title, "Inferno Regent");
     assert.match(payload.opponentDisplay.avatar, /rival_crownfire_duelist_avatar\.png/);
     assert.match(payload.opponentDisplay.titleIcon, /title_crownfire_inferno_regent\.png/);
