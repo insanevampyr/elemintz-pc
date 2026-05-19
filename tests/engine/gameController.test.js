@@ -2453,6 +2453,49 @@ test("appController: local mode opens setup screen before match start", () => {
   assert.equal(shownScreens.at(-1).context.player2.mode, "login");
 });
 
+test("appController: Play vs AI from the main menu opens the difficulty screen instead of starting immediately", () => {
+  const shownScreens = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "hard", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "PveChooser";
+  app.profile = { username: "PveChooser" };
+
+  app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+  shownScreens.at(-1).context.actions.startPveGame();
+
+  assert.equal(shownScreens.at(-1).name, "aiDifficulty");
+  assert.equal(shownScreens.at(-1).context.selectedDifficulty, "hard");
+});
+
+test("appController: ai difficulty screen back action returns to the main menu", () => {
+  const shownScreens = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "PveChooser";
+  app.profile = { username: "PveChooser" };
+
+  app.showAiDifficultySelect();
+  shownScreens.at(-1).context.actions.back();
+
+  assert.equal(shownScreens.at(-1).name, "menu");
+});
+
 test("appController: switch account clears authenticated state and returns to login", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
@@ -7191,6 +7234,199 @@ test("appController: gameplay uses equipped profile background", async () => {
     const last = shownScreens.at(-1);
     assert.equal(last.name, "game");
     assert.match(last.context.arenaBackground, /EleMintzIcon\.png/);
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: selecting Easy from the difficulty screen starts PvE with easy difficulty", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "hard", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "EasyPicker";
+  app.profile = { username: "EasyPicker" };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.showAiDifficultySelect();
+    await shownScreens.at(-1).context.actions.start({ aiDifficulty: "easy" });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.aiDifficulty, "easy");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: selecting Normal from the difficulty screen starts PvE with normal difficulty", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "easy", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "NormalPicker";
+  app.profile = { username: "NormalPicker" };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.showAiDifficultySelect();
+    await shownScreens.at(-1).context.actions.start({ aiDifficulty: "normal" });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.aiDifficulty, "normal");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: selecting Hard from the difficulty screen starts PvE with hard difficulty", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "HardPicker";
+  app.profile = { username: "HardPicker" };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.showAiDifficultySelect();
+    await shownScreens.at(-1).context.actions.start({ aiDifficulty: "hard" });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.aiDifficulty, "hard");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: selected PvE difficulty override beats the Settings fallback", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "easy", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "OverrideUser";
+  app.profile = { username: "OverrideUser" };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE, { aiDifficulty: "hard" });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.aiDifficulty, "hard");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: PvE still uses the Settings difficulty when no override is provided", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "hard", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "FallbackUser";
+  app.profile = { username: "FallbackUser" };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE);
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.aiDifficulty, "hard");
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();

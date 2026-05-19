@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { achievementsScreen } from "../../src/renderer/ui/screens/achievementsScreen.js";
+import { aiDifficultyScreen } from "../../src/renderer/ui/screens/aiDifficultyScreen.js";
 import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.js";
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature, gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
@@ -1712,6 +1713,95 @@ test("ui: store search and filters update visible cosmetics without mutating cat
     assert.equal(emptyState.style.display, "");
   } finally {
     global.document = previousDocument;
+  }
+});
+
+test("ui: ai difficulty screen renders Easy, Normal, and Hard choices", () => {
+  const html = aiDifficultyScreen.render({
+    selectedDifficulty: "normal",
+    actions: {}
+  });
+
+  assert.match(html, /Choose AI Difficulty/);
+  assert.match(html, /Easy Practice/);
+  assert.match(html, /Normal AI/);
+  assert.match(html, /Hard AI/);
+});
+
+test("ui: ai difficulty screen includes Easy practice suppression wording", () => {
+  const html = aiDifficultyScreen.render({
+    selectedDifficulty: "easy",
+    actions: {}
+  });
+
+  assert.match(html, /Practice mode\. No stats, quests, achievements, rewards, or chest progress\./);
+  assert.match(html, /does not count toward progression/i);
+});
+
+test("ui: ai difficulty screen includes Hard bonus wording", () => {
+  const html = aiDifficultyScreen.render({
+    selectedDifficulty: "hard",
+    actions: {}
+  });
+
+  assert.match(html, /Smarter, tougher AI\. Win for \+5 XP, \+5 tokens, and improved chest chance\./);
+});
+
+test("ui: ai difficulty screen binds start and back actions", async () => {
+  const previousDocument = global.document;
+  const previousFormData = global.FormData;
+  const starts = [];
+  let backCalls = 0;
+  const form = {
+    values: new Map([["aiDifficulty", "hard"]])
+  };
+  const elements = new Map();
+
+  elements.set("ai-difficulty-form", {
+    addEventListener: (_type, handler) => {
+      form.submit = handler;
+    }
+  });
+  elements.set("ai-difficulty-back-btn", {
+    addEventListener: (_type, handler) => {
+      form.back = handler;
+    }
+  });
+
+  global.document = {
+    getElementById: (id) => elements.get(id)
+  };
+  global.FormData = class {
+    constructor(target) {
+      this.target = target;
+    }
+
+    get(key) {
+      return this.target.values.get(key) ?? null;
+    }
+  };
+
+  try {
+    aiDifficultyScreen.bind({
+      actions: {
+        start: async (payload) => starts.push(payload),
+        back: () => {
+          backCalls += 1;
+        }
+      }
+    });
+
+    await form.submit({
+      preventDefault: () => {},
+      currentTarget: form
+    });
+    form.back();
+
+    assert.deepEqual(starts, [{ aiDifficulty: "hard" }]);
+    assert.equal(backCalls, 1);
+  } finally {
+    global.document = previousDocument;
+    global.FormData = previousFormData;
   }
 });
 

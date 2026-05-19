@@ -1,4 +1,5 @@
 import {
+  aiDifficultyScreen,
   achievementsScreen,
   cosmeticsScreen,
   dailyChallengesScreen,
@@ -741,6 +742,7 @@ export class AppController {
   registerScreens() {
     this.screenManager.register("login", loginScreen);
     this.screenManager.register("menu", menuScreen);
+    this.screenManager.register("aiDifficulty", aiDifficultyScreen);
     this.screenManager.register("localSetup", localSetupScreen);
     this.screenManager.register("game", gameScreen);
     this.screenManager.register("pass", passScreen);
@@ -1026,6 +1028,20 @@ export class AppController {
     return ["easy", "normal", "hard"].includes(configured)
       ? configured
       : FALLBACK_SETTINGS.aiDifficulty;
+  }
+
+  showAiDifficultySelect() {
+    this.clearTransientUiBeforeScreenTransition();
+    this.screenFlow = "aiDifficulty";
+    this.screenManager.show("aiDifficulty", {
+      selectedDifficulty: this.getConfiguredAiDifficulty(),
+      actions: {
+        start: async ({ aiDifficulty } = {}) => {
+          this.startGame(MATCH_MODE.PVE, { aiDifficulty });
+        },
+        back: () => this.showMenu()
+      }
+    });
   }
 
   getConfiguredAiOpponentStyle() {
@@ -1412,7 +1428,7 @@ export class AppController {
           }
         : null,
       actions: {
-        startPveGame: () => this.startGame(MATCH_MODE.PVE),
+        startPveGame: () => this.showAiDifficultySelect(),
         startLocalGame: () => this.showLocalSetup(),
         openOnlinePlay: async () => this.showOnlinePlay(),
         openProfile: async () => this.showProfile(),
@@ -5514,7 +5530,7 @@ export class AppController {
     });
   }
 
-  startGame(mode = MATCH_MODE.PVE) {
+  startGame(mode = MATCH_MODE.PVE, options = {}) {
     this.clearPassTimer();
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
@@ -5534,7 +5550,10 @@ export class AppController {
       localPlayerNames: mode === MATCH_MODE.LOCAL_PVP ? this.getLocalNames() : null,
       timerSeconds: this.settings?.gameplay?.timerSeconds ?? FALLBACK_SETTINGS.gameplay.timerSeconds,
       matchTimeLimitSeconds: 300,
-      aiDifficulty: mode === MATCH_MODE.PVE ? this.getConfiguredAiDifficulty() : FALLBACK_SETTINGS.aiDifficulty,
+      aiDifficulty:
+        mode === MATCH_MODE.PVE
+          ? String(options?.aiDifficulty ?? "").trim().toLowerCase() || this.getConfiguredAiDifficulty()
+          : FALLBACK_SETTINGS.aiDifficulty,
       mode,
       persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP,
       persistMatchResult:

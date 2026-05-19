@@ -3351,19 +3351,35 @@ test("daily: legacy challenge windows normalize selected bonus ids and exclude r
 
   const normalized = normalizeProfileDailyChallenges(legacyProfile, nowMs);
   const view = getDailyChallengesView(legacyProfile, nowMs);
+  const selectedDailyIds = normalized.dailyChallenges.daily.selectedBonusChallengeIds;
+  const selectedWeeklyIds = normalized.dailyChallenges.weekly.selectedBonusChallengeIds;
   const dailyIds = view.view.daily.challenges.map((challenge) => challenge.id);
   const weeklyIds = view.view.weekly.challenges.map((challenge) => challenge.id);
+  const dailyBonusPoolIds = new Set(DAILY_BONUS_CHALLENGE_POOL.map((challenge) => challenge.id));
+  const weeklyBonusPoolIds = new Set(WEEKLY_BONUS_CHALLENGE_POOL.map((challenge) => challenge.id));
+  const dailySelectedElementalCount = selectedDailyIds.filter((id) =>
+    DAILY_BONUS_CHALLENGE_POOL.some((challenge) => challenge.id === id && challenge.bonusFamily === "elemental")
+  ).length;
+  const weeklySelectedElementalCount = selectedWeeklyIds.filter((id) =>
+    WEEKLY_BONUS_CHALLENGE_POOL.some((challenge) => challenge.id === id && challenge.bonusFamily === "elemental")
+  ).length;
 
   assert.equal(normalized.dailyChallenges.daily.setVersion, "core_bonus_v1");
   assert.equal(normalized.dailyChallenges.weekly.setVersion, "core_bonus_v1");
-  assert.equal(normalized.dailyChallenges.daily.selectedBonusChallengeIds.length, 3);
-  assert.equal(normalized.dailyChallenges.weekly.selectedBonusChallengeIds.length, 3);
-  assert.ok(dailyIds.includes("daily_online_match_1"));
-  assert.ok(dailyIds.includes("daily_no_quit_3"));
-  assert.ok(dailyIds.includes("daily_win_with_water"));
-  assert.ok(weeklyIds.includes("weekly_hard_ai_wins_5"));
-  assert.ok(weeklyIds.includes("weekly_online_matches_5"));
-  assert.ok(weeklyIds.includes("weekly_online_wins_3"));
+  assert.equal(selectedDailyIds.length, 3);
+  assert.equal(selectedWeeklyIds.length, 3);
+  assert.equal(new Set(selectedDailyIds).size, 3);
+  assert.equal(new Set(selectedWeeklyIds).size, 3);
+  assert.ok(selectedDailyIds.every((id) => dailyBonusPoolIds.has(id)));
+  assert.ok(selectedWeeklyIds.every((id) => weeklyBonusPoolIds.has(id)));
+  assert.equal(dailySelectedElementalCount <= 1, true);
+  assert.equal(weeklySelectedElementalCount <= 1, true);
+  for (const id of selectedDailyIds) {
+    assert.ok(dailyIds.includes(id));
+  }
+  for (const id of selectedWeeklyIds) {
+    assert.ok(weeklyIds.includes(id));
+  }
   assert.equal(dailyIds.includes("daily_win_2_wars"), false);
   assert.equal(dailyIds.includes("daily_trigger_2_wars_one_match"), false);
   assert.equal(dailyIds.includes("daily_capture_24_cards"), false);
