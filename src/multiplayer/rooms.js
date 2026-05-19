@@ -8,6 +8,12 @@ const INITIAL_HAND_COUNTS = Object.freeze({
   earth: 2,
   wind: 2
 });
+const FEATURED_RIVAL_HAND_CONFIGS = Object.freeze({
+  crownfire_duelist: Object.freeze({
+    host: Object.freeze({ fire: 2, water: 2, earth: 2, wind: 2 }),
+    guest: Object.freeze({ fire: 3, water: 3, earth: 3, wind: 3 })
+  })
+});
 const DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
   avatar: "default_avatar",
   background: "default_background",
@@ -462,11 +468,13 @@ function buildPlayer(socket, payload = {}, identity = null) {
   const aiDifficulty = bot
     ? normalizeAiDifficulty(payload?.aiDifficulty)
     : null;
+  const featuredRivalId = bot ? normalizeFeaturedRivalId(payload?.featuredRivalId) : null;
   return {
     socketId: socket.id,
     connected: true,
     bot,
     ...(aiDifficulty ? { aiDifficulty } : {}),
+    ...(featuredRivalId ? { featuredRivalId } : {}),
     ...(username ? { username } : {}),
     ...(sessionId ? { sessionId } : {}),
     equippedCosmetics: normalizeEquippedCosmetics(payload.equippedCosmetics),
@@ -478,6 +486,16 @@ function buildPlayer(socket, payload = {}, identity = null) {
 function normalizeAiDifficulty(value) {
   const allowed = new Set(Object.values(AI_DIFFICULTY));
   return allowed.has(value) ? value : AI_DIFFICULTY.NORMAL;
+}
+
+function normalizeFeaturedRivalId(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return Object.hasOwn(FEATURED_RIVAL_HAND_CONFIGS, normalized) ? normalized : null;
+}
+
+function getHandConfigForRoom(room) {
+  const featuredRivalId = normalizeFeaturedRivalId(room?.featuredRivalId ?? room?.guest?.featuredRivalId);
+  return FEATURED_RIVAL_HAND_CONFIGS[featuredRivalId] ?? null;
 }
 
 function expandHandCounts(hand) {
@@ -867,10 +885,12 @@ function createInitialDisconnectState() {
   };
 }
 
-function createInitialHandState() {
+function createInitialHandState(handConfig = null) {
+  const hostHand = handConfig?.host ?? INITIAL_HAND_COUNTS;
+  const guestHand = handConfig?.guest ?? INITIAL_HAND_COUNTS;
   return {
-    hostHand: { ...INITIAL_HAND_COUNTS },
-    guestHand: { ...INITIAL_HAND_COUNTS }
+    hostHand: { ...hostHand },
+    guestHand: { ...guestHand }
   };
 }
 
@@ -906,8 +926,9 @@ function resetMoveState(room) {
 }
 
 function resetHandState(room) {
-  room.hostHand = { ...INITIAL_HAND_COUNTS };
-  room.guestHand = { ...INITIAL_HAND_COUNTS };
+  const handConfig = getHandConfigForRoom(room);
+  room.hostHand = { ...(handConfig?.host ?? INITIAL_HAND_COUNTS) };
+  room.guestHand = { ...(handConfig?.guest ?? INITIAL_HAND_COUNTS) };
 }
 
 function resetWarState(room) {
@@ -1764,6 +1785,7 @@ function cloneRoom(room) {
     visibility: normalizeRoomVisibility(room.visibility),
     host: room.host ? { ...room.host } : null,
     guest: room.guest ? { ...room.guest } : null,
+    featuredRivalId: room.featuredRivalId ?? null,
     status: room.status,
     closingAt: room.closingAt ?? null,
     disconnectState: {
@@ -1920,6 +1942,7 @@ export function createRoomStore({ random = Math.random } = {}) {
         visibility: normalizeRoomVisibility(payload?.visibility),
         host: buildPlayer(socket, payload, identity),
         guest: null,
+        featuredRivalId: null,
         status: "waiting",
         ...createInitialMatchState(),
         ...createInitialTauntState(),
@@ -2075,7 +2098,9 @@ export function createRoomStore({ random = Math.random } = {}) {
       }
 
       room.guest = buildPlayer(socket, { ...payload, username }, identity);
+      room.featuredRivalId = normalizeFeaturedRivalId(room.guest?.featuredRivalId);
       room.status = "full";
+      resetHandState(room);
       resetMoveState(room);
       resetRematchState(room);
       syncServerMatchState(room);

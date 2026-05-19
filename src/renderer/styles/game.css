@@ -100,6 +100,58 @@ input[type="number"] {
   font-weight: 700;
 }
 
+.settings-radio-option-featured-rival {
+  gap: 10px;
+}
+
+.featured-rival-card {
+  display: grid;
+  gap: 10px;
+  margin-left: 28px;
+  padding: 10px;
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(76, 20, 12, 0.92), rgba(24, 10, 8, 0.94));
+  border: 1px solid rgba(232, 126, 66, 0.42);
+}
+
+.featured-rival-card__art {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 189, 126, 0.25);
+  object-fit: cover;
+}
+
+.featured-rival-card__body {
+  display: grid;
+  gap: 4px;
+}
+
+.featured-rival-card__eyebrow {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffbb84;
+}
+
+.featured-rival-card__name {
+  font-size: 1.08rem;
+  color: #fff4dc;
+}
+
+.featured-rival-card__title {
+  color: #ffd1a1;
+  font-weight: 700;
+}
+
+.featured-rival-card__description,
+.featured-rival-card__detail {
+  color: rgba(244, 232, 218, 0.88);
+  line-height: 1.4;
+}
+
 .game-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;

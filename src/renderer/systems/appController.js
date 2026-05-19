@@ -101,6 +101,26 @@ const PVE_AI_TAUNT_LINES = Object.freeze({
   near_victory: Object.freeze(["This isn't over.", "Let's finish this.", "Your move."]),
   match_end: Object.freeze(["Well played.", "Not bad.", "This isn't over."])
 });
+const FEATURED_RIVAL_CONFIGS = Object.freeze({
+  crownfire_duelist: Object.freeze({
+    id: "crownfire_duelist",
+    name: "Crownfire Duelist",
+    titleName: "Inferno Regent",
+    titleIconPath: "rivals/Crownfire/title_crownfire_inferno_regent.png",
+    avatarPath: "rivals/Crownfire/rival_crownfire_duelist_avatar.png",
+    badgePath: "rivals/Crownfire/badge_crownfire_sigil.png",
+    cardBackPath: "rivals/Crownfire/cardback_crownfire_regent.png",
+    backgroundPath: "rivals/Crownfire/bg_crownfire_arena.png",
+    elementCardVariant: Object.freeze({
+      fire: "rivals/Crownfire/variant_fire_crownfire.png",
+      water: "rivals/Crownfire/variant_water_crownfire.png",
+      earth: "rivals/Crownfire/variant_earth_crownfire.png",
+      wind: "rivals/Crownfire/variant_wind_crownfire.png"
+    }),
+    aiDifficulty: "hard",
+    totalCards: 20
+  })
+});
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -140,6 +160,7 @@ export class AppController {
     this.deferPveOutcomeSound = false;
     this.deferredPveRoundSound = null;
     this.pveOpponentStyle = null;
+    this.pveFeaturedRivalId = null;
     this.profileChestVisualState = {
       basicOpen: false,
       milestoneOpen: false,
@@ -1030,14 +1051,20 @@ export class AppController {
       : FALLBACK_SETTINGS.aiDifficulty;
   }
 
+  getFeaturedRivalConfig(featuredRivalId = null) {
+    const normalizedId = String(featuredRivalId ?? "").trim().toLowerCase();
+    return FEATURED_RIVAL_CONFIGS[normalizedId] ?? null;
+  }
+
   showAiDifficultySelect() {
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "aiDifficulty";
     this.screenManager.show("aiDifficulty", {
       selectedDifficulty: this.getConfiguredAiDifficulty(),
+      selectedFeaturedRivalId: this.pveFeaturedRivalId,
       actions: {
-        start: async ({ aiDifficulty } = {}) => {
-          this.startGame(MATCH_MODE.PVE, { aiDifficulty });
+        start: async ({ aiDifficulty, featuredRivalId } = {}) => {
+          this.startGame(MATCH_MODE.PVE, { aiDifficulty, featuredRivalId });
         },
         back: () => this.showMenu()
       }
@@ -1210,6 +1237,16 @@ export class AppController {
           fallbackMap?.[element] ?? ONLINE_DEFAULT_EQUIPPED_COSMETICS.elementCardVariant[element]
         );
         const requestedId = String(selection?.[element] ?? "").trim();
+        if (
+          requestedId &&
+          (requestedId.includes("/") ||
+            requestedId.endsWith(".png") ||
+            requestedId.endsWith(".jpg") ||
+            requestedId.endsWith(".jpeg"))
+        ) {
+          return [element, requestedId];
+        }
+
         const definition = requestedId ? getCosmeticDefinition("elementCardVariant", requestedId) : null;
         const resolvedId = definition?.element === element ? requestedId : fallbackId;
         return [element, resolvedId];
@@ -1233,7 +1270,24 @@ export class AppController {
     );
   }
 
-  buildPveOpponentStyle() {
+  buildPveOpponentStyle(featuredRivalId = this.pveFeaturedRivalId) {
+    const featuredRival = this.getFeaturedRivalConfig(featuredRivalId);
+    if (featuredRival) {
+      return {
+        featuredRivalId: featuredRival.id,
+        avatarPath: featuredRival.avatarPath,
+        titleId: null,
+        titleName: featuredRival.titleName,
+        titleIconPath: featuredRival.titleIconPath,
+        badgePath: featuredRival.badgePath,
+        cardBackId: featuredRival.cardBackPath,
+        backgroundPath: featuredRival.backgroundPath,
+        elementCardVariant: {
+          ...featuredRival.elementCardVariant
+        }
+      };
+    }
+
     if (this.getConfiguredAiOpponentStyle() !== "random") {
       return {
         avatarId: "default_avatar",
@@ -2012,18 +2066,31 @@ export class AppController {
     name = null,
     fallbackName = "Player",
     avatarId = null,
+    avatarPath = null,
     titleId = null,
     badgeId = null,
+    badgePath = null,
+    titleIconPath = null,
     titleText = null,
     fallbackTitle = "Initiate"
   } = {}) {
-    const resolvedAvatarId = getCosmeticDefinition("avatar", avatarId) ? avatarId : "default_avatar";
+    const resolvedAvatarId = avatarPath
+      ? avatarPath
+      : getCosmeticDefinition("avatar", avatarId)
+        ? avatarId
+        : "default_avatar";
     const resolvedTitleId = getCosmeticDefinition("title", titleId) ? titleId : null;
-    const resolvedBadgeId = getCosmeticDefinition("badge", badgeId) ? badgeId : "none";
+    const resolvedBadgeId = badgePath
+      ? badgePath
+      : getCosmeticDefinition("badge", badgeId)
+        ? badgeId
+        : "none";
     const resolvedTitle = getCosmeticDisplayName("title", resolvedTitleId, titleText ?? fallbackTitle) ?? fallbackTitle;
     const titleDefinition = resolvedTitleId ? getCosmeticDefinition("title", resolvedTitleId) : null;
     const titleIcon =
-      titleDefinition?.image
+      titleIconPath
+        ? getAssetPath(titleIconPath)
+        : titleDefinition?.image
         ? getAssetPath(titleDefinition.image)
         : TITLE_ICON_MAP[resolvedTitle]
           ? getAssetPath(TITLE_ICON_MAP[resolvedTitle])
@@ -5545,7 +5612,11 @@ export class AppController {
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
     this.pendingMatchCompletePayload = null;
-    this.pveOpponentStyle = mode === MATCH_MODE.PVE ? this.buildPveOpponentStyle() : null;
+    this.pveFeaturedRivalId =
+      mode === MATCH_MODE.PVE ? String(options?.featuredRivalId ?? "").trim().toLowerCase() || null : null;
+    const featuredRival = this.getFeaturedRivalConfig(this.pveFeaturedRivalId);
+    this.pveOpponentStyle =
+      mode === MATCH_MODE.PVE ? this.buildPveOpponentStyle(this.pveFeaturedRivalId) : null;
     this.resetMatchTaunts();
 
     this.roundPresentation = {
@@ -5562,8 +5633,11 @@ export class AppController {
       matchTimeLimitSeconds: 300,
       aiDifficulty:
         mode === MATCH_MODE.PVE
-          ? String(options?.aiDifficulty ?? "").trim().toLowerCase() || this.getConfiguredAiDifficulty()
+          ? featuredRival?.aiDifficulty ??
+            (String(options?.aiDifficulty ?? "").trim().toLowerCase() ||
+              this.getConfiguredAiDifficulty())
           : FALLBACK_SETTINGS.aiDifficulty,
+      featuredRivalId: this.pveFeaturedRivalId,
       mode,
       persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP,
       persistMatchResult:
@@ -6135,11 +6209,14 @@ export class AppController {
     const opponentDisplay = localPvp
       ? this.buildPlayerDisplay(p2Profile, names.p2, "Initiate")
       : this.resolveIdentityDisplay({
-          name: "Elemental AI",
-          fallbackName: "Elemental AI",
+          name: pveOpponentStyle?.featuredRivalId ? "Crownfire Duelist" : "Elemental AI",
+          fallbackName: pveOpponentStyle?.featuredRivalId ? "Crownfire Duelist" : "Elemental AI",
           avatarId: pveOpponentStyle?.avatarId ?? "default_avatar",
+          avatarPath: pveOpponentStyle?.avatarPath ?? null,
           titleId: pveOpponentStyle?.titleId ?? null,
           badgeId: pveOpponentStyle?.badgeId ?? "none",
+          badgePath: pveOpponentStyle?.badgePath ?? null,
+          titleIconPath: pveOpponentStyle?.titleIconPath ?? null,
           titleText: pveOpponentStyle?.titleName ?? "Arena Rival",
           fallbackTitle: "Arena Rival"
         });
@@ -6157,10 +6234,14 @@ export class AppController {
 
     const backgroundProfile =
       localPvp && vm.hotseatTurn === "p2" ? p2Profile ?? this.profile : p1Profile ?? this.profile;
+    const arenaBackground =
+      !localPvp && pveOpponentStyle?.backgroundPath
+        ? getArenaBackground(pveOpponentStyle.backgroundPath)
+        : this.getBackgroundFromProfile(backgroundProfile);
 
     this.screenManager.show("game", {
       game: vm,
-      arenaBackground: this.getBackgroundFromProfile(backgroundProfile),
+      arenaBackground,
       cardImages: {
         p1: getVariantCardImages(p1Variant),
         p2: getVariantCardImages(p2Variant)

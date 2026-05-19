@@ -68,6 +68,55 @@ function createStoreSocket(id) {
   return { id };
 }
 
+test("multiplayer rooms: featured rival join seeds an asymmetric 8 vs 12 boss hand", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("host-featured");
+  const guest = createStoreSocket("guest-featured");
+
+  const created = store.createRoom(host, { username: "Hero" });
+  assert.equal(created.ok, true);
+
+  const joined = store.joinRoom(guest, created.room.roomCode, {
+    username: "Crownfire Duelist",
+    bot: true,
+    aiDifficulty: "hard",
+    featuredRivalId: "crownfire_duelist"
+  });
+  assert.equal(joined.ok, true);
+  assert.deepEqual(joined.room.hostHand, { fire: 2, water: 2, earth: 2, wind: 2 });
+  assert.deepEqual(joined.room.guestHand, { fire: 3, water: 3, earth: 3, wind: 3 });
+  assert.equal(joined.room.featuredRivalId, "crownfire_duelist");
+});
+
+test("multiplayer rooms: featured rival rematch reset preserves the asymmetric boss hand counts", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("host-featured-rematch");
+  const guest = createStoreSocket("guest-featured-rematch");
+
+  const created = store.createRoom(host, { username: "Hero" });
+  const joined = store.joinRoom(guest, created.room.roomCode, {
+    username: "Crownfire Duelist",
+    bot: true,
+    aiDifficulty: "hard",
+    featuredRivalId: "crownfire_duelist"
+  });
+  assert.equal(joined.ok, true);
+
+  const completed = store.completeMatch(host.id, { winner: "guest", reason: "manual_test" });
+  assert.equal(completed.ok, true);
+
+  const firstReady = store.readyRematch(host.id);
+  assert.equal(firstReady.ok, true);
+  assert.equal(firstReady.rematchStarted, false);
+
+  const secondReady = store.readyRematch(guest.id);
+  assert.equal(secondReady.ok, true);
+  assert.equal(secondReady.rematchStarted, true);
+  assert.deepEqual(secondReady.room.hostHand, { fire: 2, water: 2, earth: 2, wind: 2 });
+  assert.deepEqual(secondReady.room.guestHand, { fire: 3, water: 3, earth: 3, wind: 3 });
+  assert.equal(secondReady.room.featuredRivalId, "crownfire_duelist");
+});
+
 async function bootstrapSession(socket, username) {
   return new Promise((resolve) => {
     socket.emit("session:bootstrap", { username }, resolve);

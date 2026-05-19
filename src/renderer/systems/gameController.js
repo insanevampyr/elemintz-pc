@@ -353,7 +353,9 @@ function buildLocalMatchFromAuthoritativeRoom(
     },
     history,
     meta: {
-      totalCards: existingMatch?.meta?.totalCards ?? 16,
+      totalCards:
+        existingMatch?.meta?.totalCards ??
+        (String(room?.featuredRivalId ?? "").trim().toLowerCase() === "crownfire_duelist" ? 20 : 16),
       startedAt: existingMatch?.meta?.startedAt ?? null,
       endedAt: existingMatch?.meta?.endedAt ?? null,
       durationMs: existingMatch?.meta?.durationMs ?? 0
@@ -543,6 +545,7 @@ export class GameController {
     this.onRoundResolved = options.onRoundResolved ?? (() => {});
     this.onHotseatTurnTimeout = options.onHotseatTurnTimeout ?? (() => {});
     this.aiDifficulty = difficultyFromSettings(options.aiDifficulty);
+    this.featuredRivalId = String(options.featuredRivalId ?? "").trim().toLowerCase() || null;
     this.mode = options.mode ?? MATCH_MODE.PVE;
     this.persistMatchResults = options.persistMatchResults ?? true;
     this.persistMatchResult = typeof options.persistMatchResult === "function" ? options.persistMatchResult : null;
@@ -591,7 +594,7 @@ export class GameController {
       ? this.getLocalAuthorityNames()
       : {
           p1: String(this.username ?? "Player 1").trim() || "Player 1",
-          p2: "EleMintz AI"
+          p2: this.featuredRivalId === "crownfire_duelist" ? "Crownfire Duelist" : "EleMintz AI"
         };
     const createResult = store.createRoom(hostSocket, { username: names.p1 });
 
@@ -604,7 +607,8 @@ export class GameController {
       ...(this.isPve()
         ? {
             bot: true,
-            aiDifficulty: this.aiDifficulty
+            aiDifficulty: this.aiDifficulty,
+            ...(this.featuredRivalId ? { featuredRivalId: this.featuredRivalId } : {})
           }
         : {})
     });

@@ -1717,7 +1717,7 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 });
 
-test("ui: ai difficulty screen renders Easy, Normal, and Hard choices", () => {
+test("ui: ai difficulty screen renders Easy, Normal, Hard, and Featured Rival choices", () => {
   const html = aiDifficultyScreen.render({
     selectedDifficulty: "normal",
     actions: {}
@@ -1727,6 +1727,22 @@ test("ui: ai difficulty screen renders Easy, Normal, and Hard choices", () => {
   assert.match(html, /Easy Practice/);
   assert.match(html, /Normal AI/);
   assert.match(html, /Hard AI/);
+  assert.match(html, /Featured Rival/);
+});
+
+test("ui: ai difficulty screen renders the Crownfire featured rival card details", () => {
+  const html = aiDifficultyScreen.render({
+    selectedDifficulty: "normal",
+    actions: {}
+  });
+
+  assert.match(html, /tile_featured_rival_crownfire\.png/);
+  assert.match(html, /Crownfire Duelist/);
+  assert.match(html, /Inferno Regent/);
+  assert.match(html, /Your Deck: 8 cards/);
+  assert.match(html, /Rival Deck: 12 cards/);
+  assert.match(html, /Normal EleMintz rules apply/);
+  assert.match(html, /Rewards: normal PvE rewards for MVP/);
 });
 
 test("ui: ai difficulty screen includes Easy practice suppression wording", () => {
@@ -1754,7 +1770,7 @@ test("ui: ai difficulty screen binds start and back actions", async () => {
   const starts = [];
   let backCalls = 0;
   const form = {
-    values: new Map([["aiDifficulty", "hard"]])
+    values: new Map([["pveOpponentChoice", "hard"]])
   };
   const elements = new Map();
 
@@ -1800,6 +1816,57 @@ test("ui: ai difficulty screen binds start and back actions", async () => {
 
     assert.deepEqual(starts, [{ aiDifficulty: "hard" }]);
     assert.equal(backCalls, 1);
+  } finally {
+    global.document = previousDocument;
+    global.FormData = previousFormData;
+  }
+});
+
+test("ui: ai difficulty screen binds the featured rival start payload", async () => {
+  const previousDocument = global.document;
+  const previousFormData = global.FormData;
+  const starts = [];
+  const form = {
+    values: new Map([["pveOpponentChoice", "featured_rival_crownfire"]])
+  };
+  const elements = new Map();
+
+  elements.set("ai-difficulty-form", {
+    addEventListener: (_type, handler) => {
+      form.submit = handler;
+    }
+  });
+  elements.set("ai-difficulty-back-btn", {
+    addEventListener: () => {}
+  });
+
+  global.document = {
+    getElementById: (id) => elements.get(id)
+  };
+  global.FormData = class {
+    constructor(target) {
+      this.target = target;
+    }
+
+    get(key) {
+      return this.target.values.get(key) ?? null;
+    }
+  };
+
+  try {
+    aiDifficultyScreen.bind({
+      actions: {
+        start: async (payload) => starts.push(payload),
+        back: () => {}
+      }
+    });
+
+    await form.submit({
+      preventDefault: () => {},
+      currentTarget: form
+    });
+
+    assert.deepEqual(starts, [{ featuredRivalId: "crownfire_duelist" }]);
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;

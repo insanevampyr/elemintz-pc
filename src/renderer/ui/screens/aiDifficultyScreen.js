@@ -1,3 +1,5 @@
+import { getAssetPath } from "../../utils/dom.js";
+
 function renderRadioOption({ name, id, value, checked, title, subtitle, warning = null }) {
   return `
     <label class="settings-radio-option" for="${id}">
@@ -11,11 +13,43 @@ function renderRadioOption({ name, id, value, checked, title, subtitle, warning 
   `;
 }
 
+function renderFeaturedRivalOption({ name, id, checked }) {
+  return `
+    <label class="settings-radio-option settings-radio-option-featured-rival" for="${id}">
+      <span class="settings-radio-main">
+        <input id="${id}" name="${name}" type="radio" value="featured_rival_crownfire" ${checked ? "checked" : ""} />
+        <strong>Featured Rival</strong>
+      </span>
+      <span class="featured-rival-card">
+        <img
+          class="featured-rival-card__art"
+          src="${getAssetPath("rivals/Crownfire/tile_featured_rival_crownfire.png")}"
+          alt="Crownfire Duelist Featured Rival"
+        />
+        <span class="featured-rival-card__body">
+          <span class="featured-rival-card__eyebrow">Boss Battle</span>
+          <strong class="featured-rival-card__name">Crownfire Duelist</strong>
+          <span class="featured-rival-card__title">Inferno Regent</span>
+          <span class="featured-rival-card__description">Challenge Crownfire Duelist in a 12-card boss battle.</span>
+          <span class="featured-rival-card__detail">Your Deck: 8 cards</span>
+          <span class="featured-rival-card__detail">Rival Deck: 12 cards</span>
+          <span class="featured-rival-card__detail">Normal EleMintz rules apply</span>
+          <span class="featured-rival-card__detail">Rewards: normal PvE rewards for MVP</span>
+        </span>
+      </span>
+    </label>
+  `;
+}
+
 export const aiDifficultyScreen = {
   render(context) {
     const selectedDifficulty = ["easy", "normal", "hard"].includes(String(context.selectedDifficulty ?? ""))
       ? String(context.selectedDifficulty)
       : "normal";
+    const selectedOption =
+      String(context.selectedFeaturedRivalId ?? "").trim().toLowerCase() === "crownfire_duelist"
+        ? "featured_rival_crownfire"
+        : selectedDifficulty;
 
     return `
       <section class="screen screen-ai-difficulty">
@@ -31,29 +65,34 @@ export const aiDifficultyScreen = {
 
             <div class="settings-group">
               ${renderRadioOption({
-                name: "aiDifficulty",
+                name: "pveOpponentChoice",
                 id: "ai-difficulty-select-easy",
                 value: "easy",
-                checked: selectedDifficulty === "easy",
+                checked: selectedOption === "easy",
                 title: "Easy Practice",
                 subtitle: "Practice mode. No stats, quests, achievements, rewards, or chest progress.",
                 warning: "Easy AI is practice-only and does not count toward progression."
               })}
               ${renderRadioOption({
-                name: "aiDifficulty",
+                name: "pveOpponentChoice",
                 id: "ai-difficulty-select-normal",
                 value: "normal",
-                checked: selectedDifficulty === "normal",
+                checked: selectedOption === "normal",
                 title: "Normal AI",
                 subtitle: "Standard rewards and progression."
               })}
               ${renderRadioOption({
-                name: "aiDifficulty",
+                name: "pveOpponentChoice",
                 id: "ai-difficulty-select-hard",
                 value: "hard",
-                checked: selectedDifficulty === "hard",
+                checked: selectedOption === "hard",
                 title: "Hard AI",
                 subtitle: "Smarter, tougher AI. Win for +5 XP, +5 tokens, and improved chest chance."
+              })}
+              ${renderFeaturedRivalOption({
+                name: "pveOpponentChoice",
+                id: "ai-difficulty-select-featured-rival",
+                checked: selectedOption === "featured_rival_crownfire"
               })}
             </div>
 
@@ -67,8 +106,13 @@ export const aiDifficultyScreen = {
     document.getElementById("ai-difficulty-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
-      const aiDifficulty = String(formData.get("aiDifficulty") ?? "normal");
-      await context.actions.start({ aiDifficulty });
+      const pveOpponentChoice = String(formData.get("pveOpponentChoice") ?? "normal").trim().toLowerCase();
+      if (pveOpponentChoice === "featured_rival_crownfire") {
+        await context.actions.start({ featuredRivalId: "crownfire_duelist" });
+        return;
+      }
+
+      await context.actions.start({ aiDifficulty: pveOpponentChoice || "normal" });
     });
 
     document.getElementById("ai-difficulty-back-btn").addEventListener("click", context.actions.back);

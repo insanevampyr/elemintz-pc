@@ -2353,6 +2353,109 @@ test("gameController: local authoritative rematch start resets to a fresh room-b
   }
 });
 
+test("gameController: Featured Rival PvE starts with an 8-card player hand, a 12-card rival hand, and 20 total cards", async () => {
+  const originalWindow = globalThis.window;
+  const controller = new GameController({
+    username: "CrownfireChallenger",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "normal",
+    featuredRivalId: "crownfire_duelist",
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    assert.equal(controller.match.players.p1.hand.length, 8);
+    assert.equal(controller.match.players.p2.hand.length, 12);
+    assert.equal(controller.match.meta.totalCards, 20);
+
+    const room = controller.localAuthority.store.getRoom(controller.localAuthority.roomCode);
+    assert.deepEqual(room.hostHand, { fire: 2, water: 2, earth: 2, wind: 2 });
+    assert.deepEqual(room.guestHand, { fire: 3, water: 3, earth: 3, wind: 3 });
+    assert.equal(room.featuredRivalId, "crownfire_duelist");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: Featured Rival rematch resets back to the same asymmetric 8 vs 12 hand counts", async () => {
+  const originalWindow = globalThis.window;
+  const controller = new GameController({
+    username: "CrownfireRematch",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "normal",
+    featuredRivalId: "crownfire_duelist",
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    const store = controller.localAuthority.store;
+    const hostSocketId = controller.localAuthority.hostSocket.id;
+    const guestSocketId = controller.localAuthority.guestSocket.id;
+
+    const completed = store.completeMatch(hostSocketId, { winner: "guest", reason: "manual_test" });
+    assert.equal(completed.ok, true);
+
+    const firstReady = store.readyRematch(hostSocketId);
+    assert.equal(firstReady.ok, true);
+    assert.equal(firstReady.rematchStarted, false);
+
+    const secondReady = store.readyRematch(guestSocketId);
+    assert.equal(secondReady.ok, true);
+    assert.equal(secondReady.rematchStarted, true);
+    assert.deepEqual(secondReady.room.hostHand, { fire: 2, water: 2, earth: 2, wind: 2 });
+    assert.deepEqual(secondReady.room.guestHand, { fire: 3, water: 3, earth: 3, wind: 3 });
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: normal PvE still starts with symmetric 8 vs 8 hands", async () => {
+  const originalWindow = globalThis.window;
+  const controller = new GameController({
+    username: "StandardPve",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "hard",
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    assert.equal(controller.match.players.p1.hand.length, 8);
+    assert.equal(controller.match.players.p2.hand.length, 8);
+    assert.equal(controller.match.meta.totalCards, 16);
+
+    const room = controller.localAuthority.store.getRoom(controller.localAuthority.roomCode);
+    assert.deepEqual(room.hostHand, { fire: 2, water: 2, earth: 2, wind: 2 });
+    assert.deepEqual(room.guestHand, { fire: 2, water: 2, earth: 2, wind: 2 });
+    assert.equal(room.featuredRivalId, null);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("gameController: WAR pile preview reflects committed WAR cards", () => {
   const controller = new GameController({
     username: "WarPreviewUser",
@@ -7558,6 +7661,50 @@ test("appController: selecting Hard from the difficulty screen starts PvE with h
   }
 });
 
+test("appController: selecting Featured Rival starts PvE with rival config instead of a fake aiDifficulty", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "easy", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "RivalPicker";
+  app.profile = {
+    username: "RivalPicker",
+    equippedCosmetics: { background: "default_background" }
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.showAiDifficultySelect();
+    await shownScreens.at(-1).context.actions.start({ featuredRivalId: "crownfire_duelist" });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.featuredRivalId, "crownfire_duelist");
+    assert.equal(app.gameController?.aiDifficulty, "hard");
+    assert.match(shownScreens.at(-1).context.arenaBackground, /bg_crownfire_arena\.png/);
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: selected PvE difficulty override beats the Settings fallback", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
@@ -7626,6 +7773,56 @@ test("appController: PvE still uses the Settings difficulty when no override is 
 
     assert.equal(shownScreens.at(-1).name, "game");
     assert.equal(app.gameController?.aiDifficulty, "hard");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: Crownfire rival display uses fixed rival-only identity assets", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "DisplayUser";
+  app.profile = {
+    username: "DisplayUser",
+    equippedCosmetics: { background: "default_background" }
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE, { featuredRivalId: "crownfire_duelist" });
+    const payload = shownScreens.at(-1).context;
+
+    assert.equal(payload.opponentDisplay.name, "Crownfire Duelist");
+    assert.equal(payload.opponentDisplay.title, "Inferno Regent");
+    assert.match(payload.opponentDisplay.avatar, /rival_crownfire_duelist_avatar\.png/);
+    assert.match(payload.opponentDisplay.titleIcon, /title_crownfire_inferno_regent\.png/);
+    assert.match(payload.opponentDisplay.featuredBadge, /badge_crownfire_sigil\.png/);
+    assert.match(payload.cardBacks.p2, /cardback_crownfire_regent\.png/);
+    assert.match(payload.opponentCardVariants.fire, /variant_fire_crownfire\.png/);
+    assert.match(payload.opponentCardVariants.water, /variant_water_crownfire\.png/);
+    assert.match(payload.opponentCardVariants.earth, /variant_earth_crownfire\.png/);
+    assert.match(payload.opponentCardVariants.wind, /variant_wind_crownfire\.png/);
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();

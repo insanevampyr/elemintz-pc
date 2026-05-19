@@ -209,11 +209,48 @@ function buildVariantMap(selection = null) {
       const variant = ELEMENT_VARIANT_IMAGES[variantId];
       if (variant && variant.element === element) {
         map[element] = variant.image;
+        continue;
+      }
+
+      if (typeof variantId === "string") {
+        const directVariantImage = resolveDirectAssetPath(variantId);
+        if (directVariantImage) {
+          map[element] = directVariantImage;
+        }
       }
     }
   }
 
   return map;
+}
+
+function resolveDirectAssetPath(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://") ||
+    normalized.startsWith("data:") ||
+    normalized.startsWith("assets/") ||
+    normalized.startsWith("../") ||
+    normalized.startsWith("./")
+  ) {
+    return normalized;
+  }
+
+  if (
+    normalized.includes("/") ||
+    normalized.endsWith(".png") ||
+    normalized.endsWith(".jpg") ||
+    normalized.endsWith(".jpeg")
+  ) {
+    return getAssetPath(normalized);
+  }
+
+  return null;
 }
 
 export const ASSET_CATALOG = Object.freeze({
@@ -281,7 +318,7 @@ export function getVariantCardImages(selection = null) {
 }
 
 export function getCardBackImage(cardBackId = "default_card_back") {
-  return CARD_BACKS[cardBackId] ?? CARD_BACKS.default_card_back;
+  return CARD_BACKS[cardBackId] ?? resolveDirectAssetPath(cardBackId) ?? CARD_BACKS.default_card_back;
 }
 
 export function getCardImage(element, variantMap = null) {
@@ -318,11 +355,11 @@ export function getArenaBackground(theme = "default_background") {
 }
 
 export function getAvatarImage(avatarId = "default_avatar") {
-  return AVATAR_MAP[avatarId] ?? AVATAR_MAP.default_avatar;
+  return AVATAR_MAP[avatarId] ?? resolveDirectAssetPath(avatarId) ?? AVATAR_MAP.default_avatar;
 }
 
 export function getBadgeImage(badgeId = "none") {
-  return BADGE_IMAGES[badgeId] ?? null;
+  return BADGE_IMAGES[badgeId] ?? resolveDirectAssetPath(badgeId) ?? null;
 }
 
 
