@@ -9602,6 +9602,111 @@ test("appController: PvE match-complete modal waits for shared resolution popup 
   assert.equal(flushCalls, 1);
 });
 
+test("appController: Featured Rival Play Again preserves crownfire_duelist launch config", () => {
+  const originalDocument = global.document;
+  const listeners = new Map();
+  const starts = [];
+
+  global.document = {
+    getElementById: (id) =>
+      id === "match-complete-play-again"
+        ? {
+            addEventListener: (event, handler) => {
+              listeners.set(`${id}:${event}`, handler);
+            }
+          }
+        : id === "match-complete-return-menu"
+          ? {
+              addEventListener: () => {}
+            }
+          : null
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveFeaturedRivalId = "crownfire_duelist";
+
+  try {
+    app.showMatchCompleteModal({
+      title: "Match Complete",
+      bodyHtml:
+        '<button id="match-complete-play-again" class="btn btn-primary">Play Again</button><button id="match-complete-return-menu" class="btn">Return to Menu</button>',
+      mode: MATCH_MODE.PVE,
+      startOptions: { featuredRivalId: "crownfire_duelist" }
+    });
+
+    listeners.get("match-complete-play-again:click")?.();
+
+    assert.deepEqual(starts, [
+      {
+        mode: MATCH_MODE.PVE,
+        options: { featuredRivalId: "crownfire_duelist" }
+      }
+    ]);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test("appController: normal PvE Play Again stays on generic Elemental AI flow", () => {
+  const originalDocument = global.document;
+  const listeners = new Map();
+  const starts = [];
+
+  global.document = {
+    getElementById: (id) =>
+      id === "match-complete-play-again"
+        ? {
+            addEventListener: (event, handler) => {
+              listeners.set(`${id}:${event}`, handler);
+            }
+          }
+        : id === "match-complete-return-menu"
+          ? {
+              addEventListener: () => {}
+            }
+          : null
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+
+  try {
+    app.showMatchCompleteModal({
+      title: "Match Complete",
+      bodyHtml:
+        '<button id="match-complete-play-again" class="btn btn-primary">Play Again</button><button id="match-complete-return-menu" class="btn">Return to Menu</button>',
+      mode: MATCH_MODE.PVE,
+      startOptions: {}
+    });
+
+    listeners.get("match-complete-play-again:click")?.();
+
+    assert.deepEqual(starts, [
+      {
+        mode: MATCH_MODE.PVE,
+        options: {}
+      }
+    ]);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
 test("appController: PvE WAR continuation clears the busy lock if popup flow is interrupted", async () => {
   const app = new AppController({
     screenManager: { register: () => {}, show: () => {} },

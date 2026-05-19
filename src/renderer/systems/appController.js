@@ -4984,6 +4984,10 @@ export class AppController {
     const roundsPlayed = Array.isArray(match?.history) ? match.history.length : 0;
     const safeValue = (value) => (value ?? "-");
     const isLocalPvp = mode === MATCH_MODE.LOCAL_PVP;
+    const startOptions =
+      !isLocalPvp && mode === MATCH_MODE.PVE && this.pveFeaturedRivalId
+        ? { featuredRivalId: this.pveFeaturedRivalId }
+        : {};
 
     const leftName = isLocalPvp ? names.p1 : (this.profile?.username ?? this.username ?? "Player");
     const rightName = isLocalPvp ? names.p2 : this.getCurrentPveOpponentName();
@@ -5071,7 +5075,7 @@ export class AppController {
       </section>
     `;
 
-    return { title: "Match Complete", bodyHtml, mode };
+    return { title: "Match Complete", bodyHtml, mode, startOptions };
   }
 
   showMatchCompleteModal(payload) {
@@ -5084,7 +5088,7 @@ export class AppController {
 
     document.getElementById("match-complete-play-again")?.addEventListener("click", () => {
       this.modalManager.hide();
-      this.startGame(payload.mode ?? MATCH_MODE.PVE);
+      this.startGame(payload.mode ?? MATCH_MODE.PVE, payload.startOptions ?? {});
     });
 
     document.getElementById("match-complete-return-menu")?.addEventListener("click", async () => {

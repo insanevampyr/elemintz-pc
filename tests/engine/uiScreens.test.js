@@ -15678,6 +15678,7 @@ test("ui: featured rival match complete payload uses the rival name instead of E
   assert.match(payload.bodyHtml, /VampyrLee defeated Crownfire Duelist\./);
   assert.match(payload.bodyHtml, /VampyrLee • 4 \| Crownfire Duelist • 3/);
   assert.doesNotMatch(payload.bodyHtml, /Elemental AI/);
+  assert.deepEqual(payload.startOptions, { featuredRivalId: "crownfire_duelist" });
 });
 
 test("ui: PvE match complete payload prefers authoritative live capture totals over trimmed history", () => {
