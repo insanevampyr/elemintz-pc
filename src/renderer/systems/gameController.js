@@ -335,6 +335,7 @@ function buildLocalMatchFromAuthoritativeRoom(
     status: room?.matchComplete ? "completed" : "active",
     round: Math.max(0, Number(room?.roundNumber ?? 1) - 1),
     mode,
+    featuredRivalId: String(room?.featuredRivalId ?? "").trim().toLowerCase() || null,
     difficulty:
       existingMatch?.difficulty ??
       (mode === MATCH_MODE.PVE ? aiDifficulty : "authoritative_local_pvp"),

@@ -27,14 +27,14 @@ function renderFeaturedRivalOption({ name, id, checked }) {
           alt="Crownfire Duelist Featured Rival"
         />
         <span class="featured-rival-card__body">
-          <span class="featured-rival-card__eyebrow">Boss Battle</span>
+          <span class="featured-rival-card__eyebrow">Featured Rival / Boss Battle</span>
           <strong class="featured-rival-card__name">Crownfire Duelist</strong>
           <span class="featured-rival-card__title">Inferno Regent</span>
-          <span class="featured-rival-card__description">Challenge Crownfire Duelist in a 12-card boss battle.</span>
           <span class="featured-rival-card__detail">Your Deck: 8 cards</span>
           <span class="featured-rival-card__detail">Rival Deck: 12 cards</span>
           <span class="featured-rival-card__detail">Normal EleMintz rules apply</span>
-          <span class="featured-rival-card__detail">Rewards: normal PvE rewards for MVP</span>
+          <span class="featured-rival-card__detail">Daily First Win Bonus: +30 XP / +15 Tokens</span>
+          <span class="featured-rival-card__detail">Warning: Crownfire is intentionally difficult.</span>
         </span>
       </span>
     </label>

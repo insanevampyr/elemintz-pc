@@ -1739,10 +1739,12 @@ test("ui: ai difficulty screen renders the Crownfire featured rival card details
   assert.match(html, /tile_featured_rival_crownfire\.png/);
   assert.match(html, /Crownfire Duelist/);
   assert.match(html, /Inferno Regent/);
+  assert.match(html, /Featured Rival \/ Boss Battle/);
   assert.match(html, /Your Deck: 8 cards/);
   assert.match(html, /Rival Deck: 12 cards/);
   assert.match(html, /Normal EleMintz rules apply/);
-  assert.match(html, /Rewards: normal PvE rewards for MVP/);
+  assert.match(html, /Daily First Win Bonus: \+30 XP \/ \+15 Tokens/);
+  assert.match(html, /Warning: Crownfire is intentionally difficult\./);
 });
 
 test("ui: ai difficulty screen includes Easy practice suppression wording", () => {
@@ -15675,7 +15677,8 @@ test("ui: featured rival match complete payload uses the rival name instead of E
     }
   );
 
-  assert.match(payload.bodyHtml, /VampyrLee defeated Crownfire Duelist\./);
+  assert.match(payload.bodyHtml, /<h4 class="match-complete-outcome">Boss Defeated<\/h4>/);
+  assert.match(payload.bodyHtml, /You defeated Crownfire Duelist\./);
   assert.match(payload.bodyHtml, /VampyrLee • 4 \| Crownfire Duelist • 3/);
   assert.doesNotMatch(payload.bodyHtml, /Elemental AI/);
   assert.deepEqual(payload.startOptions, { featuredRivalId: "crownfire_duelist" });
@@ -15720,6 +15723,48 @@ test("ui: featured rival match complete payload shows the Crownfire first-win bo
   );
 
   assert.match(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong> \+30 XP \/ \+15 tokens/);
+});
+
+test("ui: featured rival match complete payload uses boss-specific loss wording", () => {
+  const controller = createRendererController();
+  controller.username = "VampyrLee";
+  controller.profile = { username: "VampyrLee" };
+  controller.gameController = { captured: { p1: 3, p2: 5 } };
+  controller.pveFeaturedRivalId = "crownfire_duelist";
+  controller.opponentDisplayName = "Crownfire Duelist";
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p2",
+      endReason: "normal",
+      difficulty: "hard",
+      history: [{ result: "p2" }],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: ["fire", "water"] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 3,
+        warsEntered: 2,
+        longestWar: 4
+      },
+      featuredRivalReward: {
+        rivalId: "crownfire_duelist",
+        granted: false,
+        xpDelta: 0,
+        tokenDelta: 0,
+        label: "Crownfire First Win Bonus"
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<h4 class="match-complete-outcome">Boss Survived<\/h4>/);
+  assert.match(payload.bodyHtml, /Crownfire Duelist defeated you\./);
+  assert.match(payload.bodyHtml, /No Crownfire First Win Bonus earned\./);
+  assert.doesNotMatch(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong>/);
 });
 
 test("ui: featured rival match complete payload keeps boost messaging separate from the Crownfire bonus", () => {

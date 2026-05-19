@@ -2425,6 +2425,47 @@ test("gameController: Featured Rival rematch resets back to the same asymmetric 
   }
 });
 
+test("gameController: Featured Rival completion persists featuredRivalId on the settled match payload", async () => {
+  const originalWindow = globalThis.window;
+  const persistedCalls = [];
+  const completedMatches = [];
+  const controller = new GameController({
+    username: "CrownfirePersistence",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "normal",
+    featuredRivalId: "crownfire_duelist",
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+    onUpdate: () => {},
+    onMatchComplete: ({ match }) => completedMatches.push(match)
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async (payload) => {
+            persistedCalls.push(payload);
+            return { ok: true };
+          }
+        }
+      }
+    };
+
+    controller.startNewMatch();
+    await controller.quitMatch({ quitter: "p2", reason: "quit_forfeit" });
+
+    assert.equal(persistedCalls.length, 1);
+    assert.equal(persistedCalls[0].matchState.featuredRivalId, "crownfire_duelist");
+    assert.equal(completedMatches.length, 1);
+    assert.equal(completedMatches[0].featuredRivalId, "crownfire_duelist");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("gameController: normal PvE still starts with symmetric 8 vs 8 hands", async () => {
   const originalWindow = globalThis.window;
   const controller = new GameController({

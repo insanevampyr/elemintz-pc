@@ -5014,13 +5014,19 @@ export class AppController {
     const leftFinalHand = safeValue(match?.players?.p1?.hand?.length);
     const rightFinalHand = safeValue(match?.players?.p2?.hand?.length);
     const rewardSummary = this.buildMatchCompleteRewardSummary(mode, match, finalPersisted);
+    const isCrownfireFeaturedRival =
+      mode === MATCH_MODE.PVE && String(this.pveFeaturedRivalId ?? "").trim().toLowerCase() === "crownfire_duelist";
 
     const outcomeLabel =
       match.winner === "draw"
         ? "Draw"
-        : !isLocalPvp && match.winner === "p2"
-          ? "Defeat"
-          : "Victory";
+        : isCrownfireFeaturedRival
+          ? match.winner === "p1"
+            ? "Boss Defeated"
+            : "Boss Survived"
+          : !isLocalPvp && match.winner === "p2"
+            ? "Defeat"
+            : "Victory";
 
     const outcomeClass =
       outcomeLabel === "Victory"
@@ -5032,7 +5038,15 @@ export class AppController {
     const outcomeSubtitle =
       match.winner === "draw"
         ? `${escapeHtml(leftName)} and ${escapeHtml(rightName)} finished even.`
-        : `${escapeHtml(match.winner === "p1" ? leftName : rightName)} defeated ${escapeHtml(match.winner === "p1" ? rightName : leftName)}.`;
+        : isCrownfireFeaturedRival
+          ? match.winner === "p1"
+            ? `You defeated ${escapeHtml(rightName)}.`
+            : `${escapeHtml(rightName)} defeated you.`
+          : `${escapeHtml(match.winner === "p1" ? leftName : rightName)} defeated ${escapeHtml(match.winner === "p1" ? rightName : leftName)}.`;
+    const featuredRivalLossHelper =
+      isCrownfireFeaturedRival && match.winner === "p2"
+        ? `<p class="match-complete-helper">No Crownfire First Win Bonus earned.</p>`
+        : "";
 
     const bodyHtml = `
       <section class="match-complete-modal ${outcomeClass}">
@@ -5043,6 +5057,7 @@ export class AppController {
           <p class="match-complete-captured">${escapeHtml(leftName)} • ${leftCaptured} | ${escapeHtml(rightName)} • ${rightCaptured}</p>
         </header>
         <p class="match-complete-helper">Captured totals reflect opponent cards won across the full match.</p>
+        ${featuredRivalLossHelper}
 
         <section class="match-complete-stats">
           <div class="match-complete-stat">
