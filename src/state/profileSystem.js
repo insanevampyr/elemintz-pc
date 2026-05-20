@@ -212,6 +212,7 @@ function validateAndRepairProfile(profile) {
   repairNumericField("playerXP", defaults.playerXP);
   repairNumericField("playerLevel", defaults.playerLevel, { min: 1 });
   repairNumericField("cardsCaptured", defaults.cardsCaptured);
+  repairNumericField("featuredRivalWins", defaults.featuredRivalWins);
   repairNumericField("longestWar", defaults.longestWar);
   repairNumericField("matchesUsingAllElements", defaults.matchesUsingAllElements);
 
@@ -530,6 +531,7 @@ function snapshot(profile) {
     warsEntered: profile?.warsEntered ?? 0,
     warsWon: profile?.warsWon ?? 0,
     cardsCaptured: profile?.cardsCaptured ?? 0,
+    featuredRivalWins: profile?.featuredRivalWins ?? 0,
     tokens: profile?.tokens ?? 0,
     playerXP: profile?.playerXP ?? 0,
     playerLevel: profile?.playerLevel ?? 1,

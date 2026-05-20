@@ -273,6 +273,37 @@ const FIRST_EXPANSION_BATCH_ACHIEVEMENTS = Object.freeze([
   }
 ]);
 
+const FEATURED_RIVAL_ACHIEVEMENTS = Object.freeze([
+  {
+    id: "rival_defeats_10",
+    name: "Boss Breaker",
+    description: "Defeat Featured Rivals 10 times.",
+    image: "badges/featuredRival.png",
+    repeatable: false
+  },
+  {
+    id: "rival_defeats_20",
+    name: "Rival Hunter",
+    description: "Defeat Featured Rivals 20 times.",
+    image: "badges/featuredRival.png",
+    repeatable: false
+  },
+  {
+    id: "rival_defeats_30",
+    name: "Boss Slayer",
+    description: "Defeat Featured Rivals 30 times.",
+    image: "badges/featuredRival.png",
+    repeatable: false
+  },
+  {
+    id: "rival_defeats_50",
+    name: "Regent Breaker",
+    description: "Defeat Featured Rivals 50 times.",
+    image: "badges/featuredRival.png",
+    repeatable: false
+  }
+]);
+
 const ACHIEVEMENT_TOKEN_REWARDS = Object.freeze({
   comeback_win_5: 5,
   local_pvp_wins_25: 5,
@@ -304,6 +335,10 @@ const TIERED_UNLOCK_RULES = Object.freeze([
   { id: "wars_won_25", key: "warsWon", threshold: 25 },
   { id: "wars_won_50", key: "warsWon", threshold: 50 },
   { id: "wars_won_100", key: "warsWon", threshold: 100 },
+  { id: "rival_defeats_10", key: "featuredRivalWins", threshold: 10 },
+  { id: "rival_defeats_20", key: "featuredRivalWins", threshold: 20 },
+  { id: "rival_defeats_30", key: "featuredRivalWins", threshold: 30 },
+  { id: "rival_defeats_50", key: "featuredRivalWins", threshold: 50 },
   { id: "level_5", key: "playerLevel", threshold: 5 },
   { id: "level_10", key: "playerLevel", threshold: 10 },
   { id: "level_25", key: "playerLevel", threshold: 25 },
@@ -432,6 +467,7 @@ export const ACHIEVEMENT_DEFINITIONS = Object.freeze([
   },
   ...APPROVED_EXPANSION_ACHIEVEMENTS,
   ...FIRST_EXPANSION_BATCH_ACHIEVEMENTS,
+  ...FEATURED_RIVAL_ACHIEVEMENTS,
   ...PHASE_ONE_TIERED_ACHIEVEMENTS
 ]);
 
@@ -463,6 +499,10 @@ const NUMERIC_PROGRESS_RULES = Object.freeze({
   wars_won_50: { target: 50, current: (profile) => Number(profile?.warsWon ?? 0) },
   wars_won_100: { target: 100, current: (profile) => Number(profile?.warsWon ?? 0) },
   wars_won_250: { target: 250, current: (profile) => Number(profile?.warsWon ?? 0) },
+  rival_defeats_10: { target: 10, current: (profile) => Number(profile?.featuredRivalWins ?? 0) },
+  rival_defeats_20: { target: 20, current: (profile) => Number(profile?.featuredRivalWins ?? 0) },
+  rival_defeats_30: { target: 30, current: (profile) => Number(profile?.featuredRivalWins ?? 0) },
+  rival_defeats_50: { target: 50, current: (profile) => Number(profile?.featuredRivalWins ?? 0) },
   level_5: { target: 5, current: (profile) => Number(profile?.playerLevel ?? 0) },
   level_10: { target: 10, current: (profile) => Number(profile?.playerLevel ?? 0) },
   level_25: { target: 25, current: (profile) => Number(profile?.playerLevel ?? 0) },

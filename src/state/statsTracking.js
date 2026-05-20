@@ -68,6 +68,7 @@ export function normalizeProfileModeStats(profile) {
     warsWon: safeNonNegativeInt(profile.warsWon),
     longestWar: safeNonNegativeInt(profile.longestWar),
     cardsCaptured: safeNonNegativeInt(profile.cardsCaptured),
+    featuredRivalWins: safeNonNegativeInt(profile.featuredRivalWins),
     matchesUsingAllElements: safeNonNegativeInt(profile.matchesUsingAllElements),
     playerXP: safeNonNegativeInt(profile.playerXP),
     playerLevel: Math.max(1, safeNonNegativeInt(profile.playerLevel, 1)),
@@ -134,6 +135,7 @@ export function createDefaultProfile(username) {
     warsWon: 0,
     longestWar: 0,
     cardsCaptured: 0,
+    featuredRivalWins: 0,
     matchesUsingAllElements: 0,
     playerXP: 0,
     playerLevel: 1,
@@ -194,6 +196,7 @@ export function applyMatchStatsToProfile(profile, matchStats, mode = "pve", opti
     warsWon: normalized.warsWon + (matchStats.warsWon ?? 0),
     longestWar: Math.max(normalized.longestWar, matchStats.longestWar ?? 0),
     cardsCaptured: normalized.cardsCaptured + (matchStats.cardsCaptured ?? 0),
+    featuredRivalWins: normalized.featuredRivalWins + (matchStats.featuredRivalWins ?? 0),
     matchesUsingAllElements:
       normalized.matchesUsingAllElements + (matchStats.matchesUsingAllElements ?? 0),
     modeStats: {
@@ -251,6 +254,12 @@ export function deriveMatchStats(matchState, perspective = "p1") {
   const timeLimitWins = didWin && matchState.endReason === "time_limit" ? 1 : 0;
   const matchesUsingAllElements =
     extractPlayedElements(matchState, perspective).size === 4 ? 1 : 0;
+  const isFeaturedRivalWin =
+    didWin &&
+    !isQuitForfeit &&
+    String(matchState?.mode ?? "").trim().toLowerCase() === "pve" &&
+    String(matchState?.difficulty ?? "").trim().toLowerCase() !== "easy" &&
+    String(matchState?.featuredRivalId ?? "").trim().length > 0;
 
   return {
     gamesPlayed: 1,
@@ -260,6 +269,7 @@ export function deriveMatchStats(matchState, perspective = "p1") {
     warsWon,
     longestWar,
     cardsCaptured,
+    featuredRivalWins: isFeaturedRivalWin ? 1 : 0,
     matchesUsingAllElements,
     quickWins,
     timeLimitWins

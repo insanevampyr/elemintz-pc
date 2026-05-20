@@ -282,6 +282,7 @@ test("runtime guard: unresolved mode safely skips stat write", () => {
     warsWon: 0,
     longestWar: 0,
     cardsCaptured: 0,
+    featuredRivalWins: 0,
     matchesUsingAllElements: 0,
     quickWins: 0,
     timeLimitWins: 0
@@ -316,6 +317,7 @@ test("runtime invariant: malformed stat delta does not propagate negative values
     warsWon: 0,
     longestWar: 0,
     cardsCaptured: 0,
+    featuredRivalWins: 0,
     matchesUsingAllElements: 0,
     quickWins: 0,
     timeLimitWins: 0

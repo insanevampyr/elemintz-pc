@@ -354,6 +354,7 @@ test("state: easy PvE practice mode suppresses rewards, stats, chests, challenge
     warsWon: 0,
     longestWar: 0,
     cardsCaptured: 0,
+    featuredRivalWins: 0,
     matchesUsingAllElements: 0,
     quickWins: 0,
     timeLimitWins: 0
@@ -2520,6 +2521,7 @@ test("state: Crownfire first win of the day grants the featured rival daily bonu
   assert.equal(first.featuredRivalReward.granted, true);
   assert.equal(first.featuredRivalReward.xpDelta, 30);
   assert.equal(first.featuredRivalReward.tokenDelta, 15);
+  assert.equal(first.profile.featuredRivalWins, 1);
   assert.equal(
     first.profile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate,
     first.featuredRivalReward.rewardDateKey
@@ -2528,6 +2530,7 @@ test("state: Crownfire first win of the day grants the featured rival daily bonu
   assert.equal(second.featuredRivalReward.granted, false);
   assert.equal(second.featuredRivalReward.xpDelta, 0);
   assert.equal(second.featuredRivalReward.tokenDelta, 0);
+  assert.equal(second.profile.featuredRivalWins, 2);
   assert.ok(second.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
 });
 
@@ -2550,6 +2553,8 @@ test("state: Crownfire loss and quit do not grant the featured rival daily bonus
 
   assert.equal(lossResult.featuredRivalReward.granted, false);
   assert.equal(quitResult.featuredRivalReward.granted, false);
+  assert.equal(lossResult.profile.featuredRivalWins, 0);
+  assert.equal(quitResult.profile.featuredRivalWins, 0);
   assert.ok(lossResult.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
   assert.ok(quitResult.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
 });
@@ -2609,6 +2614,7 @@ test("state: Crownfire reward lock survives reload and old profiles normalize sa
   const legacyState = new StateCoordinator({ dataDir: legacyDataDir, random: constantRandom(0.99) });
   const legacyProfile = await legacyState.profiles.ensureProfile("LegacyCrownfireUser");
   assert.equal(legacyProfile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate, null);
+  assert.equal(legacyProfile.featuredRivalWins, 0);
 });
 
 test("state: normal PvE wins do not set the Crownfire daily reward lock", async () => {
@@ -2625,8 +2631,84 @@ test("state: normal PvE wins do not set the Crownfire daily reward lock", async 
   });
 
   assert.equal(result.featuredRivalReward.granted, false);
+  assert.equal(result.profile.featuredRivalWins, 0);
   assert.equal(result.profile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate, null);
   assert.ok(result.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
+});
+
+test("state: repeat Featured Rival wins still advance weekly rival quest progress after the daily boss bonus is claimed", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.99)
+  });
+  const nowMs = Date.now();
+  const seeded = await state.profiles.ensureProfile("FeaturedRivalRepeatQuestUser");
+
+  await state.profiles.updateProfile("FeaturedRivalRepeatQuestUser", {
+    ...seeded,
+    dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(nowMs), {
+      daily: ["daily_defeat_featured_rival_1", "daily_online_match_1", "daily_win_with_fire"],
+      weekly: ["weekly_defeat_featured_rival_3", "weekly_defeat_featured_rival_5", "weekly_online_matches_5"]
+    })
+  });
+
+  const first = await state.recordMatchResult({
+    username: "FeaturedRivalRepeatQuestUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1" })
+  });
+  const second = await state.recordMatchResult({
+    username: "FeaturedRivalRepeatQuestUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1" })
+  });
+
+  assert.equal(first.featuredRivalReward.granted, true);
+  assert.equal(second.featuredRivalReward.granted, false);
+  assert.equal(second.profile.featuredRivalWins, 2);
+  assert.equal(second.profile.dailyChallenges.daily.progress.featuredRivalWins, 2);
+  assert.equal(second.profile.dailyChallenges.weekly.progress.featuredRivalWins, 2);
+  assert.ok(first.dailyRewards.some((item) => item.id === "daily_defeat_featured_rival_1"));
+  assert.equal(second.dailyRewards.some((item) => item.id === "daily_defeat_featured_rival_1"), false);
+});
+
+test("state: Featured Rival lifetime wins count only for completed PvE Featured Rival victories", async () => {
+  const winDataDir = await createTempDataDir();
+  const lossDataDir = await createTempDataDir();
+  const quitDataDir = await createTempDataDir();
+  const genericDataDir = await createTempDataDir();
+
+  const winState = new StateCoordinator({ dataDir: winDataDir, random: constantRandom(0.99) });
+  const lossState = new StateCoordinator({ dataDir: lossDataDir, random: constantRandom(0.99) });
+  const quitState = new StateCoordinator({ dataDir: quitDataDir, random: constantRandom(0.99) });
+  const genericState = new StateCoordinator({ dataDir: genericDataDir, random: constantRandom(0.99) });
+
+  const winResult = await winState.recordMatchResult({
+    username: "FeaturedRivalLifetimeWinUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1" })
+  });
+  const lossResult = await lossState.recordMatchResult({
+    username: "FeaturedRivalLifetimeLossUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p2" })
+  });
+  const quitResult = await quitState.recordMatchResult({
+    username: "FeaturedRivalLifetimeQuitUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", endReason: "quit_forfeit" })
+  });
+  const genericResult = await genericState.recordMatchResult({
+    username: "FeaturedRivalLifetimeGenericPveUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(winResult.profile.featuredRivalWins, 1);
+  assert.equal(lossResult.profile.featuredRivalWins, 0);
+  assert.equal(quitResult.profile.featuredRivalWins, 0);
+  assert.equal(genericResult.profile.featuredRivalWins, 0);
 });
 
 test("boost events: Crownfire XP bonus stays fixed under an active PvE XP boost", async () => {
@@ -2794,6 +2876,56 @@ test("boost events: repeat Crownfire win does not regrant the daily bonus during
   assert.ok(second.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
   assert.equal(second.matchXpDelta, first.matchXpDelta);
   assert.equal(second.matchTokenDelta, first.matchTokenDelta);
+});
+
+test("boost events: Featured Rival quest rewards remain fixed under active PvE boosts", () => {
+  const nowMs = Date.now();
+  const buildProfile = (username) => ({
+    username,
+    tokens: 0,
+    playerXP: 0,
+    playerLevel: 1,
+    dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(nowMs), {
+      daily: ["daily_defeat_featured_rival_1", "daily_online_match_1", "daily_win_with_fire"],
+      weekly: ["weekly_defeat_featured_rival_3", "weekly_defeat_featured_rival_5", "weekly_online_matches_5"]
+    })
+  });
+  const matchState = createCrownfireRewardMatch({ winner: "p1" });
+  const matchStats = { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 };
+
+  const baseline = applyDailyChallengesForMatch({
+    profile: buildProfile("FeaturedRivalQuestBoostBaseline"),
+    matchState,
+    perspective: "p1",
+    matchStats,
+    nowMs
+  });
+  const boosted = applyDailyChallengesForMatch({
+    profile: buildProfile("FeaturedRivalQuestBoosted"),
+    matchState,
+    perspective: "p1",
+    matchStats,
+    nowMs,
+    options: {
+      boostEvent: {
+        enabled: true,
+        scope: "pve",
+        xpMultiplier: 2,
+        tokenMultiplier: 2,
+        excludeDifficulties: []
+      }
+    }
+  });
+
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
+  assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
+  assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
+  assert.ok(
+    boosted.rewards.daily.some(
+      (item) => item.id === "daily_defeat_featured_rival_1" && item.rewardXp === 15 && item.rewardTokens === 8
+    )
+  );
 });
 
 test("state: local_pvp draw chest chance can grant one basic chest", async () => {
@@ -3476,6 +3608,7 @@ test("economy: daily and weekly challenge rewards include stage1 token+xp values
       daily_local_pvp_match_1: [3, 7],
       daily_comeback_win: [4, 8],
       daily_no_quit_3: [3, 6],
+      daily_defeat_featured_rival_1: [8, 15],
       daily_win_with_fire: [3, 6],
       daily_win_with_water: [3, 6],
       daily_win_with_earth: [3, 6],
@@ -3501,6 +3634,8 @@ test("economy: daily and weekly challenge rewards include stage1 token+xp values
       weekly_local_pvp_matches_5: [10, 25],
       weekly_comeback_wins_5: [12, 30],
       weekly_no_quit_10: [10, 25],
+      weekly_defeat_featured_rival_3: [25, 45],
+      weekly_defeat_featured_rival_5: [40, 75],
       weekly_element_master_fire: [10, 25],
       weekly_element_master_water: [10, 25],
       weekly_element_master_earth: [10, 25],
@@ -3548,6 +3683,13 @@ test("daily: selected bonus IDs are unique and include at most one elemental que
   assert.equal(selected.length, 3);
   assert.equal(new Set(selected).size, 3);
   assert.ok(selected.filter((id) => elementalIds.has(id)).length <= 1);
+});
+
+test("daily and weekly bonus pools include the Featured Rival quest additions", () => {
+  assert.ok(DAILY_BONUS_CHALLENGE_POOL.some((item) => item.id === "daily_defeat_featured_rival_1"));
+  assert.ok(WEEKLY_BONUS_CHALLENGE_POOL.some((item) => item.id === "weekly_defeat_featured_rival_3"));
+  assert.ok(WEEKLY_BONUS_CHALLENGE_POOL.some((item) => item.id === "weekly_defeat_featured_rival_5"));
+  assert.equal(WEEKLY_BONUS_CHALLENGE_POOL.some((item) => item.id === "weekly_defeat_featured_rival_1"), false);
 });
 
 test("weekly: selected bonus IDs are unique and include at most one elemental quest", () => {
@@ -3958,6 +4100,70 @@ test("daily: hard AI bonus quests progress correctly", () => {
   assert.ok(result.rewards.daily.some((item) => item.id === "daily_hard_ai_win_1"));
 });
 
+test("daily: Featured Rival win increments the new Featured Rival bonus quest progress", () => {
+  const result = applyDailyChallengesForMatch({
+    profile: {
+      username: "FeaturedRivalBonusQuestUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+        daily: ["daily_defeat_featured_rival_1", "daily_online_match_1", "daily_win_with_fire"],
+        weekly: ["weekly_defeat_featured_rival_3", "weekly_defeat_featured_rival_5", "weekly_online_matches_5"]
+      })
+    },
+    matchState: createCrownfireRewardMatch({ winner: "p1" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 }
+  });
+
+  assert.equal(result.profile.dailyChallenges.daily.progress.featuredRivalWins, 1);
+  assert.equal(result.profile.dailyChallenges.weekly.progress.featuredRivalWins, 1);
+  assert.ok(result.rewards.daily.some((item) => item.id === "daily_defeat_featured_rival_1"));
+  assert.equal(
+    result.view.weekly.challenges.find((item) => item.id === "weekly_defeat_featured_rival_3")?.progress,
+    1
+  );
+});
+
+test("daily: Featured Rival loss, quit, and generic hard PvE wins do not increment Featured Rival quest progress", () => {
+  const buildProfile = (username) => ({
+    username,
+    tokens: 0,
+    playerXP: 0,
+    playerLevel: 1,
+    dailyChallenges: withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+      daily: ["daily_defeat_featured_rival_1", "daily_online_match_1", "daily_win_with_fire"],
+      weekly: ["weekly_defeat_featured_rival_3", "weekly_defeat_featured_rival_5", "weekly_online_matches_5"]
+    })
+  });
+
+  const loss = applyDailyChallengesForMatch({
+    profile: buildProfile("FeaturedRivalLossQuestUser"),
+    matchState: createCrownfireRewardMatch({ winner: "p2" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 0, cardsCaptured: 0, longestWar: 5 }
+  });
+  const quit = applyDailyChallengesForMatch({
+    profile: buildProfile("FeaturedRivalQuitQuestUser"),
+    matchState: createCrownfireRewardMatch({ winner: "p1", endReason: "quit_forfeit" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 }
+  });
+  const genericHardPveWin = applyDailyChallengesForMatch({
+    profile: buildProfile("GenericHardPveQuestUser"),
+    matchState: createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "hard" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 }
+  });
+
+  for (const result of [loss, quit, genericHardPveWin]) {
+    assert.equal(result.profile.dailyChallenges.daily.progress.featuredRivalWins, 0);
+    assert.equal(result.profile.dailyChallenges.weekly.progress.featuredRivalWins, 0);
+    assert.equal(result.rewards.daily.some((item) => item.id === "daily_defeat_featured_rival_1"), false);
+  }
+});
+
 test("daily: local PvP bonus quests progress correctly", () => {
   const result = applyDailyChallengesForMatch({
     profile: {
@@ -4085,6 +4291,8 @@ test("daily: quit forfeits do not count toward new daily and weekly challenges",
   assert.equal(result.rewards.weekly.length, 0);
   assert.equal(result.profile.dailyChallenges.daily.progress.triggeredTwoWarsInMatch, 0);
   assert.equal(result.profile.dailyChallenges.weekly.progress.reachedWinStreak3, 0);
+  assert.equal(result.profile.dailyChallenges.daily.progress.featuredRivalWins, 0);
+  assert.equal(result.profile.dailyChallenges.weekly.progress.featuredRivalWins, 0);
 });
 
 test("daily: normalizes new progress keys for older profiles safely", () => {
@@ -4121,6 +4329,8 @@ test("daily: normalizes new progress keys for older profiles safely", () => {
   assert.equal(normalized.dailyChallenges.daily.progress.triggeredTwoWarsInMatch, 0);
   assert.equal(normalized.dailyChallenges.weekly.progress.reachedWinStreak3, 0);
   assert.equal(normalized.dailyChallenges.weekly.progress.survivedLongestWar5, 0);
+  assert.equal(normalized.dailyChallenges.daily.progress.featuredRivalWins, 0);
+  assert.equal(normalized.dailyChallenges.weekly.progress.featuredRivalWins, 0);
 });
 
 test("daily: hydration marks newly added challenges completed when stored progress already meets the goal", () => {

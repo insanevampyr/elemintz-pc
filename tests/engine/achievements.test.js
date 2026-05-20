@@ -103,6 +103,10 @@ test("achievement definitions include required badges", () => {
   assert.ok(ids.includes("wars_entered_250"));
   assert.ok(ids.includes("wars_won_250"));
   assert.ok(ids.includes("win_streak_10"));
+  assert.ok(ids.includes("rival_defeats_10"));
+  assert.ok(ids.includes("rival_defeats_20"));
+  assert.ok(ids.includes("rival_defeats_30"));
+  assert.ok(ids.includes("rival_defeats_50"));
 });
 
 test("achievement catalog includes numeric progress metadata for safe locked achievements", () => {
@@ -110,6 +114,7 @@ test("achievement catalog includes numeric progress metadata for safe locked ach
     wins: 73,
     gamesPlayed: 412,
     cardsCaptured: 486,
+    featuredRivalWins: 23,
     warsEntered: 120,
     warsWon: 86,
     playerLevel: 38,
@@ -140,6 +145,10 @@ test("achievement catalog includes numeric progress metadata for safe locked ach
     { current: 38, target: 50, label: "38 / 50", kind: "numeric" }
   );
   assert.deepEqual(
+    catalog.find((item) => item.id === "rival_defeats_20")?.progress,
+    { current: 20, target: 20, label: "20 / 20", kind: "numeric" }
+  );
+  assert.deepEqual(
     catalog.find((item) => item.id === "comeback_win_25")?.progress,
     { current: 11, target: 25, label: "11 / 25", kind: "numeric" }
   );
@@ -150,6 +159,7 @@ test("achievement catalog progress clamps current to 0 minimum", () => {
     wins: -20,
     gamesPlayed: -5,
     cardsCaptured: -10,
+    featuredRivalWins: -12,
     warsEntered: -2,
     warsWon: -1,
     playerLevel: -4,
@@ -182,6 +192,7 @@ test("achievement catalog progress clamps current to target maximum", () => {
     wins: 9999,
     gamesPlayed: 9999,
     cardsCaptured: 9999,
+    featuredRivalWins: 9999,
     warsEntered: 9999,
     warsWon: 9999,
     playerLevel: 999,
@@ -202,6 +213,10 @@ test("achievement catalog progress clamps current to target maximum", () => {
   assert.deepEqual(
     catalog.find((item) => item.id === "wars_won_250")?.progress,
     { current: 250, target: 250, label: "250 / 250", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "rival_defeats_50")?.progress,
+    { current: 50, target: 50, label: "50 / 50", kind: "numeric" }
   );
   assert.deepEqual(
     catalog.find((item) => item.id === "streak_lord")?.progress,
@@ -749,6 +764,35 @@ test("achievement evaluator: first expansion batch does not unlock below thresho
   assert.ok(!ids.includes("win_streak_10"));
 });
 
+test("achievement evaluator: Featured Rival lifetime milestones unlock at 10, 20, 30, and 50 wins", () => {
+  const match = buildCompletedMatch({
+    winner: "p1",
+    rounds: 5,
+    history: [{ result: "p1", warClashes: 0, capturedCards: 2 }],
+    mode: "pve"
+  });
+  match.featuredRivalId = "crownfire_duelist";
+
+  const scenarios = [
+    { before: 9, after: 10, id: "rival_defeats_10" },
+    { before: 19, after: 20, id: "rival_defeats_20" },
+    { before: 29, after: 30, id: "rival_defeats_30" },
+    { before: 49, after: 50, id: "rival_defeats_50" }
+  ];
+
+  for (const scenario of scenarios) {
+    const unlocked = evaluateAchievements({
+      profileBefore: { achievements: {}, featuredRivalWins: scenario.before },
+      profileAfter: { achievements: {}, featuredRivalWins: scenario.after },
+      matchState: match,
+      perspective: "p1",
+      matchStats: { wins: 1, losses: 0, cardsCaptured: 1, featuredRivalWins: 1 }
+    });
+
+    assert.ok(unlocked.some((item) => item.id === scenario.id));
+  }
+});
+
 test("achievement token rewards: first expansion batch grants only the approved token payouts", () => {
   const startingProfile = { tokens: 100 };
   const rewarded = applyAchievementTokenRewards(startingProfile, [
@@ -768,6 +812,31 @@ test("achievement token rewards: first expansion batch grants only the approved 
     { id: "wars_won_250" }
   ]);
   assert.equal(unrewarded.profile.tokens, 100);
+});
+
+test("Featured Rival lifetime achievements use the shared badge and grant no token rewards", () => {
+  const definitions = ACHIEVEMENT_DEFINITIONS.filter((item) =>
+    ["rival_defeats_10", "rival_defeats_20", "rival_defeats_30", "rival_defeats_50"].includes(item.id)
+  );
+
+  assert.equal(definitions.length, 4);
+  for (const definition of definitions) {
+    assert.equal(definition.image, "badges/featuredRival.png");
+    assert.equal(definition.repeatable, false);
+    assert.equal("rewardTokens" in definition, false);
+    assert.equal("rewardXp" in definition, false);
+    assert.equal("rewardChest" in definition, false);
+    assert.equal("rewardCosmetic" in definition, false);
+    assert.equal("rewardTitle" in definition, false);
+    assert.equal("shopReward" in definition, false);
+  }
+
+  const rewarded = applyAchievementTokenRewards(
+    { tokens: 100 },
+    definitions.map((definition) => ({ id: definition.id }))
+  );
+  assert.equal(rewarded.tokenDelta, 0);
+  assert.equal(rewarded.profile.tokens, 100);
 });
 
 test("achievement evaluator: comeback win unlocks only for the eventual winner who dropped to three cards", () => {
@@ -1037,7 +1106,10 @@ test("state coordinator: local PvP mode milestone grants one-time token reward",
 
   assert.ok(result.unlockedAchievements.some((item) => item.id === "local_pvp_wins_50"));
   assert.equal(result.profile.achievements.local_pvp_wins_50.count, 1);
-  assert.equal(result.profile.tokens - beforeMilestone.tokens, 14);
+  assert.equal(
+    result.profile.tokens - beforeMilestone.tokens - result.tokenDelta - result.levelRewardTokenDelta,
+    10
+  );
 });
 
 test("state coordinator: online PvP unlocks through recordOnlineMatchResult on the shared authoritative path", async () => {
@@ -1256,6 +1328,112 @@ test("profile normalization retroactively unlocks first expansion batch from per
   assert.equal(secondLoad.achievements.online_wins_50.count, 1);
   assert.equal(secondLoad.achievements.win_streak_10.count, 1);
   assert.equal(secondLoad.tokens, 170);
+});
+
+test("profile normalization retroactively unlocks Featured Rival lifetime achievements only when the lifetime stat exists", async () => {
+  const dataDir = await createTempDataDir();
+  const profilesPath = path.join(dataDir, "profiles.json");
+  await fs.writeFile(
+    profilesPath,
+    JSON.stringify([
+      {
+        username: "RetroFeaturedRivalUser",
+        tokens: 55,
+        wins: 0,
+        losses: 0,
+        gamesPlayed: 0,
+        featuredRivalWins: 50,
+        playerXP: 0,
+        playerLevel: 1,
+        modeStats: {
+          pve: { gamesPlayed: 0, wins: 0, losses: 0, warsEntered: 0, warsWon: 0, longestWar: 0, cardsCaptured: 0, quickWins: 0, timeLimitWins: 0 },
+          local_pvp: { gamesPlayed: 0, wins: 0, losses: 0, warsEntered: 0, warsWon: 0, longestWar: 0, cardsCaptured: 0, quickWins: 0, timeLimitWins: 0 },
+          online_pvp: { gamesPlayed: 0, wins: 0, losses: 0, warsEntered: 0, warsWon: 0, longestWar: 0, cardsCaptured: 0, quickWins: 0, timeLimitWins: 0 }
+        },
+        achievements: {},
+        ownedCosmetics: {
+          avatar: ["default_avatar"],
+          cardBack: ["default_card_back"],
+          background: ["default_background"],
+          elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+          badge: ["none"],
+          title: ["Initiate"]
+        },
+        equippedCosmetics: {
+          avatar: "default_avatar",
+          cardBack: "default_card_back",
+          background: "default_background",
+          elementCardVariant: {
+            fire: "default_fire_card",
+            water: "default_water_card",
+            earth: "default_earth_card",
+            wind: "default_wind_card"
+          },
+          badge: "none",
+          title: "Initiate"
+        },
+        cosmetics: {
+          avatar: "default_avatar",
+          cardBack: "default_card_back",
+          background: "default_background",
+          badge: "none"
+        },
+        dailyChallenges: {
+          daily: { lastReset: null, progress: {}, completed: {}, rewarded: {}, completionChestGranted: false },
+          weekly: { lastReset: null, progress: {}, completed: {}, rewarded: {}, completionChestGranted: false }
+        },
+        chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 },
+        levelRewardsClaimed: {},
+        cosmeticUnlockTracking: {
+          FIRST_AVATAR_PURCHASED: false,
+          FIRST_CARD_BACK_PURCHASED: false,
+          FIRST_BACKGROUND_PURCHASED: false,
+          FIRST_CARD_VARIANT_PURCHASED: false,
+          FIRST_TITLE_UNLOCKED: false,
+          FIRST_BADGE_UNLOCKED: false,
+          TOTAL_COSMETICS_OWNED: 9
+        },
+        onlineRewardSettlements: { appliedSettlementKeys: [] },
+        onlineDisconnectTracking: {
+          totalLiveMatchDisconnects: 0,
+          totalReconnectTimeoutExpirations: 0,
+          totalSuccessfulReconnectResumes: 0,
+          recentDisconnectTimestamps: [],
+          recentExpirationTimestamps: []
+        },
+        achievementCatalogVersion: 45,
+        schemaVersion: 1
+      },
+      {
+        username: "LegacyFeaturedRivalUser",
+        tokens: 55,
+        wins: 0,
+        losses: 0,
+        gamesPlayed: 0,
+        playerXP: 0,
+        playerLevel: 1,
+        achievements: {},
+        schemaVersion: 1
+      }
+    ], null, 2)
+  );
+
+  const state = new StateCoordinator({ dataDir });
+  const withStat = await state.profiles.getProfile("RetroFeaturedRivalUser");
+  const legacy = await state.profiles.getProfile("LegacyFeaturedRivalUser");
+
+  assert.equal(withStat.achievements.rival_defeats_10.count, 1);
+  assert.equal(withStat.achievements.rival_defeats_20.count, 1);
+  assert.equal(withStat.achievements.rival_defeats_30.count, 1);
+  assert.equal(withStat.achievements.rival_defeats_50.count, 1);
+  assert.equal(withStat.tokens, 55);
+
+  assert.equal(legacy.featuredRivalWins, 0);
+  assert.equal(legacy.achievements.rival_defeats_10 ?? null, null);
+
+  const secondLoad = await state.profiles.getProfile("RetroFeaturedRivalUser");
+  assert.equal(secondLoad.achievements.rival_defeats_50.count, 1);
+  assert.equal(secondLoad.tokens, 55);
 });
 
 test("state coordinator: already unlocked non-repeatable achievements do not persist twice", async () => {

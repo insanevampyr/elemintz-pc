@@ -164,6 +164,7 @@ function profileCommitSnapshot(profile) {
     warsEntered: profile?.warsEntered ?? 0,
     warsWon: profile?.warsWon ?? 0,
     cardsCaptured: profile?.cardsCaptured ?? 0,
+    featuredRivalWins: profile?.featuredRivalWins ?? 0,
     tokens: profile?.tokens ?? 0,
     playerXP: profile?.playerXP ?? 0,
     playerLevel: profile?.playerLevel ?? 1,
@@ -185,6 +186,7 @@ function createZeroMatchStats(matchStats = {}) {
     warsWon: 0,
     longestWar: 0,
     cardsCaptured: 0,
+    featuredRivalWins: 0,
     matchesUsingAllElements: 0,
     quickWins: 0,
     timeLimitWins: 0,
@@ -368,6 +370,7 @@ export function guardRuntimeStatWritePayload({
     warsWon: safeRuntimeCount(matchStats?.warsWon, 0),
     longestWar: safeRuntimeCount(matchStats?.longestWar, 0),
     cardsCaptured: safeRuntimeCount(matchStats?.cardsCaptured, 0),
+    featuredRivalWins: safeRuntimeCount(matchStats?.featuredRivalWins, 0),
     matchesUsingAllElements: safeRuntimeCount(matchStats?.matchesUsingAllElements, 0),
     quickWins: safeRuntimeCount(matchStats?.quickWins, 0),
     timeLimitWins: safeRuntimeCount(matchStats?.timeLimitWins, 0)

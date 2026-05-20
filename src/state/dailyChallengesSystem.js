@@ -139,6 +139,15 @@ export const DAILY_BONUS_CHALLENGE_POOL = Object.freeze([
     progressKey: "completedNoQuitMatch"
   },
   {
+    id: "daily_defeat_featured_rival_1",
+    name: "Bring Down the Boss",
+    description: "Defeat the Featured Rival 1 time today.",
+    rewardTokens: 8,
+    rewardXp: 15,
+    goal: 1,
+    progressKey: "featuredRivalWins"
+  },
+  {
     id: "daily_win_with_fire",
     name: "Win With Fire",
     description: "Win a completed match where Fire wins at least one round.",
@@ -307,6 +316,24 @@ export const WEEKLY_BONUS_CHALLENGE_POOL = Object.freeze([
     progressKey: "completedNoQuitMatch"
   },
   {
+    id: "weekly_defeat_featured_rival_3",
+    name: "Rival Challenger",
+    description: "Defeat the Featured Rival 3 times this week.",
+    rewardTokens: 25,
+    rewardXp: 45,
+    goal: 3,
+    progressKey: "featuredRivalWins"
+  },
+  {
+    id: "weekly_defeat_featured_rival_5",
+    name: "Rival Slayer",
+    description: "Defeat the Featured Rival 5 times this week.",
+    rewardTokens: 40,
+    rewardXp: 75,
+    goal: 5,
+    progressKey: "featuredRivalWins"
+  },
+  {
     id: "weekly_element_master_fire",
     name: "Element Master: Fire",
     description: "Win 5 matches where Fire wins at least one round.",
@@ -416,6 +443,7 @@ function buildProgressDefaults() {
     wonHardPveMatch: 0,
     completedLocalPvpMatch: 0,
     completedNoQuitMatch: 0,
+    featuredRivalWins: 0,
     comebackWin: 0,
     wonRoundWithFire: 0,
     wonRoundWithWater: 0,
@@ -472,6 +500,10 @@ function normalizeProgress(value) {
     completedNoQuitMatch: Math.max(
       0,
       Number(incoming.completedNoQuitMatch ?? defaults.completedNoQuitMatch) || 0
+    ),
+    featuredRivalWins: Math.max(
+      0,
+      Number(incoming.featuredRivalWins ?? defaults.featuredRivalWins) || 0
     ),
     comebackWin: Math.max(0, Number(incoming.comebackWin ?? defaults.comebackWin) || 0),
     wonRoundWithFire: Math.max(0, Number(incoming.wonRoundWithFire ?? defaults.wonRoundWithFire) || 0),
@@ -966,6 +998,7 @@ function applyChallengeProgress({ definitions, state, metrics }) {
   next.progress.wonHardPveMatch += metrics.wonHardPveMatch;
   next.progress.completedLocalPvpMatch += metrics.completedLocalPvpMatch;
   next.progress.completedNoQuitMatch += metrics.completedNoQuitMatch;
+  next.progress.featuredRivalWins += metrics.featuredRivalWins;
   next.progress.comebackWin += metrics.comebackWin;
   next.progress.wonRoundWithFire += metrics.wonRoundWithFire;
   next.progress.wonRoundWithWater += metrics.wonRoundWithWater;
@@ -1058,6 +1091,10 @@ export function applyDailyChallengesForMatch({
   });
 
   if (isCompleted && !isQuit && !practiceMode) {
+    const isFeaturedRivalWin =
+      String(matchState?.mode ?? "").trim().toLowerCase() === "pve" &&
+      String(matchState?.featuredRivalId ?? "").trim().length > 0 &&
+      didWin;
     const metrics = {
       matchesPlayed: 1,
       matchesWon: didWin ? 1 : 0,
@@ -1078,6 +1115,7 @@ export function applyDailyChallengesForMatch({
           : 0,
       completedLocalPvpMatch: String(matchState?.mode ?? "").trim().toLowerCase() === "local_pvp" ? 1 : 0,
       completedNoQuitMatch: 1,
+      featuredRivalWins: isFeaturedRivalWin ? 1 : 0,
       comebackWin: didWin && didLoseAnyRound(matchState, perspective) ? 1 : 0,
       wonRoundWithFire: didWin && wonRoundElements.has("fire") ? 1 : 0,
       wonRoundWithWater: didWin && wonRoundElements.has("water") ? 1 : 0,
