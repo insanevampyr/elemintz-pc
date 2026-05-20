@@ -139,6 +139,42 @@ function viewedTitleIcon(viewedProfile) {
   return iconMap[title] ?? null;
 }
 
+function safeStat(value) {
+  return Math.max(0, Number(value ?? 0));
+}
+
+function renderStatList(items) {
+  return `
+    <div class="profile-stat-list">
+      ${items
+        .map(
+          (item) => `
+            <div class="profile-stat-row">
+              <span class="profile-stat-label">${item.label}</span>
+              <strong class="profile-stat-value">${item.value}</strong>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderModeStatsCard(title, stats = {}) {
+  return `
+    <section class="profile-mode-card stack-sm">
+      <h4 class="section-title">${title}</h4>
+      ${renderStatList([
+        { label: "Games Played", value: safeStat(stats.gamesPlayed) },
+        { label: "Wins / Losses", value: `${safeStat(stats.wins)} / ${safeStat(stats.losses)}` },
+        { label: "Cards Captured", value: safeStat(stats.cardsCaptured) },
+        { label: "WARs Entered / Won", value: `${safeStat(stats.warsEntered)} / ${safeStat(stats.warsWon)}` },
+        { label: "Longest WAR", value: safeStat(stats.longestWar) }
+      ])}
+    </section>
+  `;
+}
+
 function renderXpProgress(profile) {
   const level = Math.max(1, Number(profile.playerLevel ?? 1));
   const totalXp = Math.max(0, Number(profile.playerXP ?? 0));
@@ -159,8 +195,8 @@ function renderXpProgress(profile) {
     : '<p class="next-reward-line"><strong>Next Reward:</strong> Level cap reached</p>';
 
   return `
-    <section class="stack-sm xp-panel">
-      <h3 class="section-title">Progression</h3>
+    <section class="stack-sm xp-panel profile-summary-card">
+      <h3 class="section-title">Progress</h3>
       <p><strong>Level ${level}</strong></p>
       <p>XP: ${displayedCurrentXp} / ${displayedRequiredXp}</p>
       ${nextRewardLine}
@@ -307,10 +343,10 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
   const warsWon = Math.max(0, Number(viewedProfile.warsWon ?? 0));
   const longestWar = Math.max(0, Number(viewedProfile.longestWar ?? 0));
   const bestWinStreak = Math.max(0, Number(viewedProfile.bestWinStreak ?? 0));
-  const pveWins = Math.max(0, Number(viewedProfile.modeStats?.pve?.wins ?? 0));
-  const pveLosses = Math.max(0, Number(viewedProfile.modeStats?.pve?.losses ?? 0));
-  const pvpWins = Math.max(0, Number(viewedProfile.modeStats?.local_pvp?.wins ?? 0));
-  const pvpLosses = Math.max(0, Number(viewedProfile.modeStats?.local_pvp?.losses ?? 0));
+  const featuredRivalWins = Math.max(0, Number(viewedProfile.featuredRivalWins ?? 0));
+  const pveStats = viewedProfile.modeStats?.pve ?? {};
+  const localPvpStats = viewedProfile.modeStats?.local_pvp ?? {};
+  const onlinePvpStats = viewedProfile.modeStats?.online_pvp ?? {};
   const viewedBackgroundId =
     viewedProfile.equippedCosmetics?.background ??
     viewedProfile.cosmetics?.background ??
@@ -331,21 +367,47 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
           badgeId: viewedProfile.equippedCosmetics?.badge ?? "none",
           badgeSrc: featuredBadge
         })}
-        <div class="grid two-col">
-          <p>Level: ${level}</p>
-          <p>Total XP: ${xp}</p>
-          <p>Tokens: ${tokens}</p>
-          <p>Games Played: ${gamesPlayed}</p>
-          <p>Wins: ${wins}</p>
-          <p>Losses: ${losses}</p>
-          <p>Cards Captured: ${cardsCaptured}</p>
-          <p>Wars Entered / Won: ${warsEntered} / ${warsWon}</p>
-          <p>Longest War: ${longestWar}</p>
-          <p>Best Win Streak: ${bestWinStreak}</p>
-          <p>PvE W/L: ${pveWins} / ${pveLosses}</p>
-          <p>Local PvP W/L: ${pvpWins} / ${pvpLosses}</p>
+        <div class="profile-summary-grid profile-summary-grid-viewed">
+          <section class="profile-summary-card stack-sm">
+            <h3 class="section-title">Account Snapshot</h3>
+            ${renderStatList([
+              { label: "Level", value: level },
+              { label: "XP", value: xp },
+              { label: "Tokens", value: tokens }
+            ])}
+          </section>
+          <section class="profile-summary-card stack-sm">
+            <h3 class="section-title">Overall Record</h3>
+            ${renderStatList([
+              { label: "Wins", value: wins },
+              { label: "Losses", value: losses },
+              { label: "Games Played", value: gamesPlayed },
+              { label: "Best Win Streak", value: bestWinStreak }
+            ])}
+          </section>
+          <section class="profile-summary-card stack-sm">
+            <h3 class="section-title">Battle Stats</h3>
+            ${renderStatList([
+              { label: "Cards Captured", value: cardsCaptured },
+              { label: "WARs Entered", value: warsEntered },
+              { label: "WARs Won", value: warsWon },
+              { label: "Longest WAR", value: longestWar }
+            ])}
+          </section>
+          <section class="profile-summary-card stack-sm">
+            <h3 class="section-title">Featured Rival</h3>
+            ${renderStatList([{ label: "Featured Rival Wins", value: featuredRivalWins }])}
+          </section>
         </div>
-        <div class="section-heading-row">
+        <section class="profile-summary-card stack-sm">
+          <h3 class="section-title">Mode Stats</h3>
+          <div class="profile-mode-grid">
+            ${renderModeStatsCard("PvE", pveStats)}
+            ${renderModeStatsCard("Local PvP", localPvpStats)}
+            ${renderModeStatsCard("Online PvP", onlinePvpStats)}
+          </div>
+        </section>
+        <div class="section-heading-row profile-achievements-heading">
           <h3 class="section-title">Achievements (${unlockedAchievementCount}/${totalAchievementCount})</h3>
           <button id="viewed-profile-achievements-toggle-btn" class="btn btn-secondary" type="button">${achievementToggleLabel}</button>
         </div>
@@ -378,6 +440,7 @@ export const profileScreen = {
     const viewedProfileAchievementsExpanded = Boolean(context.viewedProfileAchievementsExpanded);
     const searchResults = context.searchResults ?? [];
     const cosmetics = context.cosmetics;
+    const onlinePvpStats = profile.modeStats?.online_pvp ?? {};
 
     const playerAvatar = getAvatarImage(profile.equippedCosmetics?.avatar);
     const profileTitleIcon = getTitleCatalogIcon(cosmetics, profile.equippedCosmetics?.title);
@@ -405,31 +468,54 @@ export const profileScreen = {
             badgeId: profile.equippedCosmetics?.badge ?? "none",
             badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
           })}
-          <p>Tokens: <strong>${profile.tokens ?? 0}</strong></p>
-          <p>Founder / Supporter: <strong>${profile.supporterPass ? "Active" : "Not Active"}</strong></p>
-          ${renderXpProgress(profile)}
-          ${renderChestPanel(profile, context.basicChestVisualState, {
-            openingInFlight: context.profileChestOpenInFlight
-          })}
-
-          <div class="grid two-col">
-            <p>Wins: ${profile.wins}</p>
-            <p>Losses: ${profile.losses}</p>
-            <p>Wars Entered: ${profile.warsEntered}</p>
-            <p>Wars Won: ${profile.warsWon}</p>
-            <p>Longest War: ${profile.longestWar}</p>
-            <p>Cards Captured: ${profile.cardsCaptured}</p>
-            <p>Games Played: ${profile.gamesPlayed ?? 0}</p>
-            <p>Best Win Streak: ${profile.bestWinStreak ?? 0}</p>
+          <div class="profile-summary-grid">
+            ${renderXpProgress(profile)}
+            <section class="profile-summary-card stack-sm">
+              <h3 class="section-title">Currency & Chests</h3>
+              ${renderStatList([
+                { label: "Tokens", value: profile.tokens ?? 0 },
+                { label: "Founder / Supporter", value: profile.supporterPass ? "Active" : "Not Active" }
+              ])}
+              ${renderChestPanel(profile, context.basicChestVisualState, {
+                openingInFlight: context.profileChestOpenInFlight
+              })}
+            </section>
+            <section class="profile-summary-card stack-sm">
+              <h3 class="section-title">Overall Record</h3>
+              ${renderStatList([
+                { label: "Wins", value: profile.wins ?? 0 },
+                { label: "Losses", value: profile.losses ?? 0 },
+                { label: "Games Played", value: profile.gamesPlayed ?? 0 },
+                { label: "Best Win Streak", value: profile.bestWinStreak ?? 0 }
+              ])}
+            </section>
+            <section class="profile-summary-card stack-sm">
+              <h3 class="section-title">Battle Stats</h3>
+              ${renderStatList([
+                { label: "Cards Captured", value: profile.cardsCaptured ?? 0 },
+                { label: "WARs Entered", value: profile.warsEntered ?? 0 },
+                { label: "WARs Won", value: profile.warsWon ?? 0 },
+                { label: "Longest WAR", value: profile.longestWar ?? 0 }
+              ])}
+            </section>
+            <section class="profile-summary-card stack-sm">
+              <h3 class="section-title">Featured Rival</h3>
+              ${renderStatList([
+                { label: "Featured Rival Wins", value: profile.featuredRivalWins ?? 0 }
+              ])}
+            </section>
           </div>
 
-          <h3 class="section-title">Mode Stats</h3>
-          <div class="grid two-col">
-            <p>PvE W/L: ${profile.modeStats?.pve?.wins ?? 0} / ${profile.modeStats?.pve?.losses ?? 0}</p>
-            <p>Local PvP W/L: ${profile.modeStats?.local_pvp?.wins ?? 0} / ${profile.modeStats?.local_pvp?.losses ?? 0}</p>
-          </div>
+          <section class="profile-summary-card stack-sm">
+            <h3 class="section-title">Mode Stats</h3>
+            <div class="profile-mode-grid">
+              ${renderModeStatsCard("PvE", profile.modeStats?.pve ?? {})}
+              ${renderModeStatsCard("Local PvP", profile.modeStats?.local_pvp ?? {})}
+              ${renderModeStatsCard("Online PvP", onlinePvpStats)}
+            </div>
+          </section>
 
-          <div class="section-heading-row">
+          <div class="section-heading-row profile-achievements-heading">
             <h3 class="section-title">Achievements (${unlockedAchievementCount}/${totalAchievementCount})</h3>
             <button id="profile-achievements-toggle-btn" class="btn btn-secondary" type="button">${profileAchievementsExpanded ? "Hide Achievements" : "Show Achievements"}</button>
           </div>

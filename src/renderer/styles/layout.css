@@ -1432,6 +1432,77 @@ body {
   z-index: 1;
 }
 
+.profile-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.profile-summary-grid-viewed {
+  margin-top: 10px;
+}
+
+.profile-summary-card {
+  border: 1px solid rgba(108, 154, 187, 0.32);
+  border-radius: 12px;
+  background: rgba(10, 25, 39, 0.5);
+  padding: 12px;
+}
+
+.profile-summary-card > .section-title {
+  margin-bottom: 6px;
+}
+
+.profile-stat-list {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-stat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(130, 170, 199, 0.1);
+  padding-top: 6px;
+}
+
+.profile-stat-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.profile-stat-label {
+  color: rgba(219, 236, 251, 0.84);
+}
+
+.profile-stat-value {
+  text-align: right;
+  color: #f3fbff;
+}
+
+.profile-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-mode-card {
+  border: 1px solid rgba(108, 154, 187, 0.22);
+  border-radius: 10px;
+  background: rgba(5, 18, 31, 0.34);
+  padding: 10px;
+}
+
+.profile-mode-card > .section-title {
+  font-size: 0.95rem;
+}
+
+.profile-achievements-heading {
+  margin-top: 14px;
+}
+
 
 .daily-panel {
   background: linear-gradient(160deg, var(--screen-panel-start), var(--screen-panel-end));
@@ -1783,6 +1854,11 @@ body {
   }
 
   .achievement-grid-profile {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-summary-grid,
+  .profile-mode-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -3408,9 +3408,14 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
       gamesPlayed: 3,
       bestWinStreak: 2,
       tokens: 200,
+      featuredRivalWins: 7,
       supporterPass: false,
       achievements: {},
-      modeStats: { pve: { wins: 2, losses: 1 }, local_pvp: { wins: 0, losses: 0 } },
+      modeStats: {
+        pve: { wins: 2, losses: 1, gamesPlayed: 3, cardsCaptured: 4, warsEntered: 1, warsWon: 0, longestWar: 2 },
+        local_pvp: { wins: 0, losses: 0, gamesPlayed: 0, cardsCaptured: 0, warsEntered: 0, warsWon: 0, longestWar: 0 },
+        online_pvp: { wins: 1, losses: 2, gamesPlayed: 3, cardsCaptured: 5, warsEntered: 2, warsWon: 1, longestWar: 3 }
+      },
       equippedCosmetics: { avatar: "default_avatar", title: "Initiate" }
     },
     cosmetics: {
@@ -3439,8 +3444,17 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
 
   assert.match(html, /class="player-avatar"/);
   assert.match(html, /<span>Initiate<\/span>/);
+  assert.match(html, />Progress</);
+  assert.match(html, />Currency & Chests</);
+  assert.match(html, />Overall Record</);
+  assert.match(html, />Battle Stats</);
+  assert.match(html, />Mode Stats</);
+  assert.match(html, />Featured Rival</);
   assert.match(html, /Profile Search/);
   assert.match(html, /View Rival/);
+  assert.match(html, /Online PvP/);
+  assert.match(html, /Featured Rival Wins/);
+  assert.match(html, /profile-stat-value">7<\/strong>/);
   assert.doesNotMatch(html, /Avatar:/);
   assert.doesNotMatch(html, /Card Back:/);
   assert.doesNotMatch(html, /Background:/);
@@ -3451,6 +3465,56 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.match(html, /data-preview-type="title"/);
   assert.doesNotMatch(html, /data-preview-type="badge"/);
   assert.match(html, /data-preview-description="Default cosmetic\."/);
+});
+
+test("ui: profile screen renders safe fallback values for missing online and featured rival stats", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "FallbackHero",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    profileAchievementsExpanded: false,
+    viewedProfileAchievementsExpanded: false,
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(html, /Online PvP/);
+  assert.match(html, /Featured Rival Wins/);
+  assert.match(html, /profile-stat-value">0<\/strong>/);
 });
 
 test("ui: profile screen adds hover preview metadata for own and viewed badge and title identity", () => {
@@ -5824,10 +5888,10 @@ test("ui: viewed profile shows only unlocked achievements with badge images", ()
   });
 
   assert.match(html, /Viewed Profile/);
-  assert.match(html, /Level: 4/);
-  assert.match(html, /Total XP: 83/);
-  assert.match(html, /Tokens: 245/);
-  assert.match(html, /Games Played: 7/);
+  assert.match(html, /profile-stat-label">Level<\/span>\s*<strong class="profile-stat-value">4<\/strong>/);
+  assert.match(html, /profile-stat-label">XP<\/span>\s*<strong class="profile-stat-value">83<\/strong>/);
+  assert.match(html, /profile-stat-label">Tokens<\/span>\s*<strong class="profile-stat-value">245<\/strong>/);
+  assert.match(html, /profile-stat-label">Games Played<\/span>\s*<strong class="profile-stat-value">7<\/strong>/);
   assert.match(
     html,
     new RegExp(`Achievements \\(1\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
@@ -6165,13 +6229,15 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
       wins: 2,
       losses: 3,
       cardsCaptured: 10,
+      featuredRivalWins: 4,
       achievements: {
         first_flame: { count: 1 },
         quick_draw: { count: 0 }
       },
       modeStats: {
-        pve: { wins: 2, losses: 1 },
-        local_pvp: { wins: 0, losses: 2 }
+        pve: { wins: 2, losses: 1, gamesPlayed: 3, cardsCaptured: 6, warsEntered: 2, warsWon: 1, longestWar: 4 },
+        local_pvp: { wins: 0, losses: 2, gamesPlayed: 2, cardsCaptured: 3, warsEntered: 1, warsWon: 0, longestWar: 2 },
+        online_pvp: { wins: 1, losses: 3, gamesPlayed: 4, cardsCaptured: 7, warsEntered: 2, warsWon: 1, longestWar: 3 }
       },
       equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
     },
@@ -6179,11 +6245,19 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
   });
 
   assert.match(html, /Viewed Profile/);
+  assert.match(html, />Account Snapshot</);
+  assert.match(html, />Overall Record</);
+  assert.match(html, />Battle Stats</);
+  assert.match(html, />Mode Stats</);
+  assert.match(html, />Featured Rival</);
   assert.match(
     html,
     new RegExp(`Achievements \\(1\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
   );
   assert.match(html, /Show Achievements/);
+  assert.match(html, /Online PvP/);
+  assert.match(html, /Featured Rival Wins/);
+  assert.match(html, /profile-stat-value">4<\/strong>/);
   assert.match(html, /Close Viewed Profile/);
   assert.doesNotMatch(html, /firstFlame\.png/);
 });
@@ -6246,8 +6320,8 @@ test("ui: viewed profile renders derived level correctly on first render", () =>
     backgroundImage: "assets/EleMintzIcon.png"
   });
 
-  assert.match(html, /Level: 4/);
-  assert.match(html, /Total XP: 112/);
+  assert.match(html, /profile-stat-label">Level<\/span>\s*<strong class="profile-stat-value">4<\/strong>/);
+  assert.match(html, /profile-stat-label">XP<\/span>\s*<strong class="profile-stat-value">112<\/strong>/);
 });
 
 test("ui: viewed profile mode hides cosmetic selectors and applies viewed background on panel", () => {
