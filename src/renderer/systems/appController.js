@@ -147,6 +147,8 @@ export class AppController {
     this.localPlayerAuthorities = null;
     this.profileSearchQuery = "";
     this.viewedProfileUsername = null;
+    this.profileAchievementsExpanded = false;
+    this.viewedProfileAchievementsExpanded = false;
     this.passTimerId = null;
     this.passKeyHandler = null;
     this.dailyChallenges = null;
@@ -6324,8 +6326,13 @@ export class AppController {
     this.ensureMatchTauntUiTimer();
   }
 
-  async showProfile({ preserveModal = false } = {}) {
+  async showProfile({ preserveModal = false, preserveAchievementVisibility = false } = {}) {
+    const enteringFresh = this.screenFlow !== "profile";
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
+    if (!preserveAchievementVisibility || enteringFresh) {
+      this.profileAchievementsExpanded = false;
+      this.viewedProfileAchievementsExpanded = false;
+    }
     this.screenFlow = "profile";
     const serverProfile = this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
@@ -6372,6 +6379,8 @@ export class AppController {
         searchQuery: this.profileSearchQuery,
         searchResults,
         viewedProfile,
+        profileAchievementsExpanded: this.profileAchievementsExpanded,
+        viewedProfileAchievementsExpanded: this.viewedProfileAchievementsExpanded,
       actions: {
         openBasicChest: async () => {
           await this.openProfileChest("basic");
@@ -6393,20 +6402,31 @@ export class AppController {
           this.profile = result?.snapshot
             ? this.buildProfileFromServerSnapshot(result.snapshot)
             : result.profile;
-          await this.showProfile();
+          await this.showProfile({ preserveAchievementVisibility: true });
+        },
+        toggleProfileAchievements: async () => {
+          this.profileAchievementsExpanded = !this.profileAchievementsExpanded;
+          await this.showProfile({ preserveAchievementVisibility: true });
+        },
+        toggleViewedProfileAchievements: async () => {
+          this.viewedProfileAchievementsExpanded = !this.viewedProfileAchievementsExpanded;
+          await this.showProfile({ preserveAchievementVisibility: true });
         },
         searchProfiles: async (queryValue) => {
           this.profileSearchQuery = queryValue;
           this.viewedProfileUsername = null;
-          await this.showProfile();
+          this.viewedProfileAchievementsExpanded = false;
+          await this.showProfile({ preserveAchievementVisibility: true });
         },
         viewProfile: async (username) => {
           this.viewedProfileUsername = username;
-          await this.showProfile();
+          this.viewedProfileAchievementsExpanded = false;
+          await this.showProfile({ preserveAchievementVisibility: true });
         },
         clearViewed: async () => {
           this.viewedProfileUsername = null;
-          await this.showProfile();
+          this.viewedProfileAchievementsExpanded = false;
+          await this.showProfile({ preserveAchievementVisibility: true });
         },
         back: () => this.showMenu()
       }

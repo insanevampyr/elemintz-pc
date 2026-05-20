@@ -278,13 +278,17 @@ function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, tit
   `;
 }
 
-function renderReadOnlyProfile(viewedProfile) {
+function renderReadOnlyProfile(viewedProfile, options = {}) {
   if (!viewedProfile) {
     return "";
   }
 
   const achievementCatalog = buildAchievementCatalog(viewedProfile);
   const unlockedAchievements = achievementCatalog.filter((item) => item.unlocked);
+  const unlockedAchievementCount = unlockedAchievements.length;
+  const totalAchievementCount = achievementCatalog.length;
+  const achievementsExpanded = Boolean(options.achievementsExpanded);
+  const achievementToggleLabel = achievementsExpanded ? "Hide Achievements" : "Show Achievements";
   const avatar = getAvatarImage(viewedProfile.equippedCosmetics?.avatar);
   const title = getCosmeticDisplayName(
     "title",
@@ -340,15 +344,22 @@ function renderReadOnlyProfile(viewedProfile) {
           <p>Best Win Streak: ${bestWinStreak}</p>
           <p>PvE W/L: ${pveWins} / ${pveLosses}</p>
           <p>Local PvP W/L: ${pvpWins} / ${pvpLosses}</p>
-          <p>Achievements: ${unlockedAchievements.length}</p>
         </div>
-        <div class="achievement-grid achievement-grid-profile">
-          ${
-            unlockedAchievements.length > 0
-              ? unlockedAchievements.map(renderAchievement).join("")
-              : "<p>No unlocked achievements yet.</p>"
-          }
+        <div class="section-heading-row">
+          <h3 class="section-title">Achievements (${unlockedAchievementCount}/${totalAchievementCount})</h3>
+          <button id="viewed-profile-achievements-toggle-btn" class="btn btn-secondary" type="button">${achievementToggleLabel}</button>
         </div>
+        ${
+          achievementsExpanded
+            ? `<div class="achievement-grid achievement-grid-profile">
+                ${
+                  unlockedAchievements.length > 0
+                    ? unlockedAchievements.map(renderAchievement).join("")
+                    : "<p>No unlocked achievements yet.</p>"
+                }
+              </div>`
+            : ""
+        }
       </div>
     </section>
   `;
@@ -363,6 +374,8 @@ export const profileScreen = {
     const unlockedAchievements = achievementCatalog.filter((item) => item.unlocked);
     const unlockedAchievementCount = unlockedAchievements.length;
     const totalAchievementCount = achievementCatalog.length;
+    const profileAchievementsExpanded = Boolean(context.profileAchievementsExpanded);
+    const viewedProfileAchievementsExpanded = Boolean(context.viewedProfileAchievementsExpanded);
     const searchResults = context.searchResults ?? [];
     const cosmetics = context.cosmetics;
 
@@ -416,14 +429,21 @@ export const profileScreen = {
             <p>Local PvP W/L: ${profile.modeStats?.local_pvp?.wins ?? 0} / ${profile.modeStats?.local_pvp?.losses ?? 0}</p>
           </div>
 
-          <h3 class="section-title">Achievements (${unlockedAchievementCount}/${totalAchievementCount})</h3>
-          <div class="achievement-grid achievement-grid-profile">
-            ${
-              unlockedAchievements.length > 0
-                ? unlockedAchievements.map(renderAchievement).join("")
-                : "<p>No achievements unlocked yet.</p>"
-            }
+          <div class="section-heading-row">
+            <h3 class="section-title">Achievements (${unlockedAchievementCount}/${totalAchievementCount})</h3>
+            <button id="profile-achievements-toggle-btn" class="btn btn-secondary" type="button">${profileAchievementsExpanded ? "Hide Achievements" : "Show Achievements"}</button>
           </div>
+          ${
+            profileAchievementsExpanded
+              ? `<div class="achievement-grid achievement-grid-profile">
+                  ${
+                    unlockedAchievements.length > 0
+                      ? unlockedAchievements.map(renderAchievement).join("")
+                      : "<p>No achievements unlocked yet.</p>"
+                  }
+                </div>`
+              : ""
+          }
 
           <h3 class="section-title">Profile Search</h3>
           <form id="profile-search-form" class="stack-sm">
@@ -440,7 +460,9 @@ export const profileScreen = {
               : ""
           }
 
-          ${renderReadOnlyProfile(context.viewedProfile)}
+          ${renderReadOnlyProfile(context.viewedProfile, {
+            achievementsExpanded: viewedProfileAchievementsExpanded
+          })}
           ${context.viewedProfile ? '<button id="clear-viewed-profile-btn" class="btn">Close Viewed Profile</button>' : ""}
 
           </div>
@@ -455,6 +477,10 @@ export const profileScreen = {
     });
 
     document.getElementById("profile-back-btn").addEventListener("click", context.actions.back);
+    const profileAchievementsToggle = document.getElementById("profile-achievements-toggle-btn");
+    if (profileAchievementsToggle && context.actions.toggleProfileAchievements) {
+      profileAchievementsToggle.addEventListener("click", context.actions.toggleProfileAchievements);
+    }
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {
       openBasicChestButton.addEventListener("click", context.actions.openBasicChest);
@@ -490,6 +516,11 @@ export const profileScreen = {
     const clearViewed = document.getElementById("clear-viewed-profile-btn");
     if (clearViewed) {
       clearViewed.addEventListener("click", context.actions.clearViewed);
+    }
+
+    const viewedAchievementsToggle = document.getElementById("viewed-profile-achievements-toggle-btn");
+    if (viewedAchievementsToggle && context.actions.toggleViewedProfileAchievements) {
+      viewedAchievementsToggle.addEventListener("click", context.actions.toggleViewedProfileAchievements);
     }
   }
 };

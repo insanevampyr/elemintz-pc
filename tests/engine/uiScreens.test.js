@@ -135,6 +135,8 @@ function createProfileScreenContext(overrides = {}) {
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
     searchResults: [],
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     actions: {
       openBasicChest: () => {},
@@ -5792,6 +5794,8 @@ test("ui: viewed profile shows only unlocked achievements with badge images", ()
     },
     searchResults: [],
     searchQuery: "",
+    profileAchievementsExpanded: false,
+    viewedProfileAchievementsExpanded: true,
     viewedProfile: {
       username: "Rival",
       title: "Initiate",
@@ -5824,6 +5828,11 @@ test("ui: viewed profile shows only unlocked achievements with badge images", ()
   assert.match(html, /Total XP: 83/);
   assert.match(html, /Tokens: 245/);
   assert.match(html, /Games Played: 7/);
+  assert.match(
+    html,
+    new RegExp(`Achievements \\(1\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
+  );
+  assert.match(html, /Hide Achievements/);
   assert.match(html, /firstFlame\.png/);
   assert.doesNotMatch(html, /quickDraw\.png/);
 });
@@ -5871,6 +5880,8 @@ test("ui: profile unlocked achievements render approved expansion badge asset pa
     },
     searchResults: [],
     searchQuery: "",
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     backgroundImage: "assets/EleMintzIcon.png"
   });
@@ -5925,6 +5936,8 @@ test("ui: profile renders all valid attained achievements and shows achievement 
     },
     searchResults: [],
     searchQuery: "",
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     backgroundImage: "assets/EleMintzIcon.png"
   });
@@ -5941,7 +5954,7 @@ test("ui: profile renders all valid attained achievements and shows achievement 
   assert.doesNotMatch(html, /legacy_badge/);
 });
 
-test("ui: profile achievement progress heading ignores duplicate counts and shows zero state", () => {
+test("ui: profile achievements default collapsed while keeping count visible", () => {
   const zeroHtml = profileScreen.render({
     profile: {
       username: "ZeroUser",
@@ -5980,6 +5993,8 @@ test("ui: profile achievement progress heading ignores duplicate counts and show
     },
     searchResults: [],
     searchQuery: "",
+    profileAchievementsExpanded: false,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     backgroundImage: "assets/EleMintzIcon.png"
   });
@@ -5988,7 +6003,189 @@ test("ui: profile achievement progress heading ignores duplicate counts and show
     zeroHtml,
     new RegExp(`Achievements \\(0\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
   );
+  assert.match(zeroHtml, /Show Achievements/);
+  assert.doesNotMatch(zeroHtml, /No achievements unlocked yet\./);
+});
+
+test("ui: profile achievements expanded zero state shows hide label and empty message", () => {
+  const zeroHtml = profileScreen.render({
+    profile: {
+      username: "ZeroUser",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(zeroHtml, /Hide Achievements/);
   assert.match(zeroHtml, /No achievements unlocked yet\./);
+});
+
+test("ui: profile achievements toggle keeps search and chest controls visible", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "CatalogUser",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 7,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {
+        first_flame: { count: 1 }
+      },
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    searchResults: [{ username: "Rival" }],
+    searchQuery: "Ri",
+    profileAchievementsExpanded: false,
+    viewedProfileAchievementsExpanded: false,
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(html, /Profile Search/);
+  assert.match(html, /Reward Chests/);
+  assert.match(html, /View Rival/);
+  assert.match(html, /Show Achievements/);
+  assert.doesNotMatch(html, /First Flame/);
+});
+
+test("ui: viewed profile achievements default collapsed while keeping count visible", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "Viewer",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 0,
+      supporterPass: false,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }, { id: "default_water_card", name: "Core Water", element: "water", owned: true }, { id: "default_earth_card", name: "Core Earth", element: "earth", owned: true }, { id: "default_wind_card", name: "Core Wind", element: "wind", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    profileAchievementsExpanded: false,
+    viewedProfileAchievementsExpanded: false,
+    viewedProfile: {
+      username: "Rival",
+      title: "Initiate",
+      playerLevel: 4,
+      playerXP: 83,
+      tokens: 245,
+      gamesPlayed: 7,
+      warsEntered: 3,
+      warsWon: 2,
+      longestWar: 4,
+      bestWinStreak: 3,
+      wins: 2,
+      losses: 3,
+      cardsCaptured: 10,
+      achievements: {
+        first_flame: { count: 1 },
+        quick_draw: { count: 0 }
+      },
+      modeStats: {
+        pve: { wins: 2, losses: 1 },
+        local_pvp: { wins: 0, losses: 2 }
+      },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
+    },
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(html, /Viewed Profile/);
+  assert.match(
+    html,
+    new RegExp(`Achievements \\(1\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
+  );
+  assert.match(html, /Show Achievements/);
+  assert.match(html, /Close Viewed Profile/);
+  assert.doesNotMatch(html, /firstFlame\.png/);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {
@@ -9141,6 +9338,8 @@ test("ui: profile unlocked achievements section uses 3-column profile grid class
     titleIcon: null,
     searchResults: [],
     searchQuery: "",
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     backgroundImage: "assets/EleMintzIcon.png"
   });
@@ -9184,6 +9383,8 @@ test("ui: profile screen shows next reward preview", () => {
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
     searchResults: [],
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     actions: {
       equip: () => {},
@@ -9238,6 +9439,8 @@ test("ui: profile XP display resets to 0 at the start of a new level", () => {
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
     searchResults: [],
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     actions: {
       equip: () => {},
@@ -9289,6 +9492,8 @@ test("ui: profile initial progression display can render correct per-level value
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
     searchResults: [],
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     actions: {
       equip: () => {},
@@ -9353,6 +9558,8 @@ test("ui: profile header resolves equipped title display name without exposing t
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
     searchResults: [],
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     actions: {
       equip: () => {},
@@ -15520,6 +15727,8 @@ test("ui: profile unlocked achievements render comeback_win badge once earned", 
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
     searchResults: [],
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     actions: {
       equip: () => {},
@@ -15581,6 +15790,8 @@ test("ui: profile unlocked achievements treat legacy boolean comeback_win as unl
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
     searchResults: [],
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
     viewedProfile: null,
     actions: {
       equip: () => {},
