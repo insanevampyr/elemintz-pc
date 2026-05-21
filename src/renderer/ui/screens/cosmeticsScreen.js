@@ -11,7 +11,7 @@ import {
   buildHoverPreviewAttributes,
   hasRenderablePreviewSource
 } from "../shared/cosmeticHoverPreview.js";
-import { getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
+import { getCosmeticDefinition, getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
 
 const RANDOMIZE_AFTER_MATCH_OPTIONS = Object.freeze([
   ["avatar", "Avatar"],
@@ -40,6 +40,15 @@ function renderCollectionChip(collection) {
   }
 
   return `<p><span class="cosmetic-collection-chip">${collection} Collection</span></p>`;
+}
+
+function resolveOwnedItemNewStatus(type, item) {
+  const definition = item?.id ? getCosmeticDefinition(type, item.id) : null;
+  if (typeof definition?.isNew === "boolean") {
+    return definition.isNew;
+  }
+
+  return Boolean(item?.isNew);
 }
 
 function getCosmeticTypeLabel(type, item) {
@@ -176,15 +185,16 @@ function preview(type, item) {
 }
 
 function renderItem(type, item) {
+  const resolvedIsNew = resolveOwnedItemNewStatus(type, item);
   const framed = usesRarityFrame(type);
   const variantHint =
     type === "elementCardVariant" && item.element
       ? `<p>Applies to: ${item.element[0].toUpperCase()}${item.element.slice(1)} cards only</p>`
       : "";
-  const newBadge = item.isNew ? '<span class="store-item-badge store-item-badge-new">NEW</span>' : "";
+  const newBadge = resolvedIsNew ? '<span class="store-item-badge store-item-badge-new">NEW</span>' : "";
 
   return `
-    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}" data-cosmetic-collection="${normalizeCollectionKey(item.collection).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}" data-cosmetic-is-new="${item.isNew ? "true" : "false"}" data-cosmetic-original-index="${item.originalIndex ?? 0}">
+    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}" data-cosmetic-collection="${normalizeCollectionKey(item.collection).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}" data-cosmetic-is-new="${resolvedIsNew ? "true" : "false"}" data-cosmetic-original-index="${item.originalIndex ?? 0}">
       ${newBadge}
       ${preview(type, item)}
       <div class="cosmetic-meta">
@@ -217,9 +227,10 @@ function sortOwnedItems(items) {
   });
 }
 
-function sortOwnedItemsForDisplay(items, showNewFirst) {
+function sortOwnedItemsForDisplay(type, items, showNewFirst) {
   const ordered = sortOwnedItems(items).map((item, index) => ({
     ...item,
+    isNew: resolveOwnedItemNewStatus(type, item),
     originalIndex: index
   }));
 
@@ -443,6 +454,7 @@ export const cosmeticsScreen = {
           <div class="grid cosmetics-sections">
               ${COSMETIC_SECTIONS.map(([type, title]) => {
                 const owned = sortOwnedItemsForDisplay(
+                  type,
                   (cosmetics.catalog[type] ?? []).filter((item) => item.owned),
                   viewState.showNewFirst
                 );

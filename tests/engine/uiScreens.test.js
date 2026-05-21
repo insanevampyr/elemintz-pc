@@ -3684,7 +3684,7 @@ test("ui: cosmetics screen shows the Show NEW First control by default", () => {
   assert.match(html, /id="cosmetics-show-new-first" checked/);
 });
 
-test("ui: cosmetics screen keeps NEW badges visible for newly marked owned cosmetics", () => {
+test("ui: cosmetics screen resolves owned NEW badges from the current catalog instead of stale item metadata", () => {
   const html = cosmeticsScreen.render({
     cosmetics: {
       preferences: { randomizeAfterEachMatch: {} },
@@ -3699,6 +3699,15 @@ test("ui: cosmetics screen keeps NEW badges visible for newly marked owned cosme
             owned: true,
             equipped: false,
             isNew: true
+          },
+          {
+            id: "avatar_neon_pyre_entity",
+            name: "Neon Pyre Entity",
+            image: "avatars/avatar_neon_pyre_entity.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: false,
+            isNew: false
           }
         ],
         cardBack: [],
@@ -3716,7 +3725,71 @@ test("ui: cosmetics screen keeps NEW badges visible for newly marked owned cosme
     actions: {}
   });
 
-  assert.match(html, /store-item-badge store-item-badge-new">NEW</);
+  const newBadges = html.match(/store-item-badge store-item-badge-new">NEW</g) ?? [];
+  assert.equal(newBadges.length, 1);
+  const legacyAvatarCard =
+    (html.match(/<article[\s\S]*?<\/article>/g) ?? []).find((article) =>
+      article.includes('data-equip-id="avatar_smirk_ember"')
+    ) ?? "";
+  const neonAvatarCard =
+    (html.match(/<article[\s\S]*?<\/article>/g) ?? []).find((article) =>
+      article.includes('data-equip-id="avatar_neon_pyre_entity"')
+    ) ?? "";
+  assert.doesNotMatch(legacyAvatarCard, /store-item-badge store-item-badge-new">NEW/);
+  assert.match(neonAvatarCard, /store-item-badge store-item-badge-new">NEW/);
+  assert.match(legacyAvatarCard, /Smirk Ember/);
+  assert.match(neonAvatarCard, /Neon Pyre Entity/);
+});
+
+test("ui: cosmetics screen Show NEW First prioritizes currently-new owned cosmetics over stale legacy metadata", () => {
+  const html = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_smirk_ember",
+            name: "Smirk Ember",
+            image: "avatars/avatar_smirk_ember.png",
+            rarity: "Common",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            releaseTag: "v0.1.6",
+            collection: "Ember"
+          },
+          {
+            id: "avatar_neon_pyre_entity",
+            name: "Neon Pyre Entity",
+            image: "avatars/avatar_neon_pyre_entity.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: false,
+            isNew: false,
+            releaseTag: "neon_arcana_01",
+            collection: "Neon Arcana"
+          }
+        ],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    viewState: {
+      categories: new Set(["avatar"]),
+      rarities: new Set(["Common", "Epic"]),
+      collections: new Set(["Ember", "Neon Arcana"]),
+      showNewFirst: true
+    },
+    actions: {}
+  });
+
+  assert.ok(html.indexOf("Neon Pyre Entity") < html.indexOf("Smirk Ember"));
+  assert.match(html, /data-cosmetic-collection="Ember"/);
+  assert.match(html, /data-cosmetic-collection="Neon Arcana"/);
 });
 
 test("ui: cosmetics screen randomization panel and loadout controls bind through actions", async () => {
