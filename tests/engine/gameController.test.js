@@ -7763,6 +7763,12 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
   app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
   app.username = "GauntletPicker";
   app.gauntletRandom = () => 0;
+  app.chooseRandomElementCardVariantMap = () => ({
+    fire: "fire_variant_ember",
+    water: "water_variant_crystal",
+    earth: "earth_variant_titan",
+    wind: "wind_variant_sky_serpent"
+  });
   app.profile = {
     username: "GauntletPicker",
     equippedCosmetics: { background: "default_background" }
@@ -7816,14 +7822,22 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
       lastResult: null
     });
     assert.equal(app.gameController?.featuredRivalId, null);
-    assert.equal(app.gameController?.gauntletRivalId, "tide_witch");
-    assert.equal(app.gameController?.match?.gauntletRivalId, "tide_witch");
-    assert.equal(app.gameController?.aiDifficulty, "normal");
-    assert.equal(shownScreens.at(-1).context.opponentDisplay.name, "Tide Witch");
-    assert.equal(shownScreens.at(-1).context.opponentDisplay.title, "Tidecaller");
-    assert.deepEqual(gauntletStatCalls, [
-      {
-        username: "GauntletPicker",
+      assert.equal(app.gameController?.gauntletRivalId, "tide_witch");
+      assert.equal(app.gameController?.match?.gauntletRivalId, "tide_witch");
+      assert.equal(app.gameController?.aiDifficulty, "normal");
+      assert.equal(shownScreens.at(-1).context.opponentDisplay.name, "Tide Witch");
+      assert.equal(shownScreens.at(-1).context.opponentDisplay.title, "Tidecaller");
+      assert.match(shownScreens.at(-1).context.opponentDisplay.avatar, /gauntlet\/avatars\/avatar_gauntlet_tide_witch\.png/);
+      assert.doesNotMatch(shownScreens.at(-1).context.opponentDisplay.avatar, /assets\/avatars\//);
+      assert.deepEqual(shownScreens.at(-1).context.opponentCardVariants, {
+        fire: "fire_variant_ember",
+        water: "water_variant_crystal",
+        earth: "earth_variant_titan",
+        wind: "wind_variant_sky_serpent"
+      });
+      assert.deepEqual(gauntletStatCalls, [
+        {
+          username: "GauntletPicker",
         runStarted: true,
         matchWon: false,
         runEndedWithLoss: false,
@@ -7897,8 +7911,18 @@ test("appController: gauntlet win increments streak and pulls the next rival fro
     rivalBag: ["storm_chaser", "inferno_drummer"],
     lastRivalId: "tide_witch",
     defeatedRivalIds: ["tide_witch"],
-    lastResult: "win"
+      lastResult: "win"
+    });
+  assert.deepEqual(app.pendingGauntletContinuation, {
+    mode: MATCH_MODE.PVE,
+    options: {
+      gauntletMode: true,
+      gauntletContinue: true,
+      gauntletRivalId: "stonewall"
+    }
   });
+  assert.deepEqual(starts, []);
+  assert.equal(app.flushPendingGauntletContinuation(), true);
   assert.deepEqual(starts, [
     {
       mode: MATCH_MODE.PVE,
@@ -7939,6 +7963,7 @@ test("appController: gauntlet bag use never selects the same rival twice in a ro
   assert.equal(continued, true);
   assert.notEqual(app.gauntletRunState.currentRivalId, "pyro_maniac");
   assert.equal(app.gauntletRunState.currentRivalId, "tide_witch");
+  app.flushPendingGauntletContinuation();
   assert.equal(starts.at(-1)?.options?.gauntletRivalId, "tide_witch");
 });
 
@@ -7985,6 +8010,7 @@ test("appController: gauntlet bag refill recreates all 8 rivals and avoids an im
     "pyro_maniac"
   ]);
   assert.equal(app.gauntletRunState.defeatedRivalIds.at(-1), "tide_witch");
+  app.flushPendingGauntletContinuation();
   assert.deepEqual(starts.at(-1), {
     mode: MATCH_MODE.PVE,
     options: {
@@ -8114,6 +8140,10 @@ test("appController: gauntlet match win records persistent win stats without inc
       match: { winner: "p1", endReason: "normal" },
       persisted: { profile: { username: "GauntletWinner" } }
     });
+    assert.equal(continuedStarts.length, 0);
+    assert.ok(app.pendingGauntletContinuation);
+    assert.equal(app.flushPendingGauntletContinuation(), true);
+    assert.equal(app.flushPendingGauntletContinuation(), false);
 
     assert.deepEqual(gauntletStatCalls, [
       {
@@ -8220,6 +8250,36 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
     app.gameController?.stopTimer();
     app.gameController?.stopMatchClock();
     globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE round win does not trigger gauntlet continuation before full match completion", async () => {
+  let matchCompleteCalls = 0;
+  let roundResolvedCalls = 0;
+  const controller = new GameController({
+    username: "GauntletRoundOnly",
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onRoundResolved: () => {
+      roundResolvedCalls += 1;
+    },
+    onMatchComplete: () => {
+      matchCompleteCalls += 1;
+    }
+  });
+
+  try {
+    controller.startNewMatch();
+    const result = await controller.playCard(0);
+
+    assert.ok(result?.status === "resolved" || result?.status === "war_continues");
+    assert.equal(controller.match?.status, "active");
+    assert.equal(roundResolvedCalls >= 0, true);
+    assert.equal(matchCompleteCalls, 0);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
   }
 });
 

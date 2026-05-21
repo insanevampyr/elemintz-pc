@@ -185,6 +185,7 @@ export class AppController {
     this.dailyLoginAutoClaimPromise = null;
     this.passCompletionResolve = null;
     this.pendingMatchCompletePayload = null;
+    this.pendingGauntletContinuation = null;
     this.deferPveOutcomeSound = false;
     this.deferredPveRoundSound = null;
     this.pveOpponentStyle = null;
@@ -1362,6 +1363,7 @@ export class AppController {
   clearGauntletRunState() {
     this.pveGauntletMode = false;
     this.gauntletRunState = createDefaultGauntletRunState();
+    this.pendingGauntletContinuation = null;
   }
 
   async recordGauntletProfileStats({
@@ -1470,6 +1472,7 @@ export class AppController {
       active: false,
       lastResult: result
     };
+    this.pendingGauntletContinuation = null;
   }
 
   handleGauntletMatchCompletion(match) {
@@ -1484,11 +1487,14 @@ export class AppController {
         return false;
       }
 
-      void this.startGame(MATCH_MODE.PVE, {
-        gauntletMode: true,
-        gauntletContinue: true,
-        gauntletRivalId: nextRival.id
-      });
+      this.pendingGauntletContinuation = {
+        mode: MATCH_MODE.PVE,
+        options: {
+          gauntletMode: true,
+          gauntletContinue: true,
+          gauntletRivalId: nextRival.id
+        }
+      };
       return true;
     }
 
@@ -1514,7 +1520,7 @@ export class AppController {
         titleIconPath: null,
         badgeId: "none",
         cardBackId: "default_card_back",
-        elementCardVariant: this.getDefaultElementCardVariantMap()
+        elementCardVariant: this.chooseRandomElementCardVariantMap()
       };
     }
 
@@ -2226,6 +2232,11 @@ export class AppController {
   }
 
   resolveAvatarPath(avatarId) {
+    const directPath = String(avatarId ?? "").trim();
+    if (directPath.startsWith("assets/")) {
+      return getAssetPath(directPath.slice("assets/".length));
+    }
+
     return getAvatarImage(avatarId);
   }
 
@@ -5374,6 +5385,23 @@ export class AppController {
     this.showMatchCompleteModal(payload);
   }
 
+  flushPendingGauntletContinuation() {
+    if (!this.pendingGauntletContinuation || this.roundPresentation?.busy || this.screenFlow === "pass") {
+      return false;
+    }
+
+    const pendingContinuation = this.pendingGauntletContinuation;
+    this.pendingGauntletContinuation = null;
+    void this.startGame(pendingContinuation.mode, pendingContinuation.options);
+    return true;
+  }
+
+  schedulePendingGauntletContinuationFlush() {
+    setTimeout(() => {
+      this.flushPendingGauntletContinuation();
+    }, 0);
+  }
+
   async init() {
     if (this.initPromise) {
       console.info("[Renderer] AppController.init() skipped", {
@@ -5813,6 +5841,10 @@ export class AppController {
       return;
     }
 
+    if (this.flushPendingGauntletContinuation()) {
+      return;
+    }
+
     if (this.refreshActiveGameHudInPlace()) {
       return;
     }
@@ -5887,6 +5919,7 @@ export class AppController {
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
     this.pendingMatchCompletePayload = null;
+    this.pendingGauntletContinuation = null;
     const wantsGauntlet = mode === MATCH_MODE.PVE && options?.gauntletMode === true;
     if (wantsGauntlet) {
       if (options?.gauntletContinue === true) {
@@ -6014,11 +6047,12 @@ export class AppController {
                 profile: gauntletStatsResult.profile
               };
             }
-          }
         }
-        if (mode === MATCH_MODE.PVE && this.handleGauntletMatchCompletion(match)) {
-          return;
-        }
+      }
+      if (mode === MATCH_MODE.PVE && this.handleGauntletMatchCompletion(match)) {
+        this.schedulePendingGauntletContinuationFlush();
+        return;
+      }
         const modalPayload = this.buildMatchCompleteModalPayload(mode, match, finalPersisted);
         if (this.roundPresentation.busy || this.screenFlow === "pass") {
           this.pendingMatchCompletePayload = modalPayload;
@@ -6381,6 +6415,10 @@ export class AppController {
     if (this.gameController.getViewModel()?.status === "active") {
       this.gameController?.rearmActiveRoundPresentation?.();
       this.showGame();
+      return;
+    }
+
+    if (this.flushPendingGauntletContinuation()) {
       return;
     }
 
