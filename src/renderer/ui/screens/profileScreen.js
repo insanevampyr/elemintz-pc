@@ -329,6 +329,33 @@ function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, tit
   `;
 }
 
+function renderProfileSearchBlock({ searchQuery = "", searchResults = [] } = {}) {
+  return `
+    <section class="profile-summary-card stack-sm profile-search-card">
+      <h3 class="section-title">Search Player</h3>
+      <p class="text-muted profile-search-helper">View another player's profile.</p>
+      <form id="profile-search-form" class="stack-sm">
+        <label for="profile-search-input">Username</label>
+        <input
+          id="profile-search-input"
+          name="profileSearch"
+          type="text"
+          value="${searchQuery}"
+          placeholder="Enter username"
+        />
+        <button type="submit" class="btn">View Profile</button>
+      </form>
+      ${
+        searchResults.length
+          ? `<div class="stack-sm profile-search-results">${searchResults
+              .map((item) => `<button class="btn" data-view-profile="${item.username}">View ${item.username}</button>`)
+              .join("")}</div>`
+          : ""
+      }
+    </section>
+  `;
+}
+
 function renderReadOnlyProfile(viewedProfile, options = {}) {
   if (!viewedProfile) {
     return "";
@@ -371,7 +398,7 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
   return `
     <section class="panel stack-sm viewed-profile-panel" style="background-image: url('${viewedBackground}')">
       <div class="viewed-profile-content">
-        <h3 class="section-title">Viewed Profile</h3>
+        <h3 class="section-title">Viewing: ${viewedProfile.username}</h3>
         ${renderProfileIdentityHeader({
           username: viewedProfile.username,
           avatarId: viewedProfile.equippedCosmetics?.avatar,
@@ -484,6 +511,10 @@ export const profileScreen = {
             badgeId: profile.equippedCosmetics?.badge ?? "none",
             badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
           })}
+          ${renderProfileSearchBlock({
+            searchQuery: context.searchQuery ?? "",
+            searchResults
+          })}
           <div class="profile-summary-grid">
             ${renderXpProgress(profile)}
             <section class="profile-summary-card stack-sm">
@@ -545,21 +576,6 @@ export const profileScreen = {
                       : "<p>No achievements unlocked yet.</p>"
                   }
                 </div>`
-              : ""
-          }
-
-          <h3 class="section-title">Profile Search</h3>
-          <form id="profile-search-form" class="stack-sm">
-            <label for="profile-search-input">Search usernames</label>
-            <input id="profile-search-input" name="profileSearch" type="text" value="${context.searchQuery ?? ""}" />
-            <button type="submit" class="btn">Search</button>
-          </form>
-
-          ${
-            searchResults.length
-              ? `<div class="stack-sm">${searchResults
-                  .map((item) => `<button class="btn" data-view-profile="${item.username}">View ${item.username}</button>`)
-                  .join("")}</div>`
               : ""
           }
 

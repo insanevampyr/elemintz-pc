@@ -3671,7 +3671,7 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.match(html, />Mode Stats</);
   assert.match(html, />Featured Rival</);
   assert.match(html, />Gauntlet</);
-  assert.match(html, /Profile Search/);
+  assert.match(html, /Search Player/);
   assert.match(html, /View Rival/);
   assert.match(html, /Online PvP/);
   assert.match(html, /Featured Rival Wins/);
@@ -6118,7 +6118,7 @@ test("ui: viewed profile shows only unlocked achievements with badge images", ()
     backgroundImage: "assets/EleMintzIcon.png"
   });
 
-  assert.match(html, /Viewed Profile/);
+  assert.match(html, /Viewing: Rival/);
   assert.match(html, /profile-stat-label">Level<\/span>\s*<strong class="profile-stat-value">4<\/strong>/);
   assert.match(html, /profile-stat-label">XP<\/span>\s*<strong class="profile-stat-value">83<\/strong>/);
   assert.match(html, /profile-stat-label">Tokens<\/span>\s*<strong class="profile-stat-value">245<\/strong>/);
@@ -6398,11 +6398,16 @@ test("ui: profile achievements toggle keeps search and chest controls visible", 
     backgroundImage: "assets/EleMintzIcon.png"
   });
 
-  assert.match(html, /Profile Search/);
+  assert.match(html, /Search Player/);
+  assert.match(html, /View another player's profile\./);
+  assert.match(html, /placeholder="Enter username"/);
+  assert.match(html, />View Profile</);
   assert.match(html, /Reward Chests/);
   assert.match(html, /View Rival/);
   assert.match(html, /Show Achievements/);
   assert.doesNotMatch(html, /First Flame/);
+  assert.ok(html.indexOf("Search Player") < html.indexOf("Overall Record"));
+  assert.ok(html.indexOf("Search Player") < html.indexOf("Achievements"));
 });
 
 test("ui: viewed profile achievements default collapsed while keeping count visible", () => {
@@ -6480,7 +6485,7 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
     backgroundImage: "assets/EleMintzIcon.png"
   });
 
-  assert.match(html, /Viewed Profile/);
+  assert.match(html, /Viewing: Rival/);
   assert.match(html, />Account Snapshot</);
   assert.match(html, />Overall Record</);
   assert.match(html, />Battle Stats</);
@@ -6502,6 +6507,8 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
   assert.match(html, /profile-stat-value">4<\/strong>/);
   assert.match(html, /Close Viewed Profile/);
   assert.doesNotMatch(html, /firstFlame\.png/);
+  assert.match(html, /profile-search-input/);
+  assert.doesNotMatch(html, /id="cosmetic-form"/);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {

@@ -1506,6 +1506,18 @@ body {
   margin-bottom: 6px;
 }
 
+.profile-search-card {
+  margin: 12px 0;
+}
+
+.profile-search-helper {
+  margin: 0;
+}
+
+.profile-search-results {
+  margin-top: 4px;
+}
+
 .profile-stat-list {
   display: grid;
   gap: 6px;
