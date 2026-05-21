@@ -75,6 +75,14 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
     { allowWhen: isLocalAuthoritativeMatchResultPayload }
   );
 
+  registerGuardedMutation(
+    "state:recordGauntletStats",
+    async (payload) => coordinator.recordGauntletStats(payload),
+    {
+      allowWhen: (payload) => Boolean(payload && typeof payload === "object" && !Array.isArray(payload))
+    }
+  );
+
   ipcMain.handle("state:getProfile", async (_event, username) =>
     coordinator.profiles.getProfile(username)
   );

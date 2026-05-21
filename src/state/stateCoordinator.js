@@ -165,10 +165,25 @@ function profileCommitSnapshot(profile) {
     warsWon: profile?.warsWon ?? 0,
     cardsCaptured: profile?.cardsCaptured ?? 0,
     featuredRivalWins: profile?.featuredRivalWins ?? 0,
+    gauntletBestStreak: profile?.gauntletBestStreak ?? 0,
+    gauntletRuns: profile?.gauntletRuns ?? 0,
+    gauntletWins: profile?.gauntletWins ?? 0,
+    gauntletLosses: profile?.gauntletLosses ?? 0,
+    gauntletRivalsDefeated: profile?.gauntletRivalsDefeated ?? 0,
     tokens: profile?.tokens ?? 0,
     playerXP: profile?.playerXP ?? 0,
     playerLevel: profile?.playerLevel ?? 1,
     achievements: Object.keys(profile?.achievements ?? {}).length
+  };
+}
+
+function buildGauntletStatsSnapshot(profile) {
+  return {
+    gauntletBestStreak: Math.max(0, Number(profile?.gauntletBestStreak ?? 0)),
+    gauntletRuns: Math.max(0, Number(profile?.gauntletRuns ?? 0)),
+    gauntletWins: Math.max(0, Number(profile?.gauntletWins ?? 0)),
+    gauntletLosses: Math.max(0, Number(profile?.gauntletLosses ?? 0)),
+    gauntletRivalsDefeated: Math.max(0, Number(profile?.gauntletRivalsDefeated ?? 0))
   };
 }
 
@@ -974,6 +989,47 @@ export class StateCoordinator {
         levelAfter: challengeResult.levelAfter,
         levelRewards: levelRewardResult.grantedRewards,
         levelRewardTokenDelta: levelRewardResult.tokenDelta
+      };
+    });
+  }
+
+  async recordGauntletStats({
+    username,
+    runStarted = false,
+    matchWon = false,
+    runEndedWithLoss = false,
+    currentStreak = 0
+  } = {}) {
+    return this.runMatchPersistence(async () => {
+      if (!username) {
+        throw new Error("username is required to record gauntlet stats.");
+      }
+
+      const safeCurrentStreak = Math.max(0, Math.floor(Number(currentStreak ?? 0) || 0));
+      const profile = await this.profiles.updateProfile(username, (current) => {
+        const nextRuns = Math.max(0, Number(current?.gauntletRuns ?? 0)) + (runStarted ? 1 : 0);
+        const nextWins = Math.max(0, Number(current?.gauntletWins ?? 0)) + (matchWon ? 1 : 0);
+        const nextLosses =
+          Math.max(0, Number(current?.gauntletLosses ?? 0)) + (runEndedWithLoss ? 1 : 0);
+        const nextRivalsDefeated =
+          Math.max(0, Number(current?.gauntletRivalsDefeated ?? 0)) + (matchWon ? 1 : 0);
+        const nextBestStreak = matchWon
+          ? Math.max(Math.max(0, Number(current?.gauntletBestStreak ?? 0)), safeCurrentStreak)
+          : Math.max(0, Number(current?.gauntletBestStreak ?? 0));
+
+        return {
+          ...current,
+          gauntletBestStreak: nextBestStreak,
+          gauntletRuns: nextRuns,
+          gauntletWins: nextWins,
+          gauntletLosses: nextLosses,
+          gauntletRivalsDefeated: nextRivalsDefeated
+        };
+      });
+
+      return {
+        profile,
+        gauntletStats: buildGauntletStatsSnapshot(profile)
       };
     });
   }

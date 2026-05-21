@@ -3482,6 +3482,11 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
       bestWinStreak: 2,
       tokens: 200,
       featuredRivalWins: 7,
+      gauntletBestStreak: 5,
+      gauntletRuns: 3,
+      gauntletWins: 8,
+      gauntletLosses: 2,
+      gauntletRivalsDefeated: 8,
       supporterPass: false,
       achievements: {},
       modeStats: {
@@ -3523,10 +3528,16 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.match(html, />Battle Stats</);
   assert.match(html, />Mode Stats</);
   assert.match(html, />Featured Rival</);
+  assert.match(html, />Gauntlet</);
   assert.match(html, /Profile Search/);
   assert.match(html, /View Rival/);
   assert.match(html, /Online PvP/);
   assert.match(html, /Featured Rival Wins/);
+  assert.match(html, /Best Gauntlet Streak/);
+  assert.match(html, /Gauntlet Runs/);
+  assert.match(html, /Gauntlet Wins/);
+  assert.match(html, /Gauntlet Losses/);
+  assert.match(html, /Rivals Defeated/);
   assert.match(html, /profile-stat-value">7<\/strong>/);
   assert.doesNotMatch(html, /Avatar:/);
   assert.doesNotMatch(html, /Card Back:/);
@@ -3587,6 +3598,11 @@ test("ui: profile screen renders safe fallback values for missing online and fea
 
   assert.match(html, /Online PvP/);
   assert.match(html, /Featured Rival Wins/);
+  assert.match(html, /Best Gauntlet Streak/);
+  assert.match(html, /Gauntlet Runs/);
+  assert.match(html, /Gauntlet Wins/);
+  assert.match(html, /Gauntlet Losses/);
+  assert.match(html, /Rivals Defeated/);
   assert.match(html, /profile-stat-value">0<\/strong>/);
 });
 
@@ -6303,6 +6319,11 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
       losses: 3,
       cardsCaptured: 10,
       featuredRivalWins: 4,
+      gauntletBestStreak: 6,
+      gauntletRuns: 4,
+      gauntletWins: 9,
+      gauntletLosses: 3,
+      gauntletRivalsDefeated: 9,
       achievements: {
         first_flame: { count: 1 },
         quick_draw: { count: 0 }
@@ -6323,6 +6344,7 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
   assert.match(html, />Battle Stats</);
   assert.match(html, />Mode Stats</);
   assert.match(html, />Featured Rival</);
+  assert.match(html, />Gauntlet</);
   assert.match(
     html,
     new RegExp(`Achievements \\(1\\/${ACHIEVEMENT_DEFINITIONS.length}\\)`)
@@ -6330,6 +6352,11 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
   assert.match(html, /Show Achievements/);
   assert.match(html, /Online PvP/);
   assert.match(html, /Featured Rival Wins/);
+  assert.match(html, /Best Gauntlet Streak/);
+  assert.match(html, /Gauntlet Runs/);
+  assert.match(html, /Gauntlet Wins/);
+  assert.match(html, /Gauntlet Losses/);
+  assert.match(html, /Rivals Defeated/);
   assert.match(html, /profile-stat-value">4<\/strong>/);
   assert.match(html, /Close Viewed Profile/);
   assert.doesNotMatch(html, /firstFlame\.png/);
@@ -7628,6 +7655,41 @@ test("ui: menu shows Daily Login section above the Challenges heading", () => {
   });
 
   assert.ok(html.indexOf("Daily Login Reward") < html.indexOf("<h3 class=\"section-title\">Challenges</h3>"));
+});
+
+test("ui: viewed profile renders gauntlet stat fallbacks as 0 when missing", () => {
+  const html = profileScreen.render({
+    ...createProfileScreenContext(),
+    viewedProfile: {
+      username: "LegacyViewed",
+      title: "Initiate",
+      playerLevel: 2,
+      playerXP: 25,
+      tokens: 10,
+      gamesPlayed: 1,
+      wins: 1,
+      losses: 0,
+      cardsCaptured: 2,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      bestWinStreak: 1,
+      featuredRivalWins: 0,
+      achievements: {},
+      modeStats: {
+        pve: { wins: 1, losses: 0, gamesPlayed: 1, cardsCaptured: 2, warsEntered: 0, warsWon: 0, longestWar: 0 }
+      },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
+    }
+  });
+
+  assert.match(html, />Gauntlet</);
+  assert.match(html, /Best Gauntlet Streak/);
+  assert.match(html, /Gauntlet Runs/);
+  assert.match(html, /Gauntlet Wins/);
+  assert.match(html, /Gauntlet Losses/);
+  assert.match(html, /Rivals Defeated/);
+  assert.match(html, /profile-stat-value">0<\/strong>/);
 });
 
 test("ui: menu renders the highest-priority announcement card above daily login", () => {

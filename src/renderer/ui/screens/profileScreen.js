@@ -175,6 +175,21 @@ function renderModeStatsCard(title, stats = {}) {
   `;
 }
 
+function renderGauntletStatsCard(profile = {}) {
+  return `
+    <section class="profile-summary-card stack-sm">
+      <h3 class="section-title">Gauntlet</h3>
+      ${renderStatList([
+        { label: "Best Gauntlet Streak", value: safeStat(profile.gauntletBestStreak) },
+        { label: "Gauntlet Runs", value: safeStat(profile.gauntletRuns) },
+        { label: "Gauntlet Wins", value: safeStat(profile.gauntletWins) },
+        { label: "Gauntlet Losses", value: safeStat(profile.gauntletLosses) },
+        { label: "Rivals Defeated", value: safeStat(profile.gauntletRivalsDefeated) }
+      ])}
+    </section>
+  `;
+}
+
 function renderXpProgress(profile) {
   const level = Math.max(1, Number(profile.playerLevel ?? 1));
   const totalXp = Math.max(0, Number(profile.playerXP ?? 0));
@@ -398,6 +413,7 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
             <h3 class="section-title">Featured Rival</h3>
             ${renderStatList([{ label: "Featured Rival Wins", value: featuredRivalWins }])}
           </section>
+          ${renderGauntletStatsCard(viewedProfile)}
         </div>
         <section class="profile-summary-card stack-sm">
           <h3 class="section-title">Mode Stats</h3>
@@ -504,6 +520,7 @@ export const profileScreen = {
                 { label: "Featured Rival Wins", value: profile.featuredRivalWins ?? 0 }
               ])}
             </section>
+            ${renderGauntletStatsCard(profile)}
           </div>
 
           <section class="profile-summary-card stack-sm">

@@ -16,6 +16,7 @@ function buildElemintzBridge(ipcRenderer, { appVersion = "unknown" } = {}) {
     version: appVersion,
     state: {
       recordMatchResult: (payload) => ipcRenderer.invoke("state:recordMatchResult", payload),
+      recordGauntletStats: (payload) => ipcRenderer.invoke("state:recordGauntletStats", payload),
       getProfile: (username) => ipcRenderer.invoke("state:getProfile", username),
       ensureProfile: (username) => ipcRenderer.invoke("state:ensureProfile", username),
       getAchievements: (username) => ipcRenderer.invoke("state:getAchievements", username),

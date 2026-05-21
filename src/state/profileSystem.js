@@ -213,6 +213,11 @@ function validateAndRepairProfile(profile) {
   repairNumericField("playerLevel", defaults.playerLevel, { min: 1 });
   repairNumericField("cardsCaptured", defaults.cardsCaptured);
   repairNumericField("featuredRivalWins", defaults.featuredRivalWins);
+  repairNumericField("gauntletBestStreak", defaults.gauntletBestStreak);
+  repairNumericField("gauntletRuns", defaults.gauntletRuns);
+  repairNumericField("gauntletWins", defaults.gauntletWins);
+  repairNumericField("gauntletLosses", defaults.gauntletLosses);
+  repairNumericField("gauntletRivalsDefeated", defaults.gauntletRivalsDefeated);
   repairNumericField("longestWar", defaults.longestWar);
   repairNumericField("matchesUsingAllElements", defaults.matchesUsingAllElements);
 
@@ -532,6 +537,11 @@ function snapshot(profile) {
     warsWon: profile?.warsWon ?? 0,
     cardsCaptured: profile?.cardsCaptured ?? 0,
     featuredRivalWins: profile?.featuredRivalWins ?? 0,
+    gauntletBestStreak: profile?.gauntletBestStreak ?? 0,
+    gauntletRuns: profile?.gauntletRuns ?? 0,
+    gauntletWins: profile?.gauntletWins ?? 0,
+    gauntletLosses: profile?.gauntletLosses ?? 0,
+    gauntletRivalsDefeated: profile?.gauntletRivalsDefeated ?? 0,
     tokens: profile?.tokens ?? 0,
     playerXP: profile?.playerXP ?? 0,
     playerLevel: profile?.playerLevel ?? 1,

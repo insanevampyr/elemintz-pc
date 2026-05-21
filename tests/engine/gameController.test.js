@@ -7749,6 +7749,7 @@ test("appController: selecting Featured Rival starts PvE with rival config inste
 test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routing while keeping normal PvE fallback behavior", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
+  const gauntletStatCalls = [];
 
   const app = new AppController({
     screenManager: {
@@ -7771,13 +7772,27 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
     globalThis.window = {
       elemintz: {
         state: {
-          recordMatchResult: async () => ({})
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: 0,
+                gauntletRuns: 1,
+                gauntletWins: 0,
+                gauntletLosses: 0,
+                gauntletRivalsDefeated: 0
+              }
+            };
+          }
         }
       }
     };
 
     app.showAiDifficultySelect();
     await shownScreens.at(-1).context.actions.start({ gauntletMode: true });
+    await Promise.resolve();
 
     assert.equal(shownScreens.at(-1).name, "game");
     assert.equal(app.pveGauntletMode, true);
@@ -7806,6 +7821,15 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
     assert.equal(app.gameController?.aiDifficulty, "normal");
     assert.equal(shownScreens.at(-1).context.opponentDisplay.name, "Tide Witch");
     assert.equal(shownScreens.at(-1).context.opponentDisplay.title, "Tidecaller");
+    assert.deepEqual(gauntletStatCalls, [
+      {
+        username: "GauntletPicker",
+        runStarted: true,
+        matchWon: false,
+        runEndedWithLoss: false,
+        currentStreak: 0
+      }
+    ]);
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();
@@ -8033,6 +8057,170 @@ test("appController: gauntlet draw ends the run without starting another match",
   assert.equal(app.gauntletRunState.active, false);
   assert.equal(app.gauntletRunState.lastResult, "draw");
   assert.deepEqual(starts, []);
+});
+
+test("appController: gauntlet match win records persistent win stats without incrementing runs again", async () => {
+  const originalWindow = globalThis.window;
+  const gauntletStatCalls = [];
+  const continuedStarts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletWinner";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletWinner", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.showMatchCompleteModal = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: payload.matchWon ? payload.currentStreak : 0,
+                gauntletRuns: 1,
+                gauntletWins: payload.matchWon ? 1 : 0,
+                gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
+                gauntletRivalsDefeated: payload.matchWon ? 1 : 0
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+    await Promise.resolve();
+    const originalStartGame = app.startGame.bind(app);
+    app.startGame = (mode, options = {}) => {
+      continuedStarts.push({ mode, options });
+      return originalStartGame(mode, options);
+    };
+
+    await app.gameController.onMatchComplete({
+      match: { winner: "p1", endReason: "normal" },
+      persisted: { profile: { username: "GauntletWinner" } }
+    });
+
+    assert.deepEqual(gauntletStatCalls, [
+      {
+        username: "GauntletWinner",
+        runStarted: true,
+        matchWon: false,
+        runEndedWithLoss: false,
+        currentStreak: 0
+      },
+      {
+        username: "GauntletWinner",
+        runStarted: false,
+        matchWon: true,
+        runEndedWithLoss: false,
+        currentStreak: 1
+      }
+    ]);
+    assert.equal(app.profile.gauntletRuns, 1);
+    assert.equal(app.profile.gauntletWins, 1);
+    assert.equal(app.profile.gauntletRivalsDefeated, 1);
+    assert.equal(app.profile.gauntletBestStreak, 1);
+    assert.equal(continuedStarts.length, 1);
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: gauntlet terminal draw records one persistent loss and quit does not", async () => {
+  const originalWindow = globalThis.window;
+  const gauntletStatCalls = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletTerminal";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletTerminal", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.showMatchCompleteModal = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: 0,
+                gauntletRuns: 1,
+                gauntletWins: 0,
+                gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
+                gauntletRivalsDefeated: 0
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+    await Promise.resolve();
+    gauntletStatCalls.length = 0;
+
+    await app.gameController.onMatchComplete({
+      match: { winner: "draw", endReason: "hand_exhaustion" },
+      persisted: { profile: { username: "GauntletTerminal" } }
+    });
+
+    assert.deepEqual(gauntletStatCalls, [
+      {
+        username: "GauntletTerminal",
+        runStarted: false,
+        matchWon: false,
+        runEndedWithLoss: true,
+        currentStreak: 0
+      }
+    ]);
+
+    app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+    await Promise.resolve();
+    gauntletStatCalls.length = 0;
+
+    await app.gameController.onMatchComplete({
+      match: { winner: "p2", endReason: "quit_forfeit" },
+      persisted: { profile: { username: "GauntletTerminal" } }
+    });
+
+    assert.deepEqual(gauntletStatCalls, []);
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
 });
 
 test("appController: starting non-gauntlet PvE clears temporary gauntlet run state", async () => {

@@ -139,6 +139,91 @@ test("state: records completed match into profile and saves", async () => {
   assert.ok(Array.isArray(result.unlockedAchievements));
 });
 
+test("state: new profile defaults include gauntlet stats at 0", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  const profile = await state.profiles.ensureProfile("GauntletDefaultsUser");
+
+  assert.equal(profile.gauntletBestStreak, 0);
+  assert.equal(profile.gauntletRuns, 0);
+  assert.equal(profile.gauntletWins, 0);
+  assert.equal(profile.gauntletLosses, 0);
+  assert.equal(profile.gauntletRivalsDefeated, 0);
+});
+
+test("state: old profile data normalizes missing gauntlet stats to 0", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.profiles.store.write([
+    {
+      username: "LegacyGauntletUser",
+      wins: 3,
+      losses: 1,
+      gamesPlayed: 4
+    }
+  ]);
+
+  const profile = await state.profiles.getProfile("LegacyGauntletUser");
+
+  assert.equal(profile.gauntletBestStreak, 0);
+  assert.equal(profile.gauntletRuns, 0);
+  assert.equal(profile.gauntletWins, 0);
+  assert.equal(profile.gauntletLosses, 0);
+  assert.equal(profile.gauntletRivalsDefeated, 0);
+});
+
+test("state: gauntlet stat updates increment runs once and wins/best streak separately", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletStatsUser",
+    runStarted: true
+  });
+  await state.recordGauntletStats({
+    username: "GauntletStatsUser",
+    matchWon: true,
+    currentStreak: 1
+  });
+  await state.recordGauntletStats({
+    username: "GauntletStatsUser",
+    matchWon: true,
+    currentStreak: 2
+  });
+
+  const profile = await state.profiles.getProfile("GauntletStatsUser");
+
+  assert.equal(profile.gauntletRuns, 1);
+  assert.equal(profile.gauntletWins, 2);
+  assert.equal(profile.gauntletRivalsDefeated, 2);
+  assert.equal(profile.gauntletBestStreak, 2);
+  assert.equal(profile.gauntletLosses, 0);
+});
+
+test("state: gauntlet terminal non-win updates increment losses once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletLossUser",
+    runStarted: true
+  });
+  await state.recordGauntletStats({
+    username: "GauntletLossUser",
+    runEndedWithLoss: true
+  });
+
+  const profile = await state.profiles.getProfile("GauntletLossUser");
+
+  assert.equal(profile.gauntletRuns, 1);
+  assert.equal(profile.gauntletWins, 0);
+  assert.equal(profile.gauntletLosses, 1);
+  assert.equal(profile.gauntletBestStreak, 0);
+  assert.equal(profile.gauntletRivalsDefeated, 0);
+});
+
 test("state: deriveMatchStats counts only opponent cards captured and ignores no-effect rounds", () => {
   const stats = deriveMatchStats(
     {

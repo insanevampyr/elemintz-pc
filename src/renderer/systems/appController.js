@@ -1364,6 +1364,32 @@ export class AppController {
     this.gauntletRunState = createDefaultGauntletRunState();
   }
 
+  async recordGauntletProfileStats({
+    runStarted = false,
+    matchWon = false,
+    runEndedWithLoss = false,
+    currentStreak = 0
+  } = {}) {
+    const recorder = globalThis.window?.elemintz?.state?.recordGauntletStats;
+    if (typeof recorder !== "function" || !this.username) {
+      return null;
+    }
+
+    const result = await recorder({
+      username: this.username,
+      runStarted,
+      matchWon,
+      runEndedWithLoss,
+      currentStreak
+    });
+
+    if (result?.profile) {
+      this.profile = result.profile;
+    }
+
+    return result ?? null;
+  }
+
   startFreshGauntletRun() {
     const { rival: firstRival, rivalBag } = this.pullNextGauntletRival();
     this.pveGauntletMode = Boolean(firstRival);
@@ -1458,7 +1484,7 @@ export class AppController {
         return false;
       }
 
-      this.startGame(MATCH_MODE.PVE, {
+      void this.startGame(MATCH_MODE.PVE, {
         gauntletMode: true,
         gauntletContinue: true,
         gauntletRivalId: nextRival.id
@@ -5964,6 +5990,32 @@ export class AppController {
         } else {
           this.emitRewardToastsForResult(finalPersisted, this.username, previousPveProfile);
         }
+        if (mode === MATCH_MODE.PVE && this.pveGauntletMode && this.gauntletRunState?.active) {
+          const isQuitForfeit = String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit";
+          if (match?.winner === "p1") {
+            const nextStreak = Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)) + 1;
+            const gauntletStatsResult = await this.recordGauntletProfileStats({
+              matchWon: true,
+              currentStreak: nextStreak
+            });
+            if (gauntletStatsResult?.profile) {
+              finalPersisted = {
+                ...(finalPersisted ?? {}),
+                profile: gauntletStatsResult.profile
+              };
+            }
+          } else if (!isQuitForfeit) {
+            const gauntletStatsResult = await this.recordGauntletProfileStats({
+              runEndedWithLoss: true
+            });
+            if (gauntletStatsResult?.profile) {
+              finalPersisted = {
+                ...(finalPersisted ?? {}),
+                profile: gauntletStatsResult.profile
+              };
+            }
+          }
+        }
         if (mode === MATCH_MODE.PVE && this.handleGauntletMatchCompletion(match)) {
           return;
         }
@@ -5982,6 +6034,9 @@ export class AppController {
     }
 
     this.gameController.startNewMatch();
+    if (wantsGauntlet && options?.gauntletContinue !== true && this.gauntletRunState?.active) {
+      void this.recordGauntletProfileStats({ runStarted: true });
+    }
 
     if (mode === MATCH_MODE.LOCAL_PVP) {
       this.showInitialHotseatPass();
