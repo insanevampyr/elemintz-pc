@@ -19,7 +19,8 @@ const NEW_TITLE_DEFINITIONS = Object.freeze([
   ["title_glitch_royalty", "Glitch Royalty", "Epic", 500, "titles/title_glitch_royalty.png"],
   ["title_crownless_king", "Crownless King", "Legendary", 850, "titles/title_crownless_king.png"],
   ["title_divine_menace", "Divine Menace", "Legendary", 850, "titles/title_divine_menace.png"],
-  ["title_cataclysm_icon", "Cataclysm Icon", "Legendary", 850, "titles/title_cataclysm_icon.png"]
+  ["title_cataclysm_icon", "Cataclysm Icon", "Legendary", 850, "titles/title_cataclysm_icon.png"],
+  ["title_spellwired", "Spellwired", "Legendary", 850, "titles/title_spellwired.png"]
 ]);
 
 const NEW_AVATAR_DEFINITIONS = Object.freeze([
@@ -34,9 +35,27 @@ const NEW_AVATAR_DEFINITIONS = Object.freeze([
   ["avatar_corrupt_cherub", "Corrupt Cherub", "Epic", 600, "avatars/avatar_corrupt_cherub.png"],
   ["avatar_void_glam", "Void Glam", "Epic", 600, "avatars/avatar_void_glam.png"],
   ["avatar_riot_halo", "Riot Halo", "Epic", 600, "avatars/avatar_riot_halo.png"],
+  ["avatar_neon_pyre_entity", "Neon Pyre Entity", "Epic", 600, "avatars/avatar_neon_pyre_entity.png"],
+  ["avatar_neon_tide_entity", "Neon Tide Entity", "Epic", 600, "avatars/avatar_neon_tide_entity.png"],
+  ["avatar_neon_stone_entity", "Neon Stone Entity", "Epic", 600, "avatars/avatar_neon_stone_entity.png"],
+  ["avatar_neon_gale_entity", "Neon Gale Entity", "Epic", 600, "avatars/avatar_neon_gale_entity.png"],
   ["avatar_golden_menace", "Golden Menace", "Legendary", 900, "avatars/avatar_golden_menace.png"],
   ["avatar_chaos_monarch", "Chaos Monarch", "Legendary", 900, "avatars/avatar_chaos_monarch.png"],
   ["avatar_rose_riot", "Rose Riot", "Legendary", 900, "avatars/avatar_rose_riot.png"]
+]);
+
+const NEON_ARCANA_VARIANT_DEFINITIONS = Object.freeze([
+  ["fire_variant_neon_arcana", "Neon Arcana Fire", "fire", "cards/fire_variant_neon_arcana.png"],
+  ["water_variant_neon_arcana", "Neon Arcana Water", "water", "cards/water_variant_neon_arcana.png"],
+  ["earth_variant_neon_arcana", "Neon Arcana Earth", "earth", "cards/earth_variant_neon_arcana.png"],
+  ["wind_variant_neon_arcana", "Neon Arcana Wind", "wind", "cards/wind_variant_neon_arcana.png"]
+]);
+
+const NEON_ARCANA_AVATAR_IDS = new Set([
+  "avatar_neon_pyre_entity",
+  "avatar_neon_tide_entity",
+  "avatar_neon_stone_entity",
+  "avatar_neon_gale_entity"
 ]);
 
 function buildCompletedMatch({
@@ -377,8 +396,8 @@ test("cosmetics: new avatar and title catalog entries are present with exact met
     "duplicate cosmetic ids found"
   );
 
-  assert.equal(NEW_TITLE_DEFINITIONS.length, 12);
-  assert.equal(NEW_AVATAR_DEFINITIONS.length, 14);
+  assert.equal(NEW_TITLE_DEFINITIONS.length, 13);
+  assert.equal(NEW_AVATAR_DEFINITIONS.length, 18);
 
   for (const [id, name, rarity, price, image] of NEW_TITLE_DEFINITIONS) {
     const item = titles.get(id);
@@ -389,7 +408,7 @@ test("cosmetics: new avatar and title catalog entries are present with exact met
     assert.equal(item.image, image);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.releaseTag, id === "title_spellwired" ? "neon_arcana_01" : "v0.1.6");
     assert.equal(item.isNew, true);
   }
 
@@ -402,7 +421,76 @@ test("cosmetics: new avatar and title catalog entries are present with exact met
     assert.equal(item.image, image);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.releaseTag, NEON_ARCANA_AVATAR_IDS.has(id) ? "neon_arcana_01" : "v0.1.6");
     assert.equal(item.isNew, true);
+  }
+});
+
+test("cosmetics: Neon Arcana entries use exact metadata across categories and collection mappings", () => {
+  const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
+  const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
+  const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
+  const variants = new Map(COSMETIC_CATALOG.elementCardVariant.map((item) => [item.id, item]));
+
+  for (const avatarId of [
+    "avatar_neon_pyre_entity",
+    "avatar_neon_tide_entity",
+    "avatar_neon_stone_entity",
+    "avatar_neon_gale_entity"
+  ]) {
+    const item = avatars.get(avatarId);
+    assert.ok(item, `missing Neon Arcana avatar ${avatarId}`);
+    assert.equal(item.rarity, "Epic");
+    assert.equal(item.price, 600);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "neon_arcana_01");
+    assert.equal(item.collection, "Neon Arcana");
+    assert.match(item.image, /^avatars\//);
+    assert.equal(item.rotationOnly ?? false, false);
+    assert.equal(item.storeHidden ?? false, false);
+  }
+
+  const title = titles.get("title_spellwired");
+  assert.ok(title);
+  assert.equal(title.name, "Spellwired");
+  assert.equal(title.image, "titles/title_spellwired.png");
+  assert.equal(title.rarity, "Legendary");
+  assert.equal(title.price, 850);
+  assert.equal(title.purchasable, true);
+  assert.equal(title.isNew, true);
+  assert.equal(title.releaseTag, "neon_arcana_01");
+  assert.equal(title.collection, "Neon Arcana");
+  assert.equal(title.rotationOnly ?? false, false);
+  assert.equal(title.storeHidden ?? false, false);
+
+  const cardBack = cardBacks.get("cardback_neon_arcana");
+  assert.ok(cardBack);
+  assert.equal(cardBack.name, "Neon Arcana Card Back");
+  assert.equal(cardBack.image, "card_backs/cardback_neon_arcana.png");
+  assert.equal(cardBack.rarity, "Legendary");
+  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.purchasable, true);
+  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.releaseTag, "neon_arcana_01");
+  assert.equal(cardBack.collection, "Neon Arcana");
+  assert.equal(cardBack.rotationOnly ?? false, false);
+  assert.equal(cardBack.storeHidden ?? false, false);
+
+  for (const [id, name, element, image] of NEON_ARCANA_VARIANT_DEFINITIONS) {
+    const item = variants.get(id);
+    assert.ok(item, `missing Neon Arcana variant ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.image, image);
+    assert.equal(item.element, element);
+    assert.equal(item.rarity, "Rare");
+    assert.equal(item.price, 250);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "neon_arcana_01");
+    assert.equal(item.collection, "Neon Arcana");
+    assert.equal(item.rotationOnly ?? false, false);
+    assert.equal(item.storeHidden ?? false, false);
   }
 });

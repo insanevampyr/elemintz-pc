@@ -38,6 +38,17 @@ async function writeBoostEventConfig(dataDir, config) {
   await fs.writeFile(filePath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
+async function readPngDimensions(filePath) {
+  const buffer = await fs.readFile(filePath);
+  const pngSignature = "89504e470d0a1a0a";
+  assert.equal(buffer.subarray(0, 8).toString("hex"), pngSignature, `expected PNG file for ${filePath}`);
+  assert.equal(buffer.subarray(12, 16).toString("ascii"), "IHDR", `missing IHDR chunk in ${filePath}`);
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20)
+  };
+}
+
 function createBoostAwareStateCoordinator(options = {}) {
   const boostEventStore = new BoostEventStore({
     dataDir: options.dataDir,
@@ -900,6 +911,32 @@ test("state: cosmetic catalog covers all completed on-disk avatar, background, c
   const cosmeticCardFiles = cardFiles.filter((file) => !["back.jpg", "rules.jpg"].includes(file));
   for (const file of cosmeticCardFiles) {
     assert.ok(variantImages.has(`cards/${file}`), `missing card variant catalog entry for ${file}`);
+  }
+});
+
+test("state: Neon Arcana resized avatar and title art match category standards while card assets stay card-sized", async () => {
+  for (const relativePath of [
+    "assets/avatars/avatar_neon_pyre_entity.png",
+    "assets/avatars/avatar_neon_tide_entity.png",
+    "assets/avatars/avatar_neon_stone_entity.png",
+    "assets/avatars/avatar_neon_gale_entity.png",
+    "assets/titles/title_spellwired.png"
+  ]) {
+    const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
+    assert.equal(width, 512, `${relativePath} should be 512px wide`);
+    assert.equal(height, 512, `${relativePath} should be 512px tall`);
+  }
+
+  for (const relativePath of [
+    "assets/card_backs/cardback_neon_arcana.png",
+    "assets/cards/fire_variant_neon_arcana.png",
+    "assets/cards/water_variant_neon_arcana.png",
+    "assets/cards/earth_variant_neon_arcana.png",
+    "assets/cards/wind_variant_neon_arcana.png"
+  ]) {
+    const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
+    assert.equal(width, 1024, `${relativePath} should stay 1024px wide`);
+    assert.equal(height, 1536, `${relativePath} should stay 1536px tall`);
   }
 });
 

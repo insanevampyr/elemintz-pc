@@ -654,6 +654,50 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: AVATAR_RARITY_PRICING.Epic
     },
     {
+      id: "avatar_neon_pyre_entity",
+      name: "Neon Pyre Entity",
+      image: "avatars/avatar_neon_pyre_entity.png",
+      rarity: "Epic",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_neon_tide_entity",
+      name: "Neon Tide Entity",
+      image: "avatars/avatar_neon_tide_entity.png",
+      rarity: "Epic",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_neon_stone_entity",
+      name: "Neon Stone Entity",
+      image: "avatars/avatar_neon_stone_entity.png",
+      rarity: "Epic",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
+      id: "avatar_neon_gale_entity",
+      name: "Neon Gale Entity",
+      image: "avatars/avatar_neon_gale_entity.png",
+      rarity: "Epic",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Epic
+    },
+    {
       id: "avatar_golden_menace",
       name: "Golden Menace",
       image: "avatars/avatar_golden_menace.png",
@@ -785,6 +829,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       name: "Elemental Nexus Card Back",
       image: "card_backs/cardback_elemental_nexus.png",
       rarity: "Legendary",
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_neon_arcana",
+      name: "Neon Arcana Card Back",
+      image: "card_backs/cardback_neon_arcana.png",
+      rarity: "Legendary",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
       defaultOwned: false,
       purchasable: true,
       price: CARD_BACK_RARITY_PRICING.Legendary
@@ -1542,6 +1597,18 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: 450
     },
     {
+      id: "earth_variant_neon_arcana",
+      name: "Neon Arcana Earth",
+      image: "cards/earth_variant_neon_arcana.png",
+      element: "earth",
+      rarity: "Rare",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+    },
+    {
       id: "fire_variant_blue_inferno",
       name: "Blue Inferno",
       image: "cards/fire_variant_blue_inferno.png",
@@ -1561,6 +1628,18 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       purchasable: true,
       rotationOnly: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+    },
+    {
+      id: "fire_variant_neon_arcana",
+      name: "Neon Arcana Fire",
+      image: "cards/fire_variant_neon_arcana.png",
+      element: "fire",
+      rarity: "Rare",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
     },
     {
       id: "fire_variant_ember_core",
@@ -1643,6 +1722,18 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: ELEMENT_VARIANT_RARITY_PRICING.Rare
     },
     {
+      id: "water_variant_neon_arcana",
+      name: "Neon Arcana Water",
+      image: "cards/water_variant_neon_arcana.png",
+      element: "water",
+      rarity: "Rare",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+    },
+    {
       id: "earth_variant_crystal_titan",
       name: "Crystal Titan",
       image: "cards/earth_variant_crystal_titan.png",
@@ -1711,6 +1802,18 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "wind_variant_neon_arcana",
+      name: "Neon Arcana Wind",
+      image: "cards/wind_variant_neon_arcana.png",
+      element: "wind",
+      rarity: "Rare",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
     },
     {
       id: "wind_variant_transparent_vortex",
@@ -1978,6 +2081,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: 850
     },
     {
+      id: "title_spellwired",
+      name: "Spellwired",
+      image: "titles/title_spellwired.png",
+      rarity: "Legendary",
+      releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 850
+    },
+    {
       id: "title_apprentice",
       name: "Apprentice",
       image: "titles/title_apprentice.png",
@@ -2120,7 +2234,17 @@ const COSMETIC_COLLECTION_BY_KEY = Object.freeze({
   "avatar:avatar_arcane_gambler": "Lucky",
   "avatar:avatar_mimic_entity": "Lucky",
   "cardBack:elemental_chest_cardback": "Lucky",
-  "cardBack:cardback_lucky_you": "Lucky"
+  "cardBack:cardback_lucky_you": "Lucky",
+  "avatar:avatar_neon_pyre_entity": "Neon Arcana",
+  "avatar:avatar_neon_tide_entity": "Neon Arcana",
+  "avatar:avatar_neon_stone_entity": "Neon Arcana",
+  "avatar:avatar_neon_gale_entity": "Neon Arcana",
+  "title:title_spellwired": "Neon Arcana",
+  "cardBack:cardback_neon_arcana": "Neon Arcana",
+  "elementCardVariant:fire_variant_neon_arcana": "Neon Arcana",
+  "elementCardVariant:water_variant_neon_arcana": "Neon Arcana",
+  "elementCardVariant:earth_variant_neon_arcana": "Neon Arcana",
+  "elementCardVariant:wind_variant_neon_arcana": "Neon Arcana"
 });
 
 function applyCosmeticCollections(catalog) {

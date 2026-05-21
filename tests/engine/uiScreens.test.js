@@ -632,6 +632,220 @@ test("ui: store and cosmetics render short collection filter labels when collect
   assert.doesNotMatch(cosmeticsHtml, /Celestial Collection<\/span><\/label>/);
 });
 
+test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmetics visibility, and correct type labels", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_neon_pyre_entity",
+            name: "Neon Pyre Entity",
+            image: "avatars/avatar_neon_pyre_entity.png",
+            rarity: "Epic",
+            price: 600,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            collection: "Neon Arcana"
+          }
+        ],
+        cardBack: [
+          {
+            id: "cardback_neon_arcana",
+            name: "Neon Arcana Card Back",
+            image: "card_backs/cardback_neon_arcana.png",
+            rarity: "Legendary",
+            price: 800,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            collection: "Neon Arcana"
+          }
+        ],
+        background: [],
+        title: [
+          {
+            id: "title_spellwired",
+            name: "Spellwired",
+            image: "titles/title_spellwired.png",
+            rarity: "Legendary",
+            price: 850,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            collection: "Neon Arcana"
+          }
+        ],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_neon_arcana",
+            name: "Neon Arcana Fire",
+            image: "cards/fire_variant_neon_arcana.png",
+            rarity: "Rare",
+            price: 250,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "fire",
+            collection: "Neon Arcana"
+          },
+          {
+            id: "water_variant_neon_arcana",
+            name: "Neon Arcana Water",
+            image: "cards/water_variant_neon_arcana.png",
+            rarity: "Rare",
+            price: 250,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "water",
+            collection: "Neon Arcana"
+          },
+          {
+            id: "earth_variant_neon_arcana",
+            name: "Neon Arcana Earth",
+            image: "cards/earth_variant_neon_arcana.png",
+            rarity: "Rare",
+            price: 250,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "earth",
+            collection: "Neon Arcana"
+          },
+          {
+            id: "wind_variant_neon_arcana",
+            name: "Neon Arcana Wind",
+            image: "cards/wind_variant_neon_arcana.png",
+            rarity: "Rare",
+            price: 250,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "wind",
+            collection: "Neon Arcana"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_neon_pyre_entity",
+            name: "Neon Pyre Entity",
+            image: "avatars/avatar_neon_pyre_entity.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: true,
+            isNew: true,
+            collection: "Neon Arcana"
+          }
+        ],
+        cardBack: [
+          {
+            id: "cardback_neon_arcana",
+            name: "Neon Arcana Card Back",
+            image: "card_backs/cardback_neon_arcana.png",
+            rarity: "Legendary",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            collection: "Neon Arcana"
+          }
+        ],
+        background: [],
+        title: [
+          {
+            id: "title_spellwired",
+            name: "Spellwired",
+            image: "titles/title_spellwired.png",
+            rarity: "Legendary",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            collection: "Neon Arcana"
+          }
+        ],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_neon_arcana",
+            name: "Neon Arcana Fire",
+            image: "cards/fire_variant_neon_arcana.png",
+            rarity: "Rare",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "fire",
+            collection: "Neon Arcana"
+          },
+          {
+            id: "water_variant_neon_arcana",
+            name: "Neon Arcana Water",
+            image: "cards/water_variant_neon_arcana.png",
+            rarity: "Rare",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "water",
+            collection: "Neon Arcana"
+          },
+          {
+            id: "earth_variant_neon_arcana",
+            name: "Neon Arcana Earth",
+            image: "cards/earth_variant_neon_arcana.png",
+            rarity: "Rare",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "earth",
+            collection: "Neon Arcana"
+          },
+          {
+            id: "wind_variant_neon_arcana",
+            name: "Neon Arcana Wind",
+            image: "cards/wind_variant_neon_arcana.png",
+            rarity: "Rare",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "wind",
+            collection: "Neon Arcana"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(storeHtml, /data-store-collection-filter="Neon Arcana"/);
+  assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Neon Arcana"/);
+  assert.match(storeHtml, /Neon Arcana Collection/);
+  assert.match(cosmeticsHtml, /Neon Arcana Collection/);
+  assert.ok((storeHtml.match(/store-item-badge-new">NEW<\/span>/g) ?? []).length >= 3);
+  assert.match(storeHtml, /Type: Avatar/);
+  assert.match(storeHtml, /Type: Title/);
+  assert.match(storeHtml, /Type: Card Back/);
+  assert.match(storeHtml, /Type: Fire Variant/);
+  assert.match(storeHtml, /Type: Water Variant/);
+  assert.match(storeHtml, /Type: Earth Variant/);
+  assert.match(storeHtml, /Type: Wind Variant/);
+  assert.match(cosmeticsHtml, /Neon Pyre Entity/);
+  assert.match(cosmeticsHtml, /Spellwired/);
+  assert.match(cosmeticsHtml, /Neon Arcana Card Back/);
+  assert.match(cosmeticsHtml, /Equipped: Yes/);
+});
+
 test("ui: settings screen defaults to normal AI, random cosmetics, and a 20 second timer when fields are missing", () => {
   const html = settingsScreen.render({
     settings: {

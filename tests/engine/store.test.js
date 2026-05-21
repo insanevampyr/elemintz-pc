@@ -18,7 +18,8 @@ const NEW_TITLE_EXPECTATIONS = Object.freeze([
   ["title_glitch_royalty", "Epic", 500],
   ["title_crownless_king", "Legendary", 850],
   ["title_divine_menace", "Legendary", 850],
-  ["title_cataclysm_icon", "Legendary", 850]
+  ["title_cataclysm_icon", "Legendary", 850],
+  ["title_spellwired", "Legendary", 850]
 ]);
 
 const NEW_AVATAR_EXPECTATIONS = Object.freeze([
@@ -33,9 +34,20 @@ const NEW_AVATAR_EXPECTATIONS = Object.freeze([
   ["avatar_corrupt_cherub", "Epic", 600],
   ["avatar_void_glam", "Epic", 600],
   ["avatar_riot_halo", "Epic", 600],
+  ["avatar_neon_pyre_entity", "Epic", 600],
+  ["avatar_neon_tide_entity", "Epic", 600],
+  ["avatar_neon_stone_entity", "Epic", 600],
+  ["avatar_neon_gale_entity", "Epic", 600],
   ["avatar_golden_menace", "Legendary", 900],
   ["avatar_chaos_monarch", "Legendary", 900],
   ["avatar_rose_riot", "Legendary", 900]
+]);
+
+const NEON_ARCANA_AVATAR_IDS = new Set([
+  "avatar_neon_pyre_entity",
+  "avatar_neon_tide_entity",
+  "avatar_neon_stone_entity",
+  "avatar_neon_gale_entity"
 ]);
 
 async function createTempDataDir() {
@@ -623,7 +635,7 @@ test("store: new avatar and title cosmetics are purchasable and visible with exa
     assert.equal(item.owned, false);
     assert.equal(item.rarity, rarity);
     assert.equal(item.price, price);
-    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.releaseTag, id === "title_spellwired" ? "neon_arcana_01" : "v0.1.6");
     assert.equal(item.isNew, true);
   }
 
@@ -635,7 +647,7 @@ test("store: new avatar and title cosmetics are purchasable and visible with exa
     assert.equal(catalogItem.owned, false);
     assert.equal(catalogItem.rarity, rarity);
     assert.equal(catalogItem.price, price);
-    assert.equal(catalogItem.releaseTag, "v0.1.6");
+    assert.equal(catalogItem.releaseTag, NEON_ARCANA_AVATAR_IDS.has(id) ? "neon_arcana_01" : "v0.1.6");
     assert.equal(catalogItem.isNew, true);
 
     if (id === "avatar_golden_menace") {
@@ -647,5 +659,47 @@ test("store: new avatar and title cosmetics are purchasable and visible with exa
     assert.ok(visibleStoreItem, `missing store avatar ${id}`);
     assert.equal(visibleStoreItem.rarity, rarity);
     assert.equal(visibleStoreItem.price, price);
+  }
+});
+
+test("store: Neon Arcana card back and element variants are visible, purchasable, and tagged as new", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const store = await state.getStore("NeonArcanaStoreUser");
+
+  const cardBacks = new Map((store.catalog.cardBack ?? []).map((item) => [item.id, item]));
+  const variants = new Map((store.catalog.elementCardVariant ?? []).map((item) => [item.id, item]));
+
+  const cardBack = cardBacks.get("cardback_neon_arcana");
+  assert.ok(cardBack);
+  assert.equal(cardBack.name, "Neon Arcana Card Back");
+  assert.equal(cardBack.image, "card_backs/cardback_neon_arcana.png");
+  assert.equal(cardBack.rarity, "Legendary");
+  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.purchasable, true);
+  assert.equal(cardBack.releaseTag, "neon_arcana_01");
+  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.collection, "Neon Arcana");
+  assert.equal(cardBack.rotationOnly ?? false, false);
+  assert.equal(cardBack.storeHidden ?? false, false);
+
+  for (const [id, element] of [
+    ["fire_variant_neon_arcana", "fire"],
+    ["water_variant_neon_arcana", "water"],
+    ["earth_variant_neon_arcana", "earth"],
+    ["wind_variant_neon_arcana", "wind"]
+  ]) {
+    const item = variants.get(id);
+    assert.ok(item, `missing store element variant ${id}`);
+    assert.equal(item.rarity, "Rare");
+    assert.equal(item.price, 250);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.releaseTag, "neon_arcana_01");
+    assert.equal(item.isNew, true);
+    assert.equal(item.collection, "Neon Arcana");
+    assert.equal(item.element, element);
+    assert.match(item.image, /^cards\//);
+    assert.equal(item.rotationOnly ?? false, false);
+    assert.equal(item.storeHidden ?? false, false);
   }
 });
