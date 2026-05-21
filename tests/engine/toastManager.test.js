@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ToastManager } from "../../src/renderer/systems/toastManager.js";
+import { ToastManager, getChestRewardImagePath } from "../../src/renderer/systems/toastManager.js";
 
 function makeFakeElement() {
   return {
@@ -187,16 +187,28 @@ test("toast: chest grants render singular and plural labels", () => {
   globalThis.setTimeout = (callback) => { callback(); return 0; };
 
   const manager = new ToastManager(root);
-  manager.showChestGrant({ amount: 1, chestLabel: "Basic Chest" });
-  manager.showChestGrant({ amount: 2, chestLabel: "Basic Chest" });
+  manager.showChestGrant({ amount: 1, chestLabel: "Basic Chest", chestType: "basic" });
+  manager.showChestGrant({ amount: 2, chestLabel: "Basic Chest", chestType: "basic" });
 
   assert.equal(appended.length, 2);
   assert.match(appended[0].innerHTML, /\+1 Basic Chest/);
+  assert.match(appended[0].innerHTML, /assets\/icons\/basic_chest\.png/);
   assert.match(appended[1].innerHTML, /\+2 Basic Chests/);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;
   globalThis.setTimeout = originalSetTimeout;
+});
+
+test("toast: chest grant mapping uses the correct closed chest art for each supported chest type", () => {
+  assert.match(getChestRewardImagePath("basic"), /assets\/icons\/basic_chest\.png/);
+  assert.match(getChestRewardImagePath("milestone"), /assets\/icons\/loot_chest\.png/);
+  assert.match(getChestRewardImagePath("epic"), /assets\/icons\/epic_chest\.png/);
+  assert.match(getChestRewardImagePath("legendary"), /assets\/icons\/legendary_chest\.png/);
+});
+
+test("toast: unknown chest types fall back to the basic chest art safely", () => {
+  assert.equal(getChestRewardImagePath("mystery"), getChestRewardImagePath("basic"));
 });
 
 test("toast: chest open rewards render xp, tokens, and cosmetic messages", () => {

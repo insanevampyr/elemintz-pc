@@ -4944,7 +4944,8 @@ export class AppController {
       if (chestDelta > 0) {
         this.toastManager.showChestGrant?.({
           amount: chestDelta,
-          chestLabel: this.getChestLabel(chestType)
+          chestLabel: this.getChestLabel(chestType),
+          chestType
         });
       }
     }

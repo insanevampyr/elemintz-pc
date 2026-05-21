@@ -9247,10 +9247,62 @@ test("appController: reward toasts are labeled with receiving player", () => {
   assert.equal(chestCalls.length, 1);
   assert.equal(chestCalls[0].amount, 2);
   assert.equal(chestCalls[0].chestLabel, "Basic Chest");
+  assert.equal(chestCalls[0].chestType, "basic");
   assert.equal(xpCalls.length, 1);
   assert.equal(xpCalls[0].label, "Alice XP");
   assert.equal(levelCalls.length, 1);
   assert.equal(levelCalls[0].playerName, "Alice");
+});
+
+test("appController: reward toasts preserve chest type for milestone, epic, and legendary grant popups", () => {
+  const chestCalls = [];
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {
+      showAchievement: () => {},
+      showTokenReward: () => {},
+      showChestGrant: (payload) => chestCalls.push(payload),
+      showXpBreakdown: () => {},
+      showLevelUp: () => {}
+    }
+  });
+
+  const previousProfile = {
+    username: "Alice",
+    chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+  };
+  const nextProfile = {
+    username: "Alice",
+    chests: { basic: 0, milestone: 1, epic: 1, legendary: 1 }
+  };
+
+  app.emitRewardToastsForResult(
+    {
+      profile: nextProfile,
+      unlockedAchievements: [],
+      dailyRewards: [],
+      weeklyRewards: [],
+      levelRewardTokenDelta: 0,
+      xpBreakdown: { lines: [] },
+      xpDelta: 0,
+      levelBefore: 1,
+      levelAfter: 1,
+      levelRewards: []
+    },
+    "Player 1",
+    previousProfile
+  );
+
+  assert.deepEqual(
+    chestCalls.map((payload) => [payload.chestType, payload.chestLabel]),
+    [
+      ["milestone", "Milestone Chest"],
+      ["epic", "Epic Chest"],
+      ["legendary", "Legendary Chest"]
+    ]
+  );
 });
 
 test("appController: opening a basic chest from profile shows the fake open visual, then refreshes and emits reward toast", async () => {

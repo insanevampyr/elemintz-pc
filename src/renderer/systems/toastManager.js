@@ -1,5 +1,12 @@
 import { getAssetPath } from "../utils/dom.js";
 
+const CHEST_REWARD_IMAGE_PATHS = Object.freeze({
+  basic: "icons/basic_chest.png",
+  milestone: "icons/loot_chest.png",
+  epic: "icons/epic_chest.png",
+  legendary: "icons/legendary_chest.png"
+});
+
 function resolveAchievementImage(image) {
   if (!image) {
     return null;
@@ -19,6 +26,12 @@ function resolveAchievementImage(image) {
   }
 
   return getAssetPath(value);
+}
+
+function getChestRewardImagePath(chestType) {
+  const safeChestType = String(chestType ?? "").trim().toLowerCase();
+  const imagePath = CHEST_REWARD_IMAGE_PATHS[safeChestType] ?? CHEST_REWARD_IMAGE_PATHS.basic;
+  return getAssetPath(imagePath);
 }
 
 export class ToastManager {
@@ -118,17 +131,18 @@ export class ToastManager {
     });
   }
 
-  showChestGrant({ amount = 0, chestLabel = "Basic Chest" } = {}) {
+  showChestGrant({ amount = 0, chestLabel = "Basic Chest", chestType = "basic" } = {}) {
     const chestAmount = Math.max(0, Number(amount) || 0);
     if (chestAmount <= 0) {
       return;
     }
+    const chestImage = getChestRewardImagePath(chestType);
 
     this.enqueueToast({
       className: "reward-toast chest-toast",
       durationMs: 2200,
       html: `
-        <div class="reward-toast-icon">\uD83E\uDDF0</div>
+        <img class="reward-toast-icon reward-toast-icon-image" src="${chestImage}" alt="${chestLabel}" />
         <div>
           <h4>+${chestAmount} ${chestLabel}${chestAmount === 1 ? "" : "s"}</h4>
         </div>
@@ -213,5 +227,8 @@ export class ToastManager {
         </div>
       `
     });
-  }}
+  }
+}
+
+export { getChestRewardImagePath };
 
