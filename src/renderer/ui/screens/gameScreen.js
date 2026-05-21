@@ -66,7 +66,16 @@ export function buildGameLiveUpdateSignature(context) {
       p1Name: context.hotseat?.p1Name ?? null,
       p2Name: context.hotseat?.p2Name ?? null,
       turnLabel: context.hotseat?.turnLabel ?? null
-    }
+    },
+    gauntlet: context.gauntlet
+      ? {
+          active: Boolean(context.gauntlet.active),
+          currentStreak: Number(context.gauntlet.currentStreak ?? 0),
+          rivalName: context.gauntlet.rivalName ?? null,
+          rivalTitle: context.gauntlet.rivalTitle ?? null,
+          rivalHint: context.gauntlet.rivalHint ?? null
+        }
+      : null
   });
 }
 
@@ -278,6 +287,31 @@ function buildRoundChangeLine(vm, labels) {
   return `Captured totals are now ${labels.left} ${vm.captured.p1} and ${labels.right} ${vm.captured.p2}.`;
 }
 
+function renderGauntletStatus(context) {
+  if (!context.gauntlet?.active) {
+    return "";
+  }
+
+  const streak = Math.max(0, Number(context.gauntlet.currentStreak ?? 0));
+  const rivalName = escapeHtml(context.gauntlet.rivalName ?? "Arena Rival");
+  const rivalTitle = escapeHtml(context.gauntlet.rivalTitle ?? "Gauntlet Rival");
+  const rivalHint = String(context.gauntlet.rivalHint ?? "").trim();
+
+  return `
+    <section class="panel gauntlet-status-panel">
+      <div class="gauntlet-status-panel__header">
+        <p class="gauntlet-status-panel__eyebrow">Gauntlet Mode</p>
+        <p class="gauntlet-status-panel__streak">Current Streak: ${streak}</p>
+      </div>
+      <div class="gauntlet-status-panel__identity">
+        <strong class="gauntlet-status-panel__name">${rivalName}</strong>
+        <span class="gauntlet-status-panel__title">${rivalTitle}</span>
+      </div>
+      ${rivalHint ? `<p class="gauntlet-status-panel__hint">${escapeHtml(rivalHint)}</p>` : ""}
+    </section>
+  `;
+}
+
 function renderHands(vm, context, phase, names) {
   const hotseat = context.hotseat;
   const selectedCardIndex = context.presentation?.selectedCardIndex ?? null;
@@ -416,6 +450,7 @@ export const gameScreen = {
           cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
           canSend: context.taunts?.canSend ?? true
         })}
+        ${renderGauntletStatus(context)}
 
         <section class="arena-board" style="background-image: url('${context.arenaBackground}')">
           <section class="grid game-grid">

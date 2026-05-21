@@ -186,6 +186,7 @@ export class AppController {
     this.passCompletionResolve = null;
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletContinuation = null;
+    this.pendingGauntletContinuationRequiresConfirm = false;
     this.deferPveOutcomeSound = false;
     this.deferredPveRoundSound = null;
     this.pveOpponentStyle = null;
@@ -1364,6 +1365,7 @@ export class AppController {
     this.pveGauntletMode = false;
     this.gauntletRunState = createDefaultGauntletRunState();
     this.pendingGauntletContinuation = null;
+    this.pendingGauntletContinuationRequiresConfirm = false;
   }
 
   async recordGauntletProfileStats({
@@ -1473,18 +1475,19 @@ export class AppController {
       lastResult: result
     };
     this.pendingGauntletContinuation = null;
+    this.pendingGauntletContinuationRequiresConfirm = false;
   }
 
   handleGauntletMatchCompletion(match) {
     if (!this.pveGauntletMode || !this.gauntletRunState?.active) {
-      return false;
+      return { handled: false };
     }
 
     if (match?.winner === "p1") {
       const nextRival = this.advanceGauntletRunStateAfterWin();
       if (!nextRival) {
         this.endGauntletRun("win");
-        return false;
+        return { handled: false };
       }
 
       this.pendingGauntletContinuation = {
@@ -1495,17 +1498,34 @@ export class AppController {
           gauntletRivalId: nextRival.id
         }
       };
-      return true;
+      this.pendingGauntletContinuationRequiresConfirm = true;
+      return {
+        handled: true,
+        type: "victory",
+        nextRival,
+        streak: Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0))
+      };
     }
 
     const result =
       match?.winner === "draw"
         ? "draw"
         : String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit"
-          ? "quit_forfeit"
-          : "loss";
+            ? "quit_forfeit"
+            : "loss";
+    const finalStreak = Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0));
+    const rivalsDefeated = Array.isArray(this.gauntletRunState?.defeatedRivalIds)
+      ? this.gauntletRunState.defeatedRivalIds.length
+      : 0;
     this.endGauntletRun(result);
-    return false;
+    return {
+      handled: false,
+      type: "ended",
+      result,
+      showSummary: result !== "quit_forfeit",
+      finalStreak,
+      rivalsDefeated
+    };
   }
 
   buildPveOpponentStyle(featuredRivalId = this.pveFeaturedRivalId) {
@@ -5239,7 +5259,15 @@ export class AppController {
     }
   }
 
-  buildMatchCompleteModalPayload(mode, match, finalPersisted) {
+  buildGauntletRunSummary({ finalStreak = 0, rivalsDefeated = 0, bestStreak = 0 } = {}) {
+    return {
+      finalStreak: Math.max(0, Number(finalStreak ?? 0)),
+      rivalsDefeated: Math.max(0, Number(rivalsDefeated ?? 0)),
+      bestStreak: Math.max(0, Number(bestStreak ?? 0))
+    };
+  }
+
+  buildMatchCompleteModalPayload(mode, match, finalPersisted, options = {}) {
     const names = this.getLocalNames();
     const roundsPlayed = Array.isArray(match?.history) ? match.history.length : 0;
     const safeValue = (value) => (value ?? "-");
@@ -5270,6 +5298,7 @@ export class AppController {
     const leftFinalHand = safeValue(match?.players?.p1?.hand?.length);
     const rightFinalHand = safeValue(match?.players?.p2?.hand?.length);
     const rewardSummary = this.buildMatchCompleteRewardSummary(mode, match, finalPersisted);
+    const gauntletSummary = options?.gauntletSummary ?? null;
     const isCrownfireFeaturedRival =
       mode === MATCH_MODE.PVE && String(this.pveFeaturedRivalId ?? "").trim().toLowerCase() === "crownfire_duelist";
 
@@ -5303,6 +5332,27 @@ export class AppController {
       isCrownfireFeaturedRival && match.winner === "p2"
         ? `<p class="match-complete-helper">No Crownfire First Win Bonus earned.</p>`
         : "";
+    const gauntletSummaryHtml = gauntletSummary
+      ? `
+        <section class="match-complete-gauntlet-summary">
+          <p class="match-complete-helper">Gauntlet Run Ended</p>
+          <div class="match-complete-stats">
+            <div class="match-complete-stat">
+              <span class="match-complete-stat-label">Final Streak</span>
+              <strong class="match-complete-stat-value">${gauntletSummary.finalStreak}</strong>
+            </div>
+            <div class="match-complete-stat">
+              <span class="match-complete-stat-label">Best Streak</span>
+              <strong class="match-complete-stat-value">${gauntletSummary.bestStreak}</strong>
+            </div>
+            <div class="match-complete-stat">
+              <span class="match-complete-stat-label">Rivals Defeated</span>
+              <strong class="match-complete-stat-value">${gauntletSummary.rivalsDefeated}</strong>
+            </div>
+          </div>
+        </section>
+      `
+      : "";
 
     const bodyHtml = `
       <section class="match-complete-modal ${outcomeClass}">
@@ -5314,6 +5364,7 @@ export class AppController {
         </header>
         <p class="match-complete-helper">Captured totals reflect opponent cards won across the full match.</p>
         ${featuredRivalLossHelper}
+        ${gauntletSummaryHtml}
 
         <section class="match-complete-stats">
           <div class="match-complete-stat">
@@ -5352,7 +5403,12 @@ export class AppController {
       </section>
     `;
 
-    return { title: "Match Complete", bodyHtml, mode, startOptions };
+    return {
+      title: gauntletSummary ? "Gauntlet Run Ended" : "Match Complete",
+      bodyHtml,
+      mode,
+      startOptions
+    };
   }
 
   showMatchCompleteModal(payload) {
@@ -5375,6 +5431,45 @@ export class AppController {
     });
   }
 
+  showGauntletVictoryModal({ streak = 0, nextRival = null } = {}) {
+    this.prepareForFinalModal();
+    this.modalManager.show({
+      title: "Gauntlet Victory!",
+      bodyHtml: `
+        <section class="match-complete-modal is-victory">
+          <header class="match-complete-hero">
+            <p class="match-complete-kicker">Gauntlet Victory!</p>
+            <h4 class="match-complete-outcome">Streak: ${Math.max(0, Number(streak ?? 0))}</h4>
+            <p class="match-complete-subtitle">Next Rival: ${escapeHtml(nextRival?.displayName ?? "Unknown Rival")}</p>
+            <p class="match-complete-helper">${escapeHtml(nextRival?.title ?? "Arena Rival")}</p>
+            ${
+              nextRival?.hint
+                ? `<p class="match-complete-helper">${escapeHtml(nextRival.hint)}</p>`
+                : ""
+            }
+          </header>
+          <div class="match-complete-actions">
+            <button id="gauntlet-continue-btn" class="btn btn-primary">Continue Gauntlet</button>
+            <button id="gauntlet-return-menu-btn" class="btn">Return to Menu</button>
+          </div>
+        </section>
+      `,
+      actions: []
+    });
+
+    document.getElementById("gauntlet-continue-btn")?.addEventListener("click", () => {
+      this.modalManager.hide();
+      this.flushPendingGauntletContinuation({ force: true });
+    });
+
+    document.getElementById("gauntlet-return-menu-btn")?.addEventListener("click", async () => {
+      this.modalManager.hide();
+      this.clearGauntletRunState();
+      this.showMenu();
+      await this.refreshDailyChallengesForMenu();
+    });
+  }
+
   flushPendingMatchCompleteModal() {
     if (!this.pendingMatchCompletePayload) {
       return;
@@ -5385,13 +5480,19 @@ export class AppController {
     this.showMatchCompleteModal(payload);
   }
 
-  flushPendingGauntletContinuation() {
-    if (!this.pendingGauntletContinuation || this.roundPresentation?.busy || this.screenFlow === "pass") {
+  flushPendingGauntletContinuation({ force = false } = {}) {
+    if (
+      !this.pendingGauntletContinuation ||
+      this.roundPresentation?.busy ||
+      this.screenFlow === "pass" ||
+      (this.pendingGauntletContinuationRequiresConfirm && !force)
+    ) {
       return false;
     }
 
     const pendingContinuation = this.pendingGauntletContinuation;
     this.pendingGauntletContinuation = null;
+    this.pendingGauntletContinuationRequiresConfirm = false;
     void this.startGame(pendingContinuation.mode, pendingContinuation.options);
     return true;
   }
@@ -5920,6 +6021,7 @@ export class AppController {
     this.gameController?.stopMatchClock();
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletContinuation = null;
+    this.pendingGauntletContinuationRequiresConfirm = false;
     const wantsGauntlet = mode === MATCH_MODE.PVE && options?.gauntletMode === true;
     if (wantsGauntlet) {
       if (options?.gauntletContinue === true) {
@@ -6049,11 +6151,29 @@ export class AppController {
             }
         }
       }
-      if (mode === MATCH_MODE.PVE && this.handleGauntletMatchCompletion(match)) {
-        this.schedulePendingGauntletContinuationFlush();
-        return;
-      }
-        const modalPayload = this.buildMatchCompleteModalPayload(mode, match, finalPersisted);
+        const gauntletCompletion =
+          mode === MATCH_MODE.PVE ? this.handleGauntletMatchCompletion(match) : { handled: false };
+        if (mode === MATCH_MODE.PVE && gauntletCompletion?.type === "victory") {
+          this.showGauntletVictoryModal({
+            streak: gauntletCompletion.streak,
+            nextRival: gauntletCompletion.nextRival
+          });
+          return;
+        }
+        const gauntletSummary =
+          mode === MATCH_MODE.PVE && gauntletCompletion?.showSummary
+            ? this.buildGauntletRunSummary({
+                finalStreak: gauntletCompletion.finalStreak,
+                rivalsDefeated: gauntletCompletion.rivalsDefeated,
+                bestStreak:
+                  finalPersisted?.profile?.gauntletBestStreak ??
+                  this.profile?.gauntletBestStreak ??
+                  0
+              })
+            : null;
+        const modalPayload = this.buildMatchCompleteModalPayload(mode, match, finalPersisted, {
+          gauntletSummary
+        });
         if (this.roundPresentation.busy || this.screenFlow === "pass") {
           this.pendingMatchCompletePayload = modalPayload;
           return;
@@ -6090,6 +6210,7 @@ export class AppController {
 
     const names = this.getLocalNames();
     const p2Name = vm.mode === MATCH_MODE.LOCAL_PVP ? names.p2 : this.getCurrentPveOpponentName();
+    const gauntletRival = vm.mode === MATCH_MODE.PVE && this.pveGauntletMode ? this.getCurrentGauntletRival() : null;
     return {
       game: vm,
       hotseat: {
@@ -6102,6 +6223,16 @@ export class AppController {
             ? `${vm.hotseatTurn === "p1" ? names.p1 : names.p2} Turn`
             : "Player Turn"
       },
+      gauntlet:
+        gauntletRival
+          ? {
+              active: true,
+              currentStreak: Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)),
+              rivalName: gauntletRival.displayName,
+              rivalTitle: gauntletRival.title,
+              rivalHint: gauntletRival.hint
+            }
+          : null,
       presentation: this.roundPresentation
     };
   }

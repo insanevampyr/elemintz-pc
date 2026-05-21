@@ -7877,7 +7877,7 @@ test("appController: gauntlet start creates a shuffled rival bag and first rival
   assert.equal(app.gauntletRunState.lastRivalId, null);
 });
 
-test("appController: gauntlet win increments streak and pulls the next rival from the bag", () => {
+test("appController: gauntlet win increments streak, queues a confirmation transition, and pulls the next rival from the bag", () => {
   const starts = [];
   const app = new AppController({
     screenManager: { register: () => {}, show: () => {} },
@@ -7902,7 +7902,12 @@ test("appController: gauntlet win increments streak and pulls the next rival fro
 
   const continued = app.handleGauntletMatchCompletion({ winner: "p1", endReason: "normal" });
 
-  assert.equal(continued, true);
+  assert.deepEqual(continued, {
+    handled: true,
+    type: "victory",
+    nextRival: app.getCurrentGauntletRival(),
+    streak: 1
+  });
   assert.deepEqual(app.gauntletRunState, {
     active: true,
     currentStreak: 1,
@@ -7922,7 +7927,8 @@ test("appController: gauntlet win increments streak and pulls the next rival fro
     }
   });
   assert.deepEqual(starts, []);
-  assert.equal(app.flushPendingGauntletContinuation(), true);
+  assert.equal(app.flushPendingGauntletContinuation(), false);
+  assert.equal(app.flushPendingGauntletContinuation({ force: true }), true);
   assert.deepEqual(starts, [
     {
       mode: MATCH_MODE.PVE,
@@ -7960,10 +7966,15 @@ test("appController: gauntlet bag use never selects the same rival twice in a ro
 
   const continued = app.handleGauntletMatchCompletion({ winner: "p1", endReason: "normal" });
 
-  assert.equal(continued, true);
+  assert.deepEqual(continued, {
+    handled: true,
+    type: "victory",
+    nextRival: app.getCurrentGauntletRival(),
+    streak: 4
+  });
   assert.notEqual(app.gauntletRunState.currentRivalId, "pyro_maniac");
   assert.equal(app.gauntletRunState.currentRivalId, "tide_witch");
-  app.flushPendingGauntletContinuation();
+  assert.equal(app.flushPendingGauntletContinuation({ force: true }), true);
   assert.equal(starts.at(-1)?.options?.gauntletRivalId, "tide_witch");
 });
 
@@ -7993,7 +8004,12 @@ test("appController: gauntlet bag refill recreates all 8 rivals and avoids an im
 
   const continued = app.handleGauntletMatchCompletion({ winner: "p1", endReason: "normal" });
 
-  assert.equal(continued, true);
+  assert.deepEqual(continued, {
+    handled: true,
+    type: "victory",
+    nextRival: app.getCurrentGauntletRival(),
+    streak: 8
+  });
   assert.equal(app.gauntletRunState.currentStreak, 8);
   assert.equal(app.gauntletRunState.lastRivalId, "tide_witch");
   assert.notEqual(app.gauntletRunState.currentRivalId, "tide_witch");
@@ -8010,7 +8026,8 @@ test("appController: gauntlet bag refill recreates all 8 rivals and avoids an im
     "pyro_maniac"
   ]);
   assert.equal(app.gauntletRunState.defeatedRivalIds.at(-1), "tide_witch");
-  app.flushPendingGauntletContinuation();
+  assert.equal(app.flushPendingGauntletContinuation(), false);
+  assert.equal(app.flushPendingGauntletContinuation({ force: true }), true);
   assert.deepEqual(starts.at(-1), {
     mode: MATCH_MODE.PVE,
     options: {
@@ -8046,7 +8063,14 @@ test("appController: gauntlet loss ends the run without starting another match",
 
   const continued = app.handleGauntletMatchCompletion({ winner: "p2", endReason: "normal" });
 
-  assert.equal(continued, false);
+  assert.deepEqual(continued, {
+    handled: false,
+    type: "ended",
+    result: "loss",
+    showSummary: true,
+    finalStreak: 2,
+    rivalsDefeated: 2
+  });
   assert.equal(app.pveGauntletMode, true);
   assert.equal(app.gauntletRunState.active, false);
   assert.equal(app.gauntletRunState.lastResult, "loss");
@@ -8078,7 +8102,14 @@ test("appController: gauntlet draw ends the run without starting another match",
 
   const continued = app.handleGauntletMatchCompletion({ winner: "draw", endReason: "hand_exhaustion" });
 
-  assert.equal(continued, false);
+  assert.deepEqual(continued, {
+    handled: false,
+    type: "ended",
+    result: "draw",
+    showSummary: true,
+    finalStreak: 1,
+    rivalsDefeated: 1
+  });
   assert.equal(app.pveGauntletMode, true);
   assert.equal(app.gauntletRunState.active, false);
   assert.equal(app.gauntletRunState.lastResult, "draw");
@@ -8089,9 +8120,10 @@ test("appController: gauntlet match win records persistent win stats without inc
   const originalWindow = globalThis.window;
   const gauntletStatCalls = [];
   const continuedStarts = [];
+  const modalManager = createModalCapture();
   const app = new AppController({
     screenManager: { register: () => {}, show: () => {} },
-    modalManager: { show: () => {}, hide: () => {} },
+    modalManager,
     toastManager: { showAchievement: () => {} }
   });
 
@@ -8103,7 +8135,6 @@ test("appController: gauntlet match win records persistent win stats without inc
   app.maybeEmitPveAiTaunt = () => {};
   app.sound.playMatchComplete = () => {};
   app.emitRewardToastsForResult = () => {};
-  app.showMatchCompleteModal = () => {};
   app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
 
   try {
@@ -8127,45 +8158,69 @@ test("appController: gauntlet match win records persistent win stats without inc
         }
       }
     };
-
-    app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
-    await Promise.resolve();
-    const originalStartGame = app.startGame.bind(app);
-    app.startGame = (mode, options = {}) => {
-      continuedStarts.push({ mode, options });
-      return originalStartGame(mode, options);
+    const originalDocument = globalThis.document;
+    const continueButton = createFakeDomElement();
+    const returnButton = createFakeDomElement();
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "gauntlet-continue-btn"
+          ? continueButton
+          : id === "gauntlet-return-menu-btn"
+            ? returnButton
+            : null,
+      querySelector: () => null
     };
 
-    await app.gameController.onMatchComplete({
-      match: { winner: "p1", endReason: "normal" },
-      persisted: { profile: { username: "GauntletWinner" } }
-    });
-    assert.equal(continuedStarts.length, 0);
-    assert.ok(app.pendingGauntletContinuation);
-    assert.equal(app.flushPendingGauntletContinuation(), true);
-    assert.equal(app.flushPendingGauntletContinuation(), false);
+    try {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+      const originalStartGame = app.startGame.bind(app);
+      app.startGame = (mode, options = {}) => {
+        continuedStarts.push({ mode, options });
+        return originalStartGame(mode, options);
+      };
 
-    assert.deepEqual(gauntletStatCalls, [
-      {
-        username: "GauntletWinner",
-        runStarted: true,
-        matchWon: false,
-        runEndedWithLoss: false,
-        currentStreak: 0
-      },
-      {
-        username: "GauntletWinner",
-        runStarted: false,
-        matchWon: true,
-        runEndedWithLoss: false,
-        currentStreak: 1
-      }
-    ]);
-    assert.equal(app.profile.gauntletRuns, 1);
-    assert.equal(app.profile.gauntletWins, 1);
-    assert.equal(app.profile.gauntletRivalsDefeated, 1);
-    assert.equal(app.profile.gauntletBestStreak, 1);
-    assert.equal(continuedStarts.length, 1);
+      await app.gameController.onMatchComplete({
+        match: { winner: "p1", endReason: "normal" },
+        persisted: { profile: { username: "GauntletWinner" } }
+      });
+      assert.equal(modalManager.shows.length, 1);
+      assert.equal(modalManager.shows[0].title, "Gauntlet Victory!");
+      assert.match(modalManager.shows[0].bodyHtml, /Streak: 1/);
+      assert.match(modalManager.shows[0].bodyHtml, /Next Rival:/);
+      assert.match(modalManager.shows[0].bodyHtml, /Continue Gauntlet/);
+      assert.equal(continuedStarts.length, 0);
+      assert.ok(app.pendingGauntletContinuation);
+      assert.equal(app.pendingGauntletContinuationRequiresConfirm, true);
+
+      await continueButton.listeners.get("click")?.();
+
+      assert.deepEqual(gauntletStatCalls, [
+        {
+          username: "GauntletWinner",
+          runStarted: true,
+          matchWon: false,
+          runEndedWithLoss: false,
+          currentStreak: 0
+        },
+        {
+          username: "GauntletWinner",
+          runStarted: false,
+          matchWon: true,
+          runEndedWithLoss: false,
+          currentStreak: 1
+        }
+      ]);
+      assert.equal(app.profile.gauntletRuns, 1);
+      assert.equal(app.profile.gauntletWins, 1);
+      assert.equal(app.profile.gauntletRivalsDefeated, 1);
+      assert.equal(app.profile.gauntletBestStreak, 1);
+      assert.equal(continuedStarts.length, 1);
+      assert.equal(app.pendingGauntletContinuation, null);
+      assert.equal(app.pendingGauntletContinuationRequiresConfirm, false);
+    } finally {
+      globalThis.document = originalDocument;
+    }
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();
@@ -8177,6 +8232,7 @@ test("appController: gauntlet match win records persistent win stats without inc
 test("appController: gauntlet terminal draw records one persistent loss and quit does not", async () => {
   const originalWindow = globalThis.window;
   const gauntletStatCalls = [];
+  const matchCompletePayloads = [];
   const app = new AppController({
     screenManager: { register: () => {}, show: () => {} },
     modalManager: { show: () => {}, hide: () => {} },
@@ -8191,8 +8247,9 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
   app.maybeEmitPveAiTaunt = () => {};
   app.sound.playMatchComplete = () => {};
   app.emitRewardToastsForResult = () => {};
-  app.showMatchCompleteModal = () => {};
-  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+  app.showMatchCompleteModal = (payload) => {
+    matchCompletePayloads.push(payload);
+  };
 
   try {
     globalThis.window = {
@@ -8234,10 +8291,17 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
         currentStreak: 0
       }
     ]);
+    assert.equal(matchCompletePayloads.length, 1);
+    assert.equal(matchCompletePayloads[0].title, "Gauntlet Run Ended");
+    assert.match(matchCompletePayloads[0].bodyHtml, /Final Streak/);
+    assert.match(matchCompletePayloads[0].bodyHtml, /Best Streak/);
+    assert.match(matchCompletePayloads[0].bodyHtml, /Rivals Defeated/);
+    assert.match(matchCompletePayloads[0].bodyHtml, /match-complete-stat-value">0<\/strong>/);
 
     app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
     await Promise.resolve();
     gauntletStatCalls.length = 0;
+    matchCompletePayloads.length = 0;
 
     await app.gameController.onMatchComplete({
       match: { winner: "p2", endReason: "quit_forfeit" },
@@ -8245,6 +8309,7 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
     });
 
     assert.deepEqual(gauntletStatCalls, []);
+    assert.equal(matchCompletePayloads[0].title, "Match Complete");
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();

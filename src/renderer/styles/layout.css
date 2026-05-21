@@ -858,6 +858,58 @@ body {
   margin-bottom: 8px;
 }
 
+.gauntlet-status-panel {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  background: linear-gradient(160deg, rgba(29, 48, 78, 0.96), rgba(15, 31, 52, 0.94));
+  border-color: rgba(155, 203, 237, 0.3);
+}
+
+.gauntlet-status-panel__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.gauntlet-status-panel__eyebrow,
+.gauntlet-status-panel__streak,
+.gauntlet-status-panel__title,
+.gauntlet-status-panel__hint {
+  margin: 0;
+}
+
+.gauntlet-status-panel__eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9fcaec;
+}
+
+.gauntlet-status-panel__streak {
+  font-weight: 700;
+  color: #f6dca1;
+}
+
+.gauntlet-status-panel__identity {
+  display: grid;
+  gap: 2px;
+}
+
+.gauntlet-status-panel__name {
+  font-size: 1rem;
+}
+
+.gauntlet-status-panel__title {
+  color: var(--text-soft);
+}
+
+.gauntlet-status-panel__hint {
+  color: var(--text-muted);
+}
+
 .player-avatar {
   width: 52px;
   height: 52px;

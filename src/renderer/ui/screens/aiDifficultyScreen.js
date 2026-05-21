@@ -80,7 +80,7 @@ export const aiDifficultyScreen = {
       <section class="screen screen-ai-difficulty">
         <div class="panel">
           <div class="screen-topbar">
-            <h2 class="view-title">Choose AI Difficulty</h2>
+            <h2 class="view-title">Choose AI Challenge</h2>
             <button id="ai-difficulty-back-btn" class="btn screen-back-btn">Back</button>
           </div>
           <form id="ai-difficulty-form" class="stack-sm">

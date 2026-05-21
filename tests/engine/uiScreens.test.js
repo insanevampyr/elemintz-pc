@@ -1725,7 +1725,7 @@ test("ui: ai difficulty screen renders Easy, Normal, Hard, Gauntlet, and Feature
     actions: {}
   });
 
-  assert.match(html, /Choose AI Difficulty/);
+  assert.match(html, /Choose AI Challenge/);
   assert.match(html, /Easy Practice/);
   assert.match(html, /Normal AI/);
   assert.match(html, /Hard AI/);
@@ -1752,6 +1752,148 @@ test("ui: ai difficulty screen renders the Gauntlet placeholder card details", (
   assert.match(html, /menu_tiles\/tile_gauntlet_mode\.png/);
   assert.match(html, /Gauntlet Mode/);
   assert.match(html, /Build a win streak against rival AIs\./);
+});
+
+test("ui: game screen renders active Gauntlet streak and rival details when present", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: {
+      name: "Hero",
+      avatarId: "default_avatar",
+      titleId: "Initiate",
+      badgeId: "badge_element_initiate",
+      title: "Initiate",
+      titleIcon: null,
+      featuredBadge: getBadgeImage("badge_element_initiate"),
+      avatar: "assets/avatars/default.png"
+    },
+    opponentDisplay: {
+      name: "Stone March",
+      avatarId: "assets/gauntlet/avatars/avatar_gauntlet_stone_march.png",
+      titleId: null,
+      badgeId: null,
+      title: "Mountain Step",
+      avatar: "assets/gauntlet/avatars/avatar_gauntlet_stone_march.png"
+    },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    gauntlet: {
+      active: true,
+      currentStreak: 4,
+      rivalName: "Stone March",
+      rivalTitle: "Mountain Step",
+      rivalHint: "Repeats a heavy Earth pattern with occasional elemental shifts."
+    },
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      status: "active",
+      winner: null,
+      endReason: null,
+      hotseatTurn: "p1",
+      hotseatPending: false,
+      playerHand: ["fire", "water"],
+      opponentHand: ["earth", "wind"],
+      warActive: false,
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      warPileSizes: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    }
+  });
+
+  assert.match(html, /Gauntlet Mode/);
+  assert.match(html, /Current Streak: 4/);
+  assert.match(html, /Stone March/);
+  assert.match(html, /Mountain Step/);
+  assert.match(html, /Repeats a heavy Earth pattern with occasional elemental shifts\./);
+});
+
+test("ui: game screen does not render Gauntlet labels for normal PvE or Featured Rival matches", () => {
+  const baseContext = {
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: {
+      name: "Hero",
+      avatarId: "default_avatar",
+      titleId: "Initiate",
+      badgeId: "badge_element_initiate",
+      title: "Initiate",
+      titleIcon: null,
+      featuredBadge: getBadgeImage("badge_element_initiate"),
+      avatar: "assets/avatars/default.png"
+    },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      status: "active",
+      winner: null,
+      endReason: null,
+      hotseatTurn: "p1",
+      hotseatPending: false,
+      playerHand: ["fire", "water"],
+      opponentHand: ["earth", "wind"],
+      warActive: false,
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      warPileSizes: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    }
+  };
+  const normalHtml = gameScreen.render({
+    ...baseContext,
+    opponentDisplay: {
+      name: "Elemental AI",
+      avatarId: "default_avatar",
+      titleId: null,
+      badgeId: null,
+      title: "Arena Rival",
+      avatar: "assets/avatars/default.png"
+    },
+    gauntlet: null
+  });
+  const featuredHtml = gameScreen.render({
+    ...baseContext,
+    opponentDisplay: {
+      name: "Crownfire Duelist",
+      avatarId: "assets/rivals/Crownfire/rival_crownfire_duelist_avatar.png",
+      titleId: null,
+      badgeId: null,
+      title: "Inferno Regent",
+      avatar: "assets/rivals/Crownfire/rival_crownfire_duelist_avatar.png"
+    },
+    gauntlet: null
+  });
+
+  assert.doesNotMatch(normalHtml, /Current Streak:/);
+  assert.doesNotMatch(normalHtml, /Gauntlet Mode/);
+  assert.doesNotMatch(featuredHtml, /Current Streak:/);
+  assert.doesNotMatch(featuredHtml, /Gauntlet Mode/);
 });
 
 test("ui: ai difficulty screen renders the Crownfire featured rival card details", () => {
