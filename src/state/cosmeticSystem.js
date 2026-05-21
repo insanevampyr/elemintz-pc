@@ -538,7 +538,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_smirk_ember.png",
       rarity: "Common",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Common
@@ -549,7 +549,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_bubble_brat.png",
       rarity: "Common",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Common
@@ -560,7 +560,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_moss_mood.png",
       rarity: "Common",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Common
@@ -571,7 +571,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_neon_puff.png",
       rarity: "Common",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Common
@@ -582,7 +582,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_stone_cold_cutie.png",
       rarity: "Rare",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Rare
@@ -593,7 +593,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_storm_brat.png",
       rarity: "Rare",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Rare
@@ -604,7 +604,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_tidal_diva.png",
       rarity: "Rare",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Rare
@@ -615,7 +615,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_ashen_trickster.png",
       rarity: "Rare",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Rare
@@ -626,7 +626,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_corrupt_cherub.png",
       rarity: "Epic",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Epic
@@ -637,7 +637,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_void_glam.png",
       rarity: "Epic",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Epic
@@ -648,7 +648,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_riot_halo.png",
       rarity: "Epic",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Epic
@@ -703,7 +703,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_golden_menace.png",
       rarity: "Legendary",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
@@ -715,7 +715,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_chaos_monarch.png",
       rarity: "Legendary",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Legendary
@@ -726,7 +726,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_rose_riot.png",
       rarity: "Legendary",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Legendary
@@ -1954,7 +1954,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_chaos_gremlin.png",
       rarity: "Common",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 100
@@ -1965,7 +1965,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_soft_doom.png",
       rarity: "Common",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 100
@@ -1976,7 +1976,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_pretty_problem.png",
       rarity: "Common",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 100
@@ -1987,7 +1987,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_silent_menace.png",
       rarity: "Rare",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 250
@@ -1998,7 +1998,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_drama_magnet.png",
       rarity: "Rare",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 250
@@ -2009,7 +2009,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_neon_rebel.png",
       rarity: "Rare",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 250
@@ -2020,7 +2020,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_velvet_villain.png",
       rarity: "Epic",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 500
@@ -2031,7 +2031,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_void_doll.png",
       rarity: "Epic",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 500
@@ -2042,7 +2042,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_glitch_royalty.png",
       rarity: "Epic",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 500
@@ -2053,7 +2053,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_crownless_king.png",
       rarity: "Legendary",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 850
@@ -2064,7 +2064,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_divine_menace.png",
       rarity: "Legendary",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 850
@@ -2075,7 +2075,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_cataclysm_icon.png",
       rarity: "Legendary",
       releaseTag: "v0.1.6",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 850

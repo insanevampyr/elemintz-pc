@@ -7,7 +7,7 @@ import path from "node:path";
 import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
-const NEW_TITLE_DEFINITIONS = Object.freeze([
+const PERSONALITY_DROP_TITLE_DEFINITIONS = Object.freeze([
   ["title_chaos_gremlin", "Chaos Gremlin", "Common", 100, "titles/title_chaos_gremlin.png"],
   ["title_soft_doom", "Soft Doom", "Common", 100, "titles/title_soft_doom.png"],
   ["title_pretty_problem", "Pretty Problem", "Common", 100, "titles/title_pretty_problem.png"],
@@ -19,11 +19,10 @@ const NEW_TITLE_DEFINITIONS = Object.freeze([
   ["title_glitch_royalty", "Glitch Royalty", "Epic", 500, "titles/title_glitch_royalty.png"],
   ["title_crownless_king", "Crownless King", "Legendary", 850, "titles/title_crownless_king.png"],
   ["title_divine_menace", "Divine Menace", "Legendary", 850, "titles/title_divine_menace.png"],
-  ["title_cataclysm_icon", "Cataclysm Icon", "Legendary", 850, "titles/title_cataclysm_icon.png"],
-  ["title_spellwired", "Spellwired", "Legendary", 850, "titles/title_spellwired.png"]
+  ["title_cataclysm_icon", "Cataclysm Icon", "Legendary", 850, "titles/title_cataclysm_icon.png"]
 ]);
 
-const NEW_AVATAR_DEFINITIONS = Object.freeze([
+const PERSONALITY_DROP_AVATAR_DEFINITIONS = Object.freeze([
   ["avatar_smirk_ember", "Smirk Ember", "Common", 150, "avatars/avatar_smirk_ember.png"],
   ["avatar_bubble_brat", "Bubble Brat", "Common", 150, "avatars/avatar_bubble_brat.png"],
   ["avatar_moss_mood", "Moss Mood", "Common", 150, "avatars/avatar_moss_mood.png"],
@@ -35,13 +34,20 @@ const NEW_AVATAR_DEFINITIONS = Object.freeze([
   ["avatar_corrupt_cherub", "Corrupt Cherub", "Epic", 600, "avatars/avatar_corrupt_cherub.png"],
   ["avatar_void_glam", "Void Glam", "Epic", 600, "avatars/avatar_void_glam.png"],
   ["avatar_riot_halo", "Riot Halo", "Epic", 600, "avatars/avatar_riot_halo.png"],
-  ["avatar_neon_pyre_entity", "Neon Pyre Entity", "Epic", 600, "avatars/avatar_neon_pyre_entity.png"],
-  ["avatar_neon_tide_entity", "Neon Tide Entity", "Epic", 600, "avatars/avatar_neon_tide_entity.png"],
-  ["avatar_neon_stone_entity", "Neon Stone Entity", "Epic", 600, "avatars/avatar_neon_stone_entity.png"],
-  ["avatar_neon_gale_entity", "Neon Gale Entity", "Epic", 600, "avatars/avatar_neon_gale_entity.png"],
   ["avatar_golden_menace", "Golden Menace", "Legendary", 900, "avatars/avatar_golden_menace.png"],
   ["avatar_chaos_monarch", "Chaos Monarch", "Legendary", 900, "avatars/avatar_chaos_monarch.png"],
   ["avatar_rose_riot", "Rose Riot", "Legendary", 900, "avatars/avatar_rose_riot.png"]
+]);
+
+const NEON_ARCANA_TITLE_DEFINITIONS = Object.freeze([
+  ["title_spellwired", "Spellwired", "Legendary", 850, "titles/title_spellwired.png"]
+]);
+
+const NEON_ARCANA_AVATAR_DEFINITIONS = Object.freeze([
+  ["avatar_neon_pyre_entity", "Neon Pyre Entity", "Epic", 600, "avatars/avatar_neon_pyre_entity.png"],
+  ["avatar_neon_tide_entity", "Neon Tide Entity", "Epic", 600, "avatars/avatar_neon_tide_entity.png"],
+  ["avatar_neon_stone_entity", "Neon Stone Entity", "Epic", 600, "avatars/avatar_neon_stone_entity.png"],
+  ["avatar_neon_gale_entity", "Neon Gale Entity", "Epic", 600, "avatars/avatar_neon_gale_entity.png"]
 ]);
 
 const NEON_ARCANA_VARIANT_DEFINITIONS = Object.freeze([
@@ -49,13 +55,6 @@ const NEON_ARCANA_VARIANT_DEFINITIONS = Object.freeze([
   ["water_variant_neon_arcana", "Neon Arcana Water", "water", "cards/water_variant_neon_arcana.png"],
   ["earth_variant_neon_arcana", "Neon Arcana Earth", "earth", "cards/earth_variant_neon_arcana.png"],
   ["wind_variant_neon_arcana", "Neon Arcana Wind", "wind", "cards/wind_variant_neon_arcana.png"]
-]);
-
-const NEON_ARCANA_AVATAR_IDS = new Set([
-  "avatar_neon_pyre_entity",
-  "avatar_neon_tide_entity",
-  "avatar_neon_stone_entity",
-  "avatar_neon_gale_entity"
 ]);
 
 function buildCompletedMatch({
@@ -383,7 +382,7 @@ test("cosmetics: newly added water variant equips only water and persists across
   assert.equal(profile.equippedCosmetics.elementCardVariant.water, "wave_water_card");
 });
 
-test("cosmetics: new avatar and title catalog entries are present with exact metadata", () => {
+test("cosmetics: Personality Drop avatar and title catalog entries remain present but are no longer marked new", () => {
   const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
   const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
 
@@ -396,10 +395,10 @@ test("cosmetics: new avatar and title catalog entries are present with exact met
     "duplicate cosmetic ids found"
   );
 
-  assert.equal(NEW_TITLE_DEFINITIONS.length, 13);
-  assert.equal(NEW_AVATAR_DEFINITIONS.length, 18);
+  assert.equal(PERSONALITY_DROP_TITLE_DEFINITIONS.length, 12);
+  assert.equal(PERSONALITY_DROP_AVATAR_DEFINITIONS.length, 14);
 
-  for (const [id, name, rarity, price, image] of NEW_TITLE_DEFINITIONS) {
+  for (const [id, name, rarity, price, image] of PERSONALITY_DROP_TITLE_DEFINITIONS) {
     const item = titles.get(id);
     assert.ok(item, `missing title ${id}`);
     assert.equal(item.name, name);
@@ -408,11 +407,11 @@ test("cosmetics: new avatar and title catalog entries are present with exact met
     assert.equal(item.image, image);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.releaseTag, id === "title_spellwired" ? "neon_arcana_01" : "v0.1.6");
-    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.isNew, false);
   }
 
-  for (const [id, name, rarity, price, image] of NEW_AVATAR_DEFINITIONS) {
+  for (const [id, name, rarity, price, image] of PERSONALITY_DROP_AVATAR_DEFINITIONS) {
     const item = avatars.get(id);
     assert.ok(item, `missing avatar ${id}`);
     assert.equal(item.name, name);
@@ -421,9 +420,16 @@ test("cosmetics: new avatar and title catalog entries are present with exact met
     assert.equal(item.image, image);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.releaseTag, NEON_ARCANA_AVATAR_IDS.has(id) ? "neon_arcana_01" : "v0.1.6");
-    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.isNew, false);
   }
+
+  assert.equal(avatars.get("avatar_smirk_ember")?.collection, "Ember");
+  assert.equal(avatars.get("avatar_bubble_brat")?.collection, "Cutesy");
+  assert.equal(avatars.get("avatar_rose_riot")?.collection, "Velvet & Rose");
+  assert.equal(titles.get("title_soft_doom")?.collection, "Gothic Corruption");
+  assert.equal(titles.get("title_void_doll")?.collection, "Void");
+  assert.equal(titles.get("title_divine_menace")?.collection, "Celestial");
 });
 
 test("cosmetics: Neon Arcana entries use exact metadata across categories and collection mappings", () => {
@@ -432,12 +438,7 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
   const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
   const variants = new Map(COSMETIC_CATALOG.elementCardVariant.map((item) => [item.id, item]));
 
-  for (const avatarId of [
-    "avatar_neon_pyre_entity",
-    "avatar_neon_tide_entity",
-    "avatar_neon_stone_entity",
-    "avatar_neon_gale_entity"
-  ]) {
+  for (const [avatarId] of NEON_ARCANA_AVATAR_DEFINITIONS) {
     const item = avatars.get(avatarId);
     assert.ok(item, `missing Neon Arcana avatar ${avatarId}`);
     assert.equal(item.rarity, "Epic");
@@ -450,6 +451,20 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
     assert.match(item.image, /^avatars\//);
     assert.equal(item.rotationOnly ?? false, false);
     assert.equal(item.storeHidden ?? false, false);
+  }
+
+  for (const [titleId, name, rarity, price, image] of NEON_ARCANA_TITLE_DEFINITIONS) {
+    const item = titles.get(titleId);
+    assert.ok(item, `missing Neon Arcana title ${titleId}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, rarity);
+    assert.equal(item.price, price);
+    assert.equal(item.image, image);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "neon_arcana_01");
+    assert.equal(item.collection, "Neon Arcana");
   }
 
   const title = titles.get("title_spellwired");

@@ -384,9 +384,9 @@ export const storeScreen = {
           </div>
           <section class="store-feature-banner" aria-label="Featured cosmetics update">
             <p class="store-feature-banner-eyebrow">Featured Update</p>
-            <h3 class="store-feature-banner-title">New Personality Cosmetics Are Live!</h3>
+            <h3 class="store-feature-banner-title">Neon Arcana Collection Is Live!</h3>
             <p class="store-feature-banner-copy">
-              Fresh avatars and titles are now available. Use “Show NEW First” to find them fast.
+              Premium neon-arcane avatars, card variants, card back, and the Legendary Spellwired title are now available.
             </p>
           </section>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>

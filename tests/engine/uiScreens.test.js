@@ -1692,13 +1692,13 @@ test("ui: store screen renders the featured new personality cosmetics banner abo
     }
   });
 
-  assert.match(html, /New Personality Cosmetics Are Live!/);
-  assert.match(html, /Fresh avatars and titles are now available\. Use “Show NEW First” to find them fast\./);
+  assert.match(html, /Neon Arcana Collection Is Live!/);
+  assert.match(html, /Premium neon-arcane avatars, card variants, card back, and the Legendary Spellwired title are now available\./);
   assert.match(html, /Show NEW First/);
   assert.match(html, /store-item-badge-new">NEW<\/span>/);
   assert.match(html, /Price: 150 Tokens/);
   assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
-  assert.ok(html.indexOf("New Personality Cosmetics Are Live!") < html.indexOf("Show NEW First"));
+  assert.ok(html.indexOf("Neon Arcana Collection Is Live!") < html.indexOf("Show NEW First"));
 });
 
 test("ui: Store screen keeps Founder / Supporter status visible without exposing the local activation button", () => {

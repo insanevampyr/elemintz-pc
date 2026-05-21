@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
-const NEW_TITLE_EXPECTATIONS = Object.freeze([
+const PERSONALITY_DROP_TITLE_EXPECTATIONS = Object.freeze([
   ["title_chaos_gremlin", "Common", 100],
   ["title_soft_doom", "Common", 100],
   ["title_pretty_problem", "Common", 100],
@@ -18,11 +18,10 @@ const NEW_TITLE_EXPECTATIONS = Object.freeze([
   ["title_glitch_royalty", "Epic", 500],
   ["title_crownless_king", "Legendary", 850],
   ["title_divine_menace", "Legendary", 850],
-  ["title_cataclysm_icon", "Legendary", 850],
-  ["title_spellwired", "Legendary", 850]
+  ["title_cataclysm_icon", "Legendary", 850]
 ]);
 
-const NEW_AVATAR_EXPECTATIONS = Object.freeze([
+const PERSONALITY_DROP_AVATAR_EXPECTATIONS = Object.freeze([
   ["avatar_smirk_ember", "Common", 150],
   ["avatar_bubble_brat", "Common", 150],
   ["avatar_moss_mood", "Common", 150],
@@ -34,20 +33,9 @@ const NEW_AVATAR_EXPECTATIONS = Object.freeze([
   ["avatar_corrupt_cherub", "Epic", 600],
   ["avatar_void_glam", "Epic", 600],
   ["avatar_riot_halo", "Epic", 600],
-  ["avatar_neon_pyre_entity", "Epic", 600],
-  ["avatar_neon_tide_entity", "Epic", 600],
-  ["avatar_neon_stone_entity", "Epic", 600],
-  ["avatar_neon_gale_entity", "Epic", 600],
   ["avatar_golden_menace", "Legendary", 900],
   ["avatar_chaos_monarch", "Legendary", 900],
   ["avatar_rose_riot", "Legendary", 900]
-]);
-
-const NEON_ARCANA_AVATAR_IDS = new Set([
-  "avatar_neon_pyre_entity",
-  "avatar_neon_tide_entity",
-  "avatar_neon_stone_entity",
-  "avatar_neon_gale_entity"
 ]);
 
 async function createTempDataDir() {
@@ -618,7 +606,7 @@ test("store: war machine badge is hidden from store and remains achievement-lock
   assert.equal(warMachine.unlockSource?.achievementId, "war_machine");
 });
 
-test("store: new avatar and title cosmetics are purchasable and visible with exact rarity pricing", async () => {
+test("store: Personality Drop avatar and title cosmetics remain purchasable and visible but are no longer marked new", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const store = await state.getStore("NewCosmeticsStoreUser");
@@ -628,18 +616,18 @@ test("store: new avatar and title cosmetics are purchasable and visible with exa
   const avatars = new Map((store.catalog.avatar ?? []).map((item) => [item.id, item]));
   const cosmeticAvatars = new Map((cosmetics.catalog.avatar ?? []).map((item) => [item.id, item]));
 
-  for (const [id, rarity, price] of NEW_TITLE_EXPECTATIONS) {
+  for (const [id, rarity, price] of PERSONALITY_DROP_TITLE_EXPECTATIONS) {
     const item = titles.get(id);
     assert.ok(item, `missing store title ${id}`);
     assert.equal(item.purchasable, true);
     assert.equal(item.owned, false);
     assert.equal(item.rarity, rarity);
     assert.equal(item.price, price);
-    assert.equal(item.releaseTag, id === "title_spellwired" ? "neon_arcana_01" : "v0.1.6");
-    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "v0.1.6");
+    assert.equal(item.isNew, false);
   }
 
-  for (const [id, rarity, price] of NEW_AVATAR_EXPECTATIONS) {
+  for (const [id, rarity, price] of PERSONALITY_DROP_AVATAR_EXPECTATIONS) {
     const visibleStoreItem = avatars.get(id);
     const catalogItem = cosmeticAvatars.get(id);
     assert.ok(catalogItem, `missing cosmetic catalog avatar ${id}`);
@@ -647,8 +635,8 @@ test("store: new avatar and title cosmetics are purchasable and visible with exa
     assert.equal(catalogItem.owned, false);
     assert.equal(catalogItem.rarity, rarity);
     assert.equal(catalogItem.price, price);
-    assert.equal(catalogItem.releaseTag, NEON_ARCANA_AVATAR_IDS.has(id) ? "neon_arcana_01" : "v0.1.6");
-    assert.equal(catalogItem.isNew, true);
+    assert.equal(catalogItem.releaseTag, "v0.1.6");
+    assert.equal(catalogItem.isNew, false);
 
     if (id === "avatar_golden_menace") {
       assert.equal(visibleStoreItem, undefined);
@@ -702,4 +690,18 @@ test("store: Neon Arcana card back and element variants are visible, purchasable
     assert.equal(item.rotationOnly ?? false, false);
     assert.equal(item.storeHidden ?? false, false);
   }
+});
+
+test("store: Neon Arcana stays new while older Personality Drop cosmetics remain visible and not new", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const store = await state.getStore("NeonArcanaSortUser");
+
+  const avatars = new Map((store.catalog.avatar ?? []).map((item) => [item.id, item]));
+  const titles = new Map((store.catalog.title ?? []).map((item) => [item.id, item]));
+
+  assert.equal(avatars.get("avatar_neon_pyre_entity")?.isNew, true);
+  assert.equal(avatars.get("avatar_smirk_ember")?.isNew, false);
+  assert.equal(titles.get("title_spellwired")?.isNew, true);
+  assert.equal(titles.get("title_chaos_gremlin")?.isNew, false);
 });
