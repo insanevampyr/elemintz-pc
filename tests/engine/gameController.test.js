@@ -7818,6 +7818,7 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
         "pyro_maniac"
       ],
       lastRivalId: null,
+      claimedMilestoneStreaks: [],
       defeatedRivalIds: [],
       lastResult: null
     });
@@ -7838,12 +7839,13 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
       assert.deepEqual(gauntletStatCalls, [
         {
           username: "GauntletPicker",
-        runStarted: true,
-        matchWon: false,
-        runEndedWithLoss: false,
-        currentStreak: 0
-      }
-    ]);
+          runStarted: true,
+          matchWon: false,
+          runEndedWithLoss: false,
+          currentStreak: 0,
+          claimedMilestoneStreaks: []
+        }
+      ]);
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();
@@ -7875,6 +7877,7 @@ test("appController: gauntlet start creates a shuffled rival bag and first rival
   ]);
   assert.equal(app.gauntletRunState.currentRivalId, "tide_witch");
   assert.equal(app.gauntletRunState.lastRivalId, null);
+  assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, []);
 });
 
 test("appController: gauntlet win increments streak, queues a confirmation transition, and pulls the next rival from the bag", () => {
@@ -7896,6 +7899,7 @@ test("appController: gauntlet win increments streak, queues a confirmation trans
     currentRivalId: "tide_witch",
     rivalBag: ["stonewall", "storm_chaser", "inferno_drummer"],
     lastRivalId: null,
+    claimedMilestoneStreaks: [],
     defeatedRivalIds: [],
     lastResult: null
   };
@@ -7915,6 +7919,7 @@ test("appController: gauntlet win increments streak, queues a confirmation trans
     currentRivalId: "stonewall",
     rivalBag: ["storm_chaser", "inferno_drummer"],
     lastRivalId: "tide_witch",
+    claimedMilestoneStreaks: [],
     defeatedRivalIds: ["tide_witch"],
       lastResult: "win"
     });
@@ -7960,6 +7965,7 @@ test("appController: gauntlet bag use never selects the same rival twice in a ro
     currentRivalId: "pyro_maniac",
     rivalBag: ["pyro_maniac", "tide_witch", "stonewall"],
     lastRivalId: null,
+    claimedMilestoneStreaks: [],
     defeatedRivalIds: [],
     lastResult: null
   };
@@ -7998,6 +8004,7 @@ test("appController: gauntlet bag refill recreates all 8 rivals and avoids an im
     currentRivalId: "tide_witch",
     rivalBag: [],
     lastRivalId: null,
+    claimedMilestoneStreaks: [],
     defeatedRivalIds: ["pyro_maniac"],
     lastResult: null
   };
@@ -8057,6 +8064,7 @@ test("appController: gauntlet loss ends the run without starting another match",
     currentRivalId: "stonewall",
     rivalBag: ["storm_chaser"],
     lastRivalId: "tide_witch",
+    claimedMilestoneStreaks: [],
     defeatedRivalIds: ["pyro_maniac", "tide_witch"],
     lastResult: null
   };
@@ -8096,6 +8104,7 @@ test("appController: gauntlet draw ends the run without starting another match",
     currentRivalId: "tide_witch",
     rivalBag: ["stonewall"],
     lastRivalId: "pyro_maniac",
+    claimedMilestoneStreaks: [],
     defeatedRivalIds: ["pyro_maniac"],
     lastResult: null
   };
@@ -8152,7 +8161,11 @@ test("appController: gauntlet match win records persistent win stats without inc
                 gauntletWins: payload.matchWon ? 1 : 0,
                 gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
                 gauntletRivalsDefeated: payload.matchWon ? 1 : 0
-              }
+              },
+              claimedMilestoneStreaks: payload.matchWon ? [3] : payload.claimedMilestoneStreaks ?? [],
+              milestoneRewards: payload.matchWon
+                ? [{ streak: 3, xp: 0, tokens: 25, chests: [] }]
+                : []
             };
           }
         }
@@ -8174,6 +8187,8 @@ test("appController: gauntlet match win records persistent win stats without inc
     try {
       app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
       await Promise.resolve();
+      app.roundPresentation = { phase: "reveal", busy: true, selectedCardIndex: 0 };
+      app.screenFlow = "game";
       const originalStartGame = app.startGame.bind(app);
       app.startGame = (mode, options = {}) => {
         continuedStarts.push({ mode, options });
@@ -8184,10 +8199,20 @@ test("appController: gauntlet match win records persistent win stats without inc
         match: { winner: "p1", endReason: "normal" },
         persisted: { profile: { username: "GauntletWinner" } }
       });
+
+      assert.equal(modalManager.shows.length, 0);
+      assert.ok(app.pendingGauntletVictoryPayload);
+
+      app.roundPresentation = { phase: "idle", busy: false, selectedCardIndex: null };
+      app.screenFlow = "idle";
+      assert.equal(app.flushPendingGauntletVictoryModal(), true);
+
       assert.equal(modalManager.shows.length, 1);
       assert.equal(modalManager.shows[0].title, "Gauntlet Victory!");
       assert.match(modalManager.shows[0].bodyHtml, /Streak: 1/);
       assert.match(modalManager.shows[0].bodyHtml, /Next Rival:/);
+      assert.match(modalManager.shows[0].bodyHtml, /Milestone Reward!/);
+      assert.match(modalManager.shows[0].bodyHtml, /\+25 Tokens/);
       assert.match(modalManager.shows[0].bodyHtml, /Continue Gauntlet/);
       assert.equal(continuedStarts.length, 0);
       assert.ok(app.pendingGauntletContinuation);
@@ -8201,23 +8226,205 @@ test("appController: gauntlet match win records persistent win stats without inc
           runStarted: true,
           matchWon: false,
           runEndedWithLoss: false,
-          currentStreak: 0
+          currentStreak: 0,
+          claimedMilestoneStreaks: []
         },
         {
           username: "GauntletWinner",
           runStarted: false,
           matchWon: true,
           runEndedWithLoss: false,
-          currentStreak: 1
+          currentStreak: 1,
+          claimedMilestoneStreaks: []
         }
       ]);
       assert.equal(app.profile.gauntletRuns, 1);
       assert.equal(app.profile.gauntletWins, 1);
       assert.equal(app.profile.gauntletRivalsDefeated, 1);
       assert.equal(app.profile.gauntletBestStreak, 1);
+      assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, [3]);
+      assert.equal(continuedStarts.length, 1);
+      await continueButton.listeners.get("click")?.();
       assert.equal(continuedStarts.length, 1);
       assert.equal(app.pendingGauntletContinuation, null);
       assert.equal(app.pendingGauntletContinuationRequiresConfirm, false);
+      assert.equal(app.pendingGauntletVictoryPayload, null);
+      assert.equal(gauntletStatCalls.length, 2);
+    } finally {
+      globalThis.document = originalDocument;
+    }
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: gauntlet victory return to menu clears queued continuation and temporary run state safely", async () => {
+  const originalWindow = globalThis.window;
+  const modalManager = createModalCapture();
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletReturnUser";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletReturnUser", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  let returnedToMenu = 0;
+  app.showMenu = () => {
+    returnedToMenu += 1;
+  };
+  app.refreshDailyChallengesForMenu = async () => {};
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => ({
+            profile: {
+              username: payload.username,
+              gauntletBestStreak: payload.matchWon ? payload.currentStreak : 0,
+              gauntletRuns: 1,
+              gauntletWins: payload.matchWon ? 1 : 0,
+              gauntletLosses: 0,
+              gauntletRivalsDefeated: payload.matchWon ? 1 : 0
+            },
+            claimedMilestoneStreaks: payload.claimedMilestoneStreaks ?? [],
+            milestoneRewards: []
+          })
+        }
+      }
+    };
+    const originalDocument = globalThis.document;
+    const continueButton = createFakeDomElement();
+    const returnButton = createFakeDomElement();
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "gauntlet-continue-btn"
+          ? continueButton
+          : id === "gauntlet-return-menu-btn"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+
+    try {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+
+      await app.gameController.onMatchComplete({
+        match: { winner: "p1", endReason: "normal" },
+        persisted: { profile: { username: "GauntletReturnUser" } }
+      });
+
+      assert.equal(modalManager.shows.length, 1);
+      assert.ok(app.pendingGauntletContinuation);
+      await returnButton.listeners.get("click")?.();
+
+      assert.equal(returnedToMenu, 1);
+      assert.equal(app.pendingGauntletContinuation, null);
+      assert.equal(app.pendingGauntletContinuationRequiresConfirm, false);
+      assert.equal(app.pveGauntletMode, false);
+      assert.equal(app.gauntletRunState.active, false);
+    } finally {
+      globalThis.document = originalDocument;
+    }
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: gauntlet streaks above 20 continue the run without granting repeated milestone rewards", async () => {
+  const originalWindow = globalThis.window;
+  const gauntletStatCalls = [];
+  const modalManager = createModalCapture();
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletTwentyOne";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletTwentyOne", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({ tokenDelta: 9, xpDelta: 11 }),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: payload.matchWon ? payload.currentStreak : 20,
+                gauntletRuns: 1,
+                gauntletWins: payload.matchWon ? 21 : 20,
+                gauntletLosses: 0,
+                gauntletRivalsDefeated: payload.matchWon ? 21 : 20
+              },
+              claimedMilestoneStreaks: [3, 5, 10, 15, 20],
+              milestoneRewards: []
+            };
+          }
+        }
+      }
+    };
+    const originalDocument = globalThis.document;
+    globalThis.document = {
+      getElementById: () => createFakeDomElement(),
+      querySelector: () => null
+    };
+
+    try {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+      app.gauntletRunState = {
+        ...app.gauntletRunState,
+        active: true,
+        currentStreak: 20,
+        claimedMilestoneStreaks: [3, 5, 10, 15, 20]
+      };
+
+      await app.gameController.onMatchComplete({
+        match: { winner: "p1", endReason: "hand_exhaustion" },
+        persisted: { profile: { username: "GauntletTwentyOne" }, tokenDelta: 9, xpDelta: 11 }
+      });
+
+      assert.equal(modalManager.shows.length, 1);
+      assert.match(modalManager.shows[0].bodyHtml, /Streak: 21/);
+      assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Milestone Reward!/);
+      assert.equal(app.gauntletRunState.currentStreak, 21);
+      assert.ok(app.pendingGauntletContinuation);
+      assert.deepEqual(gauntletStatCalls.at(-1), {
+        username: "GauntletTwentyOne",
+        runStarted: false,
+        matchWon: true,
+        runEndedWithLoss: false,
+        currentStreak: 21,
+        claimedMilestoneStreaks: [3, 5, 10, 15, 20]
+      });
     } finally {
       globalThis.document = originalDocument;
     }
@@ -8283,14 +8490,15 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
     });
 
     assert.deepEqual(gauntletStatCalls, [
-      {
-        username: "GauntletTerminal",
-        runStarted: false,
-        matchWon: false,
-        runEndedWithLoss: true,
-        currentStreak: 0
-      }
-    ]);
+        {
+          username: "GauntletTerminal",
+          runStarted: false,
+          matchWon: false,
+          runEndedWithLoss: true,
+          currentStreak: 0,
+          claimedMilestoneStreaks: []
+        }
+      ]);
     assert.equal(matchCompletePayloads.length, 1);
     assert.equal(matchCompletePayloads[0].title, "Gauntlet Run Ended");
     assert.match(matchCompletePayloads[0].bodyHtml, /Final Streak/);
@@ -8310,6 +8518,80 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
 
     assert.deepEqual(gauntletStatCalls, []);
     assert.equal(matchCompletePayloads[0].title, "Match Complete");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: gauntlet victory modal does not show milestone reward text when no milestone is earned", async () => {
+  const originalWindow = globalThis.window;
+  const modalManager = createModalCapture();
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletNoMilestone";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletNoMilestone", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => ({
+            profile: {
+              username: payload.username,
+              gauntletBestStreak: payload.matchWon ? payload.currentStreak : 0,
+              gauntletRuns: 1,
+              gauntletWins: payload.matchWon ? 1 : 0,
+              gauntletLosses: 0,
+              gauntletRivalsDefeated: payload.matchWon ? 1 : 0
+            },
+            claimedMilestoneStreaks: payload.claimedMilestoneStreaks ?? [],
+            milestoneRewards: []
+          })
+        }
+      }
+    };
+    const originalDocument = globalThis.document;
+    const continueButton = createFakeDomElement();
+    const returnButton = createFakeDomElement();
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "gauntlet-continue-btn"
+          ? continueButton
+          : id === "gauntlet-return-menu-btn"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+
+    try {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+      await app.gameController.onMatchComplete({
+        match: { winner: "p1", endReason: "normal" },
+        persisted: { profile: { username: "GauntletNoMilestone" } }
+      });
+
+      assert.equal(modalManager.shows.length, 1);
+      assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Milestone Reward!/);
+      assert.doesNotMatch(modalManager.shows[0].bodyHtml, /\+\d+\s+Tokens/);
+    } finally {
+      globalThis.document = originalDocument;
+    }
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();
@@ -8371,6 +8653,7 @@ test("appController: starting non-gauntlet PvE clears temporary gauntlet run sta
     currentRivalId: "storm_chaser",
     rivalBag: ["inferno_drummer"],
     lastRivalId: "stonewall",
+    claimedMilestoneStreaks: [3],
     defeatedRivalIds: ["pyro_maniac"],
     lastResult: "win"
   };
@@ -8395,6 +8678,7 @@ test("appController: starting non-gauntlet PvE clears temporary gauntlet run sta
       currentRivalId: null,
       rivalBag: [],
       lastRivalId: null,
+      claimedMilestoneStreaks: [],
       defeatedRivalIds: [],
       lastResult: null
     });
@@ -8430,6 +8714,7 @@ test("appController: starting Featured Rival clears temporary gauntlet run state
     currentRivalId: "stonewall",
     rivalBag: ["storm_chaser"],
     lastRivalId: "tide_witch",
+    claimedMilestoneStreaks: [3],
     defeatedRivalIds: ["pyro_maniac"],
     lastResult: "win"
   };

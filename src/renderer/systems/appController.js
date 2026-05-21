@@ -141,6 +141,7 @@ function createDefaultGauntletRunState() {
     rivalBag: [],
     lastRivalId: null,
     defeatedRivalIds: [],
+    claimedMilestoneStreaks: [],
     lastResult: null
   };
 }
@@ -185,6 +186,7 @@ export class AppController {
     this.dailyLoginAutoClaimPromise = null;
     this.passCompletionResolve = null;
     this.pendingMatchCompletePayload = null;
+    this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;
     this.pendingGauntletContinuationRequiresConfirm = false;
     this.deferPveOutcomeSound = false;
@@ -1364,6 +1366,7 @@ export class AppController {
   clearGauntletRunState() {
     this.pveGauntletMode = false;
     this.gauntletRunState = createDefaultGauntletRunState();
+    this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;
     this.pendingGauntletContinuationRequiresConfirm = false;
   }
@@ -1372,7 +1375,8 @@ export class AppController {
     runStarted = false,
     matchWon = false,
     runEndedWithLoss = false,
-    currentStreak = 0
+    currentStreak = 0,
+    claimedMilestoneStreaks = []
   } = {}) {
     const recorder = globalThis.window?.elemintz?.state?.recordGauntletStats;
     if (typeof recorder !== "function" || !this.username) {
@@ -1384,7 +1388,8 @@ export class AppController {
       runStarted,
       matchWon,
       runEndedWithLoss,
-      currentStreak
+      currentStreak,
+      claimedMilestoneStreaks
     });
 
     if (result?.profile) {
@@ -1407,6 +1412,7 @@ export class AppController {
       rivalBag,
       lastRivalId: null,
       defeatedRivalIds: [],
+      claimedMilestoneStreaks: [],
       lastResult: null
     };
     return firstRival;
@@ -1462,6 +1468,9 @@ export class AppController {
           : []),
         currentRivalId
       ],
+      claimedMilestoneStreaks: Array.isArray(this.gauntletRunState?.claimedMilestoneStreaks)
+        ? [...this.gauntletRunState.claimedMilestoneStreaks]
+        : [],
       lastResult: "win"
     };
 
@@ -1474,6 +1483,7 @@ export class AppController {
       active: false,
       lastResult: result
     };
+    this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;
     this.pendingGauntletContinuationRequiresConfirm = false;
   }
@@ -5267,6 +5277,35 @@ export class AppController {
     };
   }
 
+  buildGauntletMilestoneRewardLines(milestoneRewards = []) {
+    const rewards = Array.isArray(milestoneRewards) ? milestoneRewards : [];
+    const lines = [];
+
+    for (const reward of rewards) {
+      const xp = Math.max(0, Number(reward?.xp ?? 0));
+      const tokens = Math.max(0, Number(reward?.tokens ?? 0));
+      const chests = Array.isArray(reward?.chests) ? reward.chests : [];
+
+      if (xp > 0 && tokens > 0) {
+        lines.push(`+${xp} XP, +${tokens} Tokens`);
+      } else if (xp > 0) {
+        lines.push(`+${xp} XP`);
+      } else if (tokens > 0) {
+        lines.push(`+${tokens} Tokens`);
+      }
+
+      for (const chest of chests) {
+        const amount = Math.max(0, Number(chest?.amount ?? 0));
+        const label = String(chest?.chestLabel ?? "Chest").trim() || "Chest";
+        if (amount > 0) {
+          lines.push(`+${amount} ${label}${amount === 1 ? "" : "s"}`);
+        }
+      }
+    }
+
+    return lines;
+  }
+
   buildMatchCompleteModalPayload(mode, match, finalPersisted, options = {}) {
     const names = this.getLocalNames();
     const roundsPlayed = Array.isArray(match?.history) ? match.history.length : 0;
@@ -5431,8 +5470,9 @@ export class AppController {
     });
   }
 
-  showGauntletVictoryModal({ streak = 0, nextRival = null } = {}) {
+  showGauntletVictoryModal({ streak = 0, nextRival = null, milestoneRewards = [] } = {}) {
     this.prepareForFinalModal();
+    const milestoneLines = this.buildGauntletMilestoneRewardLines(milestoneRewards);
     this.modalManager.show({
       title: "Gauntlet Victory!",
       bodyHtml: `
@@ -5448,6 +5488,18 @@ export class AppController {
                 : ""
             }
           </header>
+          ${
+            milestoneLines.length > 0
+              ? `
+          <section class="match-complete-gauntlet-summary">
+            <p class="match-complete-helper">Milestone Reward!</p>
+            <div class="match-complete-meta">
+              ${milestoneLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+            </div>
+          </section>
+          `
+              : ""
+          }
           <div class="match-complete-actions">
             <button id="gauntlet-continue-btn" class="btn btn-primary">Continue Gauntlet</button>
             <button id="gauntlet-return-menu-btn" class="btn">Return to Menu</button>
@@ -5468,6 +5520,21 @@ export class AppController {
       this.showMenu();
       await this.refreshDailyChallengesForMenu();
     });
+  }
+
+  flushPendingGauntletVictoryModal() {
+    if (
+      !this.pendingGauntletVictoryPayload ||
+      this.roundPresentation?.busy ||
+      this.screenFlow === "pass"
+    ) {
+      return false;
+    }
+
+    const payload = this.pendingGauntletVictoryPayload;
+    this.pendingGauntletVictoryPayload = null;
+    this.showGauntletVictoryModal(payload);
+    return true;
   }
 
   flushPendingMatchCompleteModal() {
@@ -5500,6 +5567,12 @@ export class AppController {
   schedulePendingGauntletContinuationFlush() {
     setTimeout(() => {
       this.flushPendingGauntletContinuation();
+    }, 0);
+  }
+
+  schedulePendingGauntletVictoryModalFlush() {
+    setTimeout(() => {
+      this.flushPendingGauntletVictoryModal();
     }, 0);
   }
 
@@ -5942,6 +6015,10 @@ export class AppController {
       return;
     }
 
+    if (this.flushPendingGauntletVictoryModal()) {
+      return;
+    }
+
     if (this.flushPendingGauntletContinuation()) {
       return;
     }
@@ -6020,6 +6097,7 @@ export class AppController {
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
     this.pendingMatchCompletePayload = null;
+    this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;
     this.pendingGauntletContinuationRequiresConfirm = false;
     const wantsGauntlet = mode === MATCH_MODE.PVE && options?.gauntletMode === true;
@@ -6125,24 +6203,39 @@ export class AppController {
         } else {
           this.emitRewardToastsForResult(finalPersisted, this.username, previousPveProfile);
         }
-        if (mode === MATCH_MODE.PVE && this.pveGauntletMode && this.gauntletRunState?.active) {
-          const isQuitForfeit = String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit";
-          if (match?.winner === "p1") {
-            const nextStreak = Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)) + 1;
-            const gauntletStatsResult = await this.recordGauntletProfileStats({
-              matchWon: true,
-              currentStreak: nextStreak
-            });
-            if (gauntletStatsResult?.profile) {
-              finalPersisted = {
-                ...(finalPersisted ?? {}),
-                profile: gauntletStatsResult.profile
-              };
-            }
-          } else if (!isQuitForfeit) {
-            const gauntletStatsResult = await this.recordGauntletProfileStats({
-              runEndedWithLoss: true
-            });
+          if (mode === MATCH_MODE.PVE && this.pveGauntletMode && this.gauntletRunState?.active) {
+            const isQuitForfeit = String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit";
+            if (match?.winner === "p1") {
+              const nextStreak = Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)) + 1;
+              const gauntletStatsResult = await this.recordGauntletProfileStats({
+                matchWon: true,
+                currentStreak: nextStreak,
+                claimedMilestoneStreaks: this.gauntletRunState?.claimedMilestoneStreaks ?? []
+              });
+              if (gauntletStatsResult?.profile) {
+                finalPersisted = {
+                  ...(finalPersisted ?? {}),
+                  profile: gauntletStatsResult.profile
+                };
+              }
+              if (Array.isArray(gauntletStatsResult?.claimedMilestoneStreaks)) {
+                this.gauntletRunState = {
+                  ...this.gauntletRunState,
+                  claimedMilestoneStreaks: [...gauntletStatsResult.claimedMilestoneStreaks]
+                };
+              }
+              if (gauntletStatsResult) {
+                finalPersisted = {
+                  ...(finalPersisted ?? {}),
+                  gauntletMilestoneRewards: Array.isArray(gauntletStatsResult.milestoneRewards)
+                    ? gauntletStatsResult.milestoneRewards
+                    : []
+                };
+              }
+            } else if (!isQuitForfeit) {
+              const gauntletStatsResult = await this.recordGauntletProfileStats({
+                runEndedWithLoss: true
+              });
             if (gauntletStatsResult?.profile) {
               finalPersisted = {
                 ...(finalPersisted ?? {}),
@@ -6154,10 +6247,18 @@ export class AppController {
         const gauntletCompletion =
           mode === MATCH_MODE.PVE ? this.handleGauntletMatchCompletion(match) : { handled: false };
         if (mode === MATCH_MODE.PVE && gauntletCompletion?.type === "victory") {
-          this.showGauntletVictoryModal({
+          const gauntletVictoryPayload = {
             streak: gauntletCompletion.streak,
-            nextRival: gauntletCompletion.nextRival
-          });
+            nextRival: gauntletCompletion.nextRival,
+            milestoneRewards: finalPersisted?.gauntletMilestoneRewards ?? []
+          };
+          if (this.roundPresentation.busy || this.screenFlow === "pass") {
+            this.pendingGauntletVictoryPayload = gauntletVictoryPayload;
+            this.schedulePendingGauntletVictoryModalFlush();
+            return;
+          }
+
+          this.showGauntletVictoryModal(gauntletVictoryPayload);
           return;
         }
         const gauntletSummary =
@@ -6546,6 +6647,10 @@ export class AppController {
     if (this.gameController.getViewModel()?.status === "active") {
       this.gameController?.rearmActiveRoundPresentation?.();
       this.showGame();
+      return;
+    }
+
+    if (this.flushPendingGauntletVictoryModal()) {
       return;
     }
 

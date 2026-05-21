@@ -22,7 +22,7 @@ import {
 import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { applyLevelRewardsForLevelChange, buildXpBreakdown, deriveLevelFromXp } from "../../src/state/levelRewardsSystem.js";
-import { MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
+import { EPIC_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
@@ -200,6 +200,166 @@ test("state: gauntlet stat updates increment runs once and wins/best streak sepa
   assert.equal(profile.gauntletRivalsDefeated, 2);
   assert.equal(profile.gauntletBestStreak, 2);
   assert.equal(profile.gauntletLosses, 0);
+});
+
+test("state: gauntlet 3-streak grants +25 tokens once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletMilestone3User",
+    runStarted: true
+  });
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletMilestone3User",
+    matchWon: true,
+    currentStreak: 3,
+    claimedMilestoneStreaks: []
+  });
+  const noDuplicate = await state.recordGauntletStats({
+    username: "GauntletMilestone3User",
+    matchWon: true,
+    currentStreak: 4,
+    claimedMilestoneStreaks: [3]
+  });
+
+  assert.equal(awarded.tokenDelta, 25);
+  assert.equal(awarded.profile.tokens, 225);
+  assert.deepEqual(awarded.chestGrants, []);
+  assert.deepEqual(awarded.claimedMilestoneStreaks, [3]);
+  assert.equal(noDuplicate.tokenDelta, 0);
+  assert.equal(noDuplicate.profile.tokens, 225);
+});
+
+test("state: gauntlet 5-streak grants 1 basic chest once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletMilestone5User",
+    runStarted: true
+  });
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletMilestone5User",
+    matchWon: true,
+    currentStreak: 5,
+    claimedMilestoneStreaks: [3]
+  });
+
+  assert.equal(awarded.profile.chests.basic, 1);
+  assert.deepEqual(awarded.chestGrants, [{ chestType: "basic", amount: 1 }]);
+  assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5]);
+});
+
+test("state: gauntlet 10-streak grants 1 milestone chest once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletMilestone10User",
+    runStarted: true
+  });
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletMilestone10User",
+    matchWon: true,
+    currentStreak: 10,
+    claimedMilestoneStreaks: [3, 5]
+  });
+
+  assert.equal(awarded.profile.chests[MILESTONE_CHEST_TYPE], 1);
+  assert.deepEqual(awarded.chestGrants, [{ chestType: MILESTONE_CHEST_TYPE, amount: 1 }]);
+  assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10]);
+});
+
+test("state: gauntlet 15-streak grants +100 XP and +75 tokens once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletMilestone15User",
+    runStarted: true
+  });
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletMilestone15User",
+    matchWon: true,
+    currentStreak: 15,
+    claimedMilestoneStreaks: [3, 5, 10]
+  });
+
+  assert.equal(awarded.xpDelta, 100);
+  assert.equal(awarded.tokenDelta, 75);
+  assert.equal(awarded.profile.playerXP, 100);
+  assert.equal(awarded.profile.tokens, 275);
+  assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10, 15]);
+});
+
+test("state: gauntlet 20-streak grants 1 epic chest once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletMilestone20User",
+    runStarted: true
+  });
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletMilestone20User",
+    matchWon: true,
+    currentStreak: 20,
+    claimedMilestoneStreaks: [3, 5, 10, 15]
+  });
+
+  assert.equal(awarded.profile.chests[EPIC_CHEST_TYPE], 1);
+  assert.deepEqual(awarded.chestGrants, [{ chestType: EPIC_CHEST_TYPE, amount: 1 }]);
+  assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10, 15, 20]);
+});
+
+test("state: gauntlet milestone rewards do not grant on non-win terminal results", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletMilestoneNoWinUser",
+    runStarted: true
+  });
+  const draw = await state.recordGauntletStats({
+    username: "GauntletMilestoneNoWinUser",
+    runEndedWithLoss: true,
+    currentStreak: 10,
+    claimedMilestoneStreaks: []
+  });
+
+  assert.equal(draw.tokenDelta, 0);
+  assert.equal(draw.xpDelta, 0);
+  assert.deepEqual(draw.chestGrants, []);
+  assert.deepEqual(draw.claimedMilestoneStreaks, []);
+  assert.equal(draw.profile.chests.basic, 0);
+  assert.equal(draw.profile.chests[MILESTONE_CHEST_TYPE], 0);
+});
+
+test("state: gauntlet streaks above 20 do not grant repeated or extra milestone rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletAboveTwentyUser",
+    runStarted: true
+  });
+
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletAboveTwentyUser",
+    matchWon: true,
+    currentStreak: 21,
+    claimedMilestoneStreaks: [3, 5, 10, 15, 20]
+  });
+
+  assert.equal(awarded.tokenDelta, 0);
+  assert.equal(awarded.xpDelta, 0);
+  assert.deepEqual(awarded.chestGrants, []);
+  assert.deepEqual(awarded.milestoneRewards, []);
+  assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10, 15, 20]);
+  assert.equal(awarded.profile.gauntletBestStreak, 21);
+  assert.equal(awarded.profile.gauntletWins, 1);
+  assert.equal(awarded.profile.gauntletRivalsDefeated, 1);
 });
 
 test("state: gauntlet terminal non-win updates increment losses once", async () => {

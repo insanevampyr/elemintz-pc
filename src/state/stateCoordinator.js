@@ -32,7 +32,11 @@ import {
 import {
   acknowledgeMilestoneChestReward,
   applyWinStreakChestGrants,
+  DEFAULT_CHEST_TYPE,
+  EPIC_CHEST_TYPE,
   grantChest,
+  getChestLabel,
+  MILESTONE_CHEST_TYPE,
   openChest
 } from "./chestSystem.js";
 import {
@@ -54,6 +58,13 @@ const FEATURED_RIVAL_DAILY_WIN_REWARD_CONFIGS = {
 };
 const VALID_RUNTIME_MODES = new Set(["pve", "local_pvp", "online_pvp"]);
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
+const GAUNTLET_MILESTONE_REWARDS = Object.freeze([
+  Object.freeze({ streak: 3, tokens: 25 }),
+  Object.freeze({ streak: 5, chests: Object.freeze([{ chestType: DEFAULT_CHEST_TYPE, amount: 1 }]) }),
+  Object.freeze({ streak: 10, chests: Object.freeze([{ chestType: MILESTONE_CHEST_TYPE, amount: 1 }]) }),
+  Object.freeze({ streak: 15, xp: 100, tokens: 75 }),
+  Object.freeze({ streak: 20, chests: Object.freeze([{ chestType: EPIC_CHEST_TYPE, amount: 1 }]) })
+]);
 
 function profilesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -190,6 +201,104 @@ function buildGauntletStatsSnapshot(profile) {
 function appendBoundedTimestamp(list, timestamp, limit = 10) {
   const next = Array.isArray(list) ? [...list, timestamp] : [timestamp];
   return next.slice(-limit);
+}
+
+function normalizeGauntletClaimedMilestoneStreaks(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(
+    value
+      .map((entry) => Math.max(0, Math.floor(Number(entry ?? 0) || 0)))
+      .filter((entry) => entry > 0)
+  )].sort((a, b) => a - b);
+}
+
+function applyGauntletMilestoneRewards(
+  profile,
+  { currentStreak = 0, claimedMilestoneStreaks = [] } = {}
+) {
+  const safeCurrentStreak = Math.max(0, Math.floor(Number(currentStreak ?? 0) || 0));
+  const alreadyClaimed = new Set(normalizeGauntletClaimedMilestoneStreaks(claimedMilestoneStreaks));
+  const milestonesToGrant = GAUNTLET_MILESTONE_REWARDS.filter(
+    (entry) => safeCurrentStreak >= entry.streak && !alreadyClaimed.has(entry.streak)
+  );
+
+  if (milestonesToGrant.length === 0) {
+    return {
+      profile,
+      claimedMilestoneStreaks: normalizeGauntletClaimedMilestoneStreaks(claimedMilestoneStreaks),
+      milestoneRewards: [],
+      xpDelta: 0,
+      tokenDelta: 0,
+      chestGrants: [],
+      levelBefore: Math.max(1, Number(profile?.playerLevel ?? getLevelProgress(profile).level ?? 1)),
+      levelAfter: Math.max(1, Number(profile?.playerLevel ?? getLevelProgress(profile).level ?? 1)),
+      levelRewards: [],
+      levelRewardTokenDelta: 0
+    };
+  }
+
+  const levelBefore = Math.max(1, Number(profile?.playerLevel ?? getLevelProgress(profile).level ?? 1));
+  const xpDelta = milestonesToGrant.reduce((sum, entry) => sum + Math.max(0, Number(entry.xp ?? 0)), 0);
+  const tokenDelta = milestonesToGrant.reduce((sum, entry) => sum + Math.max(0, Number(entry.tokens ?? 0)), 0);
+  const chestGrants = milestonesToGrant.flatMap((entry) =>
+    (Array.isArray(entry.chests) ? entry.chests : []).map((chest) => ({
+      chestType: String(chest?.chestType ?? DEFAULT_CHEST_TYPE).trim() || DEFAULT_CHEST_TYPE,
+      amount: Math.max(0, Math.floor(Number(chest?.amount ?? 0) || 0))
+    })).filter((chest) => chest.amount > 0)
+  );
+
+  let nextProfile = {
+    ...profile,
+    tokens: Math.max(0, Number(profile?.tokens ?? 0) + tokenDelta),
+    playerXP: Math.max(0, Number(profile?.playerXP ?? 0) + xpDelta),
+    playerLevel: levelBefore
+  };
+
+  const levelAfterGain = Math.max(levelBefore, getLevelProgress(nextProfile).level);
+  nextProfile = {
+    ...nextProfile,
+    playerLevel: levelAfterGain
+  };
+
+  const levelRewardResult = applyLevelRewardsForLevelChange(nextProfile, {
+    fromLevel: levelBefore,
+    toLevel: levelAfterGain
+  });
+  nextProfile = levelRewardResult.profile;
+
+  for (const chestGrant of chestGrants) {
+    nextProfile = grantChest(nextProfile, chestGrant);
+  }
+
+  const nextClaimedMilestoneStreaks = normalizeGauntletClaimedMilestoneStreaks([
+    ...alreadyClaimed,
+    ...milestonesToGrant.map((entry) => entry.streak)
+  ]);
+
+  return {
+    profile: nextProfile,
+    claimedMilestoneStreaks: nextClaimedMilestoneStreaks,
+    milestoneRewards: milestonesToGrant.map((entry) => ({
+      streak: entry.streak,
+      xp: Math.max(0, Number(entry.xp ?? 0)),
+      tokens: Math.max(0, Number(entry.tokens ?? 0)),
+      chests: (Array.isArray(entry.chests) ? entry.chests : []).map((chest) => ({
+        chestType: String(chest?.chestType ?? DEFAULT_CHEST_TYPE).trim() || DEFAULT_CHEST_TYPE,
+        amount: Math.max(0, Math.floor(Number(chest?.amount ?? 0) || 0)),
+        chestLabel: getChestLabel(chest?.chestType ?? DEFAULT_CHEST_TYPE)
+      }))
+    })),
+    xpDelta,
+    tokenDelta,
+    chestGrants,
+    levelBefore,
+    levelAfter: Math.max(levelAfterGain, Number(nextProfile?.playerLevel ?? levelAfterGain)),
+    levelRewards: levelRewardResult.grantedRewards,
+    levelRewardTokenDelta: levelRewardResult.tokenDelta
+  };
 }
 
 function createZeroMatchStats(matchStats = {}) {
@@ -998,7 +1107,8 @@ export class StateCoordinator {
     runStarted = false,
     matchWon = false,
     runEndedWithLoss = false,
-    currentStreak = 0
+    currentStreak = 0,
+    claimedMilestoneStreaks = []
   } = {}) {
     return this.runMatchPersistence(async () => {
       if (!username) {
@@ -1006,6 +1116,19 @@ export class StateCoordinator {
       }
 
       const safeCurrentStreak = Math.max(0, Math.floor(Number(currentStreak ?? 0) || 0));
+      const normalizedClaimedMilestoneStreaks =
+        normalizeGauntletClaimedMilestoneStreaks(claimedMilestoneStreaks);
+      let gauntletRewardSummary = {
+        claimedMilestoneStreaks: normalizedClaimedMilestoneStreaks,
+        milestoneRewards: [],
+        xpDelta: 0,
+        tokenDelta: 0,
+        chestGrants: [],
+        levelBefore: 1,
+        levelAfter: 1,
+        levelRewards: [],
+        levelRewardTokenDelta: 0
+      };
       const profile = await this.profiles.updateProfile(username, (current) => {
         const nextRuns = Math.max(0, Number(current?.gauntletRuns ?? 0)) + (runStarted ? 1 : 0);
         const nextWins = Math.max(0, Number(current?.gauntletWins ?? 0)) + (matchWon ? 1 : 0);
@@ -1017,7 +1140,7 @@ export class StateCoordinator {
           ? Math.max(Math.max(0, Number(current?.gauntletBestStreak ?? 0)), safeCurrentStreak)
           : Math.max(0, Number(current?.gauntletBestStreak ?? 0));
 
-        return {
+        let nextProfile = {
           ...current,
           gauntletBestStreak: nextBestStreak,
           gauntletRuns: nextRuns,
@@ -1025,11 +1148,42 @@ export class StateCoordinator {
           gauntletLosses: nextLosses,
           gauntletRivalsDefeated: nextRivalsDefeated
         };
+
+        if (matchWon) {
+          gauntletRewardSummary = applyGauntletMilestoneRewards(nextProfile, {
+            currentStreak: safeCurrentStreak,
+            claimedMilestoneStreaks: normalizedClaimedMilestoneStreaks
+          });
+          nextProfile = gauntletRewardSummary.profile;
+        } else {
+          gauntletRewardSummary = {
+            claimedMilestoneStreaks: normalizedClaimedMilestoneStreaks,
+            milestoneRewards: [],
+            xpDelta: 0,
+            tokenDelta: 0,
+            chestGrants: [],
+            levelBefore: Math.max(1, Number(nextProfile?.playerLevel ?? getLevelProgress(nextProfile).level ?? 1)),
+            levelAfter: Math.max(1, Number(nextProfile?.playerLevel ?? getLevelProgress(nextProfile).level ?? 1)),
+            levelRewards: [],
+            levelRewardTokenDelta: 0
+          };
+        }
+
+        return nextProfile;
       });
 
       return {
         profile,
-        gauntletStats: buildGauntletStatsSnapshot(profile)
+        gauntletStats: buildGauntletStatsSnapshot(profile),
+        claimedMilestoneStreaks: gauntletRewardSummary.claimedMilestoneStreaks,
+        milestoneRewards: gauntletRewardSummary.milestoneRewards,
+        xpDelta: gauntletRewardSummary.xpDelta,
+        tokenDelta: gauntletRewardSummary.tokenDelta,
+        chestGrants: gauntletRewardSummary.chestGrants,
+        levelBefore: gauntletRewardSummary.levelBefore,
+        levelAfter: gauntletRewardSummary.levelAfter,
+        levelRewards: gauntletRewardSummary.levelRewards,
+        levelRewardTokenDelta: gauntletRewardSummary.levelRewardTokenDelta
       };
     });
   }
