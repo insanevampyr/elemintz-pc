@@ -1,0 +1,327 @@
+EleMintz PC - Gauntlet Art Prep List v1
+
+LOCKED RULES
+Gauntlet rivals get:
+- Unique avatar
+- Name
+- Title
+- Behavior hint
+
+No badge.
+No background.
+No unique card back.
+No unique card variants.
+User background stays displayed.
+Card backs/variants can stay random/default/existing pool.
+
+============================================================
+1. GAUNTLET MODE TILE
+============================================================
+
+Filename:
+tile_gauntlet_mode.png
+
+Suggested folder:
+assets/tiles/tile_gauntlet_mode.png
+
+Use:
+Play vs AI screen tile.
+
+Image Description:
+Square menu tile art for "Gauntlet Mode" in EleMintz. Show a dramatic elemental challenge arena with multiple rival silhouettes facing the player, representing a streak/survival mode. Fire, Water, Earth, and Wind energy should swirl around the arena edges. The image should feel intense, replayable, and competitive, but not like one specific boss. Premium dark fantasy card-game style, clean readable composition, high detail, no text.
+
+============================================================
+2. GAUNTLET RIVAL AVATARS
+============================================================
+
+------------------------------------------------------------
+1. Pyro Maniac
+------------------------------------------------------------
+
+AI Name:
+Pyro Maniac
+
+Title:
+Flame Addict
+
+Behavior Type:
+Weighted
+
+Pattern / Bias:
+Fire-heavy
+
+Player Hint:
+Favors Fire heavily, but still mixes in other elements.
+
+Avatar Filename:
+avatar_gauntlet_pyro_maniac.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_pyro_maniac.png
+
+Title Type:
+New unique title, optional
+
+Avatar Image Description:
+Square game avatar portrait of a chaotic fire-obsessed elemental duelist. Wild glowing eyes, ember-lit grin, scorched clothing or armor, flames curling around the shoulders. Red, orange, and black palette. Energetic, unstable, aggressive personality. Centered bust portrait, high detail, clean edges, no text.
+
+------------------------------------------------------------
+2. Tide Witch
+------------------------------------------------------------
+
+AI Name:
+Tide Witch
+
+Title:
+Tidecaller
+
+Behavior Type:
+Weighted
+
+Pattern / Bias:
+Water-heavy
+
+Player Hint:
+Favors Water and tries to drown Fire-heavy players.
+
+Avatar Filename:
+avatar_gauntlet_tide_witch.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_tide_witch.png
+
+Title Type:
+New unique title, optional
+
+Avatar Image Description:
+Square game avatar portrait of a mysterious water witch elemental duelist. Flowing dark-blue hair, glowing aqua eyes, mist and water ribbons swirling around her. Elegant but dangerous expression. Deep blue, teal, silver, and black palette. Magical ocean energy, high detail, centered bust portrait, clean edges, no text.
+
+------------------------------------------------------------
+3. Stonewall
+------------------------------------------------------------
+
+AI Name:
+Stonewall
+
+Title:
+Iron Root
+
+Behavior Type:
+Weighted
+
+Pattern / Bias:
+Earth-heavy
+
+Player Hint:
+Favors Earth and plays a heavy defensive style.
+
+Avatar Filename:
+avatar_gauntlet_stonewall.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_stonewall.png
+
+Title Type:
+Existing-style elemental title or new if needed
+
+Avatar Image Description:
+Square game avatar portrait of a heavy earth elemental guardian duelist. Stone-like skin or armor, mossy cracks, glowing amber eyes, grounded and stubborn expression. Earth, bronze, moss green, and dark slate palette. Powerful defensive personality, centered bust portrait, high detail, clean edges, no text.
+
+------------------------------------------------------------
+4. Storm Chaser
+------------------------------------------------------------
+
+AI Name:
+Storm Chaser
+
+Title:
+Storm Caller
+
+Behavior Type:
+Weighted
+
+Pattern / Bias:
+Wind-heavy
+
+Player Hint:
+Favors Wind and pressures Water-based play.
+
+Avatar Filename:
+avatar_gauntlet_storm_chaser.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_storm_chaser.png
+
+Title Type:
+Existing title if already available
+
+Avatar Image Description:
+Square game avatar portrait of a fast wind elemental duelist wrapped in storm currents. Sharp confident face, wind-blown hair, glowing pale-blue or white eyes, lightning-tinted air trails around the shoulders. Sky gray, white, teal, and dark navy palette. Fast, cocky, storm-powered energy, centered bust portrait, high detail, clean edges, no text.
+
+------------------------------------------------------------
+5. Inferno Drummer
+------------------------------------------------------------
+
+AI Name:
+Inferno Drummer
+
+Title:
+Warbeat Flame
+
+Behavior Type:
+10-card loop
+
+Pattern / Bias:
+Fire-heavy rhythm loop
+
+Example Loop:
+Fire, Fire, Earth, Earth, Wind, Wind, Water, Water, Earth, Earth
+
+Player Hint:
+Repeats a steady battle rhythm with extra Fire pressure.
+
+Avatar Filename:
+avatar_gauntlet_inferno_drummer.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_inferno_drummer.png
+
+Title Type:
+New unique title
+
+Avatar Image Description:
+Square game avatar portrait of a fire-themed battle drummer elemental duelist. Tribal or arena-war aesthetic, glowing drumsticks or ember gauntlets, rhythmic flame rings behind them. Fierce focused expression. Red, gold, black, and ember-orange palette. Feels like a ritual combat musician, centered bust portrait, high detail, clean edges, no text.
+
+------------------------------------------------------------
+6. River Spiral
+------------------------------------------------------------
+
+AI Name:
+River Spiral
+
+Title:
+Flow Seer
+
+Behavior Type:
+10-card loop
+
+Pattern / Bias:
+Repeating Water/Earth/Wind flow
+
+Example Loop:
+Water, Earth, Wind, Water, Earth, Wind, Fire, Water, Earth, Wind
+
+Player Hint:
+Repeats a flowing pattern that cycles through Water, Earth, and Wind.
+
+Avatar Filename:
+avatar_gauntlet_river_spiral.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_river_spiral.png
+
+Title Type:
+New unique title
+
+Avatar Image Description:
+Square game avatar portrait of a calm but tricky elemental duelist themed around spiraling river currents. Smooth flowing robes, circular water patterns, subtle earth stones and wind ribbons in the design. Calm knowing expression. Teal, blue, soft green, and silver palette. Strategic and fluid personality, centered bust portrait, high detail, clean edges, no text.
+
+------------------------------------------------------------
+7. Stone March
+------------------------------------------------------------
+
+AI Name:
+Stone March
+
+Title:
+Mountain Step
+
+Behavior Type:
+10-card loop
+
+Pattern / Bias:
+Earth-heavy repeat loop
+
+Example Loop:
+Earth, Earth, Fire, Earth, Wind, Earth, Water, Earth, Fire, Wind
+
+Player Hint:
+Repeats a heavy Earth pattern with occasional elemental shifts.
+
+Avatar Filename:
+avatar_gauntlet_stone_march.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_stone_march.png
+
+Title Type:
+New unique title
+
+Avatar Image Description:
+Square game avatar portrait of a disciplined earth elemental marcher or commander. Heavy stone armor, cracked mountain textures, glowing runes, stern tactical expression. Brown, slate, bronze, and muted green palette. Feels slow, strong, and inevitable. Centered bust portrait, high detail, clean edges, no text.
+
+------------------------------------------------------------
+8. Fourfold Monk
+------------------------------------------------------------
+
+AI Name:
+Fourfold Monk
+
+Title:
+Element Keeper
+
+Behavior Type:
+10-card loop
+
+Pattern / Bias:
+Balanced repeating element cycle
+
+Example Loop:
+Fire, Water, Earth, Wind, Earth, Water, Fire, Water, Earth, Wind
+
+Player Hint:
+Repeats a balanced four-element discipline pattern.
+
+Avatar Filename:
+avatar_gauntlet_fourfold_monk.png
+
+Suggested folder:
+assets/avatars/avatar_gauntlet_fourfold_monk.png
+
+Title Type:
+New unique title
+
+Avatar Image Description:
+Square game avatar portrait of a balanced elemental monk duelist. Calm centered pose, four elemental symbols or energy wisps around them: Fire, Water, Earth, and Wind. Wise focused expression. Balanced red, blue, green, white, and gold accents over a dark fantasy base. Spiritual card-battle energy, centered bust portrait, high detail, clean edges, no text.
+
+============================================================
+ART COUNT
+============================================================
+
+Total needed for Gauntlet MVP:
+- 1 tile image
+- 8 avatar images
+
+Total: 9 images
+
+============================================================
+FULL FILE LIST
+============================================================
+
+assets/tiles/tile_gauntlet_mode.png
+
+assets/avatars/avatar_gauntlet_pyro_maniac.png
+assets/avatars/avatar_gauntlet_tide_witch.png
+assets/avatars/avatar_gauntlet_stonewall.png
+assets/avatars/avatar_gauntlet_storm_chaser.png
+assets/avatars/avatar_gauntlet_inferno_drummer.png
+assets/avatars/avatar_gauntlet_river_spiral.png
+assets/avatars/avatar_gauntlet_stone_march.png
+assets/avatars/avatar_gauntlet_fourfold_monk.png
+
+============================================================
+IMPLEMENTATION NOTE
+============================================================
+
+Start with the tile and 8 avatars only.
+Do not generate badges, backgrounds, card backs, or card variants for the first Gauntlet rollout.

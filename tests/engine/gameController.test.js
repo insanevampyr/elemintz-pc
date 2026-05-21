@@ -7746,6 +7746,51 @@ test("appController: selecting Featured Rival starts PvE with rival config inste
   }
 });
 
+test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routing while keeping normal PvE fallback behavior", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletPicker";
+  app.profile = {
+    username: "GauntletPicker",
+    equippedCosmetics: { background: "default_background" }
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.showAiDifficultySelect();
+    await shownScreens.at(-1).context.actions.start({ gauntletMode: true });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.pveGauntletMode, true);
+    assert.equal(app.pveFeaturedRivalId, null);
+    assert.equal(app.gameController?.featuredRivalId, null);
+    assert.equal(app.gameController?.aiDifficulty, "normal");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: selected PvE difficulty override beats the Settings fallback", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];

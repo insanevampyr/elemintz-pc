@@ -1067,10 +1067,11 @@ export class AppController {
     this.screenFlow = "aiDifficulty";
     this.screenManager.show("aiDifficulty", {
       selectedDifficulty: this.getConfiguredAiDifficulty(),
+      selectedGauntletMode: Boolean(this.pveGauntletMode),
       selectedFeaturedRivalId: this.pveFeaturedRivalId,
       actions: {
-        start: async ({ aiDifficulty, featuredRivalId } = {}) => {
-          this.startGame(MATCH_MODE.PVE, { aiDifficulty, featuredRivalId });
+        start: async ({ aiDifficulty, featuredRivalId, gauntletMode } = {}) => {
+          this.startGame(MATCH_MODE.PVE, { aiDifficulty, featuredRivalId, gauntletMode });
         },
         back: () => this.showMenu()
       }
@@ -5643,6 +5644,7 @@ export class AppController {
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
     this.pendingMatchCompletePayload = null;
+    this.pveGauntletMode = mode === MATCH_MODE.PVE && options?.gauntletMode === true;
     this.pveFeaturedRivalId =
       mode === MATCH_MODE.PVE ? String(options?.featuredRivalId ?? "").trim().toLowerCase() || null : null;
     const featuredRival = this.getFeaturedRivalConfig(this.pveFeaturedRivalId);
@@ -5668,6 +5670,7 @@ export class AppController {
             (String(options?.aiDifficulty ?? "").trim().toLowerCase() ||
               this.getConfiguredAiDifficulty())
           : FALLBACK_SETTINGS.aiDifficulty,
+      gauntletMode: this.pveGauntletMode,
       featuredRivalId: this.pveFeaturedRivalId,
       mode,
       persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP,

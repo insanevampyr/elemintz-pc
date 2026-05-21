@@ -41,15 +41,40 @@ function renderFeaturedRivalOption({ name, id, checked }) {
   `;
 }
 
+function renderGauntletOption({ name, id, checked }) {
+  return `
+    <label class="settings-radio-option settings-radio-option-featured-rival" for="${id}">
+      <span class="settings-radio-main">
+        <input id="${id}" name="${name}" type="radio" value="gauntlet_mode" ${checked ? "checked" : ""} />
+        <strong>Gauntlet Mode</strong>
+      </span>
+      <span class="featured-rival-card">
+        <img
+          class="featured-rival-card__art"
+          src="${getAssetPath("rivals/Gauntlet/tile_gauntlet_mode.png")}"
+          alt="Gauntlet Mode"
+        />
+        <span class="featured-rival-card__body">
+          <span class="featured-rival-card__eyebrow">Special Challenge Mode</span>
+          <strong class="featured-rival-card__name">Gauntlet Mode</strong>
+          <span class="featured-rival-card__detail">Build a win streak against rival AIs.</span>
+        </span>
+      </span>
+    </label>
+  `;
+}
+
 export const aiDifficultyScreen = {
   render(context) {
     const selectedDifficulty = ["easy", "normal", "hard"].includes(String(context.selectedDifficulty ?? ""))
       ? String(context.selectedDifficulty)
       : "normal";
     const selectedOption =
-      String(context.selectedFeaturedRivalId ?? "").trim().toLowerCase() === "crownfire_duelist"
-        ? "featured_rival_crownfire"
-        : selectedDifficulty;
+      context.selectedGauntletMode
+        ? "gauntlet_mode"
+        : String(context.selectedFeaturedRivalId ?? "").trim().toLowerCase() === "crownfire_duelist"
+          ? "featured_rival_crownfire"
+          : selectedDifficulty;
 
     return `
       <section class="screen screen-ai-difficulty">
@@ -89,6 +114,11 @@ export const aiDifficultyScreen = {
                 title: "Hard AI",
                 subtitle: "Smarter, tougher AI. Win for +5 XP, +5 tokens, and improved chest chance."
               })}
+              ${renderGauntletOption({
+                name: "pveOpponentChoice",
+                id: "ai-difficulty-select-gauntlet",
+                checked: selectedOption === "gauntlet_mode"
+              })}
               ${renderFeaturedRivalOption({
                 name: "pveOpponentChoice",
                 id: "ai-difficulty-select-featured-rival",
@@ -107,6 +137,10 @@ export const aiDifficultyScreen = {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
       const pveOpponentChoice = String(formData.get("pveOpponentChoice") ?? "normal").trim().toLowerCase();
+      if (pveOpponentChoice === "gauntlet_mode") {
+        await context.actions.start({ gauntletMode: true });
+        return;
+      }
       if (pveOpponentChoice === "featured_rival_crownfire") {
         await context.actions.start({ featuredRivalId: "crownfire_duelist" });
         return;

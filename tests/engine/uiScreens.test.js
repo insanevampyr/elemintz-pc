@@ -1719,7 +1719,7 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 });
 
-test("ui: ai difficulty screen renders Easy, Normal, Hard, and Featured Rival choices", () => {
+test("ui: ai difficulty screen renders Easy, Normal, Hard, Gauntlet, and Featured Rival choices", () => {
   const html = aiDifficultyScreen.render({
     selectedDifficulty: "normal",
     actions: {}
@@ -1729,7 +1729,29 @@ test("ui: ai difficulty screen renders Easy, Normal, Hard, and Featured Rival ch
   assert.match(html, /Easy Practice/);
   assert.match(html, /Normal AI/);
   assert.match(html, /Hard AI/);
+  assert.match(html, /Gauntlet Mode/);
   assert.match(html, /Featured Rival/);
+});
+
+test("ui: ai difficulty screen places Gauntlet Mode after Hard and before Featured Rival", () => {
+  const html = aiDifficultyScreen.render({
+    selectedDifficulty: "normal",
+    actions: {}
+  });
+
+  assert.ok(html.indexOf("Hard AI") < html.indexOf("Gauntlet Mode"));
+  assert.ok(html.indexOf("Gauntlet Mode") < html.indexOf("Featured Rival"));
+});
+
+test("ui: ai difficulty screen renders the Gauntlet placeholder card details", () => {
+  const html = aiDifficultyScreen.render({
+    selectedDifficulty: "normal",
+    actions: {}
+  });
+
+  assert.match(html, /rivals\/Gauntlet\/tile_gauntlet_mode\.png/);
+  assert.match(html, /Gauntlet Mode/);
+  assert.match(html, /Build a win streak against rival AIs\./);
 });
 
 test("ui: ai difficulty screen renders the Crownfire featured rival card details", () => {
@@ -1871,6 +1893,57 @@ test("ui: ai difficulty screen binds the featured rival start payload", async ()
     });
 
     assert.deepEqual(starts, [{ featuredRivalId: "crownfire_duelist" }]);
+  } finally {
+    global.document = previousDocument;
+    global.FormData = previousFormData;
+  }
+});
+
+test("ui: ai difficulty screen binds the Gauntlet start payload", async () => {
+  const previousDocument = global.document;
+  const previousFormData = global.FormData;
+  const starts = [];
+  const form = {
+    values: new Map([["pveOpponentChoice", "gauntlet_mode"]])
+  };
+  const elements = new Map();
+
+  elements.set("ai-difficulty-form", {
+    addEventListener: (_type, handler) => {
+      form.submit = handler;
+    }
+  });
+  elements.set("ai-difficulty-back-btn", {
+    addEventListener: () => {}
+  });
+
+  global.document = {
+    getElementById: (id) => elements.get(id)
+  };
+  global.FormData = class {
+    constructor(target) {
+      this.target = target;
+    }
+
+    get(key) {
+      return this.target.values.get(key) ?? null;
+    }
+  };
+
+  try {
+    aiDifficultyScreen.bind({
+      actions: {
+        start: async (payload) => starts.push(payload),
+        back: () => {}
+      }
+    });
+
+    await form.submit({
+      preventDefault: () => {},
+      currentTarget: form
+    });
+
+    assert.deepEqual(starts, [{ gauntletMode: true }]);
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;
