@@ -79,7 +79,7 @@ function comparePreviewChallenges(left, right) {
   const leftCompleted = left?.completed ? 1 : 0;
   const rightCompleted = right?.completed ? 1 : 0;
   if (leftCompleted !== rightCompleted) {
-    return rightCompleted - leftCompleted;
+    return leftCompleted - rightCompleted;
   }
 
   const leftFeatured = isFeaturedRivalChallenge(left) ? 1 : 0;

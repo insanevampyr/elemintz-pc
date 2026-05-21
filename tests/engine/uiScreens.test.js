@@ -8042,7 +8042,7 @@ test("ui: menu challenge preview shows up to three entries per section and keeps
   assert.match(html, /open-daily-challenges-btn/);
 });
 
-test("ui: menu challenge preview prioritizes completed entries above ordinary incomplete ones", () => {
+test("ui: menu challenge preview keeps completed ordinary entries behind incomplete ones", () => {
   const html = menuScreen.render({
     username: "PriorityUser",
     backgroundImage: "assets/EleMintzIcon.png",
@@ -8074,11 +8074,11 @@ test("ui: menu challenge preview prioritizes completed entries above ordinary in
   const completedB = html.indexOf("Completed B");
 
   assert.ok(incompleteA >= 0);
+  assert.ok(incompleteB >= 0);
   assert.ok(completedA >= 0);
-  assert.ok(completedB >= 0);
-  assert.equal(incompleteB, -1);
-  assert.ok(completedA < incompleteA);
-  assert.ok(completedB < incompleteA);
+  assert.equal(completedB, -1);
+  assert.ok(incompleteA < completedA);
+  assert.ok(incompleteB < completedA);
 });
 
 test("ui: menu challenge preview prioritizes featured rival quests above ordinary core quests", () => {
@@ -8116,6 +8116,49 @@ test("ui: menu challenge preview prioritizes featured rival quests above ordinar
             name: "Win 1 WAR",
             rewardTokens: 2,
             rewardXp: 5,
+            completed: false,
+            progress: 0,
+            goal: 1
+          }
+        ]
+      },
+      weekly: {
+        resetLabel: "2d 03:00",
+        challenges: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.ok(html.indexOf("Bring Down the Boss") < html.indexOf("Play 5 Matches"));
+});
+
+test("ui: menu challenge preview prioritizes incomplete featured rival quests above completed ordinary challenges", () => {
+  const html = menuScreen.render({
+    username: "PriorityUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Next Daily Login Reward: 05:00",
+        resetLabel: "05:00"
+      },
+      daily: {
+        resetLabel: "01:00",
+        challenges: [
+          {
+            id: "daily_play_5_matches",
+            name: "Play 5 Matches",
+            rewardTokens: 3,
+            rewardXp: 6,
+            completed: true,
+            progress: 5,
+            goal: 5
+          },
+          {
+            id: "daily_defeat_featured_rival_1",
+            name: "Bring Down the Boss",
+            rewardTokens: 8,
+            rewardXp: 15,
             completed: false,
             progress: 0,
             goal: 1
@@ -8172,6 +8215,50 @@ test("ui: menu challenge preview prioritizes bonus quests above ordinary core qu
             completed: false,
             progress: 0,
             goal: 1
+          }
+        ]
+      },
+      weekly: {
+        resetLabel: "2d 03:00",
+        challenges: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.ok(html.indexOf("Complete 3 Matches Without Quitting") < html.indexOf("Play 5 Matches"));
+});
+
+test("ui: menu challenge preview prioritizes incomplete bonus quests above completed ordinary challenges", () => {
+  const html = menuScreen.render({
+    username: "PriorityUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Next Daily Login Reward: 05:00",
+        resetLabel: "05:00"
+      },
+      daily: {
+        resetLabel: "01:00",
+        challenges: [
+          {
+            id: "daily_play_5_matches",
+            name: "Play 5 Matches",
+            rewardTokens: 3,
+            rewardXp: 6,
+            completed: true,
+            progress: 5,
+            goal: 5
+          },
+          {
+            id: "daily_no_quit_3",
+            name: "Complete 3 Matches Without Quitting",
+            rewardTokens: 3,
+            rewardXp: 6,
+            completed: false,
+            progress: 0,
+            goal: 3,
+            isBonus: true
           }
         ]
       },
@@ -8266,6 +8353,80 @@ test("ui: menu challenge preview still renders safely without bonus metadata", (
   assert.match(html, /Play 5 Matches/);
   assert.match(html, /Win 1 Match/);
   assert.match(html, /Win 1 WAR/);
+});
+
+test("ui: menu challenge preview uses completed entries only to backfill when fewer than three incomplete entries exist", () => {
+  const html = menuScreen.render({
+    username: "PriorityUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Next Daily Login Reward: 05:00",
+        resetLabel: "05:00"
+      },
+      daily: {
+        resetLabel: "01:00",
+        challenges: [
+          {
+            id: "daily_play_5_matches",
+            name: "Play 5 Matches",
+            rewardTokens: 3,
+            rewardXp: 6,
+            completed: false,
+            progress: 2,
+            goal: 5
+          },
+          {
+            id: "daily_win_1_match",
+            name: "Win 1 Match",
+            rewardTokens: 2,
+            rewardXp: 5,
+            completed: false,
+            progress: 0,
+            goal: 1
+          },
+          {
+            id: "daily_win_1_war",
+            name: "Win 1 WAR",
+            rewardTokens: 2,
+            rewardXp: 5,
+            completed: true,
+            progress: 1,
+            goal: 1
+          },
+          {
+            id: "daily_capture_16_cards",
+            name: "Capture 16 Cards Total In One Day",
+            rewardTokens: 3,
+            rewardXp: 6,
+            completed: true,
+            progress: 16,
+            goal: 16
+          }
+        ]
+      },
+      weekly: {
+        resetLabel: "2d 03:00",
+        challenges: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Play 5 Matches/);
+  assert.match(html, /Win 1 Match/);
+  assert.ok(
+    /Win 1 WAR/.test(html) || /Capture 16 Cards Total In One Day/.test(html),
+    "expected one completed challenge to backfill the third preview slot"
+  );
+  assert.ok(
+    !(/Win 1 WAR/.test(html) && /Capture 16 Cards Total In One Day/.test(html)),
+    "expected only one completed challenge to appear in the preview"
+  );
+  const completedIndex = /Win 1 WAR/.test(html)
+    ? html.indexOf("Win 1 WAR")
+    : html.indexOf("Capture 16 Cards Total In One Day");
+  assert.ok(html.indexOf("Win 1 Match") < completedIndex);
 });
 
 test("ui: later PvE WAR states render the shared WAR impact marker", () => {
