@@ -1749,7 +1749,7 @@ test("ui: ai difficulty screen renders the Gauntlet placeholder card details", (
     actions: {}
   });
 
-  assert.match(html, /rivals\/Gauntlet\/tile_gauntlet_mode\.png/);
+  assert.match(html, /menu_tiles\/tile_gauntlet_mode\.png/);
   assert.match(html, /Gauntlet Mode/);
   assert.match(html, /Build a win streak against rival AIs\./);
 });

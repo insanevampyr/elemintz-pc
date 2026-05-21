@@ -51,7 +51,7 @@ function renderGauntletOption({ name, id, checked }) {
       <span class="featured-rival-card">
         <img
           class="featured-rival-card__art"
-          src="${getAssetPath("rivals/Gauntlet/tile_gauntlet_mode.png")}"
+          src="${getAssetPath("menu_tiles/tile_gauntlet_mode.png")}"
           alt="Gauntlet Mode"
         />
         <span class="featured-rival-card__body">

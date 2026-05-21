@@ -24,6 +24,7 @@ import { buildAchievementCatalog } from "../../state/achievementSystem.js";
 import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../state/storeSystem.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
+import { listGauntletRivals, resolveGauntletRivalById } from "../../engine/gauntletRivals.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS, renderMatchTauntHudContents } from "../ui/shared/playSurfaceShared.js";
 import { getUpdateSafetyState as buildUpdateSafetyState, isSafeForUpdateRestart as computeIsSafeForUpdateRestart } from "./updateSafety.js";
@@ -131,6 +132,31 @@ function normalizeName(value, fallback) {
   return normalized.length > 0 ? normalized : fallback;
 }
 
+function createDefaultGauntletRunState() {
+  return {
+    active: false,
+    currentStreak: 0,
+    currentRivalIndex: -1,
+    currentRivalId: null,
+    rivalBag: [],
+    lastRivalId: null,
+    defeatedRivalIds: [],
+    lastResult: null
+  };
+}
+
+function shuffleList(items = [], random = Math.random) {
+  const nextItems = Array.isArray(items) ? [...items] : [];
+  for (let index = nextItems.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    const current = nextItems[index];
+    nextItems[index] = nextItems[swapIndex];
+    nextItems[swapIndex] = current;
+  }
+
+  return nextItems;
+}
+
 export class AppController {
   constructor({ screenManager, modalManager, toastManager }) {
     this.screenManager = screenManager;
@@ -162,7 +188,9 @@ export class AppController {
     this.deferPveOutcomeSound = false;
     this.deferredPveRoundSound = null;
     this.pveOpponentStyle = null;
+    this.pveGauntletMode = false;
     this.pveFeaturedRivalId = null;
+    this.gauntletRunState = createDefaultGauntletRunState();
     this.profileChestVisualState = {
       basicOpen: false,
       milestoneOpen: false,
@@ -205,6 +233,7 @@ export class AppController {
     this.menuAnnouncement = null;
     this.menuBoostEvent = null;
     this.tauntRandom = Math.random;
+    this.gauntletRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
     this.storeViewState = this.createDefaultStoreViewState();
     this.cosmeticsViewState = createDefaultCategoryViewState();
@@ -1059,7 +1088,12 @@ export class AppController {
   }
 
   getCurrentPveOpponentName() {
-    return this.getFeaturedRivalConfig(this.pveFeaturedRivalId)?.name ?? this.opponentDisplayName ?? "Elemental AI";
+    return (
+      this.getCurrentGauntletRival()?.displayName ??
+      this.getFeaturedRivalConfig(this.pveFeaturedRivalId)?.name ??
+      this.opponentDisplayName ??
+      "Elemental AI"
+    );
   }
 
   showAiDifficultySelect() {
@@ -1277,7 +1311,187 @@ export class AppController {
     );
   }
 
+  getGauntletRivalCatalog() {
+    return listGauntletRivals();
+  }
+
+  getCurrentGauntletRival() {
+    return this.pveGauntletMode
+      ? resolveGauntletRivalById(this.gauntletRunState?.currentRivalId ?? null)
+      : null;
+  }
+
+  buildShuffledGauntletBag(excludedFirstRivalId = null) {
+    const rivalIds = this.getGauntletRivalCatalog().map((rival) => rival.id);
+    const bag = shuffleList(rivalIds, this.gauntletRandom);
+    const excluded = String(excludedFirstRivalId ?? "").trim().toLowerCase() || null;
+
+    if (excluded && bag.length > 1 && bag[0] === excluded) {
+      const swapIndex = bag.findIndex((rivalId) => rivalId !== excluded);
+      if (swapIndex > 0) {
+        [bag[0], bag[swapIndex]] = [bag[swapIndex], bag[0]];
+      }
+    }
+
+    return bag;
+  }
+
+  pullNextGauntletRival({ rivalBag = [], lastRivalId = null } = {}) {
+    let nextBag = Array.isArray(rivalBag) ? [...rivalBag] : [];
+    if (!nextBag.length) {
+      nextBag = this.buildShuffledGauntletBag(lastRivalId);
+    }
+
+    const excluded = String(lastRivalId ?? "").trim().toLowerCase() || null;
+    if (excluded && nextBag.length > 1 && nextBag[0] === excluded) {
+      const swapIndex = nextBag.findIndex((rivalId) => rivalId !== excluded);
+      if (swapIndex > 0) {
+        [nextBag[0], nextBag[swapIndex]] = [nextBag[swapIndex], nextBag[0]];
+      }
+    }
+
+    const nextRivalId = nextBag.shift() ?? null;
+    const nextRival = resolveGauntletRivalById(nextRivalId, null);
+    return {
+      rival: nextRival,
+      rivalId: nextRival?.id ?? null,
+      rivalBag: nextBag
+    };
+  }
+
+  clearGauntletRunState() {
+    this.pveGauntletMode = false;
+    this.gauntletRunState = createDefaultGauntletRunState();
+  }
+
+  startFreshGauntletRun() {
+    const { rival: firstRival, rivalBag } = this.pullNextGauntletRival();
+    this.pveGauntletMode = Boolean(firstRival);
+    this.gauntletRunState = {
+      active: Boolean(firstRival),
+      currentStreak: 0,
+      currentRivalIndex: firstRival
+        ? Math.max(0, this.getGauntletRivalCatalog().findIndex((rival) => rival.id === firstRival.id))
+        : -1,
+      currentRivalId: firstRival?.id ?? null,
+      rivalBag,
+      lastRivalId: null,
+      defeatedRivalIds: [],
+      lastResult: null
+    };
+    return firstRival;
+  }
+
+  continueGauntletRunWithRival(gauntletRivalId = null) {
+    const rivals = this.getGauntletRivalCatalog();
+    const fallbackRival = rivals[0] ?? null;
+    const resolvedRival = resolveGauntletRivalById(gauntletRivalId, fallbackRival?.id ?? null);
+    const resolvedIndex = resolvedRival
+      ? Math.max(
+          0,
+          rivals.findIndex((rival) => rival.id === resolvedRival.id)
+        )
+      : -1;
+    this.pveGauntletMode = Boolean(resolvedRival);
+    this.gauntletRunState = {
+      ...createDefaultGauntletRunState(),
+      ...this.gauntletRunState,
+      active: Boolean(resolvedRival),
+      currentRivalIndex: resolvedIndex,
+      currentRivalId: resolvedRival?.id ?? null
+    };
+    return resolvedRival;
+  }
+
+  advanceGauntletRunStateAfterWin() {
+    const rivals = this.getGauntletRivalCatalog();
+    if (!rivals.length) {
+      this.clearGauntletRunState();
+      return null;
+    }
+
+    const currentRivalId = this.gauntletRunState?.currentRivalId ?? null;
+    const { rival: nextRival, rivalBag } = this.pullNextGauntletRival({
+      rivalBag: this.gauntletRunState?.rivalBag ?? [],
+      lastRivalId: currentRivalId
+    });
+    const nextIndex = nextRival
+      ? Math.max(0, rivals.findIndex((rival) => rival.id === nextRival.id))
+      : -1;
+
+    this.gauntletRunState = {
+      active: true,
+      currentStreak: Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)) + 1,
+      currentRivalIndex: nextIndex,
+      currentRivalId: nextRival?.id ?? null,
+      rivalBag,
+      lastRivalId: currentRivalId,
+      defeatedRivalIds: [
+        ...(Array.isArray(this.gauntletRunState?.defeatedRivalIds)
+          ? this.gauntletRunState.defeatedRivalIds
+          : []),
+        currentRivalId
+      ],
+      lastResult: "win"
+    };
+
+    return nextRival ?? null;
+  }
+
+  endGauntletRun(result = "ended") {
+    this.gauntletRunState = {
+      ...this.gauntletRunState,
+      active: false,
+      lastResult: result
+    };
+  }
+
+  handleGauntletMatchCompletion(match) {
+    if (!this.pveGauntletMode || !this.gauntletRunState?.active) {
+      return false;
+    }
+
+    if (match?.winner === "p1") {
+      const nextRival = this.advanceGauntletRunStateAfterWin();
+      if (!nextRival) {
+        this.endGauntletRun("win");
+        return false;
+      }
+
+      this.startGame(MATCH_MODE.PVE, {
+        gauntletMode: true,
+        gauntletContinue: true,
+        gauntletRivalId: nextRival.id
+      });
+      return true;
+    }
+
+    const result =
+      match?.winner === "draw"
+        ? "draw"
+        : String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit"
+          ? "quit_forfeit"
+          : "loss";
+    this.endGauntletRun(result);
+    return false;
+  }
+
   buildPveOpponentStyle(featuredRivalId = this.pveFeaturedRivalId) {
+    const gauntletRival = this.getCurrentGauntletRival();
+    if (gauntletRival) {
+      return {
+        gauntletRivalId: gauntletRival.id,
+        name: gauntletRival.displayName,
+        avatarPath: gauntletRival.avatarPath,
+        titleId: null,
+        titleName: gauntletRival.title,
+        titleIconPath: null,
+        badgeId: "none",
+        cardBackId: "default_card_back",
+        elementCardVariant: this.getDefaultElementCardVariantMap()
+      };
+    }
+
     const featuredRival = this.getFeaturedRivalConfig(featuredRivalId);
     if (featuredRival) {
       return {
@@ -4994,9 +5208,11 @@ export class AppController {
     const safeValue = (value) => (value ?? "-");
     const isLocalPvp = mode === MATCH_MODE.LOCAL_PVP;
     const startOptions =
-      !isLocalPvp && mode === MATCH_MODE.PVE && this.pveFeaturedRivalId
-        ? { featuredRivalId: this.pveFeaturedRivalId }
-        : {};
+      !isLocalPvp && mode === MATCH_MODE.PVE && this.pveGauntletMode
+        ? { gauntletMode: true }
+        : !isLocalPvp && mode === MATCH_MODE.PVE && this.pveFeaturedRivalId
+          ? { featuredRivalId: this.pveFeaturedRivalId }
+          : {};
 
     const leftName = isLocalPvp ? names.p1 : (this.profile?.username ?? this.username ?? "Player");
     const rightName = isLocalPvp ? names.p2 : this.getCurrentPveOpponentName();
@@ -5307,6 +5523,7 @@ export class AppController {
   showMenu({ autoClaimDailyLogin = true, showDailyLoginToasts = true } = {}) {
     this.clearPassTimer();
     this.clearTransientUiBeforeScreenTransition();
+    this.clearGauntletRunState();
     this.screenFlow = "menu";
     this.localPlayers = null;
     this.localProfiles = null;
@@ -5644,9 +5861,21 @@ export class AppController {
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
     this.pendingMatchCompletePayload = null;
-    this.pveGauntletMode = mode === MATCH_MODE.PVE && options?.gauntletMode === true;
+    const wantsGauntlet = mode === MATCH_MODE.PVE && options?.gauntletMode === true;
+    if (wantsGauntlet) {
+      if (options?.gauntletContinue === true) {
+        this.continueGauntletRunWithRival(options?.gauntletRivalId);
+      } else {
+        this.startFreshGauntletRun();
+      }
+    } else {
+      this.clearGauntletRunState();
+    }
+
     this.pveFeaturedRivalId =
-      mode === MATCH_MODE.PVE ? String(options?.featuredRivalId ?? "").trim().toLowerCase() || null : null;
+      mode === MATCH_MODE.PVE && !wantsGauntlet
+        ? String(options?.featuredRivalId ?? "").trim().toLowerCase() || null
+        : null;
     const featuredRival = this.getFeaturedRivalConfig(this.pveFeaturedRivalId);
     this.pveOpponentStyle =
       mode === MATCH_MODE.PVE ? this.buildPveOpponentStyle(this.pveFeaturedRivalId) : null;
@@ -5670,7 +5899,8 @@ export class AppController {
             (String(options?.aiDifficulty ?? "").trim().toLowerCase() ||
               this.getConfiguredAiDifficulty())
           : FALLBACK_SETTINGS.aiDifficulty,
-      gauntletMode: this.pveGauntletMode,
+      gauntletMode: wantsGauntlet,
+      gauntletRivalId: wantsGauntlet ? this.gauntletRunState?.currentRivalId ?? null : null,
       featuredRivalId: this.pveFeaturedRivalId,
       mode,
       persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP,
@@ -5733,6 +5963,9 @@ export class AppController {
           this.emitRewardToastsForResult(finalPersisted?.p2, names.p2, previousLocalProfiles?.p2);
         } else {
           this.emitRewardToastsForResult(finalPersisted, this.username, previousPveProfile);
+        }
+        if (mode === MATCH_MODE.PVE && this.handleGauntletMatchCompletion(match)) {
+          return;
         }
         const modalPayload = this.buildMatchCompleteModalPayload(mode, match, finalPersisted);
         if (this.roundPresentation.busy || this.screenFlow === "pass") {

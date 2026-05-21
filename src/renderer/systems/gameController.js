@@ -10,6 +10,7 @@ import {
 } from "../../engine/index.js";
 import { createRoomStore } from "../../multiplayer/rooms.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
+import { getGauntletRivalById } from "../../engine/gauntletRivals.js";
 
 const MATCH_MODE = Object.freeze({
   PVE: "pve",
@@ -336,6 +337,7 @@ function buildLocalMatchFromAuthoritativeRoom(
     round: Math.max(0, Number(room?.roundNumber ?? 1) - 1),
     mode,
     featuredRivalId: String(room?.featuredRivalId ?? "").trim().toLowerCase() || null,
+    gauntletRivalId: String(room?.gauntletRivalId ?? "").trim().toLowerCase() || null,
     difficulty:
       existingMatch?.difficulty ??
       (mode === MATCH_MODE.PVE ? aiDifficulty : "authoritative_local_pvp"),
@@ -547,6 +549,8 @@ export class GameController {
     this.onHotseatTurnTimeout = options.onHotseatTurnTimeout ?? (() => {});
     this.aiDifficulty = difficultyFromSettings(options.aiDifficulty);
     this.featuredRivalId = String(options.featuredRivalId ?? "").trim().toLowerCase() || null;
+    this.gauntletMode = options.gauntletMode === true;
+    this.gauntletRivalId = String(options.gauntletRivalId ?? "").trim().toLowerCase() || null;
     this.mode = options.mode ?? MATCH_MODE.PVE;
     this.persistMatchResults = options.persistMatchResults ?? true;
     this.persistMatchResult = typeof options.persistMatchResult === "function" ? options.persistMatchResult : null;
@@ -591,11 +595,14 @@ export class GameController {
     const store = this.localAuthorityStoreFactory();
     const hostSocket = createLocalAuthoritySocket("host");
     const guestSocket = createLocalAuthoritySocket("guest");
+    const gauntletRival = this.isPve() ? getGauntletRivalById(this.gauntletRivalId) : null;
     const names = this.isLocalPvp()
       ? this.getLocalAuthorityNames()
       : {
           p1: String(this.username ?? "Player 1").trim() || "Player 1",
-          p2: this.featuredRivalId === "crownfire_duelist" ? "Crownfire Duelist" : "EleMintz AI"
+          p2:
+            gauntletRival?.displayName ??
+            (this.featuredRivalId === "crownfire_duelist" ? "Crownfire Duelist" : "EleMintz AI")
         };
     const createResult = store.createRoom(hostSocket, { username: names.p1 });
 
@@ -609,7 +616,8 @@ export class GameController {
         ? {
             bot: true,
             aiDifficulty: this.aiDifficulty,
-            ...(this.featuredRivalId ? { featuredRivalId: this.featuredRivalId } : {})
+            ...(this.featuredRivalId ? { featuredRivalId: this.featuredRivalId } : {}),
+            ...(this.gauntletRivalId ? { gauntletRivalId: this.gauntletRivalId } : {})
           }
         : {})
     });

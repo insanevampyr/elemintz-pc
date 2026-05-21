@@ -240,7 +240,7 @@ test("ai: all 8 Gauntlet rival definitions exist with rival-only identity fields
     assert.equal(typeof rival.title, "string");
     assert.equal(typeof rival.hint, "string");
     assert.ok(rival.behaviorType === "weighted" || rival.behaviorType === "loop");
-    assert.match(rival.avatarPath, /^assets\/rivals\/Gauntlet\/avatar_gauntlet_/);
+    assert.match(rival.avatarPath, /^assets\/gauntlet\/avatars\/avatar_gauntlet_/);
     assert.doesNotMatch(rival.avatarPath, /^assets\/avatars\//);
     assert.equal(Object.hasOwn(rival, "badge"), false);
     assert.equal(Object.hasOwn(rival, "background"), false);

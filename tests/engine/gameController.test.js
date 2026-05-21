@@ -7761,6 +7761,7 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
 
   app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
   app.username = "GauntletPicker";
+  app.gauntletRandom = () => 0;
   app.profile = {
     username: "GauntletPicker",
     equippedCosmetics: { background: "default_background" }
@@ -7781,8 +7782,361 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
     assert.equal(shownScreens.at(-1).name, "game");
     assert.equal(app.pveGauntletMode, true);
     assert.equal(app.pveFeaturedRivalId, null);
+    assert.deepEqual(app.gauntletRunState, {
+      active: true,
+      currentStreak: 0,
+      currentRivalIndex: 1,
+      currentRivalId: "tide_witch",
+      rivalBag: [
+        "stonewall",
+        "storm_chaser",
+        "inferno_drummer",
+        "river_spiral",
+        "stone_march",
+        "fourfold_monk",
+        "pyro_maniac"
+      ],
+      lastRivalId: null,
+      defeatedRivalIds: [],
+      lastResult: null
+    });
     assert.equal(app.gameController?.featuredRivalId, null);
+    assert.equal(app.gameController?.gauntletRivalId, "tide_witch");
+    assert.equal(app.gameController?.match?.gauntletRivalId, "tide_witch");
     assert.equal(app.gameController?.aiDifficulty, "normal");
+    assert.equal(shownScreens.at(-1).context.opponentDisplay.name, "Tide Witch");
+    assert.equal(shownScreens.at(-1).context.opponentDisplay.title, "Tidecaller");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: gauntlet start creates a shuffled rival bag and first rival is pulled from it", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.gauntletRandom = () => 0;
+
+  const firstRival = app.startFreshGauntletRun();
+
+  assert.equal(firstRival?.id, "tide_witch");
+  assert.deepEqual(app.gauntletRunState.rivalBag, [
+    "stonewall",
+    "storm_chaser",
+    "inferno_drummer",
+    "river_spiral",
+    "stone_march",
+    "fourfold_monk",
+    "pyro_maniac"
+  ]);
+  assert.equal(app.gauntletRunState.currentRivalId, "tide_witch");
+  assert.equal(app.gauntletRunState.lastRivalId, null);
+});
+
+test("appController: gauntlet win increments streak and pulls the next rival from the bag", () => {
+  const starts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 0,
+    currentRivalIndex: 1,
+    currentRivalId: "tide_witch",
+    rivalBag: ["stonewall", "storm_chaser", "inferno_drummer"],
+    lastRivalId: null,
+    defeatedRivalIds: [],
+    lastResult: null
+  };
+
+  const continued = app.handleGauntletMatchCompletion({ winner: "p1", endReason: "normal" });
+
+  assert.equal(continued, true);
+  assert.deepEqual(app.gauntletRunState, {
+    active: true,
+    currentStreak: 1,
+    currentRivalIndex: 2,
+    currentRivalId: "stonewall",
+    rivalBag: ["storm_chaser", "inferno_drummer"],
+    lastRivalId: "tide_witch",
+    defeatedRivalIds: ["tide_witch"],
+    lastResult: "win"
+  });
+  assert.deepEqual(starts, [
+    {
+      mode: MATCH_MODE.PVE,
+      options: {
+        gauntletMode: true,
+        gauntletContinue: true,
+        gauntletRivalId: "stonewall"
+      }
+    }
+  ]);
+});
+
+test("appController: gauntlet bag use never selects the same rival twice in a row", () => {
+  const starts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 3,
+    currentRivalIndex: 0,
+    currentRivalId: "pyro_maniac",
+    rivalBag: ["pyro_maniac", "tide_witch", "stonewall"],
+    lastRivalId: null,
+    defeatedRivalIds: [],
+    lastResult: null
+  };
+
+  const continued = app.handleGauntletMatchCompletion({ winner: "p1", endReason: "normal" });
+
+  assert.equal(continued, true);
+  assert.notEqual(app.gauntletRunState.currentRivalId, "pyro_maniac");
+  assert.equal(app.gauntletRunState.currentRivalId, "tide_witch");
+  assert.equal(starts.at(-1)?.options?.gauntletRivalId, "tide_witch");
+});
+
+test("appController: gauntlet bag refill recreates all 8 rivals and avoids an immediate repeat", () => {
+  const starts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.gauntletRandom = () => 0;
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 7,
+    currentRivalIndex: 1,
+    currentRivalId: "tide_witch",
+    rivalBag: [],
+    lastRivalId: null,
+    defeatedRivalIds: ["pyro_maniac"],
+    lastResult: null
+  };
+
+  const continued = app.handleGauntletMatchCompletion({ winner: "p1", endReason: "normal" });
+
+  assert.equal(continued, true);
+  assert.equal(app.gauntletRunState.currentStreak, 8);
+  assert.equal(app.gauntletRunState.lastRivalId, "tide_witch");
+  assert.notEqual(app.gauntletRunState.currentRivalId, "tide_witch");
+  assert.equal(app.gauntletRunState.currentRivalId, "stonewall");
+  assert.equal(app.gauntletRunState.currentRivalIndex, 2);
+  assert.equal(app.gauntletRunState.rivalBag.length, 7);
+  assert.deepEqual(app.gauntletRunState.rivalBag, [
+    "tide_witch",
+    "storm_chaser",
+    "inferno_drummer",
+    "river_spiral",
+    "stone_march",
+    "fourfold_monk",
+    "pyro_maniac"
+  ]);
+  assert.equal(app.gauntletRunState.defeatedRivalIds.at(-1), "tide_witch");
+  assert.deepEqual(starts.at(-1), {
+    mode: MATCH_MODE.PVE,
+    options: {
+      gauntletMode: true,
+      gauntletContinue: true,
+      gauntletRivalId: "stonewall"
+    }
+  });
+});
+
+test("appController: gauntlet loss ends the run without starting another match", () => {
+  const starts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 2,
+    currentRivalIndex: 2,
+    currentRivalId: "stonewall",
+    rivalBag: ["storm_chaser"],
+    lastRivalId: "tide_witch",
+    defeatedRivalIds: ["pyro_maniac", "tide_witch"],
+    lastResult: null
+  };
+
+  const continued = app.handleGauntletMatchCompletion({ winner: "p2", endReason: "normal" });
+
+  assert.equal(continued, false);
+  assert.equal(app.pveGauntletMode, true);
+  assert.equal(app.gauntletRunState.active, false);
+  assert.equal(app.gauntletRunState.lastResult, "loss");
+  assert.deepEqual(starts, []);
+});
+
+test("appController: gauntlet draw ends the run without starting another match", () => {
+  const starts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 1,
+    currentRivalIndex: 1,
+    currentRivalId: "tide_witch",
+    rivalBag: ["stonewall"],
+    lastRivalId: "pyro_maniac",
+    defeatedRivalIds: ["pyro_maniac"],
+    lastResult: null
+  };
+
+  const continued = app.handleGauntletMatchCompletion({ winner: "draw", endReason: "hand_exhaustion" });
+
+  assert.equal(continued, false);
+  assert.equal(app.pveGauntletMode, true);
+  assert.equal(app.gauntletRunState.active, false);
+  assert.equal(app.gauntletRunState.lastResult, "draw");
+  assert.deepEqual(starts, []);
+});
+
+test("appController: starting non-gauntlet PvE clears temporary gauntlet run state", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletReset";
+  app.profile = { username: "GauntletReset" };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 4,
+    currentRivalIndex: 3,
+    currentRivalId: "storm_chaser",
+    rivalBag: ["inferno_drummer"],
+    lastRivalId: "stonewall",
+    defeatedRivalIds: ["pyro_maniac"],
+    lastResult: "win"
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE, { aiDifficulty: "hard" });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.pveGauntletMode, false);
+    assert.deepEqual(app.gauntletRunState, {
+      active: false,
+      currentStreak: 0,
+      currentRivalIndex: -1,
+      currentRivalId: null,
+      rivalBag: [],
+      lastRivalId: null,
+      defeatedRivalIds: [],
+      lastResult: null
+    });
+    assert.equal(app.gameController?.gauntletRivalId, null);
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: starting Featured Rival clears temporary gauntlet run state", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletToRival";
+  app.profile = { username: "GauntletToRival", equippedCosmetics: { background: "default_background" } };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 2,
+    currentRivalIndex: 2,
+    currentRivalId: "stonewall",
+    rivalBag: ["storm_chaser"],
+    lastRivalId: "tide_witch",
+    defeatedRivalIds: ["pyro_maniac"],
+    lastResult: "win"
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE, { featuredRivalId: "crownfire_duelist" });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.pveGauntletMode, false);
+    assert.equal(app.pveFeaturedRivalId, "crownfire_duelist");
+    assert.equal(app.gameController?.gauntletRivalId, null);
+    assert.equal(app.gameController?.featuredRivalId, "crownfire_duelist");
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();
@@ -10432,6 +10786,48 @@ test("gameController: PvE authoritative restart resets to a fresh room-backed st
     controller.stopTimer();
     controller.stopMatchClock();
     globalThis.window = originalWindow;
+  }
+});
+
+test("rooms: gauntlet rival bot branch activates only when gauntletRivalId exists", () => {
+  const originalMathRandom = Math.random;
+  const gauntletStore = createRoomStore({ random: () => 0.75 });
+  const gauntletHost = { id: "gauntlet-host" };
+  const gauntletGuest = { id: "gauntlet-guest" };
+  const gauntletRoom = gauntletStore.createRoom(gauntletHost, { username: "Host" }).room;
+  const gauntletJoin = gauntletStore.joinRoom(gauntletGuest, gauntletRoom.roomCode, {
+    username: "Loop Rival",
+    bot: true,
+    aiDifficulty: "easy",
+    gauntletRivalId: "fourfold_monk"
+  });
+
+  try {
+    Math.random = () => 0.75;
+
+    assert.equal(gauntletJoin.ok, true);
+    assert.equal(gauntletJoin.room.gauntletRivalId, "fourfold_monk");
+    const gauntletSubmit = gauntletStore.submitMove(gauntletHost.id, "fire");
+    assert.equal(gauntletSubmit.ok, true);
+    assert.equal(gauntletSubmit.roundResult?.guestMove, "fire");
+
+    const normalStore = createRoomStore({ random: () => 0.75 });
+    const normalHost = { id: "normal-host" };
+    const normalGuest = { id: "normal-guest" };
+    const normalRoom = normalStore.createRoom(normalHost, { username: "Host" }).room;
+    const normalJoin = normalStore.joinRoom(normalGuest, normalRoom.roomCode, {
+      username: "Easy Bot",
+      bot: true,
+      aiDifficulty: "easy"
+    });
+
+    assert.equal(normalJoin.ok, true);
+    assert.equal(normalJoin.room.gauntletRivalId, null);
+    const normalSubmit = normalStore.submitMove(normalHost.id, "fire");
+    assert.equal(normalSubmit.ok, true);
+    assert.equal(normalSubmit.roundResult?.guestMove, "wind");
+  } finally {
+    Math.random = originalMathRandom;
   }
 });
 

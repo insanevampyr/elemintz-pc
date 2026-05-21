@@ -27,7 +27,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Flame Addict",
     behaviorType: "weighted",
     hint: "Favors Fire heavily, but still mixes in other elements.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_pyro_maniac.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_pyro_maniac.png",
     weights: {
       fire: 50,
       earth: 20,
@@ -41,7 +41,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Tidecaller",
     behaviorType: "weighted",
     hint: "Favors Water and tries to drown Fire-heavy players.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_tide_witch.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_tide_witch.png",
     weights: {
       water: 50,
       fire: 20,
@@ -55,7 +55,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Iron Root",
     behaviorType: "weighted",
     hint: "Favors Earth and plays a heavy defensive style.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_stonewall.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_stonewall.png",
     weights: {
       earth: 50,
       fire: 20,
@@ -69,7 +69,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Storm Caller",
     behaviorType: "weighted",
     hint: "Favors Wind and pressures Water-based play.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_storm_chaser.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_storm_chaser.png",
     weights: {
       wind: 50,
       earth: 20,
@@ -83,7 +83,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Warbeat Flame",
     behaviorType: "loop",
     hint: "Repeats a steady battle rhythm with extra Fire pressure.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_inferno_drummer.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_inferno_drummer.png",
     loop: ["fire", "fire", "earth", "earth", "wind", "wind", "water", "water", "earth", "earth"]
   }),
   freezeRivalDefinition({
@@ -92,7 +92,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Flow Seer",
     behaviorType: "loop",
     hint: "Repeats a flowing pattern that cycles through Water, Earth, and Wind.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_river_spiral.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_river_spiral.png",
     loop: ["water", "earth", "wind", "water", "earth", "wind", "fire", "water", "earth", "wind"]
   }),
   freezeRivalDefinition({
@@ -101,7 +101,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Mountain Step",
     behaviorType: "loop",
     hint: "Repeats a heavy Earth pattern with occasional elemental shifts.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_stone_march.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_stone_march.png",
     loop: ["earth", "earth", "fire", "earth", "wind", "earth", "water", "earth", "fire", "wind"]
   }),
   freezeRivalDefinition({
@@ -110,7 +110,7 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     title: "Element Keeper",
     behaviorType: "loop",
     hint: "Repeats a balanced four-element discipline pattern.",
-    avatarPath: "assets/rivals/Gauntlet/avatar_gauntlet_fourfold_monk.png",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_fourfold_monk.png",
     loop: ["fire", "water", "earth", "wind", "earth", "water", "fire", "water", "earth", "wind"]
   })
 ]);

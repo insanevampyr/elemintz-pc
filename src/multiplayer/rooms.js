@@ -474,12 +474,14 @@ function buildPlayer(socket, payload = {}, identity = null) {
     ? normalizeAiDifficulty(payload?.aiDifficulty)
     : null;
   const featuredRivalId = bot ? normalizeFeaturedRivalId(payload?.featuredRivalId) : null;
+  const gauntletRivalId = bot ? normalizeGauntletRivalId(payload?.gauntletRivalId) : null;
   return {
     socketId: socket.id,
     connected: true,
     bot,
     ...(aiDifficulty ? { aiDifficulty } : {}),
     ...(featuredRivalId ? { featuredRivalId } : {}),
+    ...(gauntletRivalId ? { gauntletRivalId } : {}),
     ...(username ? { username } : {}),
     ...(sessionId ? { sessionId } : {}),
     equippedCosmetics: normalizeEquippedCosmetics(payload.equippedCosmetics),
@@ -496,6 +498,11 @@ function normalizeAiDifficulty(value) {
 function normalizeFeaturedRivalId(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return Object.hasOwn(FEATURED_RIVAL_HAND_CONFIGS, normalized) ? normalized : null;
+}
+
+function normalizeGauntletRivalId(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return getGauntletRivalById(normalized)?.id ?? null;
 }
 
 function getHandConfigForRoom(room) {
@@ -1808,6 +1815,7 @@ function cloneRoom(room) {
     host: room.host ? { ...room.host } : null,
     guest: room.guest ? { ...room.guest } : null,
     featuredRivalId: room.featuredRivalId ?? null,
+    gauntletRivalId: room.gauntletRivalId ?? null,
     status: room.status,
     closingAt: room.closingAt ?? null,
     disconnectState: {
@@ -1965,6 +1973,7 @@ export function createRoomStore({ random = Math.random } = {}) {
         host: buildPlayer(socket, payload, identity),
         guest: null,
         featuredRivalId: null,
+        gauntletRivalId: null,
         status: "waiting",
         ...createInitialMatchState(),
         ...createInitialTauntState(),
@@ -2121,6 +2130,7 @@ export function createRoomStore({ random = Math.random } = {}) {
 
       room.guest = buildPlayer(socket, { ...payload, username }, identity);
       room.featuredRivalId = normalizeFeaturedRivalId(room.guest?.featuredRivalId);
+      room.gauntletRivalId = normalizeGauntletRivalId(room.guest?.gauntletRivalId);
       room.status = "full";
       resetHandState(room);
       resetMoveState(room);
