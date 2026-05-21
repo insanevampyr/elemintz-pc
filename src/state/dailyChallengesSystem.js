@@ -386,6 +386,8 @@ const DAILY_BONUS_POOL_BY_ID = Object.freeze(
 const WEEKLY_BONUS_POOL_BY_ID = Object.freeze(
   Object.fromEntries(WEEKLY_BONUS_CHALLENGE_POOL.map((item) => [item.id, item]))
 );
+const DAILY_BONUS_ID_SET = new Set(DAILY_BONUS_CHALLENGE_POOL.map((item) => item.id));
+const WEEKLY_BONUS_ID_SET = new Set(WEEKLY_BONUS_CHALLENGE_POOL.map((item) => item.id));
 
 function getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) {
   if (!isCompleted || isQuit) {
@@ -954,7 +956,8 @@ function challengeProgressValue(challenge, progress) {
   return Math.max(0, value);
 }
 
-function buildChallengeView(definitions, state, nextResetMs, icon, nowMs) {
+function buildChallengeView(definitions, state, nextResetMs, icon, nowMs, options = {}) {
+  const bonusIdSet = options.bonusIdSet instanceof Set ? options.bonusIdSet : null;
   return {
     lastReset: state.lastReset,
     resetAt: new Date(nextResetMs).toISOString(),
@@ -971,6 +974,7 @@ function buildChallengeView(definitions, state, nextResetMs, icon, nowMs) {
         goal: challenge.goal,
         progress: Math.min(challenge.goal, progressValue),
         completed: isCompleted,
+        isBonus: bonusIdSet ? bonusIdSet.has(challenge.id) : false,
         icon
       };
     })
@@ -1285,14 +1289,16 @@ export function getDailyChallengesView(profile, nowMs = Date.now()) {
         ensured.challenges.daily,
         ensured.dailyResetWindow.nextResetMs,
         "\u2B50",
-        nowMs
+        nowMs,
+        { bonusIdSet: DAILY_BONUS_ID_SET }
       ),
       weekly: buildChallengeView(
         weeklyActiveDefinitions,
         ensured.challenges.weekly,
         ensured.weeklyResetWindow.nextResetMs,
         "\uD83C\uDFC6",
-        nowMs
+        nowMs,
+        { bonusIdSet: WEEKLY_BONUS_ID_SET }
       )
     },
     level: getLevelProgress(normalizedProfile)

@@ -1516,6 +1516,7 @@ body {
     linear-gradient(180deg, rgba(20, 45, 68, 0.88), rgba(11, 28, 44, 0.92));
   padding: 12px 13px;
   display: grid;
+  grid-template-rows: auto minmax(0, auto) auto;
   gap: 8px;
 }
 
@@ -1547,6 +1548,13 @@ body {
 
 .menu-announcement-card__title {
   margin: 0;
+}
+
+.menu-announcement-card__content {
+  max-block-size: min(15rem, 34svh);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .menu-announcement-card__message {
@@ -1851,6 +1859,10 @@ body {
 @media (max-width: 760px) {
   .menu-tile {
     min-height: 118px;
+  }
+
+  .menu-announcement-card__content {
+    max-block-size: min(12.5rem, 28svh);
   }
 
   .achievement-grid-profile {

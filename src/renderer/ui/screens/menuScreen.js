@@ -61,11 +61,61 @@ function getChallengeSummary(bucket) {
   return { completed, total };
 }
 
+function isFeaturedRivalChallenge(challenge) {
+  return /^daily_defeat_featured_rival_|^weekly_defeat_featured_rival_/.test(
+    String(challenge?.id ?? "").trim()
+  );
+}
+
+function getSafeGoal(challenge) {
+  return Math.max(1, Number(challenge?.goal ?? 1) || 1);
+}
+
+function getSafeProgress(challenge) {
+  return Math.max(0, Number(challenge?.progress ?? 0) || 0);
+}
+
+function comparePreviewChallenges(left, right) {
+  const leftCompleted = left?.completed ? 1 : 0;
+  const rightCompleted = right?.completed ? 1 : 0;
+  if (leftCompleted !== rightCompleted) {
+    return rightCompleted - leftCompleted;
+  }
+
+  const leftFeatured = isFeaturedRivalChallenge(left) ? 1 : 0;
+  const rightFeatured = isFeaturedRivalChallenge(right) ? 1 : 0;
+  if (leftFeatured !== rightFeatured) {
+    return rightFeatured - leftFeatured;
+  }
+
+  const leftBonus = left?.isBonus ? 1 : 0;
+  const rightBonus = right?.isBonus ? 1 : 0;
+  if (leftBonus !== rightBonus) {
+    return rightBonus - leftBonus;
+  }
+
+  const leftRatio = Math.min(1, getSafeProgress(left) / getSafeGoal(left));
+  const rightRatio = Math.min(1, getSafeProgress(right) / getSafeGoal(right));
+  if (leftRatio !== rightRatio) {
+    return rightRatio - leftRatio;
+  }
+
+  const leftProgress = getSafeProgress(left);
+  const rightProgress = getSafeProgress(right);
+  if (leftProgress !== rightProgress) {
+    return rightProgress - leftProgress;
+  }
+
+  return (left?._previewIndex ?? 0) - (right?._previewIndex ?? 0);
+}
+
 function getPreviewChallenges(bucket, limit = 3) {
   const challenges = bucket?.challenges ?? [];
-  const unfinished = challenges.filter((item) => !item?.completed);
-  const completed = challenges.filter((item) => item?.completed);
-  return [...unfinished, ...completed].slice(0, limit);
+  return challenges
+    .map((item, index) => ({ ...item, _previewIndex: index }))
+    .sort(comparePreviewChallenges)
+    .slice(0, limit)
+    .map(({ _previewIndex, ...item }) => item);
 }
 
 export function renderMenuChallengePreview(title, iconText, bucket) {
@@ -134,7 +184,7 @@ function renderMenuAnnouncementCard(announcement) {
         <span class="menu-announcement-card__label">Announcement</span>
         ${type ? `<span class="menu-announcement-card__type">${escapeHtml(type)}</span>` : ""}
       </div>
-      <div class="stack-xs">
+      <div class="stack-xs menu-announcement-card__content">
         <h3 class="section-title menu-announcement-card__title">${escapeHtml(announcement.title)}</h3>
         <div class="menu-announcement-card__message-group">
           ${renderEscapedAnnouncementMessage(announcement.message)}
