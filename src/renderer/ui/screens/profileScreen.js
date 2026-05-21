@@ -394,11 +394,18 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
     viewedProfile.cosmetics?.background ??
     "default_background";
   const viewedBackground = getArenaBackground(viewedBackgroundId);
+  const headingText =
+    options.headingText === undefined ? `Viewing: ${viewedProfile.username}` : options.headingText;
+  const showHeading = options.showHeading !== false;
+  const wrapperClassName = String(options.wrapperClassName ?? "").trim();
+  const wrapperClassAttribute = wrapperClassName
+    ? `panel stack-sm viewed-profile-panel ${wrapperClassName}`
+    : "panel stack-sm viewed-profile-panel";
 
   return `
-    <section class="panel stack-sm viewed-profile-panel" style="background-image: url('${viewedBackground}')">
+    <section class="${wrapperClassAttribute}" style="background-image: url('${viewedBackground}')">
       <div class="viewed-profile-content">
-        <h3 class="section-title">Viewing: ${viewedProfile.username}</h3>
+        ${showHeading && headingText ? `<h3 class="section-title">${headingText}</h3>` : ""}
         ${renderProfileIdentityHeader({
           username: viewedProfile.username,
           avatarId: viewedProfile.equippedCosmetics?.avatar,
@@ -470,6 +477,23 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
   `;
 }
 
+function renderViewedProfileModalBody(viewedProfile, options = {}) {
+  if (!viewedProfile) {
+    return "";
+  }
+
+  return `
+    <div class="viewed-profile-modal-content stack-sm">
+      <p class="text-muted viewed-profile-modal-intro">Read-only player profile</p>
+      ${renderReadOnlyProfile(viewedProfile, {
+        achievementsExpanded: options.achievementsExpanded,
+        showHeading: false,
+        wrapperClassName: "viewed-profile-panel-modal"
+      })}
+    </div>
+  `;
+}
+
 export const profileScreen = {
   render(context) {
     const profile = context.profile;
@@ -480,7 +504,6 @@ export const profileScreen = {
     const unlockedAchievementCount = unlockedAchievements.length;
     const totalAchievementCount = achievementCatalog.length;
     const profileAchievementsExpanded = Boolean(context.profileAchievementsExpanded);
-    const viewedProfileAchievementsExpanded = Boolean(context.viewedProfileAchievementsExpanded);
     const searchResults = context.searchResults ?? [];
     const cosmetics = context.cosmetics;
     const onlinePvpStats = profile.modeStats?.online_pvp ?? {};
@@ -579,11 +602,6 @@ export const profileScreen = {
               : ""
           }
 
-          ${renderReadOnlyProfile(context.viewedProfile, {
-            achievementsExpanded: viewedProfileAchievementsExpanded
-          })}
-          ${context.viewedProfile ? '<button id="clear-viewed-profile-btn" class="btn">Close Viewed Profile</button>' : ""}
-
           </div>
         </section>
       </section>
@@ -631,18 +649,10 @@ export const profileScreen = {
         await context.actions.viewProfile(username);
       });
     });
-
-    const clearViewed = document.getElementById("clear-viewed-profile-btn");
-    if (clearViewed) {
-      clearViewed.addEventListener("click", context.actions.clearViewed);
-    }
-
-    const viewedAchievementsToggle = document.getElementById("viewed-profile-achievements-toggle-btn");
-    if (viewedAchievementsToggle && context.actions.toggleViewedProfileAchievements) {
-      viewedAchievementsToggle.addEventListener("click", context.actions.toggleViewedProfileAchievements);
-    }
   }
 };
+
+profileScreen.renderViewedProfileModalBody = renderViewedProfileModalBody;
 
 
 

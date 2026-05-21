@@ -6979,8 +6979,7 @@ export class AppController {
         },
         searchProfiles: async (queryValue) => {
           this.profileSearchQuery = queryValue;
-          this.viewedProfileUsername = null;
-          this.viewedProfileAchievementsExpanded = false;
+          this.clearViewedProfileSelection();
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         viewProfile: async (username) => {
@@ -6989,15 +6988,61 @@ export class AppController {
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         clearViewed: async () => {
-          this.viewedProfileUsername = null;
-          this.viewedProfileAchievementsExpanded = false;
+          this.clearViewedProfileSelection();
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         back: () => this.showMenu()
       }
     });
+    if (viewedProfile) {
+      this.showViewedProfileModal(viewedProfile);
+    }
     this.updateOnlineReconnectReminderModal();
     Promise.resolve().then(() => this.maybeShowMilestoneChestRewardNotice());
+  }
+
+  clearViewedProfileSelection() {
+    this.viewedProfileUsername = null;
+    this.viewedProfileAchievementsExpanded = false;
+  }
+
+  bindViewedProfileModalControls() {
+    const viewedAchievementsToggle =
+      globalThis.document?.getElementById?.("viewed-profile-achievements-toggle-btn") ?? null;
+    if (!viewedAchievementsToggle) {
+      return;
+    }
+
+    viewedAchievementsToggle.addEventListener("click", async () => {
+      this.viewedProfileAchievementsExpanded = !this.viewedProfileAchievementsExpanded;
+      await this.showProfile({ preserveAchievementVisibility: true, preserveModal: true });
+    });
+  }
+
+  showViewedProfileModal(viewedProfile) {
+    if (!viewedProfile) {
+      return;
+    }
+
+    this.modalManager.show({
+      title: `Viewing: ${viewedProfile.username}`,
+      bodyHtml: profileScreen.renderViewedProfileModalBody(viewedProfile, {
+        achievementsExpanded: this.viewedProfileAchievementsExpanded
+      }),
+      modalClassName: "viewed-profile-modal",
+      bodyClassName: "viewed-profile-modal-body",
+      actions: [
+        {
+          label: "Close",
+          onClick: async () => {
+            this.modalManager.hide();
+            this.clearViewedProfileSelection();
+            await this.showProfile({ preserveAchievementVisibility: true, preserveModal: true });
+          }
+        }
+      ]
+    });
+    this.bindViewedProfileModalControls();
   }
 
   async showDailyChallenges() {

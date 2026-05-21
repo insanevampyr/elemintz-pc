@@ -18,6 +18,7 @@ import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
+import { ModalManager } from "../../src/renderer/systems/modalManager.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
 import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
@@ -3787,7 +3788,10 @@ test("ui: profile screen adds hover preview metadata for own and viewed badge an
     },
     searchResults: [],
     searchQuery: "",
-    viewedProfile: {
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+  const viewedProfileHtml = profileScreen.renderViewedProfileModalBody({
       username: "Rival",
       title: "Elementalist",
       wins: 5,
@@ -3810,8 +3814,6 @@ test("ui: profile screen adds hover preview metadata for own and viewed badge an
         background: "default_background"
       },
       cosmetics: { background: "default_background" }
-    },
-    backgroundImage: "assets/EleMintzIcon.png"
   });
 
   assert.match(html, /data-preview-type="badge"/);
@@ -3820,11 +3822,11 @@ test("ui: profile screen adds hover preview metadata for own and viewed badge an
   assert.match(html, /data-preview-name="Apprentice"/);
   assert.match(html, /data-preview-description="Level Reward: Reach Level 3\."/);
   assert.match(html, /data-preview-src="[^"]*title_apprentice\.png"/);
-  assert.match(html, /data-preview-name="Arena Challenger"/);
-  assert.match(html, /data-preview-description="Level Reward: Reach Level 30\."/);
-  assert.match(html, /data-preview-name="Elementalist"/);
-  assert.match(html, /data-preview-description="Level Reward: Reach Level 20\."/);
-  assert.match(html, /data-preview-src="[^"]*title_elementalist\.png"/);
+  assert.match(viewedProfileHtml, /data-preview-name="Arena Challenger"/);
+  assert.match(viewedProfileHtml, /data-preview-description="Level Reward: Reach Level 30\."/);
+  assert.match(viewedProfileHtml, /data-preview-name="Elementalist"/);
+  assert.match(viewedProfileHtml, /data-preview-description="Level Reward: Reach Level 20\."/);
+  assert.match(viewedProfileHtml, /data-preview-src="[^"]*title_elementalist\.png"/);
 });
 
 test("ui: missing badge and missing title art stay graceful in profile identity hover markup", () => {
@@ -6050,48 +6052,9 @@ test("ui: player hand summary counts are derived from full hand contents and sum
   assert.match(html, /Water count x2/);
 });
 
-test("ui: viewed profile shows only unlocked achievements with badge images", () => {
-  const html = profileScreen.render({
-    profile: {
-      username: "Viewer",
-      title: "Initiate",
-      wins: 0,
-      losses: 0,
-      warsEntered: 0,
-      warsWon: 0,
-      longestWar: 0,
-      cardsCaptured: 0,
-      gamesPlayed: 0,
-      bestWinStreak: 0,
-      tokens: 0,
-      supporterPass: false,
-      achievements: {},
-      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate" }
-    },
-    cosmetics: {
-      equipped: {
-        avatar: "default_avatar",
-        cardBack: "default_card_back",
-        background: "default_background",
-        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
-        badge: "none",
-        title: "Initiate"
-      },
-      catalog: {
-        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
-        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
-        background: [{ id: "default_background", name: "Default", owned: true }],
-        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }, { id: "default_water_card", name: "Core Water", element: "water", owned: true }, { id: "default_earth_card", name: "Core Earth", element: "earth", owned: true }, { id: "default_wind_card", name: "Core Wind", element: "wind", owned: true }],
-        badge: [{ id: "none", name: "No Badge", owned: true }],
-        title: [{ id: "Initiate", name: "Initiate", owned: true }]
-      }
-    },
-    searchResults: [],
-    searchQuery: "",
-    profileAchievementsExpanded: false,
-    viewedProfileAchievementsExpanded: true,
-    viewedProfile: {
+test("ui: viewed profile modal shows only unlocked achievements with badge images", () => {
+  const html = profileScreen.renderViewedProfileModalBody(
+    {
       username: "Rival",
       title: "Initiate",
       playerLevel: 4,
@@ -6115,10 +6078,11 @@ test("ui: viewed profile shows only unlocked achievements with badge images", ()
       },
       equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
     },
-    backgroundImage: "assets/EleMintzIcon.png"
-  });
+    {
+      achievementsExpanded: true
+    }
+  );
 
-  assert.match(html, /Viewing: Rival/);
   assert.match(html, /profile-stat-label">Level<\/span>\s*<strong class="profile-stat-value">4<\/strong>/);
   assert.match(html, /profile-stat-label">XP<\/span>\s*<strong class="profile-stat-value">83<\/strong>/);
   assert.match(html, /profile-stat-label">Tokens<\/span>\s*<strong class="profile-stat-value">245<\/strong>/);
@@ -6485,7 +6449,52 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
     backgroundImage: "assets/EleMintzIcon.png"
   });
 
-  assert.match(html, /Viewing: Rival/);
+  assert.doesNotMatch(html, /Viewing: Rival/);
+  assert.doesNotMatch(html, /viewed-profile-panel/);
+  assert.doesNotMatch(html, /Close Viewed Profile/);
+  assert.match(html, /profile-search-input/);
+  assert.doesNotMatch(html, /id="cosmetic-form"/);
+});
+
+test("ui: viewed profile modal body keeps read-only profile sections and gauntlet stats", () => {
+  const html = profileScreen.renderViewedProfileModalBody(
+    {
+      username: "Rival",
+      title: "Initiate",
+      playerLevel: 4,
+      playerXP: 83,
+      tokens: 245,
+      gamesPlayed: 7,
+      warsEntered: 3,
+      warsWon: 2,
+      longestWar: 4,
+      bestWinStreak: 3,
+      wins: 2,
+      losses: 3,
+      cardsCaptured: 10,
+      featuredRivalWins: 4,
+      gauntletBestStreak: 6,
+      gauntletRuns: 4,
+      gauntletWins: 9,
+      gauntletLosses: 3,
+      gauntletRivalsDefeated: 9,
+      achievements: {
+        first_flame: { count: 1 },
+        quick_draw: { count: 0 }
+      },
+      modeStats: {
+        pve: { wins: 2, losses: 1, gamesPlayed: 3, cardsCaptured: 6, warsEntered: 2, warsWon: 1, longestWar: 4 },
+        local_pvp: { wins: 0, losses: 2, gamesPlayed: 2, cardsCaptured: 3, warsEntered: 1, warsWon: 0, longestWar: 2 },
+        online_pvp: { wins: 1, losses: 3, gamesPlayed: 4, cardsCaptured: 7, warsEntered: 2, warsWon: 1, longestWar: 3 }
+      },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
+    },
+    {
+      achievementsExpanded: false
+    }
+  );
+
+  assert.match(html, /Read-only player profile/);
   assert.match(html, />Account Snapshot</);
   assert.match(html, />Overall Record</);
   assert.match(html, />Battle Stats</);
@@ -6505,56 +6514,200 @@ test("ui: viewed profile achievements default collapsed while keeping count visi
   assert.match(html, /Gauntlet Losses/);
   assert.match(html, /Rivals Defeated/);
   assert.match(html, /profile-stat-value">4<\/strong>/);
-  assert.match(html, /Close Viewed Profile/);
-  assert.doesNotMatch(html, /firstFlame\.png/);
-  assert.match(html, /profile-search-input/);
   assert.doesNotMatch(html, /id="cosmetic-form"/);
 });
 
-test("ui: viewed profile renders derived level correctly on first render", () => {
-  const html = profileScreen.render({
-    profile: {
-      username: "Viewer",
+test("ui: appController opens searched profiles in a read-only modal instead of inline", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const hideCalls = [];
+  const ownProfile = {
+    ...createProfileScreenContext().profile,
+    username: "Owner",
+    title: "Initiate",
+    playerLevel: 8,
+    playerXP: 140,
+    equippedCosmetics: {
+      avatar: "default_avatar",
       title: "Initiate",
-      wins: 0,
-      losses: 0,
-      warsEntered: 0,
-      warsWon: 0,
-      longestWar: 0,
-      cardsCaptured: 0,
-      gamesPlayed: 0,
-      bestWinStreak: 0,
-      tokens: 0,
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+  const viewedProfile = {
+    username: "Rival",
+    title: "Initiate",
+    playerLevel: 4,
+    playerXP: 83,
+    tokens: 245,
+    gamesPlayed: 7,
+    warsEntered: 3,
+    warsWon: 2,
+    longestWar: 4,
+    bestWinStreak: 3,
+    wins: 2,
+    losses: 3,
+    cardsCaptured: 10,
+    featuredRivalWins: 4,
+    gauntletBestStreak: 6,
+    gauntletRuns: 4,
+    gauntletWins: 9,
+    gauntletLosses: 3,
+    gauntletRivalsDefeated: 9,
+    achievements: { first_flame: { count: 1 } },
+    modeStats: {
+      pve: { wins: 2, losses: 1, gamesPlayed: 3, cardsCaptured: 6, warsEntered: 2, warsWon: 1, longestWar: 4 },
+      local_pvp: { wins: 0, losses: 2, gamesPlayed: 2, cardsCaptured: 3, warsEntered: 1, warsWon: 0, longestWar: 2 },
+      online_pvp: { wins: 1, losses: 3, gamesPlayed: 4, cardsCaptured: 7, warsEntered: 2, warsWon: 1, longestWar: 3 }
+    },
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
+  };
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => hideCalls.push("hide"),
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => (username === "Rival" ? viewedProfile : ownProfile),
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [{ username: "Rival" }]
+      }
+    }
+  };
+
+  try {
+    controller.username = "Owner";
+    controller.viewedProfileUsername = "Rival";
+
+    await controller.showProfile();
+
+    assert.equal(shown.at(-1)?.screenId, "profile");
+    const ownProfileHtml = profileScreen.render(shown.at(-1).context);
+    assert.match(ownProfileHtml, /Search Player/);
+    assert.match(ownProfileHtml, /Reward Chests/);
+    assert.doesNotMatch(ownProfileHtml, /Viewing: Rival/);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Viewing: Rival");
+    assert.match(modalCalls[0].bodyHtml, /Read-only player profile/);
+    assert.match(modalCalls[0].bodyHtml, /Gauntlet Runs/);
+    assert.match(modalCalls[0].bodyHtml, /Achievements/);
+    assert.equal(modalCalls[0].actions[0].label, "Close");
+
+    await modalCalls[0].actions[0].onClick();
+
+    assert.equal(hideCalls.length, 1);
+    assert.equal(controller.viewedProfileUsername, null);
+    assert.equal(controller.viewedProfileAchievementsExpanded, false);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(shown.at(-1)?.screenId, "profile");
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: viewed profile modal reuses a single overlay and updates when another player is opened", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const ownProfile = {
+    ...createProfileScreenContext().profile,
+    username: "Owner",
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+  const profiles = {
+    Owner: ownProfile,
+    Rival: {
+      username: "Rival",
+      title: "Initiate",
+      playerLevel: 4,
+      playerXP: 83,
       achievements: {},
       modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
     },
-    cosmetics: {
-      equipped: {
-        avatar: "default_avatar",
-        cardBack: "default_card_back",
-        background: "default_background",
-        elementCardVariant: {
-          fire: "default_fire_card",
-          water: "default_water_card",
-          earth: "default_earth_card",
-          wind: "default_wind_card"
-        },
-        badge: "none",
-        title: "Initiate"
-      },
-      catalog: {
-        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
-        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
-        background: [{ id: "default_background", name: "Default", owned: true }],
-        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
-        badge: [{ id: "none", name: "No Badge", owned: true }],
-        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+    RivalTwo: {
+      username: "RivalTwo",
+      title: "Initiate",
+      playerLevel: 5,
+      playerXP: 120,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
+    }
+  };
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async (username) => profiles[username] ?? ownProfile,
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [{ username: "Rival" }, { username: "RivalTwo" }]
       }
-    },
-    searchResults: [],
-    searchQuery: "",
-    viewedProfile: {
+    }
+  };
+
+  try {
+    controller.username = "Owner";
+    controller.viewedProfileUsername = "Rival";
+    await controller.showProfile();
+    controller.viewedProfileUsername = "RivalTwo";
+    await controller.showProfile({ preserveAchievementVisibility: true, preserveModal: true });
+
+    assert.equal(shown.at(-1)?.screenId, "profile");
+    assert.equal(modalCalls.length, 2);
+    assert.equal(modalCalls[0].title, "Viewing: Rival");
+    assert.equal(modalCalls[1].title, "Viewing: RivalTwo");
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: viewed profile renders derived level correctly on first render", () => {
+  const html = profileScreen.renderViewedProfileModalBody({
       username: "LookupUser",
       title: "Initiate",
       playerLevel: 4,
@@ -6565,8 +6718,6 @@ test("ui: viewed profile renders derived level correctly on first render", () =>
       achievements: {},
       modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
       equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
-    },
-    backgroundImage: "assets/EleMintzIcon.png"
   });
 
   assert.match(html, /profile-stat-label">Level<\/span>\s*<strong class="profile-stat-value">4<\/strong>/);
@@ -6574,50 +6725,7 @@ test("ui: viewed profile renders derived level correctly on first render", () =>
 });
 
 test("ui: viewed profile mode hides cosmetic selectors and applies viewed background on panel", () => {
-  const html = profileScreen.render({
-    profile: {
-      username: "Viewer",
-      title: "Initiate",
-      wins: 1,
-      losses: 1,
-      warsEntered: 0,
-      warsWon: 0,
-      longestWar: 0,
-      cardsCaptured: 2,
-      gamesPlayed: 2,
-      bestWinStreak: 1,
-      tokens: 50,
-      supporterPass: false,
-      achievements: {},
-      modeStats: { pve: { wins: 1, losses: 1 }, local_pvp: { wins: 0, losses: 0 } },
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
-    },
-    cosmetics: {
-      equipped: {
-        avatar: "default_avatar",
-        cardBack: "default_card_back",
-        background: "default_background",
-        elementCardVariant: {
-          fire: "default_fire_card",
-          water: "default_water_card",
-          earth: "default_earth_card",
-          wind: "default_wind_card"
-        },
-        badge: "none",
-        title: "Initiate"
-      },
-      catalog: {
-        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
-        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
-        background: [{ id: "default_background", name: "Default", owned: true }],
-        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
-        badge: [{ id: "none", name: "No Badge", owned: true }],
-        title: [{ id: "Initiate", name: "Initiate", owned: true }]
-      }
-    },
-    searchResults: [],
-    searchQuery: "",
-    viewedProfile: {
+  const html = profileScreen.renderViewedProfileModalBody({
       username: "Rival",
       title: "Arena Founder",
       playerLevel: 6,
@@ -6634,8 +6742,6 @@ test("ui: viewed profile mode hides cosmetic selectors and applies viewed backgr
         cardBack: "default_card_back"
       },
       modeStats: { pve: { wins: 4, losses: 2 }, local_pvp: { wins: 1, losses: 1 } }
-    },
-    backgroundImage: "assets/EleMintzIcon.png"
   });
 
   assert.doesNotMatch(html, /id="cosmetic-form"/);
@@ -6708,7 +6814,7 @@ test("ui: owner profile is display-only and keeps cosmetic equip controls off th
 });
 
 test("ui: viewed profile panel falls back to default background and keeps owner page background", () => {
-  const html = profileScreen.render({
+  const ownerHtml = profileScreen.render({
     profile: {
       username: "Owner",
       title: "Initiate",
@@ -6751,24 +6857,25 @@ test("ui: viewed profile panel falls back to default background and keeps owner 
     },
     searchResults: [],
     searchQuery: "",
-    viewedProfile: {
-      username: "NoBgUser",
-      title: "Initiate",
-      playerLevel: 1,
-      playerXP: 0,
-      wins: 0,
-      losses: 0,
-      cardsCaptured: 0,
-      achievements: {},
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
-      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } }
-    },
+    viewedProfile: null,
     backgroundImage: "assets/backgrounds/lava_throne_background.png"
   });
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "NoBgUser",
+    title: "Initiate",
+    playerLevel: 1,
+    playerXP: 0,
+    wins: 0,
+    losses: 0,
+    cardsCaptured: 0,
+    achievements: {},
+    equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } }
+  });
 
-  assert.match(html, /background-image: url\('assets\/backgrounds\/lava_throne_background\.png'\)/);
-  assert.match(html, /viewed-profile-panel/);
-  assert.match(html, /background-image: url\('(?:file:.*\/)?assets\/EleMintzIcon\.png'\)/);
+  assert.match(ownerHtml, /background-image: url\('assets\/backgrounds\/lava_throne_background\.png'\)/);
+  assert.match(viewedHtml, /viewed-profile-panel/);
+  assert.match(viewedHtml, /background-image: url\('(?:file:.*\/)?assets\/EleMintzIcon\.png'\)/);
 });
 
 test("ui: title reward renders icon and text on profile and game headers", () => {
@@ -6821,45 +6928,7 @@ test("ui: title reward renders icon and text on profile and game headers", () =>
 });
 
 test("ui: fallback title icons do not create hover preview media for viewed profile or match identity titles", () => {
-  const viewedProfileHtml = profileScreen.render({
-    profile: {
-      username: "Owner",
-      title: "Initiate",
-      wins: 0,
-      losses: 0,
-      warsEntered: 0,
-      warsWon: 0,
-      longestWar: 0,
-      cardsCaptured: 0,
-      gamesPlayed: 0,
-      bestWinStreak: 0,
-      tokens: 0,
-      supporterPass: false,
-      achievements: {},
-      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
-      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
-    },
-    cosmetics: {
-      equipped: {
-        avatar: "default_avatar",
-        cardBack: "default_card_back",
-        background: "default_background",
-        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
-        badge: "none",
-        title: "Initiate"
-      },
-      catalog: {
-        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
-        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
-        background: [{ id: "default_background", name: "Default", owned: true }],
-        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
-        badge: [{ id: "none", name: "No Badge", owned: true }],
-        title: [{ id: "Initiate", name: "Initiate", image: null, owned: true }]
-      }
-    },
-    searchResults: [],
-    searchQuery: "",
-    viewedProfile: {
+  const viewedProfileHtml = profileScreen.renderViewedProfileModalBody({
       username: "Rival",
       title: "Arena Founder",
       wins: 2,
@@ -6882,8 +6951,6 @@ test("ui: fallback title icons do not create hover preview media for viewed prof
         background: "default_background"
       },
       cosmetics: { background: "default_background" }
-    },
-    backgroundImage: "assets/EleMintzIcon.png"
   });
 
   assert.match(viewedProfileHtml, /title-icon/);
@@ -7807,9 +7874,7 @@ test("ui: menu shows Daily Login section above the Challenges heading", () => {
 });
 
 test("ui: viewed profile renders gauntlet stat fallbacks as 0 when missing", () => {
-  const html = profileScreen.render({
-    ...createProfileScreenContext(),
-    viewedProfile: {
+  const html = profileScreen.renderViewedProfileModalBody({
       username: "LegacyViewed",
       title: "Initiate",
       playerLevel: 2,
@@ -7829,7 +7894,6 @@ test("ui: viewed profile renders gauntlet stat fallbacks as 0 when missing", () 
         pve: { wins: 1, losses: 0, gamesPlayed: 1, cardsCaptured: 2, warsEntered: 0, warsWon: 0, longestWar: 0 }
       },
       equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
-    }
   });
 
   assert.match(html, />Gauntlet</);
@@ -14690,6 +14754,36 @@ test("ui: profile shows the new milestone chest popup with the exact grant messa
   } finally {
     global.window = previousWindow;
   }
+});
+
+test("ui: modal manager supports large profile modal classes without changing default modal markup", () => {
+  const buttons = [];
+  const rootNode = {
+    innerHTML: "",
+    querySelectorAll: () => buttons
+  };
+  const manager = new ModalManager(rootNode);
+
+  manager.show({
+    title: "Viewing: Rival",
+    bodyHtml: "<div>Read-only player profile</div>",
+    modalClassName: "viewed-profile-modal",
+    bodyClassName: "viewed-profile-modal-body",
+    actions: [{ label: "Close", onClick: () => {} }]
+  });
+
+  assert.match(rootNode.innerHTML, /class="modal viewed-profile-modal"/);
+  assert.match(rootNode.innerHTML, /class="modal-body viewed-profile-modal-body"/);
+
+  manager.show({
+    title: "Simple Modal",
+    body: "Hello there",
+    actions: []
+  });
+
+  assert.match(rootNode.innerHTML, /class="modal"/);
+  assert.doesNotMatch(rootNode.innerHTML, /viewed-profile-modal-body/);
+  assert.match(rootNode.innerHTML, /<p class="modal-body">Hello there<\/p>/);
 });
 
 test("ui: appController fetches authenticated featured shop rotation and passes it into the store screen", async () => {

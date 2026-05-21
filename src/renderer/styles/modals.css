@@ -29,6 +29,30 @@
   margin-bottom: 12px;
 }
 
+.viewed-profile-modal {
+  width: min(1100px, 100%);
+  max-height: min(calc(100vh - 40px), 920px);
+}
+
+.viewed-profile-modal-body {
+  max-height: min(calc(100vh - 180px), 760px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.viewed-profile-modal-content {
+  display: grid;
+  gap: 12px;
+}
+
+.viewed-profile-modal-intro {
+  margin: 0;
+}
+
+.viewed-profile-panel-modal {
+  margin: 0;
+}
+
 .loadout-unlock-modal {
   display: grid;
   gap: 16px;

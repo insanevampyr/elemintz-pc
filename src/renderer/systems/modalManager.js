@@ -7,21 +7,25 @@ export class ModalManager {
     return Boolean(this.rootNode?.querySelector?.(".modal-overlay"));
   }
 
-  show({ title, body, bodyHtml, actions = [] }) {
+  show({ title, body, bodyHtml, actions = [], modalClassName = "", bodyClassName = "" }) {
     const actionButtons = actions
       .map(
         (action, index) =>
           `<button class="modal-btn" data-modal-action="${index}">${action.label}</button>`
       )
       .join("");
+    const safeModalClassName = String(modalClassName ?? "").trim();
+    const safeBodyClassName = String(bodyClassName ?? "").trim();
+    const modalClassAttribute = safeModalClassName ? `modal ${safeModalClassName}` : "modal";
+    const bodyClassAttribute = safeBodyClassName ? `modal-body ${safeBodyClassName}` : "modal-body";
 
     const content = bodyHtml
-      ? `<div class="modal-body">${bodyHtml}</div>`
-      : `<p class="modal-body">${body ?? ""}</p>`;
+      ? `<div class="${bodyClassAttribute}">${bodyHtml}</div>`
+      : `<p class="${bodyClassAttribute}">${body ?? ""}</p>`;
 
     this.rootNode.innerHTML = `
       <div class="modal-overlay">
-        <section class="modal">
+        <section class="${modalClassAttribute}">
           <h3>${title}</h3>
           ${content}
           <div class="modal-actions">${actionButtons}</div>
