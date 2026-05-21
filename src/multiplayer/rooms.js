@@ -1,4 +1,9 @@
-import { AI_DIFFICULTY, chooseAiCardIndex } from "../engine/index.js";
+import {
+  AI_DIFFICULTY,
+  chooseAiCardIndex,
+  chooseGauntletRivalCardIndex,
+  getGauntletRivalById
+} from "../engine/index.js";
 
 const ROOM_CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const ROOM_CODE_DIGITS = "23456789";
@@ -533,6 +538,23 @@ function getRecentRoundMoves(roundHistory = [], moveKey) {
 
 function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
   const aiHand = expandHandCounts(room?.guestHand);
+  const gauntletRivalId = String(
+    room?.gauntletRivalId ?? room?.guest?.gauntletRivalId ?? ""
+  )
+    .trim()
+    .toLowerCase();
+  const gauntletRival = getGauntletRivalById(gauntletRivalId);
+
+  if (gauntletRival) {
+    const gauntletIndex = chooseGauntletRivalCardIndex(aiHand, {
+      rival: gauntletRival,
+      turnIndex: Math.max(0, safeRuntimeCount(room?.roundNumber, 1) - 1)
+    });
+    if (Number.isInteger(gauntletIndex) && gauntletIndex >= 0 && gauntletIndex < aiHand.length) {
+      return aiHand[gauntletIndex] ?? null;
+    }
+  }
+
   const aiIndex = chooseAiCardIndex(aiHand, {
     difficulty: normalizeAiDifficulty(room?.guest?.aiDifficulty),
     publicState: {

@@ -1,4 +1,5 @@
 import { compareElements, ELEMENTS } from "./rules.js";
+import { resolveGauntletRivalById } from "./gauntletRivals.js";
 
 export const AI_DIFFICULTY = Object.freeze({
   EASY: "easy",
@@ -8,6 +9,15 @@ export const AI_DIFFICULTY = Object.freeze({
 
 function randomIndex(hand, rng) {
   return Math.floor(rng() * hand.length);
+}
+
+function buildAvailableElementEntries(hand) {
+  return hand
+    .map((card, index) => ({
+      index,
+      element: normalizeElement(card)
+    }))
+    .filter((entry) => entry.element && ELEMENTS.includes(entry.element));
 }
 
 function normalizeElement(card) {
@@ -198,6 +208,102 @@ function chooseWeightedHardCard(scoreEntries, rng) {
   }
 
   return weights.at(-1)?.index ?? sortedEntries[0]?.index ?? 0;
+}
+
+function chooseWeightedElementIndex(availableEntries, weightsConfig = {}, rng = Math.random) {
+  if (!Array.isArray(availableEntries) || availableEntries.length === 0) {
+    return null;
+  }
+
+  const entriesByElement = new Map();
+  for (const entry of availableEntries) {
+    if (!entriesByElement.has(entry.element)) {
+      entriesByElement.set(entry.element, []);
+    }
+    entriesByElement.get(entry.element).push(entry.index);
+  }
+
+  const weightedElements = [];
+  for (const [element, indexes] of entriesByElement.entries()) {
+    const configuredWeight = Math.max(0, Number(weightsConfig?.[element] ?? 0));
+    weightedElements.push({
+      element,
+      indexes,
+      weight: configuredWeight
+    });
+  }
+
+  const totalWeight = weightedElements.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) {
+    return availableEntries[0]?.index ?? null;
+  }
+
+  let remaining = rng() * totalWeight;
+  for (const entry of weightedElements) {
+    remaining -= entry.weight;
+    if (remaining <= 0) {
+      return entry.indexes[0] ?? availableEntries[0]?.index ?? null;
+    }
+  }
+
+  return weightedElements.at(-1)?.indexes?.[0] ?? availableEntries[0]?.index ?? null;
+}
+
+function chooseLoopElementIndex(availableEntries, loop = [], turnIndex = 0) {
+  if (!Array.isArray(availableEntries) || availableEntries.length === 0) {
+    return null;
+  }
+
+  if (!Array.isArray(loop) || loop.length === 0) {
+    return availableEntries[0]?.index ?? null;
+  }
+
+  const normalizedTurnIndex = Number.isFinite(Number(turnIndex))
+    ? Math.max(0, Math.floor(Number(turnIndex)))
+    : 0;
+  const startIndex = normalizedTurnIndex % loop.length;
+
+  for (let offset = 0; offset < loop.length; offset += 1) {
+    const loopElement = normalizeElement(loop[(startIndex + offset) % loop.length]);
+    const matchingEntry = availableEntries.find((entry) => entry.element === loopElement);
+    if (matchingEntry) {
+      return matchingEntry.index;
+    }
+  }
+
+  return availableEntries[0]?.index ?? null;
+}
+
+export function chooseGauntletRivalCardIndex(hand, context = {}) {
+  if (!Array.isArray(hand) || hand.length === 0) {
+    return null;
+  }
+
+  const {
+    rivalId = null,
+    rival = null,
+    turnIndex = 0,
+    rng = Math.random
+  } = context;
+  const availableEntries = buildAvailableElementEntries(hand);
+  if (availableEntries.length === 0) {
+    return 0;
+  }
+
+  const resolvedRival = rival ?? resolveGauntletRivalById(rivalId);
+  if (!resolvedRival) {
+    return availableEntries[0]?.index ?? 0;
+  }
+
+  if (resolvedRival.behaviorType === "weighted") {
+    return chooseWeightedElementIndex(availableEntries, resolvedRival.weights, rng);
+  }
+
+  if (resolvedRival.behaviorType === "loop") {
+    return chooseLoopElementIndex(availableEntries, resolvedRival.loop, turnIndex);
+  }
+
+  return availableEntries[0]?.index ?? 0;
 }
 
 export function chooseAiCardIndex(hand, context = {}) {
