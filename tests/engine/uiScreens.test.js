@@ -7023,6 +7023,227 @@ test("ui: appController opens searched profiles in a read-only modal instead of 
   }
 });
 
+test("ui: authenticated cosmetics loadout actions use multiplayer authority even when online lobby state is disconnected", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const calls = {
+    save: [],
+    apply: [],
+    rename: []
+  };
+  const baseProfile = {
+    username: "AuthorityCaptain",
+    playerLevel: 20,
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+  const cosmetics = {
+    preferences: { randomizeBackgroundEachMatch: false },
+    loadouts: [
+      {
+        index: 0,
+        slotNumber: 1,
+        unlockLevel: 10,
+        unlocked: true,
+        name: "Authority Slot",
+        hasSavedLoadout: true,
+        isActive: false
+      }
+    ],
+    catalog: {
+      avatar: [],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      badge: [],
+      title: []
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getCosmetics: async () => cosmetics,
+        equipCosmetic: async () => ({ profile: baseProfile }),
+        saveCosmeticLoadout: async () => {
+          throw new Error("state save should stay disabled");
+        },
+        applyCosmeticLoadout: async () => {
+          throw new Error("state apply should stay disabled");
+        },
+        renameCosmeticLoadout: async () => {
+          throw new Error("state rename should stay disabled");
+        }
+      },
+      multiplayer: {
+        saveCosmeticLoadout: async (payload) => {
+          calls.save.push(payload);
+          return { snapshot: { profile: baseProfile, cosmetics: { snapshot: cosmetics } } };
+        },
+        applyCosmeticLoadout: async (payload) => {
+          calls.apply.push(payload);
+          return {
+            snapshot: {
+              profile: {
+                ...baseProfile,
+                equippedCosmetics: {
+                  ...baseProfile.equippedCosmetics,
+                  avatar: "authority_avatar"
+                }
+              },
+              cosmetics: { snapshot: cosmetics }
+            }
+          };
+        },
+        renameCosmeticLoadout: async (payload) => {
+          calls.rename.push(payload);
+          return { snapshot: { profile: baseProfile, cosmetics: { snapshot: cosmetics } } };
+        }
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (payload) => payload.actions?.[0]?.onClick?.(),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "AuthorityCaptain";
+    app.profile = baseProfile;
+    app.onlinePlayState = {
+      connectionStatus: "disconnected",
+      session: {
+        authenticated: true,
+        username: "AuthorityCaptain"
+      }
+    };
+
+    await app.showCosmetics();
+    await shown.at(-1).actions.saveLoadout(0);
+    await shown.at(-1).actions.applyLoadout(0);
+    await shown.at(-1).actions.renameLoadout(0, "Authority Fit");
+
+    assert.deepEqual(calls.save, [{ username: "AuthorityCaptain", slotIndex: 0 }]);
+    assert.deepEqual(calls.apply, [{ username: "AuthorityCaptain", slotIndex: 0 }]);
+    assert.deepEqual(calls.rename, [{ username: "AuthorityCaptain", slotIndex: 0, name: "Authority Fit" }]);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: authenticated cosmetics loadout apply failures surface a clean unavailable modal", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const baseProfile = {
+    username: "AuthorityCaptain",
+    playerLevel: 20,
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+  const cosmetics = {
+    preferences: { randomizeBackgroundEachMatch: false },
+    loadouts: [
+      {
+        index: 0,
+        slotNumber: 1,
+        unlockLevel: 10,
+        unlocked: true,
+        name: "Broken Slot",
+        hasSavedLoadout: true,
+        isActive: false
+      }
+    ],
+    catalog: {
+      avatar: [],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      badge: [],
+      title: []
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getCosmetics: async () => cosmetics,
+        equipCosmetic: async () => ({ profile: baseProfile }),
+        applyCosmeticLoadout: async () => {
+          throw new Error("state apply should stay disabled");
+        }
+      },
+      multiplayer: {
+        applyCosmeticLoadout: async () => {
+          throw new Error("One or more cosmetics in this loadout are no longer owned.");
+        }
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "AuthorityCaptain";
+    app.profile = baseProfile;
+    app.onlinePlayState = {
+      connectionStatus: "disconnected",
+      session: {
+        authenticated: true,
+        username: "AuthorityCaptain"
+      }
+    };
+
+    await app.showCosmetics();
+    await shown.at(-1).actions.applyLoadout(0);
+
+    assert.equal(modalCalls.at(-1)?.title, "Loadout Unavailable");
+    assert.match(String(modalCalls.at(-1)?.body ?? ""), /no longer owned/i);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: viewed profile modal reuses a single overlay and updates when another player is opened", async () => {
   const previousWindow = global.window;
   const shown = [];

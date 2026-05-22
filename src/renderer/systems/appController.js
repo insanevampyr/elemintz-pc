@@ -7230,9 +7230,12 @@ export class AppController {
         },
         saveLoadout: async (slotIndex) => {
           const slot = cosmetics.loadouts?.[slotIndex] ?? null;
+          const shouldUseAuthoritativeLoadoutPath =
+            this.hasAuthenticatedMultiplayerSessionForUsername(this.username) &&
+            window.elemintz?.multiplayer?.saveCosmeticLoadout;
           const runSave = async () => {
             const result =
-              this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.saveCosmeticLoadout
+              shouldUseAuthoritativeLoadoutPath
                 ? await window.elemintz.multiplayer.saveCosmeticLoadout({
                     username: this.username,
                     slotIndex
@@ -7272,8 +7275,11 @@ export class AppController {
         },
         applyLoadout: async (slotIndex) => {
           try {
+            const shouldUseAuthoritativeLoadoutPath =
+              this.hasAuthenticatedMultiplayerSessionForUsername(this.username) &&
+              window.elemintz?.multiplayer?.applyCosmeticLoadout;
             const result =
-              this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.applyCosmeticLoadout
+              shouldUseAuthoritativeLoadoutPath
                 ? await window.elemintz.multiplayer.applyCosmeticLoadout({
                     username: this.username,
                     slotIndex
@@ -7296,8 +7302,11 @@ export class AppController {
         },
         renameLoadout: async (slotIndex, name) => {
           try {
+            const shouldUseAuthoritativeLoadoutPath =
+              this.hasAuthenticatedMultiplayerSessionForUsername(this.username) &&
+              window.elemintz?.multiplayer?.renameCosmeticLoadout;
             const result =
-              this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.renameCosmeticLoadout
+              shouldUseAuthoritativeLoadoutPath
                 ? await window.elemintz.multiplayer.renameCosmeticLoadout({
                     username: this.username,
                     slotIndex,
