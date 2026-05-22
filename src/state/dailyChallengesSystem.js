@@ -1,4 +1,11 @@
-import { buildXpBreakdown, deriveLevelFromXp, getLevelProgress, getXpThresholds } from "./levelRewardsSystem.js";
+import {
+  applyXpWithMaxLevelFallback,
+  buildXpBreakdown,
+  deriveLevelFromXp,
+  getLevelProgress,
+  getXpThresholds,
+  trimXpBreakdownLinesToAppliedXp
+} from "./levelRewardsSystem.js";
 import { EPIC_CHEST_TYPE, grantChest } from "./chestSystem.js";
 import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
 
@@ -1153,8 +1160,6 @@ export function applyDailyChallengesForMatch({
     0
   );
   const matchTokenDelta = boostRewardResult.tokens;
-  const tokenDelta = matchTokenDelta + challengeTokenDelta;
-
   const previousXp = Math.max(0, Number(profile.playerXP ?? 0));
   const challengeXpLines = [...dailyRewards, ...weeklyRewards]
     .filter((reward) => Number(reward.rewardXp ?? 0) > 0)
@@ -1183,14 +1188,23 @@ export function applyDailyChallengesForMatch({
           }
         ]
       : [];
+  const rawXpLines = [...matchXpBreakdown.lines, ...hardBonusXpLines, ...boostXpLines, ...challengeXpLines];
+  const rawXpDelta = boostRewardResult.xp + challengeXpDelta;
+  const xpAwardResult = applyXpWithMaxLevelFallback({
+    currentXp: previousXp,
+    xpToAward: rawXpDelta
+  });
   const xpBreakdown = {
-    lines: [...matchXpBreakdown.lines, ...hardBonusXpLines, ...boostXpLines, ...challengeXpLines],
-    total: boostRewardResult.xp + challengeXpDelta
+    lines: trimXpBreakdownLinesToAppliedXp(rawXpLines, xpAwardResult.appliedXp),
+    total: xpAwardResult.appliedXp
   };
-  const xpDelta = xpBreakdown.total;
+  const xpDelta = xpAwardResult.appliedXp;
   const matchXpDelta = boostRewardResult.xp;
-  const nextXp = previousXp + xpDelta;
-  const nextLevel = deriveLevelFromXp(nextXp);
+  const nextXp = xpAwardResult.nextXp;
+  const nextLevel = xpAwardResult.levelAfter;
+  const xpConversionTokenBonus = xpAwardResult.convertedTokens;
+  const overflowXp = xpAwardResult.overflowXp;
+  const tokenDelta = matchTokenDelta + challengeTokenDelta + xpConversionTokenBonus;
 
   let nextProfile = {
     ...profile,
@@ -1265,6 +1279,8 @@ export function applyDailyChallengesForMatch({
     xpDelta,
     matchXpDelta,
     xpBreakdown,
+    xpConversionTokenBonus,
+    overflowXp,
     boostDisplay: boostRewardResult.display,
     levelBefore: deriveLevelFromXp(previousXp),
     levelAfter: nextLevel

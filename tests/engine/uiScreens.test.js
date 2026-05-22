@@ -16971,6 +16971,72 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
 });
 
+test("ui: PvE match complete payload shows max level bonus line when xp conversion occurs", () => {
+  const controller = createRendererController();
+  controller.username = "CapUser";
+  controller.profile = { username: "CapUser" };
+  controller.gameController = { captured: { p1: 2, p2: 1 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      difficulty: "hard",
+      history: [{ result: "p1" }],
+      players: {
+        p1: { hand: ["fire"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 2,
+        warsEntered: 1,
+        longestWar: 1
+      },
+      xpDelta: 0,
+      tokenDelta: 7,
+      xpConversionTokenBonus: 2
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<strong>Max Level Bonus:<\/strong> \+2 Tokens/);
+});
+
+test("ui: PvE match complete payload omits max level bonus line when no xp conversion occurs", () => {
+  const controller = createRendererController();
+  controller.username = "NoCapUser";
+  controller.profile = { username: "NoCapUser" };
+  controller.gameController = { captured: { p1: 2, p2: 1 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      difficulty: "hard",
+      history: [{ result: "p1" }],
+      players: {
+        p1: { hand: ["fire"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 2,
+        warsEntered: 1,
+        longestWar: 1
+      },
+      xpDelta: 4,
+      tokenDelta: 5,
+      xpConversionTokenBonus: 0
+    }
+  );
+
+  assert.doesNotMatch(payload.bodyHtml, /<strong>Max Level Bonus:<\/strong>/);
+});
+
 test("ui: featured rival match complete payload uses the rival name instead of Elemental AI", () => {
   const controller = createRendererController();
   controller.username = "VampyrLee";

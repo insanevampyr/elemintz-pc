@@ -4854,11 +4854,13 @@ export class AppController {
       });
       this.toastManager.showDailyLoginReward?.({
         tokens: reward.rewardTokens ?? 0,
-        xp: reward.rewardXp ?? 0
+        xp: reward.rewardXp ?? 0,
+        xpConversionTokenBonus: reward.xpConversionTokenBonus ?? 0
       });
 
       const totalTokens =
         Math.max(0, Number(reward.rewardTokens ?? 0)) +
+        Math.max(0, Number(reward.xpConversionTokenBonus ?? 0)) +
         Math.max(0, Number(reward.levelRewardTokenDelta ?? 0));
 
       if (totalTokens > 0) {
@@ -5090,6 +5092,7 @@ export class AppController {
     const difficulty = String(match?.difficulty ?? "normal").trim().toLowerCase();
     const xpDelta = Math.max(0, Number(finalPersisted?.xpDelta ?? 0));
     const tokenDelta = Math.max(0, Number(finalPersisted?.tokenDelta ?? 0));
+    const xpConversionTokenBonus = Math.max(0, Number(finalPersisted?.xpConversionTokenBonus ?? 0));
     const xpLines = Array.isArray(finalPersisted?.xpBreakdown?.lines) ? finalPersisted.xpBreakdown.lines : [];
     const boostDisplay = finalPersisted?.boostDisplay ?? null;
     const hasHardBonus = xpLines.some((line) => line?.label === "Hard AI Victory Bonus");
@@ -5118,12 +5121,17 @@ export class AppController {
       difficulty === "hard"
         ? `<p><strong>Basic Chest Win Chance:</strong> 12%</p>`
         : `<p><strong>Basic Chest Win Chance:</strong> 10%</p>`;
+    const maxLevelBonusLine =
+      xpConversionTokenBonus > 0
+        ? `<p><strong>Max Level Bonus:</strong> +${xpConversionTokenBonus} Tokens</p>`
+        : "";
 
     return `
       <section class="match-complete-meta match-complete-rewards">
         <p><strong>Difficulty:</strong> ${escapeHtml(difficultyLabel)}</p>
         <p><strong>XP Gained:</strong> ${xpDelta}</p>
         <p><strong>Tokens Gained:</strong> ${tokenDelta}</p>
+        ${maxLevelBonusLine}
         ${bonusLine}
         ${featuredRivalBonusLine}
         ${boostLine}
@@ -5472,9 +5480,17 @@ export class AppController {
     });
   }
 
-  showGauntletVictoryModal({ streak = 0, nextRival = null, milestoneRewards = [] } = {}) {
+  showGauntletVictoryModal({
+    streak = 0,
+    nextRival = null,
+    milestoneRewards = [],
+    xpConversionTokenBonus = 0
+  } = {}) {
     this.prepareForFinalModal();
     const milestoneLines = this.buildGauntletMilestoneRewardLines(milestoneRewards);
+    if (Math.max(0, Number(xpConversionTokenBonus ?? 0)) > 0) {
+      milestoneLines.push(`Max Level Bonus: +${Math.max(0, Number(xpConversionTokenBonus ?? 0))} Tokens`);
+    }
     this.modalManager.show({
       title: "Gauntlet Victory!",
       bodyHtml: `
@@ -6231,7 +6247,11 @@ export class AppController {
                   ...(finalPersisted ?? {}),
                   gauntletMilestoneRewards: Array.isArray(gauntletStatsResult.milestoneRewards)
                     ? gauntletStatsResult.milestoneRewards
-                    : []
+                    : [],
+                  gauntletXpConversionTokenBonus: Math.max(
+                    0,
+                    Number(gauntletStatsResult.xpConversionTokenBonus ?? 0)
+                  )
                 };
               }
             } else if (!isQuitForfeit) {
@@ -6252,7 +6272,11 @@ export class AppController {
           const gauntletVictoryPayload = {
             streak: gauntletCompletion.streak,
             nextRival: gauntletCompletion.nextRival,
-            milestoneRewards: finalPersisted?.gauntletMilestoneRewards ?? []
+            milestoneRewards: finalPersisted?.gauntletMilestoneRewards ?? [],
+            xpConversionTokenBonus: Math.max(
+              0,
+              Number(finalPersisted?.gauntletXpConversionTokenBonus ?? 0)
+            )
           };
           if (this.roundPresentation.busy || this.screenFlow === "pass") {
             this.pendingGauntletVictoryPayload = gauntletVictoryPayload;

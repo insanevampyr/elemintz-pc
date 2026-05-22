@@ -226,6 +226,37 @@ test("toast: unknown chest types fall back to the basic opened chest art safely"
   assert.equal(getChestOpenRewardImagePath("mystery"), getChestOpenRewardImagePath("basic"));
 });
 
+test("toast: daily login reward includes max level bonus line only when conversion occurs", () => {
+  const appended = [];
+  const root = {
+    appendChild(node) {
+      appended.push(node);
+    }
+  };
+
+  const originalDocument = globalThis.document;
+  const originalRaf = globalThis.requestAnimationFrame;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  globalThis.document = {
+    createElement: () => makeFakeElement()
+  };
+  globalThis.requestAnimationFrame = (callback) => callback();
+  globalThis.setTimeout = (callback) => { callback(); return 0; };
+
+  const manager = new ToastManager(root);
+  manager.showDailyLoginReward({ tokens: 5, xp: 0, xpConversionTokenBonus: 1 });
+  manager.showDailyLoginReward({ tokens: 5, xp: 2, xpConversionTokenBonus: 0 });
+
+  assert.equal(appended.length, 2);
+  assert.match(appended[0].innerHTML, /Max Level Bonus: \+1 Tokens/);
+  assert.doesNotMatch(appended[1].innerHTML, /Max Level Bonus:/);
+
+  globalThis.document = originalDocument;
+  globalThis.requestAnimationFrame = originalRaf;
+  globalThis.setTimeout = originalSetTimeout;
+});
+
 test("toast: chest open rewards render xp, tokens, and cosmetic messages", () => {
   const appended = [];
   const root = {
@@ -253,8 +284,9 @@ test("toast: chest open rewards render xp, tokens, and cosmetic messages", () =>
   });
   manager.showChestOpenReward({ chestType: "legendary", rewards: { xp: 1, tokens: 0, cosmetic: null } });
   manager.showChestOpenReward({ chestType: "mystery", rewards: { xp: 2, tokens: 0, cosmetic: null } });
+  manager.showChestOpenReward({ chestType: "basic", rewards: { xp: 0, tokens: 0, cosmetic: null, xpConversionTokenBonus: 2 } });
 
-  assert.equal(appended.length, 5);
+  assert.equal(appended.length, 6);
   assert.match(appended[0].innerHTML, /\+5 XP/);
   assert.match(appended[0].innerHTML, /assets\/icons\/basic_chest_open\.png/);
   assert.match(appended[1].innerHTML, /\+10 Tokens/);
@@ -264,6 +296,7 @@ test("toast: chest open rewards render xp, tokens, and cosmetic messages", () =>
   assert.match(appended[3].innerHTML, /assets\/icons\/legendary_chest_open\.png/);
   assert.match(appended[4].innerHTML, /assets\/icons\/basic_chest_open\.png/);
   assert.match(appended[4].innerHTML, /Chest Opened/);
+  assert.match(appended[5].innerHTML, /Max Level Bonus: \+2 Tokens/);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;

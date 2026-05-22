@@ -21,7 +21,13 @@ import {
 } from "../../src/state/dailyChallengesSystem.js";
 import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
-import { applyLevelRewardsForLevelChange, buildXpBreakdown, deriveLevelFromXp } from "../../src/state/levelRewardsSystem.js";
+import {
+  applyLevelRewardsForLevelChange,
+  applyXpWithMaxLevelFallback,
+  buildXpBreakdown,
+  deriveLevelFromXp,
+  getMaxLevelXpThreshold
+} from "../../src/state/levelRewardsSystem.js";
 import { EPIC_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
@@ -300,8 +306,36 @@ test("state: gauntlet 15-streak grants +100 XP and +75 tokens once", async () =>
   assert.equal(awarded.xpDelta, 100);
   assert.equal(awarded.tokenDelta, 75);
   assert.equal(awarded.profile.playerXP, 100);
-  assert.equal(awarded.profile.tokens, 275);
+  assert.equal(awarded.levelRewardTokenDelta, 50);
+  assert.equal(awarded.profile.tokens, 325);
   assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10, 15]);
+});
+
+test("state: gauntlet milestone xp converts to max level bonus tokens at the cap", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  await state.profiles.updateProfile("GauntletOverflowUser", (current) => ({
+    ...current,
+    playerXP: maxThreshold,
+    playerLevel: 100
+  }));
+
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletOverflowUser",
+    runStarted: true,
+    matchWon: true,
+    currentStreak: 15,
+    claimedMilestoneStreaks: [3, 5, 10]
+  });
+
+  assert.equal(awarded.xpDelta, 0);
+  assert.equal(awarded.xpConversionTokenBonus, 10);
+  assert.equal(awarded.overflowXp, 100);
+  assert.equal(awarded.tokenDelta, 85);
+  assert.equal(awarded.profile.tokens, 285);
+  assert.equal(awarded.profile.playerXP, maxThreshold);
 });
 
 test("state: gauntlet 20-streak grants 1 epic chest once", async () => {
@@ -2422,6 +2456,28 @@ test("state: daily login reward does not reset before 6 PM Central", async () =>
   assert.equal(second.profile.playerXP, 2);
 });
 
+test("state: daily login reward converts xp into max level bonus tokens at the cap", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+  const nowMs = Date.parse("2026-03-09T15:00:00.000Z");
+
+  await state.profiles.updateProfile("MaxLoginUser", (current) => ({
+    ...current,
+    playerXP: maxThreshold,
+    playerLevel: 100
+  }));
+
+  const reward = await state.claimDailyLoginReward("MaxLoginUser", nowMs);
+
+  assert.equal(reward.granted, true);
+  assert.equal(reward.rewardXp, 0);
+  assert.equal(reward.xpConversionTokenBonus, 1);
+  assert.equal(reward.overflowXp, 2);
+  assert.equal(reward.profile.playerXP, maxThreshold);
+  assert.equal(reward.profile.tokens, 206);
+});
+
 test("state: daily challenges payload includes daily login status from the shared 6 PM reset window", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -3869,6 +3925,155 @@ test("boost events: daily login and admin grants stay unboosted", async () => {
   assert.equal(adminGrant.tokenDelta, 15);
 });
 
+test("boost events: boosted match xp converts after boost math at max level", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+  const nowMs = Date.parse("2026-05-16T12:00:00.000Z");
+  const seededChallenges = markAllChallengeRewardsConsumed(createDefaultDailyChallenges(nowMs));
+  const profile = {
+    ...(await state.profiles.ensureProfile("BoostedOverflowUser")),
+    playerXP: maxThreshold,
+    playerLevel: 100,
+    dailyChallenges: seededChallenges
+  };
+
+  const result = applyDailyChallengesForMatch({
+    profile,
+    matchState: {
+      ...createRewardHookMatch({ winner: "p1", difficulty: "hard" }),
+      difficulty: "hard"
+    },
+    perspective: "p1",
+    matchStats: {
+      warsWon: 0,
+      cardsCaptured: 0,
+      matchesUsingAllElements: 0,
+      featuredRivalWins: 0
+    },
+    nowMs,
+    options: {
+      boostEvent: {
+        enabled: true,
+        scope: "all",
+        excludeDifficulties: [],
+        xpMultiplier: 2,
+        tokenMultiplier: 1
+      }
+    }
+  });
+
+  assert.equal(result.matchXpDelta, 16);
+  assert.equal(result.xpDelta, 0);
+  assert.equal(result.xpConversionTokenBonus, 1);
+  assert.equal(result.overflowXp, 16);
+  assert.equal(result.profile.playerXP, maxThreshold);
+});
+
+test("state: admin grant converts overflow xp into persisted max level bonus tokens", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  await state.profiles.updateProfile("AdminOverflowUser", (current) => ({
+    ...current,
+    playerXP: maxThreshold,
+    playerLevel: 100
+  }));
+
+  const grant = await state.applyAdminGrant({
+    username: "AdminOverflowUser",
+    xp: 88,
+    tokens: 15
+  });
+
+  assert.equal(grant.xpDelta, 0);
+  assert.equal(grant.xpConversionTokenBonus, 8);
+  assert.equal(grant.overflowXp, 88);
+  assert.equal(grant.tokenDelta, 23);
+  assert.equal(grant.profile.tokens, 223);
+  assert.equal(grant.profile.playerXP, maxThreshold);
+});
+
+test("state: online reward settlement converts overflow xp once and preserves duplicate settlement protection", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  await state.profiles.updateProfile("OnlineOverflowUser", (current) => ({
+    ...current,
+    playerXP: maxThreshold,
+    playerLevel: 100
+  }));
+
+  const first = await state.applyOnlineRewardSettlementDecision({
+    username: "OnlineOverflowUser",
+    settlementKey: "ROOM-OVERFLOW:1",
+    rewardDecision: {
+      participants: {
+        hostUsername: "OnlineOverflowUser",
+        guestUsername: "GuestUser"
+      },
+      rewards: {
+        host: { tokens: 5, xp: 24, basicChests: 0 },
+        guest: { tokens: 0, xp: 0, basicChests: 0 }
+      }
+    },
+    participantRole: "host"
+  });
+  const duplicate = await state.applyOnlineRewardSettlementDecision({
+    username: "OnlineOverflowUser",
+    settlementKey: "ROOM-OVERFLOW:1",
+    rewardDecision: {
+      participants: {
+        hostUsername: "OnlineOverflowUser",
+        guestUsername: "GuestUser"
+      },
+      rewards: {
+        host: { tokens: 5, xp: 24, basicChests: 0 },
+        guest: { tokens: 0, xp: 0, basicChests: 0 }
+      }
+    },
+    participantRole: "host"
+  });
+
+  assert.equal(first.duplicate, false);
+  assert.equal(first.rewards.xp, 0);
+  assert.equal(first.rewards.xpConversionTokenBonus, 2);
+  assert.equal(first.rewards.tokens, 7);
+  assert.equal(first.profile.tokens, 207);
+  assert.equal(first.profile.playerXP, maxThreshold);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.rewards.tokens, 0);
+  assert.equal(duplicate.rewards.xpConversionTokenBonus, 0);
+});
+
+test("state: direct online reward grants convert overflow xp into token bonus", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  await state.profiles.updateProfile("DirectOnlineOverflowUser", (current) => ({
+    ...current,
+    playerXP: maxThreshold,
+    playerLevel: 100
+  }));
+
+  const result = await state.grantOnlineMatchRewards({
+    username: "DirectOnlineOverflowUser",
+    tokens: 3,
+    xp: 24,
+    basicChests: 0
+  });
+
+  assert.equal(result.rewards.xp, 0);
+  assert.equal(result.rewards.xpConversionTokenBonus, 2);
+  assert.equal(result.rewards.overflowXp, 24);
+  assert.equal(result.rewards.tokens, 5);
+  assert.equal(result.profile.playerXP, maxThreshold);
+  assert.equal(result.profile.tokens, 205);
+});
+
 test("economy: daily and weekly challenge rewards include stage1 token+xp values", () => {
   const byDailyId = Object.fromEntries(DAILY_CHALLENGE_DEFINITIONS.map((item) => [item.id, item]));
   const byWeeklyId = Object.fromEntries(WEEKLY_CHALLENGE_DEFINITIONS.map((item) => [item.id, item]));
@@ -4942,6 +5147,37 @@ test("level rewards: multi-level gains grant all missed rewards once", async () 
   assert.equal(second.tokenDelta, 0);
 });
 
+test("state: reaching max level from a large xp grant does not duplicate level rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  await state.profiles.updateProfile("MaxRewardUser", (current) => ({
+    ...current,
+    playerXP: maxThreshold - 1,
+    playerLevel: 99
+  }));
+
+  const first = await state.applyAdminGrant({
+    username: "MaxRewardUser",
+    xp: 200,
+    tokens: 0
+  });
+  const second = await state.applyAdminGrant({
+    username: "MaxRewardUser",
+    xp: 10,
+    tokens: 0
+  });
+
+  assert.equal(first.xpDelta, 1);
+  assert.equal(first.levelAfter, 100);
+  assert.equal(first.levelRewards.filter((reward) => reward.id === "lvl100_title_master_elemintz").length, 1);
+  assert.equal(first.profile.playerXP, maxThreshold);
+  assert.equal(second.xpDelta, 0);
+  assert.equal(second.levelRewards.length, 0);
+  assert.equal(second.profile.playerXP, maxThreshold);
+});
+
 test("state: level milestone chest grants exactly once at level 5 and does not re-grant on reload", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -5018,6 +5254,112 @@ test("state: opening a milestone chest grants persisted token rewards in the 2 t
   const persisted = await state.profiles.getProfile("MilestoneRewardUser");
   assert.equal(persisted.tokens, opened.profile.tokens);
   assert.ok(opened.rewards.tokens >= 2 && opened.rewards.tokens <= 100);
+});
+
+test("state: chest xp converts to max level bonus tokens and does not grow stored xp past the cap", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0)
+  });
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  await state.profiles.updateProfile("ChestOverflowUser", (current) => ({
+    ...current,
+    playerXP: maxThreshold,
+    playerLevel: 100
+  }));
+
+  await state.grantChest({
+    username: "ChestOverflowUser",
+    chestType: "basic",
+    amount: 1
+  });
+
+  const opened = await state.openChest({
+    username: "ChestOverflowUser",
+    chestType: "basic"
+  });
+
+  assert.equal(opened.rewards.xp, 0);
+  assert.equal(opened.rewards.xpConversionTokenBonus, 1);
+  assert.equal(opened.rewards.overflowXp, 5);
+  assert.equal(opened.profile.tokens, 201);
+  assert.equal(opened.profile.playerXP, maxThreshold);
+});
+
+test("level rewards: xp fallback applies normally below max level", () => {
+  const maxThreshold = getMaxLevelXpThreshold();
+  const result = applyXpWithMaxLevelFallback({
+    currentXp: maxThreshold - 50,
+    xpToAward: 24
+  });
+
+  assert.equal(result.nextXp, maxThreshold - 26);
+  assert.equal(result.appliedXp, 24);
+  assert.equal(result.overflowXp, 0);
+  assert.equal(result.convertedTokens, 0);
+});
+
+test("level rewards: xp fallback applies normally up to max level and converts only overflow", () => {
+  const maxThreshold = getMaxLevelXpThreshold();
+  const result = applyXpWithMaxLevelFallback({
+    currentXp: maxThreshold - 5,
+    xpToAward: 24
+  });
+
+  assert.equal(result.nextXp, maxThreshold);
+  assert.equal(result.appliedXp, 5);
+  assert.equal(result.overflowXp, 19);
+  assert.equal(result.convertedTokens, 1);
+});
+
+test("level rewards: xp fallback converts overflow at max level with expected rounding", () => {
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  const fiveXp = applyXpWithMaxLevelFallback({
+    currentXp: maxThreshold,
+    xpToAward: 5
+  });
+  const twentyFourXp = applyXpWithMaxLevelFallback({
+    currentXp: maxThreshold,
+    xpToAward: 24
+  });
+  const hundredXp = applyXpWithMaxLevelFallback({
+    currentXp: maxThreshold,
+    xpToAward: 100
+  });
+  const zeroXp = applyXpWithMaxLevelFallback({
+    currentXp: maxThreshold,
+    xpToAward: 0
+  });
+
+  assert.equal(fiveXp.convertedTokens, 1);
+  assert.equal(twentyFourXp.convertedTokens, 2);
+  assert.equal(hundredXp.convertedTokens, 10);
+  assert.equal(zeroXp.convertedTokens, 0);
+  assert.equal(hundredXp.nextXp, maxThreshold);
+});
+
+test("state: profile normalization clamps stored xp above the max threshold", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const maxThreshold = getMaxLevelXpThreshold();
+
+  await state.profiles.store.write([
+    {
+      username: "OverflowLegacyUser",
+      wins: 1,
+      losses: 0,
+      gamesPlayed: 1,
+      playerXP: maxThreshold + 250,
+      playerLevel: 42
+    }
+  ]);
+
+  const profile = await state.profiles.getProfile("OverflowLegacyUser");
+  assert.equal(profile.playerXP, maxThreshold);
+  assert.equal(profile.playerLevel, 100);
 });
 
 test("level rewards: level cap never exceeds 100", () => {

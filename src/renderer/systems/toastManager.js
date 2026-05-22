@@ -125,10 +125,11 @@ export class ToastManager {
     });
   }
 
-  showDailyLoginReward({ tokens = 5, xp = 2 } = {}) {
+  showDailyLoginReward({ tokens = 5, xp = 2, xpConversionTokenBonus = 0 } = {}) {
     console.info("[DailyLogin][Renderer] toast display path ran", {
       tokens,
-      xp
+      xp,
+      xpConversionTokenBonus
     });
 
     this.enqueueToast({
@@ -140,6 +141,7 @@ export class ToastManager {
           <h4>Daily Login Reward</h4>
           <p>+${Math.max(0, Number(tokens) || 0)} Tokens</p>
           <p>+${Math.max(0, Number(xp) || 0)} XP</p>
+          ${Math.max(0, Number(xpConversionTokenBonus) || 0) > 0 ? `<p>Max Level Bonus: +${Math.max(0, Number(xpConversionTokenBonus) || 0)} Tokens</p>` : ""}
         </div>
       `
     });
@@ -167,6 +169,7 @@ export class ToastManager {
   showChestOpenReward({ rewards = {}, chestType = "basic" } = {}) {
     const xpAmount = Math.max(0, Number(rewards?.xp) || 0);
     const tokenAmount = Math.max(0, Number(rewards?.tokens) || 0);
+    const xpConversionTokenBonus = Math.max(0, Number(rewards?.xpConversionTokenBonus) || 0);
     const cosmeticName = String(rewards?.cosmetic?.name ?? "").trim();
     const rewardLines = [];
     const chestImage = getChestOpenRewardImagePath(chestType);
@@ -176,6 +179,9 @@ export class ToastManager {
     }
     if (xpAmount > 0) {
       rewardLines.push(`<p>+${xpAmount} XP</p>`);
+    }
+    if (xpConversionTokenBonus > 0) {
+      rewardLines.push(`<p>Max Level Bonus: +${xpConversionTokenBonus} Tokens</p>`);
     }
     if (cosmeticName) {
       const rarity = String(rewards?.cosmetic?.rarity ?? "").trim();

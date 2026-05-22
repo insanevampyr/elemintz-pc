@@ -44,7 +44,12 @@ import {
   getDailyChallengesView,
   getDailyResetWindow
 } from "./dailyChallengesSystem.js";
-import { applyLevelRewardsForLevelChange, deriveLevelFromXp, getLevelProgress } from "./levelRewardsSystem.js";
+import {
+  applyLevelRewardsForLevelChange,
+  applyXpWithMaxLevelFallback,
+  deriveLevelFromXp,
+  getLevelProgress
+} from "./levelRewardsSystem.js";
 import { rollBasicChest } from "../shared/basicChestDrop.js";
 
 const DAILY_LOGIN_TOKENS = 5;
@@ -138,12 +143,17 @@ function maybeApplyFeaturedRivalWinReward(profile, { matchState, perspective = "
     };
   }
 
-  const nextXp = Math.max(0, Number(profile?.playerXP ?? 0)) + rewardConfig.xpDelta;
+  const xpAwardResult = applyXpWithMaxLevelFallback({
+    currentXp: profile?.playerXP ?? 0,
+    xpToAward: rewardConfig.xpDelta
+  });
   const nextProfile = {
     ...profile,
-    tokens: Math.max(0, Number(profile?.tokens ?? 0) + rewardConfig.tokenDelta),
-    playerXP: nextXp,
-    playerLevel: deriveLevelFromXp(nextXp),
+    tokens:
+      Math.max(0, Number(profile?.tokens ?? 0) + rewardConfig.tokenDelta) +
+      xpAwardResult.convertedTokens,
+    playerXP: xpAwardResult.nextXp,
+    playerLevel: xpAwardResult.levelAfter,
     featuredRivalRewards: {
       ...(profile?.featuredRivalRewards ?? {}),
       [rivalId]: {
@@ -158,8 +168,10 @@ function maybeApplyFeaturedRivalWinReward(profile, { matchState, perspective = "
     reward: {
       rivalId,
       granted: true,
-      xpDelta: rewardConfig.xpDelta,
+      xpDelta: xpAwardResult.appliedXp,
       tokenDelta: rewardConfig.tokenDelta,
+      xpConversionTokenBonus: xpAwardResult.convertedTokens,
+      overflowXp: xpAwardResult.overflowXp,
       label: rewardConfig.label,
       rewardDateKey
     }
@@ -215,6 +227,48 @@ function normalizeGauntletClaimedMilestoneStreaks(value) {
   )].sort((a, b) => a - b);
 }
 
+function applyXpAwardToProfile(profile, xpAmount, tokenAmount = 0) {
+  const safeTokenAmount = Math.max(0, Number(tokenAmount ?? 0) || 0);
+  const levelBefore = Math.max(
+    1,
+    Number(profile?.playerLevel ?? getLevelProgress(profile).playerLevel ?? 1)
+  );
+  const xpAwardResult = applyXpWithMaxLevelFallback({
+    currentXp: profile?.playerXP ?? 0,
+    xpToAward: xpAmount
+  });
+
+  let nextProfile = {
+    ...profile,
+    tokens: Math.max(0, Number(profile?.tokens ?? 0) + safeTokenAmount + xpAwardResult.convertedTokens),
+    playerXP: xpAwardResult.nextXp,
+    playerLevel: levelBefore
+  };
+
+  const levelAfterGain = Math.max(levelBefore, xpAwardResult.levelAfter);
+  nextProfile = {
+    ...nextProfile,
+    playerLevel: levelAfterGain
+  };
+
+  const levelRewardResult = applyLevelRewardsForLevelChange(nextProfile, {
+    fromLevel: levelBefore,
+    toLevel: levelAfterGain
+  });
+
+  return {
+    profile: levelRewardResult.profile,
+    xpDelta: xpAwardResult.appliedXp,
+    xpConversionTokenBonus: xpAwardResult.convertedTokens,
+    overflowXp: xpAwardResult.overflowXp,
+    tokenDelta: safeTokenAmount + xpAwardResult.convertedTokens,
+    levelBefore,
+    levelAfter: Math.max(levelAfterGain, Number(levelRewardResult.profile?.playerLevel ?? levelAfterGain)),
+    levelRewards: levelRewardResult.grantedRewards,
+    levelRewardTokenDelta: levelRewardResult.tokenDelta
+  };
+}
+
 function applyGauntletMilestoneRewards(
   profile,
   { currentStreak = 0, claimedMilestoneStreaks = [] } = {}
@@ -232,6 +286,8 @@ function applyGauntletMilestoneRewards(
       milestoneRewards: [],
       xpDelta: 0,
       tokenDelta: 0,
+      xpConversionTokenBonus: 0,
+      overflowXp: 0,
       chestGrants: [],
       levelBefore: Math.max(1, Number(profile?.playerLevel ?? getLevelProgress(profile).level ?? 1)),
       levelAfter: Math.max(1, Number(profile?.playerLevel ?? getLevelProgress(profile).level ?? 1)),
@@ -240,7 +296,6 @@ function applyGauntletMilestoneRewards(
     };
   }
 
-  const levelBefore = Math.max(1, Number(profile?.playerLevel ?? getLevelProgress(profile).level ?? 1));
   const xpDelta = milestonesToGrant.reduce((sum, entry) => sum + Math.max(0, Number(entry.xp ?? 0)), 0);
   const tokenDelta = milestonesToGrant.reduce((sum, entry) => sum + Math.max(0, Number(entry.tokens ?? 0)), 0);
   const chestGrants = milestonesToGrant.flatMap((entry) =>
@@ -250,24 +305,8 @@ function applyGauntletMilestoneRewards(
     })).filter((chest) => chest.amount > 0)
   );
 
-  let nextProfile = {
-    ...profile,
-    tokens: Math.max(0, Number(profile?.tokens ?? 0) + tokenDelta),
-    playerXP: Math.max(0, Number(profile?.playerXP ?? 0) + xpDelta),
-    playerLevel: levelBefore
-  };
-
-  const levelAfterGain = Math.max(levelBefore, getLevelProgress(nextProfile).level);
-  nextProfile = {
-    ...nextProfile,
-    playerLevel: levelAfterGain
-  };
-
-  const levelRewardResult = applyLevelRewardsForLevelChange(nextProfile, {
-    fromLevel: levelBefore,
-    toLevel: levelAfterGain
-  });
-  nextProfile = levelRewardResult.profile;
+  const xpAwardSummary = applyXpAwardToProfile(profile, xpDelta, tokenDelta);
+  let nextProfile = xpAwardSummary.profile;
 
   for (const chestGrant of chestGrants) {
     nextProfile = grantChest(nextProfile, chestGrant);
@@ -291,13 +330,15 @@ function applyGauntletMilestoneRewards(
         chestLabel: getChestLabel(chest?.chestType ?? DEFAULT_CHEST_TYPE)
       }))
     })),
-    xpDelta,
-    tokenDelta,
+    xpDelta: xpAwardSummary.xpDelta,
+    tokenDelta: xpAwardSummary.tokenDelta,
+    xpConversionTokenBonus: xpAwardSummary.xpConversionTokenBonus,
+    overflowXp: xpAwardSummary.overflowXp,
     chestGrants,
-    levelBefore,
-    levelAfter: Math.max(levelAfterGain, Number(nextProfile?.playerLevel ?? levelAfterGain)),
-    levelRewards: levelRewardResult.grantedRewards,
-    levelRewardTokenDelta: levelRewardResult.tokenDelta
+    levelBefore: xpAwardSummary.levelBefore,
+    levelAfter: Math.max(xpAwardSummary.levelAfter, Number(nextProfile?.playerLevel ?? xpAwardSummary.levelAfter)),
+    levelRewards: xpAwardSummary.levelRewards,
+    levelRewardTokenDelta: xpAwardSummary.levelRewardTokenDelta
   };
 }
 
@@ -581,6 +622,8 @@ export class StateCoordinator {
         dailyLoginStatus: statusBefore,
         rewardTokens: 0,
         rewardXp: 0,
+        xpConversionTokenBonus: 0,
+        overflowXp: 0,
         xpBreakdown: { lines: [], total: 0 },
         levelBefore: profileBefore.playerLevel ?? 1,
         levelAfter: profileBefore.playerLevel ?? 1,
@@ -589,28 +632,13 @@ export class StateCoordinator {
       };
     }
 
-    const previousXp = Math.max(0, Number(profileBefore.playerXP ?? 0));
-    const levelBefore = profileBefore.playerLevel ?? 1;
-    let workingProfile = {
-      ...profileBefore,
-      tokens: Math.max(0, Number(profileBefore.tokens ?? 0) + DAILY_LOGIN_TOKENS),
-      playerXP: previousXp + DAILY_LOGIN_XP,
-      playerLevel: levelBefore,
+    const xpAwardSummary = applyXpAwardToProfile(profileBefore, DAILY_LOGIN_XP, DAILY_LOGIN_TOKENS);
+    const workingProfile = {
+      ...xpAwardSummary.profile,
       lastDailyLoginClaimDate: claimDate
     };
 
-    const levelAfterLogin = Math.max(levelBefore, getLevelProgress(workingProfile).level);
-    workingProfile = {
-      ...workingProfile,
-      playerLevel: levelAfterLogin
-    };
-
-    const levelRewardResult = applyLevelRewardsForLevelChange(workingProfile, {
-      fromLevel: levelBefore,
-      toLevel: levelAfterLogin
-    });
-
-    const committedProfile = await this.profiles.updateProfile(username, levelRewardResult.profile);
+    const committedProfile = await this.profiles.updateProfile(username, workingProfile);
     const statusAfter = getDailyLoginStatus(committedProfile, nowMs);
 
     console.info("[DailyLogin] grant_applied", {
@@ -627,15 +655,20 @@ export class StateCoordinator {
       profile: committedProfile,
       dailyLoginStatus: statusAfter,
       rewardTokens: DAILY_LOGIN_TOKENS,
-      rewardXp: DAILY_LOGIN_XP,
+      rewardXp: xpAwardSummary.xpDelta,
+      xpConversionTokenBonus: xpAwardSummary.xpConversionTokenBonus,
+      overflowXp: xpAwardSummary.overflowXp,
       xpBreakdown: {
-        lines: [{ key: "daily_login", label: "Daily Login", amount: DAILY_LOGIN_XP }],
-        total: DAILY_LOGIN_XP
+        lines:
+          xpAwardSummary.xpDelta > 0
+            ? [{ key: "daily_login", label: "Daily Login", amount: xpAwardSummary.xpDelta }]
+            : [],
+        total: xpAwardSummary.xpDelta
       },
-      levelBefore,
-      levelAfter: committedProfile.playerLevel ?? levelAfterLogin,
-      levelRewards: levelRewardResult.grantedRewards,
-      levelRewardTokenDelta: levelRewardResult.tokenDelta
+      levelBefore: xpAwardSummary.levelBefore,
+      levelAfter: committedProfile.playerLevel ?? xpAwardSummary.levelAfter,
+      levelRewards: xpAwardSummary.levelRewards,
+      levelRewardTokenDelta: xpAwardSummary.levelRewardTokenDelta
     };
   }
 
@@ -697,6 +730,8 @@ export class StateCoordinator {
           matchXpDelta: 0,
           challengeXpDelta: 0,
           xpDelta: 0,
+          xpConversionTokenBonus: 0,
+          overflowXp: 0,
           xpBreakdown: { lines: [], total: 0 },
           levelBefore: committedProfile.playerLevel ?? 1,
           levelAfter: committedProfile.playerLevel ?? 1,
@@ -752,6 +787,8 @@ export class StateCoordinator {
               granted: false,
               xpDelta: 0,
               tokenDelta: 0,
+              xpConversionTokenBonus: 0,
+              overflowXp: 0,
               label: null,
               rewardDateKey: null
             }
@@ -764,6 +801,10 @@ export class StateCoordinator {
       const featuredRivalReward = featuredRivalRewardResult.reward;
       const featuredRivalXpDelta = Math.max(0, Number(featuredRivalReward.xpDelta ?? 0));
       const featuredRivalTokenDelta = Math.max(0, Number(featuredRivalReward.tokenDelta ?? 0));
+      const featuredRivalXpConversionTokenBonus = Math.max(
+        0,
+        Number(featuredRivalReward.xpConversionTokenBonus ?? 0)
+      );
       if (featuredRivalXpDelta > 0) {
         challengeResult.xpBreakdown = {
           ...challengeResult.xpBreakdown,
@@ -778,8 +819,14 @@ export class StateCoordinator {
           total: Math.max(0, Number(challengeResult.xpBreakdown.total ?? 0)) + featuredRivalXpDelta
         };
       }
-      challengeResult.tokenDelta += featuredRivalTokenDelta;
+      challengeResult.tokenDelta += featuredRivalTokenDelta + featuredRivalXpConversionTokenBonus;
       challengeResult.xpDelta += featuredRivalXpDelta;
+      challengeResult.xpConversionTokenBonus = Math.max(
+        0,
+        Number(challengeResult.xpConversionTokenBonus ?? 0)
+      ) + featuredRivalXpConversionTokenBonus;
+      challengeResult.overflowXp = Math.max(0, Number(challengeResult.overflowXp ?? 0)) +
+        Math.max(0, Number(featuredRivalReward.overflowXp ?? 0));
       challengeResult.levelAfter = deriveLevelFromXp(Math.max(0, Number(workingProfile.playerXP ?? 0)));
       const streakChestGrantResult = practiceMode
         ? { profile: workingProfile }
@@ -877,6 +924,8 @@ export class StateCoordinator {
         dailyRewards: challengeResult.rewards.daily,
         weeklyRewards: challengeResult.rewards.weekly,
         tokenDelta: challengeResult.tokenDelta,
+        xpConversionTokenBonus: challengeResult.xpConversionTokenBonus ?? 0,
+        overflowXp: challengeResult.overflowXp ?? 0,
         featuredRivalReward,
         matchTokenDelta: challengeResult.matchTokenDelta,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
@@ -908,6 +957,8 @@ export class StateCoordinator {
         dailyRewards: challengeResult.rewards.daily,
         weeklyRewards: challengeResult.rewards.weekly,
         tokenDelta: challengeResult.tokenDelta,
+        xpConversionTokenBonus: challengeResult.xpConversionTokenBonus ?? 0,
+        overflowXp: challengeResult.overflowXp ?? 0,
         featuredRivalReward,
         matchTokenDelta: challengeResult.matchTokenDelta,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
@@ -1065,6 +1116,8 @@ export class StateCoordinator {
         dailyRewards: challengeResult.rewards.daily,
         weeklyRewards: challengeResult.rewards.weekly,
         tokenDelta: challengeResult.tokenDelta,
+        xpConversionTokenBonus: challengeResult.xpConversionTokenBonus ?? 0,
+        overflowXp: challengeResult.overflowXp ?? 0,
         matchTokenDelta: 0,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
         challengeXpDelta: challengeResult.challengeXpDelta,
@@ -1090,6 +1143,8 @@ export class StateCoordinator {
         dailyRewards: challengeResult.rewards.daily,
         weeklyRewards: challengeResult.rewards.weekly,
         tokenDelta: challengeResult.tokenDelta,
+        xpConversionTokenBonus: challengeResult.xpConversionTokenBonus ?? 0,
+        overflowXp: challengeResult.overflowXp ?? 0,
         challengeTokenDelta: challengeResult.challengeTokenDelta,
         challengeXpDelta: challengeResult.challengeXpDelta,
         xpDelta: challengeResult.xpDelta,
@@ -1123,6 +1178,8 @@ export class StateCoordinator {
         milestoneRewards: [],
         xpDelta: 0,
         tokenDelta: 0,
+        xpConversionTokenBonus: 0,
+        overflowXp: 0,
         chestGrants: [],
         levelBefore: 1,
         levelAfter: 1,
@@ -1161,6 +1218,8 @@ export class StateCoordinator {
             milestoneRewards: [],
             xpDelta: 0,
             tokenDelta: 0,
+            xpConversionTokenBonus: 0,
+            overflowXp: 0,
             chestGrants: [],
             levelBefore: Math.max(1, Number(nextProfile?.playerLevel ?? getLevelProgress(nextProfile).level ?? 1)),
             levelAfter: Math.max(1, Number(nextProfile?.playerLevel ?? getLevelProgress(nextProfile).level ?? 1)),
@@ -1179,6 +1238,8 @@ export class StateCoordinator {
         milestoneRewards: gauntletRewardSummary.milestoneRewards,
         xpDelta: gauntletRewardSummary.xpDelta,
         tokenDelta: gauntletRewardSummary.tokenDelta,
+        xpConversionTokenBonus: gauntletRewardSummary.xpConversionTokenBonus ?? 0,
+        overflowXp: gauntletRewardSummary.overflowXp ?? 0,
         chestGrants: gauntletRewardSummary.chestGrants,
         levelBefore: gauntletRewardSummary.levelBefore,
         levelAfter: gauntletRewardSummary.levelAfter,
@@ -1348,25 +1409,8 @@ export class StateCoordinator {
 
     let grantSummary = null;
     const profile = await this.profiles.updateProfile(safeUsername, (current) => {
-      const levelBefore = Math.max(1, Number(current?.playerLevel ?? getLevelProgress(current).playerLevel ?? 1));
-      let nextProfile = {
-        ...current,
-        tokens: Math.max(0, Number(current?.tokens ?? 0) + safeTokens),
-        playerXP: Math.max(0, Number(current?.playerXP ?? 0) + safeXp),
-        playerLevel: levelBefore
-      };
-
-      const levelAfterGain = Math.max(levelBefore, getLevelProgress(nextProfile).playerLevel);
-      nextProfile = {
-        ...nextProfile,
-        playerLevel: levelAfterGain
-      };
-
-      const levelRewardResult = applyLevelRewardsForLevelChange(nextProfile, {
-        fromLevel: levelBefore,
-        toLevel: levelAfterGain
-      });
-      nextProfile = levelRewardResult.profile;
+      const xpAwardSummary = applyXpAwardToProfile(current, safeXp, safeTokens);
+      let nextProfile = xpAwardSummary.profile;
 
       for (const entry of normalizedChests) {
         nextProfile = grantChest(nextProfile, {
@@ -1383,14 +1427,16 @@ export class StateCoordinator {
       }
 
       grantSummary = {
-        xpDelta: safeXp,
-        tokenDelta: safeTokens,
+        xpDelta: xpAwardSummary.xpDelta,
+        tokenDelta: xpAwardSummary.tokenDelta,
+        xpConversionTokenBonus: xpAwardSummary.xpConversionTokenBonus,
+        overflowXp: xpAwardSummary.overflowXp,
         chestGrants: normalizedChests,
         cosmeticGrant,
-        levelBefore,
-        levelAfter: Math.max(levelAfterGain, Number(nextProfile?.playerLevel ?? levelAfterGain)),
-        levelRewards: levelRewardResult.grantedRewards,
-        levelRewardTokenDelta: levelRewardResult.tokenDelta
+        levelBefore: xpAwardSummary.levelBefore,
+        levelAfter: Math.max(xpAwardSummary.levelAfter, Number(nextProfile?.playerLevel ?? xpAwardSummary.levelAfter)),
+        levelRewards: xpAwardSummary.levelRewards,
+        levelRewardTokenDelta: xpAwardSummary.levelRewardTokenDelta
       };
 
       return nextProfile;
@@ -1401,6 +1447,8 @@ export class StateCoordinator {
       xp: getLevelProgress(profile),
       xpDelta: grantSummary?.xpDelta ?? safeXp,
       tokenDelta: grantSummary?.tokenDelta ?? safeTokens,
+      xpConversionTokenBonus: grantSummary?.xpConversionTokenBonus ?? 0,
+      overflowXp: grantSummary?.overflowXp ?? 0,
       chestGrants: grantSummary?.chestGrants ?? normalizedChests,
       cosmeticGrant: grantSummary?.cosmeticGrant ?? null,
       levelBefore: grantSummary?.levelBefore ?? Number(profile?.playerLevel ?? 1),
@@ -1414,12 +1462,20 @@ export class StateCoordinator {
     const safeTokens = Math.max(0, Number(tokens ?? 0));
     const safeXp = Math.max(0, Number(xp ?? 0));
     const safeBasicChests = Math.max(0, Number(basicChests ?? 0));
+    let rewardSummary = null;
 
     const profile = await this.profiles.updateProfile(username, (current) => {
+      const xpAwardResult = applyXpWithMaxLevelFallback({
+        currentXp: current?.playerXP ?? 0,
+        xpToAward: safeXp
+      });
       let nextProfile = {
         ...current,
-        tokens: Math.max(0, Number(current.tokens ?? 0) + safeTokens),
-        playerXP: Math.max(0, Number(current.playerXP ?? 0) + safeXp)
+        tokens:
+          Math.max(0, Number(current?.tokens ?? 0) + safeTokens) +
+          xpAwardResult.convertedTokens,
+        playerXP: xpAwardResult.nextXp,
+        playerLevel: xpAwardResult.levelAfter
       };
 
       if (safeBasicChests > 0) {
@@ -1429,16 +1485,33 @@ export class StateCoordinator {
         });
       }
 
+      rewardSummary = {
+        xpDelta: xpAwardResult.appliedXp,
+        tokenDelta: safeTokens + xpAwardResult.convertedTokens,
+        xpConversionTokenBonus: xpAwardResult.convertedTokens,
+        overflowXp: xpAwardResult.overflowXp,
+        levelBefore: xpAwardResult.levelBefore,
+        levelAfter: xpAwardResult.levelAfter,
+        levelRewards: [],
+        levelRewardTokenDelta: 0
+      };
+
       return nextProfile;
     });
 
     return {
       profile,
       rewards: {
-        tokens: safeTokens,
-        xp: safeXp,
+        tokens: rewardSummary?.tokenDelta ?? safeTokens,
+        xp: rewardSummary?.xpDelta ?? safeXp,
+        xpConversionTokenBonus: rewardSummary?.xpConversionTokenBonus ?? 0,
+        overflowXp: rewardSummary?.overflowXp ?? 0,
         basicChests: safeBasicChests
-      }
+      },
+      levelBefore: rewardSummary?.levelBefore ?? Number(profile?.playerLevel ?? 1),
+      levelAfter: rewardSummary?.levelAfter ?? Number(profile?.playerLevel ?? 1),
+      levelRewards: rewardSummary?.levelRewards ?? [],
+      levelRewardTokenDelta: rewardSummary?.levelRewardTokenDelta ?? 0
     };
   }
 
@@ -1481,6 +1554,7 @@ export class StateCoordinator {
       const safeXp = Math.max(0, Number(selectedRewards.xp ?? 0));
       const safeBasicChests = Math.max(0, Number(selectedRewards.basicChests ?? 0));
       let duplicate = false;
+      let rewardSummary = null;
 
       const profile = await this.profiles.updateProfile(username, (current) => {
         const appliedSettlementKeys = normalizeAppliedSettlementKeys(
@@ -1492,10 +1566,17 @@ export class StateCoordinator {
           return current;
         }
 
+        const xpAwardResult = applyXpWithMaxLevelFallback({
+          currentXp: current?.playerXP ?? 0,
+          xpToAward: safeXp
+        });
         let nextProfile = {
           ...current,
-          tokens: Math.max(0, Number(current.tokens ?? 0) + safeTokens),
-          playerXP: Math.max(0, Number(current.playerXP ?? 0) + safeXp)
+          tokens:
+            Math.max(0, Number(current?.tokens ?? 0) + safeTokens) +
+            xpAwardResult.convertedTokens,
+          playerXP: xpAwardResult.nextXp,
+          playerLevel: xpAwardResult.levelAfter
         };
 
         if (safeBasicChests > 0) {
@@ -1504,6 +1585,17 @@ export class StateCoordinator {
             amount: safeBasicChests
           });
         }
+
+        rewardSummary = {
+          xpDelta: xpAwardResult.appliedXp,
+          tokenDelta: safeTokens + xpAwardResult.convertedTokens,
+          xpConversionTokenBonus: xpAwardResult.convertedTokens,
+          overflowXp: xpAwardResult.overflowXp,
+          levelBefore: xpAwardResult.levelBefore,
+          levelAfter: xpAwardResult.levelAfter,
+          levelRewards: [],
+          levelRewardTokenDelta: 0
+        };
 
         return {
           ...nextProfile,
@@ -1522,10 +1614,18 @@ export class StateCoordinator {
         settlementKey: effectiveSettlementKey,
         profile,
         rewards: {
-          tokens: safeTokens,
-          xp: safeXp,
+          tokens: duplicate ? 0 : rewardSummary?.tokenDelta ?? Math.max(0, safeTokens),
+          xp: duplicate ? 0 : rewardSummary?.xpDelta ?? Math.max(0, safeXp),
+          xpConversionTokenBonus: duplicate ? 0 : rewardSummary?.xpConversionTokenBonus ?? 0,
+          overflowXp: duplicate ? 0 : rewardSummary?.overflowXp ?? 0,
           basicChests: safeBasicChests
-        }
+        },
+        xpConversionTokenBonus: duplicate ? 0 : rewardSummary?.xpConversionTokenBonus ?? 0,
+        overflowXp: duplicate ? 0 : rewardSummary?.overflowXp ?? 0,
+        levelBefore: duplicate ? Number(profile?.playerLevel ?? 1) : rewardSummary?.levelBefore ?? Number(profile?.playerLevel ?? 1),
+        levelAfter: duplicate ? Number(profile?.playerLevel ?? 1) : rewardSummary?.levelAfter ?? Number(profile?.playerLevel ?? 1),
+        levelRewards: duplicate ? [] : rewardSummary?.levelRewards ?? [],
+        levelRewardTokenDelta: duplicate ? 0 : rewardSummary?.levelRewardTokenDelta ?? 0
       };
     });
   }
@@ -1544,7 +1644,13 @@ export class StateCoordinator {
       chestType: openResult?.chestType ?? chestType,
       consumed: openResult?.consumed ?? 0,
       remaining: openResult?.remaining ?? 0,
-      rewards: openResult?.rewards ?? { xp: 0, tokens: 0, cosmetic: null }
+      rewards: openResult?.rewards ?? {
+        xp: 0,
+        tokens: 0,
+        cosmetic: null,
+        xpConversionTokenBonus: 0,
+        overflowXp: 0
+      }
     };
   }
 

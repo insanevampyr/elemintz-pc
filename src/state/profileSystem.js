@@ -22,7 +22,11 @@ import {
 } from "./statsTracking.js";
 import { normalizeProfileStore } from "./storeSystem.js";
 import { normalizeProfileDailyChallenges } from "./dailyChallengesSystem.js";
-import { deriveLevelFromXp, normalizeProfileLevelRewards } from "./levelRewardsSystem.js";
+import {
+  deriveLevelFromXp,
+  getMaxLevelXpThreshold,
+  normalizeProfileLevelRewards
+} from "./levelRewardsSystem.js";
 
 // Bump this constant whenever persisted profile structure needs a new on-disk
 // schema step. The migration pipeline below upgrades older records to match it.
@@ -220,6 +224,13 @@ function validateAndRepairProfile(profile) {
   repairNumericField("gauntletRivalsDefeated", defaults.gauntletRivalsDefeated);
   repairNumericField("longestWar", defaults.longestWar);
   repairNumericField("matchesUsingAllElements", defaults.matchesUsingAllElements);
+
+  const maxLevelXpThreshold = getMaxLevelXpThreshold();
+  if (Number(repairedProfile.playerXP ?? 0) > maxLevelXpThreshold) {
+    const previousValue = repairedProfile.playerXP;
+    repairedProfile.playerXP = maxLevelXpThreshold;
+    logFieldRepair("playerXP", previousValue, maxLevelXpThreshold);
+  }
 
   const derivedPlayerLevel = Math.max(
     1,

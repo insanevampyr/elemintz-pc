@@ -1,5 +1,5 @@
 import { COSMETIC_CATALOG, normalizeProfileCosmetics } from "./cosmeticSystem.js";
-import { deriveLevelFromXp } from "./levelRewardsSystem.js";
+import { applyXpWithMaxLevelFallback, deriveLevelFromXp } from "./levelRewardsSystem.js";
 import { normalizeProfileStore } from "./storeSystem.js";
 
 export const DEFAULT_CHEST_TYPE = "basic";
@@ -145,11 +145,22 @@ function addTokens(profile, amount) {
   };
 }
 
-function addXp(profile, amount) {
-  const nextAmount = Math.max(0, Number(amount ?? 0) || 0);
+function addXpWithMaxLevelFallback(profile, amount) {
+  const xpResult = applyXpWithMaxLevelFallback({
+    currentXp: profile?.playerXP ?? 0,
+    xpToAward: amount
+  });
+
   return {
-    ...profile,
-    playerXP: Math.max(0, Number(profile.playerXP ?? 0)) + nextAmount
+    profile: {
+      ...profile,
+      tokens: Math.max(0, Number(profile?.tokens ?? 0)) + xpResult.convertedTokens,
+      playerXP: xpResult.nextXp,
+      playerLevel: xpResult.levelAfter
+    },
+    appliedXp: xpResult.appliedXp,
+    overflowXp: xpResult.overflowXp,
+    xpConversionTokenBonus: xpResult.convertedTokens
   };
 }
 
@@ -191,13 +202,18 @@ function openBasicChest(profile, random) {
   let nextProfile = profile;
   let xpReward = 0;
   let tokenReward = 0;
+  let xpConversionTokenBonus = 0;
+  let overflowXp = 0;
   let cosmetic = null;
 
   const roll = random();
 
   if (roll < BASIC_CHEST_XP_CHANCE) {
-    xpReward = BASIC_CHEST_XP_REWARD;
-    nextProfile = addXp(nextProfile, xpReward);
+    const xpGrant = addXpWithMaxLevelFallback(nextProfile, BASIC_CHEST_XP_REWARD);
+    xpReward = xpGrant.appliedXp;
+    xpConversionTokenBonus = xpGrant.xpConversionTokenBonus;
+    overflowXp = xpGrant.overflowXp;
+    nextProfile = xpGrant.profile;
   } else if (roll < BASIC_CHEST_XP_CHANCE + BASIC_CHEST_TOKEN_CHANCE) {
     tokenReward = BASIC_CHEST_TOKEN_REWARD;
     nextProfile = addTokens(nextProfile, tokenReward);
@@ -220,7 +236,9 @@ function openBasicChest(profile, random) {
     rewards: {
       xp: xpReward,
       tokens: tokenReward,
-      cosmetic
+      cosmetic,
+      xpConversionTokenBonus,
+      overflowXp
     }
   };
 }
@@ -252,10 +270,15 @@ function openTieredCosmeticChest(
   const guaranteedTokenReward = drawRandomInt(guaranteedTokens.min, guaranteedTokens.max, random);
   const guaranteedXpReward = drawRandomInt(guaranteedXp.min, guaranteedXp.max, random);
   let bonusTokenReward = 0;
+  let xpConversionTokenBonus = 0;
+  let overflowXp = 0;
   let cosmetic = null;
 
   nextProfile = addTokens(nextProfile, guaranteedTokenReward);
-  nextProfile = addXp(nextProfile, guaranteedXpReward);
+  const xpGrant = addXpWithMaxLevelFallback(nextProfile, guaranteedXpReward);
+  nextProfile = xpGrant.profile;
+  xpConversionTokenBonus = xpGrant.xpConversionTokenBonus;
+  overflowXp = xpGrant.overflowXp;
 
   const cosmeticRoll = random();
   if (cosmeticRoll < cosmeticChance) {
@@ -281,9 +304,11 @@ function openTieredCosmeticChest(
   return {
     profile: nextProfile,
     rewards: {
-      xp: guaranteedXpReward,
+      xp: xpGrant.appliedXp,
       tokens: guaranteedTokenReward + bonusTokenReward,
-      cosmetic
+      cosmetic,
+      xpConversionTokenBonus,
+      overflowXp
     }
   };
 }

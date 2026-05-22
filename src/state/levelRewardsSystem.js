@@ -148,6 +148,79 @@ export function getXpThresholds() {
   return [...XP_THRESHOLDS];
 }
 
+export function getMaxLevelXpThreshold() {
+  return getXpForLevel(MAX_LEVEL);
+}
+
+export function applyXpWithMaxLevelFallback({
+  currentXp,
+  xpToAward,
+  tokenRate = 10,
+  minTokenForPositiveOverflow = 1
+} = {}) {
+  const safeCurrentXp = Math.max(0, Number(currentXp ?? 0) || 0);
+  const safeXpToAward = Math.max(0, Number(xpToAward ?? 0) || 0);
+  const safeTokenRate = Math.max(1, Math.floor(Number(tokenRate ?? 10) || 10));
+  const safeMinimumTokenBonus = Math.max(
+    0,
+    Math.floor(Number(minTokenForPositiveOverflow ?? 1) || 0)
+  );
+  const maxLevelXpThreshold = getMaxLevelXpThreshold();
+  const cappedCurrentXp = Math.min(safeCurrentXp, maxLevelXpThreshold);
+  const levelBefore = deriveLevelFromXp(cappedCurrentXp);
+  const remainingXpCapacity = Math.max(0, maxLevelXpThreshold - cappedCurrentXp);
+  const appliedXp = Math.min(remainingXpCapacity, safeXpToAward);
+  const overflowXp = Math.max(0, safeXpToAward - appliedXp);
+  const convertedTokens =
+    overflowXp > 0
+      ? Math.max(safeMinimumTokenBonus, Math.floor(overflowXp / safeTokenRate))
+      : 0;
+  const nextXp = Math.min(maxLevelXpThreshold, cappedCurrentXp + appliedXp);
+  const levelAfter = deriveLevelFromXp(nextXp);
+
+  return {
+    nextXp,
+    maxLevelXpThreshold,
+    levelBefore,
+    levelAfter,
+    appliedXp,
+    overflowXp,
+    convertedTokens,
+    levelCapReachedBefore: levelBefore >= MAX_LEVEL,
+    levelCapReachedAfter: levelAfter >= MAX_LEVEL
+  };
+}
+
+export function trimXpBreakdownLinesToAppliedXp(lines = [], appliedXp = 0) {
+  const normalizedLines = Array.isArray(lines) ? lines : [];
+  let remaining = Math.max(0, Number(appliedXp ?? 0) || 0);
+  const trimmed = [];
+
+  for (const line of normalizedLines) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const rawAmount = Math.max(0, Number(line?.amount ?? 0) || 0);
+    if (rawAmount <= 0) {
+      continue;
+    }
+
+    const nextAmount = Math.min(rawAmount, remaining);
+    if (nextAmount <= 0) {
+      continue;
+    }
+
+    trimmed.push({
+      ...line,
+      amount: nextAmount
+    });
+    remaining -= nextAmount;
+  }
+
+  return trimmed;
+}
+
 export function buildXpBreakdown({ isCompleted, isQuit, didWin, warsWon }) {
   if (!isCompleted || isQuit) {
     return {

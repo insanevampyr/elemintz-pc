@@ -8165,7 +8165,8 @@ test("appController: gauntlet match win records persistent win stats without inc
               claimedMilestoneStreaks: payload.matchWon ? [3] : payload.claimedMilestoneStreaks ?? [],
               milestoneRewards: payload.matchWon
                 ? [{ streak: 3, xp: 0, tokens: 25, chests: [] }]
-                : []
+                : [],
+              xpConversionTokenBonus: payload.matchWon ? 2 : 0
             };
           }
         }
@@ -8213,6 +8214,7 @@ test("appController: gauntlet match win records persistent win stats without inc
       assert.match(modalManager.shows[0].bodyHtml, /Next Rival:/);
       assert.match(modalManager.shows[0].bodyHtml, /Milestone Reward!/);
       assert.match(modalManager.shows[0].bodyHtml, /\+25 Tokens/);
+      assert.match(modalManager.shows[0].bodyHtml, /Max Level Bonus: \+2 Tokens/);
       assert.match(modalManager.shows[0].bodyHtml, /Continue Gauntlet/);
       assert.equal(continuedStarts.length, 0);
       assert.ok(app.pendingGauntletContinuation);
