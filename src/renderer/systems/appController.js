@@ -3676,7 +3676,7 @@ export class AppController {
       this.profile = result?.snapshot
         ? this.buildProfileFromServerSnapshot(result.snapshot)
         : result?.profile ?? this.profile;
-      this.emitChestOpenToast(result, { previousProfile });
+      this.emitChestOpenToast(result, { previousProfile, nextProfile: this.profile });
     } catch (error) {
       preserveModal = true;
       this.modalManager.show({
@@ -3702,22 +3702,36 @@ export class AppController {
       }
     }
 
-  normalizeChestOpenToastRewards(rewards, previousProfile = null) {
+  normalizeChestOpenToastRewards(rewards, previousProfile = null, nextProfile = null) {
     if (!rewards || typeof rewards !== "object") {
       return rewards;
     }
 
+    const xpAmount = Math.max(0, Number(rewards.xp ?? 0) || 0);
     const xpConversionTokenBonus = Math.max(0, Number(rewards.xpConversionTokenBonus ?? 0) || 0);
+    const overflowXp = Math.max(0, Number(rewards.overflowXp ?? 0) || 0);
     if (xpConversionTokenBonus <= 0) {
       return rewards;
     }
 
-    const profileLevel = Math.max(
+    const profileLevelBefore = Math.max(
       0,
       Number(previousProfile?.playerLevel ?? 0) || 0,
       deriveLevelFromXp(previousProfile?.playerXP ?? 0)
     );
-    if (profileLevel < MAX_LEVEL) {
+    const profileLevelAfter = Math.max(
+      0,
+      Number(nextProfile?.playerLevel ?? 0) || 0,
+      deriveLevelFromXp(nextProfile?.playerXP ?? 0)
+    );
+    const wasAlreadyAtMaxLevel = profileLevelBefore >= MAX_LEVEL;
+    const stayedAtMaxWithFullyOverflowedDisplayedXp =
+      profileLevelAfter >= MAX_LEVEL &&
+      xpAmount > 0 &&
+      overflowXp > 0 &&
+      xpAmount === overflowXp;
+
+    if (!wasAlreadyAtMaxLevel && !stayedAtMaxWithFullyOverflowedDisplayedXp) {
       return rewards;
     }
 
@@ -3727,13 +3741,13 @@ export class AppController {
     };
   }
 
-  emitChestOpenToast(result, { previousProfile = null } = {}) {
+  emitChestOpenToast(result, { previousProfile = null, nextProfile = null } = {}) {
     if (!result?.rewards) {
       return;
     }
 
     this.toastManager.showChestOpenReward?.({
-      rewards: this.normalizeChestOpenToastRewards(result.rewards, previousProfile),
+      rewards: this.normalizeChestOpenToastRewards(result.rewards, previousProfile, nextProfile),
       chestType: result.chestType
     });
   }

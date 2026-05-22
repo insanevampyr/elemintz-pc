@@ -9513,6 +9513,331 @@ test("appController: opening a chest at max level suppresses stale raw xp in the
   }
 });
 
+for (const [chestType, xpReward, tokenReward, bonusTokens] of [
+  ["epic", 26, 80, 2],
+  ["legendary", 68, 140, 6]
+]) {
+  test(`appController: opening a ${chestType} chest at max level suppresses stale raw xp and preserves the max level bonus`, async () => {
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const shownScreens = [];
+    const chestToastCalls = [];
+    let serverProfileSnapshot = null;
+
+    const maxLevelProfile = {
+      username: `Max${chestType}User`,
+      title: "Master of EleMintz",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 900,
+      playerXP: 28824,
+      playerLevel: 100,
+      supporterPass: false,
+      chests: { basic: 0, milestone: 0, epic: chestType === "epic" ? 1 : 0, legendary: chestType === "legendary" ? 1 : 0 },
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 }, online_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Master of EleMintz", badge: "none" },
+      ownedCosmetics: {}
+    };
+    const openedProfile = {
+      ...maxLevelProfile,
+      tokens: maxLevelProfile.tokens + tokenReward + bonusTokens,
+      chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+    };
+    const openedSnapshot = {
+      authority: "server",
+      source: "multiplayer",
+      profile: openedProfile,
+      progression: {}
+    };
+    serverProfileSnapshot = {
+      authority: "server",
+      source: "multiplayer",
+      profile: maxLevelProfile,
+      progression: {}
+    };
+
+    const app = new AppController({
+      screenManager: {
+        register: () => {},
+        show: (name, context) => shownScreens.push({ name, context })
+      },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: {
+        showChestOpenReward: (payload) => chestToastCalls.push(payload)
+      }
+    });
+
+    try {
+      globalThis.setTimeout = (callback) => {
+        callback();
+        return 0;
+      };
+      globalThis.window = {
+        elemintz: {
+          state: {
+            getProfile: async () => {
+              throw new Error("local profile path should not be used");
+            },
+            getCosmetics: async () => ({
+              equipped: maxLevelProfile.equippedCosmetics,
+              catalog: {
+                avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+                cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+                background: [{ id: "default_background", name: "Default", owned: true }],
+                elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+                badge: [{ id: "none", name: "No Badge", owned: true }],
+                title: [{ id: "Master of EleMintz", name: "Master of EleMintz", owned: true }]
+              }
+            }),
+            getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+            listProfiles: async () => [],
+            openChest: async () => ({})
+          },
+          multiplayer: {
+            getProfile: async () => serverProfileSnapshot,
+            getCosmetics: async () => ({
+              equipped: maxLevelProfile.equippedCosmetics,
+              catalog: {
+                avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+                cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+                background: [{ id: "default_background", name: "Default", owned: true }],
+                elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+                badge: [{ id: "none", name: "No Badge", owned: true }],
+                title: [{ id: "Master of EleMintz", name: "Master of EleMintz", owned: true }]
+              }
+            }),
+            openChest: async () => {
+              serverProfileSnapshot = openedSnapshot;
+              return {
+                chestType,
+                consumed: 1,
+                remaining: 0,
+                rewards: {
+                  xp: xpReward,
+                  tokens: tokenReward,
+                  cosmetic: null,
+                  xpConversionTokenBonus: bonusTokens,
+                  overflowXp: xpReward
+                },
+                snapshot: openedSnapshot
+              };
+            }
+          }
+        }
+      };
+
+      app.username = maxLevelProfile.username;
+      app.profile = maxLevelProfile;
+      app.onlinePlayState = app.normalizeOnlinePlayState({
+        connectionStatus: "connected",
+        session: {
+          active: true,
+          username: maxLevelProfile.username,
+          sessionId: `${chestType}-session`,
+          accountId: `${chestType}-account`,
+          profileKey: maxLevelProfile.username,
+          authenticated: true
+        }
+      });
+
+      await app.showProfile();
+      if (chestType === "epic") {
+        await shownScreens.at(-1).context.actions.openEpicChest();
+      } else {
+        await shownScreens.at(-1).context.actions.openLegendaryChest();
+      }
+
+      assert.equal(chestToastCalls.length, 1);
+      assert.deepEqual(chestToastCalls[0], {
+        chestType,
+        rewards: {
+          xp: 0,
+          tokens: tokenReward,
+          cosmetic: null,
+          xpConversionTokenBonus: bonusTokens,
+          overflowXp: xpReward
+        }
+      });
+      assert.equal(shownScreens.at(-1).context.profile.playerXP, 28824);
+      assert.equal(
+        shownScreens.at(-1).context.profile.tokens,
+        maxLevelProfile.tokens + tokenReward + bonusTokens
+      );
+    } finally {
+      globalThis.window = originalWindow;
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
+}
+
+for (const [chestType, xpReward, tokenReward] of [
+  ["epic", 26, 80],
+  ["legendary", 68, 140]
+]) {
+  test(`appController: opening a ${chestType} chest below max level preserves normal xp display`, async () => {
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const shownScreens = [];
+    const chestToastCalls = [];
+    let serverProfileSnapshot = null;
+
+    const profile = {
+      username: `Below${chestType}User`,
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 200,
+      playerXP: 2300,
+      playerLevel: 24,
+      supporterPass: false,
+      chests: { basic: 0, milestone: 0, epic: chestType === "epic" ? 1 : 0, legendary: chestType === "legendary" ? 1 : 0 },
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 }, online_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
+      ownedCosmetics: {}
+    };
+    const openedProfile = {
+      ...profile,
+      tokens: profile.tokens + tokenReward,
+      playerXP: profile.playerXP + xpReward,
+      playerLevel: 25,
+      chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+    };
+    const openedSnapshot = {
+      authority: "server",
+      source: "multiplayer",
+      profile: openedProfile,
+      progression: {}
+    };
+    serverProfileSnapshot = {
+      authority: "server",
+      source: "multiplayer",
+      profile,
+      progression: {}
+    };
+
+    const app = new AppController({
+      screenManager: {
+        register: () => {},
+        show: (name, context) => shownScreens.push({ name, context })
+      },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: {
+        showChestOpenReward: (payload) => chestToastCalls.push(payload)
+      }
+    });
+
+    try {
+      globalThis.setTimeout = (callback) => {
+        callback();
+        return 0;
+      };
+      globalThis.window = {
+        elemintz: {
+          state: {
+            getProfile: async () => {
+              throw new Error("local profile path should not be used");
+            },
+            getCosmetics: async () => ({
+              equipped: profile.equippedCosmetics,
+              catalog: {
+                avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+                cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+                background: [{ id: "default_background", name: "Default", owned: true }],
+                elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+                badge: [{ id: "none", name: "No Badge", owned: true }],
+                title: [{ id: "Initiate", name: "Initiate", owned: true }]
+              }
+            }),
+            getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+            listProfiles: async () => [],
+            openChest: async () => ({})
+          },
+          multiplayer: {
+            getProfile: async () => serverProfileSnapshot,
+            getCosmetics: async () => ({
+              equipped: profile.equippedCosmetics,
+              catalog: {
+                avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+                cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+                background: [{ id: "default_background", name: "Default", owned: true }],
+                elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+                badge: [{ id: "none", name: "No Badge", owned: true }],
+                title: [{ id: "Initiate", name: "Initiate", owned: true }]
+              }
+            }),
+            openChest: async () => {
+              serverProfileSnapshot = openedSnapshot;
+              return {
+                chestType,
+                consumed: 1,
+                remaining: 0,
+                rewards: {
+                  xp: xpReward,
+                  tokens: tokenReward,
+                  cosmetic: null,
+                  xpConversionTokenBonus: 0,
+                  overflowXp: 0
+                },
+                snapshot: openedSnapshot
+              };
+            }
+          }
+        }
+      };
+
+      app.username = profile.username;
+      app.profile = profile;
+      app.onlinePlayState = app.normalizeOnlinePlayState({
+        connectionStatus: "connected",
+        session: {
+          active: true,
+          username: profile.username,
+          sessionId: `below-${chestType}-session`,
+          accountId: `below-${chestType}-account`,
+          profileKey: profile.username,
+          authenticated: true
+        }
+      });
+
+      await app.showProfile();
+      if (chestType === "epic") {
+        await shownScreens.at(-1).context.actions.openEpicChest();
+      } else {
+        await shownScreens.at(-1).context.actions.openLegendaryChest();
+      }
+
+      assert.equal(chestToastCalls.length, 1);
+      assert.deepEqual(chestToastCalls[0], {
+        chestType,
+        rewards: {
+          xp: xpReward,
+          tokens: tokenReward,
+          cosmetic: null,
+          xpConversionTokenBonus: 0,
+          overflowXp: 0
+        }
+      });
+    } finally {
+      globalThis.window = originalWindow;
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
+}
+
 test("appController: opening a basic chest is a no-op when the profile has zero chests", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
