@@ -9415,6 +9415,104 @@ test("appController: opening a basic chest from profile shows the fake open visu
   }
 });
 
+test("appController: opening a chest at max level suppresses stale raw xp in the chest-open toast and keeps the max level bonus", async () => {
+  const originalWindow = globalThis.window;
+  const originalSetTimeout = globalThis.setTimeout;
+  const shownScreens = [];
+  const chestToastCalls = [];
+
+  const maxLevelProfile = {
+    username: "MaxChestUser",
+    title: "Master of EleMintz",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 900,
+    playerXP: 28824,
+    playerLevel: 100,
+    supporterPass: false,
+    chests: { basic: 1 },
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Master of EleMintz", badge: "none" }
+  };
+  const openedProfile = {
+    ...maxLevelProfile,
+    tokens: 903,
+    chests: { basic: 0 }
+  };
+  let profileReads = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {
+      showChestOpenReward: (payload) => chestToastCalls.push(payload)
+    }
+  });
+
+  try {
+    globalThis.setTimeout = (callback) => {
+      callback();
+      return 0;
+    };
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => {
+            profileReads += 1;
+            return profileReads === 1 ? maxLevelProfile : openedProfile;
+          },
+          getCosmetics: async () => ({
+            equipped: maxLevelProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Master of EleMintz", name: "Master of EleMintz", owned: true }]
+            }
+          }),
+          getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+          listProfiles: async () => [],
+          openChest: async () => ({
+            profile: openedProfile,
+            chestType: "basic",
+            consumed: 1,
+            remaining: 0,
+            rewards: { xp: 29, tokens: 0, cosmetic: null, xpConversionTokenBonus: 2, overflowXp: 29 }
+          })
+        }
+      }
+    };
+
+    app.username = "MaxChestUser";
+
+    await app.showProfile();
+    await shownScreens.at(-1).context.actions.openBasicChest();
+
+    assert.equal(chestToastCalls.length, 1);
+    assert.deepEqual(chestToastCalls[0], {
+      chestType: "basic",
+      rewards: { xp: 0, tokens: 0, cosmetic: null, xpConversionTokenBonus: 2, overflowXp: 29 }
+    });
+    assert.equal(shownScreens.at(-1).context.profile.playerXP, 28824);
+    assert.equal(shownScreens.at(-1).context.profile.tokens, 903);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
 test("appController: opening a basic chest is a no-op when the profile has zero chests", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];

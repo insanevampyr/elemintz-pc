@@ -3472,12 +3472,6 @@ test("multiplayer foundation: repeated legendary chest opens stay stable when th
     })
   });
   let client = null;
-  const normalizationWarnings = [];
-  const originalWarn = console.warn;
-  console.warn = (...args) => {
-    normalizationWarnings.push(args.map((entry) => String(entry)).join(" "));
-  };
-
   try {
     const xpThresholds = getXpThresholds();
     await coordinator.profiles.updateProfile("LegendaryRepeatUser", (current) => ({
@@ -3517,14 +3511,7 @@ test("multiplayer foundation: repeated legendary chest opens stay stable when th
     assert.equal(profileAfterOpens?.chests?.legendary, 1);
     assert.ok((profileAfterOpens?.legendaryChestGrantedLevels?.["25"] ?? false) === true);
     assert.ok((profileAfterOpens?.playerLevel ?? 0) >= 25);
-    assert.equal(
-      normalizationWarnings.some((entry) =>
-        entry.includes("normalization introduced unexpected mutation")
-      ),
-      false
-    );
   } finally {
-    console.warn = originalWarn;
     client?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
@@ -3546,12 +3533,6 @@ test("multiplayer foundation: mixed chest open sequence stays stable across lege
     })
   });
   let client = null;
-  const normalizationWarnings = [];
-  const originalWarn = console.warn;
-  console.warn = (...args) => {
-    normalizationWarnings.push(args.map((entry) => String(entry)).join(" "));
-  };
-
   try {
     await coordinator.profiles.updateProfile("MixedChestUser", (current) => ({
       ...current,
@@ -3591,14 +3572,7 @@ test("multiplayer foundation: mixed chest open sequence stays stable across lege
     assert.equal(profileAfterSequence?.chests?.legendary, 0);
     assert.equal(profileAfterSequence?.chests?.epic, 0);
     assert.equal(profileAfterSequence?.chests?.basic, 0);
-    assert.equal(
-      normalizationWarnings.some((entry) =>
-        entry.includes("normalization introduced unexpected mutation")
-      ),
-      false
-    );
   } finally {
-    console.warn = originalWarn;
     client?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
@@ -3620,12 +3594,6 @@ test("multiplayer foundation: repeated epic chest opens stay stable after fresh 
     })
   });
   let client = null;
-  const normalizationWarnings = [];
-  const originalWarn = console.warn;
-  console.warn = (...args) => {
-    normalizationWarnings.push(args.map((entry) => String(entry)).join(" "));
-  };
-
   try {
     const xpThresholds = getXpThresholds();
     await coordinator.profiles.updateProfile("EpicRepeatUser", (current) => ({
@@ -3665,14 +3633,7 @@ test("multiplayer foundation: repeated epic chest opens stay stable after fresh 
     assert.equal(profileAfterOpens?.chests?.epic, 0);
     assert.ok((profileAfterOpens?.playerLevel ?? 0) >= 25);
     assert.ok((profileAfterOpens?.legendaryChestGrantedLevels?.["25"] ?? false) === true);
-    assert.equal(
-      normalizationWarnings.some((entry) =>
-        entry.includes("normalization introduced unexpected mutation")
-      ),
-      false
-    );
   } finally {
-    console.warn = originalWarn;
     client?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });

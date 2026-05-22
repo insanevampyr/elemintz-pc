@@ -297,6 +297,7 @@ test("toast: chest open rewards render xp, tokens, and cosmetic messages", () =>
   assert.match(appended[4].innerHTML, /assets\/icons\/basic_chest_open\.png/);
   assert.match(appended[4].innerHTML, /Chest Opened/);
   assert.match(appended[5].innerHTML, /Max Level Bonus: \+2 Tokens/);
+  assert.doesNotMatch(appended[5].innerHTML, /\+\d+ XP/);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;

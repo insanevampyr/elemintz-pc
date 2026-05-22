@@ -24,6 +24,7 @@ import { buildAchievementCatalog } from "../../state/achievementSystem.js";
 import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../state/storeSystem.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
+import { deriveLevelFromXp, MAX_LEVEL } from "../../state/levelRewardsSystem.js";
 import { listGauntletRivals, resolveGauntletRivalById } from "../../engine/gauntletRivals.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS, renderMatchTauntHudContents } from "../ui/shared/playSurfaceShared.js";
@@ -3662,6 +3663,7 @@ export class AppController {
     let preserveModal = false;
 
     try {
+      const previousProfile = this.profile ? { ...this.profile } : null;
       this.setProfileChestVisualState(safeChestType, true);
       await this.showProfile();
       await delay(this.isReducedMotion() ? 0 : 220);
@@ -3674,7 +3676,7 @@ export class AppController {
       this.profile = result?.snapshot
         ? this.buildProfileFromServerSnapshot(result.snapshot)
         : result?.profile ?? this.profile;
-      this.emitChestOpenToast(result);
+      this.emitChestOpenToast(result, { previousProfile });
     } catch (error) {
       preserveModal = true;
       this.modalManager.show({
@@ -3700,13 +3702,38 @@ export class AppController {
       }
     }
 
-  emitChestOpenToast(result) {
+  normalizeChestOpenToastRewards(rewards, previousProfile = null) {
+    if (!rewards || typeof rewards !== "object") {
+      return rewards;
+    }
+
+    const xpConversionTokenBonus = Math.max(0, Number(rewards.xpConversionTokenBonus ?? 0) || 0);
+    if (xpConversionTokenBonus <= 0) {
+      return rewards;
+    }
+
+    const profileLevel = Math.max(
+      0,
+      Number(previousProfile?.playerLevel ?? 0) || 0,
+      deriveLevelFromXp(previousProfile?.playerXP ?? 0)
+    );
+    if (profileLevel < MAX_LEVEL) {
+      return rewards;
+    }
+
+    return {
+      ...rewards,
+      xp: 0
+    };
+  }
+
+  emitChestOpenToast(result, { previousProfile = null } = {}) {
     if (!result?.rewards) {
       return;
     }
 
     this.toastManager.showChestOpenReward?.({
-      rewards: result.rewards,
+      rewards: this.normalizeChestOpenToastRewards(result.rewards, previousProfile),
       chestType: result.chestType
     });
   }
