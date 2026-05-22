@@ -31,16 +31,18 @@ function resolveStandaloneDataDir() {
   }
 }
 
+const dataDir = resolveStandaloneDataDir();
+
 const announcementStore = new AnnouncementStore({
-  dataDir: resolveStandaloneDataDir(),
+  dataDir,
   logger
 });
 const boostEventStore = new BoostEventStore({
-  dataDir: resolveStandaloneDataDir(),
+  dataDir,
   logger
 });
 const stateCoordinator = new StateCoordinator({
-  dataDir: resolveStandaloneDataDir(),
+  dataDir,
   getActiveBoostEvent: (options) => boostEventStore.getActiveEvent(options)
 });
 const profileAuthority = new MultiplayerProfileAuthority({
@@ -49,18 +51,18 @@ const profileAuthority = new MultiplayerProfileAuthority({
   announcementStore
 });
 const accountStore = new MultiplayerAccountStore({
-  dataDir: resolveStandaloneDataDir(),
+  dataDir,
   logger
 });
 const adminGrantStore = new AdminGrantStore({
-  dataDir: resolveStandaloneDataDir()
+  dataDir
 });
 const feedbackStore = new FeedbackStore({
-  dataDir: resolveStandaloneDataDir(),
+  dataDir,
   logger
 });
 const shopRotationStore = new ShopRotationStore({
-  dataDir: resolveStandaloneDataDir(),
+  dataDir,
   logger
 });
 
@@ -134,6 +136,7 @@ const server = createMultiplayerFoundation({
   feedbackStore,
   boostEventStore,
   shopRotationStore,
+  dataDir,
   logger
 });
 let shuttingDown = false;

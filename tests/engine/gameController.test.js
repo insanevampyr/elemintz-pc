@@ -6078,7 +6078,8 @@ test("appController: account login uses the multiplayer auth path and hydrates t
     assert.deepEqual(calls.multiplayerLogin, [
       {
         email: "player@example.com",
-        password: "password123"
+        password: "password123",
+        rememberSession: true
       }
     ]);
     assert.equal(calls.multiplayerGetState, 1);
@@ -6211,7 +6212,8 @@ test("appController: account creation uses the multiplayer register path with us
       {
         username: "NewPlayer",
         email: "new@example.com",
-        password: "password123"
+        password: "password123",
+        rememberSession: true
       }
     ]);
     assert.equal(calls.multiplayerGetState, 1);
@@ -6262,6 +6264,116 @@ test("appController: auth failure rerenders the correct auth screen and clears t
     assert.equal(shownScreens.at(-1).context.defaults.email, "taken@example.com");
     assert.ok(!("password" in shownScreens.at(-1).context.defaults));
     assert.match(shownScreens.at(-1).context.errorMessage, /Email already in use|Unable to authenticate this account/i);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: unchecked account login keeps the current run signed in without requesting remember-me persistence", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const calls = {
+    multiplayerLogin: []
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getDailyChallenges: async () => ({
+            dailyLogin: { eligible: false, msUntilReset: 3600000 },
+            daily: { msUntilReset: 3600000, challenges: [] },
+            weekly: { msUntilReset: 7200000, challenges: [] }
+          })
+        },
+        multiplayer: {
+          login: async (payload) => {
+            calls.multiplayerLogin.push(payload);
+            return {
+              ok: true,
+              session: {
+                token: "session-token-remember-off",
+                sessionId: "session-id-remember-off",
+                username: "RememberOffUser",
+                profileKey: "RememberOffUser",
+                accountId: "account-remember-off",
+                authenticated: true
+              }
+            };
+          },
+          getState: async () => ({
+            connectionStatus: "connected",
+            session: {
+              active: true,
+              username: "RememberOffUser",
+              sessionId: "session-id-remember-off",
+              accountId: "account-remember-off",
+              profileKey: "RememberOffUser",
+              authenticated: true
+            },
+            room: null,
+            lastError: null,
+            statusMessage: "Signed in."
+          }),
+          getProfile: async () => ({
+            username: "RememberOffUser",
+            profile: {
+              username: "RememberOffUser",
+              tokens: 120,
+              playerXP: 0,
+              playerLevel: 1,
+              equippedCosmetics: {}
+            },
+            cosmetics: { equipped: {}, owned: {} },
+            stats: { summary: { wins: 0, losses: 0, gamesPlayed: 0, warsEntered: 0, warsWon: 0, cardsCaptured: 0 }, modes: {} },
+            currency: { tokens: 120 },
+            progression: {
+              dailyChallenges: { challenges: [] },
+              weeklyChallenges: { challenges: [] },
+              dailyLogin: { eligible: false, msUntilReset: 3600000 }
+            }
+          }),
+          claimDailyLoginReward: async ({ username }) => ({
+            granted: false,
+            profile: { username, tokens: 120, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+            snapshot: {
+              profile: { username, tokens: 120, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+              progression: {
+                dailyChallenges: { challenges: [] },
+                weeklyChallenges: { challenges: [] },
+                dailyLogin: { eligible: false, msUntilReset: 3600000 }
+              }
+            }
+          })
+        }
+      }
+    };
+
+    app.showLogin();
+    await shownScreens.at(-1).context.actions.login({
+      mode: "login",
+      email: "player@example.com",
+      password: "password123",
+      rememberSession: false
+    });
+
+    assert.deepEqual(calls.multiplayerLogin, [
+      {
+        email: "player@example.com",
+        password: "password123",
+        rememberSession: false
+      }
+    ]);
+    assert.equal(app.username, "RememberOffUser");
   } finally {
     globalThis.window = originalWindow;
   }

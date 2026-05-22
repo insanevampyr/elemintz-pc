@@ -5726,6 +5726,7 @@ export class AppController {
           let username = "";
           let email = "";
           let mode = "choice";
+          let rememberSession = true;
           try {
             this.resetDailyLoginAutoClaimGuard();
             const loginRequest =
@@ -5736,6 +5737,7 @@ export class AppController {
             username = String(loginRequest.username ?? "").trim();
             email = String(loginRequest.email ?? "").trim();
             const password = String(loginRequest.password ?? "");
+            rememberSession = loginRequest.rememberSession !== false;
 
             if (mode === "login" || mode === "register") {
               const authAction =
@@ -5748,8 +5750,8 @@ export class AppController {
 
               const authPayload =
                 mode === "register"
-                  ? { username, email, password }
-                  : { email, password };
+                  ? { username, email, password, rememberSession }
+                  : { email, password, rememberSession };
               const authResult = await authAction(authPayload);
               if (!authResult?.ok) {
                 console.error("[OnlinePlay][Renderer] authentication failed", authResult?.error ?? null);
@@ -5795,7 +5797,8 @@ export class AppController {
               ),
               defaults: {
                 username,
-                email
+                email,
+                rememberSession
               },
               mode: mode === "register" ? "register" : "login"
             });

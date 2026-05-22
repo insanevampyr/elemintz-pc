@@ -37,6 +37,24 @@ function renderStatusAndError(statusMessage, errorMessage) {
   `;
 }
 
+function renderRememberSessionField(defaults = {}) {
+  const rememberSession = defaults.rememberSession !== false;
+  return `
+    <div class="login-form-field login-form-field-checkbox">
+      <label class="login-checkbox-label" for="remember-session-input">
+        <input
+          id="remember-session-input"
+          name="rememberSession"
+          type="checkbox"
+          ${rememberSession ? "checked" : ""}
+        />
+        <span>Keep me signed in for 30 days</span>
+      </label>
+      <p class="login-helper-text">Stay signed in after closing the game. Logging out clears this.</p>
+    </div>
+  `;
+}
+
 function renderSignInForm(defaults) {
   return `
     <form id="login-form" class="stack-md" data-auth-mode="login">
@@ -62,6 +80,7 @@ function renderSignInForm(defaults) {
           autocomplete="current-password"
         />
       </div>
+      ${renderRememberSessionField(defaults)}
       <div class="button-row">
         <button id="login-submit-btn" type="submit" class="btn btn-primary">Sign In</button>
         <button id="login-back-btn" type="button" class="btn btn-secondary">Back</button>
@@ -107,6 +126,7 @@ function renderCreateAccountForm(defaults) {
           autocomplete="new-password"
         />
       </div>
+      ${renderRememberSessionField(defaults)}
       <div class="button-row">
         <button id="register-submit-btn" type="submit" class="btn btn-primary">Create Account</button>
         <button id="register-back-btn" type="button" class="btn btn-secondary">Back</button>
@@ -183,6 +203,7 @@ export const loginScreen = {
     const usernameInput = document.getElementById("username-input");
     const emailInput = document.getElementById("email-input");
     const passwordInput = document.getElementById("password-input");
+    const rememberSessionInput = document.getElementById("remember-session-input");
     const backButton = document.getElementById(mode === "register" ? "register-back-btn" : "login-back-btn");
 
     if (!form || !emailInput || !passwordInput || !backButton) {
@@ -203,13 +224,14 @@ export const loginScreen = {
       const username = String(usernameInput?.value ?? "").trim();
       const email = String(emailInput.value ?? "").trim();
       const password = String(passwordInput.value ?? "");
+      const rememberSession = rememberSessionInput?.checked !== false;
 
       if (mode === "login") {
         if (!email || !password) {
           context.actions.showMode({
             mode: "login",
             errorMessage: "Email and password are required to sign in.",
-            defaults: { email }
+            defaults: { email, rememberSession }
           });
           return;
         }
@@ -218,7 +240,7 @@ export const loginScreen = {
           context.actions.showMode({
             mode: "register",
             errorMessage: "Username, email, and password are required to create an account.",
-            defaults: { username, email }
+            defaults: { username, email, rememberSession }
           });
           return;
         }
@@ -227,7 +249,7 @@ export const loginScreen = {
           context.actions.showMode({
             mode: "register",
             errorMessage: "Username must be at least 2 characters long.",
-            defaults: { username, email }
+            defaults: { username, email, rememberSession }
           });
           return;
         }
@@ -237,7 +259,8 @@ export const loginScreen = {
         mode,
         username,
         email,
-        password
+        password,
+        rememberSession
       });
     });
   }

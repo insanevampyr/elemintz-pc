@@ -2737,7 +2737,7 @@ test("state: easy PvE disables chest drops for all outcomes", async () => {
   assert.equal(drawResult.profile.chests.basic, 0);
 });
 
-test("state: hard PvE win grants +5 XP and +5 tokens over normal PvE", async () => {
+test("state: hard PvE match rewards grant +5 XP and +5 tokens over normal PvE before challenge bonuses", async () => {
   const normalDataDir = await createTempDataDir();
   const hardDataDir = await createTempDataDir();
   const normalState = new StateCoordinator({
@@ -2761,8 +2761,9 @@ test("state: hard PvE win grants +5 XP and +5 tokens over normal PvE", async () 
   });
 
   assert.equal(hardResult.matchTokenDelta, normalResult.matchTokenDelta + 5);
-  assert.equal(hardResult.tokenDelta, normalResult.tokenDelta + 5);
-  assert.equal(hardResult.xpDelta, normalResult.xpDelta + 5);
+  assert.equal(hardResult.matchXpDelta, normalResult.matchXpDelta + 5);
+  assert.ok(hardResult.tokenDelta >= hardResult.matchTokenDelta);
+  assert.ok(hardResult.xpDelta >= hardResult.matchXpDelta);
   assert.ok(hardResult.xpBreakdown.lines.some((line) => line.label === "Hard AI Victory Bonus" && line.amount === 5));
   assert.ok(normalResult.xpBreakdown.lines.every((line) => line.label !== "Hard AI Victory Bonus"));
 });

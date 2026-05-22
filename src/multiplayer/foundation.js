@@ -655,12 +655,17 @@ export function createMultiplayerFoundation({
   adminGrantStore = null,
   feedbackStore = null,
   boostEventStore = null,
-  shopRotationStore = null
+  shopRotationStore = null,
+  dataDir = null
 } = {}) {
   const app = express();
   const httpServer = http.createServer(app);
   const roomStore = createRoomStore({ random });
-  const sessionStore = createSessionStore({ logger, gracePeriodMs: roomReconnectTimeoutMs });
+  const sessionStore = createSessionStore({
+    logger,
+    gracePeriodMs: roomReconnectTimeoutMs,
+    dataDir
+  });
   const inFlightFounderGrants = new Map();
   const io = new SocketIOServer(httpServer, {
     cors: {
@@ -1050,16 +1055,70 @@ export function createMultiplayerFoundation({
     }
   }
 
-  function buildResolvedAccountSession(socket, account) {
+  function buildResolvedAccountSession(socket, account, { rememberSession = true } = {}) {
     return sessionStore.issueSession({
       username: account?.username,
       profileKey: account?.profileKey ?? account?.username,
       accountId: account?.accountId ?? null,
       email: account?.email ?? null,
       authenticated: true,
+      rememberSession,
       replaceDisconnected: true,
       socketId: socket.id
     });
+  }
+
+  async function validateAuthenticatedSession(session) {
+    try {
+      if (!session?.authenticated) {
+        return {
+          ok: true,
+          session
+        };
+      }
+
+      if (session?.accountId && typeof accountStore?.getAccountById === "function") {
+        const account = await accountStore.getAccountById(session.accountId);
+        if (!account) {
+          sessionStore.destroySession(session.token);
+          return {
+            ok: false,
+            error: {
+              code: "SESSION_NOT_FOUND",
+              message: "This online session is no longer valid."
+            }
+          };
+        }
+      }
+
+      if (typeof profileAuthority?.getProfile === "function") {
+        const profileKey = session?.profileKey ?? session?.username ?? null;
+        const profile = profileKey ? await profileAuthority.getProfile(profileKey) : null;
+        if (!profile) {
+          sessionStore.destroySession(session.token);
+          return {
+            ok: false,
+            error: {
+              code: "SESSION_NOT_FOUND",
+              message: "This online session is no longer valid."
+            }
+          };
+        }
+      }
+
+      return {
+        ok: true,
+        session
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: "SESSION_VALIDATION_FAILED",
+          message: String(error?.message ?? "Unable to validate this online session.")
+        }
+      };
+    }
   }
 
   async function ensureSocketSession(socket, payload = {}, { allowBootstrap = false } = {}) {
@@ -1514,7 +1573,9 @@ export function createMultiplayerFoundation({
           username: account.username,
           accountId: account.accountId
         });
-        const sessionResult = buildResolvedAccountSession(socket, account);
+        const sessionResult = buildResolvedAccountSession(socket, account, {
+          rememberSession: payload?.rememberSession !== false
+        });
         if (!sessionResult?.ok) {
           respond(sessionResult);
           return;
@@ -1545,7 +1606,9 @@ export function createMultiplayerFoundation({
           email: payload?.email,
           password: payload?.password
         });
-        const sessionResult = buildResolvedAccountSession(socket, account);
+        const sessionResult = buildResolvedAccountSession(socket, account, {
+          rememberSession: payload?.rememberSession !== false
+        });
         if (!sessionResult?.ok) {
           respond(sessionResult);
           return;
@@ -1562,7 +1625,7 @@ export function createMultiplayerFoundation({
       }
     });
 
-    socket.on("session:resume", (payload = {}, respond = () => {}) => {
+    socket.on("session:resume", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const result = sessionStore.resumeSession({
         token: payload?.sessionToken,
@@ -1573,11 +1636,17 @@ export function createMultiplayerFoundation({
         return;
       }
 
+      const validationResult = await validateAuthenticatedSession(result.session);
+      if (!validationResult?.ok) {
+        respond(validationResult);
+        return;
+      }
+
       respond({
         ok: true,
-        session: sessionStore.toPublicSession(result.session)
+        session: sessionStore.toPublicSession(validationResult.session)
       });
-      void deliverPendingAdminNoticesForSession(result.session, socket.id);
+      void deliverPendingAdminNoticesForSession(validationResult.session, socket.id);
     });
 
     socket.on("session:logout", (_payload = {}, respond = () => {}) => {

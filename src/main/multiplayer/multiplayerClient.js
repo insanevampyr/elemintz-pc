@@ -7,7 +7,7 @@ import { formatServerTimestamp } from "../../multiplayer/logger.js";
 export const DEFAULT_MULTIPLAYER_SERVER_URL = "https://uncatchable-jonelle-pronouncedly.ngrok-free.dev";
 const MULTIPLAYER_SESSION_SCHEMA_VERSION = 1;
 const MULTIPLAYER_SESSION_FILENAME = "multiplayer-session.json";
-const AUTHENTICATED_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
+const AUTHENTICATED_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 const ROOM_ACTION_TIMEOUT_MS = 2000;
 const SUBMIT_MOVE_TIMEOUT_MS = 2000;
 const INVALID_SESSION_ERROR_CODES = new Set([
@@ -467,7 +467,9 @@ function cloneState(state) {
           sessionId: state.session.sessionId ?? null,
           accountId: state.session.accountId ?? null,
           profileKey: state.session.profileKey ?? null,
-          authenticated: Boolean(state.session.authenticated)
+          authenticated: Boolean(state.session.authenticated),
+          rememberSession: Boolean(state.session.rememberSession),
+          expiresAt: state.session.expiresAt ?? null
         }
       : {
           active: false,
@@ -475,7 +477,9 @@ function cloneState(state) {
           sessionId: null,
           accountId: null,
           profileKey: null,
-          authenticated: false
+          authenticated: false,
+          rememberSession: false,
+          expiresAt: null
         },
     room: cloneRoom(state.room),
     latestRoundResult: cloneRoundResult(state.latestRoundResult),
@@ -502,11 +506,19 @@ function createPersistedSessionRecord({
   sessionId,
   accountId,
   profileKey,
-  authenticated
+  authenticated,
+  rememberSession = false,
+  expiresAt = null
 } = {}) {
-  if (!token || !authenticated) {
+  if (!token || !authenticated || !rememberSession) {
     return null;
   }
+
+  const normalizedExpiresAt = String(expiresAt ?? "").trim();
+  const safeExpiresAt =
+    normalizedExpiresAt && Number.isFinite(Date.parse(normalizedExpiresAt))
+      ? normalizedExpiresAt
+      : new Date(Date.now() + AUTHENTICATED_SESSION_MAX_AGE_MS).toISOString();
 
   return {
     token: String(token),
@@ -516,11 +528,18 @@ function createPersistedSessionRecord({
     accountId: accountId ?? null,
     profileKey: profileKey ?? username ?? null,
     authenticated: true,
+    rememberSession: true,
+    expiresAt: safeExpiresAt,
     persistedAt: new Date().toISOString()
   };
 }
 
 function isExpiredPersistedSessionRecord(session) {
+  const expiresAtMs = Date.parse(session?.expiresAt ?? "");
+  if (Number.isFinite(expiresAtMs)) {
+    return Date.now() >= expiresAtMs;
+  }
+
   const persistedAtMs = Date.parse(session?.persistedAt ?? "");
   if (!Number.isFinite(persistedAtMs)) {
     return false;
@@ -637,7 +656,9 @@ function cloneIpcSafeSession(session) {
     sessionId: session?.sessionId ?? null,
     accountId: session?.accountId ?? null,
     profileKey: session?.profileKey ?? null,
-    authenticated: Boolean(session?.authenticated)
+    authenticated: Boolean(session?.authenticated),
+    rememberSession: Boolean(session?.rememberSession),
+    expiresAt: session?.expiresAt ?? null
   };
 }
 
@@ -745,7 +766,9 @@ export class MultiplayerClient {
         sessionId: null,
         accountId: null,
         profileKey: null,
-        authenticated: false
+        authenticated: false,
+        rememberSession: false,
+        expiresAt: null
       },
       room: null,
       latestRoundResult: null,
@@ -783,7 +806,9 @@ export class MultiplayerClient {
       sessionId: session?.sessionId ?? this.state.session?.sessionId,
       accountId: session?.accountId ?? this.state.session?.accountId,
       profileKey: session?.profileKey ?? this.state.session?.profileKey,
-      authenticated: session?.authenticated ?? this.state.session?.authenticated
+      authenticated: session?.authenticated ?? this.state.session?.authenticated,
+      rememberSession: session?.rememberSession ?? this.state.session?.rememberSession,
+      expiresAt: session?.expiresAt ?? this.state.session?.expiresAt
     });
 
     await this.sessionStore.write({
@@ -1041,7 +1066,9 @@ export class MultiplayerClient {
           sessionId: session.sessionId ?? null,
           accountId: session.accountId ?? null,
           profileKey: session.profileKey ?? session.username ?? null,
-          authenticated: Boolean(session.authenticated)
+          authenticated: Boolean(session.authenticated),
+          rememberSession: Boolean(session.rememberSession),
+          expiresAt: session.expiresAt ?? null
         }
       : {
           active: false,
@@ -1049,7 +1076,9 @@ export class MultiplayerClient {
           sessionId: null,
           accountId: null,
           profileKey: null,
-          authenticated: false
+          authenticated: false,
+          rememberSession: false,
+          expiresAt: null
         };
 
     this.sessionToken = session?.token ?? null;
@@ -1070,7 +1099,9 @@ export class MultiplayerClient {
         sessionId: null,
         accountId: null,
         profileKey: null,
-        authenticated: false
+        authenticated: false,
+        rememberSession: false,
+        expiresAt: null
       }
     });
   }
@@ -1099,7 +1130,7 @@ export class MultiplayerClient {
 
   async restoreSession({ serverUrl } = {}) {
     const persisted = await this.readPersistedSessionRecord();
-    if (!persisted?.token || !persisted?.authenticated) {
+    if (!persisted?.token || !persisted?.authenticated || persisted?.rememberSession === false) {
       return {
         ok: true,
         restored: false,
@@ -1155,7 +1186,10 @@ export class MultiplayerClient {
     if (resumeResponse?.ok && resumeResponse.session?.authenticated) {
       const restoredSession = {
         ...resumeResponse.session,
-        token: resumeResponse.session?.token ?? persisted.token
+        token: resumeResponse.session?.token ?? persisted.token,
+        rememberSession:
+          resumeResponse.session?.rememberSession ?? persisted.rememberSession !== false,
+        expiresAt: resumeResponse.session?.expiresAt ?? persisted.expiresAt ?? null
       };
       this.applySession(restoredSession);
       await this.writePersistedSessionRecord(restoredSession);
@@ -1183,7 +1217,7 @@ export class MultiplayerClient {
     };
   }
 
-  async authenticate(eventName, payload, { serverUrl } = {}) {
+  async authenticate(eventName, payload, { serverUrl, rememberSession = true } = {}) {
     const connected = await this.ensureConnected({ serverUrl });
     if (!connected || !this.socket) {
       const error = this.state.lastError
@@ -1197,8 +1231,19 @@ export class MultiplayerClient {
 
     const response = await this.emitRequest(eventName, payload, { serverUrl });
     if (response?.ok && response.session) {
-      this.applySession(response.session);
-      await this.writePersistedSessionRecord(response.session);
+      const resolvedSession = {
+        ...response.session,
+        rememberSession: Boolean(rememberSession),
+        expiresAt:
+          response.session?.expiresAt ??
+          (rememberSession ? new Date(Date.now() + AUTHENTICATED_SESSION_MAX_AGE_MS).toISOString() : null)
+      };
+      this.applySession(resolvedSession);
+      if (rememberSession) {
+        await this.writePersistedSessionRecord(resolvedSession);
+      } else {
+        await this.clearPersistedSessionRecord();
+      }
       this.updateState({
         lastError: null,
         statusMessage:
@@ -1206,7 +1251,10 @@ export class MultiplayerClient {
             ? "Account created. Online session active."
             : "Signed in. Online session active."
       });
-      return cloneIpcSafeAuthResponse(response);
+      return cloneIpcSafeAuthResponse({
+        ...response,
+        session: resolvedSession
+      });
     }
 
     this.updateState({
@@ -1428,7 +1476,9 @@ export class MultiplayerClient {
         username: this.state.session?.username ?? null,
         profileKey: this.state.session?.profileKey ?? null,
         accountId: this.state.session?.accountId ?? null,
-        authenticated: Boolean(this.state.session?.authenticated)
+        authenticated: Boolean(this.state.session?.authenticated),
+        rememberSession: Boolean(this.state.session?.rememberSession),
+        expiresAt: this.state.session?.expiresAt ?? null
       };
     }
 
@@ -1512,7 +1562,9 @@ export class MultiplayerClient {
           sessionId: this.state.session?.sessionId ?? null,
           accountId: this.state.session?.accountId ?? null,
           profileKey: this.state.session?.profileKey ?? null,
-          authenticated: Boolean(this.state.session?.authenticated)
+          authenticated: Boolean(this.state.session?.authenticated),
+          rememberSession: Boolean(this.state.session?.rememberSession),
+          expiresAt: this.state.session?.expiresAt ?? null
         },
         room: null,
         latestRoundResult: null,
@@ -1539,7 +1591,9 @@ export class MultiplayerClient {
           sessionId: this.state.session?.sessionId ?? null,
           accountId: this.state.session?.accountId ?? null,
           profileKey: this.state.session?.profileKey ?? null,
-          authenticated: Boolean(this.state.session?.authenticated)
+          authenticated: Boolean(this.state.session?.authenticated),
+          rememberSession: Boolean(this.state.session?.rememberSession),
+          expiresAt: this.state.session?.expiresAt ?? null
         },
         room: preserveAuthoritativeState ? this.state.room : null,
         latestRoundResult: preserveAuthoritativeState ? this.state.latestRoundResult : null,
@@ -1902,19 +1956,19 @@ export class MultiplayerClient {
     );
   }
 
-  async register({ email, password, username, serverUrl } = {}) {
+  async register({ email, password, username, serverUrl, rememberSession = true } = {}) {
     return this.authenticate(
       "auth:register",
-      { email, password, username },
-      { serverUrl }
+      { email, password, username, rememberSession },
+      { serverUrl, rememberSession }
     );
   }
 
-  async login({ email, password, serverUrl } = {}) {
+  async login({ email, password, serverUrl, rememberSession = true } = {}) {
     return this.authenticate(
       "auth:login",
-      { email, password },
-      { serverUrl }
+      { email, password, rememberSession },
+      { serverUrl, rememberSession }
     );
   }
 
@@ -2445,7 +2499,9 @@ export class MultiplayerClient {
         sessionId: this.state.session?.sessionId ?? null,
         accountId: this.state.session?.accountId ?? null,
         profileKey: this.state.session?.profileKey ?? null,
-        authenticated: Boolean(this.state.session?.authenticated)
+        authenticated: Boolean(this.state.session?.authenticated),
+        rememberSession: Boolean(this.state.session?.rememberSession),
+        expiresAt: this.state.session?.expiresAt ?? null
       },
       room: null,
       latestRoundResult: null,

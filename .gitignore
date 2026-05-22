@@ -31,3 +31,5 @@ elemintz_runlog.txt
 elemintz_runlog
 elemintz_runlog*
 server-data/
+
+server-data/multiplayer-sessions.json

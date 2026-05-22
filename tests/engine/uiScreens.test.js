@@ -2319,7 +2319,7 @@ test("ui: auth choice screen renders Sign In, Create Account, and version badge"
   assert.match(html, />v2\.1\.20</);
 });
 
-test("ui: sign in screen renders Email and Password only", () => {
+test("ui: sign in screen renders Email, Password, and the keep-signed-in controls", () => {
   const html = loginScreen.render({
     mode: "login",
     defaults: { email: "player@example.com" }
@@ -2330,6 +2330,10 @@ test("ui: sign in screen renders Email and Password only", () => {
   assert.doesNotMatch(html, /Username/);
   assert.match(html, /Email/);
   assert.match(html, /Password/);
+  assert.match(html, /Keep me signed in for 30 days/);
+  assert.match(html, /Stay signed in after closing the game\. Logging out clears this\./);
+  assert.match(html, /type="checkbox"/);
+  assert.match(html, /checked/);
 });
 
 test("ui: create account screen renders Username, Email, and Password", () => {
@@ -2343,6 +2347,114 @@ test("ui: create account screen renders Username, Email, and Password", () => {
   assert.match(html, /Username/);
   assert.match(html, /Email/);
   assert.match(html, /Password/);
+  assert.match(html, /Keep me signed in for 30 days/);
+});
+
+test("ui: auth forms submit the remember-session preference", async () => {
+  const previousDocument = global.document;
+  const previousAnimationFrame = global.requestAnimationFrame;
+  const requests = [];
+  let loginSubmit = null;
+  let registerSubmit = null;
+
+  global.requestAnimationFrame = (handler) => handler();
+
+  try {
+    global.document = {
+      getElementById: (id) => {
+        if (id === "login-form") {
+          return {
+            addEventListener: (_type, handler) => {
+              loginSubmit = handler;
+            }
+          };
+        }
+        if (id === "email-input") {
+          return { value: "player@example.com", focus: () => {}, select: () => {} };
+        }
+        if (id === "password-input") {
+          return { value: "password123" };
+        }
+        if (id === "remember-session-input") {
+          return { checked: true };
+        }
+        if (id === "login-back-btn") {
+          return { addEventListener: () => {} };
+        }
+        return null;
+      }
+    };
+
+    loginScreen.bind({
+      mode: "login",
+      actions: {
+        back: () => {},
+        showMode: () => {},
+        login: async (payload) => requests.push(payload)
+      }
+    });
+
+    await loginSubmit({ preventDefault: () => {} });
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === "login-form") {
+          return {
+            addEventListener: (_type, handler) => {
+              registerSubmit = handler;
+            }
+          };
+        }
+        if (id === "username-input") {
+          return { value: "NewPlayer", focus: () => {}, select: () => {} };
+        }
+        if (id === "email-input") {
+          return { value: "new@example.com", focus: () => {}, select: () => {} };
+        }
+        if (id === "password-input") {
+          return { value: "password123" };
+        }
+        if (id === "remember-session-input") {
+          return { checked: false };
+        }
+        if (id === "register-back-btn") {
+          return { addEventListener: () => {} };
+        }
+        return null;
+      }
+    };
+
+    loginScreen.bind({
+      mode: "register",
+      actions: {
+        back: () => {},
+        showMode: () => {},
+        login: async (payload) => requests.push(payload)
+      }
+    });
+
+    await registerSubmit({ preventDefault: () => {} });
+
+    assert.deepEqual(requests, [
+      {
+        mode: "login",
+        username: "",
+        email: "player@example.com",
+        password: "password123",
+        rememberSession: true
+      },
+      {
+        mode: "register",
+        username: "NewPlayer",
+        email: "new@example.com",
+        password: "password123",
+        rememberSession: false
+      }
+    ]);
+  } finally {
+    global.document = previousDocument;
+    global.requestAnimationFrame = previousAnimationFrame;
+  }
 });
 
 test("ui: auth choice and form back buttons bind to the expected actions", () => {

@@ -579,6 +579,53 @@ test("session store: authenticated connected username count ignores unauthentica
   assert.equal(store.getAuthenticatedConnectedUsernameCount(), 1);
 });
 
+test("session store: remembered authenticated sessions survive store recreation and expire after 30 days", async () => {
+  const dataDir = await createTempDataDir();
+  const baseNow = Date.parse("2026-03-01T12:00:00.000Z");
+
+  try {
+    const initialStore = createSessionStore({
+      logger: { info: () => {}, warn: () => {} },
+      dataDir,
+      now: () => baseNow
+    });
+    const issued = initialStore.issueSession({
+      username: "RememberedUser",
+      socketId: "socket-remembered-1",
+      authenticated: true,
+      rememberSession: true
+    });
+    assert.equal(issued.ok, true);
+    initialStore.disconnectSocket("socket-remembered-1");
+
+    const recreatedStore = createSessionStore({
+      logger: { info: () => {}, warn: () => {} },
+      dataDir,
+      now: () => baseNow + (1000 * 60 * 60 * 24 * 7)
+    });
+    const resumed = recreatedStore.resumeSession({
+      token: issued.session.token,
+      socketId: "socket-remembered-2"
+    });
+    assert.equal(resumed.ok, true);
+    assert.equal(resumed.session?.rememberSession, true);
+
+    const expiredStore = createSessionStore({
+      logger: { info: () => {}, warn: () => {} },
+      dataDir,
+      now: () => baseNow + (1000 * 60 * 60 * 24 * 31)
+    });
+    const expiredResume = expiredStore.resumeSession({
+      token: issued.session.token,
+      socketId: "socket-remembered-3"
+    });
+    assert.equal(expiredResume.ok, false);
+    assert.equal(expiredResume.error?.code, "SESSION_EXPIRED");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: presence:getOnlineCount returns only authenticated connected usernames", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
@@ -4152,6 +4199,81 @@ test("multiplayer foundation: auth login rejects bad credentials and binds profi
     assert.equal(profileResponse?.profile?.profile?.username, "AccountBoundUser");
     assert.deepEqual(authorityCalls, ["AccountBoundUser"]);
   } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: remembered authenticated sessions resume after restart beyond the old reconnect grace window", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  await accountStore.register({
+    email: "remember@example.com",
+    password: "password123",
+    username: "RememberFoundationUser"
+  });
+
+  const createFoundation = () =>
+    createMultiplayerFoundation({
+      port: 0,
+      logger: { info: () => {} },
+      dataDir,
+      accountStore,
+      profileAuthority: {
+        getProfile: async (username) => ({
+          username,
+          profile: { username, equippedCosmetics: {} },
+          progression: {
+            xp: { playerXP: 0, playerLevel: 1 },
+            dailyChallenges: { challenges: [] },
+            weeklyChallenges: { challenges: [] },
+            dailyLogin: { eligible: false }
+          }
+        })
+      }
+    });
+
+  let foundation = createFoundation();
+  let client = null;
+  let reconnectClient = null;
+
+  try {
+    const firstPort = await foundation.start();
+    client = await connectClient(firstPort);
+
+    const login = await new Promise((resolve) => {
+      client.emit(
+        "auth:login",
+        {
+          email: "remember@example.com",
+          password: "password123",
+          rememberSession: true
+        },
+        resolve
+      );
+    });
+
+    assert.equal(login?.ok, true);
+    assert.equal(login?.session?.rememberSession, true);
+    assert.equal(typeof login?.session?.expiresAt, "string");
+
+    client.disconnect();
+    await foundation.stop();
+
+    foundation = createFoundation();
+    const secondPort = await foundation.start();
+    reconnectClient = await connectClient(secondPort);
+
+    const resumed = await resumeSession(reconnectClient, login?.session?.token);
+    assert.equal(resumed?.ok, true);
+    assert.equal(resumed?.session?.username, "RememberFoundationUser");
+    assert.equal(resumed?.session?.rememberSession, true);
+  } finally {
+    reconnectClient?.disconnect();
     client?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });

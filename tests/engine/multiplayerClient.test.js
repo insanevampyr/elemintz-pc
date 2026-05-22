@@ -338,7 +338,9 @@ class FakeSocket {
             username: this.sessionUsername,
             profileKey: this.sessionUsername,
             accountId: "account-id-1",
-            authenticated: true
+            authenticated: true,
+            rememberSession: payload?.rememberSession !== false,
+            expiresAt: "2026-06-27T12:00:00.000Z"
           }
         });
       });
@@ -354,7 +356,9 @@ class FakeSocket {
             username: "VampyrLee",
             profileKey: "VampyrLee",
             accountId: this.sessionAuthenticated ? "account-id-1" : null,
-            authenticated: this.sessionAuthenticated
+            authenticated: this.sessionAuthenticated,
+            rememberSession: this.sessionAuthenticated,
+            expiresAt: "2026-06-27T12:00:00.000Z"
           }
         });
       });
@@ -1801,11 +1805,13 @@ test("multiplayer client: authenticated login reuses the server-issued session f
       eventName: "auth:login",
       payload: {
         email: "player@example.com",
-        password: "password123"
+        password: "password123",
+        rememberSession: true
       }
     });
     assert.equal(client.getState().session?.authenticated, true);
     assert.equal(client.getState().session?.accountId, "account-id-1");
+    assert.equal(client.getState().session?.rememberSession, true);
 
     const equippedCosmetics = createEquippedCosmetics();
     await client.createRoom({
@@ -1818,6 +1824,50 @@ test("multiplayer client: authenticated login reuses the server-issued session f
         equippedCosmetics
       }
     });
+
+    const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
+    assert.equal(persisted.session?.token, "session-token-1");
+    assert.equal(persisted.session?.rememberSession, true);
+    assert.equal(persisted.session?.expiresAt, "2026-06-27T12:00:00.000Z");
+    assert.equal("password" in persisted.session, false);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: unchecked authenticated login does not persist a remembered session", async () => {
+  let lastSocket = null;
+  const dataDir = await createTempDataDir();
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} },
+    dataDir
+  });
+
+  try {
+    const loginResult = await client.login({
+      email: "player@example.com",
+      password: "password123",
+      rememberSession: false
+    });
+
+    assert.equal(loginResult?.ok, true);
+    assert.deepEqual(lastSocket.sentEvents.at(0), {
+      eventName: "auth:login",
+      payload: {
+        email: "player@example.com",
+        password: "password123",
+        rememberSession: false
+      }
+    });
+    assert.equal(client.getState().session?.authenticated, true);
+    assert.equal(client.getState().session?.rememberSession, false);
+
+    const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
+    assert.equal(persisted.session, null);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
@@ -2033,6 +2083,8 @@ test("multiplayer client: expired persisted session is cleared before restore co
           accountId: "expired-account-id",
           profileKey: "ExpiredUser",
           authenticated: true,
+          rememberSession: true,
+          expiresAt: "2026-03-27T12:00:00.000Z",
           persistedAt: "2026-03-01T00:00:00.000Z"
         }
       }),
@@ -2085,6 +2137,7 @@ test("multiplayer client: invalid persisted session is cleared during restore", 
           accountId: "stale-account-id",
           profileKey: "StaleUser",
           authenticated: true,
+          rememberSession: true,
           persistedAt: "2026-03-28T15:00:00.000Z"
         }
       }),
@@ -2102,6 +2155,34 @@ test("multiplayer client: invalid persisted session is cleared during restore", 
     assert.equal(restoreResult?.ok, false);
     assert.equal(restoreResult?.invalid, true);
     assert.equal(client.getState().session?.authenticated, false);
+
+    const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
+    assert.equal(persisted.session, null);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: corrupt remembered session file fails safely during restore", async () => {
+  const dataDir = await createTempDataDir();
+
+  try {
+    await fs.writeFile(
+      path.join(dataDir, "multiplayer-session.json"),
+      "{not-valid-json",
+      "utf8"
+    );
+
+    const client = new MultiplayerClient({
+      socketFactory: () => new FakeSocket(),
+      logger: { info: () => {}, error: () => {} },
+      dataDir
+    });
+
+    const restoreResult = await client.restoreSession();
+
+    assert.equal(restoreResult?.ok, true);
+    assert.equal(restoreResult?.restored, false);
 
     const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
     assert.equal(persisted.session, null);
