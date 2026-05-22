@@ -9513,9 +9513,105 @@ test("appController: opening a chest at max level suppresses stale raw xp in the
   }
 });
 
-for (const [chestType, xpReward, tokenReward, bonusTokens] of [
-  ["epic", 26, 80, 2],
-  ["legendary", 68, 140, 6]
+test("appController: opening a milestone chest at max level suppresses stale raw xp and preserves the max level bonus", async () => {
+  const originalWindow = globalThis.window;
+  const originalSetTimeout = globalThis.setTimeout;
+  const shownScreens = [];
+  const chestToastCalls = [];
+
+  const maxLevelProfile = {
+    username: "MaxMilestoneChestUser",
+    title: "Master of EleMintz",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 900,
+    playerXP: 28824,
+    playerLevel: 100,
+    supporterPass: false,
+    chests: { basic: 0, milestone: 1, epic: 0, legendary: 0 },
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: { avatar: "default_avatar", title: "Master of EleMintz", badge: "none" }
+  };
+  const openedProfile = {
+    ...maxLevelProfile,
+    tokens: 912,
+    chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+  };
+  let profileReads = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {
+      showChestOpenReward: (payload) => chestToastCalls.push(payload)
+    }
+  });
+
+  try {
+    globalThis.setTimeout = (callback) => {
+      callback();
+      return 0;
+    };
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async () => {
+            profileReads += 1;
+            return profileReads === 1 ? maxLevelProfile : openedProfile;
+          },
+          getCosmetics: async () => ({
+            equipped: maxLevelProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Master of EleMintz", name: "Master of EleMintz", owned: true }]
+            }
+          }),
+          getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+          listProfiles: async () => [],
+          openChest: async () => ({
+            profile: openedProfile,
+            chestType: "milestone",
+            consumed: 1,
+            remaining: 0,
+            rewards: { xp: 14, tokens: 12, cosmetic: null, xpConversionTokenBonus: 1, overflowXp: 5 }
+          })
+        }
+      }
+    };
+
+    app.username = "MaxMilestoneChestUser";
+
+    await app.showProfile();
+    await shownScreens.at(-1).context.actions.openMilestoneChest();
+
+    assert.equal(chestToastCalls.length, 1);
+    assert.deepEqual(chestToastCalls[0], {
+      chestType: "milestone",
+      rewards: { xp: 0, tokens: 12, cosmetic: null, xpConversionTokenBonus: 1, overflowXp: 5 }
+    });
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+for (const [chestType, xpReward, tokenReward, bonusTokens, overflowXp] of [
+  ["epic", 35, 80, 2, 14],
+  ["legendary", 92, 140, 6, 51]
 ]) {
   test(`appController: opening a ${chestType} chest at max level suppresses stale raw xp and preserves the max level bonus`, async () => {
     const originalWindow = globalThis.window;
@@ -9624,7 +9720,7 @@ for (const [chestType, xpReward, tokenReward, bonusTokens] of [
                   tokens: tokenReward,
                   cosmetic: null,
                   xpConversionTokenBonus: bonusTokens,
-                  overflowXp: xpReward
+                  overflowXp
                 },
                 snapshot: openedSnapshot
               };
@@ -9662,7 +9758,7 @@ for (const [chestType, xpReward, tokenReward, bonusTokens] of [
           tokens: tokenReward,
           cosmetic: null,
           xpConversionTokenBonus: bonusTokens,
-          overflowXp: xpReward
+          overflowXp
         }
       });
       assert.equal(shownScreens.at(-1).context.profile.playerXP, 28824);

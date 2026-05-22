@@ -3707,9 +3707,7 @@ export class AppController {
       return rewards;
     }
 
-    const xpAmount = Math.max(0, Number(rewards.xp ?? 0) || 0);
     const xpConversionTokenBonus = Math.max(0, Number(rewards.xpConversionTokenBonus ?? 0) || 0);
-    const overflowXp = Math.max(0, Number(rewards.overflowXp ?? 0) || 0);
     if (xpConversionTokenBonus <= 0) {
       return rewards;
     }
@@ -3725,13 +3723,9 @@ export class AppController {
       deriveLevelFromXp(nextProfile?.playerXP ?? 0)
     );
     const wasAlreadyAtMaxLevel = profileLevelBefore >= MAX_LEVEL;
-    const stayedAtMaxWithFullyOverflowedDisplayedXp =
-      profileLevelAfter >= MAX_LEVEL &&
-      xpAmount > 0 &&
-      overflowXp > 0 &&
-      xpAmount === overflowXp;
+    const isAtMaxLevelAfterOpen = profileLevelAfter >= MAX_LEVEL;
 
-    if (!wasAlreadyAtMaxLevel && !stayedAtMaxWithFullyOverflowedDisplayedXp) {
+    if (!wasAlreadyAtMaxLevel && !isAtMaxLevelAfterOpen) {
       return rewards;
     }
 
