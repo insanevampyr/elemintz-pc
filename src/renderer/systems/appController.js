@@ -3673,9 +3673,13 @@ export class AppController {
         chestType: safeChestType
       });
 
-      this.profile = result?.snapshot
-        ? this.buildProfileFromServerSnapshot(result.snapshot)
-        : result?.profile ?? this.profile;
+      if (result?.snapshot) {
+        this.applyServerProfileSnapshot(result.snapshot, {
+          fallbackProfile: result?.profile ?? this.profile
+        });
+      } else {
+        this.profile = result?.profile ?? this.profile;
+      }
       this.emitChestOpenToast(result, { previousProfile, nextProfile: this.profile });
     } catch (error) {
       preserveModal = true;

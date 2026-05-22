@@ -9773,6 +9773,204 @@ for (const [chestType, xpReward, tokenReward, bonusTokens, overflowXp] of [
   });
 }
 
+for (const [chestType, tokenReward, bonusTokens, overflowXp] of [
+  ["basic", 0, 2, 21],
+  ["milestone", 12, 1, 5],
+  ["epic", 80, 2, 14],
+  ["legendary", 140, 6, 51]
+]) {
+  test(`appController: authenticated ${chestType} chest-open toast uses server progression cap data to suppress raw xp`, async () => {
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const shownScreens = [];
+    const chestToastCalls = [];
+    let serverProfileSnapshot = null;
+
+    const maxLevelProfile = {
+      username: `AuthMax${chestType}User`,
+      title: "Master of EleMintz",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      tokens: 900,
+      playerXP: 28824,
+      playerLevel: 100,
+      supporterPass: false,
+      chests: {
+        basic: chestType === "basic" ? 1 : 0,
+        milestone: chestType === "milestone" ? 1 : 0,
+        epic: chestType === "epic" ? 1 : 0,
+        legendary: chestType === "legendary" ? 1 : 0
+      },
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 }, online_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Master of EleMintz", badge: "none" },
+      ownedCosmetics: {}
+    };
+    const staleSnapshotProfile = {
+      ...maxLevelProfile,
+      playerXP: 28700,
+      playerLevel: 99
+    };
+    const openedSnapshot = {
+      authority: "server",
+      source: "multiplayer",
+      profile: {
+        ...staleSnapshotProfile,
+        tokens: maxLevelProfile.tokens + tokenReward + bonusTokens,
+        chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+      },
+      progression: {
+        xp: {
+          playerXP: 28824,
+          playerLevel: 100,
+          maxLevel: 100,
+          currentLevelXp: 28824,
+          nextLevelXp: 28824,
+          progressRatio: 1,
+          nextReward: null,
+          levelCapReached: true
+        }
+      }
+    };
+    serverProfileSnapshot = {
+      authority: "server",
+      source: "multiplayer",
+      profile: staleSnapshotProfile,
+      progression: {
+        xp: {
+          playerXP: 28824,
+          playerLevel: 100,
+          maxLevel: 100,
+          currentLevelXp: 28824,
+          nextLevelXp: 28824,
+          progressRatio: 1,
+          nextReward: null,
+          levelCapReached: true
+        }
+      }
+    };
+
+    const app = new AppController({
+      screenManager: {
+        register: () => {},
+        show: (name, context) => shownScreens.push({ name, context })
+      },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: {
+        showChestOpenReward: (payload) => chestToastCalls.push(payload)
+      }
+    });
+
+    try {
+      globalThis.setTimeout = (callback) => {
+        callback();
+        return 0;
+      };
+      globalThis.window = {
+        elemintz: {
+          state: {
+            getProfile: async () => {
+              throw new Error("local profile path should not be used");
+            },
+            getCosmetics: async () => ({
+              equipped: maxLevelProfile.equippedCosmetics,
+              catalog: {
+                avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+                cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+                background: [{ id: "default_background", name: "Default", owned: true }],
+                elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+                badge: [{ id: "none", name: "No Badge", owned: true }],
+                title: [{ id: "Master of EleMintz", name: "Master of EleMintz", owned: true }]
+              }
+            }),
+            getDailyChallenges: async () => ({ xp: {}, daily: { challenges: [], msUntilReset: 0 }, weekly: { challenges: [], msUntilReset: 0 } }),
+            listProfiles: async () => [],
+            openChest: async () => ({})
+          },
+          multiplayer: {
+            getProfile: async () => serverProfileSnapshot,
+            getCosmetics: async () => ({
+              equipped: maxLevelProfile.equippedCosmetics,
+              catalog: {
+                avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+                cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+                background: [{ id: "default_background", name: "Default", owned: true }],
+                elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+                badge: [{ id: "none", name: "No Badge", owned: true }],
+                title: [{ id: "Master of EleMintz", name: "Master of EleMintz", owned: true }]
+              }
+            }),
+            openChest: async () => {
+              serverProfileSnapshot = openedSnapshot;
+              return {
+                chestType,
+                consumed: 1,
+                remaining: 0,
+                rewards: {
+                  xp: overflowXp + 17,
+                  tokens: tokenReward,
+                  cosmetic: null,
+                  xpConversionTokenBonus: bonusTokens,
+                  overflowXp
+                },
+                snapshot: openedSnapshot
+              };
+            }
+          }
+        }
+      };
+
+      app.username = maxLevelProfile.username;
+      app.profile = staleSnapshotProfile;
+      app.onlinePlayState = app.normalizeOnlinePlayState({
+        connectionStatus: "connected",
+        session: {
+          active: true,
+          username: maxLevelProfile.username,
+          sessionId: `${chestType}-auth-session`,
+          accountId: `${chestType}-auth-account`,
+          profileKey: maxLevelProfile.username,
+          authenticated: true
+        }
+      });
+
+      await app.showProfile();
+      if (chestType === "basic") {
+        await shownScreens.at(-1).context.actions.openBasicChest();
+      } else if (chestType === "milestone") {
+        await shownScreens.at(-1).context.actions.openMilestoneChest();
+      } else if (chestType === "epic") {
+        await shownScreens.at(-1).context.actions.openEpicChest();
+      } else {
+        await shownScreens.at(-1).context.actions.openLegendaryChest();
+      }
+
+      assert.equal(chestToastCalls.length, 1);
+      assert.deepEqual(chestToastCalls[0], {
+        chestType,
+        rewards: {
+          xp: 0,
+          tokens: tokenReward,
+          cosmetic: null,
+          xpConversionTokenBonus: bonusTokens,
+          overflowXp
+        }
+      });
+      assert.equal(shownScreens.at(-1).context.profile.playerXP, 28824);
+      assert.equal(shownScreens.at(-1).context.profile.playerLevel, 100);
+    } finally {
+      globalThis.window = originalWindow;
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
+}
+
 for (const [chestType, xpReward, tokenReward] of [
   ["epic", 26, 80],
   ["legendary", 68, 140]

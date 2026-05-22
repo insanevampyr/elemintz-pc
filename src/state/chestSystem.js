@@ -250,7 +250,9 @@ function openMilestoneChest(profile, random) {
     rewards: {
       xp: 0,
       tokens: tokenReward,
-      cosmetic: null
+      cosmetic: null,
+      xpConversionTokenBonus: 0,
+      overflowXp: 0
     }
   };
 }

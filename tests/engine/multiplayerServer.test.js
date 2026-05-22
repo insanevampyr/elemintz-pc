@@ -3579,6 +3579,73 @@ test("multiplayer foundation: mixed chest open sequence stays stable across lege
   }
 });
 
+for (const [chestType, expectedXp, expectedTokens, expectedBonus, expectedOverflow] of [
+  ["basic", 0, 0, 1, 5],
+  ["milestone", 0, 2, 0, 0],
+  ["epic", 0, 40, 2, 20],
+  ["legendary", 0, 100, 5, 50]
+]) {
+  test(`multiplayer foundation: server-authoritative ${chestType} chest opening at max level returns chest conversion metadata and capped progression`, async () => {
+    const dataDir = await createTempDataDir();
+    const coordinator = new StateCoordinator({
+      dataDir,
+      random: () => 0
+    });
+    const foundation = createMultiplayerFoundation({
+      port: 0,
+      logger: { info: () => {} },
+      profileAuthority: new MultiplayerProfileAuthority({
+        coordinator,
+        logger: { info: () => {} }
+      })
+    });
+    let client = null;
+
+    try {
+      const maxLevelXp = getXpThresholds().at(-1);
+      await coordinator.profiles.updateProfile(`Max${chestType}ChestAuthorityUser`, (current) => ({
+        ...current,
+        playerXP: maxLevelXp,
+        playerLevel: 100,
+        chests: {
+          ...(current?.chests ?? {}),
+          basic: chestType === "basic" ? 1 : 0,
+          milestone: chestType === "milestone" ? 1 : 0,
+          epic: chestType === "epic" ? 1 : 0,
+          legendary: chestType === "legendary" ? 1 : 0
+        }
+      }));
+
+      const port = await foundation.start();
+      client = await connectClient(port);
+
+      const username = `Max${chestType}ChestAuthorityUser`;
+      const session = await bootstrapSession(client, username);
+      assert.equal(session?.ok, true);
+
+      const opened = await new Promise((resolve) => {
+        client.emit("profile:openChest", { chestType }, resolve);
+      });
+      const profileAfterOpen = await coordinator.profiles.getProfile(username);
+
+      assert.equal(opened?.ok, true);
+      assert.equal(opened?.result?.chestType, chestType);
+      assert.equal(typeof opened?.result?.rewards?.xpConversionTokenBonus, "number");
+      assert.equal(typeof opened?.result?.rewards?.overflowXp, "number");
+      assert.equal(opened?.result?.rewards?.xp, expectedXp);
+      assert.equal(opened?.result?.rewards?.tokens, expectedTokens);
+      assert.equal(opened?.result?.rewards?.xpConversionTokenBonus, expectedBonus);
+      assert.equal(opened?.result?.rewards?.overflowXp, expectedOverflow);
+      assert.equal(profileAfterOpen?.playerXP, maxLevelXp);
+      assert.equal(profileAfterOpen?.playerLevel, 100);
+    } finally {
+      client?.disconnect();
+      await foundation.stop();
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("multiplayer foundation: repeated epic chest opens stay stable after fresh session level progression", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({
