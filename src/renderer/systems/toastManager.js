@@ -7,6 +7,13 @@ const CHEST_REWARD_IMAGE_PATHS = Object.freeze({
   legendary: "icons/legendary_chest.png"
 });
 
+const CHEST_OPEN_REWARD_IMAGE_PATHS = Object.freeze({
+  basic: "icons/basic_chest_open.png",
+  milestone: "icons/loot_chest_open.png",
+  epic: "icons/epic_chest_open.png",
+  legendary: "icons/legendary_chest_open.png"
+});
+
 function resolveAchievementImage(image) {
   if (!image) {
     return null;
@@ -31,6 +38,13 @@ function resolveAchievementImage(image) {
 function getChestRewardImagePath(chestType) {
   const safeChestType = String(chestType ?? "").trim().toLowerCase();
   const imagePath = CHEST_REWARD_IMAGE_PATHS[safeChestType] ?? CHEST_REWARD_IMAGE_PATHS.basic;
+  return getAssetPath(imagePath);
+}
+
+function getChestOpenRewardImagePath(chestType) {
+  const safeChestType = String(chestType ?? "").trim().toLowerCase();
+  const imagePath =
+    CHEST_OPEN_REWARD_IMAGE_PATHS[safeChestType] ?? CHEST_OPEN_REWARD_IMAGE_PATHS.basic;
   return getAssetPath(imagePath);
 }
 
@@ -150,11 +164,12 @@ export class ToastManager {
     });
   }
 
-  showChestOpenReward({ rewards = {} } = {}) {
+  showChestOpenReward({ rewards = {}, chestType = "basic" } = {}) {
     const xpAmount = Math.max(0, Number(rewards?.xp) || 0);
     const tokenAmount = Math.max(0, Number(rewards?.tokens) || 0);
     const cosmeticName = String(rewards?.cosmetic?.name ?? "").trim();
     const rewardLines = [];
+    const chestImage = getChestOpenRewardImagePath(chestType);
 
     if (tokenAmount > 0) {
       rewardLines.push(`<p>+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}</p>`);
@@ -177,7 +192,7 @@ export class ToastManager {
       className: "reward-toast chest-open-toast",
       durationMs: 2200,
       html: `
-        <div class="reward-toast-icon">\uD83E\uDDF0</div>
+        <img class="reward-toast-icon reward-toast-icon-image" src="${chestImage}" alt="Opened ${String(chestType ?? "basic").trim() || "basic"} chest" />
         <div>
           <h4>Chest Opened</h4>
           ${rewardLines.join("")}
@@ -230,5 +245,5 @@ export class ToastManager {
   }
 }
 
-export { getChestRewardImagePath };
+export { getChestOpenRewardImagePath, getChestRewardImagePath };
 

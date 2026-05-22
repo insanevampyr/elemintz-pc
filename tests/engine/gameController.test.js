@@ -9400,6 +9400,7 @@ test("appController: opening a basic chest from profile shows the fake open visu
     assert.deepEqual(chestOpenCalls, [{ username: "ChestUser", chestType: "basic" }]);
     assert.equal(chestToastCalls.length, 1);
     assert.deepEqual(chestToastCalls[0], {
+      chestType: "basic",
       rewards: { xp: 5, tokens: 0, cosmetic: null }
     });
     assert.equal(shownScreens.at(-2).context.basicChestVisualState.basicOpen, true);
@@ -9628,6 +9629,10 @@ test("appController: authenticated online profile chest opening uses multiplayer
     assert.deepEqual(multiplayerOpenCalls, [{ username: "OnlineChestUser", chestType: "epic" }]);
     assert.deepEqual(localOpenCalls, []);
     assert.equal(chestToastCalls.length, 1);
+    assert.deepEqual(chestToastCalls[0], {
+      chestType: "epic",
+      rewards: { xp: 30, tokens: 80, cosmetic: null }
+    });
     assert.equal(shownScreens.at(-1).context.profile.chests.epic, 0);
     assert.equal(shownScreens.at(-2).context.basicChestVisualState.epicOpen, true);
   } finally {

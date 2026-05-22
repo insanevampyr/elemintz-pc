@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ToastManager, getChestRewardImagePath } from "../../src/renderer/systems/toastManager.js";
+import {
+  ToastManager,
+  getChestOpenRewardImagePath,
+  getChestRewardImagePath
+} from "../../src/renderer/systems/toastManager.js";
 
 function makeFakeElement() {
   return {
@@ -211,6 +215,17 @@ test("toast: unknown chest types fall back to the basic chest art safely", () =>
   assert.equal(getChestRewardImagePath("mystery"), getChestRewardImagePath("basic"));
 });
 
+test("toast: chest opened mapping uses the correct opened chest art for each supported chest type", () => {
+  assert.match(getChestOpenRewardImagePath("basic"), /assets\/icons\/basic_chest_open\.png/);
+  assert.match(getChestOpenRewardImagePath("milestone"), /assets\/icons\/loot_chest_open\.png/);
+  assert.match(getChestOpenRewardImagePath("epic"), /assets\/icons\/epic_chest_open\.png/);
+  assert.match(getChestOpenRewardImagePath("legendary"), /assets\/icons\/legendary_chest_open\.png/);
+});
+
+test("toast: unknown chest types fall back to the basic opened chest art safely", () => {
+  assert.equal(getChestOpenRewardImagePath("mystery"), getChestOpenRewardImagePath("basic"));
+});
+
 test("toast: chest open rewards render xp, tokens, and cosmetic messages", () => {
   const appended = [];
   const root = {
@@ -230,16 +245,25 @@ test("toast: chest open rewards render xp, tokens, and cosmetic messages", () =>
   globalThis.setTimeout = (callback) => { callback(); return 0; };
 
   const manager = new ToastManager(root);
-  manager.showChestOpenReward({ rewards: { xp: 5, tokens: 0, cosmetic: null } });
-  manager.showChestOpenReward({ rewards: { xp: 0, tokens: 10, cosmetic: null } });
+  manager.showChestOpenReward({ chestType: "basic", rewards: { xp: 5, tokens: 0, cosmetic: null } });
+  manager.showChestOpenReward({ chestType: "milestone", rewards: { xp: 0, tokens: 10, cosmetic: null } });
   manager.showChestOpenReward({
+    chestType: "epic",
     rewards: { xp: 0, tokens: 0, cosmetic: { id: "badge_ember", name: "Ember Crest" } }
   });
+  manager.showChestOpenReward({ chestType: "legendary", rewards: { xp: 1, tokens: 0, cosmetic: null } });
+  manager.showChestOpenReward({ chestType: "mystery", rewards: { xp: 2, tokens: 0, cosmetic: null } });
 
-  assert.equal(appended.length, 3);
+  assert.equal(appended.length, 5);
   assert.match(appended[0].innerHTML, /\+5 XP/);
+  assert.match(appended[0].innerHTML, /assets\/icons\/basic_chest_open\.png/);
   assert.match(appended[1].innerHTML, /\+10 Tokens/);
+  assert.match(appended[1].innerHTML, /assets\/icons\/loot_chest_open\.png/);
   assert.match(appended[2].innerHTML, /Cosmetic: <strong>Ember Crest<\/strong>/);
+  assert.match(appended[2].innerHTML, /assets\/icons\/epic_chest_open\.png/);
+  assert.match(appended[3].innerHTML, /assets\/icons\/legendary_chest_open\.png/);
+  assert.match(appended[4].innerHTML, /assets\/icons\/basic_chest_open\.png/);
+  assert.match(appended[4].innerHTML, /Chest Opened/);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;

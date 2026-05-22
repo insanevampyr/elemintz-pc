@@ -3706,7 +3706,8 @@ export class AppController {
     }
 
     this.toastManager.showChestOpenReward?.({
-      rewards: result.rewards
+      rewards: result.rewards,
+      chestType: result.chestType
     });
   }
 
