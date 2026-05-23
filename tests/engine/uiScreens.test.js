@@ -12,7 +12,7 @@ import { loginScreen } from "../../src/renderer/ui/screens/loginScreen.js";
 import { localSetupScreen } from "../../src/renderer/ui/screens/localSetupScreen.js";
 import { menuScreen } from "../../src/renderer/ui/screens/menuScreen.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
-import { profileScreen } from "../../src/renderer/ui/screens/profileScreen.js";
+import { profileScreen, selectTrophyShelfItems } from "../../src/renderer/ui/screens/profileScreen.js";
 import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js";
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
@@ -18150,4 +18150,278 @@ test("ui: Profile Overview shows a clean max-level capped state", () => {
   assert.match(html, /data-profile-overview-xp-value="true">Level cap reached</);
   assert.match(html, /data-profile-overview-next-reward="true">Level cap reached</);
   assert.match(html, /aria-valuenow="100"/);
+});
+
+test("ui: Trophy Shelf auto-selects up to 3 rarest owned cosmetics with the expected tie-breakers", () => {
+  const items = selectTrophyShelfItems(
+    {
+      username: "ShelfUser",
+      ownedCosmetics: {
+        avatar: ["default_avatar", "avatar_neon_pyre_entity", "avatar_neon_tide_entity"],
+        cardBack: ["default_card_back", "cardback_neon_arcana", "supporter_card_back"],
+        background: ["default_background"],
+        elementCardVariant: ["default_fire_card", "fire_variant_crownfire", "fire_variant_neon_arcana", "fire_variant_crownfire"],
+        badge: ["none", "war_machine_badge"],
+        title: ["Initiate", "title_spellwired"]
+      },
+      equippedCosmetics: {
+        avatar: "avatar_neon_pyre_entity",
+        cardBack: "cardback_neon_arcana",
+        background: "default_background",
+        badge: "none",
+        title: "Initiate",
+        elementCardVariant: {
+          fire: "fire_variant_crownfire",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        }
+      }
+    },
+    { limit: 3 }
+  );
+
+  assert.equal(items.length, 3);
+  assert.deepEqual(
+    items.map((item) => item.id),
+    ["fire_variant_crownfire", "cardback_neon_arcana", "title_spellwired"]
+  );
+  assert.ok(items.every((item) => item.id !== "default_avatar"));
+  assert.ok(items.every((item) => item.id !== "supporter_card_back"));
+  assert.equal(items.filter((item) => item.id === "fire_variant_crownfire").length, 1);
+});
+
+test("ui: Trophy Shelf can include owned rotationOnly and storeHidden cosmetics when they rank into the results", () => {
+  const items = selectTrophyShelfItems(
+    {
+      username: "ShelfVisibilityUser",
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        cardBack: ["default_card_back", "supporter_card_back"],
+        background: ["default_background"],
+        elementCardVariant: ["default_fire_card", "fire_variant_crownfire"],
+        badge: ["none", "war_machine_badge"],
+        title: ["Initiate"]
+      },
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        badge: "none",
+        title: "Initiate",
+        elementCardVariant: {
+          fire: "fire_variant_crownfire",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        }
+      }
+    },
+    { limit: 3 }
+  );
+
+  assert.ok(items.some((item) => item.id === "fire_variant_crownfire"));
+  assert.ok(items.some((item) => item.id === "war_machine_badge"));
+});
+
+test("ui: Trophy Shelf falls back safely when qualifying cosmetics or definitions are missing", () => {
+  const items = selectTrophyShelfItems({
+    username: "EmptyShelfUser",
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_missing_debug"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  });
+
+  assert.deepEqual(items, []);
+});
+
+test("ui: own profile renders Trophy Shelf below Profile Overview and keeps Reward Chests", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    tokens: 345,
+    supporterPass: true,
+    chests: { basic: 2, milestone: 1, epic: 3, legendary: 4 },
+    featuredRivalWins: 7,
+    gauntletBestStreak: 12,
+    gauntletRuns: 9,
+    gauntletWins: 6,
+    gauntletRivalsDefeated: 21,
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_neon_pyre_entity"],
+      cardBack: ["default_card_back", "cardback_neon_arcana"],
+      background: ["default_background"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card",
+        "fire_variant_neon_arcana",
+        "water_variant_neon_arcana"
+      ],
+      badge: ["none", "war_machine_badge"],
+      title: ["Initiate", "title_spellwired"]
+    },
+    equippedCosmetics: {
+      avatar: "avatar_neon_pyre_entity",
+      cardBack: "cardback_neon_arcana",
+      background: "default_background",
+      badge: "war_machine_badge",
+      title: "title_spellwired",
+      elementCardVariant: {
+        fire: "fire_variant_neon_arcana",
+        water: "water_variant_neon_arcana",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(profile)
+  };
+
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile,
+      cosmetics
+    })
+  );
+
+  assert.match(html, /data-profile-overview="true"/);
+  assert.match(html, /data-profile-trophy-shelf="true"/);
+  assert.match(html, /Trophy Shelf/);
+  assert.match(html, /Spellwired/);
+  assert.match(html, /Legendary/);
+  assert.match(html, /Title/);
+  assert.match(html, /Neon Arcana/);
+  assert.match(html, /data-hover-preview="true"[\s\S]*data-profile-trophy-item="0"|data-profile-trophy-item="0"[\s\S]*data-hover-preview="true"/);
+  assert.match(html, /Reward Chests/);
+  assert.ok(html.indexOf('data-profile-overview="true"') < html.indexOf('data-profile-trophy-shelf="true"'));
+  assert.ok(html.indexOf('data-profile-trophy-shelf="true"') < html.indexOf("Reward Chests"));
+});
+
+test("ui: viewed profile modal renders Trophy Shelf below Profile Overview and keeps the profile read-only", () => {
+  const html = profileScreen.renderViewedProfileModalBody({
+    username: "Enab",
+    title: "Elementalist",
+    playerLevel: 44,
+    playerXP: 1337,
+    tokens: 222,
+    wins: 30,
+    losses: 12,
+    gamesPlayed: 42,
+    bestWinStreak: 9,
+    featuredRivalWins: 5,
+    gauntletBestStreak: 8,
+    gauntletRuns: 9,
+    gauntletWins: 6,
+    gauntletLosses: 3,
+    gauntletRivalsDefeated: 14,
+    warsEntered: 4,
+    warsWon: 2,
+    longestWar: 3,
+    cardsCaptured: 55,
+    modeStats: {
+      pve: { wins: 10, losses: 2, gamesPlayed: 12, cardsCaptured: 24, warsEntered: 2, warsWon: 1, longestWar: 2 },
+      local_pvp: { wins: 4, losses: 3, gamesPlayed: 7, cardsCaptured: 8, warsEntered: 1, warsWon: 1, longestWar: 1 },
+      online_pvp: { wins: 16, losses: 7, gamesPlayed: 23, cardsCaptured: 23, warsEntered: 1, warsWon: 0, longestWar: 2 }
+    },
+    achievements: {},
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_neon_tide_entity"],
+      cardBack: ["default_card_back", "cardback_neon_arcana"],
+      background: ["default_background"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card",
+        "fire_variant_neon_arcana",
+        "earth_variant_neon_arcana",
+        "wind_variant_neon_arcana",
+        "water_variant_neon_arcana"
+      ],
+      badge: ["none", "war_machine_badge"],
+      title: ["Initiate", "title_spellwired"]
+    },
+    equippedCosmetics: {
+      avatar: "avatar_neon_tide_entity",
+      title: "title_spellwired",
+      badge: "war_machine_badge",
+      background: "default_background",
+      cardBack: "cardback_neon_arcana",
+      elementCardVariant: {
+        fire: "fire_variant_neon_arcana",
+        earth: "earth_variant_neon_arcana",
+        wind: "wind_variant_neon_arcana",
+        water: "water_variant_neon_arcana"
+      }
+    }
+  });
+
+  assert.match(html, /data-profile-overview="true"/);
+  assert.match(html, /data-profile-trophy-shelf="true"/);
+  assert.match(html, /Trophy Shelf/);
+  assert.match(html, /Spellwired/);
+  assert.match(html, /Legendary/);
+  assert.match(html, /Title/);
+  assert.match(html, /Neon Arcana/);
+  assert.doesNotMatch(html, /data-profile-overview-chests="true"/);
+  assert.doesNotMatch(html, /data-equip-type=/);
+  assert.doesNotMatch(html, /Equip<\/button>/);
+  assert.ok(html.indexOf('data-profile-overview="true"') < html.indexOf('data-profile-trophy-shelf="true"'));
+  assert.ok(html.indexOf('data-profile-trophy-shelf="true"') < html.indexOf("Overall Record"));
+});
+
+test("ui: Trophy Shelf shows an empty state when no qualifying rare cosmetics exist", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        ownedCosmetics: {
+          avatar: ["default_avatar"],
+          cardBack: ["default_card_back"],
+          background: ["default_background"],
+          elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+          badge: ["none"],
+          title: ["Initiate"]
+        }
+      },
+      cosmetics: {
+        ...createProfileScreenContext().cosmetics,
+        catalog: getCosmeticCatalogForProfile({
+          ...createProfileScreenContext().profile,
+          ownedCosmetics: {
+            avatar: ["default_avatar"],
+            cardBack: ["default_card_back"],
+            background: ["default_background"],
+            elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+            badge: ["none"],
+            title: ["Initiate"]
+          }
+        })
+      }
+    })
+  );
+
+  assert.match(html, /data-profile-trophy-shelf="true"/);
+  assert.match(html, /No rare cosmetics yet\./);
 });

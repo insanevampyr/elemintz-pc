@@ -4,7 +4,8 @@ import { buildAchievementCatalog } from "../../../state/achievementSystem.js";
 import {
   getCosmeticDisplayName,
   getCosmeticDefinition,
-  getCosmeticHoverMetadata
+  getCosmeticHoverMetadata,
+  getCosmeticCatalogForProfile
 } from "../../../state/cosmeticSystem.js";
 import {
   bindCosmeticHoverPreview,
@@ -145,6 +146,20 @@ function safeStat(value) {
 }
 
 const FLEX_VARIANT_ORDER = Object.freeze(["fire", "earth", "wind", "water"]);
+const TROPHY_SHELF_LIMIT = 3;
+const TROPHY_RARITY_RANK = Object.freeze({
+  Legendary: 0,
+  Epic: 1,
+  Rare: 2,
+  Common: 3
+});
+const TROPHY_TYPE_LABELS = Object.freeze({
+  avatar: "Avatar",
+  title: "Title",
+  badge: "Badge",
+  background: "Background",
+  cardBack: "Card Back"
+});
 
 function titleCase(value) {
   const safeValue = String(value ?? "").trim().toLowerCase();
@@ -154,6 +169,90 @@ function titleCase(value) {
 function defaultVariantName(element) {
   const label = titleCase(element);
   return label ? `Default ${label}` : "Default";
+}
+
+function getTrophyTypeLabel(type, definition = {}) {
+  if (type === "elementCardVariant") {
+    const elementLabel = titleCase(definition?.element);
+    return elementLabel ? `${elementLabel} Variant` : "Variant";
+  }
+
+  return TROPHY_TYPE_LABELS[type] ?? "Cosmetic";
+}
+
+function getTrophySourceCatalog(profile = {}, catalogOverride = null) {
+  if (catalogOverride && typeof catalogOverride === "object") {
+    return catalogOverride;
+  }
+
+  return getCosmeticCatalogForProfile(profile);
+}
+
+export function selectTrophyShelfItems(profile = {}, options = {}) {
+  const limit = Math.max(0, Number(options.limit ?? TROPHY_SHELF_LIMIT) || 0);
+  if (limit === 0) {
+    return [];
+  }
+
+  const sourceCatalog = getTrophySourceCatalog(profile, options.catalog ?? null);
+  const selected = [];
+  const seenKeys = new Set();
+
+  for (const [type, entries] of Object.entries(sourceCatalog ?? {})) {
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry?.owned || !entry?.id || entry?.defaultOwned) {
+        continue;
+      }
+
+      const dedupeKey = `${type}:${entry.id}`;
+      if (seenKeys.has(dedupeKey)) {
+        continue;
+      }
+
+      seenKeys.add(dedupeKey);
+      const name = entry.name ?? getCosmeticDisplayName(type, entry.id, entry.id);
+      const rarity = titleCase(entry.rarity) || "Common";
+      const typeLabel = getTrophyTypeLabel(type, entry);
+
+      if (!name && !entry.image) {
+        continue;
+      }
+
+      selected.push({
+        id: entry.id,
+        type,
+        name: name ?? entry.id,
+        rarity,
+        rarityRank: TROPHY_RARITY_RANK[rarity] ?? TROPHY_RARITY_RANK.Common,
+        typeLabel,
+        image: entry.image ?? null,
+        collection: entry.collection ?? null,
+        equipped: Boolean(entry.equipped)
+      });
+    }
+  }
+
+  return selected
+    .sort((left, right) => {
+      if (left.rarityRank !== right.rarityRank) {
+        return left.rarityRank - right.rarityRank;
+      }
+      if (left.equipped !== right.equipped) {
+        return left.equipped ? -1 : 1;
+      }
+
+      const nameComparison = left.name.localeCompare(right.name);
+      if (nameComparison !== 0) {
+        return nameComparison;
+      }
+
+      return left.id.localeCompare(right.id);
+    })
+    .slice(0, limit);
 }
 
 function normalizeProfileEquippedCosmetics(profile = {}) {
@@ -194,6 +293,27 @@ function buildCardStyleHoverAttributes({ type, id, imageSrc, fallbackName, fallb
     previewDescription: hoverMetadata.description,
     previewVisualText: fallbackVisualText ?? safeName,
     previewRarity: hoverMetadata.rarity
+  });
+}
+
+function buildTrophyHoverAttributes(item = {}) {
+  const safeName = String(item?.name ?? "").trim() || "Cosmetic";
+  const imageSrc = resolveImagePath(item?.image);
+  const resolvedImage = hasRenderablePreviewSource(imageSrc, {
+    previewName: safeName,
+    previewVisualText: safeName
+  })
+    ? imageSrc
+    : null;
+  const hoverMetadata = getCosmeticHoverMetadata(item.type, item.id, safeName);
+
+  return buildHoverPreviewAttributes({
+    previewType: item.type,
+    previewSrc: resolvedImage,
+    previewName: hoverMetadata.name ?? safeName,
+    previewDescription: hoverMetadata.description,
+    previewVisualText: safeName,
+    previewRarity: hoverMetadata.rarity ?? item.rarity ?? "Common"
   });
 }
 
@@ -348,6 +468,54 @@ function renderProfileFlexPanels(profile = {}, options = {}) {
           { label: "Featured Rival Wins", value: featuredRivalWins }
         ])}
       </section>
+    </section>
+  `;
+}
+
+function renderTrophyShelf(profile = {}, options = {}) {
+  const items = selectTrophyShelfItems(profile, {
+    catalog: options.catalog ?? null
+  });
+
+  return `
+    <section class="profile-summary-card stack-sm profile-trophy-panel" data-profile-trophy-shelf="true">
+      <div class="section-heading-row">
+        <h3 class="section-title">Trophy Shelf</h3>
+      </div>
+      ${
+        items.length === 0
+          ? '<p class="text-muted profile-trophy-empty">No rare cosmetics yet.</p>'
+          : `<div class="profile-trophy-grid">
+              ${items
+                .map((item, index) => {
+                  const imageSrc = resolveImagePath(item.image);
+                  const hoverAttributes = buildTrophyHoverAttributes(item);
+                  const hasImage = hasRenderablePreviewSource(imageSrc, {
+                    previewName: item.name,
+                    previewVisualText: item.name
+                  });
+
+                  return `
+                    <article class="profile-trophy-item" data-profile-trophy-item="${index}">
+                      ${
+                        hasImage
+                          ? `<img class="profile-trophy-image" src="${imageSrc}" alt="${item.name}" ${hoverAttributes} />`
+                          : `<div class="profile-trophy-fallback" data-profile-trophy-fallback="true">${item.name}</div>`
+                      }
+                      <div class="profile-trophy-copy">
+                        <strong class="profile-trophy-name">${item.name}</strong>
+                        <div class="profile-trophy-chip-row">
+                          <span class="cosmetic-rarity-label rarity-${item.rarity.toLowerCase()}" data-profile-trophy-rarity="true">${item.rarity}</span>
+                          <span class="profile-trophy-chip" data-profile-trophy-type="true">${item.typeLabel || "Cosmetic"}</span>
+                          ${item.collection ? `<span class="profile-trophy-chip" data-profile-trophy-collection="true">${item.collection}</span>` : ""}
+                        </div>
+                      </div>
+                    </article>
+                  `;
+                })
+                .join("")}
+            </div>`
+      }
     </section>
   `;
 }
@@ -625,6 +793,7 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
         ${renderProfileFlexPanels(viewedProfile, {
           titleIcon: viewedTitleIcon(viewedProfile)
         })}
+        ${renderTrophyShelf(viewedProfile)}
         <div class="profile-summary-grid profile-summary-grid-viewed">
           <section class="profile-summary-card stack-sm">
             <h3 class="section-title">Overall Record</h3>
@@ -741,6 +910,9 @@ export const profileScreen = {
           })}
           ${renderProfileFlexPanels(profile, {
             titleIcon: profileTitleIcon
+          })}
+          ${renderTrophyShelf(profile, {
+            catalog: cosmetics?.catalog ?? null
           })}
           ${renderChestPanel(profile, context.basicChestVisualState, {
             openingInFlight: context.profileChestOpenInFlight
