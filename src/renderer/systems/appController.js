@@ -27,6 +27,7 @@ import { deriveMatchStats } from "../../state/statsTracking.js";
 import { deriveLevelFromXp, MAX_LEVEL } from "../../state/levelRewardsSystem.js";
 import { listGauntletRivals, resolveGauntletRivalById } from "../../engine/gauntletRivals.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
+import { bindCosmeticHoverPreview } from "../ui/shared/cosmeticHoverPreview.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS, renderMatchTauntHudContents } from "../ui/shared/playSurfaceShared.js";
 import { getUpdateSafetyState as buildUpdateSafetyState, isSafeForUpdateRestart as computeIsSafeForUpdateRestart } from "./updateSafety.js";
 import {
@@ -7075,6 +7076,16 @@ export class AppController {
   }
 
   bindViewedProfileModalControls() {
+    const viewedProfileModalBody =
+      globalThis.document?.querySelector?.(".viewed-profile-modal-body") ?? null;
+    if (viewedProfileModalBody && !viewedProfileModalBody.__elemintzHoverPreviewBound) {
+      bindCosmeticHoverPreview({
+        root: viewedProfileModalBody,
+        documentRef: globalThis.document
+      });
+      viewedProfileModalBody.__elemintzHoverPreviewBound = true;
+    }
+
     const viewedAchievementsToggle =
       globalThis.document?.getElementById?.("viewed-profile-achievements-toggle-btn") ?? null;
     if (!viewedAchievementsToggle) {

@@ -7326,6 +7326,161 @@ test("ui: viewed profile modal reuses a single overlay and updates when another 
   }
 });
 
+test("ui: viewed profile modal binds hover preview behavior after render without duplicating listeners on reopen", () => {
+  const previousDocument = global.document;
+  const modalBodyListeners = new Map();
+  const modalBodyListenerCounts = new Map();
+  const blurListeners = new Map();
+  const appended = [];
+  const viewedAchievementsToggleListeners = new Map();
+
+  function createPreviewNode(tagName) {
+    const children = [];
+    const classes = new Set();
+    const attributes = new Map();
+    return {
+      tagName,
+      id: "",
+      hidden: false,
+      className: "",
+      style: {},
+      textContent: "",
+      src: "",
+      alt: "",
+      children,
+      appendChild(child) {
+        if (!children.includes(child)) {
+          children.push(child);
+        }
+      },
+      removeChild(child) {
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
+      },
+      contains(child) {
+        return children.includes(child);
+      },
+      setAttribute(name, value) {
+        attributes.set(name, String(value));
+      },
+      removeAttribute(name) {
+        attributes.delete(name);
+        if (name === "src") {
+          this.src = "";
+        }
+      },
+      getAttribute(name) {
+        return attributes.get(name) ?? null;
+      },
+      classList: {
+        add: (...tokens) => tokens.forEach((token) => classes.add(token)),
+        remove: (...tokens) => tokens.forEach((token) => classes.delete(token)),
+        contains: (token) => classes.has(token)
+      }
+    };
+  }
+
+  const modalBody = {
+    __elemintzHoverPreviewBound: false,
+    addEventListener(type, handler) {
+      modalBodyListeners.set(type, handler);
+      modalBodyListenerCounts.set(type, (modalBodyListenerCounts.get(type) ?? 0) + 1);
+    },
+    contains: () => true
+  };
+  const viewedAchievementsToggle = {
+    addEventListener(type, handler) {
+      viewedAchievementsToggleListeners.set(type, handler);
+    }
+  };
+
+  global.document = {
+    documentElement: { clientWidth: 900, clientHeight: 700 },
+    body: {
+      appendChild(node) {
+        appended.push(node);
+      }
+    },
+    createElement: (tagName) => createPreviewNode(tagName),
+    defaultView: {
+      innerWidth: 900,
+      innerHeight: 700,
+      addEventListener(type, handler) {
+        blurListeners.set(type, handler);
+      }
+    },
+    querySelector(selector) {
+      if (selector === ".viewed-profile-modal-body") {
+        return modalBody;
+      }
+      return null;
+    },
+    getElementById(id) {
+      if (id === "viewed-profile-achievements-toggle-btn") {
+        return viewedAchievementsToggle;
+      }
+      return null;
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  const viewedProfile = {
+    username: "Enab",
+    title: "Initiate",
+    playerLevel: 10,
+    playerXP: 220,
+    achievements: {},
+    gauntletBestStreak: 3,
+    gauntletRuns: 4,
+    gauntletWins: 2,
+    gauntletRivalsDefeated: 7,
+    featuredRivalWins: 1,
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+
+  try {
+    app.showViewedProfileModal(viewedProfile);
+    app.showViewedProfileModal(viewedProfile);
+
+    assert.equal(modalBody.__elemintzHoverPreviewBound, true);
+    assert.equal(modalBodyListenerCounts.get("mouseover"), 1);
+    assert.equal(modalBodyListenerCounts.get("mousemove"), 1);
+    assert.equal(modalBodyListenerCounts.get("mouseleave"), 1);
+    assert.equal(viewedAchievementsToggleListeners.has("click"), true);
+    assert.equal(blurListeners.has("blur"), true);
+    assert.ok(appended.length >= 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: viewed profile renders derived level correctly on first render", () => {
   const html = profileScreen.renderViewedProfileModalBody({
       username: "LookupUser",
