@@ -2,6 +2,7 @@ import {
   AI_DIFFICULTY,
   WAR_REQUIRED_CARDS,
   chooseAiCardIndex,
+  chooseGauntletRivalCardIndex,
   completeMatch,
   completeMatchByCardCount,
   createMatch,
@@ -1104,20 +1105,30 @@ export class GameController {
         };
       }
 
-      const opponentIndex = chooseAiCardIndex(this.match.players.p2.hand, {
-        difficulty: this.aiDifficulty,
-        publicState: {
-          aiCardsRemaining: this.match.players.p2.hand.length,
-          playerCardsRemaining: this.match.players.p1.hand.length,
-          playerElementCounts: buildElementCountsFromCards(this.match.players.p1.hand),
-          recentPlayerMoves: getRecentHistoryMoves(this.match.history, "p1Card"),
-          aiCaptured: this.captured.p2,
-          playerCaptured: this.captured.p1,
-          warActive: Boolean(this.match.war?.active),
-          pileCount: Array.isArray(this.match.currentPile) ? this.match.currentPile.length : 0,
-          totalWarClashes: Number(this.match.war?.clashes ?? 0)
-        }
-      });
+      const recentPlayerMoves = getRecentHistoryMoves(this.match.history, "p1Card");
+      const publicState = {
+        aiCardsRemaining: this.match.players.p2.hand.length,
+        playerCardsRemaining: this.match.players.p1.hand.length,
+        playerElementCounts: buildElementCountsFromCards(this.match.players.p1.hand),
+        recentPlayerMoves,
+        aiCaptured: this.captured.p2,
+        playerCaptured: this.captured.p1,
+        warActive: Boolean(this.match.war?.active),
+        pileCount: Array.isArray(this.match.currentPile) ? this.match.currentPile.length : 0,
+        totalWarClashes: Number(this.match.war?.clashes ?? 0)
+      };
+      const gauntletRival = this.gauntletMode ? getGauntletRivalById(this.gauntletRivalId) : null;
+      const opponentIndex = gauntletRival
+        ? chooseGauntletRivalCardIndex(this.match.players.p2.hand, {
+            rival: gauntletRival,
+            turnIndex: Math.max(0, Number(this.match?.round ?? 1) - 1),
+            playerPreviousElement: recentPlayerMoves.at(-1) ?? null,
+            publicState
+          })
+        : chooseAiCardIndex(this.match.players.p2.hand, {
+            difficulty: this.aiDifficulty,
+            publicState
+          });
       const revealedCards = {
         p1Card: playerCard,
         p2Card: getCardAtIndex(this.match.players.p2.hand, opponentIndex)

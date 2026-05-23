@@ -553,9 +553,24 @@ function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
   const gauntletRival = getGauntletRivalById(gauntletRivalId);
 
   if (gauntletRival) {
+    const recentPlayerMoves = getRecentRoundMoves(room?.roundHistory, "hostMove");
     const gauntletIndex = chooseGauntletRivalCardIndex(aiHand, {
       rival: gauntletRival,
-      turnIndex: Math.max(0, safeRuntimeCount(room?.roundNumber, 1) - 1)
+      turnIndex: Math.max(0, safeRuntimeCount(room?.roundNumber, 1) - 1),
+      playerPreviousElement: recentPlayerMoves.at(-1) ?? null,
+      publicState: {
+        aiCardsRemaining: aiHand.length,
+        playerCardsRemaining: getTotalCardsInHand(room?.hostHand),
+        ...(playerElementCounts ? { playerElementCounts: cloneHandCountsForPublicState(playerElementCounts) } : {}),
+        recentPlayerMoves,
+        aiCaptured: safeRuntimeCount(room?.guestScore, 0),
+        playerCaptured: safeRuntimeCount(room?.hostScore, 0),
+        warActive: Boolean(room?.warActive),
+        pileCount:
+          (Array.isArray(room?.warPot?.host) ? room.warPot.host.length : 0) +
+          (Array.isArray(room?.warPot?.guest) ? room.warPot.guest.length : 0),
+        totalWarClashes: safeRuntimeCount(room?.warDepth, 0)
+      }
     });
     if (Number.isInteger(gauntletIndex) && gauntletIndex >= 0 && gauntletIndex < aiHand.length) {
       return aiHand[gauntletIndex] ?? null;

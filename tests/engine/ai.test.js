@@ -216,10 +216,10 @@ test("ai: hard does not depend on the player's hidden current-round choice", () 
   assert.equal(withHiddenFire, withHiddenWater);
 });
 
-test("ai: all 8 Gauntlet rival definitions exist with rival-only identity fields", () => {
+test("ai: all 10 Gauntlet rival definitions exist with rival-only identity fields", () => {
   const rivals = listGauntletRivals();
 
-  assert.equal(rivals.length, 8);
+  assert.equal(rivals.length, 10);
   assert.deepEqual(
     rivals.map((rival) => rival.id),
     [
@@ -230,7 +230,9 @@ test("ai: all 8 Gauntlet rival definitions exist with rival-only identity fields
       "inferno_drummer",
       "river_spiral",
       "stone_march",
-      "fourfold_monk"
+      "fourfold_monk",
+      "cyclebound",
+      "mimic_rival"
     ]
   );
 
@@ -239,7 +241,11 @@ test("ai: all 8 Gauntlet rival definitions exist with rival-only identity fields
     assert.equal(typeof rival.displayName, "string");
     assert.equal(typeof rival.title, "string");
     assert.equal(typeof rival.hint, "string");
-    assert.ok(rival.behaviorType === "weighted" || rival.behaviorType === "loop");
+    assert.ok(
+      rival.behaviorType === "weighted" ||
+      rival.behaviorType === "loop" ||
+      rival.behaviorType === "mimic"
+    );
     assert.match(rival.avatarPath, /^assets\/gauntlet\/avatars\/avatar_gauntlet_/);
     assert.doesNotMatch(rival.avatarPath, /^assets\/avatars\//);
     assert.equal(Object.hasOwn(rival, "badge"), false);
@@ -252,8 +258,10 @@ test("ai: all 8 Gauntlet rival definitions exist with rival-only identity fields
 
     if (rival.behaviorType === "weighted") {
       assert.deepEqual(Object.keys(rival.weights).sort(), ["earth", "fire", "water", "wind"]);
+    } else if (rival.behaviorType === "loop") {
+      assert.ok(rival.loop.length > 0);
     } else {
-      assert.equal(rival.loop.length, 10);
+      assert.equal(rival.copyChance, 0.5);
     }
   }
 });
@@ -312,6 +320,67 @@ test("ai: loop Gauntlet rival chooser follows the 10-card loop and repeats after
     "wind"
   ]);
   assert.equal(repeatedTurn, "fire");
+});
+
+test("ai: Cyclebound follows Fire -> Earth -> Wind -> Water and repeats from the start on a new loop", () => {
+  const hand = ["fire", "water", "earth", "wind"];
+  const firstCycle = Array.from({ length: 8 }, (_, turnIndex) =>
+    hand[chooseGauntletRivalCardIndex(hand, { rivalId: "cyclebound", turnIndex })]
+  );
+
+  assert.deepEqual(firstCycle, ["fire", "earth", "wind", "water", "fire", "earth", "wind", "water"]);
+  assert.equal(hand[chooseGauntletRivalCardIndex(hand, { rivalId: "cyclebound", turnIndex: 0 })], "fire");
+});
+
+test("ai: Mimic Rival copies the player's previous element 50% of the time when it is available", () => {
+  const hand = ["fire", "water", "earth", "wind"];
+
+  const copied = chooseGauntletRivalCardIndex(hand, {
+    rivalId: "mimic_rival",
+    playerPreviousElement: "earth",
+    rng: () => 0.2
+  });
+  const fallback = chooseGauntletRivalCardIndex(hand, {
+    rivalId: "mimic_rival",
+    playerPreviousElement: "earth",
+    rng: () => 0.8
+  });
+
+  assert.equal(hand[copied], "earth");
+  assert.notEqual(copied, null);
+  assert.notEqual(fallback, null);
+});
+
+test("ai: Mimic Rival uses the normal balanced fallback when no player history exists", () => {
+  const hand = ["earth", "water", "fire"];
+  const index = chooseGauntletRivalCardIndex(hand, {
+    rivalId: "mimic_rival",
+    publicState: {
+      aiCardsRemaining: 3,
+      playerCardsRemaining: 4,
+      aiCaptured: 0,
+      playerCaptured: 2,
+      warActive: false,
+      pileCount: 0
+    },
+    rng: () => 0.1
+  });
+
+  assert.ok(index >= 0 && index < hand.length);
+});
+
+test("ai: Mimic Rival only considers the player's immediately previous element instead of a 3-card history", () => {
+  const hand = ["fire", "water", "earth", "wind"];
+  const index = chooseGauntletRivalCardIndex(hand, {
+    rivalId: "mimic_rival",
+    playerPreviousElement: "wind",
+    publicState: {
+      recentPlayerMoves: ["fire", "earth", "wind"]
+    },
+    rng: () => 0.2
+  });
+
+  assert.equal(hand[index], "wind");
 });
 
 test("ai: loop Gauntlet rival chooser falls back safely when the loop element is unavailable", () => {

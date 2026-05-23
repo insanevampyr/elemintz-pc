@@ -17,6 +17,13 @@ function freezeRivalDefinition(definition) {
     });
   }
 
+  if (definition.behaviorType === "mimic") {
+    return Object.freeze({
+      ...definition,
+      copyChance: Math.min(1, Math.max(0, Number(definition.copyChance ?? 0.5) || 0.5))
+    });
+  }
+
   return Object.freeze({ ...definition });
 }
 
@@ -112,6 +119,24 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     hint: "Repeats a balanced four-element discipline pattern.",
     avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_fourfold_monk.png",
     loop: ["fire", "water", "earth", "wind", "earth", "water", "fire", "water", "earth", "wind"]
+  }),
+  freezeRivalDefinition({
+    id: "cyclebound",
+    displayName: "Cyclebound",
+    title: "Keeper of the Old Rhythm",
+    behaviorType: "loop",
+    hint: "Their choices feel bound to an old rhythm.",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_cyclebound.png",
+    loop: ["fire", "earth", "wind", "water"]
+  }),
+  freezeRivalDefinition({
+    id: "mimic_rival",
+    displayName: "Mimic Rival",
+    title: "The Familiar Echo",
+    behaviorType: "mimic",
+    hint: "Their style feels strangely familiar.",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_mimic_rival.png",
+    copyChance: 0.5
   })
 ]);
 

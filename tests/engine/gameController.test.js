@@ -7927,6 +7927,8 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
         "river_spiral",
         "stone_march",
         "fourfold_monk",
+        "cyclebound",
+        "mimic_rival",
         "pyro_maniac"
       ],
       lastRivalId: null,
@@ -7985,6 +7987,8 @@ test("appController: gauntlet start creates a shuffled rival bag and first rival
     "river_spiral",
     "stone_march",
     "fourfold_monk",
+    "cyclebound",
+    "mimic_rival",
     "pyro_maniac"
   ]);
   assert.equal(app.gauntletRunState.currentRivalId, "tide_witch");
@@ -8096,7 +8100,7 @@ test("appController: gauntlet bag use never selects the same rival twice in a ro
   assert.equal(starts.at(-1)?.options?.gauntletRivalId, "tide_witch");
 });
 
-test("appController: gauntlet bag refill recreates all 8 rivals and avoids an immediate repeat", () => {
+test("appController: gauntlet bag refill recreates all 10 rivals and avoids an immediate repeat", () => {
   const starts = [];
   const app = new AppController({
     screenManager: { register: () => {}, show: () => {} },
@@ -8134,7 +8138,7 @@ test("appController: gauntlet bag refill recreates all 8 rivals and avoids an im
   assert.notEqual(app.gauntletRunState.currentRivalId, "tide_witch");
   assert.equal(app.gauntletRunState.currentRivalId, "stonewall");
   assert.equal(app.gauntletRunState.currentRivalIndex, 2);
-  assert.equal(app.gauntletRunState.rivalBag.length, 7);
+  assert.equal(app.gauntletRunState.rivalBag.length, 9);
   assert.deepEqual(app.gauntletRunState.rivalBag, [
     "tide_witch",
     "storm_chaser",
@@ -8142,6 +8146,8 @@ test("appController: gauntlet bag refill recreates all 8 rivals and avoids an im
     "river_spiral",
     "stone_march",
     "fourfold_monk",
+    "cyclebound",
+    "mimic_rival",
     "pyro_maniac"
   ]);
   assert.equal(app.gauntletRunState.defeatedRivalIds.at(-1), "tide_witch");

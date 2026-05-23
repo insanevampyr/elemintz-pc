@@ -974,6 +974,21 @@ test("state: Neon Arcana resized avatar and title art match category standards w
   }
 });
 
+test("state: Gauntlet rival-only Cyclebound and Mimic avatars stay 512x512 and remain outside the player avatar catalog", async () => {
+  for (const relativePath of [
+    "assets/gauntlet/avatars/avatar_gauntlet_cyclebound.png",
+    "assets/gauntlet/avatars/avatar_gauntlet_mimic_rival.png"
+  ]) {
+    const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
+    assert.equal(width, 512, `${relativePath} should be 512px wide`);
+    assert.equal(height, 512, `${relativePath} should be 512px tall`);
+  }
+
+  const avatarImages = new Set(COSMETIC_CATALOG.avatar.map((item) => item.image));
+  assert.equal(avatarImages.has("gauntlet/avatars/avatar_gauntlet_cyclebound.png"), false);
+  assert.equal(avatarImages.has("gauntlet/avatars/avatar_gauntlet_mimic_rival.png"), false);
+});
+
 test("state: local_pvp results can be persisted for both players", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });

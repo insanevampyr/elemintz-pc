@@ -274,6 +274,46 @@ function chooseLoopElementIndex(availableEntries, loop = [], turnIndex = 0) {
   return availableEntries[0]?.index ?? null;
 }
 
+function chooseMimicElementIndex(
+  availableEntries,
+  {
+    playerPreviousElement = null,
+    copyChance = 0.5,
+    publicState = {},
+    fallbackHand = [],
+    rng = Math.random
+  } = {}
+) {
+  if (!Array.isArray(availableEntries) || availableEntries.length === 0) {
+    return null;
+  }
+
+  const normalizedPreviousElement = normalizeElement(playerPreviousElement);
+  const safeCopyChance = Math.min(1, Math.max(0, Number(copyChance ?? 0.5) || 0.5));
+  const shouldCopy =
+    normalizedPreviousElement &&
+    availableEntries.some((entry) => entry.element === normalizedPreviousElement) &&
+    rng() < safeCopyChance;
+
+  if (shouldCopy) {
+    return (
+      availableEntries.find((entry) => entry.element === normalizedPreviousElement)?.index ??
+      availableEntries[0]?.index ??
+      null
+    );
+  }
+
+  if (Array.isArray(fallbackHand) && fallbackHand.length > 0) {
+    return chooseAiCardIndex(fallbackHand, {
+      difficulty: AI_DIFFICULTY.NORMAL,
+      publicState,
+      rng
+    });
+  }
+
+  return availableEntries[0]?.index ?? null;
+}
+
 export function chooseGauntletRivalCardIndex(hand, context = {}) {
   if (!Array.isArray(hand) || hand.length === 0) {
     return null;
@@ -283,6 +323,8 @@ export function chooseGauntletRivalCardIndex(hand, context = {}) {
     rivalId = null,
     rival = null,
     turnIndex = 0,
+    playerPreviousElement = null,
+    publicState = {},
     rng = Math.random
   } = context;
   const availableEntries = buildAvailableElementEntries(hand);
@@ -301,6 +343,16 @@ export function chooseGauntletRivalCardIndex(hand, context = {}) {
 
   if (resolvedRival.behaviorType === "loop") {
     return chooseLoopElementIndex(availableEntries, resolvedRival.loop, turnIndex);
+  }
+
+  if (resolvedRival.behaviorType === "mimic") {
+    return chooseMimicElementIndex(availableEntries, {
+      playerPreviousElement,
+      copyChance: resolvedRival.copyChance,
+      publicState,
+      fallbackHand: hand,
+      rng
+    });
   }
 
   return availableEntries[0]?.index ?? 0;
