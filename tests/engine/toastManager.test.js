@@ -43,7 +43,10 @@ test("toast: token rewards create reward toast and queue without overlap", () =>
     createElement: () => makeFakeElement()
   };
   globalThis.requestAnimationFrame = (callback) => callback();
-  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
 
   const manager = new ToastManager(root);
   manager.showTokenReward({ amount: 1, label: "Daily Challenge" });
@@ -57,6 +60,7 @@ test("toast: token rewards create reward toast and queue without overlap", () =>
   globalThis.requestAnimationFrame = originalRaf;
   globalThis.setTimeout = originalSetTimeout;
 });
+
 test("toast: xp breakdown and level-up toasts render expected content", () => {
   const appended = [];
   const root = {
@@ -73,7 +77,10 @@ test("toast: xp breakdown and level-up toasts render expected content", () => {
     createElement: () => makeFakeElement()
   };
   globalThis.requestAnimationFrame = (callback) => callback();
-  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
 
   const manager = new ToastManager(root);
   manager.showXpBreakdown({
@@ -116,7 +123,10 @@ test("toast: achievement toast supports player-labeled heading", () => {
     createElement: () => makeFakeElement()
   };
   globalThis.requestAnimationFrame = (callback) => callback();
-  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
 
   const manager = new ToastManager(root);
   manager.showAchievement(
@@ -148,7 +158,10 @@ test("toast: reward presentation can show both token and XP lines with player la
     createElement: () => makeFakeElement()
   };
   globalThis.requestAnimationFrame = (callback) => callback();
-  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
 
   const manager = new ToastManager(root);
   manager.showTokenReward({ amount: 5, label: "Alice reward payout" });
@@ -188,7 +201,10 @@ test("toast: chest grants render singular and plural labels", () => {
     createElement: () => makeFakeElement()
   };
   globalThis.requestAnimationFrame = (callback) => callback();
-  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
 
   const manager = new ToastManager(root);
   manager.showChestGrant({ amount: 1, chestLabel: "Basic Chest", chestType: "basic" });
@@ -242,7 +258,10 @@ test("toast: daily login reward includes max level bonus line only when conversi
     createElement: () => makeFakeElement()
   };
   globalThis.requestAnimationFrame = (callback) => callback();
-  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
 
   const manager = new ToastManager(root);
   manager.showDailyLoginReward({ tokens: 5, xp: 0, xpConversionTokenBonus: 1 });
@@ -273,35 +292,62 @@ test("toast: chest open rewards render xp, tokens, and cosmetic messages", () =>
     createElement: () => makeFakeElement()
   };
   globalThis.requestAnimationFrame = (callback) => callback();
-  globalThis.setTimeout = (callback) => { callback(); return 0; };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
 
   const manager = new ToastManager(root);
   manager.showChestOpenReward({ chestType: "basic", rewards: { xp: 5, tokens: 0, cosmetic: null } });
   manager.showChestOpenReward({ chestType: "milestone", rewards: { xp: 0, tokens: 10, cosmetic: null } });
   manager.showChestOpenReward({
     chestType: "epic",
-    rewards: { xp: 0, tokens: 0, cosmetic: { id: "badge_ember", name: "Ember Crest" } }
+    rewards: {
+      xp: 0,
+      tokens: 0,
+      cosmetic: {
+        id: "badge_ember",
+        name: "Ember Crest",
+        rarity: "Epic",
+        type: "badge",
+        image: "assets/badges/collector.png"
+      }
+    }
   });
   manager.showChestOpenReward({ chestType: "legendary", rewards: { xp: 1, tokens: 0, cosmetic: null } });
   manager.showChestOpenReward({ chestType: "mystery", rewards: { xp: 2, tokens: 0, cosmetic: null } });
-  manager.showChestOpenReward({ chestType: "basic", rewards: { xp: 0, tokens: 0, cosmetic: null, xpConversionTokenBonus: 2 } });
+  manager.showChestOpenReward({
+    chestType: "basic",
+    rewards: { xp: 0, tokens: 0, cosmetic: null, xpConversionTokenBonus: 2 }
+  });
+  manager.showChestOpenReward({
+    chestType: "basic",
+    rewards: { xp: 0, tokens: 0, cosmetic: { id: "title_test", name: "Spellwired" } }
+  });
 
-  assert.equal(appended.length, 6);
+  assert.equal(appended.length, 7);
+  assert.match(appended[0].className, /chest-open-reveal-toast/);
   assert.match(appended[0].innerHTML, /\+5 XP/);
   assert.match(appended[0].innerHTML, /assets\/icons\/basic_chest_open\.png/);
+  assert.match(appended[0].innerHTML, /chest-open-toast-row-label">XP/);
   assert.match(appended[1].innerHTML, /\+10 Tokens/);
   assert.match(appended[1].innerHTML, /assets\/icons\/loot_chest_open\.png/);
-  assert.match(appended[2].innerHTML, /Cosmetic: <strong>Ember Crest<\/strong>/);
+  assert.match(appended[2].innerHTML, /Cosmetic Unlocked/);
+  assert.match(appended[2].innerHTML, /Ember Crest/);
+  assert.match(appended[2].innerHTML, /Epic[\s\S]*badge/);
+  assert.match(appended[2].innerHTML, /assets\/badges\/collector\.png/);
   assert.match(appended[2].innerHTML, /assets\/icons\/epic_chest_open\.png/);
   assert.match(appended[3].innerHTML, /assets\/icons\/legendary_chest_open\.png/);
   assert.match(appended[4].innerHTML, /assets\/icons\/basic_chest_open\.png/);
   assert.match(appended[4].innerHTML, /Chest Opened/);
-  assert.match(appended[5].innerHTML, /Max Level Bonus: \+2 Tokens/);
+  assert.match(appended[5].innerHTML, /chest-open-toast-row-label">Max Level Bonus/);
+  assert.match(appended[5].innerHTML, /\+2 Tokens/);
   assert.doesNotMatch(appended[5].innerHTML, /\+\d+ XP/);
+  assert.equal((appended[5].innerHTML.match(/Max Level Bonus/g) ?? []).length, 1);
+  assert.match(appended[6].innerHTML, /Spellwired/);
+  assert.doesNotMatch(appended[6].innerHTML, /chest-open-toast-cosmetic-meta/);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;
   globalThis.setTimeout = originalSetTimeout;
 });
-
-

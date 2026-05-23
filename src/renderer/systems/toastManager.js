@@ -48,6 +48,27 @@ function getChestOpenRewardImagePath(chestType) {
   return getAssetPath(imagePath);
 }
 
+function resolveOptionalAssetPath(value) {
+  const safeValue = String(value ?? "").trim();
+  if (!safeValue) {
+    return null;
+  }
+
+  if (
+    safeValue.startsWith("http://") ||
+    safeValue.startsWith("https://") ||
+    safeValue.startsWith("data:") ||
+    safeValue.startsWith("../") ||
+    safeValue.startsWith("./") ||
+    safeValue.includes("/assets/") ||
+    safeValue.startsWith("assets/")
+  ) {
+    return safeValue.startsWith("assets/") ? getAssetPath(safeValue.slice("assets/".length)) : safeValue;
+  }
+
+  return getAssetPath(safeValue);
+}
+
 export class ToastManager {
   constructor(rootNode) {
     this.rootNode = rootNode;
@@ -171,37 +192,80 @@ export class ToastManager {
     const tokenAmount = Math.max(0, Number(rewards?.tokens) || 0);
     const xpConversionTokenBonus = Math.max(0, Number(rewards?.xpConversionTokenBonus) || 0);
     const cosmeticName = String(rewards?.cosmetic?.name ?? "").trim();
-    const rewardLines = [];
+    const cosmeticRarity = String(rewards?.cosmetic?.rarity ?? "").trim();
+    const cosmeticType = String(
+      rewards?.cosmetic?.displayType ?? rewards?.cosmetic?.typeLabel ?? rewards?.cosmetic?.type ?? ""
+    ).trim();
+    const cosmeticImage = resolveOptionalAssetPath(rewards?.cosmetic?.image ?? "");
+    const rewardRows = [];
     const chestImage = getChestOpenRewardImagePath(chestType);
 
     if (tokenAmount > 0) {
-      rewardLines.push(`<p>+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}</p>`);
+      rewardRows.push(`
+        <div class="chest-open-toast-row chest-open-toast-row-token">
+          <span class="chest-open-toast-row-label">Tokens</span>
+          <strong class="chest-open-toast-row-value">+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}</strong>
+        </div>
+      `);
     }
     if (xpAmount > 0) {
-      rewardLines.push(`<p>+${xpAmount} XP</p>`);
+      rewardRows.push(`
+        <div class="chest-open-toast-row chest-open-toast-row-xp">
+          <span class="chest-open-toast-row-label">XP</span>
+          <strong class="chest-open-toast-row-value">+${xpAmount} XP</strong>
+        </div>
+      `);
     }
     if (xpConversionTokenBonus > 0) {
-      rewardLines.push(`<p>Max Level Bonus: +${xpConversionTokenBonus} Tokens</p>`);
-    }
-    if (cosmeticName) {
-      const rarity = String(rewards?.cosmetic?.rarity ?? "").trim();
-      rewardLines.push(
-        `<p>${rarity ? `${rarity} ` : ""}Cosmetic: <strong>${cosmeticName}</strong></p>`
-      );
+      rewardRows.push(`
+        <div class="chest-open-toast-row chest-open-toast-row-bonus">
+          <span class="chest-open-toast-row-label">Max Level Bonus</span>
+          <strong class="chest-open-toast-row-value">+${xpConversionTokenBonus} Tokens</strong>
+        </div>
+      `);
     }
 
-    if (rewardLines.length === 0) {
+    const cosmeticBlock =
+      cosmeticName
+        ? `
+        <section class="chest-open-toast-cosmetic">
+          <p class="chest-open-toast-cosmetic-kicker">Cosmetic Unlocked</p>
+          <div class="chest-open-toast-cosmetic-body">
+            ${
+              cosmeticImage
+                ? `<img class="chest-open-toast-cosmetic-image" src="${cosmeticImage}" alt="${cosmeticName}" />`
+                : ""
+            }
+            <div class="chest-open-toast-cosmetic-copy">
+              <strong class="chest-open-toast-cosmetic-name">${cosmeticName}</strong>
+              ${
+                cosmeticRarity || cosmeticType
+                  ? `<p class="chest-open-toast-cosmetic-meta">${[cosmeticRarity, cosmeticType].filter(Boolean).join(" • ")}</p>`
+                  : ""
+              }
+            </div>
+          </div>
+        </section>
+      `
+        : "";
+
+    if (rewardRows.length === 0 && !cosmeticBlock) {
       return;
     }
 
     this.enqueueToast({
-      className: "reward-toast chest-open-toast",
-      durationMs: 2200,
+      className: "reward-toast chest-open-toast chest-open-reveal-toast",
+      durationMs: 2400,
       html: `
-        <img class="reward-toast-icon reward-toast-icon-image" src="${chestImage}" alt="Opened ${String(chestType ?? "basic").trim() || "basic"} chest" />
-        <div>
+        <div class="chest-open-toast-visual">
+          <img class="reward-toast-icon reward-toast-icon-image chest-open-toast-image" src="${chestImage}" alt="Opened ${String(chestType ?? "basic").trim() || "basic"} chest" />
+        </div>
+        <div class="chest-open-toast-content">
           <h4>Chest Opened</h4>
-          ${rewardLines.join("")}
+          <div class="chest-open-toast-rewards">
+            ${rewardRows.join("")}
+          </div>
+          ${cosmeticBlock}
         </div>
       `
     });

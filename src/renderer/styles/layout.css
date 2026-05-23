@@ -997,6 +997,142 @@ body {
   margin: 0;
 }
 
+.chest-open-reveal-toast {
+  width: min(420px, calc(100vw - 24px));
+  grid-template-columns: 84px 1fr;
+  gap: 12px;
+  padding: 12px;
+}
+
+.chest-open-toast-visual {
+  display: grid;
+  align-content: start;
+}
+
+.chest-open-toast-image {
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
+  background: rgba(9, 19, 30, 0.72);
+  border: 1px solid rgba(126, 172, 210, 0.34);
+  padding: 6px;
+  object-fit: contain;
+}
+
+.chest-open-toast-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chest-open-toast-content h4 {
+  margin: 0;
+}
+
+.chest-open-toast-rewards {
+  display: grid;
+  gap: 8px;
+}
+
+.chest-open-toast-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(113, 155, 190, 0.24);
+  background: rgba(7, 18, 29, 0.52);
+}
+
+.chest-open-toast-row-label {
+  color: rgba(214, 232, 245, 0.78);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.chest-open-toast-row-value {
+  color: #f4fbff;
+  text-align: right;
+}
+
+.chest-open-toast-row-bonus {
+  border-color: rgba(230, 198, 121, 0.3);
+  background: rgba(56, 41, 13, 0.35);
+}
+
+.chest-open-toast-cosmetic {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(169, 126, 220, 0.28);
+  background: linear-gradient(160deg, rgba(38, 25, 61, 0.72), rgba(18, 14, 36, 0.7));
+}
+
+.chest-open-toast-cosmetic-kicker {
+  color: rgba(226, 214, 245, 0.8);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.chest-open-toast-cosmetic-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.chest-open-toast-cosmetic-image {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(191, 164, 228, 0.28);
+  background: rgba(8, 14, 24, 0.66);
+}
+
+.chest-open-toast-cosmetic-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chest-open-toast-cosmetic-name {
+  color: #f8fbff;
+}
+
+.chest-open-toast-cosmetic-meta {
+  color: rgba(226, 214, 245, 0.8);
+  font-size: 0.86rem;
+}
+
+@media (max-width: 520px) {
+  .chest-open-reveal-toast {
+    width: min(100%, calc(100vw - 20px));
+    grid-template-columns: 1fr;
+  }
+
+  .chest-open-toast-visual {
+    justify-content: center;
+  }
+
+  .chest-open-toast-image {
+    margin: 0 auto;
+  }
+
+  .chest-open-toast-row {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .chest-open-toast-row-value {
+    text-align: left;
+  }
+}
+
 @media (max-width: 900px) {
   .two-col {
     grid-template-columns: 1fr;
