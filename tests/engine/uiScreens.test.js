@@ -17775,3 +17775,160 @@ test("ui: match complete payload renders polished local PvP naming and draw stat
   assert.doesNotMatch(payload.bodyHtml, /Player 1 •/);
   assert.doesNotMatch(payload.bodyHtml, /Player 2 •/);
 });
+test("ui: own profile renders Profile Flex MVP panels near the top", () => {
+  const context = createProfileScreenContext({
+    profile: {
+      ...createProfileScreenContext().profile,
+      title: "Elementalist",
+      gauntletBestStreak: 12,
+      gauntletRuns: 18,
+      gauntletWins: 11,
+      gauntletRivalsDefeated: 26,
+      featuredRivalWins: 7,
+      equippedCosmetics: {
+        avatar: "avatar_neon_pyre_entity",
+        title: "title_spellwired",
+        badge: "badge_arena_challenger",
+        cardBack: "cardback_neon_arcana",
+        elementCardVariant: {
+          fire: "fire_variant_neon_arcana",
+          earth: "earth_variant_neon_arcana",
+          wind: "wind_variant_neon_arcana",
+          water: "water_variant_neon_arcana"
+        }
+      }
+    },
+    cosmetics: {
+      ...createProfileScreenContext().cosmetics,
+      catalog: getCosmeticCatalogForProfile({
+        username: "ChestUser",
+        ownedCosmetics: {
+          avatar: ["default_avatar", "avatar_neon_pyre_entity"],
+          cardBack: ["default_card_back", "cardback_neon_arcana"],
+          background: ["default_background"],
+          elementCardVariant: [
+            "default_fire_card",
+            "default_water_card",
+            "default_earth_card",
+            "default_wind_card",
+            "fire_variant_neon_arcana",
+            "water_variant_neon_arcana",
+            "earth_variant_neon_arcana",
+            "wind_variant_neon_arcana"
+          ],
+          badge: ["none", "badge_arena_challenger"],
+          title: ["Initiate", "title_spellwired"]
+        },
+        equippedCosmetics: {
+          avatar: "avatar_neon_pyre_entity",
+          cardBack: "cardback_neon_arcana",
+          background: "default_background",
+          badge: "badge_arena_challenger",
+          title: "title_spellwired",
+          elementCardVariant: {
+            fire: "fire_variant_neon_arcana",
+            water: "water_variant_neon_arcana",
+            earth: "earth_variant_neon_arcana",
+            wind: "wind_variant_neon_arcana"
+          }
+        }
+      })
+    }
+  });
+
+  const html = profileScreen.render(context);
+
+  assert.match(html, /data-profile-flex-panel="identity"/);
+  assert.match(html, /Equipped Identity/);
+  assert.match(html, /Card Style Preview/);
+  assert.match(html, /Flex Stats/);
+  assert.match(html, /Avatar/);
+  assert.match(html, /Spellwired/);
+  assert.match(html, /Card Back/);
+  assert.match(html, /Fire/);
+  assert.match(html, /Earth/);
+  assert.match(html, /Wind/);
+  assert.match(html, /Water/);
+  assert.match(html, /Best Gauntlet Streak[\s\S]*12/);
+  assert.match(html, /Featured Rival Wins[\s\S]*7/);
+  assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
+  assert.match(html, /Search Player/);
+  assert.match(html, /Achievements \(/);
+});
+
+test("ui: viewed profile modal renders read-only Profile Flex MVP panels", () => {
+  const html = profileScreen.renderViewedProfileModalBody({
+    username: "Enab",
+    title: "Elementalist",
+    playerLevel: 44,
+    playerXP: 1337,
+    tokens: 222,
+    wins: 30,
+    losses: 12,
+    gamesPlayed: 42,
+    bestWinStreak: 9,
+    featuredRivalWins: 5,
+    gauntletBestStreak: 8,
+    gauntletRuns: 9,
+    gauntletWins: 6,
+    gauntletLosses: 3,
+    gauntletRivalsDefeated: 14,
+    warsEntered: 4,
+    warsWon: 2,
+    longestWar: 3,
+    cardsCaptured: 55,
+    modeStats: {
+      pve: { wins: 10, losses: 2, gamesPlayed: 12, cardsCaptured: 24, warsEntered: 2, warsWon: 1, longestWar: 2 },
+      local_pvp: { wins: 4, losses: 3, gamesPlayed: 7, cardsCaptured: 8, warsEntered: 1, warsWon: 1, longestWar: 1 },
+      online_pvp: { wins: 16, losses: 7, gamesPlayed: 23, cardsCaptured: 23, warsEntered: 1, warsWon: 0, longestWar: 2 }
+    },
+    achievements: {},
+    equippedCosmetics: {
+      avatar: "avatar_neon_tide_entity",
+      title: "title_spellwired",
+      badge: "badge_arena_challenger",
+      background: "default_background",
+      cardBack: "cardback_neon_arcana",
+      elementCardVariant: {
+        fire: "fire_variant_neon_arcana",
+        earth: "earth_variant_neon_arcana",
+        wind: "wind_variant_neon_arcana",
+        water: "water_variant_neon_arcana"
+      }
+    }
+  });
+
+  assert.match(html, /Read-only player profile/);
+  assert.match(html, /data-profile-flex-panel="identity"/);
+  assert.match(html, /data-profile-flex-panel="card-style"/);
+  assert.match(html, /data-profile-flex-panel="stats"/);
+  assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
+  assert.doesNotMatch(html, /data-equip-type=/);
+  assert.doesNotMatch(html, /Equip<\/button>/);
+  assert.match(html, /Account Snapshot/);
+  assert.match(html, /Overall Record/);
+});
+
+test("ui: Profile Flex MVP panels fall back safely for missing cosmetics and stats", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        title: "",
+        gauntletBestStreak: undefined,
+        gauntletRuns: undefined,
+        gauntletWins: undefined,
+        gauntletRivalsDefeated: undefined,
+        featuredRivalWins: undefined,
+        equippedCosmetics: {}
+      }
+    })
+  );
+
+  assert.match(html, /Default Avatar/);
+  assert.match(html, /Default Card Back/);
+  assert.match(html, />None<\/strong>/);
+  assert.match(html, /Featured Rival Wins[\s\S]*>0</);
+  assert.match(html, /Best Gauntlet Streak[\s\S]*>0</);
+  assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
+});

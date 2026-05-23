@@ -1,4 +1,4 @@
-import { getArenaBackground, getAvatarImage, getBadgeImage } from "../../utils/assets.js";
+import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../utils/assets.js";
 import { getAssetPath } from "../../utils/dom.js";
 import { buildAchievementCatalog } from "../../../state/achievementSystem.js";
 import {
@@ -141,6 +141,160 @@ function viewedTitleIcon(viewedProfile) {
 
 function safeStat(value) {
   return Math.max(0, Number(value ?? 0));
+}
+
+const FLEX_VARIANT_ORDER = Object.freeze(["fire", "earth", "wind", "water"]);
+
+function titleCase(value) {
+  const safeValue = String(value ?? "").trim().toLowerCase();
+  return safeValue ? `${safeValue[0].toUpperCase()}${safeValue.slice(1)}` : "";
+}
+
+function defaultVariantName(element) {
+  const label = titleCase(element);
+  return label ? `Default ${label}` : "Default";
+}
+
+function normalizeProfileEquippedCosmetics(profile = {}) {
+  const equipped = profile?.equippedCosmetics ?? {};
+  return {
+    avatar: equipped?.avatar ?? "default_avatar",
+    title: equipped?.title ?? null,
+    badge: equipped?.badge ?? "none",
+    cardBack: equipped?.cardBack ?? "default_card_back",
+    background: equipped?.background ?? "default_background",
+    elementCardVariant: equipped?.elementCardVariant ?? {}
+  };
+}
+
+function resolveTitleImagePath(titleId, fallbackIcon = null) {
+  const definition = titleId ? getCosmeticDefinition("title", titleId) : null;
+  if (definition?.image) {
+    return resolveImagePath(definition.image);
+  }
+
+  return resolveImagePath(fallbackIcon);
+}
+
+function renderFlexIdentityItem({ label, value, imageSrc = null, alt = "", previewClassName = "" } = {}) {
+  const safeValue = String(value ?? "").trim() || "Default";
+  const safeAlt = String(alt ?? safeValue).trim() || safeValue;
+  const safePreviewClassName = String(previewClassName ?? "").trim();
+
+  return `
+    <article class="profile-flex-item">
+      <p class="profile-flex-item-label">${label}</p>
+      <div class="profile-flex-item-body">
+        ${
+          imageSrc
+            ? `<img class="profile-flex-item-image ${safePreviewClassName}" src="${imageSrc}" alt="${safeAlt}" />`
+            : `<div class="profile-flex-item-fallback ${safePreviewClassName}">${label.slice(0, 1)}</div>`
+        }
+        <strong class="profile-flex-item-value">${safeValue}</strong>
+      </div>
+    </article>
+  `;
+}
+
+function renderProfileFlexPanels(profile = {}, options = {}) {
+  const equipped = normalizeProfileEquippedCosmetics(profile);
+  const titleFallback = String(profile?.title ?? "Initiate").trim() || "Initiate";
+  const avatarName = getCosmeticDisplayName("avatar", equipped.avatar, "Default Avatar") ?? "Default Avatar";
+  const titleName = getCosmeticDisplayName("title", equipped.title, titleFallback) ?? titleFallback;
+  const badgeName = equipped.badge === "none"
+    ? "None"
+    : (getCosmeticDisplayName("badge", equipped.badge, "None") ?? "None");
+  const cardBackName =
+    getCosmeticDisplayName("cardBack", equipped.cardBack, "Default Card Back") ?? "Default Card Back";
+  const titleImage = resolveTitleImagePath(equipped.title, options.titleIcon ?? null);
+  const variantImages = getVariantCardImages(equipped.elementCardVariant);
+  const featuredRivalWins = safeStat(profile.featuredRivalWins);
+
+  return `
+    <section class="profile-flex-grid" data-profile-flex-grid="true">
+      <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="identity">
+        <h3 class="section-title">Equipped Identity</h3>
+        <div class="profile-flex-identity-grid">
+          ${renderFlexIdentityItem({
+            label: "Avatar",
+            value: avatarName,
+            imageSrc: getAvatarImage(equipped.avatar),
+            alt: avatarName,
+            previewClassName: "is-avatar"
+          })}
+          ${renderFlexIdentityItem({
+            label: "Title",
+            value: titleName,
+            imageSrc: titleImage,
+            alt: titleName,
+            previewClassName: "is-title"
+          })}
+          ${renderFlexIdentityItem({
+            label: "Badge",
+            value: badgeName,
+            imageSrc: getBadgeImage(equipped.badge),
+            alt: badgeName,
+            previewClassName: "is-badge"
+          })}
+          ${renderFlexIdentityItem({
+            label: "Card Back",
+            value: cardBackName,
+            imageSrc: getCardBackImage(equipped.cardBack),
+            alt: cardBackName,
+            previewClassName: "is-card"
+          })}
+        </div>
+      </section>
+      <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="card-style">
+        <h3 class="section-title">Card Style Preview</h3>
+        <div class="profile-card-style-header">
+          <img
+            class="profile-card-style-cardback"
+            src="${getCardBackImage(equipped.cardBack)}"
+            alt="${cardBackName}"
+            data-profile-flex-cardback="true"
+          />
+          <div class="profile-card-style-copy">
+            <p class="profile-flex-item-label">Card Back</p>
+            <strong class="profile-flex-item-value">${cardBackName}</strong>
+          </div>
+        </div>
+        <div class="profile-card-style-variants" data-profile-flex-variants="true">
+          ${FLEX_VARIANT_ORDER.map((element) => {
+            const variantId = equipped.elementCardVariant?.[element] ?? null;
+            const variantName =
+              getCosmeticDisplayName("elementCardVariant", variantId, defaultVariantName(element)) ??
+              defaultVariantName(element);
+            const variantImage = variantImages?.[element] ?? null;
+
+            return `
+              <article class="profile-card-style-variant" data-profile-flex-variant="${element}">
+                ${
+                  variantImage
+                    ? `<img class="profile-card-style-variant-image" src="${variantImage}" alt="${variantName}" />`
+                    : `<div class="profile-card-style-variant-fallback">${titleCase(element).slice(0, 1)}</div>`
+                }
+                <div class="profile-card-style-variant-copy">
+                  <span class="profile-card-style-variant-label">${titleCase(element)}</span>
+                  <strong class="profile-card-style-variant-name">${variantName}</strong>
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      </section>
+      <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="stats">
+        <h3 class="section-title">Flex Stats</h3>
+        ${renderStatList([
+          { label: "Best Gauntlet Streak", value: safeStat(profile.gauntletBestStreak) },
+          { label: "Gauntlet Runs", value: safeStat(profile.gauntletRuns) },
+          { label: "Gauntlet Wins", value: safeStat(profile.gauntletWins) },
+          { label: "Rivals Defeated", value: safeStat(profile.gauntletRivalsDefeated) },
+          { label: "Featured Rival Wins", value: featuredRivalWins }
+        ])}
+      </section>
+    </section>
+  `;
 }
 
 function renderStatList(items) {
@@ -416,6 +570,9 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
           badgeId: viewedProfile.equippedCosmetics?.badge ?? "none",
           badgeSrc: featuredBadge
         })}
+        ${renderProfileFlexPanels(viewedProfile, {
+          titleIcon: viewedTitleIcon(viewedProfile)
+        })}
         <div class="profile-summary-grid profile-summary-grid-viewed">
           <section class="profile-summary-card stack-sm">
             <h3 class="section-title">Account Snapshot</h3>
@@ -537,6 +694,9 @@ export const profileScreen = {
           ${renderProfileSearchBlock({
             searchQuery: context.searchQuery ?? "",
             searchResults
+          })}
+          ${renderProfileFlexPanels(profile, {
+            titleIcon: profileTitleIcon
           })}
           <div class="profile-summary-grid">
             ${renderXpProgress(profile)}
