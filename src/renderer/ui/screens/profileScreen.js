@@ -176,87 +176,56 @@ function resolveTitleImagePath(titleId, fallbackIcon = null) {
   return resolveImagePath(fallbackIcon);
 }
 
-function renderFlexIdentityItem({ label, value, imageSrc = null, alt = "", previewClassName = "" } = {}) {
-  const safeValue = String(value ?? "").trim() || "Default";
-  const safeAlt = String(alt ?? safeValue).trim() || safeValue;
-  const safePreviewClassName = String(previewClassName ?? "").trim();
-
-  return `
-    <article class="profile-flex-item">
-      <p class="profile-flex-item-label">${label}</p>
-      <div class="profile-flex-item-body">
-        ${
-          imageSrc
-            ? `<img class="profile-flex-item-image ${safePreviewClassName}" src="${imageSrc}" alt="${safeAlt}" />`
-            : `<div class="profile-flex-item-fallback ${safePreviewClassName}">${label.slice(0, 1)}</div>`
-        }
-        <strong class="profile-flex-item-value">${safeValue}</strong>
-      </div>
-    </article>
-  `;
+function buildCardStyleHoverAttributes({ type, id, imageSrc, fallbackName, fallbackVisualText = null } = {}) {
+  const safeType = String(type ?? "").trim();
+  const safeName = String(fallbackName ?? "").trim() || "Preview";
+  const resolvedImage = hasRenderablePreviewSource(imageSrc, {
+    previewName: safeName,
+    previewVisualText: fallbackVisualText ?? safeName
+  })
+    ? imageSrc
+    : null;
+  const hoverMetadata = getCosmeticHoverMetadata(safeType, id, safeName);
+  return buildHoverPreviewAttributes({
+    previewType: safeType,
+    previewSrc: resolvedImage,
+    previewName: hoverMetadata.name ?? safeName,
+    previewDescription: hoverMetadata.description,
+    previewVisualText: fallbackVisualText ?? safeName,
+    previewRarity: hoverMetadata.rarity
+  });
 }
 
 function renderProfileFlexPanels(profile = {}, options = {}) {
   const equipped = normalizeProfileEquippedCosmetics(profile);
   const titleFallback = String(profile?.title ?? "Initiate").trim() || "Initiate";
-  const avatarName = getCosmeticDisplayName("avatar", equipped.avatar, "Default Avatar") ?? "Default Avatar";
-  const titleName = getCosmeticDisplayName("title", equipped.title, titleFallback) ?? titleFallback;
-  const badgeName = equipped.badge === "none"
-    ? "None"
-    : (getCosmeticDisplayName("badge", equipped.badge, "None") ?? "None");
   const cardBackName =
     getCosmeticDisplayName("cardBack", equipped.cardBack, "Default Card Back") ?? "Default Card Back";
-  const titleImage = resolveTitleImagePath(equipped.title, options.titleIcon ?? null);
   const variantImages = getVariantCardImages(equipped.elementCardVariant);
   const featuredRivalWins = safeStat(profile.featuredRivalWins);
+  const cardBackImage = getCardBackImage(equipped.cardBack);
+  const cardBackHoverAttributes = buildCardStyleHoverAttributes({
+    type: "cardBack",
+    id: equipped.cardBack,
+    imageSrc: cardBackImage,
+    fallbackName: cardBackName
+  });
 
   return `
     <section class="profile-flex-grid" data-profile-flex-grid="true">
-      <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="identity">
-        <h3 class="section-title">Equipped Identity</h3>
-        <div class="profile-flex-identity-grid">
-          ${renderFlexIdentityItem({
-            label: "Avatar",
-            value: avatarName,
-            imageSrc: getAvatarImage(equipped.avatar),
-            alt: avatarName,
-            previewClassName: "is-avatar"
-          })}
-          ${renderFlexIdentityItem({
-            label: "Title",
-            value: titleName,
-            imageSrc: titleImage,
-            alt: titleName,
-            previewClassName: "is-title"
-          })}
-          ${renderFlexIdentityItem({
-            label: "Badge",
-            value: badgeName,
-            imageSrc: getBadgeImage(equipped.badge),
-            alt: badgeName,
-            previewClassName: "is-badge"
-          })}
-          ${renderFlexIdentityItem({
-            label: "Card Back",
-            value: cardBackName,
-            imageSrc: getCardBackImage(equipped.cardBack),
-            alt: cardBackName,
-            previewClassName: "is-card"
-          })}
-        </div>
-      </section>
       <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="card-style">
         <h3 class="section-title">Card Style Preview</h3>
         <div class="profile-card-style-header">
           <img
             class="profile-card-style-cardback"
-            src="${getCardBackImage(equipped.cardBack)}"
+            src="${cardBackImage}"
             alt="${cardBackName}"
             data-profile-flex-cardback="true"
+            ${cardBackHoverAttributes}
           />
           <div class="profile-card-style-copy">
-            <p class="profile-flex-item-label">Card Back</p>
-            <strong class="profile-flex-item-value">${cardBackName}</strong>
+            <p class="profile-card-style-kicker">Card Back</p>
+            <strong class="profile-card-style-title">${cardBackName}</strong>
           </div>
         </div>
         <div class="profile-card-style-variants" data-profile-flex-variants="true">
@@ -266,12 +235,19 @@ function renderProfileFlexPanels(profile = {}, options = {}) {
               getCosmeticDisplayName("elementCardVariant", variantId, defaultVariantName(element)) ??
               defaultVariantName(element);
             const variantImage = variantImages?.[element] ?? null;
+            const variantHoverAttributes = buildCardStyleHoverAttributes({
+              type: "elementCardVariant",
+              id: variantId,
+              imageSrc: variantImage,
+              fallbackName: variantName,
+              fallbackVisualText: variantName
+            });
 
             return `
               <article class="profile-card-style-variant" data-profile-flex-variant="${element}">
                 ${
                   variantImage
-                    ? `<img class="profile-card-style-variant-image" src="${variantImage}" alt="${variantName}" />`
+                    ? `<img class="profile-card-style-variant-image" src="${variantImage}" alt="${variantName}" ${variantHoverAttributes} />`
                     : `<div class="profile-card-style-variant-fallback">${titleCase(element).slice(0, 1)}</div>`
                 }
                 <div class="profile-card-style-variant-copy">

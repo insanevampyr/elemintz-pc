@@ -17838,12 +17838,10 @@ test("ui: own profile renders Profile Flex MVP panels near the top", () => {
 
   const html = profileScreen.render(context);
 
-  assert.match(html, /data-profile-flex-panel="identity"/);
-  assert.match(html, /Equipped Identity/);
+  assert.doesNotMatch(html, /data-profile-flex-panel="identity"/);
+  assert.doesNotMatch(html, /Equipped Identity/);
   assert.match(html, /Card Style Preview/);
   assert.match(html, /Flex Stats/);
-  assert.match(html, /Avatar/);
-  assert.match(html, /Spellwired/);
   assert.match(html, /Card Back/);
   assert.match(html, /Fire/);
   assert.match(html, /Earth/);
@@ -17852,6 +17850,9 @@ test("ui: own profile renders Profile Flex MVP panels near the top", () => {
   assert.match(html, /Best Gauntlet Streak[\s\S]*12/);
   assert.match(html, /Featured Rival Wins[\s\S]*7/);
   assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
+  assert.match(html, /data-profile-flex-cardback="true"[^>]*data-hover-preview="true"[^>]*data-preview-type="cardBack"/);
+  assert.match(html, /data-profile-flex-variant="fire"[\s\S]*data-hover-preview="true"[\s\S]*data-preview-type="elementCardVariant"/);
+  assert.match(html, /data-preview-name="Neon Arcana Fire"/);
   assert.match(html, /Search Player/);
   assert.match(html, /Achievements \(/);
 });
@@ -17899,10 +17900,12 @@ test("ui: viewed profile modal renders read-only Profile Flex MVP panels", () =>
   });
 
   assert.match(html, /Read-only player profile/);
-  assert.match(html, /data-profile-flex-panel="identity"/);
+  assert.doesNotMatch(html, /data-profile-flex-panel="identity"/);
   assert.match(html, /data-profile-flex-panel="card-style"/);
   assert.match(html, /data-profile-flex-panel="stats"/);
   assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
+  assert.match(html, /data-profile-flex-cardback="true"[^>]*data-hover-preview="true"[^>]*data-preview-type="cardBack"/);
+  assert.match(html, /data-profile-flex-variant="water"[\s\S]*data-hover-preview="true"[\s\S]*data-preview-type="elementCardVariant"/);
   assert.doesNotMatch(html, /data-equip-type=/);
   assert.doesNotMatch(html, /Equip<\/button>/);
   assert.match(html, /Account Snapshot/);
@@ -17925,9 +17928,9 @@ test("ui: Profile Flex MVP panels fall back safely for missing cosmetics and sta
     })
   );
 
-  assert.match(html, /Default Avatar/);
+  assert.doesNotMatch(html, /Equipped Identity/);
   assert.match(html, /Default Card Back/);
-  assert.match(html, />None<\/strong>/);
+  assert.match(html, />Default Water<\/strong>/);
   assert.match(html, /Featured Rival Wins[\s\S]*>0</);
   assert.match(html, /Best Gauntlet Streak[\s\S]*>0</);
   assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
