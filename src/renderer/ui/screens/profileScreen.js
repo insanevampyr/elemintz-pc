@@ -11,6 +11,7 @@ import {
   buildHoverPreviewAttributes,
   hasRenderablePreviewSource
 } from "../shared/cosmeticHoverPreview.js";
+import { getLevelProgress, MAX_LEVEL } from "../../../state/levelRewardsSystem.js";
 
 function resolveImagePath(image) {
   if (!image) {
@@ -196,9 +197,86 @@ function buildCardStyleHoverAttributes({ type, id, imageSrc, fallbackName, fallb
   });
 }
 
+function renderProfileOverviewProgress(profile = {}) {
+  const levelProgress = getLevelProgress(profile);
+  const playerLevel = Math.max(1, Number(levelProgress?.playerLevel ?? 1));
+  const playerXp = Math.max(0, Number(levelProgress?.playerXP ?? 0));
+  const currentLevelXp = Math.max(0, Number(levelProgress?.currentLevelXp ?? 0));
+  const nextLevelXp = Math.max(currentLevelXp, Number(levelProgress?.nextLevelXp ?? currentLevelXp));
+  const span = Math.max(1, nextLevelXp - currentLevelXp);
+  const levelCapReached = Boolean(levelProgress?.levelCapReached || playerLevel >= MAX_LEVEL);
+  const displayedCurrentXp = levelCapReached ? span : Math.max(0, Math.min(span, playerXp - currentLevelXp));
+  const progressPercent = levelCapReached ? 100 : Math.max(0, Math.min(100, Math.round((displayedCurrentXp / span) * 100)));
+  const tokens = Math.max(0, Number(profile.tokens ?? 0));
+  const supporterStatus = profile.supporterPass ? "Active" : "Not Active";
+  const nextReward = levelProgress?.nextReward ?? null;
+  const nextRewardLine = nextReward ? `Lv ${nextReward.level} - ${nextReward.name}` : "Level cap reached";
+  const isReadOnlyProfile = !profile?.chests || typeof profile.chests !== "object";
+  const chestCounts = {
+    basic: Math.max(0, Number(profile?.chests?.basic ?? 0) || 0),
+    milestone: Math.max(0, Number(profile?.chests?.milestone ?? 0) || 0),
+    epic: Math.max(0, Number(profile?.chests?.epic ?? 0) || 0),
+    legendary: Math.max(0, Number(profile?.chests?.legendary ?? 0) || 0)
+  };
+
+  return `
+    <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="progress">
+      <h3 class="section-title">Progress / Account</h3>
+      <div class="profile-overview-progress">
+        <div class="profile-overview-progress-row">
+          <div class="profile-overview-progress-copy">
+            <p class="profile-overview-kicker">Level</p>
+            <strong class="profile-overview-value" data-profile-overview-level="true">${playerLevel}</strong>
+          </div>
+          <div class="profile-overview-progress-copy">
+            <p class="profile-overview-kicker">Tokens</p>
+            <strong class="profile-overview-value" data-profile-overview-tokens="true">${tokens}</strong>
+          </div>
+        </div>
+        <div class="profile-overview-xp-block" data-profile-overview-xp="true">
+          <div class="profile-overview-progress-copy">
+            <p class="profile-overview-kicker">XP</p>
+            <strong class="profile-overview-value" data-profile-overview-xp-value="true">${
+              levelCapReached ? "Level cap reached" : `${displayedCurrentXp} / ${span}`
+            }</strong>
+          </div>
+          <div
+            class="profile-overview-xp-bar"
+            role="progressbar"
+            aria-label="XP Progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="${progressPercent}"
+          >
+            <span class="profile-overview-xp-fill" style="width: ${progressPercent}%"></span>
+          </div>
+          <p class="profile-overview-progress-line">${levelCapReached ? "Level cap reached" : `${playerXp} total XP`}</p>
+        </div>
+        <div class="profile-overview-supporter-row">
+          <span class="profile-stat-label">Next Reward</span>
+          <strong class="profile-stat-value" data-profile-overview-next-reward="true">${nextRewardLine}</strong>
+        </div>
+        ${
+          isReadOnlyProfile
+            ? ""
+            : `<div class="profile-overview-chest-row" data-profile-overview-chests="true">
+                <span class="profile-overview-chest-pill" data-profile-overview-chest="basic">Basic: ${chestCounts.basic}</span>
+                <span class="profile-overview-chest-pill" data-profile-overview-chest="milestone">Milestone: ${chestCounts.milestone}</span>
+                <span class="profile-overview-chest-pill" data-profile-overview-chest="epic">Epic: ${chestCounts.epic}</span>
+                <span class="profile-overview-chest-pill" data-profile-overview-chest="legendary">Legendary: ${chestCounts.legendary}</span>
+              </div>`
+        }
+        <div class="profile-overview-supporter-row">
+          <span class="profile-stat-label">Founder / Supporter</span>
+          <strong class="profile-stat-value" data-profile-overview-supporter="true">${supporterStatus}</strong>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderProfileFlexPanels(profile = {}, options = {}) {
   const equipped = normalizeProfileEquippedCosmetics(profile);
-  const titleFallback = String(profile?.title ?? "Initiate").trim() || "Initiate";
   const cardBackName =
     getCosmeticDisplayName("cardBack", equipped.cardBack, "Default Card Back") ?? "Default Card Back";
   const variantImages = getVariantCardImages(equipped.elementCardVariant);
@@ -212,7 +290,8 @@ function renderProfileFlexPanels(profile = {}, options = {}) {
   });
 
   return `
-    <section class="profile-flex-grid" data-profile-flex-grid="true">
+    <section class="profile-flex-grid" data-profile-overview="true" data-profile-flex-grid="true">
+      ${renderProfileOverviewProgress(profile)}
       <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="card-style">
         <h3 class="section-title">Card Style Preview</h3>
         <div class="profile-card-style-header">
@@ -321,20 +400,20 @@ function renderGauntletStatsCard(profile = {}) {
 }
 
 function renderXpProgress(profile) {
-  const level = Math.max(1, Number(profile.playerLevel ?? 1));
-  const totalXp = Math.max(0, Number(profile.playerXP ?? 0));
-  const currentLevelXp = Math.max(0, Number(profile.currentLevelXp ?? 0));
-  const nextLevelXp = Math.max(currentLevelXp, Number(profile.nextLevelXp ?? currentLevelXp));
+  const levelProgress = getLevelProgress(profile);
+  const level = Math.max(1, Number(levelProgress?.playerLevel ?? 1));
+  const currentLevelXp = Math.max(0, Number(levelProgress?.currentLevelXp ?? 0));
+  const nextLevelXp = Math.max(currentLevelXp, Number(levelProgress?.nextLevelXp ?? currentLevelXp));
   const range = Math.max(1, nextLevelXp - currentLevelXp);
   const displayedCurrentXp =
-    level >= 100 ? range : Math.max(0, Math.min(range, totalXp - currentLevelXp));
+    level >= MAX_LEVEL ? range : Math.max(0, Math.min(range, Number(levelProgress?.playerXP ?? 0) - currentLevelXp));
   const displayedRequiredXp = range;
   const progress =
-    level >= 100
+    level >= MAX_LEVEL
       ? 100
       : Math.max(0, Math.min(100, Math.round((displayedCurrentXp / displayedRequiredXp) * 100)));
 
-  const nextReward = profile.nextReward ?? null;
+  const nextReward = levelProgress?.nextReward ?? null;
   const nextRewardLine = nextReward
     ? `<p class="next-reward-line"><strong>Next Reward:</strong> Lv ${nextReward.level} - ${nextReward.name}</p>`
     : '<p class="next-reward-line"><strong>Next Reward:</strong> Level cap reached</p>';
@@ -504,9 +583,6 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
     viewedProfile.title ?? "Initiate"
   );
   const featuredBadge = getBadgeImage(viewedProfile.equippedCosmetics?.badge ?? "none");
-  const level = Math.max(1, Number(viewedProfile.playerLevel ?? 1));
-  const xp = Math.max(0, Number(viewedProfile.playerXP ?? 0));
-  const tokens = Math.max(0, Number(viewedProfile.tokens ?? 0));
   const wins = Math.max(0, Number(viewedProfile.wins ?? 0));
   const losses = Math.max(0, Number(viewedProfile.losses ?? 0));
   const cardsCaptured = Math.max(0, Number(viewedProfile.cardsCaptured ?? 0));
@@ -550,14 +626,6 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
           titleIcon: viewedTitleIcon(viewedProfile)
         })}
         <div class="profile-summary-grid profile-summary-grid-viewed">
-          <section class="profile-summary-card stack-sm">
-            <h3 class="section-title">Account Snapshot</h3>
-            ${renderStatList([
-              { label: "Level", value: level },
-              { label: "XP", value: xp },
-              { label: "Tokens", value: tokens }
-            ])}
-          </section>
           <section class="profile-summary-card stack-sm">
             <h3 class="section-title">Overall Record</h3>
             ${renderStatList([
@@ -674,18 +742,10 @@ export const profileScreen = {
           ${renderProfileFlexPanels(profile, {
             titleIcon: profileTitleIcon
           })}
+          ${renderChestPanel(profile, context.basicChestVisualState, {
+            openingInFlight: context.profileChestOpenInFlight
+          })}
           <div class="profile-summary-grid">
-            ${renderXpProgress(profile)}
-            <section class="profile-summary-card stack-sm">
-              <h3 class="section-title">Currency & Chests</h3>
-              ${renderStatList([
-                { label: "Tokens", value: profile.tokens ?? 0 },
-                { label: "Founder / Supporter", value: profile.supporterPass ? "Active" : "Not Active" }
-              ])}
-              ${renderChestPanel(profile, context.basicChestVisualState, {
-                openingInFlight: context.profileChestOpenInFlight
-              })}
-            </section>
             <section class="profile-summary-card stack-sm">
               <h3 class="section-title">Overall Record</h3>
               ${renderStatList([

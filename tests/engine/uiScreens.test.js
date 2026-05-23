@@ -4064,8 +4064,8 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
 
   assert.match(html, /class="player-avatar"/);
   assert.match(html, /<span>Initiate<\/span>/);
-  assert.match(html, />Progress</);
-  assert.match(html, />Currency & Chests</);
+  assert.match(html, /Progress \/ Account/);
+  assert.match(html, /Reward Chests/);
   assert.match(html, />Overall Record</);
   assert.match(html, />Battle Stats</);
   assert.match(html, />Mode Stats</);
@@ -6482,9 +6482,9 @@ test("ui: viewed profile modal shows only unlocked achievements with badge image
     }
   );
 
-  assert.match(html, /profile-stat-label">Level<\/span>\s*<strong class="profile-stat-value">4<\/strong>/);
-  assert.match(html, /profile-stat-label">XP<\/span>\s*<strong class="profile-stat-value">83<\/strong>/);
-  assert.match(html, /profile-stat-label">Tokens<\/span>\s*<strong class="profile-stat-value">245<\/strong>/);
+  assert.match(html, /data-profile-overview-level="true">[0-9]+</);
+  assert.match(html, /data-profile-overview-xp-value="true">[0-9]+ \/ [0-9]+</);
+  assert.match(html, /data-profile-overview-tokens="true">245</);
   assert.match(html, /profile-stat-label">Games Played<\/span>\s*<strong class="profile-stat-value">7<\/strong>/);
   assert.match(
     html,
@@ -6894,7 +6894,7 @@ test("ui: viewed profile modal body keeps read-only profile sections and gauntle
   );
 
   assert.match(html, /Read-only player profile/);
-  assert.match(html, />Account Snapshot</);
+  assert.doesNotMatch(html, />Account Snapshot</);
   assert.match(html, />Overall Record</);
   assert.match(html, />Battle Stats</);
   assert.match(html, />Mode Stats</);
@@ -7003,6 +7003,7 @@ test("ui: appController opens searched profiles in a read-only modal instead of 
     const ownProfileHtml = profileScreen.render(shown.at(-1).context);
     assert.match(ownProfileHtml, /Search Player/);
     assert.match(ownProfileHtml, /Reward Chests/);
+    assert.doesNotMatch(ownProfileHtml, /Currency & Chests/);
     assert.doesNotMatch(ownProfileHtml, /Viewing: Rival/);
     assert.equal(modalCalls.length, 1);
     assert.equal(modalCalls[0].title, "Viewing: Rival");
@@ -7495,8 +7496,8 @@ test("ui: viewed profile renders derived level correctly on first render", () =>
       equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" }
   });
 
-  assert.match(html, /profile-stat-label">Level<\/span>\s*<strong class="profile-stat-value">4<\/strong>/);
-  assert.match(html, /profile-stat-label">XP<\/span>\s*<strong class="profile-stat-value">112<\/strong>/);
+  assert.match(html, /data-profile-overview-level="true">4</);
+  assert.match(html, /data-profile-overview-xp-value="true">[0-9]+ \/ [0-9]+</);
 });
 
 test("ui: viewed profile mode hides cosmetic selectors and applies viewed background on panel", () => {
@@ -10921,7 +10922,7 @@ test("ui: profile unlocked achievements section uses 3-column profile grid class
   assert.match(html, /achievement-grid achievement-grid-profile/);
 });
 
-test("ui: profile screen shows next reward preview", () => {
+test("ui: profile screen shows next reward preview from XP-derived progression", () => {
   const html = profileScreen.render({
     profile: {
       username: "PreviewUser",
@@ -10969,11 +10970,10 @@ test("ui: profile screen shows next reward preview", () => {
     }
   });
 
-  assert.match(html, /Next Reward:/);
-  assert.match(html, /Lv 5 - Avatar: Novice Mage/);
-  assert.match(html, /XP: 17 \/ 35/);
+  assert.match(html, /data-profile-overview-level="true">2</);
+  assert.match(html, /data-profile-overview-next-reward="true">Lv 3 - Title: Apprentice</);
+  assert.match(html, /data-profile-overview-xp-value="true">17 \/ 35</);
   assert.match(html, /aria-valuenow="49"/);
-  assert.match(html, /data-target-width="49"/);
   assert.match(html, /style="width: 49%"/);
 });
 
@@ -11025,7 +11025,7 @@ test("ui: profile XP display resets to 0 at the start of a new level", () => {
     }
   });
 
-  assert.match(html, /XP: 0 \/ 75/);
+  assert.match(html, /data-profile-overview-xp-value="true">0 \/ 65</);
   assert.match(html, /aria-valuenow="0"/);
   assert.match(html, /style="width: 0%"/);
 });
@@ -11078,8 +11078,8 @@ test("ui: profile initial progression display can render correct per-level value
     }
   });
 
-  assert.match(html, /Level 4/);
-  assert.match(html, /XP: 2 \/ 55/);
+  assert.match(html, /data-profile-overview-level="true">4</);
+  assert.match(html, /data-profile-overview-xp-value="true">2 \/ 55</);
   assert.match(html, /aria-valuenow="4"/);
   assert.match(html, /style="width: 4%"/);
 });
@@ -17930,11 +17930,17 @@ test("ui: match complete payload renders polished local PvP naming and draw stat
   assert.doesNotMatch(payload.bodyHtml, /Player 1 •/);
   assert.doesNotMatch(payload.bodyHtml, /Player 2 •/);
 });
-test("ui: own profile renders Profile Flex MVP panels near the top", () => {
+test("ui: own profile renders top Profile Overview panels near the top", () => {
   const context = createProfileScreenContext({
     profile: {
       ...createProfileScreenContext().profile,
       title: "Elementalist",
+      playerLevel: 18,
+      playerXP: 640,
+      tokens: 345,
+      supporterPass: true,
+      chests: { basic: 2, milestone: 1, epic: 3, legendary: 4 },
+      nextReward: { level: 20, name: "Arena Challenger Badge" },
       gauntletBestStreak: 12,
       gauntletRuns: 18,
       gauntletWins: 11,
@@ -17993,10 +17999,30 @@ test("ui: own profile renders Profile Flex MVP panels near the top", () => {
 
   const html = profileScreen.render(context);
 
+  assert.match(html, /data-profile-overview="true"/);
   assert.doesNotMatch(html, /data-profile-flex-panel="identity"/);
   assert.doesNotMatch(html, /Equipped Identity/);
+  assert.match(html, /data-profile-flex-panel="progress"/);
+  assert.match(html, /Progress \/ Account/);
+  assert.match(html, /data-profile-overview-level="true">[0-9]+</);
+  assert.match(html, /data-profile-overview-xp-value="true">[0-9]+ \/ [0-9]+</);
+  assert.match(html, /data-profile-overview-next-reward="true">Lv [0-9]+ - [^<]+</);
+  assert.match(html, /data-profile-overview-tokens="true">345</);
+  assert.match(html, /data-profile-overview-chest="basic">Basic: 2</);
+  assert.match(html, /data-profile-overview-chest="milestone">Milestone: 1</);
+  assert.match(html, /data-profile-overview-chest="epic">Epic: 3</);
+  assert.match(html, /data-profile-overview-chest="legendary">Legendary: 4</);
+  assert.match(html, /data-profile-overview-supporter="true">Active</);
+  assert.match(html, /aria-label="XP Progress"/);
   assert.match(html, /Card Style Preview/);
   assert.match(html, /Flex Stats/);
+  assert.doesNotMatch(html, /<h3 class="section-title">Progress<\/h3>/);
+  assert.doesNotMatch(html, /Currency & Chests/);
+  assert.match(html, /Overall Record/);
+  assert.match(html, /Battle Stats/);
+  assert.match(html, /Featured Rival/);
+  assert.match(html, /Gauntlet/);
+  assert.match(html, /Mode Stats/);
   assert.match(html, /Card Back/);
   assert.match(html, /Fire/);
   assert.match(html, /Earth/);
@@ -18012,7 +18038,7 @@ test("ui: own profile renders Profile Flex MVP panels near the top", () => {
   assert.match(html, /Achievements \(/);
 });
 
-test("ui: viewed profile modal renders read-only Profile Flex MVP panels", () => {
+test("ui: viewed profile modal renders read-only top Profile Overview panels", () => {
   const html = profileScreen.renderViewedProfileModalBody({
     username: "Enab",
     title: "Elementalist",
@@ -18055,7 +18081,13 @@ test("ui: viewed profile modal renders read-only Profile Flex MVP panels", () =>
   });
 
   assert.match(html, /Read-only player profile/);
+  assert.match(html, /data-profile-overview="true"/);
   assert.doesNotMatch(html, /data-profile-flex-panel="identity"/);
+  assert.match(html, /data-profile-flex-panel="progress"/);
+  assert.match(html, /Progress \/ Account/);
+  assert.match(html, /data-profile-overview-level="true">[0-9]+</);
+  assert.match(html, /data-profile-overview-xp-value="true">[0-9]+ \/ [0-9]+</);
+  assert.match(html, /data-profile-overview-tokens="true">222</);
   assert.match(html, /data-profile-flex-panel="card-style"/);
   assert.match(html, /data-profile-flex-panel="stats"/);
   assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
@@ -18063,16 +18095,21 @@ test("ui: viewed profile modal renders read-only Profile Flex MVP panels", () =>
   assert.match(html, /data-profile-flex-variant="water"[\s\S]*data-hover-preview="true"[\s\S]*data-preview-type="elementCardVariant"/);
   assert.doesNotMatch(html, /data-equip-type=/);
   assert.doesNotMatch(html, /Equip<\/button>/);
-  assert.match(html, /Account Snapshot/);
+  assert.doesNotMatch(html, /Account Snapshot/);
+  assert.doesNotMatch(html, /data-profile-overview-chests="true"/);
   assert.match(html, /Overall Record/);
 });
 
-test("ui: Profile Flex MVP panels fall back safely for missing cosmetics and stats", () => {
+test("ui: Profile Overview falls back safely for missing cosmetics stats and progress values", () => {
   const html = profileScreen.render(
     createProfileScreenContext({
       profile: {
         ...createProfileScreenContext().profile,
         title: "",
+        playerLevel: undefined,
+        playerXP: undefined,
+        tokens: undefined,
+        supporterPass: undefined,
         gauntletBestStreak: undefined,
         gauntletRuns: undefined,
         gauntletWins: undefined,
@@ -18084,9 +18121,33 @@ test("ui: Profile Flex MVP panels fall back safely for missing cosmetics and sta
   );
 
   assert.doesNotMatch(html, /Equipped Identity/);
+  assert.match(html, /data-profile-flex-panel="progress"/);
+  assert.match(html, /data-profile-overview-level="true">1</);
+  assert.match(html, /data-profile-overview-tokens="true">0</);
+  assert.match(html, /data-profile-overview-xp-value="true">0 \/ 25</);
+  assert.match(html, /data-profile-overview-next-reward="true">Lv 2 - \+50 Tokens</);
+  assert.match(html, /data-profile-overview-supporter="true">Not Active</);
   assert.match(html, /Default Card Back/);
   assert.match(html, />Default Water<\/strong>/);
   assert.match(html, /Featured Rival Wins[\s\S]*>0</);
   assert.match(html, /Best Gauntlet Streak[\s\S]*>0</);
   assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
+});
+
+test("ui: Profile Overview shows a clean max-level capped state", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        playerXP: 28824,
+        playerLevel: 100,
+        nextReward: null,
+        chests: { basic: 1, milestone: 0, epic: 0, legendary: 0 }
+      }
+    })
+  );
+
+  assert.match(html, /data-profile-overview-xp-value="true">Level cap reached</);
+  assert.match(html, /data-profile-overview-next-reward="true">Level cap reached</);
+  assert.match(html, /aria-valuenow="100"/);
 });

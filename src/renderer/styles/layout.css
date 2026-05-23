@@ -1670,6 +1670,99 @@ body {
   min-height: 100%;
 }
 
+.profile-overview-progress {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-overview-progress-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-overview-progress-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-overview-kicker {
+  margin: 0;
+  color: rgba(214, 232, 245, 0.76);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.profile-overview-value {
+  display: block;
+  color: #f3fbff;
+  line-height: 1.2;
+  font-size: 1.15rem;
+}
+
+.profile-overview-xp-block {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(130, 170, 199, 0.14);
+  border-radius: 12px;
+  background: rgba(6, 18, 29, 0.34);
+}
+
+.profile-overview-xp-bar {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(10, 25, 38, 0.9);
+  border: 1px solid rgba(140, 193, 230, 0.18);
+}
+
+.profile-overview-xp-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5db7ff, #9af0ff);
+}
+
+.profile-overview-progress-line {
+  margin: 0;
+  color: rgba(219, 236, 251, 0.84);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.profile-overview-chest-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-overview-chest-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(130, 170, 199, 0.18);
+  background: rgba(6, 18, 29, 0.34);
+  color: #f3fbff;
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.profile-overview-supporter-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(130, 170, 199, 0.1);
+  padding-top: 8px;
+}
+
 .profile-card-style-kicker,
 .profile-card-style-variant-label {
   margin: 0;
@@ -1806,6 +1899,10 @@ body {
 
 @media (max-width: 1100px) {
   .profile-flex-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-overview-progress-row {
     grid-template-columns: 1fr;
   }
 }
