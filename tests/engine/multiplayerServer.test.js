@@ -2284,6 +2284,145 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
   }
 });
 
+test("multiplayer foundation: authenticated gauntlet stat writes persist after each match and viewed profiles can read the updated authoritative counters", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let baneClient = null;
+  let viewerClient = null;
+
+  try {
+    await accountStore.register({
+      username: "Bane",
+      email: "bane@example.com",
+      password: "BanePass123"
+    });
+    await accountStore.register({
+      username: "Viewer",
+      email: "viewer@example.com",
+      password: "ViewerPass123"
+    });
+
+    const port = await foundation.start();
+    baneClient = await connectClient(port);
+    viewerClient = await connectClient(port);
+
+    const baneLogin = await loginAccount(baneClient, {
+      email: "bane@example.com",
+      password: "BanePass123"
+    });
+    const viewerLogin = await loginAccount(viewerClient, {
+      email: "viewer@example.com",
+      password: "ViewerPass123"
+    });
+    assert.equal(baneLogin?.ok, true);
+    assert.equal(viewerLogin?.ok, true);
+
+    const firstWin = await new Promise((resolve) => {
+      baneClient.emit(
+        "profile:recordGauntletStats",
+        {
+          sessionToken: baneLogin?.session?.token,
+          runStarted: true,
+          matchWon: true,
+          currentStreak: 1,
+          claimedMilestoneStreaks: []
+        },
+        resolve
+      );
+    });
+
+    assert.equal(firstWin?.ok, true);
+    assert.equal(firstWin?.result?.profile?.gauntletRuns, 1);
+    assert.equal(firstWin?.result?.profile?.gauntletWins, 1);
+    assert.equal(firstWin?.result?.profile?.gauntletRivalsDefeated, 1);
+    assert.equal(firstWin?.result?.profile?.gauntletBestStreak, 1);
+
+    const secondWin = await new Promise((resolve) => {
+      baneClient.emit(
+        "profile:recordGauntletStats",
+        {
+          sessionToken: baneLogin?.session?.token,
+          matchWon: true,
+          currentStreak: 3,
+          claimedMilestoneStreaks: firstWin?.result?.claimedMilestoneStreaks ?? []
+        },
+        resolve
+      );
+    });
+
+    assert.equal(secondWin?.ok, true);
+    assert.equal(secondWin?.result?.profile?.gauntletRuns, 1);
+    assert.equal(secondWin?.result?.profile?.gauntletWins, 2);
+    assert.equal(secondWin?.result?.profile?.gauntletRivalsDefeated, 2);
+    assert.equal(secondWin?.result?.profile?.gauntletBestStreak, 3);
+
+    const viewedDuringRun = await new Promise((resolve) => {
+      viewerClient.emit(
+        "profile:view",
+        {
+          sessionToken: viewerLogin?.session?.token,
+          username: "Bane"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(viewedDuringRun?.ok, true);
+    assert.equal(viewedDuringRun?.profile?.profile?.gauntletBestStreak, 3);
+    assert.equal(viewedDuringRun?.profile?.profile?.gauntletRuns, 1);
+    assert.equal(viewedDuringRun?.profile?.profile?.gauntletWins, 2);
+    assert.equal(viewedDuringRun?.profile?.profile?.gauntletRivalsDefeated, 2);
+
+    const profileDuringRun = await coordinator.profiles.getProfile("Bane");
+    assert.equal(profileDuringRun?.gauntletBestStreak, 3);
+    assert.equal(profileDuringRun?.gauntletRuns, 1);
+    assert.equal(profileDuringRun?.gauntletWins, 2);
+    assert.equal(profileDuringRun?.gauntletRivalsDefeated, 2);
+
+    const lossResult = await new Promise((resolve) => {
+      baneClient.emit(
+        "profile:recordGauntletStats",
+        {
+          sessionToken: baneLogin?.session?.token,
+          runEndedWithLoss: true
+        },
+        resolve
+      );
+    });
+
+    assert.equal(lossResult?.ok, true);
+    assert.equal(lossResult?.result?.profile?.gauntletRuns, 1);
+    assert.equal(lossResult?.result?.profile?.gauntletWins, 2);
+    assert.equal(lossResult?.result?.profile?.gauntletLosses, 1);
+    assert.equal(lossResult?.result?.profile?.gauntletRivalsDefeated, 2);
+
+    const profileAfterLoss = await coordinator.profiles.getProfile("Bane");
+    assert.equal(profileAfterLoss?.gauntletRuns, 1);
+    assert.equal(profileAfterLoss?.gauntletWins, 2);
+    assert.equal(profileAfterLoss?.gauntletLosses, 1);
+    assert.equal(profileAfterLoss?.gauntletBestStreak, 3);
+  } finally {
+    baneClient?.disconnect();
+    viewerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: admin lookup returns the authoritative profile snapshot by username", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

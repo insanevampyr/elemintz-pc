@@ -74,6 +74,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getProfile(payload);
   });
 
+  ipcMain.handle("multiplayer:viewProfile", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.viewProfile(payload);
+  });
+
   ipcMain.handle("multiplayer:listAnnouncements", async (event, payload) => {
     subscribers.add(event.sender);
     return client.listAnnouncements(payload);
@@ -122,6 +127,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
   ipcMain.handle("multiplayer:applyLocalMatchResult", async (event, payload) => {
     subscribers.add(event.sender);
     return client.applyLocalMatchResult(payload);
+  });
+
+  ipcMain.handle("multiplayer:recordGauntletStats", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.recordGauntletStats(payload);
   });
 
   ipcMain.handle("multiplayer:buyStoreItem", async (event, payload) => {

@@ -1803,8 +1803,50 @@ export function createMultiplayerFoundation({
             message: String(error?.message ?? "Unable to read authoritative profile.")
           }
         });
-        }
-      });
+      }
+    });
+
+    socket.on("profile:view", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.viewProfile !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const snapshot = await profileAuthority.viewProfile(payload?.username);
+        logRoomEvent(logger, "Viewed profile snapshot served", {
+          targetUsername: String(payload?.username ?? "").trim() || null,
+          viewerUsername: sessionResult.session?.username ?? null,
+          socketId: socket.id,
+          sessionId: sessionResult.session?.sessionId ?? null
+        });
+        respond({
+          ok: true,
+          profile: snapshot
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_VIEW_FAILED",
+            message: String(error?.message ?? "Unable to read viewed profile.")
+          }
+        });
+      }
+    });
 
     socket.on("profile:applyLocalMatchResult", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
@@ -1844,6 +1886,49 @@ export function createMultiplayerFoundation({
             message: String(
               error?.message ?? "Unable to complete authoritative local match settlement."
             )
+          }
+        });
+      }
+    });
+
+    socket.on("profile:recordGauntletStats", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.recordGauntletStats !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.recordGauntletStats({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          runStarted: payload?.runStarted === true,
+          matchWon: payload?.matchWon === true,
+          runEndedWithLoss: payload?.runEndedWithLoss === true,
+          currentStreak: payload?.currentStreak ?? 0,
+          claimedMilestoneStreaks: payload?.claimedMilestoneStreaks ?? []
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_GAUNTLET_STATS_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to persist gauntlet stats.")
           }
         });
       }

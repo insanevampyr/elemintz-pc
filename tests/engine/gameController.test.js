@@ -8470,6 +8470,216 @@ test("appController: gauntlet victory return to menu clears queued continuation 
   }
 });
 
+test("appController: authenticated Gauntlet stat persistence uses multiplayer authority after each win and avoids the local duplicate path", async () => {
+  const originalWindow = globalThis.window;
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "GauntletAuthorityUser";
+  app.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "GauntletAuthorityUser"
+    }
+  };
+  app.profile = {
+    username: "GauntletAuthorityUser",
+    gauntletBestStreak: 1,
+    gauntletWins: 1,
+    gauntletRivalsDefeated: 1,
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      background: "default_background",
+      cardBack: "default_card_back",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+
+  const calls = [];
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          recordGauntletStats: async (payload) => {
+            calls.push({ source: "multiplayer", payload });
+            return {
+              gauntletStats: {
+                gauntletBestStreak: 3,
+                gauntletWins: 2,
+                gauntletRivalsDefeated: 2
+              },
+              snapshot: {
+                username: "GauntletAuthorityUser",
+                profile: {
+                  username: "GauntletAuthorityUser",
+                  gauntletBestStreak: 3,
+                  gauntletRuns: 1,
+                  gauntletWins: 2,
+                  gauntletLosses: 0,
+                  gauntletRivalsDefeated: 2,
+                  equippedCosmetics: app.profile.equippedCosmetics
+                },
+                cosmetics: {
+                  equipped: app.profile.equippedCosmetics,
+                  owned: {
+                    avatar: ["default_avatar"],
+                    cardBack: ["default_card_back"],
+                    background: ["default_background"],
+                    elementCardVariant: [
+                      "default_fire_card",
+                      "default_water_card",
+                      "default_earth_card",
+                      "default_wind_card"
+                    ],
+                    badge: ["none"],
+                    title: ["Initiate"]
+                  }
+                },
+                stats: {
+                  summary: {
+                    wins: 0,
+                    losses: 0,
+                    gamesPlayed: 0,
+                    warsEntered: 0,
+                    warsWon: 0,
+                    cardsCaptured: 0
+                  },
+                  modes: {}
+                },
+                currency: {
+                  tokens: 200
+                },
+                progression: {
+                  xp: {
+                    playerXP: 0,
+                    playerLevel: 1
+                  }
+                }
+              }
+            };
+          }
+        },
+        state: {
+          recordGauntletStats: async () => {
+            throw new Error("local gauntlet stat persistence should not run for authenticated authority");
+          }
+        }
+      }
+    };
+
+    const result = await app.recordGauntletProfileStats({
+      matchWon: true,
+      currentStreak: 3,
+      claimedMilestoneStreaks: []
+    });
+
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], {
+      source: "multiplayer",
+      payload: {
+        username: "GauntletAuthorityUser",
+        runStarted: false,
+        matchWon: true,
+        runEndedWithLoss: false,
+        currentStreak: 3,
+        claimedMilestoneStreaks: []
+      }
+    });
+    assert.equal(result.profile.gauntletBestStreak, 3);
+    assert.equal(result.profile.gauntletWins, 2);
+    assert.equal(result.profile.gauntletRivalsDefeated, 2);
+    assert.equal(app.profile.gauntletBestStreak, 3);
+    assert.equal(app.profile.gauntletWins, 2);
+    assert.equal(app.profile.gauntletRivalsDefeated, 2);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: local Gauntlet stat persistence still uses the local state path", async () => {
+  const originalWindow = globalThis.window;
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "LocalGauntletPersist";
+  app.onlinePlayState = {
+    connectionStatus: "disconnected",
+    session: {
+      authenticated: false,
+      username: null
+    }
+  };
+  app.profile = {
+    username: "LocalGauntletPersist",
+    gauntletBestStreak: 0,
+    gauntletWins: 0,
+    gauntletRivalsDefeated: 0,
+    equippedCosmetics: {}
+  };
+
+  const calls = [];
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          recordGauntletStats: async () => {
+            throw new Error("multiplayer gauntlet stat persistence should not run for local profiles");
+          }
+        },
+        state: {
+          recordGauntletStats: async (payload) => {
+            calls.push(payload);
+            return {
+              profile: {
+                ...app.profile,
+                gauntletBestStreak: 2,
+                gauntletWins: 1,
+                gauntletRivalsDefeated: 1
+              }
+            };
+          }
+        }
+      }
+    };
+
+    const result = await app.recordGauntletProfileStats({
+      matchWon: true,
+      currentStreak: 2
+    });
+
+    assert.deepEqual(calls, [
+      {
+        username: "LocalGauntletPersist",
+        runStarted: false,
+        matchWon: true,
+        runEndedWithLoss: false,
+        currentStreak: 2,
+        claimedMilestoneStreaks: []
+      }
+    ]);
+    assert.equal(result.profile.gauntletBestStreak, 2);
+    assert.equal(app.profile.gauntletWins, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: gauntlet streaks above 20 continue the run without granting repeated milestone rewards", async () => {
   const originalWindow = globalThis.window;
   const gauntletStatCalls = [];
@@ -11039,6 +11249,7 @@ test("appController: authenticated Gauntlet showGame uses merged equipped backgr
     cosmetics: {
       snapshot: {
         equipped: {
+          avatar: "avatar_neon_pyre_entity",
           background: "bg_crystal_nexus",
           cardBack: "cardback_neon_arcana",
           elementCardVariant: {
@@ -11077,6 +11288,7 @@ test("appController: authenticated Gauntlet showGame uses merged equipped backgr
 
   const payload = shown.at(-1).context;
   assert.match(payload.arenaBackground, /bg_crystal_nexus\.png/);
+  assert.match(payload.playerDisplay.avatar, /avatar_neon_pyre_entity\.png/);
   assert.match(payload.cardBacks.p1, /cardback_neon_arcana\.png/);
   assert.deepEqual(payload.cosmeticIds.cardBacks, {
     p1: "cardback_neon_arcana",

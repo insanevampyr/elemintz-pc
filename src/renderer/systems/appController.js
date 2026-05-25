@@ -1380,12 +1380,43 @@ export class AppController {
     currentStreak = 0,
     claimedMilestoneStreaks = []
   } = {}) {
-    const recorder = globalThis.window?.elemintz?.state?.recordGauntletStats;
-    if (typeof recorder !== "function" || !this.username) {
+    if (!this.username) {
       return null;
     }
 
-    const result = await recorder({
+    const multiplayerRecorder =
+      this.hasAuthenticatedMultiplayerSessionForUsername(this.username) &&
+      typeof globalThis.window?.elemintz?.multiplayer?.recordGauntletStats === "function"
+        ? globalThis.window.elemintz.multiplayer.recordGauntletStats
+        : null;
+
+    if (multiplayerRecorder) {
+      const result = await multiplayerRecorder({
+        username: this.username,
+        runStarted,
+        matchWon,
+        runEndedWithLoss,
+        currentStreak,
+        claimedMilestoneStreaks
+      });
+
+      if (result?.snapshot) {
+        this.applyServerProfileSnapshot(result.snapshot, {
+          fallbackProfile: this.profile ?? null
+        });
+      } else if (result?.profile) {
+        this.profile = result.profile;
+      }
+
+      return result?.snapshot ? { ...result, profile: this.profile } : result ?? null;
+    }
+
+    const localRecorder = globalThis.window?.elemintz?.state?.recordGauntletStats;
+    if (typeof localRecorder !== "function") {
+      return null;
+    }
+
+    const result = await localRecorder({
       username: this.username,
       runStarted,
       matchWon,
@@ -7008,7 +7039,7 @@ export class AppController {
       : [];
 
     const viewedProfile = this.viewedProfileUsername
-      ? await window.elemintz.state.getProfile(this.viewedProfileUsername)
+      ? await this.loadViewedProfile(this.viewedProfileUsername)
       : null;
 
     this.screenManager.show("profile", {
@@ -7084,6 +7115,34 @@ export class AppController {
   clearViewedProfileSelection() {
     this.viewedProfileUsername = null;
     this.viewedProfileAchievementsExpanded = false;
+  }
+
+  async loadViewedProfile(username) {
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      return null;
+    }
+
+    const canUseAuthoritativeViewedProfile =
+      Boolean(this.onlinePlayState?.session?.authenticated) &&
+      typeof window.elemintz?.multiplayer?.viewProfile === "function";
+
+    if (canUseAuthoritativeViewedProfile) {
+      try {
+        const snapshot = await window.elemintz.multiplayer.viewProfile({ username: safeUsername });
+        const profile = this.buildProfileFromServerSnapshot(snapshot);
+        if (profile) {
+          return profile;
+        }
+      } catch (error) {
+        console.warn("Falling back to local viewed profile after authoritative read failed", {
+          username: safeUsername,
+          message: String(error?.message ?? error ?? "Unknown viewed profile failure.")
+        });
+      }
+    }
+
+    return window.elemintz.state.getProfile(safeUsername);
   }
 
   bindViewedProfileModalControls() {

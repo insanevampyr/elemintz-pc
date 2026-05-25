@@ -113,6 +113,16 @@ export class MultiplayerProfileAuthority {
     return buildProfileSnapshot({ profile, challenges });
   }
 
+  async viewProfile(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative viewed profile access.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] viewProfile -> ${safeUsername} (server)`);
+    return this.getProfile(safeUsername);
+  }
+
   async assertProfileClaimAvailable(username) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -345,6 +355,35 @@ export class MultiplayerProfileAuthority {
     return {
       duplicate: Boolean(matchResult?.duplicate),
       matchResult,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async recordGauntletStats({
+    username,
+    runStarted = false,
+    matchWon = false,
+    runEndedWithLoss = false,
+    currentStreak = 0,
+    claimedMilestoneStreaks = []
+  } = {}) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative gauntlet stat persistence.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] recordGauntletStats -> ${safeUsername} (server)`);
+    const result = await this.coordinator.recordGauntletStats({
+      username: safeUsername,
+      runStarted,
+      matchWon,
+      runEndedWithLoss,
+      currentStreak,
+      claimedMilestoneStreaks
+    });
+
+    return {
+      ...result,
       snapshot: await this.getProfile(safeUsername)
     };
   }

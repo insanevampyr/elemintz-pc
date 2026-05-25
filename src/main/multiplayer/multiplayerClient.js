@@ -2170,6 +2170,15 @@ export class MultiplayerClient {
     return response.profile ?? null;
   }
 
+  async viewProfile({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("profile:view", { username }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load the viewed profile.");
+    }
+
+    return response.profile ?? null;
+  }
+
   async listAnnouncements({ username, serverUrl } = {}) {
     const response = await this.runServerRequest("announcements:list", { username }, { serverUrl });
     if (!response?.ok) {
@@ -2311,6 +2320,35 @@ export class MultiplayerClient {
       duplicate: Boolean(result.duplicate),
       snapshot: result.snapshot ?? null
     };
+  }
+
+  async recordGauntletStats({
+    username,
+    runStarted = false,
+    matchWon = false,
+    runEndedWithLoss = false,
+    currentStreak = 0,
+    claimedMilestoneStreaks = [],
+    serverUrl
+  } = {}) {
+    const response = await this.runServerRequest(
+      "profile:recordGauntletStats",
+      {
+        username,
+        runStarted,
+        matchWon,
+        runEndedWithLoss,
+        currentStreak,
+        claimedMilestoneStreaks
+      },
+      { serverUrl }
+    );
+
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to persist gauntlet stats.");
+    }
+
+    return response.result ?? null;
   }
 
   async buyStoreItem({ username, type, cosmeticId, serverUrl } = {}) {

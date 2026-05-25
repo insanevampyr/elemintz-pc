@@ -32,7 +32,7 @@ import { EPIC_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSyst
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
-import { getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
+import { getAvatarImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 
 async function createTempDataDir() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-state-"));
@@ -984,6 +984,14 @@ test("state: match renderer resolves every equippable catalog card back and non-
   assert.match(getVariantCardImages({ water: "water_variant_neon_arcana" }).water, /water_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ earth: "earth_variant_neon_arcana" }).earth, /earth_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ wind: "wind_variant_neon_arcana" }).wind, /wind_variant_neon_arcana\.png/);
+});
+
+test("state: Neon Arcana avatar ids resolve in the match/profile avatar renderer and unknown ids still fall back safely", () => {
+  assert.match(getAvatarImage("avatar_neon_pyre_entity"), /avatar_neon_pyre_entity\.png/);
+  assert.match(getAvatarImage("avatar_neon_tide_entity"), /avatar_neon_tide_entity\.png/);
+  assert.match(getAvatarImage("avatar_neon_stone_entity"), /avatar_neon_stone_entity\.png/);
+  assert.match(getAvatarImage("avatar_neon_gale_entity"), /avatar_neon_gale_entity\.png/);
+  assert.match(getAvatarImage("not_a_real_avatar"), /avatars\/default\.png/);
 });
 
 test("state: Neon Arcana resized avatar and title art match category standards while card assets stay card-sized", async () => {

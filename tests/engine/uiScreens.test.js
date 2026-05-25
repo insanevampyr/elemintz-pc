@@ -7327,6 +7327,190 @@ test("ui: viewed profile modal reuses a single overlay and updates when another 
   }
 });
 
+test("ui: authenticated profile view uses authoritative viewed-profile data for gauntlet stats", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const ownProfile = {
+    ...createProfileScreenContext().profile,
+    username: "Owner",
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+
+  const authoritativeViewedSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    username: "Bane",
+    profile: {
+      username: "Bane",
+      title: "Initiate",
+      playerLevel: 8,
+      playerXP: 320,
+      gauntletBestStreak: 3,
+      gauntletRuns: 1,
+      gauntletWins: 3,
+      gauntletLosses: 0,
+      gauntletRivalsDefeated: 3,
+      achievements: {},
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: {
+        avatar: "avatar_neon_pyre_entity",
+        title: "Initiate",
+        badge: "none",
+        background: "default_background",
+        cardBack: "cardback_neon_arcana",
+        elementCardVariant: {
+          fire: "fire_variant_neon_arcana",
+          water: "water_variant_neon_arcana",
+          earth: "earth_variant_neon_arcana",
+          wind: "wind_variant_neon_arcana"
+        }
+      }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "avatar_neon_pyre_entity",
+        title: "Initiate",
+        badge: "none",
+        background: "default_background",
+        cardBack: "cardback_neon_arcana",
+        elementCardVariant: {
+          fire: "fire_variant_neon_arcana",
+          water: "water_variant_neon_arcana",
+          earth: "earth_variant_neon_arcana",
+          wind: "wind_variant_neon_arcana"
+        }
+      },
+      owned: {
+        avatar: ["avatar_neon_pyre_entity"],
+        cardBack: ["cardback_neon_arcana"],
+        background: ["default_background"],
+        elementCardVariant: [
+          "fire_variant_neon_arcana",
+          "water_variant_neon_arcana",
+          "earth_variant_neon_arcana",
+          "wind_variant_neon_arcana"
+        ],
+        badge: ["none"],
+        title: ["Initiate"]
+      }
+    },
+    stats: {
+      summary: {
+        wins: 0,
+        losses: 0,
+        gamesPlayed: 0,
+        warsEntered: 0,
+        warsWon: 0,
+        cardsCaptured: 0
+      },
+      modes: {
+        pve: { wins: 0, losses: 0 },
+        local_pvp: { wins: 0, losses: 0 }
+      }
+    },
+    currency: {
+      tokens: 125
+    },
+    progression: {
+      xp: {
+        playerXP: 320,
+        playerLevel: 8
+      }
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => ({
+          authority: "server",
+          username: "Owner",
+          profile: ownProfile,
+          cosmetics: { equipped: ownProfile.equippedCosmetics, owned: {}, loadouts: [], preferences: {} },
+          stats: { summary: {}, modes: {} },
+          currency: { tokens: 200 },
+          progression: { xp: {} }
+        }),
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        viewProfile: async ({ username }) => {
+          if (username !== "Bane") {
+            throw new Error("unexpected viewed profile username");
+          }
+          return authoritativeViewedSnapshot;
+        }
+      },
+      state: {
+        getProfile: async (username) => {
+          if (username === "Bane") {
+            return {
+              username: "Bane",
+              gauntletBestStreak: 0,
+              gauntletRuns: 0,
+              gauntletWins: 0,
+              gauntletRivalsDefeated: 0,
+              equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" },
+              achievements: {},
+              modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } }
+            };
+          }
+          throw new Error("local own-profile read should not be used for authenticated profile refresh");
+        },
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [{ username: "Bane" }]
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "Owner";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "Owner"
+      }
+    };
+    controller.viewedProfileUsername = "Bane";
+
+    await controller.showProfile();
+
+    assert.equal(shown.at(-1)?.screenId, "profile");
+    assert.equal(modalCalls.length, 1);
+    assert.match(modalCalls[0].bodyHtml, /Best Gauntlet Streak/);
+    assert.match(modalCalls[0].bodyHtml, />3</);
+    assert.match(modalCalls[0].bodyHtml, /avatar_neon_pyre_entity\.png/);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: viewed profile modal binds hover preview behavior after render without duplicating listeners on reopen", () => {
   const previousDocument = global.document;
   const modalBodyListeners = new Map();
@@ -7480,6 +7664,20 @@ test("ui: viewed profile modal binds hover preview behavior after render without
   } finally {
     global.document = previousDocument;
   }
+});
+
+test("ui: own profile header renders the equipped Neon Arcana avatar when selected", () => {
+  const context = createProfileScreenContext();
+  context.profile = {
+    ...context.profile,
+    equippedCosmetics: {
+      ...context.profile.equippedCosmetics,
+      avatar: "avatar_neon_pyre_entity"
+    }
+  };
+  const html = profileScreen.render(context);
+
+  assert.match(html, /avatar_neon_pyre_entity\.png/);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {
