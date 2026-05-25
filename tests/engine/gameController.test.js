@@ -8418,7 +8418,8 @@ test("appController: gauntlet victory return to menu clears queued continuation 
               gauntletRuns: 1,
               gauntletWins: payload.matchWon ? 1 : 0,
               gauntletLosses: 0,
-              gauntletRivalsDefeated: payload.matchWon ? 1 : 0
+              gauntletRivalsDefeated: payload.matchWon ? 1 : 0,
+              equippedCosmetics: { background: "default_background" }
             },
             claimedMilestoneStreaks: payload.claimedMilestoneStreaks ?? [],
             milestoneRewards: []
@@ -8457,6 +8458,7 @@ test("appController: gauntlet victory return to menu clears queued continuation 
       assert.equal(app.pendingGauntletContinuationRequiresConfirm, false);
       assert.equal(app.pveGauntletMode, false);
       assert.equal(app.gauntletRunState.active, false);
+      assert.deepEqual(app.profile.equippedCosmetics, { background: "default_background" });
     } finally {
       globalThis.document = originalDocument;
     }
@@ -11012,6 +11014,195 @@ test("appController: equipped background is used on menu, profile, and game scre
   app.showGame();
   assert.equal(shown.at(-1).name, "game");
   assert.match(shown.at(-1).context.arenaBackground, /windBattleArena\.png/);
+});
+
+test("appController: authenticated Gauntlet showGame uses merged equipped background, card back, and variants from the server cosmetic snapshot", () => {
+  const shown = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shown.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "SnapshotGauntlet";
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentRivalId: "tide_witch"
+  };
+  app.profile = {
+    username: "SnapshotGauntlet",
+    equippedCosmetics: {},
+    cosmetics: {
+      snapshot: {
+        equipped: {
+          background: "bg_crystal_nexus",
+          cardBack: "cardback_neon_arcana",
+          elementCardVariant: {
+            fire: "fire_variant_neon_arcana",
+            water: "water_variant_neon_arcana",
+            earth: "earth_variant_neon_arcana",
+            wind: "wind_variant_neon_arcana"
+          }
+        }
+      }
+    }
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.PVE,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+
+  app.showGame();
+
+  const payload = shown.at(-1).context;
+  assert.match(payload.arenaBackground, /bg_crystal_nexus\.png/);
+  assert.match(payload.cardBacks.p1, /cardback_neon_arcana\.png/);
+  assert.deepEqual(payload.cosmeticIds.cardBacks, {
+    p1: "cardback_neon_arcana",
+    p2: "default_card_back"
+  });
+  assert.deepEqual(payload.cosmeticIds.variants.p1, {
+    fire: "fire_variant_neon_arcana",
+    water: "water_variant_neon_arcana",
+    earth: "earth_variant_neon_arcana",
+    wind: "wind_variant_neon_arcana"
+  });
+  assert.match(payload.cardImages.p1.fire, /fire_variant_neon_arcana\.png/);
+  assert.match(payload.cardImages.p1.water, /water_variant_neon_arcana\.png/);
+  assert.match(payload.cardImages.p1.earth, /earth_variant_neon_arcana\.png/);
+  assert.match(payload.cardImages.p1.wind, /wind_variant_neon_arcana\.png/);
+});
+
+test("appController: Featured Rival arena override still beats the player's equipped background", () => {
+  const shown = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shown.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "BossOverrideUser";
+  app.profile = {
+    username: "BossOverrideUser",
+    cosmetics: {
+      snapshot: {
+        equipped: {
+          background: "bg_crystal_nexus"
+        }
+      }
+    },
+    equippedCosmetics: {}
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.PVE,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+  app.pveFeaturedRivalId = "crownfire_duelist";
+
+  app.showGame();
+
+  assert.match(shown.at(-1).context.arenaBackground, /bg_crownfire_arena\.png/);
+});
+
+test("appController: local Gauntlet showGame still respects directly equipped local cosmetics", () => {
+  const shown = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shown.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "LocalGauntlet";
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentRivalId: "cyclebound"
+  };
+  app.profile = {
+    username: "LocalGauntlet",
+    equippedCosmetics: {
+      background: "wind_background",
+      cardBack: "cardback_arcane_galaxy",
+      elementCardVariant: {
+        fire: "fire_variant_phoenix",
+        water: "water_variant_crystal",
+        earth: "earth_variant_titan",
+        wind: "wind_variant_storm_eye"
+      }
+    }
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.PVE,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+
+  app.showGame();
+
+  const payload = shown.at(-1).context;
+  assert.match(payload.arenaBackground, /windBattleArena\.png/);
+  assert.match(payload.cardBacks.p1, /cardback_arcane_galaxy\.png/);
+  assert.match(payload.cardImages.p1.fire, /fire_variant_phoenix\.png/);
 });
 
 test("appController: background change is reflected immediately across screens", () => {

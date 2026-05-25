@@ -2428,6 +2428,17 @@ export class AppController {
     });
   }
 
+  buildMatchCosmeticProfileView(profile = null) {
+    if (!profile || typeof profile !== "object") {
+      return profile;
+    }
+
+    return {
+      ...profile,
+      equippedCosmetics: this.buildOnlineEquippedCosmetics(profile)
+    };
+  }
+
   getOnlineEquippedCosmeticValue(profile = null, key, fallback) {
     return profile?.cosmetics?.snapshot?.equipped?.[key] ??
       profile?.cosmetics?.equipped?.[key] ??
@@ -6855,8 +6866,8 @@ export class AppController {
     }
 
     const names = this.getLocalNames();
-    const p1Profile = localPvp ? this.localProfiles?.p1 : this.profile;
-    const p2Profile = localPvp ? this.localProfiles?.p2 : null;
+    const p1Profile = this.buildMatchCosmeticProfileView(localPvp ? this.localProfiles?.p1 : this.profile);
+    const p2Profile = localPvp ? this.buildMatchCosmeticProfileView(this.localProfiles?.p2) : null;
     const pveOpponentStyle = localPvp ? null : this.resolvePveOpponentStyle();
     const nonLocalOpponentName = pveOpponentStyle?.name ?? this.getCurrentPveOpponentName();
     const localViewerKey = localPvp && vm.hotseatTurn === "p2" ? "p2" : "p1";

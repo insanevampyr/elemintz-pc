@@ -32,6 +32,7 @@ import { EPIC_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSyst
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
+import { getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 
 async function createTempDataDir() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-state-"));
@@ -946,6 +947,43 @@ test("state: cosmetic catalog covers all completed on-disk avatar, background, c
   for (const file of cosmeticCardFiles) {
     assert.ok(variantImages.has(`cards/${file}`), `missing card variant catalog entry for ${file}`);
   }
+});
+
+test("state: match renderer resolves every equippable catalog card back and non-default card variant", () => {
+  const defaultCardBack = getCardBackImage("default_card_back");
+
+  for (const item of COSMETIC_CATALOG.cardBack) {
+    if (item.id === "default_card_back") {
+      continue;
+    }
+
+    const resolved = getCardBackImage(item.id);
+    assert.notEqual(resolved, defaultCardBack, `match renderer fell back for card back ${item.id}`);
+  }
+
+  for (const item of COSMETIC_CATALOG.elementCardVariant) {
+    if (item.id.startsWith("default_")) {
+      continue;
+    }
+
+    const resolved = getVariantCardImages({ [item.element]: item.id });
+    const defaultImage = `/${item.element}.jpg`;
+    assert.doesNotMatch(
+      resolved[item.element],
+      new RegExp(defaultImage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `match renderer fell back for variant ${item.id}`
+    );
+    assert.match(
+      resolved[item.element],
+      new RegExp(item.image.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    );
+  }
+
+  assert.match(getCardBackImage("cardback_neon_arcana"), /cardback_neon_arcana\.png/);
+  assert.match(getVariantCardImages({ fire: "fire_variant_neon_arcana" }).fire, /fire_variant_neon_arcana\.png/);
+  assert.match(getVariantCardImages({ water: "water_variant_neon_arcana" }).water, /water_variant_neon_arcana\.png/);
+  assert.match(getVariantCardImages({ earth: "earth_variant_neon_arcana" }).earth, /earth_variant_neon_arcana\.png/);
+  assert.match(getVariantCardImages({ wind: "wind_variant_neon_arcana" }).wind, /wind_variant_neon_arcana\.png/);
 });
 
 test("state: Neon Arcana resized avatar and title art match category standards while card assets stay card-sized", async () => {
