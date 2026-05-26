@@ -1011,6 +1011,18 @@ export function createMultiplayerFoundation({
     };
   }
 
+  function buildClaimedProfileAuthError(username) {
+    return {
+      ok: false,
+      error: {
+        code: "PROFILE_AUTH_REQUIRED",
+        message: username
+          ? `An authenticated EleMintz account session is required for claimed profile '${username}'.`
+          : "An authenticated EleMintz account session is required for this claimed profile."
+      }
+    };
+  }
+
   function assertAdminAccessForSession(session) {
     const normalizedUsername = normalizeSettledUsername(session?.profileKey ?? session?.username);
     const normalizedEmail = String(session?.email ?? "").trim().toLowerCase() || null;
@@ -1162,6 +1174,37 @@ export function createMultiplayerFoundation({
       username: resolvedUsername,
       socketId: socket.id
     });
+  }
+
+  async function ensureClaimedProfileAccess(
+    socket,
+    payload = {},
+    {
+      allowBootstrap = false,
+      targetUsername = null
+    } = {}
+  ) {
+    const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap });
+    if (!sessionResult?.ok) {
+      return sessionResult;
+    }
+
+    const resolvedTargetUsername =
+      normalizeSettledUsername(
+        targetUsername ??
+          sessionResult.session?.profileKey ??
+          sessionResult.session?.username
+      ) ?? null;
+    if (!resolvedTargetUsername || typeof profileAuthority?.isProfileClaimed !== "function") {
+      return sessionResult;
+    }
+
+    const claimed = await profileAuthority.isProfileClaimed(resolvedTargetUsername);
+    if (claimed && !sessionResult.session?.authenticated) {
+      return buildClaimedProfileAuthError(resolvedTargetUsername);
+    }
+
+    return sessionResult;
   }
 
   async function settleCompletedMatchRewards(room) {
@@ -1765,7 +1808,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:get", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -1850,7 +1895,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:applyLocalMatchResult", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -1893,7 +1940,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:recordGauntletStats", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -2378,7 +2427,9 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:confirmGrantReceipt", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -2418,11 +2469,13 @@ export function createMultiplayerFoundation({
 
       socket.on("profile:getCosmetics", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
-        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+          allowBootstrap: true
+        });
         if (!sessionResult?.ok) {
           respond(sessionResult);
-        return;
-      }
+          return;
+        }
 
       if (typeof profileAuthority?.getCosmetics !== "function") {
         respond({
@@ -2454,13 +2507,15 @@ export function createMultiplayerFoundation({
         }
       });
 
-      socket.on("profile:acknowledgeAnnouncement", async (payload = {}, respond = () => {}) => {
-        respond = toAckCallback(respond);
-        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
-        if (!sessionResult?.ok) {
-          respond(sessionResult);
-          return;
-        }
+    socket.on("profile:acknowledgeAnnouncement", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
 
         if (typeof profileAuthority?.acknowledgeAnnouncement !== "function") {
           respond({
@@ -2776,7 +2831,9 @@ export function createMultiplayerFoundation({
 
       socket.on("profile:claimDailyLoginReward", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
-        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+          allowBootstrap: true
+        });
         if (!sessionResult?.ok) {
           respond(sessionResult);
           return;
@@ -2814,7 +2871,9 @@ export function createMultiplayerFoundation({
 
       socket.on("profile:acknowledgeMilestoneChestReward", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
-        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+        const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+          allowBootstrap: true
+        });
         if (!sessionResult?.ok) {
           respond(sessionResult);
           return;
@@ -2855,7 +2914,9 @@ export function createMultiplayerFoundation({
 
       socket.on("profile:buyStoreItem", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -2894,7 +2955,9 @@ export function createMultiplayerFoundation({
 
       socket.on("profile:openChest", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -2933,7 +2996,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:equipCosmetic", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -2972,7 +3037,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:updateCosmeticPreferences", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -3011,7 +3078,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:randomizeOwnedCosmetics", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -3050,7 +3119,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:saveCosmeticLoadout", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -3089,7 +3160,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:applyCosmeticLoadout", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;
@@ -3128,7 +3201,9 @@ export function createMultiplayerFoundation({
 
     socket.on("profile:renameCosmeticLoadout", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: true });
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
       if (!sessionResult?.ok) {
         respond(sessionResult);
         return;

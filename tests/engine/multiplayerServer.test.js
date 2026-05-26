@@ -3446,6 +3446,206 @@ test("multiplayer foundation: server-authoritative store purchase deducts tokens
   }
 });
 
+test("multiplayer foundation: bootstrap sessions cannot access or mutate claimed profiles", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const createFoundation = () =>
+    createMultiplayerFoundation({
+      port: 0,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      accountStore,
+      profileAuthority
+    });
+  let foundation = createFoundation();
+  let ownerClient = null;
+  let attackerClient = null;
+
+  try {
+    let port = await foundation.start();
+    ownerClient = await connectClient(port);
+
+    const ownerRegister = await registerAccount(ownerClient, {
+      username: "ClaimedVictim",
+      email: "claimed-victim@example.com",
+      password: "VictimPass123"
+    });
+    assert.equal(ownerRegister?.ok, true);
+
+    await coordinator.profiles.updateProfile("ClaimedVictim", (current) => ({
+      ...current,
+      tokens: 400,
+      playerXP: 0,
+      chests: {
+        ...(current?.chests ?? {}),
+        basic: 1
+      }
+    }));
+    const beforeProfile = await coordinator.profiles.getProfile("ClaimedVictim");
+
+    ownerClient.disconnect();
+    ownerClient = null;
+    await foundation.stop();
+
+    foundation = createFoundation();
+    port = await foundation.start();
+    attackerClient = await connectClient(port);
+
+    const bootstrap = await bootstrapSession(attackerClient, "ClaimedVictim");
+    assert.equal(bootstrap?.ok, true);
+    assert.equal(Boolean(bootstrap?.session?.authenticated), false);
+
+    const ownProfileRead = await new Promise((resolve) => {
+      attackerClient.emit("profile:get", {}, resolve);
+    });
+    const cosmeticsRead = await new Promise((resolve) => {
+      attackerClient.emit("profile:getCosmetics", {}, resolve);
+    });
+    const purchaseAttempt = await new Promise((resolve) => {
+      attackerClient.emit(
+        "profile:buyStoreItem",
+        { type: "avatar", cosmeticId: "fireavatarF" },
+        resolve
+      );
+    });
+    const dailyAttempt = await new Promise((resolve) => {
+      attackerClient.emit("profile:claimDailyLoginReward", {}, resolve);
+    });
+    const chestAttempt = await new Promise((resolve) => {
+      attackerClient.emit("profile:openChest", { chestType: "basic" }, resolve);
+    });
+    const gauntletAttempt = await new Promise((resolve) => {
+      attackerClient.emit(
+        "profile:recordGauntletStats",
+        {
+          runStarted: true,
+          matchWon: true,
+          currentStreak: 3,
+          claimedMilestoneStreaks: []
+        },
+        resolve
+      );
+    });
+
+    for (const response of [
+      ownProfileRead,
+      cosmeticsRead,
+      purchaseAttempt,
+      dailyAttempt,
+      chestAttempt,
+      gauntletAttempt
+    ]) {
+      assert.equal(response?.ok, false);
+      assert.equal(response?.error?.code, "PROFILE_AUTH_REQUIRED");
+    }
+
+    const afterProfile = await coordinator.profiles.getProfile("ClaimedVictim");
+    assert.equal(afterProfile?.tokens, beforeProfile?.tokens);
+    assert.equal(afterProfile?.playerXP, beforeProfile?.playerXP);
+    assert.equal(afterProfile?.chests?.basic, beforeProfile?.chests?.basic);
+    assert.deepEqual(afterProfile?.ownedCosmetics?.avatar ?? [], beforeProfile?.ownedCosmetics?.avatar ?? []);
+    assert.equal(afterProfile?.gauntletRuns, beforeProfile?.gauntletRuns);
+    assert.equal(afterProfile?.gauntletWins, beforeProfile?.gauntletWins);
+    assert.equal(afterProfile?.gauntletBestStreak, beforeProfile?.gauntletBestStreak);
+  } finally {
+    ownerClient?.disconnect();
+    attackerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: authenticated claimed-profile sessions keep legitimate private profile, store, daily login, and chest flows", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    accountStore,
+    profileAuthority
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const registerResult = await registerAccount(client, {
+      username: "ClaimedLegitUser",
+      email: "claimed-legit@example.com",
+      password: "ClaimedPass123"
+    });
+    assert.equal(registerResult?.ok, true);
+    assert.equal(Boolean(registerResult?.session?.authenticated), true);
+
+    await coordinator.profiles.updateProfile("ClaimedLegitUser", (current) => ({
+      ...current,
+      tokens: 400,
+      playerXP: 0,
+      chests: {
+        ...(current?.chests ?? {}),
+        basic: 1
+      }
+    }));
+
+    const profileRead = await new Promise((resolve) => {
+      client.emit("profile:get", {}, resolve);
+    });
+    const purchase = await new Promise((resolve) => {
+      client.emit(
+        "profile:buyStoreItem",
+        { type: "avatar", cosmeticId: "fireavatarF" },
+        resolve
+      );
+    });
+    const dailyClaim = await new Promise((resolve) => {
+      client.emit("profile:claimDailyLoginReward", {}, resolve);
+    });
+    const chestOpen = await new Promise((resolve) => {
+      client.emit("profile:openChest", { chestType: "basic" }, resolve);
+    });
+
+    assert.equal(profileRead?.ok, true);
+    assert.equal(profileRead?.profile?.profile?.username, "ClaimedLegitUser");
+    assert.equal(purchase?.ok, true);
+    assert.equal(purchase?.result?.purchase?.status, "purchased");
+    assert.equal(dailyClaim?.ok, true);
+    assert.equal(dailyClaim?.result?.granted, true);
+    assert.equal(chestOpen?.ok, true);
+    assert.equal(chestOpen?.result?.consumed, 1);
+
+    const profileAfter = await coordinator.profiles.getProfile("ClaimedLegitUser");
+    assert.ok(profileAfter?.ownedCosmetics?.avatar?.includes("fireavatarF"));
+    assert.equal(profileAfter?.chests?.basic, 0);
+    assert.ok(profileAfter?.tokens > 0);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: server-authoritative store purchase succeeds for all Goldbound Relics items, including the earth variant", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

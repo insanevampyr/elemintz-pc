@@ -123,6 +123,16 @@ export class MultiplayerProfileAuthority {
     return this.getProfile(safeUsername);
   }
 
+  async isProfileClaimed(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      return false;
+    }
+
+    const existingProfile = await this.coordinator.profiles.getProfile(safeUsername);
+    return Boolean(normalizeAuthorityAccountId(existingProfile?.linkedAccountId));
+  }
+
   async assertProfileClaimAvailable(username) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
