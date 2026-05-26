@@ -3446,6 +3446,71 @@ test("multiplayer foundation: server-authoritative store purchase deducts tokens
   }
 });
 
+test("multiplayer foundation: server-authoritative store purchase succeeds for all Goldbound Relics items, including the earth variant", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("GoldboundAuthorityUser", { tokens: 5000 });
+    const beforeProfile = await coordinator.profiles.getProfile("GoldboundAuthorityUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "GoldboundAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const purchaseTargets = [
+      { type: "avatar", cosmeticId: "avatar_aurelian_archon", expectedPrice: 900 },
+      { type: "title", cosmeticId: "title_goldbound", expectedPrice: 500 },
+      { type: "cardBack", cosmeticId: "cardback_goldbound_relic", expectedPrice: 800 },
+      { type: "elementCardVariant", cosmeticId: "fire_variant_goldbound_relics", expectedPrice: 450 },
+      { type: "elementCardVariant", cosmeticId: "earth_variant_goldbound_relics", expectedPrice: 450 },
+      { type: "elementCardVariant", cosmeticId: "wind_variant_goldbound_relics", expectedPrice: 450 },
+      { type: "elementCardVariant", cosmeticId: "water_variant_goldbound_relics", expectedPrice: 450 }
+    ];
+
+    const responses = [];
+    for (const target of purchaseTargets) {
+      const response = await new Promise((resolve) => {
+        client.emit("profile:buyStoreItem", { type: target.type, cosmeticId: target.cosmeticId }, resolve);
+      });
+      responses.push(response);
+    }
+
+    const profileAfterPurchases = await coordinator.profiles.getProfile("GoldboundAuthorityUser");
+
+    for (let index = 0; index < purchaseTargets.length; index += 1) {
+      const target = purchaseTargets[index];
+      const response = responses[index];
+      assert.equal(response?.ok, true, `${target.type}:${target.cosmeticId} should succeed`);
+      assert.equal(response?.result?.purchase?.status, "purchased");
+      assert.equal(response?.result?.purchase?.price, target.expectedPrice);
+    }
+
+    assert.ok(profileAfterPurchases?.ownedCosmetics?.avatar?.includes("avatar_aurelian_archon"));
+    assert.ok(profileAfterPurchases?.ownedCosmetics?.title?.includes("title_goldbound"));
+    assert.ok(profileAfterPurchases?.ownedCosmetics?.cardBack?.includes("cardback_goldbound_relic"));
+    assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("fire_variant_goldbound_relics"));
+    assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("earth_variant_goldbound_relics"));
+    assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("wind_variant_goldbound_relics"));
+    assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("water_variant_goldbound_relics"));
+    assert.equal(profileAfterPurchases?.tokens, (beforeProfile?.tokens ?? 0) - 4000);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: server-authoritative daily login claim grants once and rejects duplicate same-window claims", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

@@ -389,6 +389,50 @@ test("cosmetics: newly added water variant equips only water and persists across
   assert.equal(profile.equippedCosmetics.elementCardVariant.water, "wave_water_card");
 });
 
+test("cosmetics: Goldbound Relics store purchases succeed for avatar, title, card back, and the failing earth variant", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("GoldboundStoreUser", { tokens: 3000 });
+
+  const avatarPurchase = await state.buyStoreItem({
+    username: "GoldboundStoreUser",
+    type: "avatar",
+    cosmeticId: "avatar_aurelian_archon"
+  });
+  const titlePurchase = await state.buyStoreItem({
+    username: "GoldboundStoreUser",
+    type: "title",
+    cosmeticId: "title_goldbound"
+  });
+  const cardBackPurchase = await state.buyStoreItem({
+    username: "GoldboundStoreUser",
+    type: "cardBack",
+    cosmeticId: "cardback_goldbound_relic"
+  });
+  const earthVariantPurchase = await state.buyStoreItem({
+    username: "GoldboundStoreUser",
+    type: "elementCardVariant",
+    cosmeticId: "earth_variant_goldbound_relics"
+  });
+
+  const profile = await state.profiles.getProfile("GoldboundStoreUser");
+
+  assert.equal(avatarPurchase.purchase?.status, "purchased");
+  assert.equal(avatarPurchase.purchase?.price, 900);
+  assert.equal(titlePurchase.purchase?.status, "purchased");
+  assert.equal(titlePurchase.purchase?.price, 500);
+  assert.equal(cardBackPurchase.purchase?.status, "purchased");
+  assert.equal(cardBackPurchase.purchase?.price, 800);
+  assert.equal(earthVariantPurchase.purchase?.status, "purchased");
+  assert.equal(earthVariantPurchase.purchase?.price, 450);
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_aurelian_archon"));
+  assert.ok(profile.ownedCosmetics.title.includes("title_goldbound"));
+  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_goldbound_relic"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_goldbound_relics"));
+  assert.equal(profile.tokens, 350);
+});
+
 test("cosmetics: Personality Drop avatar and title catalog entries remain present but are no longer marked new", () => {
   const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
   const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));

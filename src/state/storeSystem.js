@@ -161,19 +161,21 @@ export function getStoreViewForProfile(profile) {
 export function buyStoreItem(profile, { type, cosmeticId }) {
   const normalized = normalizeProfileStore(profile);
   const previousTracking = normalized.cosmeticUnlockTracking;
-  const item = COSMETIC_CATALOG[type]?.find((entry) => entry.id === cosmeticId);
+  const safeType = String(type ?? "").trim();
+  const safeCosmeticId = String(cosmeticId ?? "").trim();
+  const item = COSMETIC_CATALOG[safeType]?.find((entry) => entry.id === safeCosmeticId) ?? null;
 
   if (!item) {
-    throw new Error(`Store item not found for ${type}:${cosmeticId}.`);
+    throw new Error(`Store item not found for ${safeType}:${safeCosmeticId}.`);
   }
 
-  if (normalized.ownedCosmetics[type]?.includes(cosmeticId)) {
+  if (normalized.ownedCosmetics[safeType]?.includes(safeCosmeticId)) {
     return {
       profile: normalized,
       purchase: {
         status: "already-owned",
-        type,
-        cosmeticId,
+        type: safeType,
+        cosmeticId: safeCosmeticId,
         price: 0,
         tokensLeft: normalized.tokens
       },
@@ -185,6 +187,10 @@ export function buyStoreItem(profile, { type, cosmeticId }) {
     throw new Error(`Item '${cosmeticId}' is not purchasable.`);
   }
 
+  if (item.storeHidden || item.rotationOnly) {
+    throw new Error(`Store item not found for ${safeType}:${safeCosmeticId}.`);
+  }
+
   const price = Number(item.price ?? 0);
   if (normalized.tokens < price) {
     throw new Error(`Insufficient tokens. Need ${price}, have ${normalized.tokens}.`);
@@ -192,9 +198,9 @@ export function buyStoreItem(profile, { type, cosmeticId }) {
 
   const nextTrackingSeed = {
     ...previousTracking,
-    [PURCHASE_FLAG_BY_TYPE[type]]: PURCHASE_FLAG_BY_TYPE[type]
+    [PURCHASE_FLAG_BY_TYPE[safeType]]: PURCHASE_FLAG_BY_TYPE[safeType]
       ? true
-      : previousTracking?.[PURCHASE_FLAG_BY_TYPE[type]]
+      : previousTracking?.[PURCHASE_FLAG_BY_TYPE[safeType]]
   };
 
   const updated = normalizeProfileStore({
@@ -203,7 +209,7 @@ export function buyStoreItem(profile, { type, cosmeticId }) {
     cosmeticUnlockTracking: nextTrackingSeed,
     ownedCosmetics: {
       ...normalized.ownedCosmetics,
-      [type]: [...normalized.ownedCosmetics[type], cosmeticId]
+      [safeType]: [...normalized.ownedCosmetics[safeType], safeCosmeticId]
     }
   });
   const tracking = getTrackingMilestoneDiff(previousTracking, updated.cosmeticUnlockTracking);
@@ -212,8 +218,8 @@ export function buyStoreItem(profile, { type, cosmeticId }) {
     profile: updated,
     purchase: {
       status: "purchased",
-      type,
-      cosmeticId,
+      type: safeType,
+      cosmeticId: safeCosmeticId,
       price,
       tokensLeft: updated.tokens
     },
