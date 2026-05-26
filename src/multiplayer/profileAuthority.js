@@ -1,5 +1,9 @@
 import { StateCoordinator } from "../state/stateCoordinator.js";
-import { buildAuthoritativeCosmeticSnapshot } from "../state/cosmeticSystem.js";
+import {
+  buildAuthoritativeCosmeticSnapshot,
+  getCosmeticCatalogForProfile,
+  getCosmeticDisplayName
+} from "../state/cosmeticSystem.js";
 import { getLevelProgress } from "../state/levelRewardsSystem.js";
 
 function normalizeAuthorityUsername(username) {
@@ -36,6 +40,106 @@ function buildSnapshotCosmetics(profile) {
     owned: snapshot.owned,
     loadouts: snapshot.loadouts,
     preferences: snapshot.preferences
+  };
+}
+
+const PUBLIC_TROPHY_SHELF_LIMIT = 3;
+const PUBLIC_TROPHY_RARITY_RANK = Object.freeze({
+  Legendary: 0,
+  Epic: 1,
+  Rare: 2,
+  Common: 3
+});
+const PUBLIC_TROPHY_TYPE_LABELS = Object.freeze({
+  avatar: "Avatar",
+  title: "Title",
+  badge: "Badge",
+  background: "Background",
+  cardBack: "Card Back"
+});
+
+function titleCase(value) {
+  const safeValue = String(value ?? "").trim().toLowerCase();
+  return safeValue ? `${safeValue[0].toUpperCase()}${safeValue.slice(1)}` : "";
+}
+
+function getPublicTrophyTypeLabel(type, definition = {}) {
+  if (type === "elementCardVariant") {
+    const elementLabel = titleCase(definition?.element);
+    return elementLabel ? `${elementLabel} Variant` : "Variant";
+  }
+
+  return PUBLIC_TROPHY_TYPE_LABELS[type] ?? "Cosmetic";
+}
+
+function buildPublicTrophyShelf(profile) {
+  const sourceCatalog = getCosmeticCatalogForProfile(profile);
+  const selected = [];
+  const seenKeys = new Set();
+
+  for (const [type, entries] of Object.entries(sourceCatalog ?? {})) {
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry?.owned || !entry?.id || entry?.defaultOwned) {
+        continue;
+      }
+
+      const dedupeKey = `${type}:${entry.id}`;
+      if (seenKeys.has(dedupeKey)) {
+        continue;
+      }
+
+      seenKeys.add(dedupeKey);
+      const rarity = titleCase(entry.rarity) || "Common";
+      selected.push({
+        id: entry.id,
+        type,
+        name: entry.name ?? getCosmeticDisplayName(type, entry.id, entry.id),
+        rarity,
+        rarityRank: PUBLIC_TROPHY_RARITY_RANK[rarity] ?? PUBLIC_TROPHY_RARITY_RANK.Common,
+        typeLabel: getPublicTrophyTypeLabel(type, entry),
+        image: entry.image ?? null,
+        collection: entry.collection ?? null,
+        equipped: Boolean(entry.equipped)
+      });
+    }
+  }
+
+  return selected
+    .sort((left, right) => {
+      if (left.rarityRank !== right.rarityRank) {
+        return left.rarityRank - right.rarityRank;
+      }
+      if (left.equipped !== right.equipped) {
+        return left.equipped ? -1 : 1;
+      }
+
+      const nameComparison = String(left.name ?? "").localeCompare(String(right.name ?? ""));
+      if (nameComparison !== 0) {
+        return nameComparison;
+      }
+
+      return String(left.id ?? "").localeCompare(String(right.id ?? ""));
+    })
+    .slice(0, PUBLIC_TROPHY_SHELF_LIMIT)
+    .map(({ rarityRank, ...item }) => item);
+}
+
+function buildPublicSnapshotCosmetics(profile) {
+  const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
+  const trophyShelf = buildPublicTrophyShelf(profile);
+
+  return {
+    authority: "server",
+    source: "profileAuthority",
+    snapshot: {
+      equipped: snapshot.equipped
+    },
+    equipped: snapshot.equipped,
+    trophyShelf
   };
 }
 
@@ -86,6 +190,57 @@ function buildProfileSnapshot({ profile, challenges }) {
   };
 }
 
+function buildPublicProfileSnapshot({ profile }) {
+  const cosmetics = buildPublicSnapshotCosmetics(profile);
+  const stats = buildSnapshotStats(profile);
+  const currency = {
+    tokens: Number(profile?.tokens ?? 0)
+  };
+  const publicTitle =
+    getCosmeticDisplayName(
+      "title",
+      cosmetics.equipped?.title ?? profile?.equippedCosmetics?.title ?? profile?.title,
+      profile?.title ?? "Initiate"
+    ) ?? "Initiate";
+
+  return {
+    authority: "server",
+    source: "multiplayer",
+    username: profile?.username ?? null,
+    profile: {
+      username: profile?.username ?? null,
+      title: publicTitle,
+      playerXP: Number(profile?.playerXP ?? 0),
+      playerLevel: Number(profile?.playerLevel ?? 1),
+      tokens: currency.tokens,
+      wins: stats.summary.wins,
+      losses: stats.summary.losses,
+      gamesPlayed: stats.summary.gamesPlayed,
+      warsEntered: stats.summary.warsEntered,
+      warsWon: stats.summary.warsWon,
+      cardsCaptured: stats.summary.cardsCaptured,
+      longestWar: Number(profile?.longestWar ?? 0),
+      bestWinStreak: Number(profile?.bestWinStreak ?? 0),
+      featuredRivalWins: Number(profile?.featuredRivalWins ?? 0),
+      gauntletBestStreak: Number(profile?.gauntletBestStreak ?? 0),
+      gauntletRuns: Number(profile?.gauntletRuns ?? 0),
+      gauntletWins: Number(profile?.gauntletWins ?? 0),
+      gauntletLosses: Number(profile?.gauntletLosses ?? 0),
+      gauntletRivalsDefeated: Number(profile?.gauntletRivalsDefeated ?? 0),
+      achievements: profile?.achievements ?? {},
+      modeStats: stats.modes,
+      equippedCosmetics: cosmetics.equipped,
+      trophyShelf: cosmetics.trophyShelf
+    },
+    cosmetics,
+    stats,
+    currency,
+    progression: {
+      xp: getLevelProgress(profile)
+    }
+  };
+}
+
 export class MultiplayerProfileAuthority {
   constructor({ coordinator = null, logger = console, announcementStore = null, ...options } = {}) {
     this.coordinator = coordinator ?? new StateCoordinator(options);
@@ -120,7 +275,14 @@ export class MultiplayerProfileAuthority {
     }
 
     this.logger.info?.(`[ProfileAuthority] viewProfile -> ${safeUsername} (server)`);
-    return this.getProfile(safeUsername);
+    await this.coordinator.profiles.ensureProfile(safeUsername);
+    const profile = await this.coordinator.profiles.getProfile(safeUsername);
+
+    if (!profile) {
+      throw new Error(`Failed to load server-authoritative viewed profile for ${safeUsername}.`);
+    }
+
+    return buildPublicProfileSnapshot({ profile });
   }
 
   async isProfileClaimed(username) {

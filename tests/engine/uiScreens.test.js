@@ -19168,6 +19168,65 @@ test("ui: viewed profile modal renders Trophy Shelf below Profile Overview and k
   assert.ok(html.indexOf('data-profile-trophy-shelf="true"') < html.indexOf("Overall Record"));
 });
 
+test("ui: viewed profile modal can render Trophy Shelf from a sanitized public trophyShelf list", () => {
+  const html = profileScreen.renderViewedProfileModalBody({
+    username: "SanitizedRival",
+    title: "Spellwired",
+    playerLevel: 22,
+    playerXP: 640,
+    wins: 12,
+    losses: 5,
+    gamesPlayed: 17,
+    warsEntered: 4,
+    warsWon: 2,
+    longestWar: 3,
+    cardsCaptured: 31,
+    featuredRivalWins: 2,
+    gauntletBestStreak: 4,
+    gauntletRuns: 3,
+    gauntletWins: 5,
+    gauntletLosses: 1,
+    gauntletRivalsDefeated: 7,
+    achievements: {},
+    modeStats: {
+      pve: { wins: 6, losses: 2, gamesPlayed: 8, cardsCaptured: 14, warsEntered: 2, warsWon: 1, longestWar: 2 }
+    },
+    equippedCosmetics: {
+      avatar: "avatar_neon_tide_entity",
+      title: "title_spellwired",
+      badge: "war_machine_badge",
+      background: "default_background",
+      cardBack: "cardback_neon_arcana",
+      elementCardVariant: {
+        fire: "fire_variant_neon_arcana",
+        earth: "earth_variant_neon_arcana",
+        wind: "wind_variant_neon_arcana",
+        water: "water_variant_neon_arcana"
+      }
+    },
+    trophyShelf: [
+      {
+        id: "title_spellwired",
+        type: "title",
+        name: "Spellwired",
+        rarity: "Legendary",
+        typeLabel: "Title",
+        image: "assets/titles/title_spellwired.png",
+        collection: "Neon Arcana",
+        equipped: true
+      }
+    ]
+  });
+
+  assert.match(html, /data-profile-trophy-shelf="true"/);
+  assert.match(html, /Trophy Shelf/);
+  assert.match(html, /Spellwired/);
+  assert.match(html, /Legendary/);
+  assert.match(html, /Title/);
+  assert.match(html, /Neon Arcana/);
+  assert.doesNotMatch(html, /data-profile-overview-chests="true"/);
+});
+
 test("ui: Trophy Shelf shows an empty state when no qualifying rare cosmetics exist", () => {
   const html = profileScreen.render(
     createProfileScreenContext({

@@ -2423,6 +2423,174 @@ test("multiplayer foundation: authenticated gauntlet stat writes persist after e
   }
 });
 
+test("multiplayer foundation: profile:view returns a sanitized public snapshot while own profile:get keeps private owner data", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let ownerClient = null;
+  let viewerClient = null;
+
+  try {
+    const port = await foundation.start();
+    ownerClient = await connectClient(port);
+    viewerClient = await connectClient(port);
+
+    const ownerRegister = await registerAccount(ownerClient, {
+      username: "PublicRival",
+      email: "public-rival@example.com",
+      password: "PublicRivalPass123"
+    });
+    const viewerRegister = await registerAccount(viewerClient, {
+      username: "PublicViewer",
+      email: "public-viewer@example.com",
+      password: "PublicViewerPass123"
+    });
+    assert.equal(ownerRegister?.ok, true);
+    assert.equal(viewerRegister?.ok, true);
+
+    await coordinator.profiles.updateProfile("PublicRival", (current) => ({
+      ...current,
+      title: "Spellwired",
+      tokens: 725,
+      playerXP: 1337,
+      playerLevel: 12,
+      wins: 30,
+      losses: 12,
+      gamesPlayed: 42,
+      warsEntered: 14,
+      warsWon: 9,
+      longestWar: 5,
+      bestWinStreak: 7,
+      cardsCaptured: 88,
+      featuredRivalWins: 5,
+      gauntletBestStreak: 8,
+      gauntletRuns: 9,
+      gauntletWins: 6,
+      gauntletLosses: 3,
+      gauntletRivalsDefeated: 14,
+      achievements: {
+        first_flame: { count: 1 }
+      },
+      modeStats: {
+        pve: { wins: 10, losses: 2, gamesPlayed: 12, cardsCaptured: 24, warsEntered: 4, warsWon: 2, longestWar: 3 }
+      },
+      seenAnnouncements: {
+        launch_celebration: true
+      },
+      chests: {
+        basic: 2,
+        epic: 1
+      },
+      ownedCosmetics: {
+        ...(current?.ownedCosmetics ?? {}),
+        avatar: ["default_avatar", "avatar_neon_tide_entity"],
+        title: ["Initiate", "title_spellwired"],
+        badge: ["none", "war_machine_badge"],
+        background: ["default_background"],
+        cardBack: ["default_card_back", "cardback_neon_arcana"],
+        elementCardVariant: [
+          "default_fire_card",
+          "default_water_card",
+          "default_earth_card",
+          "default_wind_card",
+          "fire_variant_neon_arcana",
+          "earth_variant_neon_arcana",
+          "wind_variant_neon_arcana",
+          "water_variant_neon_arcana"
+        ]
+      },
+      equippedCosmetics: {
+        avatar: "avatar_neon_tide_entity",
+        title: "title_spellwired",
+        badge: "war_machine_badge",
+        background: "default_background",
+        cardBack: "cardback_neon_arcana",
+        elementCardVariant: {
+          fire: "fire_variant_neon_arcana",
+          earth: "earth_variant_neon_arcana",
+          wind: "wind_variant_neon_arcana",
+          water: "water_variant_neon_arcana"
+        }
+      },
+      cosmeticLoadouts: [
+        {
+          id: "loadout_public_rival",
+          name: "Main",
+          equippedCosmetics: {
+            avatar: "avatar_neon_tide_entity"
+          }
+        }
+      ],
+      cosmeticRandomizeAfterMatch: {
+        enabled: true
+      }
+    }));
+
+    const ownProfile = await new Promise((resolve) => {
+      ownerClient.emit("profile:get", {}, resolve);
+    });
+    const viewedProfile = await new Promise((resolve) => {
+      viewerClient.emit(
+        "profile:view",
+        {
+          username: "PublicRival"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(ownProfile?.ok, true);
+    assert.equal(viewedProfile?.ok, true);
+
+    assert.equal(ownProfile?.profile?.profile?.linkedAccountId, ownerRegister?.account?.accountId);
+    assert.equal(ownProfile?.profile?.profile?.chests?.basic, 2);
+    assert.deepEqual(ownProfile?.profile?.profile?.seenAnnouncements, {
+      launch_celebration: true
+    });
+    assert.ok(Array.isArray(ownProfile?.profile?.profile?.ownedCosmetics?.avatar));
+    assert.ok(Array.isArray(ownProfile?.profile?.profile?.cosmeticLoadouts));
+
+    assert.equal(viewedProfile?.profile?.profile?.username, "PublicRival");
+    assert.equal(viewedProfile?.profile?.profile?.title, "Spellwired");
+    assert.equal(viewedProfile?.profile?.profile?.gauntletBestStreak, 8);
+    assert.equal(viewedProfile?.profile?.profile?.wins, 30);
+    assert.equal(viewedProfile?.profile?.profile?.equippedCosmetics?.title, "title_spellwired");
+    assert.equal(Array.isArray(viewedProfile?.profile?.profile?.trophyShelf), true);
+    assert.ok((viewedProfile?.profile?.profile?.trophyShelf?.length ?? 0) > 0);
+
+    assert.equal("linkedAccountId" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("chests" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("seenAnnouncements" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("ownedCosmetics" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("cosmeticLoadouts" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("cosmeticRandomizeAfterMatch" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("owned" in (viewedProfile?.profile?.cosmetics ?? {}), false);
+    assert.equal("loadouts" in (viewedProfile?.profile?.cosmetics ?? {}), false);
+    assert.equal("preferences" in (viewedProfile?.profile?.cosmetics ?? {}), false);
+    assert.equal("dailyChallenges" in (viewedProfile?.profile?.progression ?? {}), false);
+    assert.equal("weeklyChallenges" in (viewedProfile?.profile?.progression ?? {}), false);
+    assert.equal("dailyLogin" in (viewedProfile?.profile?.progression ?? {}), false);
+  } finally {
+    ownerClient?.disconnect();
+    viewerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: admin lookup returns the authoritative profile snapshot by username", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

@@ -194,6 +194,19 @@ export function selectTrophyShelfItems(profile = {}, options = {}) {
     return [];
   }
 
+  if (Array.isArray(profile?.trophyShelf)) {
+    return profile.trophyShelf.slice(0, limit).map((item) => ({
+      id: item?.id ?? null,
+      type: item?.type ?? "cosmetic",
+      name: item?.name ?? item?.id ?? "Cosmetic",
+      rarity: titleCase(item?.rarity) || "Common",
+      typeLabel: item?.typeLabel ?? getTrophyTypeLabel(item?.type, item),
+      image: item?.image ?? null,
+      collection: item?.collection ?? null,
+      equipped: Boolean(item?.equipped)
+    }));
+  }
+
   const sourceCatalog = getTrophySourceCatalog(profile, options.catalog ?? null);
   const selected = [];
   const seenKeys = new Set();
