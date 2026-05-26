@@ -698,6 +698,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: AVATAR_RARITY_PRICING.Epic
     },
     {
+      id: "avatar_aurelian_archon",
+      name: "Aurelian Archon",
+      image: "avatars/avatar_aurelian_archon.png",
+      rarity: "Legendary",
+      releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
       id: "avatar_golden_menace",
       name: "Golden Menace",
       image: "avatars/avatar_golden_menace.png",
@@ -839,6 +850,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "card_backs/cardback_neon_arcana.png",
       rarity: "Legendary",
       releaseTag: "neon_arcana_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_goldbound_relic",
+      name: "Goldbound Relic",
+      image: "card_backs/cardback_goldbound_relic.png",
+      rarity: "Legendary",
+      releaseTag: "goldbound_relics_01",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -1816,6 +1838,54 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: ELEMENT_VARIANT_RARITY_PRICING.Rare
     },
     {
+      id: "fire_variant_goldbound_relics",
+      name: "Molten Goldfire",
+      image: "cards/fire_variant_goldbound_relics.png",
+      element: "fire",
+      rarity: "Epic",
+      releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "earth_variant_goldbound_relics",
+      name: "Auric Stone",
+      image: "cards/earth_variant_goldbound_relics.png",
+      element: "earth",
+      rarity: "Epic",
+      releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "wind_variant_goldbound_relics",
+      name: "Gilded Gale",
+      image: "cards/wind_variant_goldbound_relics.png",
+      element: "wind",
+      rarity: "Epic",
+      releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "water_variant_goldbound_relics",
+      name: "Liquid Gold Tide",
+      image: "cards/water_variant_goldbound_relics.png",
+      element: "water",
+      rarity: "Epic",
+      releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
       id: "wind_variant_transparent_vortex",
       name: "Transparent Vortex",
       image: "cards/wind_variant_transparent_vortex.png",
@@ -2092,6 +2162,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: 850
     },
     {
+      id: "title_goldbound",
+      name: "Goldbound",
+      image: "titles/title_goldbound.png",
+      rarity: "Epic",
+      releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 500
+    },
+    {
       id: "title_apprentice",
       name: "Apprentice",
       image: "titles/title_apprentice.png",
@@ -2244,7 +2325,14 @@ const COSMETIC_COLLECTION_BY_KEY = Object.freeze({
   "elementCardVariant:fire_variant_neon_arcana": "Neon Arcana",
   "elementCardVariant:water_variant_neon_arcana": "Neon Arcana",
   "elementCardVariant:earth_variant_neon_arcana": "Neon Arcana",
-  "elementCardVariant:wind_variant_neon_arcana": "Neon Arcana"
+  "elementCardVariant:wind_variant_neon_arcana": "Neon Arcana",
+  "avatar:avatar_aurelian_archon": "Goldbound Relics",
+  "title:title_goldbound": "Goldbound Relics",
+  "cardBack:cardback_goldbound_relic": "Goldbound Relics",
+  "elementCardVariant:fire_variant_goldbound_relics": "Goldbound Relics",
+  "elementCardVariant:earth_variant_goldbound_relics": "Goldbound Relics",
+  "elementCardVariant:wind_variant_goldbound_relics": "Goldbound Relics",
+  "elementCardVariant:water_variant_goldbound_relics": "Goldbound Relics"
 });
 
 function applyCosmeticCollections(catalog) {

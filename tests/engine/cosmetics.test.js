@@ -57,6 +57,13 @@ const NEON_ARCANA_VARIANT_DEFINITIONS = Object.freeze([
   ["wind_variant_neon_arcana", "Neon Arcana Wind", "wind", "cards/wind_variant_neon_arcana.png"]
 ]);
 
+const GOLDBOUND_RELICS_VARIANT_DEFINITIONS = Object.freeze([
+  ["fire_variant_goldbound_relics", "Molten Goldfire", "fire", "cards/fire_variant_goldbound_relics.png"],
+  ["earth_variant_goldbound_relics", "Auric Stone", "earth", "cards/earth_variant_goldbound_relics.png"],
+  ["wind_variant_goldbound_relics", "Gilded Gale", "wind", "cards/wind_variant_goldbound_relics.png"],
+  ["water_variant_goldbound_relics", "Liquid Gold Tide", "water", "cards/water_variant_goldbound_relics.png"]
+]);
+
 function buildCompletedMatch({
   winner = "p1",
   rounds = 3,
@@ -505,6 +512,72 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
     assert.equal(item.isNew, true);
     assert.equal(item.releaseTag, "neon_arcana_01");
     assert.equal(item.collection, "Neon Arcana");
+    assert.equal(item.rotationOnly ?? false, false);
+    assert.equal(item.storeHidden ?? false, false);
+  }
+});
+
+test("cosmetics: Goldbound Relics entries use exact metadata across categories and collection mappings", () => {
+  const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
+  const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
+  const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
+  const variants = new Map(COSMETIC_CATALOG.elementCardVariant.map((item) => [item.id, item]));
+
+  const avatar = avatars.get("avatar_aurelian_archon");
+  assert.ok(avatar);
+  assert.equal(avatar.name, "Aurelian Archon");
+  assert.equal(avatar.image, "avatars/avatar_aurelian_archon.png");
+  assert.equal(avatar.rarity, "Legendary");
+  assert.equal(avatar.price, 900);
+  assert.equal(avatar.purchasable, true);
+  assert.equal(avatar.defaultOwned, false);
+  assert.equal(avatar.isNew, true);
+  assert.equal(avatar.releaseTag, "goldbound_relics_01");
+  assert.equal(avatar.collection, "Goldbound Relics");
+  assert.equal(avatar.rotationOnly ?? false, false);
+  assert.equal(avatar.storeHidden ?? false, false);
+
+  const title = titles.get("title_goldbound");
+  assert.ok(title);
+  assert.equal(title.name, "Goldbound");
+  assert.equal(title.image, "titles/title_goldbound.png");
+  assert.equal(title.rarity, "Epic");
+  assert.equal(title.price, 500);
+  assert.equal(title.purchasable, true);
+  assert.equal(title.defaultOwned, false);
+  assert.equal(title.isNew, true);
+  assert.equal(title.releaseTag, "goldbound_relics_01");
+  assert.equal(title.collection, "Goldbound Relics");
+  assert.equal(title.rotationOnly ?? false, false);
+  assert.equal(title.storeHidden ?? false, false);
+
+  const cardBack = cardBacks.get("cardback_goldbound_relic");
+  assert.ok(cardBack);
+  assert.equal(cardBack.name, "Goldbound Relic");
+  assert.equal(cardBack.image, "card_backs/cardback_goldbound_relic.png");
+  assert.equal(cardBack.rarity, "Legendary");
+  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.purchasable, true);
+  assert.equal(cardBack.defaultOwned, false);
+  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.releaseTag, "goldbound_relics_01");
+  assert.equal(cardBack.collection, "Goldbound Relics");
+  assert.equal(cardBack.rotationOnly ?? false, false);
+  assert.equal(cardBack.storeHidden ?? false, false);
+
+  for (const [id, name, element, image] of GOLDBOUND_RELICS_VARIANT_DEFINITIONS) {
+    const item = variants.get(id);
+    assert.ok(item, `missing Goldbound Relics variant ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.image, image);
+    assert.equal(item.element, element);
+    assert.equal(item.rarity, "Epic");
+    assert.equal(item.price, 450);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "goldbound_relics_01");
+    assert.equal(item.collection, "Goldbound Relics");
     assert.equal(item.rotationOnly ?? false, false);
     assert.equal(item.storeHidden ?? false, false);
   }

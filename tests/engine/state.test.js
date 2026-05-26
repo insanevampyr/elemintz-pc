@@ -980,10 +980,15 @@ test("state: match renderer resolves every equippable catalog card back and non-
   }
 
   assert.match(getCardBackImage("cardback_neon_arcana"), /cardback_neon_arcana\.png/);
+  assert.match(getCardBackImage("cardback_goldbound_relic"), /cardback_goldbound_relic\.png/);
   assert.match(getVariantCardImages({ fire: "fire_variant_neon_arcana" }).fire, /fire_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ water: "water_variant_neon_arcana" }).water, /water_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ earth: "earth_variant_neon_arcana" }).earth, /earth_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ wind: "wind_variant_neon_arcana" }).wind, /wind_variant_neon_arcana\.png/);
+  assert.match(getVariantCardImages({ fire: "fire_variant_goldbound_relics" }).fire, /fire_variant_goldbound_relics\.png/);
+  assert.match(getVariantCardImages({ earth: "earth_variant_goldbound_relics" }).earth, /earth_variant_goldbound_relics\.png/);
+  assert.match(getVariantCardImages({ wind: "wind_variant_goldbound_relics" }).wind, /wind_variant_goldbound_relics\.png/);
+  assert.match(getVariantCardImages({ water: "water_variant_goldbound_relics" }).water, /water_variant_goldbound_relics\.png/);
 });
 
 test("state: Neon Arcana avatar ids resolve in the match/profile avatar renderer and unknown ids still fall back safely", () => {
@@ -991,6 +996,11 @@ test("state: Neon Arcana avatar ids resolve in the match/profile avatar renderer
   assert.match(getAvatarImage("avatar_neon_tide_entity"), /avatar_neon_tide_entity\.png/);
   assert.match(getAvatarImage("avatar_neon_stone_entity"), /avatar_neon_stone_entity\.png/);
   assert.match(getAvatarImage("avatar_neon_gale_entity"), /avatar_neon_gale_entity\.png/);
+  assert.match(getAvatarImage("not_a_real_avatar"), /avatars\/default\.png/);
+});
+
+test("state: Goldbound Relics avatar id resolves in the match/profile avatar renderer and unknown ids still fall back safely", () => {
+  assert.match(getAvatarImage("avatar_aurelian_archon"), /avatar_aurelian_archon\.png/);
   assert.match(getAvatarImage("not_a_real_avatar"), /avatars\/default\.png/);
 });
 

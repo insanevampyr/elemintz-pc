@@ -297,8 +297,16 @@ test("ui: cosmetic catalog preserves approved collection labels for mapped entri
     "Ember"
   );
   assert.equal(
+    COSMETIC_CATALOG.cardBack.find((item) => item.id === "cardback_goldbound_relic")?.collection,
+    "Goldbound Relics"
+  );
+  assert.equal(
     COSMETIC_CATALOG.title.find((item) => item.id === "title_pretty_problem")?.collection,
     "Cutesy"
+  );
+  assert.equal(
+    COSMETIC_CATALOG.title.find((item) => item.id === "title_goldbound")?.collection,
+    "Goldbound Relics"
   );
   assert.equal(
     COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF")?.collection,
@@ -348,6 +356,87 @@ test("ui: store screen renders collection chips for mapped items and omits them 
   assert.match(html, /Type: Avatar/);
   assert.match(html, /Price: 150 Tokens/);
   assert.match(html, /Rarity: <span class="cosmetic-rarity-label[^"]*">Common<\/span>/);
+});
+
+test("ui: store and owned cosmetics screens render Goldbound Relics metadata without crashing", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 5000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_aurelian_archon",
+            name: "Aurelian Archon",
+            image: "avatars/avatar_aurelian_archon.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            collection: "Goldbound Relics",
+            isNew: true,
+            releaseTag: "goldbound_relics_01"
+          }
+        ],
+        title: [],
+        badge: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: []
+      }
+    },
+    viewState: {}
+  });
+
+  const ownedHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        badge: [],
+        title: [
+          {
+            id: "title_goldbound",
+            name: "Goldbound",
+            image: "titles/title_goldbound.png",
+            owned: true,
+            equipped: true,
+            rarity: "Epic",
+            collection: "Goldbound Relics",
+            isNew: true,
+            releaseTag: "goldbound_relics_01"
+          }
+        ],
+        elementCardVariant: [
+          {
+            id: "fire_variant_goldbound_relics",
+            name: "Molten Goldfire",
+            image: "cards/fire_variant_goldbound_relics.png",
+            element: "fire",
+            owned: true,
+            equipped: true,
+            rarity: "Epic",
+            collection: "Goldbound Relics",
+            isNew: true,
+            releaseTag: "goldbound_relics_01"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(storeHtml, /Goldbound Relics Collection/);
+  assert.match(storeHtml, /Type: Avatar/);
+  assert.match(storeHtml, /Rarity: <span class="cosmetic-rarity-label[^"]*">Legendary<\/span>/);
+  assert.match(ownedHtml, /Goldbound Relics Collection/);
+  assert.match(ownedHtml, /Type: Title/);
+  assert.match(ownedHtml, /Type: Fire Variant/);
+  assert.match(ownedHtml, /Goldbound/);
+  assert.match(ownedHtml, /Molten Goldfire/);
 });
 
 test("ui: store screen renders a featured rotation section above filters when active featured items exist", () => {
@@ -7678,6 +7767,106 @@ test("ui: own profile header renders the equipped Neon Arcana avatar when select
   const html = profileScreen.render(context);
 
   assert.match(html, /avatar_neon_pyre_entity\.png/);
+});
+
+test("ui: own and viewed profile headers render equipped Goldbound avatar and title art when selected", () => {
+  const context = createProfileScreenContext({
+    profile: {
+      ...createProfileScreenContext().profile,
+      title: "title_goldbound",
+      equippedCosmetics: {
+        ...createProfileScreenContext().profile.equippedCosmetics,
+        avatar: "avatar_aurelian_archon",
+        title: "title_goldbound",
+        cardBack: "cardback_goldbound_relic",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "fire_variant_goldbound_relics",
+          earth: "earth_variant_goldbound_relics",
+          wind: "wind_variant_goldbound_relics",
+          water: "water_variant_goldbound_relics"
+        }
+      }
+    },
+    cosmetics: {
+      ...createProfileScreenContext().cosmetics,
+      equipped: {
+        ...createProfileScreenContext().cosmetics.equipped,
+        avatar: "avatar_aurelian_archon",
+        title: "title_goldbound",
+        cardBack: "cardback_goldbound_relic",
+        elementCardVariant: {
+          fire: "fire_variant_goldbound_relics",
+          earth: "earth_variant_goldbound_relics",
+          wind: "wind_variant_goldbound_relics",
+          water: "water_variant_goldbound_relics"
+        }
+      },
+      catalog: {
+        ...createProfileScreenContext().cosmetics.catalog,
+        avatar: [
+          ...createProfileScreenContext().cosmetics.catalog.avatar,
+          { id: "avatar_aurelian_archon", name: "Aurelian Archon", image: "avatars/avatar_aurelian_archon.png", owned: true }
+        ],
+        cardBack: [
+          { id: "default_card_back", name: "Default", owned: true },
+          { id: "cardback_goldbound_relic", name: "Goldbound Relic", image: "card_backs/cardback_goldbound_relic.png", owned: true }
+        ],
+        elementCardVariant: [
+          { id: "default_fire_card", name: "Core Fire", element: "fire", owned: true },
+          { id: "fire_variant_goldbound_relics", name: "Molten Goldfire", image: "cards/fire_variant_goldbound_relics.png", element: "fire", owned: true },
+          { id: "earth_variant_goldbound_relics", name: "Auric Stone", image: "cards/earth_variant_goldbound_relics.png", element: "earth", owned: true },
+          { id: "wind_variant_goldbound_relics", name: "Gilded Gale", image: "cards/wind_variant_goldbound_relics.png", element: "wind", owned: true },
+          { id: "water_variant_goldbound_relics", name: "Liquid Gold Tide", image: "cards/water_variant_goldbound_relics.png", element: "water", owned: true }
+        ],
+        title: [
+          { id: "Initiate", name: "Initiate", owned: true },
+          { id: "title_goldbound", name: "Goldbound", image: "titles/title_goldbound.png", owned: true }
+        ]
+      }
+    }
+  });
+
+  const ownHtml = profileScreen.render(context);
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "Aurelian",
+    title: "title_goldbound",
+    playerLevel: 8,
+    playerXP: 220,
+    wins: 12,
+    losses: 4,
+    cardsCaptured: 31,
+    achievements: {},
+    modeStats: { pve: { wins: 8, losses: 2 }, local_pvp: { wins: 4, losses: 2 } },
+    equippedCosmetics: {
+      avatar: "avatar_aurelian_archon",
+      title: "title_goldbound",
+      background: "default_background",
+      badge: "none",
+      cardBack: "cardback_goldbound_relic",
+      elementCardVariant: {
+        fire: "fire_variant_goldbound_relics",
+        earth: "earth_variant_goldbound_relics",
+        wind: "wind_variant_goldbound_relics",
+        water: "water_variant_goldbound_relics"
+      }
+    }
+  });
+
+  assert.match(ownHtml, /avatar_aurelian_archon\.png/);
+  assert.match(ownHtml, /title_goldbound\.png/);
+  assert.match(ownHtml, /cardback_goldbound_relic\.png/);
+  assert.match(ownHtml, /fire_variant_goldbound_relics\.png/);
+  assert.match(ownHtml, /earth_variant_goldbound_relics\.png/);
+  assert.match(ownHtml, /wind_variant_goldbound_relics\.png/);
+  assert.match(ownHtml, /water_variant_goldbound_relics\.png/);
+  assert.match(viewedHtml, /avatar_aurelian_archon\.png/);
+  assert.match(viewedHtml, /title_goldbound\.png/);
+  assert.match(viewedHtml, /cardback_goldbound_relic\.png/);
+  assert.match(viewedHtml, /fire_variant_goldbound_relics\.png/);
+  assert.match(viewedHtml, /earth_variant_goldbound_relics\.png/);
+  assert.match(viewedHtml, /wind_variant_goldbound_relics\.png/);
+  assert.match(viewedHtml, /water_variant_goldbound_relics\.png/);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {

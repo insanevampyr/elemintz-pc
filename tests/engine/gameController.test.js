@@ -11306,6 +11306,77 @@ test("appController: authenticated Gauntlet showGame uses merged equipped backgr
   assert.match(payload.cardImages.p1.wind, /wind_variant_neon_arcana\.png/);
 });
 
+test("appController: Goldbound Relics equipped cosmetics resolve across profile identity and Gauntlet match display paths", () => {
+  const shown = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shown.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "GoldboundUser";
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentRivalId: "cyclebound"
+  };
+  app.profile = {
+    username: "GoldboundUser",
+    equippedCosmetics: {},
+    cosmetics: {
+      snapshot: {
+        equipped: {
+          avatar: "avatar_aurelian_archon",
+          background: "default_background",
+          cardBack: "cardback_goldbound_relic",
+          title: "title_goldbound",
+          elementCardVariant: {
+            fire: "fire_variant_goldbound_relics",
+            water: "water_variant_goldbound_relics",
+            earth: "earth_variant_goldbound_relics",
+            wind: "wind_variant_goldbound_relics"
+          }
+        }
+      }
+    }
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.PVE,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+
+  app.showGame();
+
+  const payload = shown.at(-1).context;
+  assert.match(payload.playerDisplay.avatar, /avatar_aurelian_archon\.png/);
+  assert.equal(payload.playerDisplay.title, "Goldbound");
+  assert.match(payload.cardBacks.p1, /cardback_goldbound_relic\.png/);
+  assert.match(payload.cardImages.p1.fire, /fire_variant_goldbound_relics\.png/);
+  assert.match(payload.cardImages.p1.water, /water_variant_goldbound_relics\.png/);
+  assert.match(payload.cardImages.p1.earth, /earth_variant_goldbound_relics\.png/);
+  assert.match(payload.cardImages.p1.wind, /wind_variant_goldbound_relics\.png/);
+});
+
 test("appController: Featured Rival arena override still beats the player's equipped background", () => {
   const shown = [];
   const app = new AppController({
