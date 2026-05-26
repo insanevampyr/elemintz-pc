@@ -4167,16 +4167,16 @@ test("app controller: authenticated local PvP settlement updates both players th
   }
 });
 
-test("app controller: authoritative local settlement falls back to local persistence when the server write fails", async () => {
+test("app controller: unauthenticated local PvE settlement still falls back to local persistence when server authority is unavailable", async () => {
   const originalWindow = globalThis.window;
   const controller = createAppController();
   controller.username = "FallbackPveUser";
   controller.onlinePlayState = {
-    connectionStatus: "connected",
+    connectionStatus: "disconnected",
     session: {
-      authenticated: true,
+      authenticated: false,
       username: "FallbackPveUser",
-      accountId: "account-id-1"
+      accountId: null
     }
   };
 

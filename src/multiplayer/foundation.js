@@ -1107,6 +1107,93 @@ export function createMultiplayerFoundation({
     throw error;
   }
 
+  function normalizeProtectedSettlementSessionId(payload = {}) {
+    return String(
+      payload?.localMatchSessionId ??
+        payload?.sessionId ??
+        payload?.localMatchSession?.sessionId ??
+        ""
+    ).trim() || null;
+  }
+
+  function isProtectedPveSettlement(matchState) {
+    const mode = normalizeLocalMatchMode(matchState?.mode);
+    if (mode !== LOCAL_MATCH_MODES.PVE) {
+      return false;
+    }
+
+    return !normalizeGauntletRivalId(matchState?.gauntletRivalId);
+  }
+
+  function getRequiredProtectedSessionMode(matchState) {
+    const featuredRivalId = normalizeFeaturedRivalId(matchState?.featuredRivalId);
+    return featuredRivalId ? LOCAL_MATCH_MODES.FEATURED_RIVAL : LOCAL_MATCH_MODES.PVE;
+  }
+
+  function assertProtectedSettlementSessionMatch(session, payload = {}) {
+    const matchState = payload?.matchState ?? null;
+    const requiredMode = getRequiredProtectedSessionMode(matchState);
+    if (session?.mode !== requiredMode) {
+      const error = new Error("This local match session does not match the submitted PvE match mode.");
+      error.code = "LOCAL_MATCH_SESSION_MODE_MISMATCH";
+      throw error;
+    }
+
+    if (session?.status === "abandoned") {
+      const error = new Error("This local match session has already been abandoned.");
+      error.code = "LOCAL_MATCH_SESSION_INACTIVE";
+      throw error;
+    }
+
+    const safeSettlementKey = String(payload?.settlementKey ?? "").trim() || null;
+    const completedSettlementKey =
+      String(session?.metadata?.settlementKey ?? "").trim() || null;
+    if (session?.status === "completed") {
+      if (!safeSettlementKey || !completedSettlementKey || safeSettlementKey !== completedSettlementKey) {
+        const error = new Error("This local match session has already been settled.");
+        error.code = "LOCAL_MATCH_SESSION_ALREADY_COMPLETED";
+        throw error;
+      }
+    } else if (session?.status !== "active") {
+      const error = new Error("This local match session is no longer active.");
+      error.code = "LOCAL_MATCH_SESSION_INACTIVE";
+      throw error;
+    }
+
+    if (!safeSettlementKey || !safeSettlementKey.includes(session.sessionId)) {
+      const error = new Error("Protected PvE settlements must use a settlement key bound to the server session.");
+      error.code = "LOCAL_MATCH_SETTLEMENT_KEY_MISMATCH";
+      throw error;
+    }
+
+    const expectedDifficulty = normalizeLocalMatchDifficulty(matchState?.difficulty);
+    if (!expectedDifficulty) {
+      const error = new Error("Protected PvE settlements require a valid AI difficulty.");
+      error.code = "LOCAL_MATCH_INVALID_DIFFICULTY";
+      throw error;
+    }
+
+    if (expectedDifficulty !== session?.aiDifficulty) {
+      const error = new Error("This local match session does not match the submitted AI difficulty.");
+      error.code = "LOCAL_MATCH_SESSION_DIFFICULTY_MISMATCH";
+      throw error;
+    }
+
+    const expectedFeaturedRivalId = normalizeFeaturedRivalId(matchState?.featuredRivalId);
+    const sessionFeaturedRivalId = normalizeFeaturedRivalId(session?.featuredRivalId);
+    if (requiredMode === LOCAL_MATCH_MODES.FEATURED_RIVAL) {
+      if (!expectedFeaturedRivalId || expectedFeaturedRivalId !== sessionFeaturedRivalId) {
+        const error = new Error("This local match session does not match the submitted featured rival.");
+        error.code = "LOCAL_MATCH_SESSION_FEATURED_RIVAL_MISMATCH";
+        throw error;
+      }
+    } else if (expectedFeaturedRivalId || sessionFeaturedRivalId) {
+      const error = new Error("Regular PvE settlements cannot use a featured rival local match session.");
+      error.code = "LOCAL_MATCH_SESSION_FEATURED_RIVAL_MISMATCH";
+      throw error;
+    }
+  }
+
   function assertAdminAccessForSession(session) {
     const normalizedUsername = normalizeSettledUsername(session?.profileKey ?? session?.username);
     const normalizedEmail = String(session?.email ?? "").trim().toLowerCase() || null;
@@ -1999,12 +2086,45 @@ export function createMultiplayerFoundation({
       }
 
       try {
+        let localMatchSession = null;
+        if (isProtectedPveSettlement(payload?.matchState)) {
+          assertSessionUsernameMatch(sessionResult.session, payload?.username);
+          const localMatchSessionId = normalizeProtectedSettlementSessionId(payload);
+          if (!localMatchSessionId) {
+            const error = new Error(
+              "Protected PvE and featured rival settlements require a server-owned local match session."
+            );
+            error.code = "LOCAL_MATCH_SESSION_REQUIRED";
+            throw error;
+          }
+
+          localMatchSession = getLocalMatchSessionForOwnerOrThrow(
+            sessionResult.session,
+            localMatchSessionId
+          );
+          assertProtectedSettlementSessionMatch(localMatchSession, payload);
+        }
+
         const result = await profileAuthority.applyLocalMatchResult({
           username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
           result: payload?.matchState ?? null,
           perspective: payload?.perspective ?? "p1",
           settlementKey: payload?.settlementKey ?? null
         });
+
+        if (localMatchSession) {
+          localMatchSessions.completeSession({
+            sessionId: localMatchSession.sessionId,
+            username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+            metadata: {
+              settlementKey: String(payload?.settlementKey ?? "").trim() || null,
+              protectedMode: getRequiredProtectedSessionMode(payload?.matchState),
+              aiDifficulty: localMatchSession.aiDifficulty ?? null,
+              featuredRivalId: localMatchSession.featuredRivalId ?? null
+            }
+          });
+        }
+
         respond({
           ok: true,
           result
@@ -2013,7 +2133,7 @@ export function createMultiplayerFoundation({
         respond({
           ok: false,
           error: {
-            code: "PROFILE_LOCAL_MATCH_WRITE_FAILED",
+            code: error?.code ?? "PROFILE_LOCAL_MATCH_WRITE_FAILED",
             message: String(
               error?.message ?? "Unable to complete authoritative local match settlement."
             )

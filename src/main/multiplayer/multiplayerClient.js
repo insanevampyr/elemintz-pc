@@ -2306,15 +2306,71 @@ export class MultiplayerClient {
     return response.result ?? null;
   }
 
+  async startLocalPveMatch({ username, aiDifficulty, featuredRivalId = null, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:startLocalPveMatch",
+      { username, aiDifficulty, featuredRivalId },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to start a protected PvE match session.");
+    }
+
+    return response.result?.session ?? null;
+  }
+
+  async startFeaturedRivalMatch({ username, aiDifficulty, featuredRivalId, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:startFeaturedRivalMatch",
+      { username, aiDifficulty, featuredRivalId },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(
+        response?.error?.message ?? "Unable to start a protected featured rival match session."
+      );
+    }
+
+    return response.result?.session ?? null;
+  }
+
+  async getLocalMatchSessionState({ username, sessionId, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:getLocalMatchSessionState",
+      { username, sessionId },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to read the local match session state.");
+    }
+
+    return response.result?.session ?? null;
+  }
+
+  async abandonLocalMatchSession({ username, sessionId, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:abandonLocalMatchSession",
+      { username, sessionId },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to abandon the local match session.");
+    }
+
+    return response.result?.session ?? null;
+  }
+
   async applyLocalMatchResult({
     username,
     perspective = "p1",
     matchState,
     settlementKey = null,
+    localMatchSessionId = null,
     sessionToken = null,
     serverUrl
   } = {}) {
     const safeSessionToken = String(sessionToken ?? "").trim() || null;
+    const safeLocalMatchSessionId = String(localMatchSessionId ?? "").trim() || null;
     const response = safeSessionToken
       ? await this.runIsolatedServerRequest(
           "profile:applyLocalMatchResult",
@@ -2322,7 +2378,8 @@ export class MultiplayerClient {
             sessionToken: safeSessionToken,
             perspective,
             matchState,
-            settlementKey
+            settlementKey,
+            ...(safeLocalMatchSessionId ? { localMatchSessionId: safeLocalMatchSessionId } : {})
           },
           { serverUrl }
         )
@@ -2332,7 +2389,8 @@ export class MultiplayerClient {
             username,
             perspective,
             matchState,
-            settlementKey
+            settlementKey,
+            ...(safeLocalMatchSessionId ? { localMatchSessionId: safeLocalMatchSessionId } : {})
           },
           { serverUrl }
         );

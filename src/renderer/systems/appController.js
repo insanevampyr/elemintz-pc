@@ -203,6 +203,9 @@ export class AppController {
     this.pveOpponentStyle = null;
     this.pveGauntletMode = false;
     this.pveFeaturedRivalId = null;
+    this.currentProtectedLocalMatchSession = null;
+    this.pendingProtectedLocalMatchSessionPromise = null;
+    this.protectedLocalMatchSessionRequestId = 0;
     this.gauntletRunState = createDefaultGauntletRunState();
     this.profileChestVisualState = {
       basicOpen: false,
@@ -2680,7 +2683,86 @@ export class AppController {
     return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
   }
 
-  buildLocalMatchSettlementKey(match, { mode = null, names = [] } = {}) {
+  clearProtectedLocalMatchSessionState() {
+    this.protectedLocalMatchSessionRequestId += 1;
+    this.currentProtectedLocalMatchSession = null;
+    this.pendingProtectedLocalMatchSessionPromise = null;
+  }
+
+  isProtectedServerSessionPveMode({
+    mode = MATCH_MODE.PVE,
+    gauntletMode = this.pveGauntletMode
+  } = {}) {
+    return mode === MATCH_MODE.PVE && !gauntletMode;
+  }
+
+  syncProtectedLocalMatchSessionOntoMatch(session = null) {
+    const safeSessionId = String(session?.sessionId ?? "").trim() || null;
+    if (!safeSessionId || !this.gameController?.match?.meta) {
+      return;
+    }
+
+    this.gameController.match.meta.localMatchSessionId = safeSessionId;
+  }
+
+  async startProtectedPveLocalMatchSession({
+    aiDifficulty,
+    featuredRivalId = null,
+    requestId = this.protectedLocalMatchSessionRequestId
+  } = {}) {
+    const multiplayer = globalThis.window?.elemintz?.multiplayer ?? null;
+    const safeUsername = String(this.username ?? "").trim() || null;
+    const safeFeaturedRivalId = String(featuredRivalId ?? "").trim().toLowerCase() || null;
+    const safeDifficulty = String(aiDifficulty ?? "").trim().toLowerCase() || null;
+
+    if (!safeUsername || !this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, safeUsername)) {
+      this.clearProtectedLocalMatchSessionState();
+      return null;
+    }
+
+    const starter = safeFeaturedRivalId
+      ? multiplayer?.startFeaturedRivalMatch
+      : multiplayer?.startLocalPveMatch;
+    if (typeof starter !== "function") {
+      this.clearProtectedLocalMatchSessionState();
+      return null;
+    }
+
+    const session = await starter({
+      username: safeUsername,
+      aiDifficulty: safeDifficulty,
+      ...(safeFeaturedRivalId ? { featuredRivalId: safeFeaturedRivalId } : {})
+    });
+
+    if (requestId !== this.protectedLocalMatchSessionRequestId) {
+      return null;
+    }
+
+    this.currentProtectedLocalMatchSession = session ?? null;
+    this.syncProtectedLocalMatchSessionOntoMatch(session);
+    return session ?? null;
+  }
+
+  async resolveProtectedPveLocalMatchSession() {
+    if (this.currentProtectedLocalMatchSession?.sessionId) {
+      return this.currentProtectedLocalMatchSession;
+    }
+
+    if (this.pendingProtectedLocalMatchSessionPromise) {
+      try {
+        const session = await this.pendingProtectedLocalMatchSessionPromise;
+        this.currentProtectedLocalMatchSession = session ?? null;
+        this.syncProtectedLocalMatchSessionOntoMatch(session);
+        return session ?? null;
+      } finally {
+        this.pendingProtectedLocalMatchSessionPromise = null;
+      }
+    }
+
+    return null;
+  }
+
+  buildLocalMatchSettlementKey(match, { mode = null, names = [], localMatchSessionId = null } = {}) {
     const safeMode = String(mode ?? match?.mode ?? "local_match").trim() || "local_match";
     const safeMatchId =
       String(match?.id ?? "").trim() ||
@@ -2695,8 +2777,20 @@ export class AppController {
       .filter(Boolean)
       .sort()
       .join("|");
+    const safeLocalMatchSessionId = String(
+      localMatchSessionId ?? match?.meta?.localMatchSessionId ?? ""
+    ).trim();
 
-    return [safeMode, safeMatchId, safeStartedAt, safeEndedAt, safeWinner, String(safeRounds), participants]
+    return [
+      safeMode,
+      safeLocalMatchSessionId ? `session:${safeLocalMatchSessionId}` : null,
+      safeMatchId,
+      safeStartedAt,
+      safeEndedAt,
+      safeWinner,
+      String(safeRounds),
+      participants
+    ]
       .filter(Boolean)
       .join("::");
   }
@@ -2718,12 +2812,20 @@ export class AppController {
           (perspective === "p1" ? this.onlinePlayState?.session?.accountId : "") ??
           ""
       ).trim() || null;
+    const localMatchSessionId =
+      String(
+        authority?.localMatchSessionId ??
+          match?.meta?.localMatchSessionId ??
+          ""
+      ).trim() || null;
+    const requiresProtectedServerSession = Boolean(authority?.protectedServerSessionRequired);
     const settlementKey = this.buildLocalMatchSettlementKey(match, {
       mode,
       names:
         mode === MATCH_MODE.LOCAL_PVP
           ? [this.getLocalNames().p1, this.getLocalNames().p2]
-          : [safeUsername]
+          : [safeUsername],
+      localMatchSessionId
     });
     const matchSummary = {
       winner: String(match?.winner ?? "").trim() || null,
@@ -2751,6 +2853,7 @@ export class AppController {
           perspective,
           matchState: match,
           settlementKey,
+          ...(localMatchSessionId ? { localMatchSessionId } : {}),
           ...(sessionToken ? { sessionToken } : {})
         });
         console.info("[MatchSettlement][Renderer] authoritative success", {
@@ -2761,6 +2864,9 @@ export class AppController {
           duplicate: Boolean(result?.duplicate),
           fallbackUsed: false
         });
+        if (requiresProtectedServerSession) {
+          this.clearProtectedLocalMatchSessionState();
+        }
         return result;
       } catch (error) {
         console.error("[MatchSettlement][Renderer] authoritative failure", {
@@ -2772,6 +2878,9 @@ export class AppController {
           message: error?.message,
           stack: error?.stack
         });
+        if (requiresProtectedServerSession) {
+          throw error;
+        }
       }
     }
 
@@ -6367,6 +6476,15 @@ export class AppController {
   }
 
   async persistPveResult(match) {
+    const protectedServerSessionRequired =
+      this.isProtectedServerSessionPveMode({
+        mode: MATCH_MODE.PVE,
+        gauntletMode: this.pveGauntletMode
+      }) &&
+      this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username);
+    const localMatchSession = protectedServerSessionRequired
+      ? await this.resolveProtectedPveLocalMatchSession()
+      : null;
     return this.settleLocalMatchResultForIdentity({
       mode: MATCH_MODE.PVE,
       username: this.username,
@@ -6375,7 +6493,9 @@ export class AppController {
       authority: {
         username: this.username,
         accountId: this.onlinePlayState?.session?.accountId ?? null,
-        sessionToken: null
+        sessionToken: null,
+        localMatchSessionId: localMatchSession?.sessionId ?? null,
+        protectedServerSessionRequired
       }
     });
   }
@@ -6406,6 +6526,14 @@ export class AppController {
     const featuredRival = this.getFeaturedRivalConfig(this.pveFeaturedRivalId);
     this.pveOpponentStyle =
       mode === MATCH_MODE.PVE ? this.buildPveOpponentStyle(this.pveFeaturedRivalId) : null;
+    const resolvedAiDifficulty =
+      mode === MATCH_MODE.PVE
+        ? featuredRival?.aiDifficulty ??
+          (String(options?.aiDifficulty ?? "").trim().toLowerCase() ||
+            this.getConfiguredAiDifficulty())
+        : FALLBACK_SETTINGS.aiDifficulty;
+    this.clearProtectedLocalMatchSessionState();
+    const protectedLocalMatchSessionRequestId = this.protectedLocalMatchSessionRequestId;
     this.resetMatchTaunts();
 
     this.roundPresentation = {
@@ -6420,12 +6548,7 @@ export class AppController {
       localPlayerNames: mode === MATCH_MODE.LOCAL_PVP ? this.getLocalNames() : null,
       timerSeconds: this.settings?.gameplay?.timerSeconds ?? FALLBACK_SETTINGS.gameplay.timerSeconds,
       matchTimeLimitSeconds: 300,
-      aiDifficulty:
-        mode === MATCH_MODE.PVE
-          ? featuredRival?.aiDifficulty ??
-            (String(options?.aiDifficulty ?? "").trim().toLowerCase() ||
-              this.getConfiguredAiDifficulty())
-          : FALLBACK_SETTINGS.aiDifficulty,
+      aiDifficulty: resolvedAiDifficulty,
       gauntletMode: wantsGauntlet,
       gauntletRivalId: wantsGauntlet ? this.gauntletRunState?.currentRivalId ?? null : null,
       featuredRivalId: this.pveFeaturedRivalId,
@@ -6579,6 +6702,31 @@ export class AppController {
         this.showMatchCompleteModal(modalPayload);
       }
     });
+
+    if (
+      this.isProtectedServerSessionPveMode({
+        mode,
+        gauntletMode: wantsGauntlet
+      }) &&
+      this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username)
+    ) {
+      this.pendingProtectedLocalMatchSessionPromise = this.startProtectedPveLocalMatchSession({
+        aiDifficulty: resolvedAiDifficulty,
+        featuredRivalId: this.pveFeaturedRivalId,
+        requestId: protectedLocalMatchSessionRequestId
+      }).catch((error) => {
+        console.error("[MatchSettlement][Renderer] failed to start protected PvE session", {
+          mode,
+          username: this.username,
+          featuredRivalId: this.pveFeaturedRivalId,
+          aiDifficulty: resolvedAiDifficulty,
+          message: error?.message,
+          stack: error?.stack
+        });
+        this.clearProtectedLocalMatchSessionState();
+        return null;
+      });
+    }
 
     if (mode === MATCH_MODE.LOCAL_PVP) {
       this.screenFlow = "pass";

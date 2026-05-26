@@ -151,11 +151,17 @@ function createCompletedLocalMatchState({
   mode = "pve",
   winner = "p1",
   endReason = null,
-  round = 3
+  round = 3,
+  difficulty = "normal",
+  featuredRivalId = null,
+  gauntletRivalId = null
 } = {}) {
   return {
     status: "completed",
     mode,
+    difficulty,
+    ...(featuredRivalId ? { featuredRivalId } : {}),
+    ...(gauntletRivalId ? { gauntletRivalId } : {}),
     winner,
     endReason,
     round,
@@ -7691,7 +7697,146 @@ test("multiplayer rewards: settlementKey prevents duplicate persisted reward gra
   }
 });
 
-test("multiplayer profile authority: authenticated PvE settlement updates the server profile and stays idempotent", async () => {
+test("multiplayer profile authority: protected PvE and featured rival settlements reject forged or mismatched local sessions", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    }),
+    adminGrantStore: new AdminGrantStore({ dataDir })
+  });
+  let owner = null;
+  let other = null;
+
+  try {
+    const port = await foundation.start();
+    owner = await connectClient(port);
+    other = await connectClient(port);
+
+    const ownerAuth = await registerAccount(owner, {
+      username: "ProtectedPveOwner",
+      email: "protected-pve-owner@example.com",
+      password: "PlayerPass123"
+    });
+    const otherAuth = await registerAccount(other, {
+      username: "ProtectedPveOther",
+      email: "protected-pve-other@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(ownerAuth?.ok, true);
+    assert.equal(otherAuth?.ok, true);
+
+    const ownerPveSession = await emitWithAck(owner, "profile:startLocalPveMatch", {
+      aiDifficulty: "hard"
+    });
+    const ownerFeaturedSession = await emitWithAck(owner, "profile:startFeaturedRivalMatch", {
+      aiDifficulty: "hard",
+      featuredRivalId: "crownfire_duelist"
+    });
+    const otherPveSession = await emitWithAck(other, "profile:startLocalPveMatch", {
+      aiDifficulty: "hard"
+    });
+
+    assert.equal(ownerPveSession?.ok, true);
+    assert.equal(ownerFeaturedSession?.ok, true);
+    assert.equal(otherPveSession?.ok, true);
+
+    const noSession = await emitWithAck(owner, "profile:applyLocalMatchResult", {
+      perspective: "p1",
+      matchState: createCompletedLocalMatchState({
+        mode: "pve",
+        winner: "p1",
+        difficulty: "hard"
+      }),
+      settlementKey: "PVE:forged:no-session"
+    });
+    const nonexistentSession = await emitWithAck(owner, "profile:applyLocalMatchResult", {
+      perspective: "p1",
+      localMatchSessionId: "local-missing-session",
+      matchState: createCompletedLocalMatchState({
+        mode: "pve",
+        winner: "p1",
+        difficulty: "hard"
+      }),
+      settlementKey: "PVE::session:local-missing-session::forged"
+    });
+    const foreignSession = await emitWithAck(owner, "profile:applyLocalMatchResult", {
+      perspective: "p1",
+      localMatchSessionId: otherPveSession.result.session.sessionId,
+      matchState: createCompletedLocalMatchState({
+        mode: "pve",
+        winner: "p1",
+        difficulty: "hard"
+      }),
+      settlementKey: `PVE::session:${otherPveSession.result.session.sessionId}::forged`
+    });
+    const wrongDifficulty = await emitWithAck(owner, "profile:applyLocalMatchResult", {
+      perspective: "p1",
+      localMatchSessionId: ownerPveSession.result.session.sessionId,
+      matchState: createCompletedLocalMatchState({
+        mode: "pve",
+        winner: "p1",
+        difficulty: "normal"
+      }),
+      settlementKey: `PVE::session:${ownerPveSession.result.session.sessionId}::wrong-difficulty`
+    });
+    const featuredWithoutSession = await emitWithAck(owner, "profile:applyLocalMatchResult", {
+      perspective: "p1",
+      matchState: createCompletedLocalMatchState({
+        mode: "pve",
+        winner: "p1",
+        difficulty: "hard",
+        featuredRivalId: "crownfire_duelist"
+      }),
+      settlementKey: "FEATURED:forged:no-session"
+    });
+    const featuredModeMismatch = await emitWithAck(owner, "profile:applyLocalMatchResult", {
+      perspective: "p1",
+      localMatchSessionId: ownerPveSession.result.session.sessionId,
+      matchState: createCompletedLocalMatchState({
+        mode: "pve",
+        winner: "p1",
+        difficulty: "hard",
+        featuredRivalId: "crownfire_duelist"
+      }),
+      settlementKey: `FEATURED::session:${ownerPveSession.result.session.sessionId}::wrong-mode`
+    });
+
+    const ownerProfile = await coordinator.profiles.getProfile("ProtectedPveOwner");
+
+    assert.equal(noSession?.ok, false);
+    assert.equal(noSession?.error?.code, "LOCAL_MATCH_SESSION_REQUIRED");
+    assert.equal(nonexistentSession?.ok, false);
+    assert.equal(nonexistentSession?.error?.code, "LOCAL_MATCH_SESSION_NOT_FOUND");
+    assert.equal(foreignSession?.ok, false);
+    assert.equal(foreignSession?.error?.code, "LOCAL_MATCH_SESSION_ACCESS_DENIED");
+    assert.equal(wrongDifficulty?.ok, false);
+    assert.equal(wrongDifficulty?.error?.code, "LOCAL_MATCH_SESSION_DIFFICULTY_MISMATCH");
+    assert.equal(featuredWithoutSession?.ok, false);
+    assert.equal(featuredWithoutSession?.error?.code, "LOCAL_MATCH_SESSION_REQUIRED");
+    assert.equal(featuredModeMismatch?.ok, false);
+    assert.equal(featuredModeMismatch?.error?.code, "LOCAL_MATCH_SESSION_MODE_MISMATCH");
+    assert.equal(ownerProfile.gamesPlayed, 0);
+    assert.equal(ownerProfile.wins, 0);
+    assert.equal(ownerProfile.featuredRivalWins, 0);
+    assert.equal(ownerProfile.modeStats?.pve?.gamesPlayed ?? 0, 0);
+  } finally {
+    owner?.disconnect();
+    other?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer profile authority: authenticated PvE settlement requires a valid local session and stays idempotent", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const foundation = createMultiplayerFoundation({
@@ -7719,13 +7864,24 @@ test("multiplayer profile authority: authenticated PvE settlement updates the se
     });
     assert.equal(auth?.ok, true);
 
+    const sessionStart = await emitWithAck(client, "profile:startLocalPveMatch", {
+      aiDifficulty: "hard"
+    });
+    assert.equal(sessionStart?.ok, true);
+    const sessionId = sessionStart?.result?.session?.sessionId;
+
     const first = await new Promise((resolve) => {
       client.emit(
         "profile:applyLocalMatchResult",
         {
           perspective: "p1",
-          matchState: createCompletedLocalMatchState({ mode: "pve", winner: "p1" }),
-          settlementKey: "PVE:server:1"
+          localMatchSessionId: sessionId,
+          matchState: createCompletedLocalMatchState({
+            mode: "pve",
+            winner: "p1",
+            difficulty: "hard"
+          }),
+          settlementKey: `PVE::session:${sessionId}::server:1`
         },
         resolve
       );
@@ -7735,11 +7891,19 @@ test("multiplayer profile authority: authenticated PvE settlement updates the se
         "profile:applyLocalMatchResult",
         {
           perspective: "p1",
-          matchState: createCompletedLocalMatchState({ mode: "pve", winner: "p1" }),
-          settlementKey: "PVE:server:1"
+          localMatchSessionId: sessionId,
+          matchState: createCompletedLocalMatchState({
+            mode: "pve",
+            winner: "p1",
+            difficulty: "hard"
+          }),
+          settlementKey: `PVE::session:${sessionId}::server:1`
         },
         resolve
       );
+    });
+    const sessionState = await emitWithAck(client, "profile:getLocalMatchSessionState", {
+      sessionId
     });
 
     const profile = await coordinator.profiles.getProfile("AuthoritativePveUser");
@@ -7748,11 +7912,77 @@ test("multiplayer profile authority: authenticated PvE settlement updates the se
     assert.equal(first?.result?.duplicate, false);
     assert.equal(second?.ok, true);
     assert.equal(second?.result?.duplicate, true);
+    assert.equal(sessionState?.ok, true);
+    assert.equal(sessionState?.result?.session?.status, "completed");
     assert.equal(profile.gamesPlayed, 1);
     assert.equal(profile.wins, 1);
     assert.ok(profile.playerXP > 0);
     assert.ok(profile.tokens > 200);
     assert.equal(profile.modeStats.pve.gamesPlayed, 1);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer profile authority: authenticated featured rival settlement requires a valid local session", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    }),
+    adminGrantStore: new AdminGrantStore({ dataDir })
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+    const auth = await registerAccount(client, {
+      username: "FeaturedAuthorityUser",
+      email: "featured-authority@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(auth?.ok, true);
+
+    const sessionStart = await emitWithAck(client, "profile:startFeaturedRivalMatch", {
+      aiDifficulty: "hard",
+      featuredRivalId: "crownfire_duelist"
+    });
+    assert.equal(sessionStart?.ok, true);
+    const sessionId = sessionStart?.result?.session?.sessionId;
+
+    const settlement = await emitWithAck(client, "profile:applyLocalMatchResult", {
+      perspective: "p1",
+      localMatchSessionId: sessionId,
+      matchState: createCompletedLocalMatchState({
+        mode: "pve",
+        winner: "p1",
+        difficulty: "hard",
+        featuredRivalId: "crownfire_duelist"
+      }),
+      settlementKey: `FEATURED::session:${sessionId}::server:1`
+    });
+
+    const profile = await coordinator.profiles.getProfile("FeaturedAuthorityUser");
+
+    assert.equal(settlement?.ok, true);
+    assert.equal(settlement?.result?.duplicate, false);
+    assert.equal(profile.gamesPlayed, 1);
+    assert.equal(profile.wins, 1);
+    assert.equal(profile.modeStats?.pve?.gamesPlayed ?? 0, 1);
+    assert.equal(profile.featuredRivalWins, 1);
+    assert.ok(profile.playerXP > 0);
+    assert.ok(profile.tokens > 200);
   } finally {
     client?.disconnect();
     await foundation.stop();

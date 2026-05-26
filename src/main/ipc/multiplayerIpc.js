@@ -124,6 +124,26 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.claimDailyLoginReward(payload);
   });
 
+  ipcMain.handle("multiplayer:startLocalPveMatch", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.startLocalPveMatch(payload);
+  });
+
+  ipcMain.handle("multiplayer:startFeaturedRivalMatch", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.startFeaturedRivalMatch(payload);
+  });
+
+  ipcMain.handle("multiplayer:getLocalMatchSessionState", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getLocalMatchSessionState(payload);
+  });
+
+  ipcMain.handle("multiplayer:abandonLocalMatchSession", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.abandonLocalMatchSession(payload);
+  });
+
   ipcMain.handle("multiplayer:applyLocalMatchResult", async (event, payload) => {
     subscribers.add(event.sender);
     return client.applyLocalMatchResult(payload);

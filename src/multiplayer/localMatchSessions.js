@@ -97,11 +97,29 @@ export function createLocalMatchSessionStore({ now = () => new Date() } = {}) {
     return toPublicSession(session);
   }
 
+  function completeSession({ sessionId, username, metadata = {} } = {}) {
+    const session = getSessionForUsername(sessionId, username);
+    if (!session) {
+      return null;
+    }
+
+    const timestamp = buildTimestamp();
+    session.status = "completed";
+    session.updatedAt = timestamp;
+    session.metadata = {
+      ...cloneMetadata(session.metadata),
+      ...cloneMetadata(metadata),
+      completedAt: timestamp
+    };
+    return toPublicSession(session);
+  }
+
   return {
     createSession,
     getSession,
     getSessionForUsername,
     abandonSession,
+    completeSession,
     toPublicSession
   };
 }
