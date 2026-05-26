@@ -7583,11 +7583,12 @@ export class AppController {
                     username: this.username,
                     slotIndex
                   });
+            const nextCosmeticsSource = result?.cosmetics ?? result?.snapshot?.cosmetics ?? null;
             this.profile = result?.snapshot
               ? this.buildProfileFromServerSnapshot(result.snapshot)
               : result.profile;
             await this.showCosmetics({
-              cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+              cosmeticsOverride: this.buildSafeCosmeticsPayload(nextCosmeticsSource, this.profile)
             });
           };
 
@@ -7629,11 +7630,12 @@ export class AppController {
                     username: this.username,
                     slotIndex
                   });
+            const nextCosmeticsSource = result?.cosmetics ?? result?.snapshot?.cosmetics ?? null;
             this.profile = result?.snapshot
               ? this.buildProfileFromServerSnapshot(result.snapshot)
               : result.profile;
             await this.showCosmetics({
-              cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+              cosmeticsOverride: this.buildSafeCosmeticsPayload(nextCosmeticsSource, this.profile)
             });
           } catch (error) {
             this.modalManager.show({
@@ -7660,11 +7662,12 @@ export class AppController {
                     slotIndex,
                     name
                   });
+            const nextCosmeticsSource = result?.cosmetics ?? result?.snapshot?.cosmetics ?? null;
             this.profile = result?.snapshot
               ? this.buildProfileFromServerSnapshot(result.snapshot)
               : result.profile;
             await this.showCosmetics({
-              cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+              cosmeticsOverride: this.buildSafeCosmeticsPayload(nextCosmeticsSource, this.profile)
             });
           } catch (error) {
             this.modalManager.show({

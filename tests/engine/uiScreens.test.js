@@ -3757,6 +3757,160 @@ test("ui: appController cosmetics actions route loadout save apply and rename th
   }
 });
 
+test("ui: applying a saved cosmetic loadout keeps owned cosmetics visible immediately and preserves valid filters", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const calls = {
+    apply: []
+  };
+  const filteredAvatar = {
+    id: "avatar_aurelian_archon",
+    name: "Aurelian Archon",
+    image: "avatars/avatar_aurelian_archon.png",
+    rarity: "Legendary",
+    collection: "Goldbound Relics",
+    owned: true,
+    equipped: false,
+    unlockSource: { type: "store" }
+  };
+  const baseProfile = {
+    username: "LoadoutCaptain",
+    playerLevel: 20,
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  };
+  const cosmetics = {
+    preferences: { randomizeBackgroundEachMatch: false },
+    loadouts: [
+      {
+        index: 0,
+        slotNumber: 1,
+        unlockLevel: 10,
+        unlocked: true,
+        name: "Goldbound Fit",
+        hasSavedLoadout: true,
+        isActive: false
+      }
+    ],
+    catalog: {
+      avatar: [filteredAvatar],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      badge: [],
+      title: []
+    },
+    owned: {
+      avatar: ["avatar_aurelian_archon"]
+    },
+    equipped: {
+      ...baseProfile.equippedCosmetics,
+      elementCardVariant: { ...baseProfile.equippedCosmetics.elementCardVariant }
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getCosmetics: async () => cosmetics,
+        applyCosmeticLoadout: async (payload) => {
+          calls.apply.push(payload);
+          return {
+            profile: {
+              ...baseProfile,
+              equippedCosmetics: {
+                ...baseProfile.equippedCosmetics,
+                avatar: "avatar_aurelian_archon"
+              }
+            },
+            cosmetics: {
+              ...cosmetics,
+              catalog: {
+                ...cosmetics.catalog,
+                avatar: [{ ...filteredAvatar, equipped: true }]
+              },
+              equipped: {
+                ...cosmetics.equipped,
+                avatar: "avatar_aurelian_archon"
+              },
+              snapshot: {
+                owned: cosmetics.owned,
+                equipped: {
+                  ...cosmetics.equipped,
+                  avatar: "avatar_aurelian_archon"
+                },
+                loadouts: cosmetics.loadouts,
+                preferences: cosmetics.preferences
+              }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "LoadoutCaptain";
+    app.profile = baseProfile;
+    app.cosmeticsViewState = {
+      categories: new Set(["avatar"]),
+      rarities: new Set(["legendary"]),
+      collections: new Set(["Goldbound Relics"]),
+      showNewFirst: false
+    };
+
+    await app.showCosmetics();
+    await shown.at(-1).actions.applyLoadout(0);
+
+    const rerenderedContext = shown.at(-1);
+    const html = cosmeticsScreen.render({
+      cosmetics: rerenderedContext.cosmetics,
+      viewState: rerenderedContext.viewState,
+      actions: {}
+    });
+    const avatarSectionStart = html.indexOf('data-cosmetic-section="avatar"');
+    const cardBackSectionStart = html.indexOf('data-cosmetic-section="cardBack"');
+    const avatarSectionHtml =
+      avatarSectionStart >= 0
+        ? html.slice(
+            avatarSectionStart,
+            cardBackSectionStart >= 0 ? cardBackSectionStart : html.length
+          )
+        : html;
+
+    assert.deepEqual(calls.apply, [{ username: "LoadoutCaptain", slotIndex: 0 }]);
+    assert.equal(rerenderedContext.cosmetics.catalog.avatar.length, 1);
+    assert.equal(rerenderedContext.cosmetics.catalog.avatar[0].owned, true);
+    assert.equal(rerenderedContext.cosmetics.catalog.avatar[0].equipped, true);
+    assert.equal(rerenderedContext.cosmetics.equipped.avatar, "avatar_aurelian_archon");
+    assert.equal(rerenderedContext.viewState.collections.has("Goldbound Relics"), true);
+    assert.match(avatarSectionHtml, /Aurelian Archon/);
+    assert.doesNotMatch(avatarSectionHtml, /No owned items in this category yet\./);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: store preview includes graceful fallback for missing images", () => {
   const html = storeScreen.render({
     store: {
