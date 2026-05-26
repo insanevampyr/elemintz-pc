@@ -121,6 +121,22 @@ function getOwnedCollectionOptions(cosmetics) {
   return options.sort((left, right) => left.localeCompare(right));
 }
 
+function reconcileCollectionSelections(viewState, availableCollections = []) {
+  const available = new Set(
+    Array.isArray(availableCollections)
+      ? availableCollections.map((collection) => normalizeCollectionKey(collection)).filter(Boolean)
+      : []
+  );
+
+  viewState.collections = new Set(
+    [...viewState.collections].map((collection) => normalizeCollectionKey(collection)).filter((collection) => {
+      return collection && available.has(collection);
+    })
+  );
+
+  return viewState;
+}
+
 function supportsHoverPreview(type, hasRenderableImage) {
   return hasRenderableImage || type === "title" || type === "badge";
 }
@@ -376,6 +392,7 @@ export const cosmeticsScreen = {
     const loadouts = Array.isArray(cosmetics.loadouts) ? cosmetics.loadouts : [];
     const viewState = normalizeCategoryViewState(context.viewState);
     const collectionOptions = getOwnedCollectionOptions(cosmetics);
+    reconcileCollectionSelections(viewState, collectionOptions);
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
@@ -490,6 +507,10 @@ export const cosmeticsScreen = {
     const scope = root && typeof root.querySelectorAll === "function" ? root : document;
     bindCosmeticHoverPreview({ root: scope, documentRef: document });
     const viewState = normalizeCategoryViewState(context.viewState);
+    const availableCollections = Array.from(scope.querySelectorAll("[data-cosmetic-collection-filter]"))
+      .map((input) => normalizeCollectionKey(input.getAttribute("data-cosmetic-collection-filter")))
+      .filter(Boolean);
+    reconcileCollectionSelections(viewState, availableCollections);
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;

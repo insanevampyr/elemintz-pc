@@ -249,6 +249,8 @@ export class AppController {
     this.storeViewState = this.createDefaultStoreViewState();
     this.storePurchaseInFlight = false;
     this.storePurchaseInFlightKey = null;
+    this.storeFeaturedRotationCache = null;
+    this.storeFeaturedRotationCacheUsername = null;
     this.cosmeticsViewState = createDefaultCategoryViewState();
     this.presentedAchievementUnlockKeys = new Set();
       this.roundPresentation = {
@@ -1312,20 +1314,36 @@ export class AppController {
     };
   }
 
-  async loadFeaturedStoreRotation() {
+  async loadFeaturedStoreRotation({ preferCache = true } = {}) {
     if (!this.hasMultiplayerProfileAccess() || !window.elemintz?.multiplayer?.getActiveShopRotation) {
+      this.storeFeaturedRotationCache = null;
+      this.storeFeaturedRotationCacheUsername = null;
       return null;
     }
 
+    const safeUsername = String(this.username ?? "").trim() || null;
+    if (
+      preferCache &&
+      this.storeFeaturedRotationCache &&
+      this.storeFeaturedRotationCacheUsername === safeUsername
+    ) {
+      return this.storeFeaturedRotationCache;
+    }
+
     try {
-      return await window.elemintz.multiplayer.getActiveShopRotation({
+      const rotation = await window.elemintz.multiplayer.getActiveShopRotation({
         username: this.username
       });
+      this.storeFeaturedRotationCache = rotation ?? null;
+      this.storeFeaturedRotationCacheUsername = safeUsername;
+      return rotation;
     } catch (error) {
       console.warn("[Store][Renderer] featured rotation load failed", {
         username: this.username,
         message: error?.message ?? String(error)
       });
+      this.storeFeaturedRotationCache = null;
+      this.storeFeaturedRotationCacheUsername = safeUsername;
       return null;
     }
   }
@@ -7101,7 +7119,15 @@ export class AppController {
     this.ensureMatchTauntUiTimer();
   }
 
-  async showProfile({ preserveModal = false, preserveAchievementVisibility = false } = {}) {
+  async showProfile({
+    preserveModal = false,
+    preserveAchievementVisibility = false,
+    profileOverride = null,
+    cosmeticsOverride = null,
+    searchResultsOverride = null,
+    viewedProfileOverride,
+    skipAuthoritativeProfileRefresh = false
+  } = {}) {
     const enteringFresh = this.screenFlow !== "profile";
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     if (!preserveAchievementVisibility || enteringFresh) {
@@ -7109,19 +7135,28 @@ export class AppController {
       this.viewedProfileAchievementsExpanded = false;
     }
     this.screenFlow = "profile";
-    const serverProfile = this.hasMultiplayerProfileAccess()
+    const shouldRefreshProfile = !skipAuthoritativeProfileRefresh && !profileOverride;
+    const serverProfile = shouldRefreshProfile && this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
       : null;
-    const localProfile = this.isAuthenticatedOnlineProfileFlow()
-      ? this.profile ?? null
-      : await window.elemintz.state.getProfile(this.username);
-    this.profile = this.mergeServerOwnedProfileDomains(localProfile, serverProfile);
+    const localProfile = profileOverride ?? (
+      this.isAuthenticatedOnlineProfileFlow()
+        ? this.profile ?? null
+        : shouldRefreshProfile
+          ? await window.elemintz.state.getProfile(this.username)
+          : this.profile ?? null
+    );
+    this.profile = profileOverride ?? this.mergeServerOwnedProfileDomains(localProfile, serverProfile);
     const achievementCatalog = this.buildAchievementCatalogForProfile(this.profile);
-    const cosmetics =
-      this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
-        ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
-        : await window.elemintz.state.getCosmetics(this.username);
-    if (serverProfile?.progression?.xp || window.elemintz.state.getDailyChallenges) {
+    const cosmetics = cosmeticsOverride ?? this.buildSafeCosmeticsPayload(
+      shouldRefreshProfile
+        ? this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+          ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
+          : await window.elemintz.state.getCosmetics(this.username)
+        : null,
+      this.profile
+    );
+    if (shouldRefreshProfile && (serverProfile?.progression?.xp || window.elemintz.state.getDailyChallenges)) {
       const challengeStatus = serverProfile
         ? { xp: serverProfile.progression?.xp ?? null }
         : await window.elemintz.state.getDailyChallenges(this.username);
@@ -7131,15 +7166,20 @@ export class AppController {
       };
     }
     const query = this.profileSearchQuery.trim().toLowerCase();
-    const searchResults = query
-      ? (await window.elemintz.state.listProfiles())
-          .filter((item) => item.username.toLowerCase().includes(query))
-          .slice(0, 8)
-      : [];
+    const searchResults =
+      searchResultsOverride ??
+      (query
+        ? (await window.elemintz.state.listProfiles())
+            .filter((item) => item.username.toLowerCase().includes(query))
+            .slice(0, 8)
+        : []);
 
-    const viewedProfile = this.viewedProfileUsername
-      ? await this.loadViewedProfile(this.viewedProfileUsername)
-      : null;
+    const viewedProfile =
+      viewedProfileOverride !== undefined
+        ? viewedProfileOverride
+        : this.viewedProfileUsername
+          ? await this.loadViewedProfile(this.viewedProfileUsername)
+          : null;
 
     this.screenManager.show("profile", {
       profile: this.profile,
@@ -7177,15 +7217,36 @@ export class AppController {
           this.profile = result?.snapshot
             ? this.buildProfileFromServerSnapshot(result.snapshot)
             : result.profile;
-          await this.showProfile({ preserveAchievementVisibility: true });
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: this.profile,
+            cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile),
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: viewedProfile,
+            skipAuthoritativeProfileRefresh: true
+          });
         },
         toggleProfileAchievements: async () => {
           this.profileAchievementsExpanded = !this.profileAchievementsExpanded;
-          await this.showProfile({ preserveAchievementVisibility: true });
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: this.profile,
+            cosmeticsOverride: cosmetics,
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: viewedProfile,
+            skipAuthoritativeProfileRefresh: true
+          });
         },
         toggleViewedProfileAchievements: async () => {
           this.viewedProfileAchievementsExpanded = !this.viewedProfileAchievementsExpanded;
-          await this.showProfile({ preserveAchievementVisibility: true });
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: this.profile,
+            cosmeticsOverride: cosmetics,
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: viewedProfile,
+            skipAuthoritativeProfileRefresh: true
+          });
         },
         searchProfiles: async (queryValue) => {
           this.profileSearchQuery = queryValue;
@@ -7193,13 +7254,34 @@ export class AppController {
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         viewProfile: async (username) => {
-          this.viewedProfileUsername = username;
+          const safeUsername = String(username ?? "").trim();
+          if (!safeUsername) {
+            this.clearViewedProfileSelection();
+            await this.showProfile({
+              preserveAchievementVisibility: true,
+              profileOverride: this.profile,
+              cosmeticsOverride: cosmetics,
+              searchResultsOverride: searchResults,
+              viewedProfileOverride: null,
+              skipAuthoritativeProfileRefresh: true
+            });
+            return;
+          }
+
+          this.viewedProfileUsername = safeUsername;
           this.viewedProfileAchievementsExpanded = false;
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         clearViewed: async () => {
           this.clearViewedProfileSelection();
-          await this.showProfile({ preserveAchievementVisibility: true });
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: this.profile,
+            cosmeticsOverride: cosmetics,
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: null,
+            skipAuthoritativeProfileRefresh: true
+          });
         },
         back: () => this.showMenu()
       }
@@ -7349,15 +7431,16 @@ export class AppController {
     this.updateOnlineReconnectReminderModal();
   }
 
-  async showCosmetics({ preserveModal = false } = {}) {
+  async showCosmetics({ preserveModal = false, cosmeticsOverride = null } = {}) {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "cosmetics";
-    const cosmetics = this.buildSafeCosmeticsPayload(
-      this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
-        ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
-        : await window.elemintz.state.getCosmetics(this.username),
-      this.profile
-    );
+    const cosmetics =
+      cosmeticsOverride ?? this.buildSafeCosmeticsPayload(
+        this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+          ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
+          : await window.elemintz.state.getCosmetics(this.username),
+        this.profile
+      );
     const viewState = this.ensureCosmeticsViewState();
 
     this.screenManager.show("cosmetics", {
@@ -7372,7 +7455,9 @@ export class AppController {
           this.profile = result?.snapshot
             ? this.buildProfileFromServerSnapshot(result.snapshot)
             : result.profile;
-          await this.showCosmetics();
+          await this.showCosmetics({
+            cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+          });
         },
         updateRandomizationPreferences: async (patch) => {
           const result =
@@ -7392,7 +7477,9 @@ export class AppController {
           this.profile = result?.snapshot
             ? this.buildProfileFromServerSnapshot(result.snapshot)
             : result.profile;
-          await this.showCosmetics();
+          await this.showCosmetics({
+            cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+          });
         },
         randomizeNow: async (categories) => {
           const result =
@@ -7408,7 +7495,9 @@ export class AppController {
           this.profile = result?.snapshot
             ? this.buildProfileFromServerSnapshot(result.snapshot)
             : result.profile;
-          await this.showCosmetics();
+          await this.showCosmetics({
+            cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+          });
         },
         saveLoadout: async (slotIndex) => {
           const slot = cosmetics.loadouts?.[slotIndex] ?? null;
@@ -7429,7 +7518,9 @@ export class AppController {
             this.profile = result?.snapshot
               ? this.buildProfileFromServerSnapshot(result.snapshot)
               : result.profile;
-            await this.showCosmetics();
+            await this.showCosmetics({
+              cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+            });
           };
 
           if (slot?.hasSavedLoadout) {
@@ -7473,7 +7564,9 @@ export class AppController {
             this.profile = result?.snapshot
               ? this.buildProfileFromServerSnapshot(result.snapshot)
               : result.profile;
-            await this.showCosmetics();
+            await this.showCosmetics({
+              cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+            });
           } catch (error) {
             this.modalManager.show({
               title: "Loadout Unavailable",
@@ -7502,7 +7595,9 @@ export class AppController {
             this.profile = result?.snapshot
               ? this.buildProfileFromServerSnapshot(result.snapshot)
               : result.profile;
-            await this.showCosmetics();
+            await this.showCosmetics({
+              cosmeticsOverride: this.buildSafeCosmeticsPayload(null, this.profile)
+            });
           } catch (error) {
             this.modalManager.show({
               title: "Rename Failed",
@@ -7517,25 +7612,38 @@ export class AppController {
     this.updateOnlineReconnectReminderModal();
   }
 
-  async showStore({ preserveModal = false } = {}) {
+  async showStore({
+    preserveModal = false,
+    profileOverride = null,
+    storeOverride = null,
+    featuredRotationOverride,
+    skipProfileRefresh = false,
+    preferCachedFeaturedRotation = true
+  } = {}) {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "store";
     const viewState = this.ensureStoreViewState();
-    const serverProfile = this.hasMultiplayerProfileAccess()
+    const serverProfile = !skipProfileRefresh && !profileOverride && this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
       : null;
     const profileForStore =
-      this.buildProfileFromServerSnapshot(serverProfile) ?? serverProfile?.profile ?? this.profile ?? {};
-    const store = serverProfile
-      ? getStoreViewForProfile(profileForStore)
-      : await window.elemintz.state.getStore(this.username);
+      profileOverride ??
+      this.buildProfileFromServerSnapshot(serverProfile) ??
+      serverProfile?.profile ??
+      this.profile ??
+      {};
+    const store =
+      storeOverride ??
+      (serverProfile || profileOverride
+        ? getStoreViewForProfile(profileForStore)
+        : await window.elemintz.state.getStore(this.username));
     const featuredRotation = this.buildFeaturedStoreRotationContext(
-      await this.loadFeaturedStoreRotation(),
+      featuredRotationOverride !== undefined
+        ? featuredRotationOverride
+        : await this.loadFeaturedStoreRotation({ preferCache: preferCachedFeaturedRotation }),
       store,
       profileForStore
     );
-    let purchaseConfirmOpen = false;
-    let purchasePending = false;
 
     this.screenManager.show("store", {
       store,
@@ -7562,6 +7670,7 @@ export class AppController {
               this.profile = result?.snapshot
                 ? this.buildProfileFromServerSnapshot(result.snapshot)
                 : result?.profile ?? this.profile;
+              const nextStore = getStoreViewForProfile(this.profile ?? {});
 
               if (result?.purchase?.status === "already-owned") {
                 this.modalManager.show({
@@ -7569,11 +7678,22 @@ export class AppController {
                   body: "That store item is already owned on your profile.",
                   actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
                 });
-                await this.showStore({ preserveModal: true });
+                await this.showStore({
+                  preserveModal: true,
+                  profileOverride: this.profile,
+                  storeOverride: nextStore,
+                  featuredRotationOverride: this.storeFeaturedRotationCache,
+                  skipProfileRefresh: true
+                });
                 return;
               }
 
-              await this.showStore();
+              await this.showStore({
+                profileOverride: this.profile,
+                storeOverride: nextStore,
+                featuredRotationOverride: this.storeFeaturedRotationCache,
+                skipProfileRefresh: true
+              });
             } catch (error) {
               this.modalManager.show({
                 title: "Purchase Failed",
@@ -7601,7 +7721,12 @@ export class AppController {
           this.profile = result?.snapshot
             ? this.buildProfileFromServerSnapshot(result.snapshot)
             : result.profile;
-          await this.showStore();
+          await this.showStore({
+            profileOverride: this.profile,
+            storeOverride: getStoreViewForProfile(this.profile ?? {}),
+            featuredRotationOverride: this.storeFeaturedRotationCache,
+            skipProfileRefresh: true
+          });
         },
         activateSupporter: async () => {
           this.showLegacyLocalAuthorityDisabledModal(

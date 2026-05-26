@@ -3519,6 +3519,152 @@ test("app controller: authenticated online store purchase unlocks after failure 
   assert.ok(controller.profile?.ownedCosmetics?.avatar?.includes("fireavatarF"));
 });
 
+test("app controller: store reuses the active featured rotation after purchase instead of reloading it redundantly", async () => {
+  const screenCalls = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, payload) => {
+        screenCalls.push({ screen, payload });
+      }
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+  controller.username = "AuthorityUser";
+  controller.profile = {
+    username: "AuthorityUser",
+    tokens: 200,
+    ownedCosmetics: {
+      avatar: ["default_avatar"]
+    },
+    equippedCosmetics: {}
+  };
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "AuthorityUser"
+    }
+  };
+
+  let profileReads = 0;
+  let rotationReads = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => {
+          profileReads += 1;
+          return {
+            authority: "server",
+            profile: {
+              username: "AuthorityUser",
+              tokens: 200,
+              ownedCosmetics: {
+                avatar: ["default_avatar"]
+              },
+              equippedCosmetics: {}
+            },
+            progression: {}
+          };
+        },
+        getActiveShopRotation: async () => {
+          rotationReads += 1;
+          return {
+            activeRotationId: "goldbound-week-01",
+            title: "Goldbound Week",
+            message: "Goldbound Relics are live.",
+            featuredCosmeticIds: [],
+            allowLimitedCosmeticIds: []
+          };
+        },
+        buyStoreItem: async ({ type, cosmeticId }) => ({
+          purchase: {
+            status: "purchased",
+            type,
+            cosmeticId,
+            price: 40,
+            tokensLeft: 160
+          },
+          snapshot: {
+            authority: "server",
+            profile: {
+              username: "AuthorityUser",
+              tokens: 160,
+              ownedCosmetics: {
+                avatar: ["default_avatar", "fireavatarF"]
+              },
+              equippedCosmetics: {}
+            },
+            progression: {}
+          }
+        })
+      },
+      state: {
+        getStore: async () => {
+          throw new Error("local store read should not be used for authenticated online purchases");
+        }
+      }
+    }
+  };
+
+  await controller.showStore();
+  await screenCalls.at(-1).payload.actions.buy("avatar", "fireavatarF");
+
+  assert.equal(profileReads, 1);
+  assert.equal(rotationReads, 1);
+});
+
+test("app controller: empty viewed-profile usernames do not call authoritative profile view and valid usernames still do", async () => {
+  const controller = createAppController();
+  controller.username = "AuthorityUser";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "AuthorityUser"
+    }
+  };
+
+  let viewedCalls = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        viewProfile: async ({ username }) => {
+          viewedCalls += 1;
+          return {
+            authority: "server",
+            username,
+            profile: {
+              username,
+              equippedCosmetics: {}
+            },
+            progression: {}
+          };
+        }
+      },
+      state: {
+        getProfile: async (username) => ({
+          username,
+          equippedCosmetics: {}
+        })
+      }
+    }
+  };
+
+  const emptyViewed = await controller.loadViewedProfile("   ");
+  const validViewed = await controller.loadViewedProfile("Enab");
+
+  assert.equal(emptyViewed, null);
+  assert.equal(viewedCalls, 1);
+  assert.equal(validViewed?.username, "Enab");
+});
+
 test("app controller: authenticated online achievements view does not read stale local achievement state", async () => {
   const controller = createAppController();
   controller.username = "AuthorityUser";

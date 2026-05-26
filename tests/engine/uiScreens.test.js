@@ -439,6 +439,87 @@ test("ui: store and owned cosmetics screens render Goldbound Relics metadata wit
   assert.match(ownedHtml, /Molten Goldfire/);
 });
 
+test("ui: store render clears stale Goldbound Relics collection filters when the collection disappears", () => {
+  const viewState = {
+    searchText: "",
+    categories: new Set(["avatar", "background", "cardBack", "elementCardVariant", "title", "badge"]),
+    rarities: new Set(["Common", "Rare", "Epic", "Legendary"]),
+    collections: new Set(["Goldbound Relics"]),
+    showNewFirst: true
+  };
+  const html = storeScreen.render({
+    store: {
+      tokens: 500,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_voidbound_entity",
+            name: "Voidbound Entity",
+            image: "avatars/avatar_voidbound_entity.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            collection: "Voidbound"
+          }
+        ],
+        title: [],
+        badge: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: []
+      }
+    },
+    viewState
+  });
+
+  assert.equal(viewState.collections.size, 0);
+  assert.match(html, /Voidbound/);
+  assert.doesNotMatch(html, /data-store-collection-filter="Goldbound Relics"/);
+});
+
+test("ui: cosmetics render clears stale invisible collection filters when owned collections disappear", () => {
+  const viewState = {
+    categories: new Set(["avatar"]),
+    rarities: new Set(["Common", "Legendary"]),
+    collections: new Set(["Goldbound Relics"]),
+    showNewFirst: true
+  };
+  const html = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_voidbound_entity",
+            name: "Voidbound Entity",
+            image: "avatars/avatar_voidbound_entity.png",
+            owned: true,
+            equipped: false,
+            rarity: "Legendary",
+            collection: "Voidbound"
+          }
+        ],
+        title: [],
+        badge: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: []
+      }
+    },
+    viewState,
+    profile: {
+      cosmeticRandomizeAfterMatch: {}
+    }
+  });
+
+  assert.equal(viewState.collections.size, 0);
+  assert.match(html, /Voidbound/);
+  assert.doesNotMatch(html, /data-cosmetic-collection-filter="Goldbound Relics"/);
+});
+
 test("ui: store screen renders a featured rotation section above filters when active featured items exist", () => {
   const html = storeScreen.render({
     store: {

@@ -2197,7 +2197,12 @@ export class MultiplayerClient {
   }
 
   async viewProfile({ username, serverUrl } = {}) {
-    const response = await this.runServerRequest("profile:view", { username }, { serverUrl });
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      return null;
+    }
+
+    const response = await this.runServerRequest("profile:view", { username: safeUsername }, { serverUrl });
     if (!response?.ok) {
       throw new Error(response?.error?.message ?? "Unable to load the viewed profile.");
     }

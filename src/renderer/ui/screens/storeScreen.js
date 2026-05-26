@@ -195,6 +195,22 @@ function getStoreCollectionOptions(store) {
   return options.sort((left, right) => left.localeCompare(right));
 }
 
+function reconcileCollectionSelections(viewState, availableCollections = []) {
+  const available = new Set(
+    Array.isArray(availableCollections)
+      ? availableCollections.map((collection) => normalizeCollectionKey(collection)).filter(Boolean)
+      : []
+  );
+
+  viewState.collections = new Set(
+    [...viewState.collections].map((collection) => normalizeCollectionKey(collection)).filter((collection) => {
+      return collection && available.has(collection);
+    })
+  );
+
+  return viewState;
+}
+
 function usesRarityFrame(type) {
   return Boolean(type);
 }
@@ -372,6 +388,10 @@ export const storeScreen = {
     const store = context.store;
     const viewState = normalizeViewState(context.viewState);
     const collectionOptions = getStoreCollectionOptions(store);
+    reconcileCollectionSelections(viewState, collectionOptions);
+    if (context.viewState) {
+      context.viewState.collections = viewState.collections;
+    }
 
     return `
       <section class="screen screen-store">
@@ -488,6 +508,10 @@ export const storeScreen = {
     const root = document.querySelector(".screen-store") ?? document;
     bindCosmeticHoverPreview({ root, documentRef: document });
     const viewState = normalizeViewState(context.viewState);
+    const availableCollections = Array.from(root.querySelectorAll("[data-store-collection-filter]"))
+      .map((input) => normalizeCollectionKey(input.getAttribute("data-store-collection-filter")))
+      .filter(Boolean);
+    reconcileCollectionSelections(viewState, availableCollections);
     if (context.viewState) {
       context.viewState.searchText = viewState.searchText;
       context.viewState.categories = viewState.categories;
