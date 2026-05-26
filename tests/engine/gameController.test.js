@@ -4216,6 +4216,69 @@ test("appController: online menu challenge refresh prefers the multiplayer profi
   }
 });
 
+test("appController: online menu challenge refresh is single-flight while a refresh is already in progress", async () => {
+  const originalWindow = globalThis.window;
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const calls = {
+    multiplayerGetProfile: 0
+  };
+  let resolveProfile;
+  const profileSettled = new Promise((resolve) => {
+    resolveProfile = resolve;
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async ({ username }) => {
+            calls.multiplayerGetProfile += 1;
+            await profileSettled;
+            return {
+              username,
+              profile: { username, tokens: 200, equippedCosmetics: {} },
+              progression: {
+                dailyChallenges: { challenges: [{ id: "daily" }], msUntilReset: 3600000 },
+                weeklyChallenges: { challenges: [{ id: "weekly" }], msUntilReset: 7200000 },
+                dailyLogin: { eligible: false, msUntilReset: 1800000 }
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "MenuOnlineUser";
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        username: "MenuOnlineUser",
+        authenticated: true
+      }
+    });
+
+    const firstRefresh = app.refreshDailyChallengesForMenu();
+    const secondRefresh = app.refreshDailyChallengesForMenu();
+    await Promise.resolve();
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+
+    resolveProfile();
+    await firstRefresh;
+    await secondRefresh;
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: authenticated online menu flow does not call the disabled local loadout unlock acknowledgement path", async () => {
   const originalWindow = globalThis.window;
   const app = new AppController({
@@ -5902,7 +5965,7 @@ test("appController: login prefers the multiplayer profile snapshot when the ses
     assert.equal(calls.ensureProfile, 0);
     assert.equal(calls.multiplayerLogin.length, 1);
     assert.equal(calls.multiplayerGetState, 1);
-    assert.equal(calls.multiplayerGetProfile, 2);
+    assert.equal(calls.multiplayerGetProfile, 1);
     assert.equal(app.username, "ConnectedUser-Canonical");
     assert.equal(app.profile.tokens, 245);
     assert.equal(app.profile.wins, 4);
@@ -6083,7 +6146,7 @@ test("appController: account login uses the multiplayer auth path and hydrates t
       }
     ]);
     assert.equal(calls.multiplayerGetState, 1);
-    assert.equal(calls.multiplayerGetProfile, 2);
+    assert.equal(calls.multiplayerGetProfile, 1);
     assert.equal(calls.ensureProfile, 0);
     assert.equal(calls.claimDailyLoginReward, 1);
     assert.equal(calls.getDailyChallenges, 0);
@@ -6217,7 +6280,7 @@ test("appController: account creation uses the multiplayer register path with us
       }
     ]);
     assert.equal(calls.multiplayerGetState, 1);
-    assert.equal(calls.multiplayerGetProfile, 2);
+    assert.equal(calls.multiplayerGetProfile, 1);
     assert.equal(calls.claimDailyLoginReward, 1);
     assert.equal(app.username, "NewPlayer");
   } finally {
@@ -6540,7 +6603,7 @@ test("appController: init restores a persisted authenticated session and auto-en
     await app.init();
 
     assert.equal(calls.restoreSession, 1);
-    assert.equal(calls.multiplayerGetProfile, 2);
+    assert.equal(calls.multiplayerGetProfile, 1);
     assert.equal(calls.claimDailyLoginReward, 1);
     assert.equal(app.username, "RestoredUser");
     assert.equal(app.profile.tokens, 275);
@@ -6894,7 +6957,7 @@ test("appController: restored authenticated startup still exposes local setup an
       }
     });
 
-    assert.equal(calls.multiplayerGetProfile, 3);
+    assert.equal(calls.multiplayerGetProfile, 2);
     assert.equal(calls.authenticateHotseatIdentity, 1);
     assert.deepEqual(calls.claimDailyLoginReward, ["RestoredUser"]);
     assert.equal(app.localPlayers.p1, "RestoredUser");
@@ -6964,6 +7027,140 @@ test("appController: duplicate daily login auto-claim requests are deduped withi
     app.profile = { username: "GuardUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
     await app.ensureDailyLoginAutoClaim({ showToasts: true, requestKey: "login:GuardUser" });
 
+    assert.equal(calls.claimDailyLoginReward, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: showing menu after a login-cycle daily login claim does not trigger a second auto-claim", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    claimDailyLoginReward: 0
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {
+      showAchievement: () => {},
+      showDailyLoginReward: () => {},
+      showTokenReward: () => {},
+      showXpBreakdown: () => {},
+      showLevelUp: () => {}
+    }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          ensureProfile: async (username) => ({ username, tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} }),
+          claimDailyLoginReward: async (username) => {
+            calls.claimDailyLoginReward += 1;
+            return {
+              granted: false,
+              profile: { username, tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+              dailyLoginStatus: {
+                eligible: false,
+                loginDayKey: "2026-03-10T00:00:00.000Z",
+                lastDailyLoginClaimDate: "2026-03-10T00:00:00.000Z",
+                msUntilReset: 3600000
+              }
+            };
+          },
+          getDailyChallenges: async () => ({
+            dailyLogin: { eligible: false, msUntilReset: 3600000 },
+            daily: { msUntilReset: 3600000, challenges: [] },
+            weekly: { msUntilReset: 7200000, challenges: [] }
+          })
+        }
+      }
+    };
+
+    app.username = "GuardUser";
+    app.profile = { username: "GuardUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+    app.dailyChallenges = {
+      dailyLogin: { eligible: false, msUntilReset: 3600000 },
+      daily: { challenges: [], msUntilReset: 3600000 },
+      weekly: { challenges: [], msUntilReset: 7200000 }
+    };
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.refreshMenuAnnouncement = async () => {};
+    app.refreshMenuBoostEvent = async () => {};
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.maybeShowNewCosmeticsAnnouncement = async () => {};
+
+    await app.ensureDailyLoginAutoClaim({ showToasts: true, requestKey: "login:GuardUser" });
+    app.showMenu({
+      autoClaimDailyLogin: true,
+      showDailyLoginToasts: true,
+      skipInitialDailyChallengesRefresh: true
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(calls.claimDailyLoginReward, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: an in-flight daily login auto-claim ignores a second menu-triggered attempt", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    claimDailyLoginReward: 0
+  };
+  let resolveClaim;
+  const claimSettled = new Promise((resolve) => {
+    resolveClaim = resolve;
+  });
+
+  const app = createUpdateSafetyController();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          claimDailyLoginReward: async (username) => {
+            calls.claimDailyLoginReward += 1;
+            await claimSettled;
+            return {
+              granted: false,
+              profile: { username, tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+              dailyLoginStatus: {
+                eligible: false,
+                loginDayKey: "2026-05-14T00:00:00.000Z",
+                lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z",
+                msUntilReset: 3600000
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "DailyInflightUser";
+    app.profile = { username: "DailyInflightUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+
+    const firstAttempt = app.ensureDailyLoginAutoClaim({
+      showToasts: false,
+      requestKey: "login:DailyInflightUser"
+    });
+    const secondAttempt = app.ensureDailyLoginAutoClaim({
+      showToasts: false,
+      requestKey: "menu:DailyInflightUser"
+    });
+
+    await Promise.resolve();
+    assert.equal(calls.claimDailyLoginReward, 1);
+
+    resolveClaim();
+    await firstAttempt;
+    await secondAttempt;
     assert.equal(calls.claimDailyLoginReward, 1);
   } finally {
     globalThis.window = originalWindow;
@@ -7172,6 +7369,166 @@ test("appController: daily login auto-claim promise clears after a failed claim 
     );
     assert.equal(app.dailyLoginAutoClaimPromise, null);
     assert.equal(app.getUpdateSafetyState().reasons.includes("daily_login_claim_in_flight"), false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: eligible menu daily login auto-claim refreshes menu state once without looping challenge fetches", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    refreshDailyChallenges: 0,
+    refreshMenuAnnouncement: 0,
+    refreshMenuBoostEvent: 0,
+    showDailyLoginReward: 0
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: {
+      showAchievement: () => {},
+      showDailyLoginReward: () => {
+        calls.showDailyLoginReward += 1;
+      },
+      showTokenReward: () => {},
+      showXpBreakdown: () => {},
+      showLevelUp: () => {}
+    }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          claimDailyLoginReward: async (username) => ({
+            granted: true,
+            profile: { username, tokens: 140, playerXP: 10, playerLevel: 1, equippedCosmetics: {} },
+            dailyLoginStatus: {
+              eligible: false,
+              loginDayKey: "2026-05-14T00:00:00.000Z",
+              lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z",
+              msUntilReset: 3600000
+            },
+            rewards: {
+              tokens: 40,
+              xp: 10,
+              levelUps: []
+            }
+          })
+        }
+      }
+    };
+
+    app.username = "DailySuccessUser";
+    app.profile = { username: "DailySuccessUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+    app.dailyChallenges = {
+      dailyLogin: { eligible: true, msUntilReset: 3600000 },
+      daily: { challenges: [], msUntilReset: 3600000 },
+      weekly: { challenges: [], msUntilReset: 7200000 }
+    };
+    app.refreshDailyChallengesForMenu = async () => {
+      calls.refreshDailyChallenges += 1;
+      return app.dailyChallenges;
+    };
+    app.refreshMenuAnnouncement = async () => {
+      calls.refreshMenuAnnouncement += 1;
+      return null;
+    };
+    app.refreshMenuBoostEvent = async () => {
+      calls.refreshMenuBoostEvent += 1;
+      return null;
+    };
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.maybeShowNewCosmeticsAnnouncement = async () => {};
+
+    app.showMenu({ autoClaimDailyLogin: true, showDailyLoginToasts: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(calls.refreshDailyChallenges, 1);
+    assert.equal(calls.refreshMenuAnnouncement, 1);
+    assert.equal(calls.refreshMenuBoostEvent, 1);
+    assert.equal(calls.showDailyLoginReward, 1);
+    assert.equal(app.profile.tokens, 140);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: ineligible menu daily login auto-claim does not show a reward toast or loop refreshes", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    refreshDailyChallenges: 0,
+    refreshMenuAnnouncement: 0,
+    refreshMenuBoostEvent: 0,
+    showDailyLoginReward: 0
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: {
+      showAchievement: () => {},
+      showDailyLoginReward: () => {
+        calls.showDailyLoginReward += 1;
+      },
+      showTokenReward: () => {},
+      showXpBreakdown: () => {},
+      showLevelUp: () => {}
+    }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          claimDailyLoginReward: async (username) => ({
+            granted: false,
+            profile: { username, tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} },
+            dailyLoginStatus: {
+              eligible: false,
+              loginDayKey: "2026-05-14T00:00:00.000Z",
+              lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z",
+              msUntilReset: 3600000
+            }
+          })
+        }
+      }
+    };
+
+    app.username = "DailyNoGrantUser";
+    app.profile = { username: "DailyNoGrantUser", tokens: 100, playerXP: 0, playerLevel: 1, equippedCosmetics: {} };
+    app.dailyChallenges = {
+      dailyLogin: { eligible: false, msUntilReset: 3600000 },
+      daily: { challenges: [], msUntilReset: 3600000 },
+      weekly: { challenges: [], msUntilReset: 7200000 }
+    };
+    app.refreshDailyChallengesForMenu = async () => {
+      calls.refreshDailyChallenges += 1;
+      return app.dailyChallenges;
+    };
+    app.refreshMenuAnnouncement = async () => {
+      calls.refreshMenuAnnouncement += 1;
+      return null;
+    };
+    app.refreshMenuBoostEvent = async () => {
+      calls.refreshMenuBoostEvent += 1;
+      return null;
+    };
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.maybeShowNewCosmeticsAnnouncement = async () => {};
+
+    app.showMenu({ autoClaimDailyLogin: true, showDailyLoginToasts: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(calls.refreshDailyChallenges, 1);
+    assert.equal(calls.refreshMenuAnnouncement, 1);
+    assert.equal(calls.refreshMenuBoostEvent, 1);
+    assert.equal(calls.showDailyLoginReward, 0);
   } finally {
     globalThis.window = originalWindow;
   }

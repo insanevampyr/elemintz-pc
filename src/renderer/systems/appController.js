@@ -187,10 +187,12 @@ export class AppController {
     this.passKeyHandler = null;
     this.dailyChallenges = null;
     this.dailyResetCountdownId = null;
+    this.dailyChallengesRefreshPromise = null;
     this.localQuitLastRequestAt = 0;
     this.initPromise = null;
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
+    this.dailyLoginAutoClaimSessionGateKey = null;
     this.passCompletionResolve = null;
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletVictoryPayload = null;
@@ -242,7 +244,9 @@ export class AppController {
     this.activeAnnouncementKey = null;
     this.seenAnnouncementSessionFlags = new Set();
     this.menuAnnouncement = null;
+    this.menuAnnouncementRefreshPromise = null;
     this.menuBoostEvent = null;
+    this.menuBoostEventRefreshPromise = null;
     this.tauntRandom = Math.random;
     this.gauntletRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
@@ -374,6 +378,7 @@ export class AppController {
   resetDailyLoginAutoClaimGuard() {
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
+    this.dailyLoginAutoClaimSessionGateKey = null;
   }
 
   getTauntNow() {
@@ -1834,6 +1839,17 @@ export class AppController {
     }
 
     const effectiveKey = requestKey ?? `user:${this.username}`;
+    const sessionGateKey = `user:${String(this.username ?? "").trim()}`;
+    if (this.dailyLoginAutoClaimSessionGateKey === sessionGateKey) {
+      console.info("[DailyLogin][Renderer] skip duplicate auto-claim", {
+        username: this.username,
+        requestKey: effectiveKey,
+        sessionGateKey,
+        inFlight: Boolean(this.dailyLoginAutoClaimPromise)
+      });
+      return this.dailyLoginAutoClaimPromise;
+    }
+
     if (this.dailyLoginAutoClaimKey === effectiveKey) {
       console.info("[DailyLogin][Renderer] skip duplicate auto-claim", {
         username: this.username,
@@ -1844,6 +1860,7 @@ export class AppController {
     }
 
     this.dailyLoginAutoClaimKey = effectiveKey;
+    this.dailyLoginAutoClaimSessionGateKey = sessionGateKey;
     const claimPromise = this.claimDailyLoginRewardFor(this.username, { showToasts });
     this.dailyLoginAutoClaimPromise = claimPromise;
     let reward = null;
@@ -1943,33 +1960,43 @@ export class AppController {
       return null;
     }
 
-    try {
-      const result = await window.elemintz.multiplayer.listAnnouncements({
-        username: this.username
-      });
-      const snapshot = result?.snapshot ?? null;
-      if (snapshot) {
-        this.profile = this.mergeServerOwnedProfileDomains(this.profile ?? {}, snapshot);
-      }
-
-      const announcement = Array.isArray(result?.announcements) ? result.announcements[0] ?? null : null;
-      this.menuAnnouncement = announcement;
-      if (this.screenFlow === "menu") {
-        this.renderMenuScreen();
-      }
-      return announcement;
-    } catch (error) {
-      console.warn("[Announcements] Failed to refresh menu announcement", {
-        username: this.username,
-        message: error?.message,
-        stack: error?.stack
-      });
-      this.menuAnnouncement = null;
-      if (this.screenFlow === "menu") {
-        this.renderMenuScreen();
-      }
-      return null;
+    if (this.menuAnnouncementRefreshPromise) {
+      return this.menuAnnouncementRefreshPromise;
     }
+
+    this.menuAnnouncementRefreshPromise = (async () => {
+      try {
+        const result = await window.elemintz.multiplayer.listAnnouncements({
+          username: this.username
+        });
+        const snapshot = result?.snapshot ?? null;
+        if (snapshot) {
+          this.profile = this.mergeServerOwnedProfileDomains(this.profile ?? {}, snapshot);
+        }
+
+        const announcement = Array.isArray(result?.announcements) ? result.announcements[0] ?? null : null;
+        this.menuAnnouncement = announcement;
+        if (this.screenFlow === "menu") {
+          this.renderMenuScreen();
+        }
+        return announcement;
+      } catch (error) {
+        console.warn("[Announcements] Failed to refresh menu announcement", {
+          username: this.username,
+          message: error?.message,
+          stack: error?.stack
+        });
+        this.menuAnnouncement = null;
+        if (this.screenFlow === "menu") {
+          this.renderMenuScreen();
+        }
+        return null;
+      } finally {
+        this.menuAnnouncementRefreshPromise = null;
+      }
+    })();
+
+    return this.menuAnnouncementRefreshPromise;
   }
 
   formatMenuBoostEvent(boostEvent) {
@@ -2002,28 +2029,38 @@ export class AppController {
       return null;
     }
 
-    try {
-      const boostEvent = this.formatMenuBoostEvent(
-        await window.elemintz.multiplayer.getActiveBoostEvent({
-          username: this.username
-        })
-      );
-      this.menuBoostEvent = boostEvent;
-      if (this.screenFlow === "menu") {
-        this.renderMenuScreen();
-      }
-      return boostEvent;
-    } catch (error) {
-      console.warn("[BoostEvent] Failed to refresh menu boost event", {
-        username: this.username,
-        message: error?.message,
-        stack: error?.stack
-      });
-      if (this.screenFlow === "menu" && this.menuBoostEvent === null) {
-        this.renderMenuScreen();
-      }
-      return null;
+    if (this.menuBoostEventRefreshPromise) {
+      return this.menuBoostEventRefreshPromise;
     }
+
+    this.menuBoostEventRefreshPromise = (async () => {
+      try {
+        const boostEvent = this.formatMenuBoostEvent(
+          await window.elemintz.multiplayer.getActiveBoostEvent({
+            username: this.username
+          })
+        );
+        this.menuBoostEvent = boostEvent;
+        if (this.screenFlow === "menu") {
+          this.renderMenuScreen();
+        }
+        return boostEvent;
+      } catch (error) {
+        console.warn("[BoostEvent] Failed to refresh menu boost event", {
+          username: this.username,
+          message: error?.message,
+          stack: error?.stack
+        });
+        if (this.screenFlow === "menu" && this.menuBoostEvent === null) {
+          this.renderMenuScreen();
+        }
+        return null;
+      } finally {
+        this.menuBoostEventRefreshPromise = null;
+      }
+    })();
+
+    return this.menuBoostEventRefreshPromise;
   }
 
   async dismissMenuAnnouncement(id) {
@@ -2339,62 +2376,74 @@ export class AppController {
       return;
     }
 
-    try {
-      const serverProfile = this.hasMultiplayerProfileAccess()
-        ? await globalThis.window.elemintz.multiplayer.getProfile({ username: this.username })
-        : null;
-      const result = serverProfile
-        ? {
-            daily: serverProfile.progression?.dailyChallenges ?? null,
-            weekly: serverProfile.progression?.weeklyChallenges ?? null,
-            dailyLogin: serverProfile.progression?.dailyLogin ?? null
-          }
-        : this.isAuthenticatedOnlineProfileFlow()
-          ? null
-        : globalThis.window?.elemintz?.state?.getDailyChallenges
-          ? await globalThis.window.elemintz.state.getDailyChallenges(this.username)
+    if (this.dailyChallengesRefreshPromise) {
+      return this.dailyChallengesRefreshPromise;
+    }
+
+    this.dailyChallengesRefreshPromise = (async () => {
+      try {
+        const serverProfile = this.hasMultiplayerProfileAccess()
+          ? await globalThis.window.elemintz.multiplayer.getProfile({ username: this.username })
           : null;
-      if (!result) {
-        return;
-      }
-      this.dailyChallenges = { daily: result.daily, weekly: result.weekly, dailyLogin: result.dailyLogin };
-
-      if (this.screenFlow === "menu") {
-        this.updateMenuChallengePreviewDisplay();
-        this.updateMenuCountdownDisplay();
-      }
-
-      this.clearDailyCountdown();
-      this.dailyResetCountdownId = setInterval(() => {
-        if (!this.dailyChallenges) {
-          return;
+        const result = serverProfile
+          ? {
+              daily: serverProfile.progression?.dailyChallenges ?? null,
+              weekly: serverProfile.progression?.weeklyChallenges ?? null,
+              dailyLogin: serverProfile.progression?.dailyLogin ?? null
+            }
+          : this.isAuthenticatedOnlineProfileFlow()
+            ? null
+          : globalThis.window?.elemintz?.state?.getDailyChallenges
+            ? await globalThis.window.elemintz.state.getDailyChallenges(this.username)
+            : null;
+        if (!result) {
+          return null;
         }
-
-        this.dailyChallenges = {
-          dailyLogin: this.dailyChallenges.dailyLogin
-            ? {
-                ...this.dailyChallenges.dailyLogin,
-                msUntilReset: Math.max(0, (this.dailyChallenges.dailyLogin?.msUntilReset ?? 0) - 1000)
-              }
-            : null,
-          daily: {
-            ...this.dailyChallenges.daily,
-            msUntilReset: Math.max(0, (this.dailyChallenges.daily?.msUntilReset ?? 0) - 1000)
-          },
-          weekly: {
-            ...this.dailyChallenges.weekly,
-            msUntilReset: Math.max(0, (this.dailyChallenges.weekly?.msUntilReset ?? 0) - 1000)
-          }
-        };
+        this.dailyChallenges = { daily: result.daily, weekly: result.weekly, dailyLogin: result.dailyLogin };
 
         if (this.screenFlow === "menu") {
+          this.updateMenuChallengePreviewDisplay();
           this.updateMenuCountdownDisplay();
         }
-      }, 1000);
-      this.dailyResetCountdownId?.unref?.();
-    } catch (error) {
-      console.error("Failed to load daily challenges", error);
-    }
+
+        this.clearDailyCountdown();
+        this.dailyResetCountdownId = setInterval(() => {
+          if (!this.dailyChallenges) {
+            return;
+          }
+
+          this.dailyChallenges = {
+            dailyLogin: this.dailyChallenges.dailyLogin
+              ? {
+                  ...this.dailyChallenges.dailyLogin,
+                  msUntilReset: Math.max(0, (this.dailyChallenges.dailyLogin?.msUntilReset ?? 0) - 1000)
+                }
+              : null,
+            daily: {
+              ...this.dailyChallenges.daily,
+              msUntilReset: Math.max(0, (this.dailyChallenges.daily?.msUntilReset ?? 0) - 1000)
+            },
+            weekly: {
+              ...this.dailyChallenges.weekly,
+              msUntilReset: Math.max(0, (this.dailyChallenges.weekly?.msUntilReset ?? 0) - 1000)
+            }
+          };
+
+          if (this.screenFlow === "menu") {
+            this.updateMenuCountdownDisplay();
+          }
+        }, 1000);
+        this.dailyResetCountdownId?.unref?.();
+        return this.dailyChallenges;
+      } catch (error) {
+        console.error("Failed to load daily challenges", error);
+        return null;
+      } finally {
+        this.dailyChallengesRefreshPromise = null;
+      }
+    })();
+
+    return this.dailyChallengesRefreshPromise;
   }
 
   applyMotionPreference() {
@@ -5844,7 +5893,11 @@ export class AppController {
           showToasts: true,
           requestKey: `restore:${this.username}`
         });
-        this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: true });
+        this.showMenu({
+          autoClaimDailyLogin: false,
+          showDailyLoginToasts: true,
+          skipInitialDailyChallengesRefresh: true
+        });
         return;
       }
       const restoreFailureMessage =
@@ -5946,7 +5999,11 @@ export class AppController {
               showToasts: true,
               requestKey: `login:${this.username}`
             });
-            this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: true });
+            this.showMenu({
+              autoClaimDailyLogin: false,
+              showDailyLoginToasts: true,
+              skipInitialDailyChallengesRefresh: true
+            });
           } catch (err) {
             console.error("LOGIN ERROR:", err);
             console.error("STACK:", err?.stack);
@@ -5968,7 +6025,11 @@ export class AppController {
     });
   }
 
-  showMenu({ autoClaimDailyLogin = true, showDailyLoginToasts = true } = {}) {
+  showMenu({
+    autoClaimDailyLogin = true,
+    showDailyLoginToasts = true,
+    skipInitialDailyChallengesRefresh = false
+  } = {}) {
     this.clearPassTimer();
     this.clearTransientUiBeforeScreenTransition();
     this.clearGauntletRunState();
@@ -5979,7 +6040,9 @@ export class AppController {
 
     this.renderMenuScreen();
     this.updateOnlineReconnectReminderModal();
-    this.refreshDailyChallengesForMenu();
+    if (!skipInitialDailyChallengesRefresh) {
+      this.refreshDailyChallengesForMenu();
+    }
     this.refreshMenuAnnouncement();
     this.refreshMenuBoostEvent();
     Promise.resolve().then(() => this.releaseQueuedAdminGrantNotice(this.onlinePlayState));
@@ -6001,7 +6064,12 @@ export class AppController {
             return null;
           }
 
-          return this.refreshDailyChallengesForMenu();
+          if (this.screenFlow === "menu") {
+            this.updateMenuChallengePreviewDisplay();
+            this.updateMenuCountdownDisplay();
+            this.renderMenuScreen();
+          }
+          return null;
         })
         .catch((error) => {
           console.error("[DailyLogin][Renderer] auto-claim failed", {
