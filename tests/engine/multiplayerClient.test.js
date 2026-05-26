@@ -2066,6 +2066,90 @@ test("multiplayer client: authenticated session restores from persisted storage 
   }
 });
 
+test("multiplayer client: request logging redacts passwords for auth requests", async () => {
+  const logEntries = [];
+  const client = new MultiplayerClient({
+    socketFactory: () => new FakeSocket(),
+    logger: {
+      info: (message, payload) => logEntries.push({ level: "info", message, payload }),
+      error: (message, payload) => logEntries.push({ level: "error", message, payload })
+    },
+    persistSession: false
+  });
+
+  await client.login({
+    email: "player@example.com",
+    password: "password123"
+  });
+
+  const requestLog = logEntries.find(
+    (entry) =>
+      entry.message === "[OnlinePlay][MainClient] socket request" &&
+      entry.payload?.eventName === "auth:login"
+  );
+
+  assert.ok(requestLog);
+  assert.equal(requestLog.payload?.payload?.password, "[REDACTED]");
+  assert.doesNotMatch(JSON.stringify(requestLog), /password123/);
+});
+
+test("multiplayer client: request logging redacts session tokens during restore and nested token fields", async () => {
+  const dataDir = await createTempDataDir();
+  const firstClient = new MultiplayerClient({
+    socketFactory: () => new FakeSocket(),
+    logger: { info: () => {}, error: () => {} },
+    dataDir
+  });
+
+  try {
+    await firstClient.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+
+    const logEntries = [];
+    const secondClient = new MultiplayerClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        socket.sessionAuthenticated = true;
+        socket.sessionUsername = "RegisteredUser";
+        return socket;
+      },
+      logger: {
+        info: (message, payload) => logEntries.push({ level: "info", message, payload }),
+        error: (message, payload) => logEntries.push({ level: "error", message, payload })
+      },
+      dataDir
+    });
+
+    const sanitized = secondClient.sanitizeRequestLogPayload({
+      sessionToken: "session-token-1",
+      nested: {
+        token: "secondary-token",
+        password: "password123"
+      }
+    });
+
+    assert.equal(sanitized.sessionToken, "[REDACTED]");
+    assert.equal(sanitized.nested.token, "[REDACTED]");
+    assert.equal(sanitized.nested.password, "[REDACTED]");
+
+    await secondClient.restoreSession();
+
+    const resumeLog = logEntries.find(
+      (entry) =>
+        entry.message === "[OnlinePlay][MainClient] socket request" &&
+        entry.payload?.eventName === "session:resume"
+    );
+
+    assert.ok(resumeLog);
+    assert.equal(resumeLog.payload?.payload?.sessionToken, "[REDACTED]");
+    assert.doesNotMatch(JSON.stringify(resumeLog), /session-token-1/);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer client: expired persisted session is cleared before restore connects", async () => {
   const dataDir = await createTempDataDir();
   let socketCreated = false;
@@ -3211,6 +3295,226 @@ test("app controller: authenticated online store purchase uses multiplayer autho
 
   assert.equal(purchaseCalls, 1);
   assert.equal(modalCalls.some((entry) => entry?.title === "Online Authority Only"), false);
+  assert.equal(controller.profile?.tokens, 160);
+  assert.ok(controller.profile?.ownedCosmetics?.avatar?.includes("fireavatarF"));
+});
+
+test("app controller: authenticated online store purchase stays single-flight while pending and unlocks after success", async () => {
+  const modalCalls = [];
+  const screenCalls = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, payload) => {
+        screenCalls.push({ screen, payload });
+      }
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+  controller.username = "AuthorityUser";
+  controller.profile = {
+    username: "AuthorityUser",
+    tokens: 200,
+    ownedCosmetics: {
+      avatar: ["default_avatar"]
+    },
+    equippedCosmetics: {}
+  };
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "AuthorityUser"
+    }
+  };
+
+  let releasePurchase = null;
+  let purchaseCalls = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => ({
+          authority: "server",
+          profile: {
+            username: "AuthorityUser",
+            tokens: purchaseCalls > 0 ? 160 : 200,
+            ownedCosmetics: {
+              avatar: purchaseCalls > 0 ? ["default_avatar", "fireavatarF"] : ["default_avatar"]
+            },
+            equippedCosmetics: {}
+          },
+          progression: {}
+        }),
+        buyStoreItem: async ({ type, cosmeticId }) => {
+          purchaseCalls += 1;
+          assert.equal(type, "avatar");
+          assert.equal(cosmeticId, "fireavatarF");
+          if (purchaseCalls === 1) {
+            await new Promise((resolve) => {
+              releasePurchase = resolve;
+            });
+          }
+          return {
+            purchase: {
+              status: "purchased",
+              type,
+              cosmeticId,
+              price: 40,
+              tokensLeft: 160
+            },
+            snapshot: {
+              authority: "server",
+              profile: {
+                username: "AuthorityUser",
+                tokens: 160,
+                ownedCosmetics: {
+                  avatar: ["default_avatar", "fireavatarF"]
+                },
+                equippedCosmetics: {}
+              },
+              progression: {}
+            }
+          };
+        }
+      },
+      state: {
+        getStore: async () => {
+          throw new Error("local store read should not be used for authenticated online purchases");
+        }
+      }
+    }
+  };
+
+  await controller.showStore();
+  const buy = screenCalls.at(-1).payload.actions.buy;
+  const firstPurchase = buy("avatar", "fireavatarF");
+  const repeatedPurchase = buy("avatar", "fireavatarF");
+
+  await Promise.resolve();
+  assert.equal(purchaseCalls, 1);
+  assert.equal(controller.storePurchaseInFlight, true);
+
+  releasePurchase?.();
+  await Promise.all([firstPurchase, repeatedPurchase]);
+
+  assert.equal(controller.storePurchaseInFlight, false);
+  assert.equal(controller.storePurchaseInFlightKey, null);
+  assert.equal(purchaseCalls, 1);
+  assert.equal(modalCalls.some((entry) => entry?.title === "Purchase Failed"), false);
+
+  await screenCalls.at(-1).payload.actions.buy("avatar", "fireavatarF");
+  assert.equal(purchaseCalls, 2);
+});
+
+test("app controller: authenticated online store purchase unlocks after failure without queuing delayed duplicate success", async () => {
+  const modalCalls = [];
+  const screenCalls = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, payload) => {
+        screenCalls.push({ screen, payload });
+      }
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+  controller.username = "AuthorityUser";
+  controller.profile = {
+    username: "AuthorityUser",
+    tokens: 200,
+    ownedCosmetics: {
+      avatar: ["default_avatar"]
+    },
+    equippedCosmetics: {}
+  };
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "AuthorityUser"
+    }
+  };
+
+  let purchaseCalls = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => ({
+          authority: "server",
+          profile: {
+            username: "AuthorityUser",
+            tokens: purchaseCalls > 1 ? 160 : 200,
+            ownedCosmetics: {
+              avatar: purchaseCalls > 1 ? ["default_avatar", "fireavatarF"] : ["default_avatar"]
+            },
+            equippedCosmetics: {}
+          },
+          progression: {}
+        }),
+        buyStoreItem: async ({ type, cosmeticId }) => {
+          purchaseCalls += 1;
+          assert.equal(type, "avatar");
+          assert.equal(cosmeticId, "fireavatarF");
+          if (purchaseCalls === 1) {
+            throw new Error("Server exploded");
+          }
+
+          return {
+            purchase: {
+              status: "purchased",
+              type,
+              cosmeticId,
+              price: 40,
+              tokensLeft: 160
+            },
+            snapshot: {
+              authority: "server",
+              profile: {
+                username: "AuthorityUser",
+                tokens: 160,
+                ownedCosmetics: {
+                  avatar: ["default_avatar", "fireavatarF"]
+                },
+                equippedCosmetics: {}
+              },
+              progression: {}
+            }
+          };
+        }
+      },
+      state: {
+        getStore: async () => {
+          throw new Error("local store read should not be used for authenticated online purchases");
+        }
+      }
+    }
+  };
+
+  await controller.showStore();
+  const buy = screenCalls.at(-1).payload.actions.buy;
+  await Promise.all([buy("avatar", "fireavatarF"), buy("avatar", "fireavatarF")]);
+
+  assert.equal(purchaseCalls, 1);
+  assert.equal(controller.storePurchaseInFlight, false);
+  assert.equal(controller.storePurchaseInFlightKey, null);
+  assert.equal(modalCalls.filter((entry) => entry?.title === "Purchase Failed").length, 1);
+  assert.equal(controller.profile?.tokens, 200);
+
+  await screenCalls.at(-1).payload.actions.buy("avatar", "fireavatarF");
+
+  assert.equal(purchaseCalls, 2);
   assert.equal(controller.profile?.tokens, 160);
   assert.ok(controller.profile?.ownedCosmetics?.avatar?.includes("fireavatarF"));
 });

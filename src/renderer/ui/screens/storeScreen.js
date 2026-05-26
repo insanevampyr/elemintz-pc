@@ -275,6 +275,12 @@ function renderPreview(type, item) {
   `;
 }
 
+function buildStorePurchaseKey(type, cosmeticId) {
+  const safeType = String(type ?? "").trim();
+  const safeCosmeticId = String(cosmeticId ?? "").trim();
+  return safeType && safeCosmeticId ? `${safeType}:${safeCosmeticId}` : "";
+}
+
 function renderActions(type, item) {
   const equipButton = item.owned
     ? `<button class="btn" data-equip-type="${type}" data-equip-id="${item.id}" ${item.equipped ? "disabled" : ""}>${item.equipped ? "Equipped" : "Equip"}</button>`
@@ -282,7 +288,7 @@ function renderActions(type, item) {
 
   const buyButton =
     !item.owned && item.purchasable
-      ? `<button class="btn btn-primary" data-buy-type="${type}" data-buy-id="${item.id}">Buy</button>`
+      ? `<button class="btn btn-primary" data-buy-type="${type}" data-buy-id="${item.id}" data-buy-default-label="Buy">Buy</button>`
       : "";
 
   return `${equipButton}${buyButton}`;
@@ -384,9 +390,9 @@ export const storeScreen = {
           </div>
           <section class="store-feature-banner" aria-label="Featured cosmetics update">
             <p class="store-feature-banner-eyebrow">Featured Update</p>
-            <h3 class="store-feature-banner-title">Neon Arcana Collection Is Live!</h3>
+            <h3 class="store-feature-banner-title">New Premium Cosmetics</h3>
             <p class="store-feature-banner-copy">
-              Premium neon-arcane avatars, card variants, card back, and the Legendary Spellwired title are now available.
+              Neon Arcana and Goldbound Relics are live now. Claim new avatars, card backs, titles, and elemental variants in the Store.
             </p>
           </section>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
@@ -583,10 +589,42 @@ export const storeScreen = {
     }
 
     root.querySelectorAll("[data-buy-type]").forEach((button) => {
+      button.disabled = false;
+      const defaultLabel = button.getAttribute("data-buy-default-label") || button.textContent || "Buy";
+      button.textContent = defaultLabel;
+    });
+
+    let purchasePending = false;
+    let activePurchaseKey = "";
+    const setPurchaseButtonsPendingState = (pending, activeKey = "") => {
+      purchasePending = Boolean(pending);
+      activePurchaseKey = activeKey;
+      root.querySelectorAll("[data-buy-type]").forEach((button) => {
+        const buttonType = button.getAttribute("data-buy-type");
+        const buttonId = button.getAttribute("data-buy-id");
+        const buttonKey = buildStorePurchaseKey(buttonType, buttonId);
+        const defaultLabel = button.getAttribute("data-buy-default-label") || "Buy";
+        button.disabled = purchasePending;
+        button.textContent =
+          purchasePending && buttonKey === activePurchaseKey ? "Purchasing..." : defaultLabel;
+      });
+    };
+
+    root.querySelectorAll("[data-buy-type]").forEach((button) => {
       button.addEventListener("click", async () => {
+        if (purchasePending || button.disabled) {
+          return;
+        }
+
         const type = button.getAttribute("data-buy-type");
         const cosmeticId = button.getAttribute("data-buy-id");
-        await context.actions.buy(type, cosmeticId);
+        const purchaseKey = buildStorePurchaseKey(type, cosmeticId);
+        setPurchaseButtonsPendingState(true, purchaseKey);
+        try {
+          await context.actions.buy(type, cosmeticId);
+        } finally {
+          setPurchaseButtonsPendingState(false);
+        }
       });
     });
 

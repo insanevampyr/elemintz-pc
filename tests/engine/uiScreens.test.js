@@ -1781,13 +1781,13 @@ test("ui: store screen renders the featured new personality cosmetics banner abo
     }
   });
 
-  assert.match(html, /Neon Arcana Collection Is Live!/);
-  assert.match(html, /Premium neon-arcane avatars, card variants, card back, and the Legendary Spellwired title are now available\./);
+  assert.match(html, /New Premium Cosmetics/);
+  assert.match(html, /Neon Arcana and Goldbound Relics are live now\. Claim new avatars, card backs, titles, and elemental variants in the Store\./);
   assert.match(html, /Show NEW First/);
   assert.match(html, /store-item-badge-new">NEW<\/span>/);
   assert.match(html, /Price: 150 Tokens/);
   assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
-  assert.ok(html.indexOf("Neon Arcana Collection Is Live!") < html.indexOf("Show NEW First"));
+  assert.ok(html.indexOf("New Premium Cosmetics") < html.indexOf("Show NEW First"));
 });
 
 test("ui: Store screen keeps Founder / Supporter status visible without exposing the local activation button", () => {
@@ -5806,6 +5806,139 @@ test("ui: Store banner controls still bind while the token balance lives in the 
   } finally {
     global.document = previousDocument;
   }
+});
+
+test("ui: store buy buttons disable with a pending state and ignore rapid repeat clicks while a purchase is in flight", async () => {
+  const previousDocument = global.document;
+  let releasePurchase = null;
+  let purchaseCalls = 0;
+
+  function createControl(attrs = {}, textContent = "Buy") {
+    const listeners = new Map();
+    return {
+      hidden: false,
+      disabled: false,
+      checked: true,
+      value: "",
+      textContent,
+      style: {},
+      classList: { toggle() {} },
+      listeners,
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      getAttribute(name) {
+        return attrs[name] ?? null;
+      }
+    };
+  }
+
+  const backButton = createControl();
+  const searchInput = createControl();
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+  const avatarBuyButton = createControl(
+    {
+      "data-buy-type": "avatar",
+      "data-buy-id": "avatar_aurelian_archon",
+      "data-buy-default-label": "Buy"
+    },
+    "Buy"
+  );
+  const titleBuyButton = createControl(
+    {
+      "data-buy-type": "title",
+      "data-buy-id": "title_goldbound",
+      "data-buy-default-label": "Buy"
+    },
+    "Buy"
+  );
+  const root = {
+    querySelectorAll(selector) {
+      switch (selector) {
+        case "[data-buy-type]":
+          return [avatarBuyButton, titleBuyButton];
+        case "[data-equip-type]":
+        case "[data-store-item]":
+        case "[data-store-section]":
+        case "[data-store-category-filter]":
+        case "[data-store-rarity-filter]":
+          return [];
+        default:
+          return [];
+      }
+    }
+  };
+
+  global.document = {
+    getElementById: (id) =>
+      ({
+        "store-back-btn": backButton,
+        "store-search-input": searchInput,
+        "store-empty-state": emptyState
+      })[id] ?? null,
+    querySelector: (selector) => (selector === ".screen-store" ? root : null),
+    querySelectorAll: root.querySelectorAll
+  };
+
+  try {
+    storeScreen.bind({
+      actions: {
+        back: () => {},
+        buy: async (type, cosmeticId) => {
+          purchaseCalls += 1;
+          assert.equal(type, "avatar");
+          assert.equal(cosmeticId, "avatar_aurelian_archon");
+          await new Promise((resolve) => {
+            releasePurchase = resolve;
+          });
+        },
+        equip: async () => {}
+      }
+    });
+
+    const clickAvatar = avatarBuyButton.listeners.get("click");
+    const clickTitle = titleBuyButton.listeners.get("click");
+
+    const firstPurchase = clickAvatar();
+    assert.equal(purchaseCalls, 1);
+    assert.equal(avatarBuyButton.disabled, true);
+    assert.equal(titleBuyButton.disabled, true);
+    assert.equal(avatarBuyButton.textContent, "Purchasing...");
+    assert.equal(titleBuyButton.textContent, "Buy");
+
+    const repeatedPurchase = clickAvatar();
+    const otherItemPurchase = clickTitle();
+    await Promise.resolve();
+
+    assert.equal(purchaseCalls, 1);
+
+    releasePurchase?.();
+    await Promise.all([firstPurchase, repeatedPurchase, otherItemPurchase]);
+
+    assert.equal(avatarBuyButton.disabled, false);
+    assert.equal(titleBuyButton.disabled, false);
+    assert.equal(avatarBuyButton.textContent, "Buy");
+    assert.equal(titleBuyButton.textContent, "Buy");
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: cosmetics screen renders safely when cosmetics payload is null", () => {
+  let html = "";
+  assert.doesNotThrow(() => {
+    html = cosmeticsScreen.render({
+      cosmetics: null,
+      viewState: {},
+      profile: {
+        cosmeticRandomizeAfterMatch: {}
+      }
+    });
+  });
+
+  assert.match(html, /Cosmetics \/ Rewards/);
+  assert.match(html, /Cosmetic Loadouts/);
+  assert.match(html, /No owned items in this category yet\./);
 });
 
 test("ui: game screen escapes player-controlled names before inserting markup", () => {

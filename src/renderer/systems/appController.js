@@ -21,7 +21,12 @@ import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
 import { buildAchievementCatalog } from "../../state/achievementSystem.js";
-import { COSMETIC_CATALOG, getCosmeticDefinition, getCosmeticDisplayName } from "../../state/cosmeticSystem.js";
+import {
+  COSMETIC_CATALOG,
+  getCosmeticCatalogForProfile,
+  getCosmeticDefinition,
+  getCosmeticDisplayName
+} from "../../state/cosmeticSystem.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../state/storeSystem.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
 import { deriveLevelFromXp, MAX_LEVEL } from "../../state/levelRewardsSystem.js";
@@ -242,6 +247,8 @@ export class AppController {
     this.gauntletRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
     this.storeViewState = this.createDefaultStoreViewState();
+    this.storePurchaseInFlight = false;
+    this.storePurchaseInFlightKey = null;
     this.cosmeticsViewState = createDefaultCategoryViewState();
     this.presentedAchievementUnlockKeys = new Set();
       this.roundPresentation = {
@@ -1132,6 +1139,98 @@ export class AppController {
       rarities: new Set(["Common", "Rare", "Epic", "Legendary"]),
       collections: new Set(),
       showNewFirst: true
+    };
+  }
+
+  buildStorePurchaseKey(type, cosmeticId) {
+    const safeType = String(type ?? "").trim();
+    const safeCosmeticId = String(cosmeticId ?? "").trim();
+    return safeType && safeCosmeticId ? `${safeType}:${safeCosmeticId}` : null;
+  }
+
+  buildSafeCosmeticsPayload(cosmetics, profile = this.profile ?? {}) {
+    const fallbackCatalog = getCosmeticCatalogForProfile(profile ?? {});
+    const fallbackOwned = {
+      avatar: Array.isArray(profile?.ownedCosmetics?.avatar) ? profile.ownedCosmetics.avatar : [],
+      cardBack: Array.isArray(profile?.ownedCosmetics?.cardBack) ? profile.ownedCosmetics.cardBack : [],
+      background: Array.isArray(profile?.ownedCosmetics?.background) ? profile.ownedCosmetics.background : [],
+      elementCardVariant: Array.isArray(profile?.ownedCosmetics?.elementCardVariant)
+        ? profile.ownedCosmetics.elementCardVariant
+        : [],
+      badge: Array.isArray(profile?.ownedCosmetics?.badge) ? profile.ownedCosmetics.badge : [],
+      title: Array.isArray(profile?.ownedCosmetics?.title) ? profile.ownedCosmetics.title : []
+    };
+    const fallbackEquipped = {
+      avatar: profile?.equippedCosmetics?.avatar ?? "default_avatar",
+      cardBack: profile?.equippedCosmetics?.cardBack ?? "default_card_back",
+      background: profile?.equippedCosmetics?.background ?? "default_background",
+      elementCardVariant: {
+        fire: profile?.equippedCosmetics?.elementCardVariant?.fire ?? "default_fire_card",
+        water: profile?.equippedCosmetics?.elementCardVariant?.water ?? "default_water_card",
+        earth: profile?.equippedCosmetics?.elementCardVariant?.earth ?? "default_earth_card",
+        wind: profile?.equippedCosmetics?.elementCardVariant?.wind ?? "default_wind_card"
+      },
+      badge: profile?.equippedCosmetics?.badge ?? "none",
+      title: profile?.equippedCosmetics?.title ?? "Initiate"
+    };
+    const fallbackLoadouts = Array.isArray(profile?.cosmeticLoadouts) ? profile.cosmeticLoadouts : [];
+    const fallbackPreferences =
+      profile?.cosmeticRandomizeAfterMatch && typeof profile.cosmeticRandomizeAfterMatch === "object"
+        ? profile.cosmeticRandomizeAfterMatch
+        : {};
+    const source = cosmetics && typeof cosmetics === "object" ? cosmetics : {};
+    const sourceSnapshot =
+      source.snapshot && typeof source.snapshot === "object" ? source.snapshot : {};
+    const safeLoadouts = Array.isArray(source.loadouts)
+      ? source.loadouts
+      : Array.isArray(sourceSnapshot.loadouts)
+        ? sourceSnapshot.loadouts
+        : fallbackLoadouts;
+
+    return {
+      ...source,
+      catalog: source.catalog && typeof source.catalog === "object" ? source.catalog : fallbackCatalog,
+      owned:
+        source.owned && typeof source.owned === "object"
+          ? source.owned
+          : sourceSnapshot.owned && typeof sourceSnapshot.owned === "object"
+            ? sourceSnapshot.owned
+            : fallbackOwned,
+      equipped:
+        source.equipped && typeof source.equipped === "object"
+          ? source.equipped
+          : sourceSnapshot.equipped && typeof sourceSnapshot.equipped === "object"
+            ? sourceSnapshot.equipped
+            : fallbackEquipped,
+      loadouts: safeLoadouts,
+      preferences:
+        source.preferences && typeof source.preferences === "object"
+          ? source.preferences
+          : sourceSnapshot.preferences && typeof sourceSnapshot.preferences === "object"
+            ? sourceSnapshot.preferences
+            : fallbackPreferences,
+      snapshot: {
+        ...sourceSnapshot,
+        owned:
+          sourceSnapshot.owned && typeof sourceSnapshot.owned === "object"
+            ? sourceSnapshot.owned
+            : source.owned && typeof source.owned === "object"
+              ? source.owned
+              : fallbackOwned,
+        equipped:
+          sourceSnapshot.equipped && typeof sourceSnapshot.equipped === "object"
+            ? sourceSnapshot.equipped
+            : source.equipped && typeof source.equipped === "object"
+              ? source.equipped
+              : fallbackEquipped,
+        loadouts: Array.isArray(sourceSnapshot.loadouts) ? sourceSnapshot.loadouts : safeLoadouts,
+        preferences:
+          sourceSnapshot.preferences && typeof sourceSnapshot.preferences === "object"
+            ? sourceSnapshot.preferences
+            : source.preferences && typeof source.preferences === "object"
+              ? source.preferences
+              : fallbackPreferences
+      }
     };
   }
 
@@ -7253,10 +7352,12 @@ export class AppController {
   async showCosmetics({ preserveModal = false } = {}) {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "cosmetics";
-    const cosmetics =
+    const cosmetics = this.buildSafeCosmeticsPayload(
       this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
         ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
-        : await window.elemintz.state.getCosmetics(this.username);
+        : await window.elemintz.state.getCosmetics(this.username),
+      this.profile
+    );
     const viewState = this.ensureCosmeticsViewState();
 
     this.screenManager.show("cosmetics", {
@@ -7440,8 +7541,17 @@ export class AppController {
       store,
       featuredRotation,
       viewState,
+      storePurchasePending: this.storePurchaseInFlight,
+      storePurchasePendingKey: this.storePurchaseInFlightKey,
       actions: {
         buy: async (type, cosmeticId) => {
+          const purchaseKey = this.buildStorePurchaseKey(type, cosmeticId);
+          if (this.storePurchaseInFlight) {
+            return;
+          }
+
+          this.storePurchaseInFlight = true;
+          this.storePurchaseInFlightKey = purchaseKey;
           if (this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.buyStoreItem) {
             try {
               const result = await window.elemintz.multiplayer.buyStoreItem({
@@ -7470,6 +7580,9 @@ export class AppController {
                 body: String(error?.message ?? "Unable to complete this store purchase."),
                 actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
               });
+            } finally {
+              this.storePurchaseInFlight = false;
+              this.storePurchaseInFlightKey = null;
             }
             return;
           }
@@ -7477,6 +7590,8 @@ export class AppController {
           this.showLegacyLocalAuthorityDisabledModal(
             "Local store purchases are unavailable while duplicate offline progression systems are being removed."
           );
+          this.storePurchaseInFlight = false;
+          this.storePurchaseInFlightKey = null;
         },
         equip: async (type, cosmeticId) => {
           const result =

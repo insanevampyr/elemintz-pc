@@ -1058,6 +1058,32 @@ export class MultiplayerClient {
     return normalized.length > 0 ? normalized : this.defaultServerUrl;
   }
 
+  sanitizeRequestLogPayload(payload) {
+    const visit = (value) => {
+      if (Array.isArray(value)) {
+        return value.map((entry) => visit(entry));
+      }
+
+      if (!value || typeof value !== "object") {
+        return value;
+      }
+
+      const sanitized = {};
+      for (const [key, entryValue] of Object.entries(value)) {
+        if (key === "password" || key === "sessionToken" || key === "token") {
+          sanitized[key] = "[REDACTED]";
+          continue;
+        }
+
+        sanitized[key] = visit(entryValue);
+      }
+
+      return sanitized;
+    };
+
+    return visit(payload ?? {});
+  }
+
   applySession(session) {
     const safeSession = session
       ? {
@@ -1432,7 +1458,7 @@ export class MultiplayerClient {
 
       this.logger.info?.("[OnlinePlay][MainClient] socket request", {
         eventName,
-        payload
+        payload: this.sanitizeRequestLogPayload(payload)
       });
       socket.emit(eventName, payload, (response) => {
         if (settled) {

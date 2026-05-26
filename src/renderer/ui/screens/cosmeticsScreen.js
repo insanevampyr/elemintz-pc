@@ -22,6 +22,18 @@ const RANDOMIZE_AFTER_MATCH_OPTIONS = Object.freeze([
   ["background", "Background"]
 ]);
 
+function createSafeCosmeticsPayload(cosmetics) {
+  const source = cosmetics && typeof cosmetics === "object" ? cosmetics : {};
+  return {
+    ...source,
+    catalog: source.catalog && typeof source.catalog === "object" ? source.catalog : {},
+    owned: source.owned && typeof source.owned === "object" ? source.owned : {},
+    equipped: source.equipped && typeof source.equipped === "object" ? source.equipped : {},
+    loadouts: Array.isArray(source.loadouts) ? source.loadouts : [],
+    preferences: source.preferences && typeof source.preferences === "object" ? source.preferences : {}
+  };
+}
+
 function normalizeRarity(rarity) {
   return FILTERABLE_RARITIES.includes(rarity) ? rarity : "Common";
 }
@@ -360,7 +372,7 @@ function renderLoadoutCard(slot) {
 
 export const cosmeticsScreen = {
   render(context) {
-    const cosmetics = context.cosmetics;
+    const cosmetics = createSafeCosmeticsPayload(context.cosmetics);
     const loadouts = Array.isArray(cosmetics.loadouts) ? cosmetics.loadouts : [];
     const viewState = normalizeCategoryViewState(context.viewState);
     const collectionOptions = getOwnedCollectionOptions(cosmetics);
