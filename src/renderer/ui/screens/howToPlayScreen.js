@@ -19,22 +19,22 @@ const HOW_TO_PLAY_SECTIONS = [
   {
     id: "quick-start",
     title: "Quick Start",
-    preview: "Choose an element, win matchups, survive WAR, and finish with the stronger board.",
+    preview: "Pick a card. Read the matchup. Win cards. Survive WAR.",
     open: true,
     bodyHtml: `
       <ul class="how-to-play-list">
-        <li>Choose one element card each round.</li>
-        <li>Your opponent chooses one at the same time.</li>
-        <li>Winning matchups keep your card and capture the other card.</li>
-        <li>Matching elements trigger WAR and build a shared pile.</li>
-        <li>Win the match by ending with more captured cards or by outlasting the other side when the match closes out.</li>
+        <li>Pick one element card each round.</li>
+        <li>Your opponent picks at the same time.</li>
+        <li>A winning matchup keeps your card and captures theirs.</li>
+        <li>Matching elements trigger WAR, where tied cards are set aside until someone wins them.</li>
+        <li>Win by outlasting your opponent or finishing with more cards.</li>
       </ul>
     `
   },
   {
     id: "element-rules",
     title: "Element Rules",
-    preview: "Each element beats one other element. Same element starts WAR. Some pairings are No Effect.",
+    preview: "Each element beats one other element. Same cards start WAR.",
     open: true,
     bodyHtml: `
       <div class="how-to-play-rule-grid">
@@ -52,81 +52,85 @@ const HOW_TO_PLAY_SECTIONS = [
   {
     id: "round-outcomes",
     title: "Round Outcomes",
-    preview: "Wins steal cards, No Effect returns both cards, and ties push the round into WAR.",
+    preview: "Win cards, lose cards, or go to WAR.",
     bodyHtml: `
       <ul class="how-to-play-list">
-        <li><strong>Win Round:</strong> the winner keeps their card and captures the opponent card.</li>
-        <li><strong>Lose Round:</strong> your card is captured and the opponent keeps theirs.</li>
-        <li><strong>No Effect:</strong> both cards return and no one captures anything.</li>
+        <li><strong>Win Round:</strong> keep your card and capture your opponent's card.</li>
+        <li><strong>No Effect:</strong> both cards return. Nobody captures anything.</li>
         <li><strong>Tie:</strong> WAR starts immediately.</li>
       </ul>
-      <p><strong>Simple example:</strong> Fire vs Earth is a win for Fire. Fire vs Wind is No Effect.</p>
+      <p><strong>Example:</strong> Fire beats Earth.</p>
+      <p><strong>Example:</strong> Fire vs Wind is No Effect.</p>
     `
   },
   {
     id: "war",
     title: "WAR",
-    preview: "WAR turns matching elements into a high-stakes pile that the next winner claims.",
+    preview: "WAR turns a tie into a high-stakes pile.",
     bodyHtml: `
       <ul class="how-to-play-list">
-        <li>Choosing the same element at the same time starts WAR.</li>
-        <li>The tied cards move into the WAR pile.</li>
-        <li>The next decisive winning result claims the full pile.</li>
-        <li>One WAR can flip momentum fast, especially late in a match.</li>
+        <li>Matching elements start WAR.</li>
+        <li>Tied cards go into the WAR pile.</li>
+        <li>The next winning result claims the whole pile.</li>
+        <li>No Effect during WAR adds more cards to the pile.</li>
+        <li>One big WAR can flip the match fast.</li>
       </ul>
     `
   },
   {
     id: "game-modes",
     title: "Game Modes",
-    preview: "Practice, Gauntlet, Featured Rival, Local PvP, and Online each ask for a slightly different mindset.",
+    preview: "Different modes, different pressure.",
     bodyHtml: `
       <ul class="how-to-play-list">
-        <li><strong>Practice / AI Difficulty:</strong> Learn matchups or test habits against Easy, Normal, and Hard AI.</li>
-        <li><strong>Gauntlet Mode:</strong> Chain wins together against rotating rivals and protect your streak.</li>
-        <li><strong>Featured Rival:</strong> Fight a showcase boss-style opponent with its own identity and presentation.</li>
-        <li><strong>Local PvP:</strong> Two players share the same device with pass-screen privacy between turns.</li>
-        <li><strong>Online Play:</strong> Create or join rooms and battle another player live.</li>
+        <li><strong>Practice / AI Difficulty:</strong> learn the rules or test yourself against Easy, Normal, and Hard AI.</li>
+        <li><strong>Gauntlet Mode:</strong> fight rotating rivals, build a streak, and see how long you can survive.</li>
+        <li><strong>Featured Rival:</strong> face a special boss-style opponent with its own look and identity.</li>
+        <li><strong>Local PvP:</strong> two players share one device and pass between turns.</li>
+        <li><strong>Online Play:</strong> create or join a room and play another person live.</li>
       </ul>
     `
   },
   {
     id: "rewards",
     title: "Rewards",
-    preview: "Matches feed XP, tokens, chests, and challenge progress without changing the core rules.",
+    preview: "Play matches, earn rewards, and flex your profile.",
     bodyHtml: `
       <ul class="how-to-play-list">
-        <li><strong>XP</strong> helps you level up and unlock progression rewards.</li>
-        <li><strong>Tokens</strong> are spent in the Store on cosmetics.</li>
-        <li><strong>Chests</strong> can award cosmetic-style rewards and progression value.</li>
-        <li><strong>Daily Login, daily goals, weekly goals, and achievements</strong> add extra long-term progress.</li>
+        <li><strong>XP</strong> helps you level up.</li>
+        <li><strong>Tokens</strong> are used in the Store for cosmetics.</li>
+        <li><strong>Chests</strong> can unlock cosmetics and extra progression value.</li>
+        <li><strong>Daily Login, daily goals, weekly goals, and achievements</strong> add more ways to progress.</li>
+        <li>Some modes or events may offer special reward chances.</li>
       </ul>
     `
   },
   {
     id: "cosmetics-loadouts",
     title: "Cosmetics + Loadouts",
-    preview: "Style your identity, card art, and profile flex without changing battle power.",
+    preview: "Build your look without changing your power.",
     bodyHtml: `
       <ul class="how-to-play-list">
         <li>Customize <strong>avatars, titles, badges, backgrounds, card backs,</strong> and <strong>elemental card variants</strong>.</li>
-        <li>The <strong>Store</strong> groups cosmetics into collections so you can chase matching themes.</li>
-        <li><strong>Loadouts</strong> let you save a full look and load it again quickly later.</li>
-        <li>Your profile, card style preview, and trophy-style showcases help show off what you have collected.</li>
+        <li>Store collections help you build a matching style.</li>
+        <li><strong>Loadouts</strong> let you save a full setup and swap back to it quickly.</li>
+        <li>Your profile and card previews show off what you have collected.</li>
+        <li>Cosmetics are for style, flex, and identity - not combat power.</li>
       </ul>
     `
   },
   {
     id: "strategy-hints",
     title: "Strategy Hints",
-    preview: "Mix your patterns, use No Effect wisely, and treat WAR as both danger and opportunity.",
+    preview: "Mix your habits. Scout smart. Respect WAR.",
     bodyHtml: `
       <ul class="how-to-play-list">
-        <li>Watch opponent habits and do not become predictable yourself.</li>
-        <li>No Effect rounds can be useful for stalling, scouting, or resetting tempo.</li>
-        <li>WAR is risky, but winning one at the right time can swing the whole match.</li>
-        <li>In Gauntlet, protect your card balance and avoid autopiloting early wins.</li>
-        <li>Harder AI and stronger players punish repeated habits quickly.</li>
+        <li>Watch what your opponent repeats.</li>
+        <li>Do not rely on one favorite element every round.</li>
+        <li>No Effect can buy time, slow the pace, or reveal habits.</li>
+        <li>WAR is risky, but one good win can swing the whole match.</li>
+        <li>In Gauntlet, protect your balance. Burning one element too fast can hurt later.</li>
+        <li>Harder AI and real players punish predictable choices.</li>
       </ul>
     `
   }

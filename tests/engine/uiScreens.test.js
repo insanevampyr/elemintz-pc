@@ -9707,15 +9707,15 @@ test("ui: how to play screen renders compact accordion sections with the current
   assert.match(html, /Rewards/);
   assert.match(html, /Cosmetics \+ Loadouts/);
   assert.match(html, /Strategy Hints/);
-  assert.match(html, /Choose an element, win matchups, survive WAR, and finish with the stronger board\./);
-  assert.match(html, /Each element beats one other element\. Same element starts WAR\. Some pairings are No Effect\./);
+  assert.match(html, /Pick a card\. Read the matchup\. Win cards\. Survive WAR\./);
+  assert.match(html, /Each element beats one other element\. Same cards start WAR\./);
   assert.match(html, /Fire<\/strong> beats Earth/);
   assert.match(html, /Earth<\/strong> beats Wind/);
   assert.match(html, /Wind<\/strong> beats Water/);
   assert.match(html, /Water<\/strong> beats Fire/);
   assert.match(html, /Gauntlet Mode/);
   assert.match(html, /Featured Rival/);
-  assert.match(html, /Harder AI and stronger players punish repeated habits quickly\./);
+  assert.match(html, /Harder AI and real players punish predictable choices\./);
   assert.doesNotMatch(html, /data-how-to-play-section="round-outcomes" open/);
   assert.doesNotMatch(html, /data-how-to-play-section="war" open/);
   assert.doesNotMatch(html, /data-how-to-play-section="game-modes" open/);
