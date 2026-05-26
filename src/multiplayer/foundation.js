@@ -5,10 +5,13 @@ import { Server as SocketIOServer } from "socket.io";
 
 import { ONLINE_TURN_TIMER_DURATION_MS, createRoomStore } from "./rooms.js";
 import { createSessionStore } from "./sessionStore.js";
+import { createLocalMatchSessionStore } from "./localMatchSessions.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
 import { getCosmeticDefinition } from "../state/cosmeticSystem.js";
 import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
+import { AI_DIFFICULTY } from "../engine/ai.js";
+import { getGauntletRivalById } from "../engine/index.js";
 
 const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
@@ -17,8 +20,14 @@ const ROOM_RECONNECT_TIMEOUT_MS = 60000;
 const ONLINE_TURN_TIMER_DURATION_MS_DEFAULT = ONLINE_TURN_TIMER_DURATION_MS;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
+const VALID_FEATURED_RIVAL_IDS = new Set(["crownfire_duelist"]);
 export const MULTIPLAYER_FOUNDATION_PHASE = 22;
 const DEVELOPMENT_PHASE_LABEL = "Unified Server Progression + Tester Stabilization";
+const LOCAL_MATCH_MODES = Object.freeze({
+  PVE: "pve",
+  FEATURED_RIVAL: "featured_rival",
+  GAUNTLET: "gauntlet"
+});
 
 function logRoomEvent(logger, message, details = {}) {
   logger.info("[Multiplayer] " + message, details);
@@ -666,6 +675,7 @@ export function createMultiplayerFoundation({
     gracePeriodMs: roomReconnectTimeoutMs,
     dataDir
   });
+  const localMatchSessions = createLocalMatchSessionStore();
   const inFlightFounderGrants = new Map();
   const io = new SocketIOServer(httpServer, {
     cors: {
@@ -1021,6 +1031,80 @@ export function createMultiplayerFoundation({
           : "An authenticated EleMintz account session is required for this claimed profile."
       }
     };
+  }
+
+  function buildLocalMatchSessionError(error, fallbackCode = "LOCAL_MATCH_SESSION_FAILED") {
+    return {
+      ok: false,
+      error: {
+        code: error?.code ?? fallbackCode,
+        message: error?.message ?? "Unable to manage the local match session."
+      }
+    };
+  }
+
+  function assertSessionUsernameMatch(session, requestedUsername) {
+    const normalizedRequested = normalizeSettledUsername(requestedUsername);
+    if (!normalizedRequested) {
+      return;
+    }
+
+    const normalizedSessionUsername = normalizeSettledUsername(
+      session?.profileKey ?? session?.username
+    );
+    if (normalizedRequested !== normalizedSessionUsername) {
+      const error = new Error("Authenticated sessions can only manage their own local match sessions.");
+      error.code = "PROFILE_USERNAME_MISMATCH";
+      throw error;
+    }
+  }
+
+  function normalizeLocalMatchMode(value) {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return Object.values(LOCAL_MATCH_MODES).includes(normalized) ? normalized : null;
+  }
+
+  function normalizeLocalMatchDifficulty(value) {
+    if (value === undefined || value === null || String(value).trim().length === 0) {
+      return AI_DIFFICULTY.NORMAL;
+    }
+
+    return Object.values(AI_DIFFICULTY).includes(value) ? value : null;
+  }
+
+  function normalizeFeaturedRivalId(value) {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return VALID_FEATURED_RIVAL_IDS.has(normalized) ? normalized : null;
+  }
+
+  function normalizeGauntletRivalId(value) {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return getGauntletRivalById(normalized)?.id ?? null;
+  }
+
+  function getLocalMatchSessionForOwnerOrThrow(session, sessionId) {
+    const normalizedSessionId = String(sessionId ?? "").trim();
+    if (!normalizedSessionId) {
+      const error = new Error("sessionId is required for local match session access.");
+      error.code = "LOCAL_MATCH_SESSION_ID_REQUIRED";
+      throw error;
+    }
+
+    const normalizedUsername = normalizeSettledUsername(session?.profileKey ?? session?.username);
+    const ownedSession = localMatchSessions.getSessionForUsername(normalizedSessionId, normalizedUsername);
+    if (ownedSession) {
+      return ownedSession;
+    }
+
+    if (localMatchSessions.getSession(normalizedSessionId)) {
+      const error = new Error("This local match session belongs to another user.");
+      error.code = "LOCAL_MATCH_SESSION_ACCESS_DENIED";
+      throw error;
+    }
+
+    const error = new Error("The requested local match session was not found.");
+    error.code = "LOCAL_MATCH_SESSION_NOT_FOUND";
+    throw error;
   }
 
   function assertAdminAccessForSession(session) {
@@ -1935,6 +2019,231 @@ export function createMultiplayerFoundation({
             )
           }
         });
+      }
+    });
+
+    socket.on("profile:startLocalPveMatch", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const requestedMode = payload?.mode;
+        if (
+          requestedMode !== undefined &&
+          normalizeLocalMatchMode(requestedMode) !== LOCAL_MATCH_MODES.PVE
+        ) {
+          const error = new Error("profile:startLocalPveMatch only accepts PvE mode.");
+          error.code = "LOCAL_MATCH_INVALID_MODE";
+          throw error;
+        }
+
+        const aiDifficulty = normalizeLocalMatchDifficulty(payload?.aiDifficulty);
+        if (!aiDifficulty) {
+          const error = new Error("A valid AI difficulty is required for PvE local match sessions.");
+          error.code = "LOCAL_MATCH_INVALID_DIFFICULTY";
+          throw error;
+        }
+
+        const featuredRivalId =
+          payload?.featuredRivalId === undefined
+            ? null
+            : normalizeFeaturedRivalId(payload?.featuredRivalId);
+        if (payload?.featuredRivalId !== undefined && !featuredRivalId) {
+          const error = new Error("A valid featured rival ID is required when starting a featured PvE match.");
+          error.code = "LOCAL_MATCH_INVALID_FEATURED_RIVAL";
+          throw error;
+        }
+
+        const session = localMatchSessions.createSession({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          mode: LOCAL_MATCH_MODES.PVE,
+          aiDifficulty,
+          featuredRivalId,
+          metadata: {
+            authority: "server-local-session",
+            sessionType: featuredRivalId ? LOCAL_MATCH_MODES.FEATURED_RIVAL : LOCAL_MATCH_MODES.PVE
+          }
+        });
+
+        respond({
+          ok: true,
+          result: {
+            session
+          }
+        });
+      } catch (error) {
+        respond(buildLocalMatchSessionError(error, "LOCAL_MATCH_START_FAILED"));
+      }
+    });
+
+    socket.on("profile:startFeaturedRivalMatch", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const featuredRivalId = normalizeFeaturedRivalId(payload?.featuredRivalId);
+        if (!featuredRivalId) {
+          const error = new Error("A valid featured rival ID is required to start a featured rival match.");
+          error.code = "LOCAL_MATCH_INVALID_FEATURED_RIVAL";
+          throw error;
+        }
+
+        const aiDifficulty = normalizeLocalMatchDifficulty(payload?.aiDifficulty);
+        if (!aiDifficulty) {
+          const error = new Error("A valid AI difficulty is required for featured rival match sessions.");
+          error.code = "LOCAL_MATCH_INVALID_DIFFICULTY";
+          throw error;
+        }
+
+        const session = localMatchSessions.createSession({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          mode: LOCAL_MATCH_MODES.FEATURED_RIVAL,
+          aiDifficulty,
+          featuredRivalId,
+          metadata: {
+            authority: "server-local-session",
+            sessionType: LOCAL_MATCH_MODES.FEATURED_RIVAL
+          }
+        });
+
+        respond({
+          ok: true,
+          result: {
+            session
+          }
+        });
+      } catch (error) {
+        respond(buildLocalMatchSessionError(error, "LOCAL_MATCH_START_FAILED"));
+      }
+    });
+
+    socket.on("profile:startGauntletMatch", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const requestedMode = payload?.mode;
+        if (
+          requestedMode !== undefined &&
+          normalizeLocalMatchMode(requestedMode) !== LOCAL_MATCH_MODES.GAUNTLET
+        ) {
+          const error = new Error("profile:startGauntletMatch only accepts gauntlet mode.");
+          error.code = "LOCAL_MATCH_INVALID_MODE";
+          throw error;
+        }
+
+        const gauntletRivalId = normalizeGauntletRivalId(payload?.gauntletRivalId);
+        if (!gauntletRivalId) {
+          const error = new Error("A valid gauntlet rival ID is required to start a gauntlet match.");
+          error.code = "LOCAL_MATCH_INVALID_GAUNTLET_RIVAL";
+          throw error;
+        }
+
+        const aiDifficulty = normalizeLocalMatchDifficulty(payload?.aiDifficulty);
+        if (!aiDifficulty) {
+          const error = new Error("A valid AI difficulty is required for gauntlet match sessions.");
+          error.code = "LOCAL_MATCH_INVALID_DIFFICULTY";
+          throw error;
+        }
+
+        const session = localMatchSessions.createSession({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          mode: LOCAL_MATCH_MODES.GAUNTLET,
+          aiDifficulty,
+          gauntletRivalId,
+          metadata: {
+            authority: "server-local-session",
+            sessionType: LOCAL_MATCH_MODES.GAUNTLET
+          }
+        });
+
+        respond({
+          ok: true,
+          result: {
+            session
+          }
+        });
+      } catch (error) {
+        respond(buildLocalMatchSessionError(error, "LOCAL_MATCH_START_FAILED"));
+      }
+    });
+
+    socket.on("profile:getLocalMatchSessionState", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const session = getLocalMatchSessionForOwnerOrThrow(
+          sessionResult.session,
+          payload?.sessionId
+        );
+        respond({
+          ok: true,
+          result: {
+            session: localMatchSessions.toPublicSession(session)
+          }
+        });
+      } catch (error) {
+        respond(buildLocalMatchSessionError(error, "LOCAL_MATCH_STATE_READ_FAILED"));
+      }
+    });
+
+    socket.on("profile:abandonLocalMatchSession", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const activeSession = getLocalMatchSessionForOwnerOrThrow(
+          sessionResult.session,
+          payload?.sessionId
+        );
+        const abandoned = localMatchSessions.abandonSession({
+          sessionId: activeSession.sessionId,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+        });
+        respond({
+          ok: true,
+          result: {
+            session: abandoned
+          }
+        });
+      } catch (error) {
+        respond(buildLocalMatchSessionError(error, "LOCAL_MATCH_ABANDON_FAILED"));
       }
     });
 

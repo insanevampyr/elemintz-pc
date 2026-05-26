@@ -141,6 +141,12 @@ async function registerAccount(socket, { username, email, password }) {
   });
 }
 
+async function emitWithAck(socket, eventName, payload = {}) {
+  return new Promise((resolve) => {
+    socket.emit(eventName, payload, resolve);
+  });
+}
+
 function createCompletedLocalMatchState({
   mode = "pve",
   winner = "p1",
@@ -3807,6 +3813,286 @@ test("multiplayer foundation: authenticated claimed-profile sessions keep legiti
     assert.ok(profileAfter?.ownedCosmetics?.avatar?.includes("fireavatarF"));
     assert.equal(profileAfter?.chests?.basic, 0);
     assert.ok(profileAfter?.tokens > 0);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: authenticated claimed user can start local PvE, Featured Rival, and Gauntlet sessions", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const auth = await registerAccount(client, {
+      username: "LocalSessionOwner",
+      email: "local-session-owner@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(auth?.ok, true);
+
+    const pve = await emitWithAck(client, "profile:startLocalPveMatch", {
+      aiDifficulty: "hard"
+    });
+    const featured = await emitWithAck(client, "profile:startFeaturedRivalMatch", {
+      aiDifficulty: "hard",
+      featuredRivalId: "crownfire_duelist"
+    });
+    const gauntlet = await emitWithAck(client, "profile:startGauntletMatch", {
+      aiDifficulty: "normal",
+      gauntletRivalId: "pyro_maniac"
+    });
+
+    assert.equal(pve?.ok, true);
+    assert.equal(pve?.result?.session?.mode, "pve");
+    assert.equal(pve?.result?.session?.aiDifficulty, "hard");
+    assert.equal(pve?.result?.session?.status, "active");
+
+    assert.equal(featured?.ok, true);
+    assert.equal(featured?.result?.session?.mode, "featured_rival");
+    assert.equal(featured?.result?.session?.featuredRivalId, "crownfire_duelist");
+
+    assert.equal(gauntlet?.ok, true);
+    assert.equal(gauntlet?.result?.session?.mode, "gauntlet");
+    assert.equal(gauntlet?.result?.session?.gauntletRivalId, "pyro_maniac");
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: bootstrap and cross-user local match session starts are rejected for claimed profiles", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore
+  });
+  const createFoundation = () =>
+    createMultiplayerFoundation({
+      port: 0,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      profileAuthority: new MultiplayerProfileAuthority({
+        coordinator,
+        logger: { info: () => {} }
+      }),
+      accountStore
+    });
+  let owner = null;
+  let bootstrap = null;
+  let attacker = null;
+  let activeFoundation = foundation;
+
+  try {
+    let port = await activeFoundation.start();
+    owner = await connectClient(port);
+    attacker = await connectClient(port);
+
+    const ownerAuth = await registerAccount(owner, {
+      username: "ClaimedLocalSessionUser",
+      email: "claimed-local-session@example.com",
+      password: "PlayerPass123"
+    });
+    const attackerAuth = await registerAccount(attacker, {
+      username: "OtherClaimedUser",
+      email: "other-claimed-user@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(ownerAuth?.ok, true);
+    assert.equal(attackerAuth?.ok, true);
+
+    owner.disconnect();
+    owner = null;
+    attacker.disconnect();
+    attacker = null;
+    await activeFoundation.stop();
+
+    activeFoundation = createFoundation();
+    port = await activeFoundation.start();
+    bootstrap = await connectClient(port);
+    attacker = await connectClient(port);
+
+    const bootstrapSessionResult = await bootstrapSession(bootstrap, "ClaimedLocalSessionUser");
+    assert.equal(bootstrapSessionResult?.ok, true);
+    assert.equal(Boolean(bootstrapSessionResult?.session?.authenticated), false);
+
+    const attackerLogin = await loginAccount(attacker, {
+      email: "other-claimed-user@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(attackerLogin?.ok, true);
+
+    const bootstrapStart = await emitWithAck(bootstrap, "profile:startLocalPveMatch", {
+      aiDifficulty: "normal"
+    });
+    const crossUserStart = await emitWithAck(attacker, "profile:startLocalPveMatch", {
+      username: "ClaimedLocalSessionUser",
+      aiDifficulty: "normal"
+    });
+
+    assert.equal(bootstrapStart?.ok, false);
+    assert.equal(bootstrapStart?.error?.code, "PROFILE_AUTH_REQUIRED");
+    assert.equal(crossUserStart?.ok, false);
+    assert.equal(crossUserStart?.error?.code, "PROFILE_USERNAME_MISMATCH");
+  } finally {
+    owner?.disconnect();
+    bootstrap?.disconnect();
+    attacker?.disconnect();
+    await activeFoundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: local match session state fetch is owner-only and session IDs stay unique", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    })
+  });
+  let owner = null;
+  let other = null;
+
+  try {
+    const port = await foundation.start();
+    owner = await connectClient(port);
+    other = await connectClient(port);
+
+    const ownerAuth = await registerAccount(owner, {
+      username: "SessionOwnerOne",
+      email: "session-owner-one@example.com",
+      password: "PlayerPass123"
+    });
+    const otherAuth = await registerAccount(other, {
+      username: "SessionOwnerTwo",
+      email: "session-owner-two@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(ownerAuth?.ok, true);
+    assert.equal(otherAuth?.ok, true);
+
+    const first = await emitWithAck(owner, "profile:startLocalPveMatch", {
+      aiDifficulty: "easy"
+    });
+    const second = await emitWithAck(owner, "profile:startLocalPveMatch", {
+      aiDifficulty: "normal"
+    });
+
+    assert.equal(first?.ok, true);
+    assert.equal(second?.ok, true);
+    assert.notEqual(first?.result?.session?.sessionId, second?.result?.session?.sessionId);
+
+    const ownerRead = await emitWithAck(owner, "profile:getLocalMatchSessionState", {
+      sessionId: first?.result?.session?.sessionId
+    });
+    const otherRead = await emitWithAck(other, "profile:getLocalMatchSessionState", {
+      sessionId: first?.result?.session?.sessionId
+    });
+    const abandoned = await emitWithAck(owner, "profile:abandonLocalMatchSession", {
+      sessionId: first?.result?.session?.sessionId
+    });
+
+    assert.equal(ownerRead?.ok, true);
+    assert.equal(ownerRead?.result?.session?.sessionId, first?.result?.session?.sessionId);
+    assert.equal(otherRead?.ok, false);
+    assert.equal(otherRead?.error?.code, "LOCAL_MATCH_SESSION_ACCESS_DENIED");
+    assert.equal(abandoned?.ok, true);
+    assert.equal(abandoned?.result?.session?.status, "abandoned");
+  } finally {
+    owner?.disconnect();
+    other?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: local match session routes reject invalid mode, difficulty, and rival inputs", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const auth = await registerAccount(client, {
+      username: "ValidationSessionUser",
+      email: "validation-session-user@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(auth?.ok, true);
+
+    const invalidMode = await emitWithAck(client, "profile:startLocalPveMatch", {
+      mode: "gauntlet",
+      aiDifficulty: "normal"
+    });
+    const invalidDifficulty = await emitWithAck(client, "profile:startLocalPveMatch", {
+      aiDifficulty: "nightmare"
+    });
+    const invalidFeatured = await emitWithAck(client, "profile:startFeaturedRivalMatch", {
+      aiDifficulty: "hard",
+      featuredRivalId: "fake_rival"
+    });
+    const invalidGauntlet = await emitWithAck(client, "profile:startGauntletMatch", {
+      aiDifficulty: "normal",
+      gauntletRivalId: "fake_rival"
+    });
+
+    assert.equal(invalidMode?.ok, false);
+    assert.equal(invalidMode?.error?.code, "LOCAL_MATCH_INVALID_MODE");
+    assert.equal(invalidDifficulty?.ok, false);
+    assert.equal(invalidDifficulty?.error?.code, "LOCAL_MATCH_INVALID_DIFFICULTY");
+    assert.equal(invalidFeatured?.ok, false);
+    assert.equal(invalidFeatured?.error?.code, "LOCAL_MATCH_INVALID_FEATURED_RIVAL");
+    assert.equal(invalidGauntlet?.ok, false);
+    assert.equal(invalidGauntlet?.error?.code, "LOCAL_MATCH_INVALID_GAUNTLET_RIVAL");
   } finally {
     client?.disconnect();
     await foundation.stop();
