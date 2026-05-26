@@ -203,8 +203,71 @@ body {
   padding-bottom: 8px;
 }
 
-.how-to-play-section {
+.how-to-play-accordion {
+  padding: 0;
+  overflow: hidden;
+}
+
+.how-to-play-accordion[open] {
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.how-to-play-accordion__summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   padding: 14px 16px;
+}
+
+.how-to-play-accordion__summary::-webkit-details-marker {
+  display: none;
+}
+
+.how-to-play-accordion__summary-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.how-to-play-accordion__title {
+  margin: 0;
+}
+
+.how-to-play-accordion__preview {
+  margin: 0;
+  color: rgba(225, 237, 255, 0.82);
+  line-height: 1.45;
+}
+
+.how-to-play-accordion__chevron {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(127, 194, 241, 0.28);
+  color: #f4fbff;
+  background: rgba(13, 31, 50, 0.55);
+  font-size: 1.05rem;
+  font-weight: 700;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.how-to-play-accordion[open] .how-to-play-accordion__chevron {
+  transform: rotate(45deg);
+  background: rgba(24, 58, 92, 0.8);
+}
+
+.how-to-play-accordion__body {
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(127, 194, 241, 0.16);
 }
 
 .how-to-play-copy p {
@@ -226,6 +289,16 @@ body {
 
 .how-to-play-list li + li {
   margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .how-to-play-accordion__summary {
+    align-items: flex-start;
+  }
+
+  .how-to-play-accordion__chevron {
+    margin-top: 2px;
+  }
 }
 
 .store-feature-banner {

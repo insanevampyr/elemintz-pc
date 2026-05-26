@@ -9684,22 +9684,44 @@ test("ui: menu renders a How to Play button and keeps existing buttons", () => {
   assert.match(html, /id="feedback-btn"/);
 });
 
-test("ui: how to play screen renders the major gameplay help sections", () => {
+test("ui: how to play screen renders compact accordion sections with the current gameplay guidance", () => {
   const html = howToPlayScreen.render({
     actions: { back: () => {} }
   });
 
   assert.match(html, /How to Play EleMintz/);
-  assert.match(html, /Basic Goal/);
+  assert.match(html, /id="how-to-play-back-btn"/);
+  assert.match(html, /data-how-to-play-section="quick-start" open/);
+  assert.match(html, /data-how-to-play-section="element-rules" open/);
+  assert.match(html, /data-how-to-play-section="round-outcomes"/);
+  assert.match(html, /data-how-to-play-section="war"/);
+  assert.match(html, /data-how-to-play-section="game-modes"/);
+  assert.match(html, /data-how-to-play-section="rewards"/);
+  assert.match(html, /data-how-to-play-section="cosmetics-loadouts"/);
+  assert.match(html, /data-how-to-play-section="strategy-hints"/);
+  assert.match(html, />Quick Start</);
   assert.match(html, /Element Rules/);
+  assert.match(html, /Round Outcomes/);
   assert.match(html, /WAR/);
-  assert.match(html, /Winning the Match/);
-  assert.match(html, /XP, Tokens, and Chests/);
-  assert.match(html, /Cosmetics/);
-  assert.match(html, /Store and Featured Rotation/);
-  assert.match(html, /Quick Tips/);
+  assert.match(html, /Game Modes/);
+  assert.match(html, /Rewards/);
+  assert.match(html, /Cosmetics \+ Loadouts/);
+  assert.match(html, /Strategy Hints/);
+  assert.match(html, /Choose an element, win matchups, survive WAR, and finish with the stronger board\./);
+  assert.match(html, /Each element beats one other element\. Same element starts WAR\. Some pairings are No Effect\./);
   assert.match(html, /Fire<\/strong> beats Earth/);
-  assert.match(html, /If you already own a limited cosmetic, it stays yours and remains usable even when it leaves the Store rotation\./);
+  assert.match(html, /Earth<\/strong> beats Wind/);
+  assert.match(html, /Wind<\/strong> beats Water/);
+  assert.match(html, /Water<\/strong> beats Fire/);
+  assert.match(html, /Gauntlet Mode/);
+  assert.match(html, /Featured Rival/);
+  assert.match(html, /Harder AI and stronger players punish repeated habits quickly\./);
+  assert.doesNotMatch(html, /data-how-to-play-section="round-outcomes" open/);
+  assert.doesNotMatch(html, /data-how-to-play-section="war" open/);
+  assert.doesNotMatch(html, /data-how-to-play-section="game-modes" open/);
+  assert.doesNotMatch(html, /data-how-to-play-section="rewards" open/);
+  assert.doesNotMatch(html, /data-how-to-play-section="cosmetics-loadouts" open/);
+  assert.doesNotMatch(html, /data-how-to-play-section="strategy-hints" open/);
 });
 
 test("ui: how to play screen back button binds to the provided action", () => {
