@@ -5,6 +5,20 @@ import { resolveDataDir } from "../paths.js";
 // Keep a small rolling window of backups so recovery stays practical without
 // letting persistence files grow unbounded over time.
 const BACKUP_RETENTION_LIMIT = 5;
+const STORAGE_DEBUG_ENABLED = process.env.ELE_DEBUG_STORAGE === "1";
+
+function logStorageDebug(message, details) {
+  if (!STORAGE_DEBUG_ENABLED) {
+    return;
+  }
+
+  if (details === undefined) {
+    console.info(message);
+    return;
+  }
+
+  console.info(message, details);
+}
 
 function formatBackupTimestamp(date = new Date()) {
   const year = String(date.getFullYear());
@@ -86,7 +100,7 @@ async function createBackupIfPresent(filePath) {
   }
 
   await fs.copyFile(filePath, backupPath);
-  console.info("[JsonStore] backup created", {
+  logStorageDebug("[JsonStore] backup created", {
     filePath,
     backupPath
   });
@@ -200,7 +214,7 @@ export class JsonStore {
 
     // Log before any disk mutation so crash reports show intent even if the
     // actual write fails before completion.
-    console.info("[JsonStore] write start", {
+    logStorageDebug("[JsonStore] write start", {
       filePath: this.filePath
     });
 
@@ -216,7 +230,7 @@ export class JsonStore {
     // Replace the main file only after the temp write has fully flushed.
     await atomicReplaceFile(this.filePath, serializedValue);
 
-    console.info("[JsonStore] write success", {
+    logStorageDebug("[JsonStore] write success", {
       filePath: this.filePath
     });
 

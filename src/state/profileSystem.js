@@ -32,6 +32,21 @@ import {
 // schema step. The migration pipeline below upgrades older records to match it.
 export const CURRENT_PROFILE_SCHEMA_VERSION = 1;
 
+const PROFILE_DEBUG_ENABLED = process.env.ELE_DEBUG_PROFILE === "1";
+
+function logProfileDebug(message, details) {
+  if (!PROFILE_DEBUG_ENABLED) {
+    return;
+  }
+
+  if (details === undefined) {
+    console.info(message);
+    return;
+  }
+
+  console.info(message, details);
+}
+
 function normalizeUsername(username) {
   const normalized = String(username ?? "").trim();
   return normalized.length > 0 ? normalized : "Player";
@@ -84,7 +99,7 @@ function migrateProfileSchema(profile) {
   const startingVersion = getProfileSchemaVersion(profile);
 
   if (startingVersion >= CURRENT_PROFILE_SCHEMA_VERSION) {
-    console.info("[ProfileSystem] migration skipped - already current", {
+    logProfileDebug("[ProfileSystem] migration skipped - already current", {
       username: profile?.username ?? null,
       schemaVersion: startingVersion
     });
@@ -96,7 +111,7 @@ function migrateProfileSchema(profile) {
     };
   }
 
-  console.info("[ProfileSystem] migration start", {
+  logProfileDebug("[ProfileSystem] migration start", {
     username: profile?.username ?? null,
     fromVersion: startingVersion,
     toVersion: CURRENT_PROFILE_SCHEMA_VERSION
@@ -150,7 +165,7 @@ function validateAndRepairProfile(profile) {
     ...baseProfile
   };
 
-  console.info("[ProfileSystem] validation start", {
+  logProfileDebug("[ProfileSystem] validation start", {
     username: repairedProfile.username ?? null
   });
 
@@ -161,7 +176,7 @@ function validateAndRepairProfile(profile) {
   const logFieldRepair = (field, previousValue, nextValue) => {
     repairs.push(field);
     mutated = true;
-    console.info("[ProfileSystem] validation repaired field", {
+    logProfileDebug("[ProfileSystem] validation repaired field", {
       username: repairedProfile.username ?? null,
       field,
       previousType: Array.isArray(previousValue) ? "array" : typeof previousValue,
@@ -171,7 +186,7 @@ function validateAndRepairProfile(profile) {
   const logSectionRepair = (section, previousValue, nextValue) => {
     repairs.push(section);
     mutated = true;
-    console.info("[ProfileSystem] validation repaired section", {
+    logProfileDebug("[ProfileSystem] validation repaired section", {
       username: repairedProfile.username ?? null,
       section,
       previousType: Array.isArray(previousValue) ? "array" : typeof previousValue,
@@ -420,18 +435,26 @@ function validateAndRepairProfile(profile) {
   repairedProfile.onlineDisconnectTracking = disconnectTracking;
 
   if (repairs.length === 0) {
-    console.info("[ProfileSystem] validation idempotent - no changes applied", {
+    logProfileDebug("[ProfileSystem] validation idempotent - no changes applied", {
       username: repairedProfile.username ?? null
     });
-    console.info("[ProfileSystem] validation skipped - already valid", {
+    logProfileDebug("[ProfileSystem] validation skipped - already valid", {
       username: repairedProfile.username ?? null
     });
   }
 
-  console.info("[ProfileSystem] validation complete", {
-    username: repairedProfile.username ?? null,
-    repairedCount: repairs.length
-  });
+  if (repairs.length > 0) {
+    console.info("[ProfileSystem] validation complete", {
+      username: repairedProfile.username ?? null,
+      repairedCount: repairs.length,
+      repairedFields: repairs
+    });
+  } else {
+    logProfileDebug("[ProfileSystem] validation complete", {
+      username: repairedProfile.username ?? null,
+      repairedCount: repairs.length
+    });
+  }
 
   return {
     profile: repairedProfile,
@@ -698,7 +721,7 @@ export class ProfileSystem {
       const fileExists = await checkFileExists(filePath);
       const dirWritable = await checkDirectoryWritable(dirPath);
 
-      console.info("[ProfileSystem] ensureProfile diagnostics", {
+      logProfileDebug("[ProfileSystem] ensureProfile diagnostics", {
         username: normalized,
         dataDir: this.store.dataDir,
         filePath,
@@ -712,7 +735,7 @@ export class ProfileSystem {
         });
 
         if (existing) {
-          console.info("[ProfileSystem] ensureProfile existing profile returned", {
+          logProfileDebug("[ProfileSystem] ensureProfile existing profile returned", {
             username: normalized
           });
           return existing;
@@ -789,11 +812,19 @@ export class ProfileSystem {
         nextProfiles[index] = next;
       }
 
-      console.info("[ProfileSystem] updateProfile write", {
-        before: snapshot(current),
-        after: snapshot(next),
-        filePath: this.store.filePath
-      });
+      if (JSON.stringify(snapshot(current)) !== JSON.stringify(snapshot(next))) {
+        console.info("[ProfileSystem] updateProfile write", {
+          before: snapshot(current),
+          after: snapshot(next),
+          filePath: this.store.filePath
+        });
+      } else {
+        logProfileDebug("[ProfileSystem] updateProfile write", {
+          before: snapshot(current),
+          after: snapshot(next),
+          filePath: this.store.filePath
+        });
+      }
 
       await this.store.write(nextProfiles);
       this.cacheProfile(next);
@@ -801,7 +832,7 @@ export class ProfileSystem {
       const reloaded = (await this.loadNormalizedProfileByUsername(normalized, {
         applyRetroactive: false
       })).profile;
-      console.info("[ProfileSystem] updateProfile reloaded", {
+      logProfileDebug("[ProfileSystem] updateProfile reloaded", {
         reloaded: snapshot(reloaded),
         filePath: this.store.filePath
       });

@@ -267,10 +267,14 @@ test("profile validation: valid profile stays stable and emits no repair logs", 
     false
   );
   assert.equal(
+    infoLogs.some((entry) => entry[0] === "[ProfileSystem] validation complete"),
+    false
+  );
+  assert.equal(
     infoLogs.some(
       (entry) => entry[0] === "[ProfileSystem] validation idempotent - no changes applied"
     ),
-    true
+    false
   );
   assert.equal(
     warnLogs.some(
@@ -304,18 +308,15 @@ test("profile validation: corrupted profile repairs only on first normalize pass
 
   assert.deepEqual(secondPass, firstPass);
 
-  const repairedFieldLogs = infoLogs.filter(
-    (entry) => entry[0] === "[ProfileSystem] validation repaired field"
-  );
-  const repairedSectionLogs = infoLogs.filter(
-    (entry) => entry[0] === "[ProfileSystem] validation repaired section"
+  const repairedSummaries = infoLogs.filter(
+    (entry) => entry[0] === "[ProfileSystem] validation complete" && entry[1]?.repairedCount > 0
   );
   const idempotentLogs = infoLogs.filter(
     (entry) => entry[0] === "[ProfileSystem] validation idempotent - no changes applied"
   );
 
-  assert.equal(repairedFieldLogs.length > 0 || repairedSectionLogs.length > 0, true);
-  assert.equal(idempotentLogs.length >= 1, true);
+  assert.equal(repairedSummaries.length >= 1, true);
+  assert.equal(idempotentLogs.length, 0);
 });
 
 test("profile validation: seenAnnouncements repairs malformed values to an object", () => {
