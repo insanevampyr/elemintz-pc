@@ -133,6 +133,13 @@ function createCrownfireRewardMatch({
   };
 }
 
+function createGauntletRewardMatch({ winner = "p1", endReason = null, difficulty = "hard" } = {}) {
+  return {
+    ...createRewardHookMatch({ winner, endReason, mode: "pve", difficulty }),
+    gauntletMode: true
+  };
+}
+
 test("state: records completed match into profile and saves", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
@@ -3664,6 +3671,82 @@ test("boost events: PvE scope boosts local base match rewards without boosting c
   );
 });
 
+test("boost events: explicit featured rival target boosts Featured Rival base rewards only", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Boss Rush Weekend",
+    message: "Boost featured rival base rewards only.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    targets: {
+      featured_rival_base: true
+    },
+    xpMultiplier: 2,
+    tokenMultiplier: 2,
+    excludeDifficulties: []
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+
+  const baseline = await baselineState.recordMatchResult({
+    username: "BaselineExplicitFeaturedUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+  const boosted = await boostedState.recordMatchResult({
+    username: "BoostedExplicitFeaturedUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+});
+
+test("boost events: explicit gauntlet target boosts gauntlet base rewards", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Gauntlet Base Reward Boost",
+    message: "Boost gauntlet base rewards only.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    targets: {
+      gauntlet_base: true
+    },
+    xpMultiplier: 2,
+    tokenMultiplier: 2,
+    excludeDifficulties: []
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+
+  const baseline = await baselineState.recordMatchResult({
+    username: "BaselineGauntletBaseBoostUser",
+    perspective: "p1",
+    matchState: createGauntletRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+  const boosted = await boostedState.recordMatchResult({
+    username: "BoostedGauntletBaseBoostUser",
+    perspective: "p1",
+    matchState: createGauntletRewardMatch({ winner: "p1", difficulty: "hard" })
+  });
+
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
+  assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
+  assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
+});
+
 test("boost events: local_pvp scope boosts local PvP base rewards only", async () => {
   const baselineDataDir = await createTempDataDir();
   const boostedDataDir = await createTempDataDir();
@@ -3697,6 +3780,49 @@ test("boost events: local_pvp scope boosts local PvP base rewards only", async (
   assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
   assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
   assert.equal(boosted.matchXpDelta, Math.floor(baseline.matchXpDelta * 1.5));
+  assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
+});
+
+test("boost events: explicit local_pvp false leaves local PvP rewards unchanged", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Standard Eligible Weekend",
+    message: "Local hotseat should stay excluded.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    targets: {
+      pve_normal: true,
+      pve_hard: true,
+      featured_rival_base: true,
+      gauntlet_base: true,
+      online_pvp: true,
+      local_pvp_casual: false
+    },
+    xpMultiplier: 2,
+    tokenMultiplier: 2,
+    excludeDifficulties: []
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+
+  const baseline = await baselineState.recordMatchResult({
+    username: "BaselineExplicitNoLocalUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", mode: "local_pvp" })
+  });
+  const boosted = await boostedState.recordMatchResult({
+    username: "BoostedExplicitNoLocalUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", mode: "local_pvp" })
+  });
+
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta);
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta);
+  assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
   assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
 });
 
@@ -4136,7 +4262,7 @@ test("economy: match token rewards apply as win=2, loss=1, tie=1, quit=0", () =>
   assert.equal(quit.xpDelta, 0);
 });
 
-test("boost events: all scope boosts eligible direct match rewards but easy exclusion blocks Easy AI boosts", () => {
+test("boost events: legacy all scope excludes local PvP by default while still respecting Easy AI exclusion", () => {
   const challenges = markAllChallengeRewardsConsumed(createDefaultDailyChallenges(Date.now()));
   const baseProfile = {
     username: "DirectBoostUser",
@@ -4170,8 +4296,8 @@ test("boost events: all scope boosts eligible direct match rewards but easy excl
       }
     }
   });
-  assert.equal(boostedLocalPvp.matchTokenDelta, 4);
-  assert.equal(boostedLocalPvp.matchXpDelta, 4);
+  assert.equal(boostedLocalPvp.matchTokenDelta, 2);
+  assert.equal(boostedLocalPvp.matchXpDelta, 3);
 
   const excludedEasyPve = applyDailyChallengesForMatch({
     profile: baseProfile,
@@ -4192,6 +4318,86 @@ test("boost events: all scope boosts eligible direct match rewards but easy excl
   });
   assert.equal(excludedEasyPve.matchTokenDelta, 2);
   assert.equal(excludedEasyPve.matchXpDelta, 3);
+});
+
+test("boost events: explicit local_pvp target boosts local PvP rewards before the daily cap", () => {
+  const challenges = markAllChallengeRewardsConsumed(createDefaultDailyChallenges(Date.now()));
+  const baseProfile = {
+    username: "ExplicitLocalBoostUser",
+    tokens: 0,
+    playerXP: 0,
+    playerLevel: 1,
+    dailyChallenges: challenges
+  };
+  const baseMatch = {
+    status: "completed",
+    endReason: null,
+    winner: "p1",
+    history: [],
+    players: { p1: { hand: [] }, p2: { hand: [] } },
+    meta: { totalCards: 16 },
+    mode: "local_pvp"
+  };
+
+  const boostedLocalPvp = applyDailyChallengesForMatch({
+    profile: baseProfile,
+    matchState: baseMatch,
+    perspective: "p1",
+    matchStats: { warsWon: 0, cardsCaptured: 0 },
+    nowMs: Date.now(),
+    options: {
+      boostEvent: {
+        enabled: true,
+        targets: {
+          local_pvp_casual: true
+        },
+        xpMultiplier: 1.5,
+        tokenMultiplier: 2,
+        excludeDifficulties: []
+      }
+    }
+  });
+
+  assert.equal(boostedLocalPvp.matchTokenDelta, 4);
+  assert.equal(boostedLocalPvp.matchXpDelta, 4);
+});
+
+test("boost events: explicit local_pvp target boosts dedicated local hotseat rewards before the cap", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Local Hotseat Boost",
+    message: "Boost only local hotseat base rewards.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    targets: {
+      local_pvp_casual: true
+    },
+    xpMultiplier: 2,
+    tokenMultiplier: 2,
+    excludeDifficulties: []
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+  const match = createRewardHookMatch({ winner: "p1", mode: "local_pvp" });
+
+  const baseline = await baselineState.recordLocalHotseatResult({
+    username: "BaselineHotseatBoostUser",
+    perspective: "p1",
+    matchState: match
+  });
+  const boosted = await boostedState.recordLocalHotseatResult({
+    username: "BoostedHotseatBoostUser",
+    perspective: "p1",
+    matchState: match
+  });
+
+  assert.equal(boosted.localPvpRewardStatus?.capped, false);
+  assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
+  assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
 });
 
 test("boost events: daily login and admin grants stay unboosted", async () => {
@@ -4220,6 +4426,83 @@ test("boost events: daily login and admin grants stay unboosted", async () => {
   });
   assert.equal(adminGrant.xpDelta, 10);
   assert.equal(adminGrant.tokenDelta, 15);
+});
+
+test("boost events: gauntlet milestone rewards stay unboosted under an active gauntlet base boost", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Gauntlet Weekend",
+    message: "Boost gauntlet base rewards only.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    targets: {
+      gauntlet_base: true
+    },
+    xpMultiplier: 3,
+    tokenMultiplier: 3,
+    excludeDifficulties: []
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.99) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.99) });
+
+  await baselineState.recordGauntletStats({ username: "BaselineMilestoneBoostUser", runStarted: true });
+  await boostedState.recordGauntletStats({ username: "BoostedMilestoneBoostUser", runStarted: true });
+
+  const baseline = await baselineState.recordGauntletStats({
+    username: "BaselineMilestoneBoostUser",
+    matchWon: true,
+    currentStreak: 3,
+    claimedMilestoneStreaks: []
+  });
+  const boosted = await boostedState.recordGauntletStats({
+    username: "BoostedMilestoneBoostUser",
+    matchWon: true,
+    currentStreak: 3,
+    claimedMilestoneStreaks: []
+  });
+
+  assert.deepEqual(boosted.milestoneRewards, baseline.milestoneRewards);
+  assert.equal(boosted.tokenDelta, baseline.tokenDelta);
+  assert.equal(boosted.xpDelta, baseline.xpDelta);
+});
+
+test("boost events: chest rewards stay unboosted under an active base reward boost", async () => {
+  const baselineDataDir = await createTempDataDir();
+  const boostedDataDir = await createTempDataDir();
+
+  await writeBoostEventConfig(boostedDataDir, {
+    enabled: true,
+    title: "Hard AI Boost",
+    message: "Base rewards only.",
+    startsAt: "2020-01-01T00:00:00.000Z",
+    endsAt: "2099-01-01T00:00:00.000Z",
+    targets: {
+      pve_hard: true
+    },
+    xpMultiplier: 2,
+    tokenMultiplier: 2,
+    excludeDifficulties: []
+  });
+
+  const baselineState = createBoostAwareStateCoordinator({ dataDir: baselineDataDir, random: constantRandom(0.01) });
+  const boostedState = createBoostAwareStateCoordinator({ dataDir: boostedDataDir, random: constantRandom(0.01) });
+
+  const baseline = await baselineState.recordMatchResult({
+    username: "BaselineChestBoostUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard", mode: "pve" })
+  });
+  const boosted = await boostedState.recordMatchResult({
+    username: "BoostedChestBoostUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard", mode: "pve" })
+  });
+
+  assert.equal(boosted.profile.chests.basic, baseline.profile.chests.basic);
 });
 
 test("boost events: boosted match xp converts after boost math at max level", async () => {

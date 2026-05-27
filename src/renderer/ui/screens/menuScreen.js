@@ -219,6 +219,8 @@ function formatBoostScopeLabel(scope) {
       return "Local 2-Player";
     case "all":
       return "All Eligible Modes";
+    case "custom":
+      return "Custom Targets";
     default:
       return "Eligible Modes";
   }
@@ -294,8 +296,12 @@ function renderMenuBoostEventCard(boostEvent) {
 
   const xpMultiplier = Number(boostEvent.xpMultiplier ?? 1);
   const tokenMultiplier = Number(boostEvent.tokenMultiplier ?? 1);
+  const targetSummary = String(boostEvent.targetSummary ?? "").trim();
   const detailLines = [
-    renderBoostDetailLine("Scope", formatBoostScopeLabel(boostEvent.scope))
+    renderBoostDetailLine(
+      targetSummary ? "Targets" : "Scope",
+      targetSummary || formatBoostScopeLabel(boostEvent.scope)
+    )
   ];
 
   if (xpMultiplier > 1) {
