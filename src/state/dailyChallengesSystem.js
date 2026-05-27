@@ -328,8 +328,8 @@ export const WEEKLY_BONUS_CHALLENGE_POOL = Object.freeze([
     id: "weekly_defeat_featured_rival_3",
     name: "Rival Challenger",
     description: "Defeat the Featured Rival 3 times this week.",
-    rewardTokens: 25,
-    rewardXp: 45,
+    rewardTokens: 18,
+    rewardXp: 35,
     goal: 3,
     progressKey: "featuredRivalWins"
   },
@@ -337,8 +337,8 @@ export const WEEKLY_BONUS_CHALLENGE_POOL = Object.freeze([
     id: "weekly_defeat_featured_rival_5",
     name: "Rival Slayer",
     description: "Defeat the Featured Rival 5 times this week.",
-    rewardTokens: 40,
-    rewardXp: 75,
+    rewardTokens: 28,
+    rewardXp: 55,
     goal: 5,
     progressKey: "featuredRivalWins"
   },
