@@ -15,6 +15,7 @@ import {
   WEEKLY_FIXED_CORE_CHALLENGE_DEFINITIONS,
   applyDailyChallengesForMatch,
   createDefaultDailyChallenges,
+  getDailyResetWindow,
   getDailyChallengesView,
   getXpThresholds,
   normalizeProfileDailyChallenges
@@ -2130,6 +2131,146 @@ test("state: local hotseat rewards the first three matches, then caps rewards wh
   assert.equal(reloaded.modeStats.local_pvp.gamesPlayed, 4);
   assert.equal(reloaded.localPvpRewardTracking.rewardedMatches, 3);
   assert.equal(Object.keys(reloaded.achievements ?? {}).length, 0);
+});
+
+test("state: local hotseat persists winner and loser rewards for both players from their own match perspectives", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const match = {
+    ...createMatch({ mode: "local_pvp" }),
+    status: "completed",
+    winner: "p2",
+    round: 3,
+    endReason: null,
+    history: [
+      {
+        round: 1,
+        result: "p2",
+        p1Card: "fire",
+        p2Card: "water",
+        warClashes: 1,
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      }
+    ]
+  };
+
+  const p1Result = await state.recordLocalHotseatResult({
+    username: "HotseatP1",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "local-hotseat-perspective-p1"
+  });
+  const p2Result = await state.recordLocalHotseatResult({
+    username: "HotseatP2",
+    perspective: "p2",
+    matchState: match,
+    settlementKey: "local-hotseat-perspective-p2"
+  });
+
+  assert.equal(p1Result.profile.modeStats.local_pvp.gamesPlayed, 1);
+  assert.equal(p2Result.profile.modeStats.local_pvp.gamesPlayed, 1);
+  assert.equal(p1Result.profile.modeStats.local_pvp.losses, 1);
+  assert.equal(p2Result.profile.modeStats.local_pvp.wins, 1);
+  assert.ok(p1Result.xpDelta >= 1);
+  assert.ok(p1Result.tokenDelta >= 1);
+  assert.ok(p2Result.xpDelta >= 1);
+  assert.ok(p2Result.tokenDelta >= 1);
+});
+
+test("state: local hotseat draw grants participation rewards to both players under their own caps", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const match = createRewardHookMatch({ winner: "draw", mode: "local_pvp" });
+
+  const p1Result = await state.recordLocalHotseatResult({
+    username: "LocalDrawP1",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "local-hotseat-draw-p1"
+  });
+  const p2Result = await state.recordLocalHotseatResult({
+    username: "LocalDrawP2",
+    perspective: "p2",
+    matchState: match,
+    settlementKey: "local-hotseat-draw-p2"
+  });
+
+  assert.equal(p1Result.profile.modeStats.local_pvp.gamesPlayed, 1);
+  assert.equal(p2Result.profile.modeStats.local_pvp.gamesPlayed, 1);
+  assert.ok(p1Result.xpDelta >= 1);
+  assert.ok(p1Result.tokenDelta >= 1);
+  assert.ok(p2Result.xpDelta >= 1);
+  assert.ok(p2Result.tokenDelta >= 1);
+});
+
+test("state: local hotseat daily reward caps are tracked independently per player", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const match = createRewardHookMatch({ winner: "p1", mode: "local_pvp" });
+
+  await state.profiles.updateProfile("CappedP1", (current) => ({
+    ...current,
+    localPvpRewardTracking: {
+      rewardWindowKey: new Date(getDailyResetWindow(Date.now()).lastResetMs).toISOString(),
+      rewardedMatches: 3
+    }
+  }));
+  await state.profiles.updateProfile("CappedP2", (current) => ({
+    ...current,
+    localPvpRewardTracking: {
+      rewardWindowKey: new Date(getDailyResetWindow(Date.now()).lastResetMs).toISOString(),
+      rewardedMatches: 3
+    }
+  }));
+
+  const p1Capped = await state.recordLocalHotseatResult({
+    username: "CappedP1",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "local-hotseat-cap-p1"
+  });
+  const p2Open = await state.recordLocalHotseatResult({
+    username: "OpenP2",
+    perspective: "p2",
+    matchState: match,
+    settlementKey: "local-hotseat-cap-p2"
+  });
+  const p1Open = await state.recordLocalHotseatResult({
+    username: "OpenP1",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "local-hotseat-cap-p1-open"
+  });
+  const p2Capped = await state.recordLocalHotseatResult({
+    username: "CappedP2",
+    perspective: "p2",
+    matchState: match,
+    settlementKey: "local-hotseat-cap-p2-capped"
+  });
+
+  assert.equal(p1Capped.xpDelta, 0);
+  assert.equal(p1Capped.tokenDelta, 0);
+  assert.equal(p1Capped.localPvpRewardStatus?.capped, true);
+  assert.equal(p1Capped.profile.modeStats.local_pvp.gamesPlayed, 1);
+
+  assert.ok(p2Open.xpDelta >= 1);
+  assert.ok(p2Open.tokenDelta >= 1);
+  assert.equal(p2Open.localPvpRewardStatus?.capped, false);
+  assert.equal(p2Open.profile.modeStats.local_pvp.gamesPlayed, 1);
+
+  assert.ok(p1Open.xpDelta >= 1);
+  assert.ok(p1Open.tokenDelta >= 1);
+  assert.equal(p1Open.localPvpRewardStatus?.capped, false);
+  assert.equal(p1Open.profile.modeStats.local_pvp.gamesPlayed, 1);
+
+  assert.equal(p2Capped.xpDelta, 0);
+  assert.equal(p2Capped.tokenDelta, 0);
+  assert.equal(p2Capped.localPvpRewardStatus?.capped, true);
+  assert.equal(p2Capped.profile.modeStats.local_pvp.gamesPlayed, 1);
 });
 
 test("state: separates pve and local_pvp mode statistics", async () => {

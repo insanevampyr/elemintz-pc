@@ -1426,7 +1426,6 @@ export class MultiplayerClient {
         };
       }
 
-      await this.emitIsolatedRequest(socket, "session:logout", {});
       return {
         ok: true,
         account: authResponse.account ?? null,

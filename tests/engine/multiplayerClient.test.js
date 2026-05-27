@@ -1998,8 +1998,7 @@ test("multiplayer client: hotseat identity authentication uses an isolated accou
   assert.equal(sockets.length, 2);
   assert.deepEqual(sockets[1].sentEvents.map((entry) => entry.eventName), [
     "auth:register",
-    "profile:get",
-    "session:logout"
+    "profile:get"
   ]);
 });
 
