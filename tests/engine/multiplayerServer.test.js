@@ -1555,6 +1555,16 @@ test("boost event store: valid active event returns normalized payload and inval
       endsAt: "2026-05-25T06:00:00.000Z",
       scope: "online",
       excludeDifficulties: ["easy"],
+      targets: {
+        pve_normal: false,
+        pve_hard: false,
+        pve_easy: false,
+        featured_rival_base: false,
+        gauntlet_base: false,
+        online_pvp: true,
+        local_pvp_casual: false
+      },
+      targetSummary: "Online PvP",
       xpMultiplier: 2,
       tokenMultiplier: 1.5
     });
@@ -1725,6 +1735,86 @@ test("multiplayer foundation: admin boost event routes validate, persist, read, 
     assert.equal(invalidScopeResponse?.ok, false);
     assert.equal(invalidScopeResponse?.error?.code, "BOOST_EVENT_SCOPE_INVALID");
 
+    const invalidExcludeDifficultiesResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:upsertBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token,
+          enabled: true,
+          title: "Bad Targets",
+          message: "Nope.",
+          startsAt: null,
+          endsAt: null,
+          targets: {
+            pve_normal: false,
+            pve_hard: false,
+            pve_easy: false,
+            featured_rival_base: false,
+            gauntlet_base: false,
+            online_pvp: true,
+            local_pvp_casual: false
+          },
+          excludeDifficulties: "easy",
+          xpMultiplier: 2,
+          tokenMultiplier: 1
+        },
+        resolve
+      );
+    });
+    assert.equal(invalidExcludeDifficultiesResponse?.ok, false);
+    assert.equal(
+      invalidExcludeDifficultiesResponse?.error?.code,
+      "BOOST_EVENT_EXCLUDE_DIFFICULTIES_INVALID"
+    );
+
+    const explicitTargetOmittedExclusionsResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:upsertBoostEvent",
+        {
+          sessionToken: adminLogin?.session?.token,
+          enabled: true,
+          title: "Online Only Weekend",
+          message: "Earn boosted online rewards this weekend.",
+          startsAt: "2026-05-10T00:00:00.000Z",
+          endsAt: "2026-05-29T00:00:00.000Z",
+          targets: {
+            pve_normal: false,
+            pve_hard: false,
+            pve_easy: false,
+            featured_rival_base: false,
+            gauntlet_base: false,
+            online_pvp: true,
+            local_pvp_casual: false
+          },
+          xpMultiplier: 2,
+          tokenMultiplier: 1.5
+        },
+        resolve
+      );
+    });
+    assert.equal(explicitTargetOmittedExclusionsResponse?.ok, true);
+    assert.deepEqual(explicitTargetOmittedExclusionsResponse?.result?.config, {
+      enabled: true,
+      title: "Online Only Weekend",
+      message: "Earn boosted online rewards this weekend.",
+      startsAt: "2026-05-10T00:00:00.000Z",
+      endsAt: "2026-05-29T00:00:00.000Z",
+      scope: "online",
+      excludeDifficulties: [],
+      targets: {
+        pve_normal: false,
+        pve_hard: false,
+        pve_easy: false,
+        featured_rival_base: false,
+        gauntlet_base: false,
+        online_pvp: true,
+        local_pvp_casual: false
+      },
+      targetSummary: "Online PvP",
+      xpMultiplier: 2,
+      tokenMultiplier: 1.5
+    });
+
     const upsertResponse = await new Promise((resolve) => {
       adminClient.emit(
         "admin:upsertBoostEvent",
@@ -1753,6 +1843,16 @@ test("multiplayer foundation: admin boost event routes validate, persist, read, 
       endsAt: "2026-05-29T00:00:00.000Z",
       scope: "all",
       excludeDifficulties: ["easy"],
+      targets: {
+        pve_normal: true,
+        pve_hard: true,
+        pve_easy: false,
+        featured_rival_base: true,
+        gauntlet_base: true,
+        online_pvp: true,
+        local_pvp_casual: false
+      },
+      targetSummary: "Normal AI, Hard AI, Featured Rival, Gauntlet, Online PvP",
       xpMultiplier: 1.5,
       tokenMultiplier: 1.5
     });
@@ -7536,6 +7636,38 @@ test("multiplayer rewards: online boost scope can boost XP without changing toke
       settledGuestUsername: null,
       hostRewards: { tokens: 25, xp: 40, basicChests: 0 },
       guestRewards: { tokens: 5, xp: 10, basicChests: 0 }
+    }
+  );
+});
+
+test("multiplayer rewards: explicit online target can boost online base rewards", () => {
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "host"
+      },
+      {
+        random: () => 0.5,
+        logger: { info: () => {} },
+        boostEvent: {
+          enabled: true,
+          targets: {
+            online_pvp: true
+          },
+          excludeDifficulties: [],
+          xpMultiplier: 2,
+          tokenMultiplier: 1.5
+        }
+      }
+    ),
+    {
+      granted: true,
+      winner: "host",
+      settledHostUsername: null,
+      settledGuestUsername: null,
+      hostRewards: { tokens: 37, xp: 40, basicChests: 0 },
+      guestRewards: { tokens: 7, xp: 10, basicChests: 0 }
     }
   );
 });

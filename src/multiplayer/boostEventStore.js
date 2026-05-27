@@ -2,8 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   applyBoostEventToBaseMatchRewards,
+  BOOST_EVENT_TARGET_KEYS,
+  buildBoostEventTargetSummary,
+  deriveBoostEventScopeLabel,
   doesBoostEventApplyToMatch,
   MATCH_REWARD_ROUNDING_MODE,
+  resolveBoostEventTargets,
   roundBoostedRewardDelta
 } from "../shared/boostEventRules.js";
 
@@ -11,10 +15,11 @@ const MAX_TITLE_LENGTH = 120;
 const MAX_MESSAGE_LENGTH = 1000;
 const MAX_SCOPE_LENGTH = 32;
 const MAX_DIFFICULTY_LENGTH = 32;
+const MAX_TARGET_SUMMARY_LENGTH = 240;
 const MAX_MULTIPLIER = 10;
 const MIN_MULTIPLIER = 1;
 const ROUNDING_FACTOR = 1000;
-const ALLOWED_SCOPES = new Set(["online", "all", "pve", "local_pvp"]);
+const ALLOWED_SCOPES = new Set(["online", "all", "pve", "local_pvp", "custom"]);
 const ALLOWED_DIFFICULTY_EXCLUSIONS = new Set(["easy"]);
 
 class BoostEventValidationError extends Error {
@@ -104,7 +109,7 @@ function normalizeBoostEvent(entry) {
   if (
     typeof entry.title !== "string" ||
     typeof entry.message !== "string" ||
-    typeof entry.scope !== "string" ||
+    (entry.scope != null && typeof entry.scope !== "string") ||
     (entry.startsAt != null && typeof entry.startsAt !== "string") ||
     (entry.endsAt != null && typeof entry.endsAt !== "string")
   ) {
@@ -113,12 +118,50 @@ function normalizeBoostEvent(entry) {
 
   const title = sanitizeText(entry.title, MAX_TITLE_LENGTH);
   const message = sanitizeText(entry.message, MAX_MESSAGE_LENGTH);
-  const scope = sanitizeText(entry.scope, MAX_SCOPE_LENGTH)?.toLowerCase() ?? null;
+  const rawScope =
+    entry.scope == null ? null : sanitizeText(entry.scope, MAX_SCOPE_LENGTH)?.toLowerCase() ?? null;
   const startsAt = normalizeTimestamp(entry.startsAt);
   const endsAt = normalizeTimestamp(entry.endsAt);
   const excludeDifficulties = normalizeDifficultyExclusions(entry.excludeDifficulties);
   const xpMultiplier = normalizeMultiplier(entry.xpMultiplier);
   const tokenMultiplier = normalizeMultiplier(entry.tokenMultiplier);
+  const explicitTargets =
+    entry.targets == null
+      ? null
+      : entry.targets && typeof entry.targets === "object" && !Array.isArray(entry.targets)
+        ? entry.targets
+        : false;
+  if (explicitTargets === false) {
+    return null;
+  }
+  if (explicitTargets) {
+    for (const [key, value] of Object.entries(explicitTargets)) {
+      if (!BOOST_EVENT_TARGET_KEYS.includes(key) || typeof value !== "boolean") {
+        return null;
+      }
+    }
+  }
+  if (entry.scope != null && (!rawScope || !ALLOWED_SCOPES.has(rawScope))) {
+    return null;
+  }
+  const targets = resolveBoostEventTargets({
+    scope: rawScope,
+    excludeDifficulties,
+    targets: explicitTargets
+  });
+  const scope = deriveBoostEventScopeLabel({
+    scope: rawScope,
+    excludeDifficulties,
+    targets
+  });
+  const targetSummary = sanitizeText(
+    buildBoostEventTargetSummary({
+      scope: rawScope,
+      excludeDifficulties,
+      targets
+    }),
+    MAX_TARGET_SUMMARY_LENGTH
+  );
 
   if (
     !title ||
@@ -127,7 +170,8 @@ function normalizeBoostEvent(entry) {
     !ALLOWED_SCOPES.has(scope) ||
     excludeDifficulties == null ||
     xpMultiplier == null ||
-    tokenMultiplier == null
+    tokenMultiplier == null ||
+    !targets
   ) {
     return null;
   }
@@ -148,6 +192,8 @@ function normalizeBoostEvent(entry) {
     endsAt,
     scope,
     excludeDifficulties,
+    targets,
+    targetSummary,
     xpMultiplier,
     tokenMultiplier
   };
@@ -198,18 +244,12 @@ function assertBoostEventConfig(entry) {
     );
   }
 
-  if (typeof entry.scope !== "string") {
+  const rawScope =
+    entry.scope == null ? null : sanitizeText(entry.scope, MAX_SCOPE_LENGTH)?.toLowerCase() ?? null;
+  if (entry.scope != null && (!rawScope || !ALLOWED_SCOPES.has(rawScope))) {
     throw new BoostEventValidationError(
       "BOOST_EVENT_SCOPE_INVALID",
-      "scope must be a string."
-    );
-  }
-
-  const scope = sanitizeText(entry.scope, MAX_SCOPE_LENGTH)?.toLowerCase() ?? null;
-  if (!scope || !ALLOWED_SCOPES.has(scope)) {
-    throw new BoostEventValidationError(
-      "BOOST_EVENT_SCOPE_INVALID",
-      "scope must be one of: online, all, pve, local_pvp."
+      "scope must be one of: online, all, pve, local_pvp, custom."
     );
   }
 
@@ -250,14 +290,30 @@ function assertBoostEventConfig(entry) {
     );
   }
 
-  if (!Array.isArray(entry.excludeDifficulties)) {
+  const explicitTargets =
+    entry.targets && typeof entry.targets === "object" && !Array.isArray(entry.targets)
+      ? entry.targets
+      : null;
+  if (entry.targets != null && !explicitTargets) {
+    throw new BoostEventValidationError(
+      "BOOST_EVENT_TARGETS_INVALID",
+      "targets must be an object when provided."
+    );
+  }
+
+  const excludeDifficultiesInput =
+    entry.excludeDifficulties == null && explicitTargets
+      ? []
+      : entry.excludeDifficulties;
+
+  if (!Array.isArray(excludeDifficultiesInput)) {
     throw new BoostEventValidationError(
       "BOOST_EVENT_EXCLUDE_DIFFICULTIES_INVALID",
       "excludeDifficulties must be an array."
     );
   }
 
-  const excludeDifficulties = normalizeDifficultyExclusions(entry.excludeDifficulties);
+  const excludeDifficulties = normalizeDifficultyExclusions(excludeDifficultiesInput);
   if (excludeDifficulties == null) {
     throw new BoostEventValidationError(
       "BOOST_EVENT_EXCLUDE_DIFFICULTIES_INVALID",
@@ -281,6 +337,44 @@ function assertBoostEventConfig(entry) {
     );
   }
 
+  if (explicitTargets) {
+    const keys = Object.keys(explicitTargets);
+    for (const key of keys) {
+      if (!BOOST_EVENT_TARGET_KEYS.includes(key) || typeof explicitTargets[key] !== "boolean") {
+        throw new BoostEventValidationError(
+          "BOOST_EVENT_TARGETS_INVALID",
+          "targets must only contain supported boolean mode target flags."
+        );
+      }
+    }
+  }
+
+  const targets = resolveBoostEventTargets({
+    scope: rawScope,
+    excludeDifficulties,
+    targets: explicitTargets
+  });
+  if (!targets) {
+    throw new BoostEventValidationError(
+      "BOOST_EVENT_TARGETS_INVALID",
+      "targets could not be resolved from the provided scope/target configuration."
+    );
+  }
+
+  const scope = deriveBoostEventScopeLabel({
+    scope: rawScope,
+    excludeDifficulties,
+    targets
+  });
+  const targetSummary = sanitizeText(
+    buildBoostEventTargetSummary({
+      scope: rawScope,
+      excludeDifficulties,
+      targets
+    }),
+    MAX_TARGET_SUMMARY_LENGTH
+  );
+
   return {
     enabled: entry.enabled,
     title,
@@ -289,6 +383,8 @@ function assertBoostEventConfig(entry) {
     endsAt,
     scope,
     excludeDifficulties,
+    targets,
+    targetSummary,
     xpMultiplier,
     tokenMultiplier
   };
@@ -385,7 +481,8 @@ export class BoostEventStore {
 
     return {
       ...config,
-      excludeDifficulties: [...config.excludeDifficulties]
+      excludeDifficulties: [...config.excludeDifficulties],
+      targets: { ...config.targets }
     };
   }
 
