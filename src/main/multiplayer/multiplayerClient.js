@@ -3,6 +3,10 @@ import path from "node:path";
 import { io as createSocket } from "socket.io-client";
 import { JsonStore } from "../../state/storage/jsonStore.js";
 import { formatServerTimestamp } from "../../multiplayer/logger.js";
+import {
+  readMultiplayerRuntimeConfigSync,
+  resolveMultiplayerRuntimeConfigPath
+} from "./multiplayerConfig.js";
 
 export const DEFAULT_MULTIPLAYER_SERVER_URL = "https://uncatchable-jonelle-pronouncedly.ngrok-free.dev";
 const MULTIPLAYER_SESSION_SCHEMA_VERSION = 1;
@@ -752,12 +756,18 @@ export class MultiplayerClient {
     this.connectPromise = null;
     this.boundSocketListeners = null;
     this.subscribers = new Set();
+    this.runtimeConfigPath = resolveMultiplayerRuntimeConfigPath({ dataDir });
+    this.runtimeConfig = readMultiplayerRuntimeConfigSync({
+      dataDir,
+      logger: this.logger
+    });
+    this.runtimeServerUrl = this.runtimeConfig?.serverUrl ?? null;
     this.sessionStore =
       persistSession
         ? new JsonStore(MULTIPLAYER_SESSION_FILENAME, { dataDir })
         : null;
     this.state = {
-      serverUrl: defaultServerUrl,
+      serverUrl: this.resolveServerUrl(),
       connectionStatus: "disconnected",
       socketId: null,
       session: {
@@ -1054,8 +1064,31 @@ export class MultiplayerClient {
   }
 
   normalizeServerUrl(serverUrl) {
-    const normalized = String(serverUrl ?? "").trim();
-    return normalized.length > 0 ? normalized : this.defaultServerUrl;
+    return this.resolveServerUrl({ explicitServerUrl: serverUrl });
+  }
+
+  getRuntimeServerUrl() {
+    const normalized = String(this.runtimeServerUrl ?? "").trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  resolveServerUrl({ explicitServerUrl, persistedServerUrl } = {}) {
+    const explicit = String(explicitServerUrl ?? "").trim();
+    if (explicit.length > 0) {
+      return explicit;
+    }
+
+    const runtime = this.getRuntimeServerUrl();
+    if (runtime) {
+      return runtime;
+    }
+
+    const persisted = String(persistedServerUrl ?? "").trim();
+    if (persisted.length > 0) {
+      return persisted;
+    }
+
+    return this.defaultServerUrl;
   }
 
   sanitizeRequestLogPayload(payload) {
@@ -1183,7 +1216,10 @@ export class MultiplayerClient {
       };
     }
 
-    const nextServerUrl = this.normalizeServerUrl(serverUrl ?? persisted.serverUrl);
+    const nextServerUrl = this.resolveServerUrl({
+      explicitServerUrl: serverUrl,
+      persistedServerUrl: persisted.serverUrl
+    });
     this.sessionToken = persisted.token;
     this.sessionBoundSocketId = null;
     this.updateState({

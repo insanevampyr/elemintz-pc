@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { MultiplayerClient } from "../../src/main/multiplayer/multiplayerClient.js";
+import { MULTIPLAYER_RUNTIME_CONFIG_FILENAME } from "../../src/main/multiplayer/multiplayerConfig.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
 
@@ -2184,6 +2185,78 @@ test("multiplayer client: authenticated session restores from persisted storage 
   }
 });
 
+test("multiplayer client: runtime config serverUrl is preferred over the hardcoded default", async () => {
+  const dataDir = await createTempDataDir();
+  let connectedUrl = null;
+
+  try {
+    await fs.writeFile(
+      path.join(dataDir, MULTIPLAYER_RUNTIME_CONFIG_FILENAME),
+      JSON.stringify({
+        serverUrl: "https://runtime-config.ngrok-free.app",
+        updatedAt: "2026-05-27T12:00:00.000Z",
+        source: "test"
+      }),
+      "utf8"
+    );
+
+    const client = new MultiplayerClient({
+      socketFactory: (serverUrl) => {
+        connectedUrl = serverUrl;
+        return new FakeSocket();
+      },
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
+      dataDir,
+      defaultServerUrl: "https://hardcoded-fallback.ngrok-free.app",
+      persistSession: false
+    });
+
+    await client.connect();
+
+    assert.equal(connectedUrl, "https://runtime-config.ngrok-free.app");
+    assert.equal(client.getState().serverUrl, "https://runtime-config.ngrok-free.app");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: explicit serverUrl argument still overrides runtime config", async () => {
+  const dataDir = await createTempDataDir();
+  let connectedUrl = null;
+
+  try {
+    await fs.writeFile(
+      path.join(dataDir, MULTIPLAYER_RUNTIME_CONFIG_FILENAME),
+      JSON.stringify({
+        serverUrl: "https://runtime-config.ngrok-free.app",
+        updatedAt: "2026-05-27T12:00:00.000Z",
+        source: "test"
+      }),
+      "utf8"
+    );
+
+    const client = new MultiplayerClient({
+      socketFactory: (serverUrl) => {
+        connectedUrl = serverUrl;
+        return new FakeSocket();
+      },
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
+      dataDir,
+      defaultServerUrl: "https://hardcoded-fallback.ngrok-free.app",
+      persistSession: false
+    });
+
+    await client.connect({
+      serverUrl: "https://explicit-override.ngrok-free.app"
+    });
+
+    assert.equal(connectedUrl, "https://explicit-override.ngrok-free.app");
+    assert.equal(client.getState().serverUrl, "https://explicit-override.ngrok-free.app");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer client: request logging redacts passwords for auth requests", async () => {
   const logEntries = [];
   const client = new MultiplayerClient({
@@ -2360,6 +2433,86 @@ test("multiplayer client: invalid persisted session is cleared during restore", 
 
     const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
     assert.equal(persisted.session, null);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: persisted session serverUrl still works when runtime config is absent", async () => {
+  const dataDir = await createTempDataDir();
+  let connectedUrl = null;
+
+  try {
+    await fs.writeFile(
+      path.join(dataDir, "multiplayer-session.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        session: {
+          token: "session-token-1",
+          serverUrl: "https://persisted-session.ngrok-free.app",
+          username: "RegisteredUser",
+          sessionId: "session-id-1",
+          accountId: "account-id-1",
+          profileKey: "RegisteredUser",
+          authenticated: true,
+          rememberSession: true,
+          expiresAt: "2026-06-27T12:00:00.000Z",
+          persistedAt: "2026-05-27T12:00:00.000Z"
+        }
+      }),
+      "utf8"
+    );
+
+    const client = new MultiplayerClient({
+      socketFactory: (serverUrl) => {
+        connectedUrl = serverUrl;
+        const socket = new FakeSocket();
+        socket.sessionAuthenticated = true;
+        socket.sessionUsername = "RegisteredUser";
+        return socket;
+      },
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
+      dataDir,
+      defaultServerUrl: "https://hardcoded-fallback.ngrok-free.app"
+    });
+
+    const restoreResult = await client.restoreSession();
+
+    assert.equal(restoreResult?.ok, true);
+    assert.equal(restoreResult?.restored, true);
+    assert.equal(connectedUrl, "https://persisted-session.ngrok-free.app");
+    assert.equal(client.getState().serverUrl, "https://persisted-session.ngrok-free.app");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: malformed runtime config falls back safely to the hardcoded default", async () => {
+  const dataDir = await createTempDataDir();
+  let connectedUrl = null;
+
+  try {
+    await fs.writeFile(
+      path.join(dataDir, MULTIPLAYER_RUNTIME_CONFIG_FILENAME),
+      "{not-valid-json",
+      "utf8"
+    );
+
+    const client = new MultiplayerClient({
+      socketFactory: (serverUrl) => {
+        connectedUrl = serverUrl;
+        return new FakeSocket();
+      },
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
+      dataDir,
+      defaultServerUrl: "https://hardcoded-fallback.ngrok-free.app",
+      persistSession: false
+    });
+
+    await client.connect();
+
+    assert.equal(connectedUrl, "https://hardcoded-fallback.ngrok-free.app");
+    assert.equal(client.getState().serverUrl, "https://hardcoded-fallback.ngrok-free.app");
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
