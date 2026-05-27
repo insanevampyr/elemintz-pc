@@ -1017,6 +1017,226 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
   assert.match(cosmeticsHtml, /Equipped: Yes/);
 });
 
+test("ui: Frostveil Court items render NEW badges, collection filters, owned cosmetics visibility, and correct type labels", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_frostveil_heir",
+            name: "Frostveil Heir",
+            image: "avatars/avatar_frostveil_heir.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "frostveil_court_2026_05",
+            collection: "Frostveil Court"
+          }
+        ],
+        cardBack: [
+          {
+            id: "cardback_glacier_sigil",
+            name: "Glacier Sigil",
+            image: "card_backs/cardback_glacier_sigil.png",
+            rarity: "Legendary",
+            price: 800,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "frostveil_court_2026_05",
+            collection: "Frostveil Court"
+          }
+        ],
+        background: [],
+        title: [
+          {
+            id: "title_shiverborne",
+            name: "Shiverborne",
+            image: "titles/title_shiverborne.png",
+            rarity: "Epic",
+            price: 500,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "frostveil_court_2026_05",
+            collection: "Frostveil Court"
+          }
+        ],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_aurora_flare",
+            name: "Aurora Flare Fire",
+            image: "cards/fire_variant_aurora_flare.png",
+            rarity: "Epic",
+            price: 450,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "fire",
+            releaseTag: "frostveil_court_2026_05",
+            collection: "Frostveil Court"
+          },
+          {
+            id: "earth_variant_icebound_crag",
+            name: "Icebound Crag Earth",
+            image: "cards/earth_variant_icebound_crag.png",
+            rarity: "Epic",
+            price: 450,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "earth",
+            releaseTag: "frostveil_court_2026_05",
+            collection: "Frostveil Court"
+          },
+          {
+            id: "wind_variant_sleet_spiral",
+            name: "Sleet Spiral Wind",
+            image: "cards/wind_variant_sleet_spiral.png",
+            rarity: "Epic",
+            price: 450,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "wind",
+            releaseTag: "frostveil_court_2026_05",
+            collection: "Frostveil Court"
+          },
+          {
+            id: "water_variant_frostbloom",
+            name: "Frostbloom Water",
+            image: "cards/water_variant_frostbloom.png",
+            rarity: "Epic",
+            price: 450,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "water",
+            releaseTag: "frostveil_court_2026_05",
+            collection: "Frostveil Court"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_frostveil_heir",
+            name: "Frostveil Heir",
+            image: "avatars/avatar_frostveil_heir.png",
+            rarity: "Legendary",
+            owned: true,
+            equipped: true,
+            isNew: true,
+            collection: "Frostveil Court"
+          }
+        ],
+        cardBack: [
+          {
+            id: "cardback_glacier_sigil",
+            name: "Glacier Sigil",
+            image: "card_backs/cardback_glacier_sigil.png",
+            rarity: "Legendary",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            collection: "Frostveil Court"
+          }
+        ],
+        background: [],
+        title: [
+          {
+            id: "title_shiverborne",
+            name: "Shiverborne",
+            image: "titles/title_shiverborne.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            collection: "Frostveil Court"
+          }
+        ],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_aurora_flare",
+            name: "Aurora Flare Fire",
+            image: "cards/fire_variant_aurora_flare.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "fire",
+            collection: "Frostveil Court"
+          },
+          {
+            id: "earth_variant_icebound_crag",
+            name: "Icebound Crag Earth",
+            image: "cards/earth_variant_icebound_crag.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "earth",
+            collection: "Frostveil Court"
+          },
+          {
+            id: "wind_variant_sleet_spiral",
+            name: "Sleet Spiral Wind",
+            image: "cards/wind_variant_sleet_spiral.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "wind",
+            collection: "Frostveil Court"
+          },
+          {
+            id: "water_variant_frostbloom",
+            name: "Frostbloom Water",
+            image: "cards/water_variant_frostbloom.png",
+            rarity: "Epic",
+            owned: true,
+            equipped: false,
+            isNew: true,
+            element: "water",
+            collection: "Frostveil Court"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(storeHtml, /data-store-collection-filter="Frostveil Court"/);
+  assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Frostveil Court"/);
+  assert.match(storeHtml, /Frostveil Court Collection/);
+  assert.match(cosmeticsHtml, /Frostveil Court Collection/);
+  assert.ok((storeHtml.match(/store-item-badge-new">NEW<\/span>/g) ?? []).length >= 3);
+  assert.match(storeHtml, /Type: Avatar/);
+  assert.match(storeHtml, /Type: Title/);
+  assert.match(storeHtml, /Type: Card Back/);
+  assert.match(storeHtml, /Type: Fire Variant/);
+  assert.match(storeHtml, /Type: Earth Variant/);
+  assert.match(storeHtml, /Type: Wind Variant/);
+  assert.match(storeHtml, /Type: Water Variant/);
+  assert.match(cosmeticsHtml, /Frostveil Heir/);
+  assert.match(cosmeticsHtml, /Shiverborne/);
+  assert.match(cosmeticsHtml, /Equipped: Yes/);
+});
+
 test("ui: settings screen defaults to normal AI, random cosmetics, and a 20 second timer when fields are missing", () => {
   const html = settingsScreen.render({
     settings: {
@@ -8239,6 +8459,106 @@ test("ui: own and viewed profile headers render equipped Goldbound avatar and ti
   assert.match(viewedHtml, /earth_variant_goldbound_relics\.png/);
   assert.match(viewedHtml, /wind_variant_goldbound_relics\.png/);
   assert.match(viewedHtml, /water_variant_goldbound_relics\.png/);
+});
+
+test("ui: own and viewed profile headers render equipped Frostveil Court avatar and title art when selected", () => {
+  const context = createProfileScreenContext({
+    profile: {
+      ...createProfileScreenContext().profile,
+      title: "title_shiverborne",
+      equippedCosmetics: {
+        ...createProfileScreenContext().profile.equippedCosmetics,
+        avatar: "avatar_frostveil_heir",
+        title: "title_shiverborne",
+        cardBack: "cardback_glacier_sigil",
+        background: "default_background",
+        elementCardVariant: {
+          fire: "fire_variant_aurora_flare",
+          earth: "earth_variant_icebound_crag",
+          wind: "wind_variant_sleet_spiral",
+          water: "water_variant_frostbloom"
+        }
+      }
+    },
+    cosmetics: {
+      ...createProfileScreenContext().cosmetics,
+      equipped: {
+        ...createProfileScreenContext().cosmetics.equipped,
+        avatar: "avatar_frostveil_heir",
+        title: "title_shiverborne",
+        cardBack: "cardback_glacier_sigil",
+        elementCardVariant: {
+          fire: "fire_variant_aurora_flare",
+          earth: "earth_variant_icebound_crag",
+          wind: "wind_variant_sleet_spiral",
+          water: "water_variant_frostbloom"
+        }
+      },
+      catalog: {
+        ...createProfileScreenContext().cosmetics.catalog,
+        avatar: [
+          ...createProfileScreenContext().cosmetics.catalog.avatar,
+          { id: "avatar_frostveil_heir", name: "Frostveil Heir", image: "avatars/avatar_frostveil_heir.png", owned: true }
+        ],
+        cardBack: [
+          { id: "default_card_back", name: "Default", owned: true },
+          { id: "cardback_glacier_sigil", name: "Glacier Sigil", image: "card_backs/cardback_glacier_sigil.png", owned: true }
+        ],
+        elementCardVariant: [
+          { id: "default_fire_card", name: "Core Fire", element: "fire", owned: true },
+          { id: "fire_variant_aurora_flare", name: "Aurora Flare Fire", image: "cards/fire_variant_aurora_flare.png", element: "fire", owned: true },
+          { id: "earth_variant_icebound_crag", name: "Icebound Crag Earth", image: "cards/earth_variant_icebound_crag.png", element: "earth", owned: true },
+          { id: "wind_variant_sleet_spiral", name: "Sleet Spiral Wind", image: "cards/wind_variant_sleet_spiral.png", element: "wind", owned: true },
+          { id: "water_variant_frostbloom", name: "Frostbloom Water", image: "cards/water_variant_frostbloom.png", element: "water", owned: true }
+        ],
+        title: [
+          { id: "Initiate", name: "Initiate", owned: true },
+          { id: "title_shiverborne", name: "Shiverborne", image: "titles/title_shiverborne.png", owned: true }
+        ]
+      }
+    }
+  });
+
+  const ownHtml = profileScreen.render(context);
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "Frostveil",
+    title: "title_shiverborne",
+    playerLevel: 9,
+    playerXP: 260,
+    wins: 14,
+    losses: 5,
+    cardsCaptured: 37,
+    achievements: {},
+    modeStats: { pve: { wins: 10, losses: 3 }, local_pvp: { wins: 4, losses: 2 } },
+    equippedCosmetics: {
+      avatar: "avatar_frostveil_heir",
+      title: "title_shiverborne",
+      background: "default_background",
+      badge: "none",
+      cardBack: "cardback_glacier_sigil",
+      elementCardVariant: {
+        fire: "fire_variant_aurora_flare",
+        earth: "earth_variant_icebound_crag",
+        wind: "wind_variant_sleet_spiral",
+        water: "water_variant_frostbloom"
+      }
+    }
+  });
+
+  assert.match(ownHtml, /avatar_frostveil_heir\.png/);
+  assert.match(ownHtml, /title_shiverborne\.png/);
+  assert.match(ownHtml, /cardback_glacier_sigil\.png/);
+  assert.match(ownHtml, /fire_variant_aurora_flare\.png/);
+  assert.match(ownHtml, /earth_variant_icebound_crag\.png/);
+  assert.match(ownHtml, /wind_variant_sleet_spiral\.png/);
+  assert.match(ownHtml, /water_variant_frostbloom\.png/);
+  assert.match(viewedHtml, /avatar_frostveil_heir\.png/);
+  assert.match(viewedHtml, /title_shiverborne\.png/);
+  assert.match(viewedHtml, /cardback_glacier_sigil\.png/);
+  assert.match(viewedHtml, /fire_variant_aurora_flare\.png/);
+  assert.match(viewedHtml, /earth_variant_icebound_crag\.png/);
+  assert.match(viewedHtml, /wind_variant_sleet_spiral\.png/);
+  assert.match(viewedHtml, /water_variant_frostbloom\.png/);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {

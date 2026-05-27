@@ -64,6 +64,13 @@ const GOLDBOUND_RELICS_VARIANT_DEFINITIONS = Object.freeze([
   ["water_variant_goldbound_relics", "Liquid Gold Tide", "water", "cards/water_variant_goldbound_relics.png"]
 ]);
 
+const FROSTVEIL_COURT_VARIANT_DEFINITIONS = Object.freeze([
+  ["fire_variant_aurora_flare", "Aurora Flare Fire", "fire", "cards/fire_variant_aurora_flare.png"],
+  ["earth_variant_icebound_crag", "Icebound Crag Earth", "earth", "cards/earth_variant_icebound_crag.png"],
+  ["wind_variant_sleet_spiral", "Sleet Spiral Wind", "wind", "cards/wind_variant_sleet_spiral.png"],
+  ["water_variant_frostbloom", "Frostbloom Water", "water", "cards/water_variant_frostbloom.png"]
+]);
+
 function buildCompletedMatch({
   winner = "p1",
   rounds = 3,
@@ -433,6 +440,43 @@ test("cosmetics: Goldbound Relics store purchases succeed for avatar, title, car
   assert.equal(profile.tokens, 350);
 });
 
+test("cosmetics: Frostveil Court store purchases succeed for all approved items", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("FrostveilStoreUser", { tokens: 5000 });
+
+  const purchaseTargets = [
+    { type: "avatar", cosmeticId: "avatar_frostveil_heir", expectedPrice: 900 },
+    { type: "title", cosmeticId: "title_shiverborne", expectedPrice: 500 },
+    { type: "cardBack", cosmeticId: "cardback_glacier_sigil", expectedPrice: 800 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_aurora_flare", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_icebound_crag", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_sleet_spiral", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_frostbloom", expectedPrice: 450 }
+  ];
+
+  for (const target of purchaseTargets) {
+    const response = await state.buyStoreItem({
+      username: "FrostveilStoreUser",
+      type: target.type,
+      cosmeticId: target.cosmeticId
+    });
+    assert.equal(response.purchase?.status, "purchased");
+    assert.equal(response.purchase?.price, target.expectedPrice);
+  }
+
+  const profile = await state.profiles.getProfile("FrostveilStoreUser");
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_frostveil_heir"));
+  assert.ok(profile.ownedCosmetics.title.includes("title_shiverborne"));
+  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_glacier_sigil"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("fire_variant_aurora_flare"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_icebound_crag"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_sleet_spiral"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_frostbloom"));
+  assert.equal(profile.tokens, 1000);
+});
+
 test("cosmetics: Personality Drop avatar and title catalog entries remain present but are no longer marked new", () => {
   const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
   const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
@@ -625,4 +669,73 @@ test("cosmetics: Goldbound Relics entries use exact metadata across categories a
     assert.equal(item.rotationOnly ?? false, false);
     assert.equal(item.storeHidden ?? false, false);
   }
+});
+
+test("cosmetics: Frostveil Court entries use exact metadata across categories and collection mappings while preserving multiple active NEW drops", () => {
+  const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
+  const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
+  const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
+  const variants = new Map(COSMETIC_CATALOG.elementCardVariant.map((item) => [item.id, item]));
+
+  const avatar = avatars.get("avatar_frostveil_heir");
+  assert.ok(avatar);
+  assert.equal(avatar.name, "Frostveil Heir");
+  assert.equal(avatar.image, "avatars/avatar_frostveil_heir.png");
+  assert.equal(avatar.rarity, "Legendary");
+  assert.equal(avatar.price, 900);
+  assert.equal(avatar.purchasable, true);
+  assert.equal(avatar.defaultOwned, false);
+  assert.equal(avatar.isNew, true);
+  assert.equal(avatar.releaseTag, "frostveil_court_2026_05");
+  assert.equal(avatar.collection, "Frostveil Court");
+  assert.equal(avatar.rotationOnly ?? false, false);
+  assert.equal(avatar.storeHidden ?? false, false);
+
+  const title = titles.get("title_shiverborne");
+  assert.ok(title);
+  assert.equal(title.name, "Shiverborne");
+  assert.equal(title.image, "titles/title_shiverborne.png");
+  assert.equal(title.rarity, "Epic");
+  assert.equal(title.price, 500);
+  assert.equal(title.purchasable, true);
+  assert.equal(title.defaultOwned, false);
+  assert.equal(title.isNew, true);
+  assert.equal(title.releaseTag, "frostveil_court_2026_05");
+  assert.equal(title.collection, "Frostveil Court");
+  assert.equal(title.rotationOnly ?? false, false);
+  assert.equal(title.storeHidden ?? false, false);
+
+  const cardBack = cardBacks.get("cardback_glacier_sigil");
+  assert.ok(cardBack);
+  assert.equal(cardBack.name, "Glacier Sigil");
+  assert.equal(cardBack.image, "card_backs/cardback_glacier_sigil.png");
+  assert.equal(cardBack.rarity, "Legendary");
+  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.purchasable, true);
+  assert.equal(cardBack.defaultOwned, false);
+  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.releaseTag, "frostveil_court_2026_05");
+  assert.equal(cardBack.collection, "Frostveil Court");
+  assert.equal(cardBack.rotationOnly ?? false, false);
+  assert.equal(cardBack.storeHidden ?? false, false);
+
+  for (const [id, name, element, image] of FROSTVEIL_COURT_VARIANT_DEFINITIONS) {
+    const item = variants.get(id);
+    assert.ok(item, `missing Frostveil Court variant ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.image, image);
+    assert.equal(item.element, element);
+    assert.equal(item.rarity, "Epic");
+    assert.equal(item.price, 450);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "frostveil_court_2026_05");
+    assert.equal(item.collection, "Frostveil Court");
+    assert.equal(item.rotationOnly ?? false, false);
+    assert.equal(item.storeHidden ?? false, false);
+  }
+
+  assert.equal(avatars.get("avatar_neon_pyre_entity")?.isNew, true);
+  assert.equal(avatars.get("avatar_aurelian_archon")?.isNew, true);
 });

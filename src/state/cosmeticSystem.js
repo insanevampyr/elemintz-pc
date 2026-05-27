@@ -709,6 +709,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: AVATAR_RARITY_PRICING.Legendary
     },
     {
+      id: "avatar_frostveil_heir",
+      name: "Frostveil Heir",
+      image: "avatars/avatar_frostveil_heir.png",
+      rarity: "Legendary",
+      releaseTag: "frostveil_court_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
       id: "avatar_golden_menace",
       name: "Golden Menace",
       image: "avatars/avatar_golden_menace.png",
@@ -861,6 +872,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "card_backs/cardback_goldbound_relic.png",
       rarity: "Legendary",
       releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_glacier_sigil",
+      name: "Glacier Sigil",
+      image: "card_backs/cardback_glacier_sigil.png",
+      rarity: "Legendary",
+      releaseTag: "frostveil_court_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -1850,12 +1872,36 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
     },
     {
+      id: "fire_variant_aurora_flare",
+      name: "Aurora Flare Fire",
+      image: "cards/fire_variant_aurora_flare.png",
+      element: "fire",
+      rarity: "Epic",
+      releaseTag: "frostveil_court_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
       id: "earth_variant_goldbound_relics",
       name: "Auric Stone",
       image: "cards/earth_variant_goldbound_relics.png",
       element: "earth",
       rarity: "Epic",
       releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "earth_variant_icebound_crag",
+      name: "Icebound Crag Earth",
+      image: "cards/earth_variant_icebound_crag.png",
+      element: "earth",
+      rarity: "Epic",
+      releaseTag: "frostveil_court_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -1874,12 +1920,36 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
     },
     {
+      id: "wind_variant_sleet_spiral",
+      name: "Sleet Spiral Wind",
+      image: "cards/wind_variant_sleet_spiral.png",
+      element: "wind",
+      rarity: "Epic",
+      releaseTag: "frostveil_court_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
       id: "water_variant_goldbound_relics",
       name: "Liquid Gold Tide",
       image: "cards/water_variant_goldbound_relics.png",
       element: "water",
       rarity: "Epic",
       releaseTag: "goldbound_relics_01",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "water_variant_frostbloom",
+      name: "Frostbloom Water",
+      image: "cards/water_variant_frostbloom.png",
+      element: "water",
+      rarity: "Epic",
+      releaseTag: "frostveil_court_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -2173,6 +2243,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: 500
     },
     {
+      id: "title_shiverborne",
+      name: "Shiverborne",
+      image: "titles/title_shiverborne.png",
+      rarity: "Epic",
+      releaseTag: "frostveil_court_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 500
+    },
+    {
       id: "title_apprentice",
       name: "Apprentice",
       image: "titles/title_apprentice.png",
@@ -2332,7 +2413,14 @@ const COSMETIC_COLLECTION_BY_KEY = Object.freeze({
   "elementCardVariant:fire_variant_goldbound_relics": "Goldbound Relics",
   "elementCardVariant:earth_variant_goldbound_relics": "Goldbound Relics",
   "elementCardVariant:wind_variant_goldbound_relics": "Goldbound Relics",
-  "elementCardVariant:water_variant_goldbound_relics": "Goldbound Relics"
+  "elementCardVariant:water_variant_goldbound_relics": "Goldbound Relics",
+  "avatar:avatar_frostveil_heir": "Frostveil Court",
+  "title:title_shiverborne": "Frostveil Court",
+  "cardBack:cardback_glacier_sigil": "Frostveil Court",
+  "elementCardVariant:fire_variant_aurora_flare": "Frostveil Court",
+  "elementCardVariant:earth_variant_icebound_crag": "Frostveil Court",
+  "elementCardVariant:wind_variant_sleet_spiral": "Frostveil Court",
+  "elementCardVariant:water_variant_frostbloom": "Frostveil Court"
 });
 
 function applyCosmeticCollections(catalog) {

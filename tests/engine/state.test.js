@@ -989,6 +989,7 @@ test("state: match renderer resolves every equippable catalog card back and non-
 
   assert.match(getCardBackImage("cardback_neon_arcana"), /cardback_neon_arcana\.png/);
   assert.match(getCardBackImage("cardback_goldbound_relic"), /cardback_goldbound_relic\.png/);
+  assert.match(getCardBackImage("cardback_glacier_sigil"), /cardback_glacier_sigil\.png/);
   assert.match(getVariantCardImages({ fire: "fire_variant_neon_arcana" }).fire, /fire_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ water: "water_variant_neon_arcana" }).water, /water_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ earth: "earth_variant_neon_arcana" }).earth, /earth_variant_neon_arcana\.png/);
@@ -997,6 +998,10 @@ test("state: match renderer resolves every equippable catalog card back and non-
   assert.match(getVariantCardImages({ earth: "earth_variant_goldbound_relics" }).earth, /earth_variant_goldbound_relics\.png/);
   assert.match(getVariantCardImages({ wind: "wind_variant_goldbound_relics" }).wind, /wind_variant_goldbound_relics\.png/);
   assert.match(getVariantCardImages({ water: "water_variant_goldbound_relics" }).water, /water_variant_goldbound_relics\.png/);
+  assert.match(getVariantCardImages({ fire: "fire_variant_aurora_flare" }).fire, /fire_variant_aurora_flare\.png/);
+  assert.match(getVariantCardImages({ earth: "earth_variant_icebound_crag" }).earth, /earth_variant_icebound_crag\.png/);
+  assert.match(getVariantCardImages({ wind: "wind_variant_sleet_spiral" }).wind, /wind_variant_sleet_spiral\.png/);
+  assert.match(getVariantCardImages({ water: "water_variant_frostbloom" }).water, /water_variant_frostbloom\.png/);
 });
 
 test("state: Neon Arcana avatar ids resolve in the match/profile avatar renderer and unknown ids still fall back safely", () => {
@@ -1009,6 +1014,11 @@ test("state: Neon Arcana avatar ids resolve in the match/profile avatar renderer
 
 test("state: Goldbound Relics avatar id resolves in the match/profile avatar renderer and unknown ids still fall back safely", () => {
   assert.match(getAvatarImage("avatar_aurelian_archon"), /avatar_aurelian_archon\.png/);
+  assert.match(getAvatarImage("not_a_real_avatar"), /avatars\/default\.png/);
+});
+
+test("state: Frostveil Court avatar id resolves in the match/profile avatar renderer and unknown ids still fall back safely", () => {
+  assert.match(getAvatarImage("avatar_frostveil_heir"), /avatar_frostveil_heir\.png/);
   assert.match(getAvatarImage("not_a_real_avatar"), /avatars\/default\.png/);
 });
 
@@ -1031,6 +1041,29 @@ test("state: Neon Arcana resized avatar and title art match category standards w
     "assets/cards/water_variant_neon_arcana.png",
     "assets/cards/earth_variant_neon_arcana.png",
     "assets/cards/wind_variant_neon_arcana.png"
+  ]) {
+    const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
+    assert.equal(width, 1024, `${relativePath} should stay 1024px wide`);
+    assert.equal(height, 1536, `${relativePath} should stay 1536px tall`);
+  }
+});
+
+test("state: Frostveil Court resized avatar and title art match category standards while card assets stay card-sized", async () => {
+  for (const relativePath of [
+    "assets/avatars/avatar_frostveil_heir.png",
+    "assets/titles/title_shiverborne.png"
+  ]) {
+    const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
+    assert.equal(width, 512, `${relativePath} should be 512px wide`);
+    assert.equal(height, 512, `${relativePath} should be 512px tall`);
+  }
+
+  for (const relativePath of [
+    "assets/card_backs/cardback_glacier_sigil.png",
+    "assets/cards/fire_variant_aurora_flare.png",
+    "assets/cards/earth_variant_icebound_crag.png",
+    "assets/cards/wind_variant_sleet_spiral.png",
+    "assets/cards/water_variant_frostbloom.png"
   ]) {
     const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
     assert.equal(width, 1024, `${relativePath} should stay 1024px wide`);
