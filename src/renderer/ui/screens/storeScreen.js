@@ -410,9 +410,9 @@ export const storeScreen = {
           </div>
           <section class="store-feature-banner" aria-label="Featured cosmetics update">
             <p class="store-feature-banner-eyebrow">Featured Update</p>
-            <h3 class="store-feature-banner-title">New Premium Cosmetics</h3>
+            <h3 class="store-feature-banner-title">New Collections in the Store</h3>
             <p class="store-feature-banner-copy">
-              Neon Arcana and Goldbound Relics are live now. Claim new avatars, card backs, titles, and elemental variants in the Store.
+              Explore Neon Arcana, Goldbound Relics, and Frostveil Court cosmetics now available in EleMintz.
             </p>
           </section>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>

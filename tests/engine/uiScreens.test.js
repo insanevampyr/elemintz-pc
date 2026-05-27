@@ -2038,7 +2038,7 @@ test("ui: store screen shows the Show NEW First control by default", () => {
   assert.match(html, /id="store-show-new-first" checked/);
 });
 
-test("ui: store screen renders the featured new personality cosmetics banner above controls", () => {
+test("ui: store screen renders the current featured collections banner above controls", () => {
   const html = storeScreen.render({
     store: {
       tokens: 120,
@@ -2083,13 +2083,13 @@ test("ui: store screen renders the featured new personality cosmetics banner abo
     }
   });
 
-  assert.match(html, /New Premium Cosmetics/);
-  assert.match(html, /Neon Arcana and Goldbound Relics are live now\. Claim new avatars, card backs, titles, and elemental variants in the Store\./);
+  assert.match(html, /New Collections in the Store/);
+  assert.match(html, /Explore Neon Arcana, Goldbound Relics, and Frostveil Court cosmetics now available in EleMintz\./);
   assert.match(html, /Show NEW First/);
   assert.match(html, /store-item-badge-new">NEW<\/span>/);
   assert.match(html, /Price: 150 Tokens/);
   assert.match(html, /cosmetic-rarity-label[^>]*>Common<\/span>/);
-  assert.ok(html.indexOf("New Premium Cosmetics") < html.indexOf("Show NEW First"));
+  assert.ok(html.indexOf("New Collections in the Store") < html.indexOf("Show NEW First"));
 });
 
 test("ui: Store screen keeps Founder / Supporter status visible without exposing the local activation button", () => {
