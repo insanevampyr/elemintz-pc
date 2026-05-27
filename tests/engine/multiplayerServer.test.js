@@ -8208,6 +8208,80 @@ test("multiplayer profile authority: authenticated local PvP settlement is rejec
   }
 });
 
+test("multiplayer profile authority: dedicated local hotseat settlement grants capped rewards without chests or achievements", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir, random: () => 0.01 });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    }),
+    adminGrantStore: new AdminGrantStore({ dataDir })
+  });
+  let p1 = null;
+  let p2 = null;
+
+  try {
+    const port = await foundation.start();
+    p1 = await connectClient(port);
+    p2 = await connectClient(port);
+
+    assert.equal(
+      (await registerAccount(p1, {
+        username: "DedicatedHotseatHost",
+        email: "dedicated-hotseat-host@example.com",
+        password: "PlayerPass123"
+      }))?.ok,
+      true
+    );
+    assert.equal(
+      (await registerAccount(p2, {
+        username: "DedicatedHotseatGuest",
+        email: "dedicated-hotseat-guest@example.com",
+        password: "PlayerPass123"
+      }))?.ok,
+      true
+    );
+
+    const matchState = createCompletedLocalMatchState({ mode: "local_pvp", winner: "p1" });
+    const p1Result = await emitWithAck(p1, "profile:applyLocalHotseatResult", {
+      perspective: "p1",
+      matchState,
+      settlementKey: "LPVP:dedicated:1"
+    });
+    const p2Result = await emitWithAck(p2, "profile:applyLocalHotseatResult", {
+      perspective: "p2",
+      matchState,
+      settlementKey: "LPVP:dedicated:1"
+    });
+
+    const hostProfile = await coordinator.profiles.getProfile("DedicatedHotseatHost");
+    const guestProfile = await coordinator.profiles.getProfile("DedicatedHotseatGuest");
+
+    assert.equal(p1Result?.ok, true);
+    assert.equal(p2Result?.ok, true);
+    assert.ok((p1Result?.result?.matchResult?.xpDelta ?? 0) >= 1);
+    assert.ok((p2Result?.result?.matchResult?.xpDelta ?? 0) >= 1);
+    assert.equal(hostProfile.modeStats.local_pvp.gamesPlayed, 1);
+    assert.equal(guestProfile.modeStats.local_pvp.gamesPlayed, 1);
+    assert.equal(hostProfile.chests.basic, 0);
+    assert.equal(guestProfile.chests.basic, 0);
+    assert.equal(Object.keys(hostProfile.achievements ?? {}).length, 0);
+    assert.equal(Object.keys(guestProfile.achievements ?? {}).length, 0);
+  } finally {
+    p1?.disconnect();
+    p2?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer rewards: reward application retry after a persistence failure does not double-grant", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

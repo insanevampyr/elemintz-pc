@@ -77,6 +77,8 @@ export const localSetupScreen = {
             <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
           </div>
           <p>Both players must authenticate with EleMintz accounts before a local hotseat match can start.</p>
+          <p>Local 2-Player rewards are casual and capped daily.</p>
+          <p>No chests are awarded in this mode.</p>
           ${context.errorMessage ? `<p class="auth-inline-error" role="alert">${context.errorMessage}</p>` : ""}
           <form id="local-setup-form" class="stack-sm">
             <fieldset class="stack-sm">

@@ -2071,7 +2071,7 @@ test("state: cosmetic loadouts fall back safely when saved cosmetics are invalid
   assert.equal(applied.profile.equippedCosmetics.elementCardVariant.wind, "default_wind_card");
 });
 
-test("state: local_pvp grants and persists XP/tokens/achievements for both players", async () => {
+test("state: local hotseat rewards the first three matches, then caps rewards while preserving stats", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
@@ -2093,32 +2093,43 @@ test("state: local_pvp grants and persists XP/tokens/achievements for both playe
     ]
   };
 
-  const p1Result = await state.recordMatchResult({
+  const first = await state.recordLocalHotseatResult({
     username: "PvpP1",
     perspective: "p1",
     matchState: match
   });
-  const p2Result = await state.recordMatchResult({
-    username: "PvpP2",
-    perspective: "p2",
+  const second = await state.recordLocalHotseatResult({
+    username: "PvpP1",
+    perspective: "p1",
+    matchState: match
+  });
+  const third = await state.recordLocalHotseatResult({
+    username: "PvpP1",
+    perspective: "p1",
+    matchState: match
+  });
+  const fourth = await state.recordLocalHotseatResult({
+    username: "PvpP1",
+    perspective: "p1",
     matchState: match
   });
 
-  assert.ok(p1Result.xpDelta >= 1);
-  assert.ok(p2Result.xpDelta >= 1);
-  assert.ok((p1Result.profile.tokens ?? 0) >= 200);
-  assert.ok((p2Result.profile.tokens ?? 0) >= 200);
-  assert.ok(p2Result.unlockedAchievements.some((item) => item.id === "first_flame"));
+  assert.ok(first.xpDelta >= 1);
+  assert.ok(second.xpDelta >= 1);
+  assert.ok(third.xpDelta >= 1);
+  assert.equal(fourth.xpDelta, 0);
+  assert.ok(first.tokenDelta >= 1);
+  assert.equal(fourth.tokenDelta, 0);
+  assert.equal(first.localPvpRewardStatus?.capped, false);
+  assert.equal(fourth.localPvpRewardStatus?.capped, true);
+  assert.equal(fourth.stats.gamesPlayed, 1);
 
   const restarted = new StateCoordinator({ dataDir });
-  const p1Reloaded = await restarted.profiles.getProfile("PvpP1");
-  const p2Reloaded = await restarted.profiles.getProfile("PvpP2");
+  const reloaded = await restarted.profiles.getProfile("PvpP1");
 
-  assert.equal(p1Reloaded.playerXP, p1Result.profile.playerXP);
-  assert.equal(p2Reloaded.playerXP, p2Result.profile.playerXP);
-  assert.equal(p1Reloaded.tokens, p1Result.profile.tokens);
-  assert.equal(p2Reloaded.tokens, p2Result.profile.tokens);
-  assert.equal(p2Reloaded.achievements.first_flame.count, 1);
+  assert.equal(reloaded.modeStats.local_pvp.gamesPlayed, 4);
+  assert.equal(reloaded.localPvpRewardTracking.rewardedMatches, 3);
+  assert.equal(Object.keys(reloaded.achievements ?? {}).length, 0);
 });
 
 test("state: separates pve and local_pvp mode statistics", async () => {
@@ -2161,7 +2172,7 @@ test("state: separates pve and local_pvp mode statistics", async () => {
     matchState: pveMatch
   });
 
-  await state.recordMatchResult({
+  await state.recordLocalHotseatResult({
     username: "ModeUser",
     perspective: "p1",
     matchState: localMatch
@@ -2231,6 +2242,79 @@ test("state: tracks new profile stats used by achievements", async () => {
   assert.equal(profile.modeStats.pve.quickWins, 1);
   assert.equal(profile.modeStats.pve.timeLimitWins, 1);
   assert.equal(profile.matchesUsingAllElements, 0);
+});
+
+test("state: local hotseat never grants base chests, streak chests, or challenge completion chests", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.01)
+  });
+
+  const match = createRewardHookMatch({ winner: "p1", mode: "local_pvp" });
+  const seededChallenges = withSelectedBonusChallenges(createDefaultDailyChallenges(Date.now()), {
+    daily: ["daily_local_pvp_match_1"],
+    weekly: ["weekly_local_pvp_matches_5"]
+  });
+  seededChallenges.daily.progress.matchesPlayed = 4;
+  seededChallenges.weekly.progress.matchesPlayed = 14;
+  seededChallenges.weekly.progress.completedLocalPvpMatch = 4;
+
+  await state.profiles.updateProfile("NoChestLocalPvpUser", (current) => ({
+    ...current,
+    winStreak: 2,
+    dailyChallenges: seededChallenges
+  }));
+
+  const result = await state.recordLocalHotseatResult({
+    username: "NoChestLocalPvpUser",
+    perspective: "p1",
+    matchState: match
+  });
+
+  assert.equal(result.profile.chests.basic, 0);
+  assert.equal(result.profile.chests.epic, 0);
+  assert.equal(result.dailyChestDelta ?? 0, 0);
+  assert.equal(result.weeklyChestDelta ?? 0, 0);
+});
+
+test("state: local hotseat only progresses whitelisted local PvP challenges", async () => {
+  const nowMs = Date.now();
+  const challenges = withSelectedBonusChallenges(createDefaultDailyChallenges(nowMs), {
+    daily: ["daily_local_pvp_match_1", "daily_no_quit_3", "daily_win_with_fire"],
+    weekly: ["weekly_local_pvp_matches_5", "weekly_no_quit_10", "weekly_element_master_fire"]
+  });
+  challenges.weekly.progress.completedLocalPvpMatch = 4;
+
+  const result = await applyDailyChallengesForMatch({
+    profile: {
+      username: "LocalWhitelistUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      dailyChallenges: challenges
+    },
+    matchState: createRewardHookMatch({ winner: "p1", mode: "local_pvp" }),
+    perspective: "p1",
+    matchStats: { warsEntered: 2, warsWon: 2, cardsCaptured: 24, longestWar: 5 },
+    nowMs,
+    options: {
+      includeMatchRewards: true,
+      localPvpWhitelistOnly: true,
+      allowChallengeProgress: true,
+      allowCompletionChests: false
+    }
+  });
+
+  assert.ok(result.rewards.daily.some((item) => item.id === "daily_local_pvp_match_1"));
+  assert.ok(result.rewards.weekly.some((item) => item.id === "weekly_local_pvp_matches_5"));
+  assert.equal(result.profile.dailyChallenges.daily.progress.completedNoQuitMatch, 0);
+  assert.equal(result.profile.dailyChallenges.daily.progress.wonRoundWithFire, 0);
+  assert.equal(result.profile.dailyChallenges.daily.progress.matchesPlayed, 0);
+  assert.equal(result.profile.dailyChallenges.weekly.progress.completedNoQuitMatch, 0);
+  assert.equal(result.profile.dailyChallenges.weekly.progress.wonRoundWithFire, 0);
+  assert.equal(result.profile.dailyChallenges.weekly.progress.matchesPlayed, 0);
+  assert.equal(result.profile.dailyChallenges.weekly.progress.completedLocalPvpMatch, 5);
 });
 
 test("state: normalizes approved achievement expansion stat fields safely", async () => {

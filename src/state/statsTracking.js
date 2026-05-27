@@ -18,6 +18,13 @@ function emptyModeStats() {
   };
 }
 
+function emptyLocalPvpRewardTracking() {
+  return {
+    rewardWindowKey: null,
+    rewardedMatches: 0
+  };
+}
+
 function extractPlayedElements(matchState, perspective) {
   const played = new Set();
   const cardKey = perspective === "p2" ? "p2Card" : "p1Card";
@@ -54,6 +61,12 @@ export function normalizeProfileModeStats(profile) {
   const pve = existing.pve ?? {};
   const localPvp = existing.local_pvp ?? {};
   const onlinePvp = existing.online_pvp ?? {};
+  const localPvpRewardTracking =
+    profile?.localPvpRewardTracking &&
+    typeof profile.localPvpRewardTracking === "object" &&
+    !Array.isArray(profile.localPvpRewardTracking)
+      ? profile.localPvpRewardTracking
+      : {};
 
   return {
     ...profile,
@@ -81,6 +94,14 @@ export function normalizeProfileModeStats(profile) {
       typeof profile.lastDailyLoginClaimDate === "string" && profile.lastDailyLoginClaimDate.trim()
         ? profile.lastDailyLoginClaimDate
         : null,
+    localPvpRewardTracking: {
+      rewardWindowKey:
+        typeof localPvpRewardTracking.rewardWindowKey === "string" &&
+        localPvpRewardTracking.rewardWindowKey.trim()
+          ? localPvpRewardTracking.rewardWindowKey.trim()
+          : null,
+      rewardedMatches: safeNonNegativeInt(localPvpRewardTracking.rewardedMatches)
+    },
     achievements:
       profile.achievements && typeof profile.achievements === "object" && !Array.isArray(profile.achievements)
         ? profile.achievements
@@ -150,6 +171,7 @@ export function createDefaultProfile(username) {
     playerXP: 0,
     playerLevel: 1,
     lastDailyLoginClaimDate: null,
+    localPvpRewardTracking: emptyLocalPvpRewardTracking(),
     modeStats: createDefaultModeStats(),
     achievements: {},
     ...createDefaultCosmeticsState(),

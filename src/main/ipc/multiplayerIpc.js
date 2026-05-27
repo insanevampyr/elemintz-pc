@@ -154,6 +154,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.applyLocalMatchResult(payload);
   });
 
+  ipcMain.handle("multiplayer:applyLocalHotseatResult", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.applyLocalHotseatResult(payload);
+  });
+
   ipcMain.handle("multiplayer:recordGauntletStats", async (event, payload) => {
     subscribers.add(event.sender);
     return client.recordGauntletStats(payload);

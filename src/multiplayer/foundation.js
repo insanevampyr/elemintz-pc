@@ -2211,6 +2211,63 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("profile:applyLocalHotseatResult", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.applyLocalHotseatResult !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const matchMode = String(payload?.matchState?.mode ?? "").trim().toLowerCase();
+        if (matchMode !== LOCAL_MATCH_MODES.LOCAL_PVP) {
+          const error = new Error(
+            "Dedicated local hotseat settlement only supports Local 2-Player match payloads."
+          );
+          error.code = "LOCAL_HOTSEAT_MODE_REQUIRED";
+          throw error;
+        }
+
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+
+        const result = await profileAuthority.applyLocalHotseatResult({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          result: payload?.matchState ?? null,
+          perspective: payload?.perspective ?? "p1",
+          settlementKey: payload?.settlementKey ?? null
+        });
+
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: error?.code ?? "PROFILE_LOCAL_HOTSEAT_WRITE_FAILED",
+            message: String(
+              error?.message ?? "Unable to complete authoritative local hotseat settlement."
+            )
+          }
+        });
+      }
+    });
+
     socket.on("profile:startLocalPveMatch", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureClaimedProfileAccess(socket, payload, {

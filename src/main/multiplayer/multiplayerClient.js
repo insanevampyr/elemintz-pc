@@ -2442,6 +2442,53 @@ export class MultiplayerClient {
     };
   }
 
+  async applyLocalHotseatResult({
+    username,
+    perspective = "p1",
+    matchState,
+    settlementKey = null,
+    sessionToken = null,
+    serverUrl
+  } = {}) {
+    const safeSessionToken = String(sessionToken ?? "").trim() || null;
+    const response = safeSessionToken
+      ? await this.runIsolatedServerRequest(
+          "profile:applyLocalHotseatResult",
+          {
+            sessionToken: safeSessionToken,
+            perspective,
+            matchState,
+            settlementKey
+          },
+          { serverUrl }
+        )
+      : await this.runServerRequest(
+          "profile:applyLocalHotseatResult",
+          {
+            username,
+            perspective,
+            matchState,
+            settlementKey
+          },
+          { serverUrl }
+        );
+
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to apply authoritative local hotseat result.");
+    }
+
+    const result = response.result ?? null;
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ...(result.matchResult ?? {}),
+      duplicate: Boolean(result.duplicate),
+      snapshot: result.snapshot ?? null
+    };
+  }
+
   async recordGauntletStats({
     username,
     runStarted = false,

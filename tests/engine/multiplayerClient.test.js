@@ -827,6 +827,65 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "profile:applyLocalHotseatResult") {
+      queueMicrotask(() => {
+        const username = this.sessionUsername ?? payload?.username ?? null;
+        ack?.({
+          ok: true,
+          result: {
+            duplicate: false,
+            matchResult: {
+              profile: {
+                username,
+                tokens: 225,
+                playerXP: 20,
+                playerLevel: 1
+              },
+              stats: {
+                gamesPlayed: 1
+              },
+              dailyChallenges: {
+                challenges: []
+              },
+              weeklyChallenges: {
+                challenges: []
+              },
+              tokenDelta: 25,
+              xpDelta: 20,
+              localPvpRewardStatus: {
+                rewardWindowKey: "2026-05-26T23:00:00.000Z",
+                rewardCap: 3,
+                rewardedMatches: 1,
+                rewardEligible: true,
+                capped: false
+              }
+            },
+            snapshot: {
+              authority: "server",
+              source: "multiplayer",
+              profile: {
+                username,
+                tokens: 225,
+                playerXP: 20,
+                playerLevel: 1,
+                equippedCosmetics: createEquippedCosmetics(),
+                ownedCosmetics: {}
+              },
+              progression: {
+                xp: {
+                  playerXP: 20,
+                  playerLevel: 1
+                },
+                dailyChallenges: { challenges: [] },
+                weeklyChallenges: { challenges: [] },
+                dailyLogin: { eligible: false }
+              }
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "admin:confirmGrantReceipt") {
       queueMicrotask(() => {
         ack?.({
@@ -2039,7 +2098,7 @@ test("multiplayer client: protected regular PvE session start omits featured riv
   assert.equal(session?.featuredRivalId, null);
 });
 
-test("multiplayer client: authoritative local hotseat settlement uses an isolated session token without replacing the primary session", async () => {
+test("multiplayer client: dedicated local hotseat settlement uses an isolated session token without replacing the primary session", async () => {
   const sockets = [];
   const client = new MultiplayerClient({
     socketFactory: () => {
@@ -2057,7 +2116,7 @@ test("multiplayer client: authoritative local hotseat settlement uses an isolate
     password: "password123"
   });
 
-  const result = await client.applyLocalMatchResult({
+  const result = await client.applyLocalHotseatResult({
     username: "HotseatGuest",
     perspective: "p2",
     matchState,
@@ -2067,7 +2126,7 @@ test("multiplayer client: authoritative local hotseat settlement uses an isolate
 
   assert.equal(sockets.length, 2);
   assert.deepEqual(sockets[1].sentEvents.at(0), {
-    eventName: "profile:applyLocalMatchResult",
+    eventName: "profile:applyLocalHotseatResult",
     payload: {
       sessionToken: "hotseat-session-token",
       perspective: "p2",
@@ -4155,7 +4214,7 @@ test("app controller: authenticated PvE settlement uses server authority before 
   }
 });
 
-test("app controller: authenticated local PvP settlement stays local-only and avoids server authority", async () => {
+test("app controller: authenticated local PvP settlement uses dedicated hotseat authority and avoids local fallback", async () => {
   const originalWindow = globalThis.window;
   const controller = createAppController();
   controller.localPlayers = {
@@ -4192,7 +4251,7 @@ test("app controller: authenticated local PvP settlement stays local-only and av
       elemintz: {
         multiplayer: {
           getProfile: async () => null,
-          applyLocalMatchResult: async (payload) => {
+          applyLocalHotseatResult: async (payload) => {
             serverCalls.push(payload);
             return {
               profile: { username: payload.username ?? "HotseatGuest" },
@@ -4215,17 +4274,17 @@ test("app controller: authenticated local PvP settlement stays local-only and av
 
     const result = await controller.persistLocalPvpResult(match);
 
-    assert.equal(serverCalls.length, 0);
-    assert.equal(fallbackCalls.length, 2);
+    assert.equal(serverCalls.length, 2);
+    assert.equal(fallbackCalls.length, 0);
     assert.deepEqual(
-      fallbackCalls.map((entry) => [entry.username, entry.perspective]),
+      serverCalls.map((entry) => [entry.username ?? null, entry.perspective, entry.sessionToken ?? null]),
       [
-        ["HotseatHost", "p1"],
-        ["HotseatGuest", "p2"]
+        ["HotseatHost", "p1", null],
+        ["HotseatGuest", "p2", "guest-session-token"]
       ]
     );
-    assert.equal(result.p1?.profile?.username, "HotseatHost");
-    assert.equal(result.p2?.profile?.username, "HotseatGuest");
+    assert.equal(result.p1?.snapshot?.profile?.username, "HotseatHost");
+    assert.equal(result.p2?.snapshot?.profile?.username, "HotseatGuest");
   } finally {
     globalThis.window = originalWindow;
   }

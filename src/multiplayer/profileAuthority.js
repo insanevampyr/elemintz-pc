@@ -531,6 +531,34 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async applyLocalHotseatResult({
+    username,
+    result,
+    perspective = "p1",
+    settlementKey = null
+  }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative local hotseat application.");
+    }
+
+    const outcome = summarizeMatchOutcome(result, perspective);
+    this.logger.info?.(`[ProfileAuthority] applyLocalHotseatResult -> ${safeUsername} (${outcome})`);
+
+    const matchResult = await this.coordinator.recordLocalHotseatResult({
+      username: safeUsername,
+      perspective,
+      matchState: result,
+      settlementKey
+    });
+
+    return {
+      duplicate: Boolean(matchResult?.duplicate),
+      matchResult,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
   async recordGauntletStats({
     username,
     runStarted = false,

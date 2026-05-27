@@ -70,6 +70,7 @@ const GAUNTLET_MILESTONE_REWARDS = Object.freeze([
   Object.freeze({ streak: 15, xp: 100, tokens: 75 }),
   Object.freeze({ streak: 20, chests: Object.freeze([{ chestType: EPIC_CHEST_TYPE, amount: 1 }]) })
 ]);
+const LOCAL_PVP_DAILY_REWARD_CAP = 3;
 
 function profilesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -78,6 +79,42 @@ function profilesEqual(a, b) {
 function getDailyLoginDateKey(nowMs = Date.now()) {
   const { lastResetMs } = getDailyResetWindow(nowMs);
   return new Date(lastResetMs).toISOString();
+}
+
+function getLocalPvpRewardWindowKey(nowMs = Date.now()) {
+  const { lastResetMs } = getDailyResetWindow(nowMs);
+  return new Date(lastResetMs).toISOString();
+}
+
+function getLocalPvpRewardTracking(profile, nowMs = Date.now()) {
+  const rewardWindowKey = getLocalPvpRewardWindowKey(nowMs);
+  const existing =
+    profile?.localPvpRewardTracking &&
+    typeof profile.localPvpRewardTracking === "object" &&
+    !Array.isArray(profile.localPvpRewardTracking)
+      ? profile.localPvpRewardTracking
+      : {};
+  const rewardedMatches =
+    existing.rewardWindowKey === rewardWindowKey
+      ? Math.max(0, Math.floor(Number(existing.rewardedMatches ?? 0) || 0))
+      : 0;
+
+  return {
+    rewardWindowKey,
+    rewardedMatches,
+    rewardEligible: rewardedMatches < LOCAL_PVP_DAILY_REWARD_CAP,
+    rewardCap: LOCAL_PVP_DAILY_REWARD_CAP
+  };
+}
+
+function buildNextLocalPvpRewardTracking(profile, { rewardedMatchApplied = false, nowMs = Date.now() } = {}) {
+  const tracking = getLocalPvpRewardTracking(profile, nowMs);
+  return {
+    rewardWindowKey: tracking.rewardWindowKey,
+    rewardedMatches: rewardedMatchApplied
+      ? Math.min(tracking.rewardCap, tracking.rewardedMatches + 1)
+      : tracking.rewardedMatches
+  };
 }
 
 function getDailyLoginStatus(profile, nowMs = Date.now()) {
@@ -672,7 +709,14 @@ export class StateCoordinator {
     };
   }
 
-  async recordMatchResult({ username, matchState, perspective = "p1", settlementKey = null }) {
+  async recordMatchResult({
+    username,
+    matchState,
+    perspective = "p1",
+    settlementKey = null,
+    rewardPolicy = null,
+    nowMs = Date.now()
+  }) {
     return this.runMatchPersistence(async () => {
       if (!username) {
         throw new Error("username is required to record match results.");
@@ -685,6 +729,13 @@ export class StateCoordinator {
       const safeMatchState = containRuntimeMatchSummaryState(matchState).value;
       const profileBefore = await this.profiles.ensureProfile(username);
       const derivedMatchStats = deriveMatchStats(safeMatchState, perspective);
+      const localHotseatPolicy =
+        String(safeMatchState.mode ?? "").trim().toLowerCase() === "local_pvp" &&
+        String(rewardPolicy?.type ?? "").trim().toLowerCase() === "local_hotseat_casual";
+      const localPvpRewardTracking = localHotseatPolicy
+        ? getLocalPvpRewardTracking(profileBefore, nowMs)
+        : null;
+      const localHotseatRewardEligible = !localHotseatPolicy || localPvpRewardTracking?.rewardEligible === true;
       const practiceMode =
         String(safeMatchState.mode ?? "") === "pve" &&
         String(safeMatchState.difficulty ?? "").trim().toLowerCase() === "easy";
@@ -739,7 +790,7 @@ export class StateCoordinator {
           levelRewardTokenDelta: 0
         };
       }
-      const achievementsDisabledForMatch = practiceMode;
+      const achievementsDisabledForMatch = practiceMode || localHotseatPolicy;
 
       console.info("[StateCoordinator] recordMatchResult:before", {
         mode,
@@ -772,10 +823,14 @@ export class StateCoordinator {
         perspective,
         matchStats,
         options: {
-          includeMatchRewards: !practiceMode,
+          includeMatchRewards: !practiceMode && localHotseatRewardEligible,
           practiceMode,
-          boostEvent: activeBoostEvent
-        }
+          boostEvent: activeBoostEvent,
+          allowChallengeProgress: localHotseatRewardEligible,
+          allowCompletionChests: !localHotseatPolicy,
+          localPvpWhitelistOnly: localHotseatPolicy
+        },
+        nowMs
       });
 
       let workingProfile = challengeResult.profile;
@@ -828,7 +883,7 @@ export class StateCoordinator {
       challengeResult.overflowXp = Math.max(0, Number(challengeResult.overflowXp ?? 0)) +
         Math.max(0, Number(featuredRivalReward.overflowXp ?? 0));
       challengeResult.levelAfter = deriveLevelFromXp(Math.max(0, Number(workingProfile.playerXP ?? 0)));
-      const streakChestGrantResult = practiceMode
+      const streakChestGrantResult = practiceMode || localHotseatPolicy
         ? { profile: workingProfile }
         : applyWinStreakChestGrants(workingProfile, {
             previousWinStreak: profileBefore?.winStreak ?? 0,
@@ -854,6 +909,7 @@ export class StateCoordinator {
 
       if (
         !practiceMode &&
+        !localHotseatPolicy &&
         rollBasicChest(matchOutcome, {
           mode,
           difficulty: safeMatchState.difficulty,
@@ -888,6 +944,16 @@ export class StateCoordinator {
         workingProfile = withTokens.profile;
         unlockEvents = withAchievements.unlockEvents;
         grantedRewards = withCosmetics.grantedRewards;
+      }
+
+      if (localHotseatPolicy) {
+        workingProfile = {
+          ...workingProfile,
+          localPvpRewardTracking: buildNextLocalPvpRewardTracking(profileBefore, {
+            rewardedMatchApplied: localHotseatRewardEligible,
+            nowMs
+          })
+        };
       }
 
       const shouldPersistProfile = !profilesEqual(workingProfile, profileWithStats);
@@ -971,9 +1037,33 @@ export class StateCoordinator {
         levelAfter: challengeResult.levelAfter,
         levelRewards: levelRewardResult.grantedRewards,
         levelRewardTokenDelta: levelRewardResult.tokenDelta,
+        localPvpRewardStatus: localHotseatPolicy
+          ? {
+              rewardWindowKey: localPvpRewardTracking?.rewardWindowKey ?? getLocalPvpRewardWindowKey(nowMs),
+              rewardCap: localPvpRewardTracking?.rewardCap ?? LOCAL_PVP_DAILY_REWARD_CAP,
+              rewardedMatches: workingProfile?.localPvpRewardTracking?.rewardedMatches ?? 0,
+              rewardEligible: localHotseatRewardEligible,
+              capped: !localHotseatRewardEligible,
+              chestsAwarded: false,
+              challengeWhitelistApplied: true
+            }
+          : null,
         save: saveEntry,
         stats: matchStats
       };
+    });
+  }
+
+  async recordLocalHotseatResult({ username, matchState, perspective = "p1", settlementKey = null, nowMs = Date.now() }) {
+    return this.recordMatchResult({
+      username,
+      matchState,
+      perspective,
+      settlementKey,
+      rewardPolicy: {
+        type: "local_hotseat_casual"
+      },
+      nowMs
     });
   }
 

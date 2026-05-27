@@ -2918,6 +2918,7 @@ export class AppController {
   } = {}) {
     const safeUsername = String(username ?? "").trim();
     const multiplayerSettle = globalThis.window?.elemintz?.multiplayer?.applyLocalMatchResult;
+    const multiplayerHotseatSettle = globalThis.window?.elemintz?.multiplayer?.applyLocalHotseatResult;
     const localRecord = globalThis.window?.elemintz?.state?.recordMatchResult;
     const sessionToken = String(authority?.sessionToken ?? "").trim() || null;
     const accountId =
@@ -2946,10 +2947,16 @@ export class AppController {
       endReason: String(match?.endReason ?? "").trim() || null,
       round: Math.max(0, Number(match?.round ?? 0) || 0)
     };
+    const hasAuthenticatedAuthority =
+      Boolean(sessionToken) || this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, safeUsername);
     const canUseServer =
       mode !== MATCH_MODE.LOCAL_PVP &&
       typeof multiplayerSettle === "function" &&
-      (Boolean(sessionToken) || this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, safeUsername));
+      hasAuthenticatedAuthority;
+    const canUseHotseatServer =
+      mode === MATCH_MODE.LOCAL_PVP &&
+      typeof multiplayerHotseatSettle === "function" &&
+      hasAuthenticatedAuthority;
 
     console.info("[MatchSettlement][Renderer] attempt", {
       mode,
@@ -2958,8 +2965,38 @@ export class AppController {
       perspective,
       ...matchSummary,
       settlementKey,
-      usingServerAuthority: canUseServer
+      usingServerAuthority: canUseServer || canUseHotseatServer
     });
+
+    if (canUseHotseatServer) {
+      try {
+        const result = await multiplayerHotseatSettle({
+          username: safeUsername,
+          perspective,
+          matchState: match,
+          settlementKey,
+          ...(sessionToken ? { sessionToken } : {})
+        });
+        console.info("[MatchSettlement][Renderer] hotseat authority success", {
+          mode,
+          username: safeUsername,
+          accountId,
+          perspective,
+          duplicate: Boolean(result?.duplicate),
+          fallbackUsed: false
+        });
+        return result;
+      } catch (error) {
+        console.error("[MatchSettlement][Renderer] hotseat authority failure", {
+          mode,
+          username: safeUsername,
+          accountId,
+          perspective,
+          error
+        });
+        throw error;
+      }
+    }
 
     if (canUseServer) {
       try {
@@ -5557,6 +5594,32 @@ export class AppController {
   }
 
   buildMatchCompleteRewardSummary(mode, match, finalPersisted) {
+    if (mode === MATCH_MODE.LOCAL_PVP) {
+      const p1Result = finalPersisted?.p1 ?? null;
+      const p2Result = finalPersisted?.p2 ?? null;
+      const names = this.getLocalNames();
+      const p1Xp = Math.max(0, Number(p1Result?.xpDelta ?? 0));
+      const p1Tokens = Math.max(0, Number(p1Result?.tokenDelta ?? 0));
+      const p2Xp = Math.max(0, Number(p2Result?.xpDelta ?? 0));
+      const p2Tokens = Math.max(0, Number(p2Result?.tokenDelta ?? 0));
+      const capped =
+        Boolean(p1Result?.localPvpRewardStatus?.capped) || Boolean(p2Result?.localPvpRewardStatus?.capped);
+
+      return `
+        <section class="match-complete-meta match-complete-rewards">
+          <p><strong>${escapeHtml(names.p1)}:</strong> +${p1Xp} XP / +${p1Tokens} Tokens</p>
+          <p><strong>${escapeHtml(names.p2)}:</strong> +${p2Xp} XP / +${p2Tokens} Tokens</p>
+          <p><strong>Mode Policy:</strong> Local 2-Player rewards are casual and capped daily.</p>
+          <p><strong>Chest Policy:</strong> No chests are awarded in this mode.</p>
+          ${
+            capped
+              ? `<p><strong>Daily local reward cap reached.</strong> Match stats saved, but no XP/tokens awarded.</p>`
+              : ""
+          }
+        </section>
+      `;
+    }
+
     if (mode !== MATCH_MODE.PVE) {
       return "";
     }

@@ -112,6 +112,7 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
       abandonLocalMatchSession: (payload) =>
         ipcRendererRef.invoke("multiplayer:abandonLocalMatchSession", payload),
       applyLocalMatchResult: (payload) => ipcRendererRef.invoke("multiplayer:applyLocalMatchResult", payload),
+      applyLocalHotseatResult: (payload) => ipcRendererRef.invoke("multiplayer:applyLocalHotseatResult", payload),
       recordGauntletStats: (payload) => ipcRendererRef.invoke("multiplayer:recordGauntletStats", payload),
       buyStoreItem: (payload) => ipcRendererRef.invoke("multiplayer:buyStoreItem", payload),
       submitFeedback: (payload) => ipcRendererRef.invoke("multiplayer:submitFeedback", payload),

@@ -125,7 +125,8 @@ export const DAILY_BONUS_CHALLENGE_POOL = Object.freeze([
     rewardTokens: 3,
     rewardXp: 7,
     goal: 1,
-    progressKey: "completedLocalPvpMatch"
+    progressKey: "completedLocalPvpMatch",
+    allowLocalPvp: true
   },
   {
     id: "daily_comeback_win",
@@ -302,7 +303,8 @@ export const WEEKLY_BONUS_CHALLENGE_POOL = Object.freeze([
     rewardTokens: 10,
     rewardXp: 25,
     goal: 5,
-    progressKey: "completedLocalPvpMatch"
+    progressKey: "completedLocalPvpMatch",
+    allowLocalPvp: true
   },
   {
     id: "weekly_comeback_wins_5",
@@ -1082,8 +1084,16 @@ export function applyDailyChallengesForMatch({
   const playedElements = extractPlayedElements(matchState, perspective);
   const wonRoundElements = extractWonRoundElements(matchState, perspective);
   const hardPveWinBonus = getHardPveWinBonus(matchState, didWin);
-  const dailyActiveDefinitions = getDailyActiveDefinitions(dailyState);
-  const weeklyActiveDefinitions = getWeeklyActiveDefinitions(weeklyState);
+  const isLocalPvp = String(matchState?.mode ?? "").trim().toLowerCase() === "local_pvp";
+  const localPvpWhitelistOnly = Boolean(options.localPvpWhitelistOnly);
+  const allowChallengeProgress = options.allowChallengeProgress !== false;
+  const allowCompletionChests = options.allowCompletionChests !== false;
+  const dailyActiveDefinitions = getDailyActiveDefinitions(dailyState).filter(
+    (challenge) => !(isLocalPvp && localPvpWhitelistOnly) || challenge?.allowLocalPvp === true
+  );
+  const weeklyActiveDefinitions = getWeeklyActiveDefinitions(weeklyState).filter(
+    (challenge) => !(isLocalPvp && localPvpWhitelistOnly) || challenge?.allowLocalPvp === true
+  );
   const baseMatchTokenDelta = includeMatchRewards
     ? getMatchTokenReward({ isCompleted, isQuit, didWin, didDraw }) + hardPveWinBonus.tokenBonus
     : 0;
@@ -1101,12 +1111,12 @@ export function applyDailyChallengesForMatch({
     tokens: baseMatchTokenDelta
   });
 
-  if (isCompleted && !isQuit && !practiceMode) {
+  if (isCompleted && !isQuit && !practiceMode && allowChallengeProgress) {
     const isFeaturedRivalWin =
       String(matchState?.mode ?? "").trim().toLowerCase() === "pve" &&
       String(matchState?.featuredRivalId ?? "").trim().length > 0 &&
       didWin;
-    const metrics = {
+    let metrics = {
       matchesPlayed: 1,
       matchesWon: didWin ? 1 : 0,
       warsWon: Number(matchStats?.warsWon ?? 0),
@@ -1133,6 +1143,17 @@ export function applyDailyChallengesForMatch({
       wonRoundWithEarth: didWin && wonRoundElements.has("earth") ? 1 : 0,
       wonRoundWithWind: didWin && wonRoundElements.has("wind") ? 1 : 0
     };
+
+    if (isLocalPvp && localPvpWhitelistOnly) {
+      const allowedProgressKeys = new Set(
+        [...dailyActiveDefinitions, ...weeklyActiveDefinitions]
+          .map((challenge) => String(challenge?.progressKey ?? "").trim())
+          .filter(Boolean)
+      );
+      metrics = Object.fromEntries(
+        Object.entries(metrics).map(([key, value]) => [key, allowedProgressKeys.has(key) ? value : 0])
+      );
+    }
 
     const dailyApplied = applyChallengeProgress({
       definitions: dailyActiveDefinitions,
@@ -1217,7 +1238,11 @@ export function applyDailyChallengesForMatch({
     }
   };
 
-  if (areAllChallengesCompleted(dailyActiveDefinitions, dailyState) && !dailyState.completionChestGranted) {
+  if (
+    allowCompletionChests &&
+    areAllChallengesCompleted(dailyActiveDefinitions, dailyState) &&
+    !dailyState.completionChestGranted
+  ) {
     dailyState = {
       ...dailyState,
       completionChestGranted: true
@@ -1235,7 +1260,11 @@ export function applyDailyChallengesForMatch({
     dailyChestDelta = DAILY_COMPLETION_CHEST_AMOUNT;
   }
 
-  if (areAllChallengesCompleted(weeklyActiveDefinitions, weeklyState) && !weeklyState.completionChestGranted) {
+  if (
+    allowCompletionChests &&
+    areAllChallengesCompleted(weeklyActiveDefinitions, weeklyState) &&
+    !weeklyState.completionChestGranted
+  ) {
     weeklyState = {
       ...weeklyState,
       completionChestGranted: true
