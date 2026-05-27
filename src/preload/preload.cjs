@@ -105,6 +105,8 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
       startLocalPveMatch: (payload) => ipcRendererRef.invoke("multiplayer:startLocalPveMatch", payload),
       startFeaturedRivalMatch: (payload) =>
         ipcRendererRef.invoke("multiplayer:startFeaturedRivalMatch", payload),
+      startGauntletMatch: (payload) =>
+        ipcRendererRef.invoke("multiplayer:startGauntletMatch", payload),
       getLocalMatchSessionState: (payload) =>
         ipcRendererRef.invoke("multiplayer:getLocalMatchSessionState", payload),
       abandonLocalMatchSession: (payload) =>

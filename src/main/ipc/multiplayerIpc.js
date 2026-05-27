@@ -134,6 +134,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.startFeaturedRivalMatch(payload);
   });
 
+  ipcMain.handle("multiplayer:startGauntletMatch", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.startGauntletMatch(payload);
+  });
+
   ipcMain.handle("multiplayer:getLocalMatchSessionState", async (event, payload) => {
     subscribers.add(event.sender);
     return client.getLocalMatchSessionState(payload);

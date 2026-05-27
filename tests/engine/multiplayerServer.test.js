@@ -2296,7 +2296,7 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
   }
 });
 
-test("multiplayer foundation: authenticated gauntlet stat writes persist after each match and viewed profiles can read the updated authoritative counters", async () => {
+test("multiplayer foundation: gauntlet progress and milestone rewards follow server-owned session state", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const accountStore = new MultiplayerAccountStore({
@@ -2343,18 +2343,27 @@ test("multiplayer foundation: authenticated gauntlet stat writes persist after e
     assert.equal(baneLogin?.ok, true);
     assert.equal(viewerLogin?.ok, true);
 
-    const firstWin = await new Promise((resolve) => {
-      baneClient.emit(
-        "profile:recordGauntletStats",
-        {
-          sessionToken: baneLogin?.session?.token,
-          runStarted: true,
-          matchWon: true,
-          currentStreak: 1,
-          claimedMilestoneStreaks: []
-        },
-        resolve
-      );
+    const firstSession = await emitWithAck(baneClient, "profile:startGauntletMatch", {
+      aiDifficulty: "normal",
+      gauntletRivalId: "pyro_maniac"
+    });
+    assert.equal(firstSession?.ok, true);
+
+    const firstRunStart = await emitWithAck(baneClient, "profile:recordGauntletStats", {
+      sessionToken: baneLogin?.session?.token,
+      localMatchSessionId: firstSession?.result?.session?.sessionId,
+      runStarted: true,
+      currentStreak: 0,
+      claimedMilestoneStreaks: []
+    });
+    assert.equal(firstRunStart?.ok, true);
+
+    const firstWin = await emitWithAck(baneClient, "profile:recordGauntletStats", {
+      sessionToken: baneLogin?.session?.token,
+      localMatchSessionId: firstSession?.result?.session?.sessionId,
+      matchWon: true,
+      currentStreak: 1,
+      claimedMilestoneStreaks: []
     });
 
     assert.equal(firstWin?.ok, true);
@@ -2362,74 +2371,201 @@ test("multiplayer foundation: authenticated gauntlet stat writes persist after e
     assert.equal(firstWin?.result?.profile?.gauntletWins, 1);
     assert.equal(firstWin?.result?.profile?.gauntletRivalsDefeated, 1);
     assert.equal(firstWin?.result?.profile?.gauntletBestStreak, 1);
+    assert.equal(firstWin?.result?.gauntletSession?.status, "completed");
 
-    const secondWin = await new Promise((resolve) => {
-      baneClient.emit(
-        "profile:recordGauntletStats",
-        {
-          sessionToken: baneLogin?.session?.token,
-          matchWon: true,
-          currentStreak: 3,
-          claimedMilestoneStreaks: firstWin?.result?.claimedMilestoneStreaks ?? []
-        },
-        resolve
-      );
+    const secondSession = await emitWithAck(baneClient, "profile:startGauntletMatch", {
+      aiDifficulty: "normal",
+      gauntletRivalId: "tide_witch",
+      previousSessionId: firstWin?.result?.gauntletSession?.sessionId
+    });
+    assert.equal(secondSession?.ok, true);
+
+    const secondWin = await emitWithAck(baneClient, "profile:recordGauntletStats", {
+      sessionToken: baneLogin?.session?.token,
+      localMatchSessionId: secondSession?.result?.session?.sessionId,
+      matchWon: true,
+      currentStreak: 2,
+      claimedMilestoneStreaks: firstWin?.result?.claimedMilestoneStreaks ?? []
     });
 
     assert.equal(secondWin?.ok, true);
     assert.equal(secondWin?.result?.profile?.gauntletRuns, 1);
     assert.equal(secondWin?.result?.profile?.gauntletWins, 2);
     assert.equal(secondWin?.result?.profile?.gauntletRivalsDefeated, 2);
-    assert.equal(secondWin?.result?.profile?.gauntletBestStreak, 3);
+    assert.equal(secondWin?.result?.profile?.gauntletBestStreak, 2);
 
-    const viewedDuringRun = await new Promise((resolve) => {
-      viewerClient.emit(
-        "profile:view",
-        {
-          sessionToken: viewerLogin?.session?.token,
-          username: "Bane"
-        },
-        resolve
-      );
+    const thirdSession = await emitWithAck(baneClient, "profile:startGauntletMatch", {
+      aiDifficulty: "normal",
+      gauntletRivalId: "stonewall",
+      previousSessionId: secondWin?.result?.gauntletSession?.sessionId
+    });
+    assert.equal(thirdSession?.ok, true);
+
+    const thirdWin = await emitWithAck(baneClient, "profile:recordGauntletStats", {
+      sessionToken: baneLogin?.session?.token,
+      localMatchSessionId: thirdSession?.result?.session?.sessionId,
+      matchWon: true,
+      currentStreak: 3,
+      claimedMilestoneStreaks: secondWin?.result?.claimedMilestoneStreaks ?? []
+    });
+    assert.equal(thirdWin?.ok, true);
+    assert.equal(thirdWin?.result?.profile?.gauntletWins, 3);
+    assert.equal(thirdWin?.result?.profile?.gauntletBestStreak, 3);
+    assert.deepEqual(thirdWin?.result?.claimedMilestoneStreaks, [3]);
+    assert.ok(Array.isArray(thirdWin?.result?.milestoneRewards));
+
+    const duplicateThirdWin = await emitWithAck(baneClient, "profile:recordGauntletStats", {
+      sessionToken: baneLogin?.session?.token,
+      localMatchSessionId: thirdSession?.result?.session?.sessionId,
+      matchWon: true,
+      currentStreak: 3,
+      claimedMilestoneStreaks: secondWin?.result?.claimedMilestoneStreaks ?? []
+    });
+    assert.equal(duplicateThirdWin?.ok, false);
+    assert.equal(duplicateThirdWin?.error?.code, "LOCAL_MATCH_SESSION_ALREADY_COMPLETED");
+
+    const viewedDuringRun = await emitWithAck(viewerClient, "profile:view", {
+      sessionToken: viewerLogin?.session?.token,
+      username: "Bane"
     });
 
     assert.equal(viewedDuringRun?.ok, true);
     assert.equal(viewedDuringRun?.profile?.profile?.gauntletBestStreak, 3);
     assert.equal(viewedDuringRun?.profile?.profile?.gauntletRuns, 1);
-    assert.equal(viewedDuringRun?.profile?.profile?.gauntletWins, 2);
-    assert.equal(viewedDuringRun?.profile?.profile?.gauntletRivalsDefeated, 2);
+    assert.equal(viewedDuringRun?.profile?.profile?.gauntletWins, 3);
+    assert.equal(viewedDuringRun?.profile?.profile?.gauntletRivalsDefeated, 3);
 
     const profileDuringRun = await coordinator.profiles.getProfile("Bane");
     assert.equal(profileDuringRun?.gauntletBestStreak, 3);
     assert.equal(profileDuringRun?.gauntletRuns, 1);
-    assert.equal(profileDuringRun?.gauntletWins, 2);
-    assert.equal(profileDuringRun?.gauntletRivalsDefeated, 2);
+    assert.equal(profileDuringRun?.gauntletWins, 3);
+    assert.equal(profileDuringRun?.gauntletRivalsDefeated, 3);
 
-    const lossResult = await new Promise((resolve) => {
-      baneClient.emit(
-        "profile:recordGauntletStats",
-        {
-          sessionToken: baneLogin?.session?.token,
-          runEndedWithLoss: true
-        },
-        resolve
-      );
+    const fourthSession = await emitWithAck(baneClient, "profile:startGauntletMatch", {
+      aiDifficulty: "normal",
+      gauntletRivalId: "storm_chaser",
+      previousSessionId: thirdWin?.result?.gauntletSession?.sessionId
+    });
+    assert.equal(fourthSession?.ok, true);
+
+    const lossResult = await emitWithAck(baneClient, "profile:recordGauntletStats", {
+      sessionToken: baneLogin?.session?.token,
+      localMatchSessionId: fourthSession?.result?.session?.sessionId,
+      runEndedWithLoss: true,
+      currentStreak: 3,
+      claimedMilestoneStreaks: thirdWin?.result?.claimedMilestoneStreaks ?? []
     });
 
     assert.equal(lossResult?.ok, true);
     assert.equal(lossResult?.result?.profile?.gauntletRuns, 1);
-    assert.equal(lossResult?.result?.profile?.gauntletWins, 2);
+    assert.equal(lossResult?.result?.profile?.gauntletWins, 3);
     assert.equal(lossResult?.result?.profile?.gauntletLosses, 1);
-    assert.equal(lossResult?.result?.profile?.gauntletRivalsDefeated, 2);
+    assert.equal(lossResult?.result?.profile?.gauntletRivalsDefeated, 3);
+    assert.equal(lossResult?.result?.gauntletSession?.status, "lost");
 
     const profileAfterLoss = await coordinator.profiles.getProfile("Bane");
     assert.equal(profileAfterLoss?.gauntletRuns, 1);
-    assert.equal(profileAfterLoss?.gauntletWins, 2);
+    assert.equal(profileAfterLoss?.gauntletWins, 3);
     assert.equal(profileAfterLoss?.gauntletLosses, 1);
     assert.equal(profileAfterLoss?.gauntletBestStreak, 3);
   } finally {
     baneClient?.disconnect();
     viewerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: forged gauntlet streak and milestone payloads are rejected without server-owned session state", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    })
+  });
+  let owner = null;
+  let other = null;
+
+  try {
+    const port = await foundation.start();
+    owner = await connectClient(port);
+    other = await connectClient(port);
+
+    const ownerAuth = await registerAccount(owner, {
+      username: "GauntletOwner",
+      email: "gauntlet-owner@example.com",
+      password: "PlayerPass123"
+    });
+    const otherAuth = await registerAccount(other, {
+      username: "GauntletOther",
+      email: "gauntlet-other@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(ownerAuth?.ok, true);
+    assert.equal(otherAuth?.ok, true);
+
+    const started = await emitWithAck(owner, "profile:startGauntletMatch", {
+      aiDifficulty: "normal",
+      gauntletRivalId: "pyro_maniac"
+    });
+    assert.equal(started?.ok, true);
+    const gauntletSessionId = started?.result?.session?.sessionId;
+
+    const noSession = await emitWithAck(owner, "profile:recordGauntletStats", {
+      sessionToken: ownerAuth?.session?.token,
+      runStarted: true,
+      matchWon: true,
+      currentStreak: 1,
+      claimedMilestoneStreaks: []
+    });
+    const foreignSession = await emitWithAck(other, "profile:recordGauntletStats", {
+      sessionToken: otherAuth?.session?.token,
+      localMatchSessionId: gauntletSessionId,
+      matchWon: true,
+      currentStreak: 1,
+      claimedMilestoneStreaks: []
+    });
+    const inflatedStreak = await emitWithAck(owner, "profile:recordGauntletStats", {
+      sessionToken: ownerAuth?.session?.token,
+      localMatchSessionId: gauntletSessionId,
+      matchWon: true,
+      currentStreak: 99,
+      claimedMilestoneStreaks: []
+    });
+    const forgedMilestones = await emitWithAck(owner, "profile:recordGauntletStats", {
+      sessionToken: ownerAuth?.session?.token,
+      localMatchSessionId: gauntletSessionId,
+      matchWon: true,
+      currentStreak: 1,
+      claimedMilestoneStreaks: [3]
+    });
+
+    assert.equal(noSession?.ok, false);
+    assert.equal(noSession?.error?.code, "LOCAL_MATCH_SESSION_REQUIRED");
+    assert.equal(foreignSession?.ok, false);
+    assert.equal(foreignSession?.error?.code, "LOCAL_MATCH_SESSION_ACCESS_DENIED");
+    assert.equal(inflatedStreak?.ok, false);
+    assert.equal(inflatedStreak?.error?.code, "LOCAL_MATCH_GAUNTLET_STREAK_MISMATCH");
+    assert.equal(forgedMilestones?.ok, false);
+    assert.equal(forgedMilestones?.error?.code, "LOCAL_MATCH_GAUNTLET_MILESTONE_MISMATCH");
+
+    const ownerProfile = await coordinator.profiles.getProfile("GauntletOwner");
+    assert.equal(ownerProfile?.gauntletRuns, 0);
+    assert.equal(ownerProfile?.gauntletWins, 0);
+    assert.equal(ownerProfile?.gauntletBestStreak, 0);
+    assert.equal(ownerProfile?.gauntletLosses, 0);
+    assert.equal(ownerProfile?.gauntletRivalsDefeated, 0);
+  } finally {
+    owner?.disconnect();
+    other?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }

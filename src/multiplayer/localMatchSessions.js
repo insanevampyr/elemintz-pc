@@ -97,21 +97,39 @@ export function createLocalMatchSessionStore({ now = () => new Date() } = {}) {
     return toPublicSession(session);
   }
 
-  function completeSession({ sessionId, username, metadata = {} } = {}) {
+  function updateSession({ sessionId, username, status, metadata = {}, gauntletRivalId } = {}) {
     const session = getSessionForUsername(sessionId, username);
     if (!session) {
       return null;
     }
 
-    const timestamp = buildTimestamp();
-    session.status = "completed";
-    session.updatedAt = timestamp;
+    if (status !== undefined) {
+      session.status = normalizeSessionString(status) ?? session.status;
+    }
+
+    if (gauntletRivalId !== undefined) {
+      session.gauntletRivalId = normalizeSessionString(gauntletRivalId);
+    }
+
+    session.updatedAt = buildTimestamp();
     session.metadata = {
       ...cloneMetadata(session.metadata),
-      ...cloneMetadata(metadata),
-      completedAt: timestamp
+      ...cloneMetadata(metadata)
     };
     return toPublicSession(session);
+  }
+
+  function completeSession({ sessionId, username, metadata = {} } = {}) {
+    const timestamp = buildTimestamp();
+    return updateSession({
+      sessionId,
+      username,
+      status: "completed",
+      metadata: {
+        ...cloneMetadata(metadata),
+        completedAt: timestamp
+      }
+    });
   }
 
   return {
@@ -119,6 +137,7 @@ export function createLocalMatchSessionStore({ now = () => new Date() } = {}) {
     getSession,
     getSessionForUsername,
     abandonSession,
+    updateSession,
     completeSession,
     toPublicSession
   };

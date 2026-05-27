@@ -1082,6 +1082,65 @@ export function createMultiplayerFoundation({
     return getGauntletRivalById(normalized)?.id ?? null;
   }
 
+  function normalizeClaimedGauntletMilestoneStreaks(value) {
+    const entries = Array.isArray(value) ? value : [];
+    return [...new Set(entries.map((entry) => Math.max(0, Math.floor(Number(entry ?? 0) || 0))).filter((entry) => entry > 0))]
+      .sort((left, right) => left - right);
+  }
+
+  function getGauntletSessionState(session) {
+    return {
+      currentStreak: Math.max(0, Math.floor(Number(session?.metadata?.currentStreak ?? 0) || 0)),
+      claimedMilestoneStreaks: normalizeClaimedGauntletMilestoneStreaks(
+        session?.metadata?.claimedMilestoneStreaks ?? []
+      ),
+      defeatedRivalIds: Array.isArray(session?.metadata?.defeatedRivalIds)
+        ? session.metadata.defeatedRivalIds
+            .map((entry) => normalizeGauntletRivalId(entry))
+            .filter(Boolean)
+        : [],
+      runCounted: session?.metadata?.runCounted === true
+    };
+  }
+
+  function getGauntletContinuationSessionForOwnerOrThrow(session, sessionId) {
+    const previousSession = getLocalMatchSessionForOwnerOrThrow(session, sessionId);
+    if (previousSession.mode !== LOCAL_MATCH_MODES.GAUNTLET) {
+      const error = new Error("Only gauntlet local match sessions can continue a gauntlet run.");
+      error.code = "LOCAL_MATCH_SESSION_MODE_MISMATCH";
+      throw error;
+    }
+
+    if (previousSession.status !== "completed") {
+      const error = new Error("Only a completed gauntlet session can continue the run.");
+      error.code = "LOCAL_MATCH_SESSION_INACTIVE";
+      throw error;
+    }
+
+    return previousSession;
+  }
+
+  function assertGauntletSessionPayloadMatchesServerState(session, payload = {}) {
+    const serverState = getGauntletSessionState(session);
+    const payloadClaimed = normalizeClaimedGauntletMilestoneStreaks(payload?.claimedMilestoneStreaks ?? []);
+    const payloadCurrentStreak = Math.max(0, Math.floor(Number(payload?.currentStreak ?? 0) || 0));
+    const expectedCurrentStreak = payload?.matchWon === true
+      ? serverState.currentStreak + 1
+      : serverState.currentStreak;
+
+    if (payloadClaimed.join("|") !== serverState.claimedMilestoneStreaks.join("|")) {
+      const error = new Error("Gauntlet milestone claims must match the server-owned gauntlet run state.");
+      error.code = "LOCAL_MATCH_GAUNTLET_MILESTONE_MISMATCH";
+      throw error;
+    }
+
+    if ((payload?.matchWon === true || payload?.runStarted === true) && payloadCurrentStreak !== expectedCurrentStreak) {
+      const error = new Error("Gauntlet streak updates must match the server-owned gauntlet run state.");
+      error.code = "LOCAL_MATCH_GAUNTLET_STREAK_MISMATCH";
+      throw error;
+    }
+  }
+
   function getLocalMatchSessionForOwnerOrThrow(session, sessionId) {
     const normalizedSessionId = String(sessionId ?? "").trim();
     if (!normalizedSessionId) {
@@ -2287,6 +2346,23 @@ export function createMultiplayerFoundation({
           throw error;
         }
 
+        const continuationSessionId = String(
+          payload?.previousSessionId ?? payload?.continuationSessionId ?? ""
+        ).trim() || null;
+        const inheritedSessionState = continuationSessionId
+          ? getGauntletSessionState(
+              getGauntletContinuationSessionForOwnerOrThrow(
+                sessionResult.session,
+                continuationSessionId
+              )
+            )
+          : {
+              currentStreak: 0,
+              claimedMilestoneStreaks: [],
+              defeatedRivalIds: [],
+              runCounted: false
+            };
+
         const session = localMatchSessions.createSession({
           username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
           mode: LOCAL_MATCH_MODES.GAUNTLET,
@@ -2294,7 +2370,12 @@ export function createMultiplayerFoundation({
           gauntletRivalId,
           metadata: {
             authority: "server-local-session",
-            sessionType: LOCAL_MATCH_MODES.GAUNTLET
+            sessionType: LOCAL_MATCH_MODES.GAUNTLET,
+            currentStreak: inheritedSessionState.currentStreak,
+            claimedMilestoneStreaks: inheritedSessionState.claimedMilestoneStreaks,
+            defeatedRivalIds: inheritedSessionState.defeatedRivalIds,
+            runCounted: inheritedSessionState.runCounted,
+            previousSessionId: continuationSessionId
           }
         });
 
@@ -2389,26 +2470,88 @@ export function createMultiplayerFoundation({
       }
 
       try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const localMatchSessionId = normalizeProtectedSettlementSessionId(payload);
+        if (!localMatchSessionId) {
+          const error = new Error("Gauntlet stat updates require a server-owned gauntlet session.");
+          error.code = "LOCAL_MATCH_SESSION_REQUIRED";
+          throw error;
+        }
+
+        const gauntletSession = getLocalMatchSessionForOwnerOrThrow(
+          sessionResult.session,
+          localMatchSessionId
+        );
+        if (gauntletSession.mode !== LOCAL_MATCH_MODES.GAUNTLET) {
+          const error = new Error("This local match session is not a gauntlet session.");
+          error.code = "LOCAL_MATCH_SESSION_MODE_MISMATCH";
+          throw error;
+        }
+        if (!["active"].includes(gauntletSession.status)) {
+          const error = new Error("This gauntlet session is no longer active.");
+          error.code =
+            gauntletSession.status === "completed"
+              ? "LOCAL_MATCH_SESSION_ALREADY_COMPLETED"
+              : "LOCAL_MATCH_SESSION_INACTIVE";
+          throw error;
+        }
+
+        assertGauntletSessionPayloadMatchesServerState(gauntletSession, payload);
+        const gauntletSessionState = getGauntletSessionState(gauntletSession);
+        if (payload?.runStarted === true && gauntletSessionState.runCounted) {
+          const error = new Error("This gauntlet run has already been started.");
+          error.code = "LOCAL_MATCH_GAUNTLET_RUN_ALREADY_STARTED";
+          throw error;
+        }
+        const authoritativeCurrentStreak =
+          payload?.matchWon === true
+            ? gauntletSessionState.currentStreak + 1
+            : gauntletSessionState.currentStreak;
+
         const result = await profileAuthority.recordGauntletStats({
           username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
           runStarted: payload?.runStarted === true,
           matchWon: payload?.matchWon === true,
           runEndedWithLoss: payload?.runEndedWithLoss === true,
-          currentStreak: payload?.currentStreak ?? 0,
-          claimedMilestoneStreaks: payload?.claimedMilestoneStreaks ?? []
+          currentStreak: authoritativeCurrentStreak,
+          claimedMilestoneStreaks: gauntletSessionState.claimedMilestoneStreaks
+        });
+
+        const updatedClaimedMilestoneStreaks = normalizeClaimedGauntletMilestoneStreaks(
+          result?.claimedMilestoneStreaks ?? gauntletSessionState.claimedMilestoneStreaks
+        );
+        const updatedDefeatedRivalIds =
+          payload?.matchWon === true
+            ? [...gauntletSessionState.defeatedRivalIds, normalizeGauntletRivalId(gauntletSession.gauntletRivalId)].filter(Boolean)
+            : gauntletSessionState.defeatedRivalIds;
+        const updatedSession = localMatchSessions.updateSession({
+          sessionId: gauntletSession.sessionId,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          status:
+            payload?.runEndedWithLoss === true
+              ? "lost"
+              : payload?.matchWon === true
+                ? "completed"
+                : "active",
+          metadata: {
+            authority: gauntletSession.metadata?.authority ?? "server-local-session",
+            sessionType: LOCAL_MATCH_MODES.GAUNTLET,
+            previousSessionId: gauntletSession.metadata?.previousSessionId ?? null,
+            runCounted: gauntletSessionState.runCounted || payload?.runStarted === true,
+            currentStreak: authoritativeCurrentStreak,
+            claimedMilestoneStreaks: updatedClaimedMilestoneStreaks,
+            defeatedRivalIds: updatedDefeatedRivalIds
+          }
         });
         respond({
           ok: true,
-          result
-        });
-      } catch (error) {
-        respond({
-          ok: false,
-          error: {
-            code: "PROFILE_GAUNTLET_STATS_WRITE_FAILED",
-            message: String(error?.message ?? "Unable to persist gauntlet stats.")
+          result: {
+            ...result,
+            gauntletSession: updatedSession
           }
         });
+      } catch (error) {
+        respond(buildLocalMatchSessionError(error, "PROFILE_GAUNTLET_STATS_WRITE_FAILED"));
       }
     });
 

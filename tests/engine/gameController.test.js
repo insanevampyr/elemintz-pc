@@ -8274,6 +8274,8 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
     assert.equal(app.pveFeaturedRivalId, null);
     assert.deepEqual(app.gauntletRunState, {
       active: true,
+      sessionId: null,
+      previousSessionId: null,
       currentStreak: 0,
       currentRivalIndex: 1,
       currentRivalId: "tide_witch",
@@ -8367,6 +8369,8 @@ test("appController: gauntlet win increments streak, queues a confirmation trans
   app.pveGauntletMode = true;
   app.gauntletRunState = {
     active: true,
+    sessionId: null,
+    previousSessionId: null,
     currentStreak: 0,
     currentRivalIndex: 1,
     currentRivalId: "tide_witch",
@@ -8387,6 +8391,8 @@ test("appController: gauntlet win increments streak, queues a confirmation trans
   });
   assert.deepEqual(app.gauntletRunState, {
     active: true,
+    sessionId: null,
+    previousSessionId: null,
     currentStreak: 1,
     currentRivalIndex: 2,
     currentRivalId: "stonewall",
@@ -8862,6 +8868,24 @@ test("appController: authenticated Gauntlet stat persistence uses multiplayer au
       }
     }
   };
+  app.currentGauntletLocalMatchSession = {
+    sessionId: "gauntlet-session-1",
+    status: "active",
+    metadata: {
+      currentStreak: 2,
+      claimedMilestoneStreaks: []
+    }
+  };
+  app.gauntletRunState = {
+    ...app.gauntletRunState,
+    active: true,
+    sessionId: "gauntlet-session-1",
+    previousSessionId: null,
+    currentStreak: 2,
+    currentRivalId: "stonewall",
+    claimedMilestoneStreaks: [],
+    defeatedRivalIds: ["pyro_maniac", "tide_witch"]
+  };
 
   const calls = [];
 
@@ -8951,7 +8975,8 @@ test("appController: authenticated Gauntlet stat persistence uses multiplayer au
         matchWon: true,
         runEndedWithLoss: false,
         currentStreak: 3,
-        claimedMilestoneStreaks: []
+        claimedMilestoneStreaks: [],
+        localMatchSessionId: "gauntlet-session-1"
       }
     });
     assert.equal(result.profile.gauntletBestStreak, 3);
@@ -9337,6 +9362,8 @@ test("appController: starting non-gauntlet PvE clears temporary gauntlet run sta
   app.pveGauntletMode = true;
   app.gauntletRunState = {
     active: true,
+    sessionId: null,
+    previousSessionId: null,
     currentStreak: 4,
     currentRivalIndex: 3,
     currentRivalId: "storm_chaser",
@@ -9362,6 +9389,8 @@ test("appController: starting non-gauntlet PvE clears temporary gauntlet run sta
     assert.equal(app.pveGauntletMode, false);
     assert.deepEqual(app.gauntletRunState, {
       active: false,
+      sessionId: null,
+      previousSessionId: null,
       currentStreak: 0,
       currentRivalIndex: -1,
       currentRivalId: null,

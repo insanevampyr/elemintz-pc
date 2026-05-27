@@ -2334,6 +2334,32 @@ export class MultiplayerClient {
     return response.result?.session ?? null;
   }
 
+  async startGauntletMatch({
+    username,
+    aiDifficulty,
+    gauntletRivalId,
+    previousSessionId = null,
+    serverUrl
+  } = {}) {
+    const response = await this.runServerRequest(
+      "profile:startGauntletMatch",
+      {
+        username,
+        aiDifficulty,
+        gauntletRivalId,
+        ...(String(previousSessionId ?? "").trim()
+          ? { previousSessionId: String(previousSessionId).trim() }
+          : {})
+      },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to start a protected gauntlet match session.");
+    }
+
+    return response.result?.session ?? null;
+  }
+
   async getLocalMatchSessionState({ username, sessionId, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:getLocalMatchSessionState",
@@ -2418,6 +2444,7 @@ export class MultiplayerClient {
     runEndedWithLoss = false,
     currentStreak = 0,
     claimedMilestoneStreaks = [],
+    localMatchSessionId = null,
     serverUrl
   } = {}) {
     const response = await this.runServerRequest(
@@ -2428,7 +2455,10 @@ export class MultiplayerClient {
         matchWon,
         runEndedWithLoss,
         currentStreak,
-        claimedMilestoneStreaks
+        claimedMilestoneStreaks,
+        ...(String(localMatchSessionId ?? "").trim()
+          ? { localMatchSessionId: String(localMatchSessionId).trim() }
+          : {})
       },
       { serverUrl }
     );

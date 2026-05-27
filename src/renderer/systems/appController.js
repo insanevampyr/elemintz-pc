@@ -142,6 +142,8 @@ function normalizeName(value, fallback) {
 function createDefaultGauntletRunState() {
   return {
     active: false,
+    sessionId: null,
+    previousSessionId: null,
     currentStreak: 0,
     currentRivalIndex: -1,
     currentRivalId: null,
@@ -206,6 +208,9 @@ export class AppController {
     this.currentProtectedLocalMatchSession = null;
     this.pendingProtectedLocalMatchSessionPromise = null;
     this.protectedLocalMatchSessionRequestId = 0;
+    this.currentGauntletLocalMatchSession = null;
+    this.pendingGauntletLocalMatchSessionPromise = null;
+    this.gauntletLocalMatchSessionRequestId = 0;
     this.gauntletRunState = createDefaultGauntletRunState();
     this.profileChestVisualState = {
       basicOpen: false,
@@ -1492,6 +1497,7 @@ export class AppController {
 
   clearGauntletRunState() {
     this.pveGauntletMode = false;
+    this.clearGauntletLocalMatchSessionState();
     this.gauntletRunState = createDefaultGauntletRunState();
     this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;
@@ -1516,13 +1522,15 @@ export class AppController {
         : null;
 
     if (multiplayerRecorder) {
+      const gauntletSession = await this.resolveGauntletLocalMatchSession();
       const result = await multiplayerRecorder({
         username: this.username,
         runStarted,
         matchWon,
         runEndedWithLoss,
         currentStreak,
-        claimedMilestoneStreaks
+        claimedMilestoneStreaks,
+        localMatchSessionId: gauntletSession?.sessionId ?? this.gauntletRunState?.sessionId ?? null
       });
 
       if (result?.snapshot) {
@@ -1531,6 +1539,21 @@ export class AppController {
         });
       } else if (result?.profile) {
         this.profile = result.profile;
+      }
+
+      if (result?.gauntletSession) {
+        const sessionStatus = String(result.gauntletSession.status ?? "").trim().toLowerCase() || null;
+        this.currentGauntletLocalMatchSession = result.gauntletSession;
+        this.gauntletRunState = {
+          ...this.gauntletRunState,
+          sessionId:
+            sessionStatus === "active" ? result.gauntletSession.sessionId : this.gauntletRunState?.sessionId ?? null,
+          previousSessionId:
+            sessionStatus === "completed" ? result.gauntletSession.sessionId : this.gauntletRunState?.previousSessionId ?? null,
+          claimedMilestoneStreaks: Array.isArray(result?.claimedMilestoneStreaks)
+            ? [...result.claimedMilestoneStreaks]
+            : this.gauntletRunState?.claimedMilestoneStreaks ?? []
+        };
       }
 
       return result?.snapshot ? { ...result, profile: this.profile } : result ?? null;
@@ -1560,8 +1583,11 @@ export class AppController {
   startFreshGauntletRun() {
     const { rival: firstRival, rivalBag } = this.pullNextGauntletRival();
     this.pveGauntletMode = Boolean(firstRival);
+    this.clearGauntletLocalMatchSessionState();
     this.gauntletRunState = {
       active: Boolean(firstRival),
+      sessionId: null,
+      previousSessionId: null,
       currentStreak: 0,
       currentRivalIndex: firstRival
         ? Math.max(0, this.getGauntletRivalCatalog().findIndex((rival) => rival.id === firstRival.id))
@@ -1591,6 +1617,7 @@ export class AppController {
       ...createDefaultGauntletRunState(),
       ...this.gauntletRunState,
       active: Boolean(resolvedRival),
+      sessionId: null,
       currentRivalIndex: resolvedIndex,
       currentRivalId: resolvedRival?.id ?? null
     };
@@ -1615,6 +1642,8 @@ export class AppController {
 
     this.gauntletRunState = {
       active: true,
+      sessionId: null,
+      previousSessionId: this.gauntletRunState?.sessionId ?? null,
       currentStreak: Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)) + 1,
       currentRivalIndex: nextIndex,
       currentRivalId: nextRival?.id ?? null,
@@ -2689,6 +2718,12 @@ export class AppController {
     this.pendingProtectedLocalMatchSessionPromise = null;
   }
 
+  clearGauntletLocalMatchSessionState() {
+    this.gauntletLocalMatchSessionRequestId += 1;
+    this.currentGauntletLocalMatchSession = null;
+    this.pendingGauntletLocalMatchSessionPromise = null;
+  }
+
   isProtectedServerSessionPveMode({
     mode = MATCH_MODE.PVE,
     gauntletMode = this.pveGauntletMode
@@ -2756,6 +2791,85 @@ export class AppController {
         return session ?? null;
       } finally {
         this.pendingProtectedLocalMatchSessionPromise = null;
+      }
+    }
+
+    return null;
+  }
+
+  syncGauntletLocalMatchSession(session = null) {
+    const safeSessionId = String(session?.sessionId ?? "").trim() || null;
+    if (!safeSessionId) {
+      return;
+    }
+
+    this.currentGauntletLocalMatchSession = session ?? null;
+    this.gauntletRunState = {
+      ...this.gauntletRunState,
+      sessionId: safeSessionId,
+      previousSessionId: null,
+      claimedMilestoneStreaks: Array.isArray(session?.metadata?.claimedMilestoneStreaks)
+        ? [...session.metadata.claimedMilestoneStreaks]
+        : this.gauntletRunState?.claimedMilestoneStreaks ?? [],
+      currentStreak: Math.max(
+        0,
+        Number(session?.metadata?.currentStreak ?? this.gauntletRunState?.currentStreak ?? 0)
+      ),
+      defeatedRivalIds: Array.isArray(session?.metadata?.defeatedRivalIds)
+        ? [...session.metadata.defeatedRivalIds]
+        : this.gauntletRunState?.defeatedRivalIds ?? []
+    };
+
+    if (this.gameController?.match?.meta) {
+      this.gameController.match.meta.localMatchSessionId = safeSessionId;
+    }
+  }
+
+  async startGauntletLocalMatchSession({
+    aiDifficulty,
+    gauntletRivalId,
+    previousSessionId = null,
+    requestId = this.gauntletLocalMatchSessionRequestId
+  } = {}) {
+    const multiplayer = globalThis.window?.elemintz?.multiplayer ?? null;
+    const safeUsername = String(this.username ?? "").trim() || null;
+    const starter = multiplayer?.startGauntletMatch;
+    if (
+      !safeUsername ||
+      !this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, safeUsername) ||
+      typeof starter !== "function"
+    ) {
+      this.clearGauntletLocalMatchSessionState();
+      return null;
+    }
+
+    const session = await starter({
+      username: safeUsername,
+      aiDifficulty: String(aiDifficulty ?? "").trim().toLowerCase() || null,
+      gauntletRivalId,
+      previousSessionId
+    });
+
+    if (requestId !== this.gauntletLocalMatchSessionRequestId) {
+      return null;
+    }
+
+    this.syncGauntletLocalMatchSession(session);
+    return session ?? null;
+  }
+
+  async resolveGauntletLocalMatchSession() {
+    if (this.currentGauntletLocalMatchSession?.sessionId) {
+      return this.currentGauntletLocalMatchSession;
+    }
+
+    if (this.pendingGauntletLocalMatchSessionPromise) {
+      try {
+        const session = await this.pendingGauntletLocalMatchSessionPromise;
+        this.syncGauntletLocalMatchSession(session);
+        return session ?? null;
+      } finally {
+        this.pendingGauntletLocalMatchSessionPromise = null;
       }
     }
 
@@ -6533,7 +6647,9 @@ export class AppController {
             this.getConfiguredAiDifficulty())
         : FALLBACK_SETTINGS.aiDifficulty;
     this.clearProtectedLocalMatchSessionState();
+    this.clearGauntletLocalMatchSessionState();
     const protectedLocalMatchSessionRequestId = this.protectedLocalMatchSessionRequestId;
+    const gauntletLocalMatchSessionRequestId = this.gauntletLocalMatchSessionRequestId;
     this.resetMatchTaunts();
 
     this.roundPresentation = {
@@ -6724,6 +6840,30 @@ export class AppController {
           stack: error?.stack
         });
         this.clearProtectedLocalMatchSessionState();
+        return null;
+      });
+    }
+
+    if (
+      wantsGauntlet &&
+      this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username)
+    ) {
+      this.pendingGauntletLocalMatchSessionPromise = this.startGauntletLocalMatchSession({
+        aiDifficulty: resolvedAiDifficulty,
+        gauntletRivalId: this.gauntletRunState?.currentRivalId ?? null,
+        previousSessionId:
+          options?.gauntletContinue === true
+            ? this.gauntletRunState?.previousSessionId ?? null
+            : null,
+        requestId: gauntletLocalMatchSessionRequestId
+      }).catch((error) => {
+        console.error("[Gauntlet][Renderer] failed to start protected gauntlet session", {
+          username: this.username,
+          gauntletRivalId: this.gauntletRunState?.currentRivalId ?? null,
+          message: error?.message,
+          stack: error?.stack
+        });
+        this.clearGauntletLocalMatchSessionState();
         return null;
       });
     }
