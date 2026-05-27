@@ -8126,7 +8126,7 @@ test("multiplayer profile authority: authenticated featured rival settlement req
   }
 });
 
-test("multiplayer profile authority: authenticated local PvP settlement updates both server profiles with their own perspectives", async () => {
+test("multiplayer profile authority: authenticated local PvP settlement is rejected and cannot mutate server profiles", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const foundation = createMultiplayerFoundation({
@@ -8190,14 +8190,16 @@ test("multiplayer profile authority: authenticated local PvP settlement updates 
     const hostProfile = await coordinator.profiles.getProfile("AuthoritativeHotseatHost");
     const guestProfile = await coordinator.profiles.getProfile("AuthoritativeHotseatGuest");
 
-    assert.equal(p1Result?.ok, true);
-    assert.equal(p2Result?.ok, true);
-    assert.equal(hostProfile.gamesPlayed, 1);
-    assert.equal(hostProfile.wins, 1);
-    assert.equal(hostProfile.modeStats.local_pvp.wins, 1);
-    assert.equal(guestProfile.gamesPlayed, 1);
-    assert.equal(guestProfile.losses, 1);
-    assert.equal(guestProfile.modeStats.local_pvp.losses, 1);
+    assert.equal(p1Result?.ok, false);
+    assert.equal(p1Result?.error?.code, "LOCAL_MATCH_UNVERIFIED_LOCAL_PVP_REJECTED");
+    assert.equal(p2Result?.ok, false);
+    assert.equal(p2Result?.error?.code, "LOCAL_MATCH_UNVERIFIED_LOCAL_PVP_REJECTED");
+    assert.equal(hostProfile.gamesPlayed, 0);
+    assert.equal(hostProfile.wins, 0);
+    assert.equal(hostProfile.modeStats.local_pvp.wins, 0);
+    assert.equal(guestProfile.gamesPlayed, 0);
+    assert.equal(guestProfile.losses, 0);
+    assert.equal(guestProfile.modeStats.local_pvp.losses, 0);
   } finally {
     p1?.disconnect();
     p2?.disconnect();

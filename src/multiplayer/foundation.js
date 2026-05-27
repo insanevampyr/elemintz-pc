@@ -25,6 +25,7 @@ export const MULTIPLAYER_FOUNDATION_PHASE = 22;
 const DEVELOPMENT_PHASE_LABEL = "Unified Server Progression + Tester Stabilization";
 const LOCAL_MATCH_MODES = Object.freeze({
   PVE: "pve",
+  LOCAL_PVP: "local_pvp",
   FEATURED_RIVAL: "featured_rival",
   GAUNTLET: "gauntlet"
 });
@@ -2145,6 +2146,15 @@ export function createMultiplayerFoundation({
       }
 
       try {
+        const matchMode = String(payload?.matchState?.mode ?? "").trim().toLowerCase();
+        if (matchMode === LOCAL_MATCH_MODES.LOCAL_PVP) {
+          const error = new Error(
+            "Authenticated local hotseat PvP settlements are local-only and cannot grant server rewards or stats."
+          );
+          error.code = "LOCAL_MATCH_UNVERIFIED_LOCAL_PVP_REJECTED";
+          throw error;
+        }
+
         let localMatchSession = null;
         if (isProtectedPveSettlement(payload?.matchState)) {
           assertSessionUsernameMatch(sessionResult.session, payload?.username);

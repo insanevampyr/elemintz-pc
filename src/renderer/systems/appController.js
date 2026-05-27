@@ -2947,6 +2947,7 @@ export class AppController {
       round: Math.max(0, Number(match?.round ?? 0) || 0)
     };
     const canUseServer =
+      mode !== MATCH_MODE.LOCAL_PVP &&
       typeof multiplayerSettle === "function" &&
       (Boolean(sessionToken) || this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, safeUsername));
 

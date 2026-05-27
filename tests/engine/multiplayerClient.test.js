@@ -4155,7 +4155,7 @@ test("app controller: authenticated PvE settlement uses server authority before 
   }
 });
 
-test("app controller: authenticated local PvP settlement updates both players through server authority", async () => {
+test("app controller: authenticated local PvP settlement stays local-only and avoids server authority", async () => {
   const originalWindow = globalThis.window;
   const controller = createAppController();
   controller.localPlayers = {
@@ -4215,13 +4215,17 @@ test("app controller: authenticated local PvP settlement updates both players th
 
     const result = await controller.persistLocalPvpResult(match);
 
-    assert.equal(serverCalls.length, 2);
-    assert.equal(fallbackCalls.length, 0);
-    assert.equal(serverCalls[0].username, "HotseatHost");
-    assert.equal(serverCalls[0].perspective, "p1");
-    assert.equal(serverCalls[1].sessionToken, "guest-session-token");
-    assert.equal(serverCalls[1].perspective, "p2");
-    assert.equal(result.p1?.snapshot?.profile?.username, "HotseatHost");
+    assert.equal(serverCalls.length, 0);
+    assert.equal(fallbackCalls.length, 2);
+    assert.deepEqual(
+      fallbackCalls.map((entry) => [entry.username, entry.perspective]),
+      [
+        ["HotseatHost", "p1"],
+        ["HotseatGuest", "p2"]
+      ]
+    );
+    assert.equal(result.p1?.profile?.username, "HotseatHost");
+    assert.equal(result.p2?.profile?.username, "HotseatGuest");
   } finally {
     globalThis.window = originalWindow;
   }
