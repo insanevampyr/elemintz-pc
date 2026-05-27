@@ -8,6 +8,7 @@ const MENU_TILE_IMAGE_MAP = Object.freeze({
   "cosmetics-btn": "menu_tiles/tile_cosmetics.png",
   "store-btn": "menu_tiles/tile_store.png",
   "achievements-btn": "menu_tiles/tile_achievements.png",
+  "roadmap-btn": "menu_tiles/tile_roadmap.png",
   "settings-btn": "menu_tiles/tile_settings.png",
   "how-to-play-btn": "menu_tiles/tile_how_to_play.png",
   "feedback-btn": "menu_tiles/tile_feedback.png",
@@ -352,6 +353,7 @@ export const menuScreen = {
                 ${renderMenuTile("cosmetics-btn", "Cosmetics")}
                 ${renderMenuTile("store-btn", "Store")}
                 ${renderMenuTile("achievements-btn", "Achievements")}
+                ${renderMenuTile("roadmap-btn", "Roadmap")}
                 ${renderMenuTile("settings-btn", "Settings")}
                 ${renderMenuTile("feedback-btn", "Feedback")}
                 ${renderMenuTile("logout-btn", "Logout")}
@@ -394,6 +396,7 @@ export const menuScreen = {
       .addEventListener("click", context.actions.openDailyChallenges);
     document.getElementById("cosmetics-btn").addEventListener("click", context.actions.openCosmetics);
     document.getElementById("store-btn").addEventListener("click", context.actions.openStore);
+    document.getElementById("roadmap-btn").addEventListener("click", context.actions.openRoadmap);
     document.getElementById("settings-btn").addEventListener("click", context.actions.openSettings);
     document.getElementById("how-to-play-btn").addEventListener("click", context.actions.openHowToPlay);
     document.getElementById("feedback-btn").addEventListener("click", context.actions.openFeedback);

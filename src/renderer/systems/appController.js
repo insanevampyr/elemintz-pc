@@ -11,6 +11,7 @@ import {
   onlinePlayScreen,
   passScreen,
   profileScreen,
+  roadmapScreen,
   settingsScreen,
   storeScreen
 } from "../ui/screens/index.js";
@@ -834,6 +835,7 @@ export class AppController {
     this.screenManager.register("settings", settingsScreen);
     this.screenManager.register("onlinePlay", onlinePlayScreen);
     this.screenManager.register("howToPlay", howToPlayScreen);
+    this.screenManager.register("roadmap", roadmapScreen);
   }
 
   clearPassTimer({ settle = true, result = { reason: "cancelled" } } = {}) {
@@ -1972,6 +1974,7 @@ export class AppController {
         openDailyChallenges: async () => this.showDailyChallenges(),
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
+        openRoadmap: () => this.showRoadmap(),
         openSettings: async () => this.showSettings(),
         openHowToPlay: () => this.showHowToPlay(),
         openFeedback: () => this.showFeedbackModal(),
@@ -8192,6 +8195,17 @@ export class AppController {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "howToPlay";
     this.screenManager.show("howToPlay", {
+      actions: {
+        back: () => this.showMenu()
+      }
+    });
+    this.updateOnlineReconnectReminderModal();
+  }
+
+  showRoadmap({ preserveModal = false } = {}) {
+    this.clearTransientUiBeforeScreenTransition({ preserveModal });
+    this.screenFlow = "roadmap";
+    this.screenManager.show("roadmap", {
       actions: {
         back: () => this.showMenu()
       }

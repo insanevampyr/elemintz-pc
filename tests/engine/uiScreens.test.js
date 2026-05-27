@@ -13,6 +13,7 @@ import { localSetupScreen } from "../../src/renderer/ui/screens/localSetupScreen
 import { menuScreen } from "../../src/renderer/ui/screens/menuScreen.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
 import { profileScreen, selectTrophyShelfItems } from "../../src/renderer/ui/screens/profileScreen.js";
+import { roadmapScreen } from "../../src/renderer/ui/screens/roadmapScreen.js";
 import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js";
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
@@ -3495,6 +3496,7 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     "open-daily-challenges-btn": createFakeElement(),
     "cosmetics-btn": createFakeElement(),
     "store-btn": createFakeElement(),
+    "roadmap-btn": createFakeElement(),
     "settings-btn": createFakeElement(),
     "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
@@ -3566,8 +3568,10 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
         openDailyChallenges: async () => {},
         openCosmetics: async () => {},
         openStore: async () => {},
+        openRoadmap: () => {},
         openSettings: async () => {},
         openHowToPlay: () => {},
+        openFeedback: () => {},
         logout: () => {}
       }
     });
@@ -9332,6 +9336,7 @@ test("ui: menu renders buttons in requested order without standalone challenges 
     "cosmetics-btn",
     "store-btn",
     "achievements-btn",
+    "roadmap-btn",
     "settings-btn",
     "feedback-btn",
     "logout-btn"
@@ -9371,6 +9376,7 @@ test("ui: menu action buttons use menu tile artwork backgrounds", () => {
   assert.match(html, /id="cosmetics-btn"[\s\S]*menu_tiles\/tile_cosmetics\.png/);
   assert.match(html, /id="store-btn"[\s\S]*menu_tiles\/tile_store\.png/);
   assert.match(html, /id="achievements-btn"[\s\S]*menu_tiles\/tile_achievements\.png/);
+  assert.match(html, /id="roadmap-btn"[\s\S]*menu_tiles\/tile_roadmap\.png/);
   assert.match(html, /id="settings-btn"[\s\S]*menu_tiles\/tile_settings\.png/);
   assert.match(html, /id="how-to-play-btn"[\s\S]*menu_tiles\/tile_how_to_play\.png/);
   assert.match(html, /id="feedback-btn"[\s\S]*menu_tiles\/tile_feedback\.png/);
@@ -9618,6 +9624,7 @@ test("ui: menu announcement dismiss button binds to the dismiss action with the 
     "open-daily-challenges-btn": createFakeElement(),
     "cosmetics-btn": createFakeElement(),
     "store-btn": createFakeElement(),
+    "roadmap-btn": createFakeElement(),
     "settings-btn": createFakeElement(),
     "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
@@ -9646,6 +9653,7 @@ test("ui: menu announcement dismiss button binds to the dismiss action with the 
         openDailyChallenges: async () => {},
         openCosmetics: async () => {},
         openStore: async () => {},
+        openRoadmap: () => {},
         openSettings: async () => {},
         openHowToPlay: async () => {},
         openFeedback: () => {},
@@ -9680,8 +9688,57 @@ test("ui: menu renders a How to Play button and keeps existing buttons", () => {
   assert.match(html, /id="how-to-play-btn"/);
   assert.match(html, />How to Play</);
   assert.match(html, /id="store-btn"/);
+  assert.match(html, /id="roadmap-btn"/);
+  assert.match(html, />Roadmap</);
   assert.match(html, /id="settings-btn"/);
   assert.match(html, /id="feedback-btn"/);
+});
+
+test("ui: roadmap screen renders the static player-facing roadmap content", () => {
+  const html = roadmapScreen.render({
+    actions: { back: () => {} }
+  });
+
+  assert.match(html, /EleMintz Roadmap/);
+  assert.match(html, /id="roadmap-back-btn"/);
+  assert.match(html, /A look at features planned or being explored\. Details may change as EleMintz grows\./);
+  assert.match(html, />COMING SOON</);
+  assert.match(html, />LATER</);
+  assert.match(html, /New cosmetic drops/);
+  assert.match(html, /More Gauntlet rivals/);
+  assert.match(html, /Challenge reward improvements/);
+  assert.match(html, /Quality-of-life polish/);
+  assert.match(html, /Alpha Season Track/);
+  assert.match(html, /Referral bonuses/);
+  assert.match(html, /Leaderboards/);
+  assert.match(html, /Tournaments/);
+  assert.match(html, /Deck Builder experiments/);
+});
+
+test("ui: roadmap screen back button binds to the provided action", () => {
+  const previousDocument = global.document;
+  let backCalls = 0;
+  const backButton = createFakeElement();
+
+  global.document = {
+    getElementById: (id) => (id === "roadmap-back-btn" ? backButton : null)
+  };
+
+  try {
+    roadmapScreen.bind({
+      actions: {
+        back: () => {
+          backCalls += 1;
+        }
+      }
+    });
+
+    backButton.listeners.get("click")();
+
+    assert.equal(backCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
 });
 
 test("ui: how to play screen renders compact accordion sections with the current gameplay guidance", () => {
@@ -9762,6 +9819,7 @@ test("ui: menu how to play button binds to the provided action", () => {
     "open-daily-challenges-btn": createFakeElement(),
     "cosmetics-btn": createFakeElement(),
     "store-btn": createFakeElement(),
+    "roadmap-btn": createFakeElement(),
     "settings-btn": createFakeElement(),
     "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
@@ -9783,6 +9841,7 @@ test("ui: menu how to play button binds to the provided action", () => {
         openDailyChallenges: async () => {},
         openCosmetics: async () => {},
         openStore: async () => {},
+        openRoadmap: () => {},
         openSettings: async () => {},
         openHowToPlay: () => {
           howToPlayCalls += 1;
@@ -9796,6 +9855,59 @@ test("ui: menu how to play button binds to the provided action", () => {
     elements["how-to-play-btn"].listeners.get("click")();
 
     assert.equal(howToPlayCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: menu roadmap button binds to the provided action", () => {
+  const previousDocument = global.document;
+  let roadmapCalls = 0;
+  const elements = {
+    "start-pve-btn": createFakeElement(),
+    "start-local-btn": createFakeElement(),
+    "online-play-btn": createFakeElement(),
+    "profile-btn": createFakeElement(),
+    "achievements-btn": createFakeElement(),
+    "open-daily-challenges-btn": createFakeElement(),
+    "cosmetics-btn": createFakeElement(),
+    "store-btn": createFakeElement(),
+    "roadmap-btn": createFakeElement(),
+    "settings-btn": createFakeElement(),
+    "how-to-play-btn": createFakeElement(),
+    "feedback-btn": createFakeElement(),
+    "logout-btn": createFakeElement()
+  };
+
+  global.document = {
+    getElementById: (id) => elements[id] ?? null
+  };
+
+  try {
+    menuScreen.bind({
+      actions: {
+        startPveGame: () => {},
+        startLocalGame: () => {},
+        openOnlinePlay: async () => {},
+        openProfile: async () => {},
+        openAchievements: async () => {},
+        openDailyChallenges: async () => {},
+        openCosmetics: async () => {},
+        openStore: async () => {},
+        openRoadmap: () => {
+          roadmapCalls += 1;
+        },
+        openSettings: async () => {},
+        openHowToPlay: () => {},
+        openFeedback: () => {},
+        logout: () => {},
+        dismissAnnouncement: async () => {}
+      }
+    });
+
+    elements["roadmap-btn"].listeners.get("click")();
+
+    assert.equal(roadmapCalls, 1);
   } finally {
     global.document = previousDocument;
   }
@@ -9827,6 +9939,38 @@ test("ui: appController showHowToPlay opens the help screen and back returns to 
   controller.showHowToPlay();
 
   assert.equal(shown.at(-1).screenId, "howToPlay");
+
+  shown.at(-1).context.actions.back();
+
+  assert.equal(shown.at(-1).screenId, "menu");
+});
+
+test("ui: appController showRoadmap opens the roadmap screen and back returns to menu", () => {
+  const shown = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => {
+        shown.push({ screenId, context });
+      }
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: {
+      show: () => {}
+    }
+  });
+
+  controller.showMenu = () => {
+    shown.push({ screenId: "menu", context: null });
+  };
+
+  controller.showRoadmap();
+
+  assert.equal(shown.at(-1).screenId, "roadmap");
 
   shown.at(-1).context.actions.back();
 

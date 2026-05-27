@@ -12,3 +12,4 @@ export * from "./dailyChallengesScreen.js";
 export * from "./onlinePlayScreen.js";
 export * from "./howToPlayScreen.js";
 export * from "./aiDifficultyScreen.js";
+export * from "./roadmapScreen.js";
