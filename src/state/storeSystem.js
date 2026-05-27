@@ -158,11 +158,37 @@ export function getStoreViewForProfile(profile) {
   };
 }
 
+function normalizeStoreLookupInput({ type, cosmeticId, storeKey } = {}) {
+  const safeStoreKey = String(storeKey ?? "").trim();
+  const compositeSource =
+    safeStoreKey ||
+    (typeof type === "string" && type.includes(":") && !String(cosmeticId ?? "").trim()
+      ? String(type).trim()
+      : "");
+
+  if (compositeSource) {
+    const separatorIndex = compositeSource.indexOf(":");
+    if (separatorIndex > 0 && separatorIndex < compositeSource.length - 1) {
+      return {
+        type: compositeSource.slice(0, separatorIndex).trim(),
+        cosmeticId: compositeSource.slice(separatorIndex + 1).trim()
+      };
+    }
+  }
+
+  return {
+    type: String(type ?? "").trim(),
+    cosmeticId: String(cosmeticId ?? "").trim()
+  };
+}
+
 export function buyStoreItem(profile, { type, cosmeticId }) {
   const normalized = normalizeProfileStore(profile);
   const previousTracking = normalized.cosmeticUnlockTracking;
-  const safeType = String(type ?? "").trim();
-  const safeCosmeticId = String(cosmeticId ?? "").trim();
+  const { type: safeType, cosmeticId: safeCosmeticId } = normalizeStoreLookupInput({
+    type,
+    cosmeticId
+  });
   const item = COSMETIC_CATALOG[safeType]?.find((entry) => entry.id === safeCosmeticId) ?? null;
 
   if (!item) {

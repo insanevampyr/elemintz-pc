@@ -4407,6 +4407,80 @@ test("multiplayer foundation: server-authoritative store purchase succeeds for a
   }
 });
 
+test("multiplayer foundation: server-authoritative store purchase lookup accepts Frostveil composite store keys", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("FrostveilAuthorityUser", { tokens: 5000 });
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "FrostveilAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const purchaseTargets = [
+      { type: "avatar:avatar_frostveil_heir", expectedPrice: 900, ownedType: "avatar", ownedId: "avatar_frostveil_heir" },
+      { type: "title:title_shiverborne", expectedPrice: 500, ownedType: "title", ownedId: "title_shiverborne" },
+      { type: "cardBack:cardback_glacier_sigil", expectedPrice: 800, ownedType: "cardBack", ownedId: "cardback_glacier_sigil" },
+      {
+        type: "elementCardVariant:fire_variant_aurora_flare",
+        expectedPrice: 450,
+        ownedType: "elementCardVariant",
+        ownedId: "fire_variant_aurora_flare"
+      },
+      {
+        type: "elementCardVariant:earth_variant_icebound_crag",
+        expectedPrice: 450,
+        ownedType: "elementCardVariant",
+        ownedId: "earth_variant_icebound_crag"
+      },
+      {
+        type: "elementCardVariant:wind_variant_sleet_spiral",
+        expectedPrice: 450,
+        ownedType: "elementCardVariant",
+        ownedId: "wind_variant_sleet_spiral"
+      },
+      {
+        type: "elementCardVariant:water_variant_frostbloom",
+        expectedPrice: 450,
+        ownedType: "elementCardVariant",
+        ownedId: "water_variant_frostbloom"
+      }
+    ];
+
+    for (const target of purchaseTargets) {
+      const response = await new Promise((resolve) => {
+        client.emit("profile:buyStoreItem", { type: target.type }, resolve);
+      });
+      assert.equal(response?.ok, true, `${target.type} should succeed`);
+      assert.equal(response?.result?.purchase?.status, "purchased");
+      assert.equal(response?.result?.purchase?.price, target.expectedPrice);
+    }
+
+    const profileAfterPurchases = await coordinator.profiles.getProfile("FrostveilAuthorityUser");
+    for (const target of purchaseTargets) {
+      assert.ok(
+        profileAfterPurchases?.ownedCosmetics?.[target.ownedType]?.includes(target.ownedId),
+        `${target.ownedType}:${target.ownedId} should be owned`
+      );
+    }
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: server-authoritative daily login claim grants once and rejects duplicate same-window claims", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

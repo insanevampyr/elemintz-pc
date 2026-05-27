@@ -477,6 +477,52 @@ test("cosmetics: Frostveil Court store purchases succeed for all approved items"
   assert.equal(profile.tokens, 1000);
 });
 
+test("cosmetics: authoritative store lookup accepts composite Frostveil store keys without creating duplicate ids", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("FrostveilCompositeLookupUser", { tokens: 5000 });
+
+  const purchaseTargets = [
+    "avatar:avatar_frostveil_heir",
+    "title:title_shiverborne",
+    "cardBack:cardback_glacier_sigil",
+    "elementCardVariant:fire_variant_aurora_flare",
+    "elementCardVariant:earth_variant_icebound_crag",
+    "elementCardVariant:wind_variant_sleet_spiral",
+    "elementCardVariant:water_variant_frostbloom"
+  ];
+
+  for (const compositeKey of purchaseTargets) {
+    const response = await state.buyStoreItem({
+      username: "FrostveilCompositeLookupUser",
+      type: compositeKey
+    });
+    assert.equal(response.purchase?.status, "purchased", `${compositeKey} should purchase cleanly`);
+  }
+
+  const profile = await state.profiles.getProfile("FrostveilCompositeLookupUser");
+  assert.equal(profile.ownedCosmetics.avatar.filter((item) => item === "avatar_frostveil_heir").length, 1);
+  assert.equal(profile.ownedCosmetics.title.filter((item) => item === "title_shiverborne").length, 1);
+  assert.equal(profile.ownedCosmetics.cardBack.filter((item) => item === "cardback_glacier_sigil").length, 1);
+  assert.equal(
+    profile.ownedCosmetics.elementCardVariant.filter((item) => item === "fire_variant_aurora_flare").length,
+    1
+  );
+  assert.equal(
+    profile.ownedCosmetics.elementCardVariant.filter((item) => item === "earth_variant_icebound_crag").length,
+    1
+  );
+  assert.equal(
+    profile.ownedCosmetics.elementCardVariant.filter((item) => item === "wind_variant_sleet_spiral").length,
+    1
+  );
+  assert.equal(
+    profile.ownedCosmetics.elementCardVariant.filter((item) => item === "water_variant_frostbloom").length,
+    1
+  );
+});
+
 test("cosmetics: Personality Drop avatar and title catalog entries remain present but are no longer marked new", () => {
   const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
   const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
