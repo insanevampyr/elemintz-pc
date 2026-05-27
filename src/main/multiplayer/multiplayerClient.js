@@ -2307,9 +2307,14 @@ export class MultiplayerClient {
   }
 
   async startLocalPveMatch({ username, aiDifficulty, featuredRivalId = null, serverUrl } = {}) {
+    const safeFeaturedRivalId = String(featuredRivalId ?? "").trim().toLowerCase() || null;
     const response = await this.runServerRequest(
       "profile:startLocalPveMatch",
-      { username, aiDifficulty, featuredRivalId },
+      {
+        username,
+        aiDifficulty,
+        ...(safeFeaturedRivalId ? { featuredRivalId: safeFeaturedRivalId } : {})
+      },
       { serverUrl }
     );
     if (!response?.ok) {

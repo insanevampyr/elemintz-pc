@@ -1979,6 +1979,66 @@ test("multiplayer client: authoritative local match settlement uses the primary 
   assert.equal(result.snapshot?.profile?.username, "RegisteredUser");
 });
 
+test("multiplayer client: protected regular PvE session start omits featured rival metadata when none is selected", async () => {
+  let lastSocket = null;
+
+  class ProtectedPveSocket extends FakeSocket {
+    emit(eventName, payload, ack) {
+      if (eventName === "profile:startLocalPveMatch") {
+        this.sentEvents.push({ eventName, payload });
+        queueMicrotask(() => {
+          ack?.({
+            ok: true,
+            result: {
+              session: {
+                sessionId: "local-session-1",
+                username: this.sessionUsername ?? payload?.username ?? null,
+                mode: "pve",
+                aiDifficulty: payload?.aiDifficulty ?? "hard",
+                featuredRivalId: null,
+                status: "active"
+              }
+            }
+          });
+        });
+        return this;
+      }
+
+      return super.emit(eventName, payload, ack);
+    }
+  }
+
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new ProtectedPveSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} },
+    persistSession: false
+  });
+
+  await client.login({
+    email: "player@example.com",
+    password: "password123"
+  });
+
+  const session = await client.startLocalPveMatch({
+    username: "RegisteredUser",
+    aiDifficulty: "hard",
+    featuredRivalId: null
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:startLocalPveMatch",
+    payload: {
+      aiDifficulty: "hard"
+    }
+  });
+  assert.equal(session?.sessionId, "local-session-1");
+  assert.equal(session?.mode, "pve");
+  assert.equal(session?.featuredRivalId, null);
+});
+
 test("multiplayer client: authoritative local hotseat settlement uses an isolated session token without replacing the primary session", async () => {
   const sockets = [];
   const client = new MultiplayerClient({
