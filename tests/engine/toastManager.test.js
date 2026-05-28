@@ -99,8 +99,61 @@ test("toast: xp breakdown and level-up toasts render expected content", () => {
   assert.match(appended[0].className, /xp-breakdown-toast/);
   assert.match(appended[0].innerHTML, /TOTAL: \+3 XP/);
   assert.match(appended[1].className, /levelup-toast/);
-  assert.match(appended[1].innerHTML, /Level 4/);
-  assert.match(appended[1].innerHTML, /Level 5/);
+  assert.match(appended[1].innerHTML, /src="(?:file:.*\/)?assets\/icons\/level_up\.png"/);
+  assert.match(appended[1].innerHTML, /alt="Level Up"/);
+  assert.match(appended[1].innerHTML, /Level 4 &rarr; Level 5/);
+  assert.doesNotMatch(appended[1].innerHTML, />\?</);
+  assert.match(appended[1].innerHTML, /Avatar: Novice Mage/);
+
+  globalThis.document = originalDocument;
+  globalThis.requestAnimationFrame = originalRaf;
+  globalThis.setTimeout = originalSetTimeout;
+});
+
+test("toast: level up toast keeps the no reward fallback copy without placeholder glyphs", () => {
+  const appended = [];
+  const root = {
+    appendChild(node) {
+      appended.push(node);
+    }
+  };
+
+  const originalDocument = globalThis.document;
+  const originalRaf = globalThis.requestAnimationFrame;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  globalThis.document = {
+    createElement() {
+      return {
+        className: "",
+        innerHTML: "",
+        classList: { add() {}, remove() {} },
+        remove() {}
+      };
+    }
+  };
+  globalThis.requestAnimationFrame = (callback) => {
+    callback();
+    return 0;
+  };
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
+
+  const manager = new ToastManager(root);
+  manager.showLevelUp({
+    fromLevel: 34,
+    toLevel: 35,
+    rewards: [],
+    playerName: "VampyrLee"
+  });
+
+  assert.equal(appended.length, 1);
+  assert.match(appended[0].innerHTML, /Level 34 &rarr; Level 35/);
+  assert.match(appended[0].innerHTML, /No new reward\./);
+  assert.match(appended[0].innerHTML, /assets\/icons\/level_up\.png/);
+  assert.doesNotMatch(appended[0].innerHTML, />\?</);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;

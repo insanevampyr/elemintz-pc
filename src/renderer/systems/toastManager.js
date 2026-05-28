@@ -14,6 +14,8 @@ const CHEST_OPEN_REWARD_IMAGE_PATHS = Object.freeze({
   legendary: "icons/legendary_chest_open.png"
 });
 
+const LEVEL_UP_ICON_PATH = "icons/level_up.png";
+
 function resolveAchievementImage(image) {
   if (!image) {
     return null;
@@ -296,18 +298,19 @@ export class ToastManager {
       return;
     }
 
+    const levelUpIcon = getAssetPath(LEVEL_UP_ICON_PATH);
     const rewardLines = Array.isArray(rewards) && rewards.length
-      ? rewards.map((reward) => `<p>${reward.name}</p>`).join("")
-      : "<p>No new reward.</p>";
+      ? rewards.map((reward) => `<p class="levelup-toast-reward-line">${reward.name}</p>`).join("")
+      : '<p class="levelup-toast-reward-line levelup-toast-reward-line-muted">No new reward.</p>';
 
     this.enqueueToast({
       className: "levelup-toast",
       durationMs: 3400,
       html: `
-        <div class="reward-toast-icon">?</div>
-        <div>
+        <img class="reward-toast-icon reward-toast-icon-image levelup-toast-icon-image" src="${levelUpIcon}" alt="Level Up" />
+        <div class="levelup-toast-content">
           <h4>LEVEL UP! ${playerName}</h4>
-          <p>Level ${fromLevel} ? Level ${toLevel}</p>
+          <p class="levelup-toast-transition">Level ${fromLevel} &rarr; Level ${toLevel}</p>
           ${rewardLines}
         </div>
       `

@@ -2443,11 +2443,44 @@ body {
 
 .levelup-toast {
   border-color: #e5b34f;
-  background: #2a2236;
+  background: linear-gradient(160deg, rgba(43, 32, 57, 0.98), rgba(20, 16, 31, 0.98));
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(229, 179, 79, 0.14);
 }
 
 .levelup-toast h4 {
   color: #ffd874;
+}
+
+.levelup-toast .reward-toast-icon {
+  background: rgba(70, 52, 16, 0.95);
+  border-color: rgba(245, 208, 115, 0.72);
+}
+
+.levelup-toast-icon-image {
+  object-fit: contain;
+  padding: 6px;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 221, 132, 0.28), rgba(53, 39, 14, 0.92));
+}
+
+.levelup-toast-content {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.levelup-toast-transition {
+  margin: 0;
+  color: #fdf3cf;
+  font-weight: 700;
+}
+
+.levelup-toast-reward-line {
+  margin: 0;
+  color: #f7fbff;
+}
+
+.levelup-toast-reward-line-muted {
+  color: rgba(241, 231, 195, 0.9);
 }
 
 .xp-fill {
