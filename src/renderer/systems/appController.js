@@ -6840,6 +6840,24 @@ export class AppController {
                   claimedMilestoneStreaks: [...gauntletStatsResult.claimedMilestoneStreaks]
                 };
               }
+              const gauntletLevelBefore = Math.max(
+                1,
+                Number(gauntletStatsResult?.levelBefore ?? 1) || 1
+              );
+              const gauntletLevelAfter = Math.max(
+                1,
+                Number(gauntletStatsResult?.levelAfter ?? gauntletLevelBefore) || gauntletLevelBefore
+              );
+              if (gauntletLevelAfter > gauntletLevelBefore) {
+                this.toastManager.showLevelUp?.({
+                  fromLevel: gauntletLevelBefore,
+                  toLevel: gauntletLevelAfter,
+                  rewards: Array.isArray(gauntletStatsResult?.levelRewards)
+                    ? gauntletStatsResult.levelRewards
+                    : [],
+                  playerName: this.username
+                });
+              }
               if (gauntletStatsResult) {
                 finalPersisted = {
                   ...(finalPersisted ?? {}),

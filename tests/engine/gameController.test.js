@@ -9314,6 +9314,181 @@ test("appController: gauntlet victory modal does not show milestone reward text 
   }
 });
 
+test("appController: Gauntlet milestone XP shows a Level Up toast when the streak reward levels the player", async () => {
+  const originalWindow = globalThis.window;
+  const modalManager = createModalCapture();
+  const levelUpCalls = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: {
+      showAchievement: () => {},
+      showLevelUp: (payload) => levelUpCalls.push(payload)
+    }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletLevelUp";
+  app.gauntletRandom = () => 0;
+  app.profile = {
+    username: "GauntletLevelUp",
+    equippedCosmetics: { background: "default_background" }
+  };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => ({
+            profile: {
+              username: payload.username,
+              gauntletBestStreak: payload.currentStreak,
+              gauntletRuns: 1,
+              gauntletWins: 1,
+              gauntletLosses: 0,
+              gauntletRivalsDefeated: 1
+            },
+            claimedMilestoneStreaks: [3, 5, 10, 15],
+            milestoneRewards: [{ type: "xp", amount: 100 }],
+            levelBefore: 14,
+            levelAfter: 15,
+            levelRewards: [{ kind: "tokens", amount: 75, label: "Level 15 Reward" }]
+          })
+        }
+      }
+    };
+    const originalDocument = globalThis.document;
+    const continueButton = createFakeDomElement();
+    const returnButton = createFakeDomElement();
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "gauntlet-continue-btn"
+          ? continueButton
+          : id === "gauntlet-return-menu-btn"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+
+    try {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+      await app.gameController.onMatchComplete({
+        match: { winner: "p1", endReason: "normal" },
+        persisted: { profile: { username: "GauntletLevelUp" } }
+      });
+
+      assert.deepEqual(levelUpCalls, [{
+        fromLevel: 14,
+        toLevel: 15,
+        rewards: [{ kind: "tokens", amount: 75, label: "Level 15 Reward" }],
+        playerName: "GauntletLevelUp"
+      }]);
+      assert.equal(app.profile.gauntletWins, 1);
+      assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, [3, 5, 10, 15]);
+      assert.equal(modalManager.shows.length, 1);
+    } finally {
+      globalThis.document = originalDocument;
+    }
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: Gauntlet milestone XP does not show a Level Up toast when the streak reward does not level the player", async () => {
+  const originalWindow = globalThis.window;
+  const modalManager = createModalCapture();
+  const levelUpCalls = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: {
+      showAchievement: () => {},
+      showLevelUp: (payload) => levelUpCalls.push(payload)
+    }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletNoLevelUp";
+  app.gauntletRandom = () => 0;
+  app.profile = {
+    username: "GauntletNoLevelUp",
+    equippedCosmetics: { background: "default_background" }
+  };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => ({
+            profile: {
+              username: payload.username,
+              gauntletBestStreak: payload.currentStreak,
+              gauntletRuns: 1,
+              gauntletWins: 1,
+              gauntletLosses: 0,
+              gauntletRivalsDefeated: 1
+            },
+            claimedMilestoneStreaks: [3],
+            milestoneRewards: [{ type: "tokens", amount: 25 }],
+            levelBefore: 8,
+            levelAfter: 8,
+            levelRewards: []
+          })
+        }
+      }
+    };
+    const originalDocument = globalThis.document;
+    const continueButton = createFakeDomElement();
+    const returnButton = createFakeDomElement();
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "gauntlet-continue-btn"
+          ? continueButton
+          : id === "gauntlet-return-menu-btn"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+
+    try {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+      await app.gameController.onMatchComplete({
+        match: { winner: "p1", endReason: "normal" },
+        persisted: { profile: { username: "GauntletNoLevelUp" } }
+      });
+
+      assert.equal(levelUpCalls.length, 0);
+      assert.equal(app.profile.gauntletWins, 1);
+      assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, [3]);
+      assert.equal(modalManager.shows.length, 1);
+    } finally {
+      globalThis.document = originalDocument;
+    }
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("gameController: PvE round win does not trigger gauntlet continuation before full match completion", async () => {
   let matchCompleteCalls = 0;
   let roundResolvedCalls = 0;
