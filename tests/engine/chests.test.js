@@ -138,6 +138,43 @@ test("chests: basic chest XP branch grants 5 XP", async () => {
   assert.equal(opened.profile.playerXP, 5);
   assert.equal(opened.profile.tokens, 200);
   assert.equal(opened.rewards.cosmetic, null);
+  assert.equal(opened.levelBefore, 1);
+  assert.equal(opened.levelAfter, 1);
+  assert.deepEqual(opened.levelRewards, []);
+});
+
+test("chests: openChest returns level metadata when chest XP causes a level up", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: randomSequence([0])
+  });
+  const xpThresholds = getXpThresholds();
+  const nextLevelThreshold = Math.max(5, Number(xpThresholds[1] ?? 5));
+
+  await state.profiles.updateProfile("ChestLevelUpUser", (current) => ({
+    ...current,
+    playerXP: nextLevelThreshold - 5
+  }));
+
+  await state.grantChest({
+    username: "ChestLevelUpUser",
+    chestType: "basic",
+    amount: 1
+  });
+
+  const beforeProfile = await state.profiles.getProfile("ChestLevelUpUser");
+  const opened = await state.openChest({
+    username: "ChestLevelUpUser",
+    chestType: "basic"
+  });
+
+  assert.equal(opened.rewards.xp, 5);
+  assert.equal(opened.levelBefore, beforeProfile.playerLevel);
+  assert.equal(opened.levelAfter, beforeProfile.playerLevel + 1);
+  assert.ok(Array.isArray(opened.levelRewards));
+  assert.equal(opened.profile.playerLevel, opened.levelAfter);
+  assert.equal(beforeProfile.playerXP, nextLevelThreshold - 5);
 });
 
 test("chests: basic chest token branch grants 10 tokens", async () => {

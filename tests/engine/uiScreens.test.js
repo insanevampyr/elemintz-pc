@@ -17162,6 +17162,7 @@ test("ui: opening a milestone chest reuses the profile chest open flow and updat
   const shown = [];
   const openCalls = [];
   const toastCalls = [];
+  const levelUpCalls = [];
   let liveProfile = {
     ...createProfileScreenContext().profile,
     username: "MilestoneOpener",
@@ -17178,7 +17179,8 @@ test("ui: opening a milestone chest reuses the profile chest open flow and updat
       hide: () => {}
     },
     toastManager: {
-      showChestOpenReward: (payload) => toastCalls.push(payload)
+      showChestOpenReward: (payload) => toastCalls.push(payload),
+      showLevelUp: (payload) => levelUpCalls.push(payload)
     }
   });
 
@@ -17206,7 +17208,11 @@ test("ui: opening a milestone chest reuses the profile chest open flow and updat
               xp: 0,
               tokens: 27,
               cosmetic: null
-            }
+            },
+            chestType: "milestone",
+            levelBefore: 9,
+            levelAfter: 10,
+            levelRewards: [{ kind: "tokens", amount: 25, label: "Level 10 Reward" }]
           };
         }
       }
@@ -17221,6 +17227,12 @@ test("ui: opening a milestone chest reuses the profile chest open flow and updat
 
     assert.deepEqual(openCalls, [{ username: "MilestoneOpener", chestType: "milestone" }]);
     assert.equal(toastCalls.length, 1);
+    assert.deepEqual(levelUpCalls, [{
+      fromLevel: 9,
+      toLevel: 10,
+      rewards: [{ kind: "tokens", amount: 25, label: "Level 10 Reward" }],
+      playerName: "MilestoneOpener"
+    }]);
     assert.ok(shown.some((context) => context.basicChestVisualState?.milestoneOpen === true));
     assert.equal(shown.at(-1).profile.tokens, 42);
     assert.equal(shown.at(-1).profile.chests.milestone, 0);
@@ -17300,6 +17312,83 @@ test("ui: failed chest opens clear the renderer in-flight state and exit the ope
   }
 });
 
+test("ui: chest XP rewards do not show a Level Up toast when the player does not level", async () => {
+  const previousWindow = global.window;
+  const previousSetTimeout = global.setTimeout;
+  const shown = [];
+  const chestToastCalls = [];
+  const levelUpCalls = [];
+  let liveProfile = {
+    ...createProfileScreenContext().profile,
+    username: "ChestNoLevelUser",
+    tokens: 10,
+    playerLevel: 7,
+    playerXP: 120,
+    chests: { basic: 1, milestone: 0, epic: 0, legendary: 0 }
+  };
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: {
+      showChestOpenReward: (payload) => chestToastCalls.push(payload),
+      showLevelUp: (payload) => levelUpCalls.push(payload)
+    }
+  });
+
+  global.setTimeout = (handler) => {
+    handler();
+    return 0;
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => liveProfile,
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => [liveProfile],
+        openChest: async () => {
+          liveProfile = {
+            ...liveProfile,
+            playerXP: 125,
+            chests: { ...liveProfile.chests, basic: 0 }
+          };
+          return {
+            profile: liveProfile,
+            rewards: {
+              xp: 5,
+              tokens: 0,
+              cosmetic: null
+            },
+            chestType: "basic",
+            levelBefore: 7,
+            levelAfter: 7,
+            levelRewards: []
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "ChestNoLevelUser";
+    await app.showProfile();
+    const openAction = shown.at(-1).actions.openBasicChest;
+    await openAction();
+
+    assert.equal(chestToastCalls.length, 1);
+    assert.equal(levelUpCalls.length, 0);
+  } finally {
+    global.window = previousWindow;
+    global.setTimeout = previousSetTimeout;
+  }
+});
+
 test("ui: appController shows and confirms an incoming admin reward notice through multiplayer authority", async () => {
   const previousWindow = global.window;
   const previousDocument = global.document;
@@ -17307,6 +17396,7 @@ test("ui: appController shows and confirms an incoming admin reward notice throu
   const shown = [];
   const multiplayerListeners = [];
   const confirmCalls = [];
+  const levelUpCalls = [];
 
   global.document = {
     querySelector: () => null
@@ -17323,7 +17413,14 @@ test("ui: appController shows and confirms an incoming admin reward notice throu
           confirmCalls.push(payload);
           return {
             transactionId: payload?.transactionId ?? null,
-            confirmationStatus: "confirmed"
+            confirmationStatus: "confirmed",
+            result: {
+              applied: {
+                levelBefore: 34,
+                levelAfter: 35,
+                levelRewards: [{ kind: "tokens", amount: 50, label: "Level 35 Reward" }]
+              }
+            }
           };
         },
         getState: async () => ({
@@ -17347,7 +17444,10 @@ test("ui: appController shows and confirms an incoming admin reward notice throu
       show: (payload) => modalCalls.push(payload),
       hide: () => {}
     },
-    toastManager: { show: () => {} }
+    toastManager: {
+      show: () => {},
+      showLevelUp: (payload) => levelUpCalls.push(payload)
+    }
   });
 
   try {
@@ -17379,6 +17479,12 @@ test("ui: appController shows and confirms an incoming admin reward notice throu
     await modalCalls[0].actions?.[0]?.onClick?.();
 
     assert.deepEqual(confirmCalls, [{ transactionId: "admin-grant-1" }]);
+    assert.deepEqual(levelUpCalls, [{
+      fromLevel: 34,
+      toLevel: 35,
+      rewards: [{ kind: "tokens", amount: 50, label: "Level 35 Reward" }],
+      playerName: "NoticePlayer"
+    }]);
   } finally {
     global.window = previousWindow;
     global.document = previousDocument;
@@ -17465,6 +17571,93 @@ test("ui: appController queues admin reward notices until the menu screen is act
     await modalCalls[0].actions?.[0]?.onClick?.();
 
     assert.deepEqual(confirmCalls, [{ transactionId: "queued-admin-grant-1" }]);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+});
+
+test("ui: admin reward confirmation does not show a Level Up toast without a level increase", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const multiplayerListeners = [];
+  const levelUpCalls = [];
+
+  global.document = {
+    querySelector: () => null
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        onUpdate: (listener) => {
+          multiplayerListeners.push(listener);
+          return () => {};
+        },
+        confirmAdminGrantNotice: async (payload) => ({
+          transactionId: payload?.transactionId ?? null,
+          confirmationStatus: "confirmed",
+          result: {
+            applied: {
+              levelBefore: 20,
+              levelAfter: 20,
+              levelRewards: []
+            }
+          }
+        }),
+        getState: async () => ({
+          connectionStatus: "connected",
+          session: {
+            username: "NoticePlayer",
+            authenticated: true
+          },
+          pendingAdminGrantNotices: []
+        })
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {},
+      showLevelUp: (payload) => levelUpCalls.push(payload)
+    }
+  });
+
+  try {
+    app.username = "NoticePlayer";
+    app.screenFlow = "menu";
+    app.bindOnlinePlayUpdates();
+
+    multiplayerListeners[0]?.({
+      connectionStatus: "connected",
+      session: {
+        username: "NoticePlayer",
+        authenticated: true
+      },
+      pendingAdminGrantNotices: [
+        {
+          transactionId: "admin-grant-2",
+          targetUsername: "NoticePlayer",
+          message: "EleMintz has sent you 10 XP. Click OK to confirm.",
+          payload: { xp: 10, tokens: 0, chests: [] },
+          timestamp: "2026-04-05T12:05:00.000Z"
+        }
+      ]
+    });
+
+    await modalCalls[0].actions?.[0]?.onClick?.();
+
+    assert.equal(levelUpCalls.length, 0);
   } finally {
     global.window = previousWindow;
     global.document = previousDocument;

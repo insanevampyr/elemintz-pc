@@ -4221,6 +4221,17 @@ export class AppController {
       rewards: this.normalizeChestOpenToastRewards(result.rewards, previousProfile, nextProfile),
       chestType: result.chestType
     });
+
+    const levelBefore = Math.max(1, Number(result?.levelBefore ?? previousProfile?.playerLevel ?? 1) || 1);
+    const levelAfter = Math.max(1, Number(result?.levelAfter ?? nextProfile?.playerLevel ?? levelBefore) || levelBefore);
+    if (levelAfter > levelBefore) {
+      this.toastManager.showLevelUp?.({
+        fromLevel: levelBefore,
+        toLevel: levelAfter,
+        rewards: Array.isArray(result?.levelRewards) ? result.levelRewards : [],
+        playerName: this.username
+      });
+    }
   }
 
   async maybeShowMilestoneChestRewardNotice() {
@@ -4622,12 +4633,23 @@ export class AppController {
           label: "OK",
           onClick: async () => {
             try {
-              await window.elemintz.multiplayer.confirmAdminGrantNotice({
+              const confirmationResult = await window.elemintz.multiplayer.confirmAdminGrantNotice({
                 transactionId: notice.transactionId
               });
               this.modalManager.hide();
               this.dequeuePendingAdminGrantNotice(notice.transactionId);
               this.activeAdminGrantNoticeId = null;
+              const applied = confirmationResult?.result?.applied ?? confirmationResult?.applied ?? null;
+              const levelBefore = Math.max(1, Number(applied?.levelBefore ?? 1) || 1);
+              const levelAfter = Math.max(1, Number(applied?.levelAfter ?? levelBefore) || levelBefore);
+              if (levelAfter > levelBefore) {
+                this.toastManager.showLevelUp?.({
+                  fromLevel: levelBefore,
+                  toLevel: levelAfter,
+                  rewards: Array.isArray(applied?.levelRewards) ? applied.levelRewards : [],
+                  playerName: this.username
+                });
+              }
               await this.syncOnlinePlayState();
               if (this.screenFlow === "profile") {
                 await this.showProfile();

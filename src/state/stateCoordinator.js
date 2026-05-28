@@ -1722,9 +1722,15 @@ export class StateCoordinator {
 
   async openChest({ username, chestType = "basic" }) {
     let openResult = null;
+    let levelBefore = 1;
+    let levelAfter = 1;
+    let levelRewards = [];
 
     const profile = await this.profiles.updateProfile(username, (current) => {
+      levelBefore = Math.max(1, Number(current?.playerLevel ?? getLevelProgress(current).level ?? 1));
       openResult = openChest(current, { chestType, random: this.random });
+      levelAfter = Math.max(1, Number(openResult?.profile?.playerLevel ?? getLevelProgress(openResult?.profile).level ?? levelBefore));
+      levelRewards = [];
       return openResult.profile;
     });
 
@@ -1740,7 +1746,10 @@ export class StateCoordinator {
         cosmetic: null,
         xpConversionTokenBonus: 0,
         overflowXp: 0
-      }
+      },
+      levelBefore,
+      levelAfter,
+      levelRewards
     };
   }
 
