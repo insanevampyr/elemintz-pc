@@ -48,6 +48,7 @@ const ROOM_TAUNT_HISTORY_LIMIT = 8;
 const MAX_USERNAME_LENGTH = 32;
 const MAX_COSMETIC_ID_LENGTH = 128;
 export const ONLINE_TURN_TIMER_DURATION_MS = 20000;
+const FATIGUE_MOVE_BLOCK_MESSAGE = "This Elemint must rest for 1 turn.";
 
 function normalizeRoomVisibility(value) {
   return String(value ?? "").trim().toLowerCase() === "public" ? "public" : "private";
@@ -151,6 +152,16 @@ function normalizeEquippedCosmetics(equippedCosmetics) {
 // valid state that is already safe.
 function isValidElement(value) {
   return Object.hasOwn(INITIAL_HAND_COUNTS, value);
+}
+
+function deriveFatiguedElementFromMoves(moves = []) {
+  const normalizedMoves = Array.isArray(moves)
+    ? moves.map((move) => (isValidElement(move) ? move : null)).filter(Boolean)
+    : [];
+  const lastMove = normalizedMoves.at(-1) ?? null;
+  const priorMove = normalizedMoves.at(-2) ?? null;
+
+  return lastMove && lastMove === priorMove ? lastMove : null;
 }
 
 // Match/round guard helpers should coerce malformed counters to safe,
@@ -543,8 +554,28 @@ function getRecentRoundMoves(roundHistory = [], moveKey) {
     .slice(-6);
 }
 
+function getBlockedFatiguedElementForRole(room, role) {
+  const handKey = getHandKeyForRole(role);
+  const moveKey = getMoveKeyForRole(role);
+  if (!handKey || !moveKey) {
+    return null;
+  }
+
+  const fatiguedElement = deriveFatiguedElementFromMoves(getRecentRoundMoves(room?.roundHistory, moveKey));
+  if (!fatiguedElement || safeRuntimeCount(room?.[handKey]?.[fatiguedElement], 0) <= 0) {
+    return null;
+  }
+
+  const hasAlternative = Object.keys(INITIAL_HAND_COUNTS).some(
+    (element) => element !== fatiguedElement && safeRuntimeCount(room?.[handKey]?.[element], 0) > 0
+  );
+
+  return hasAlternative ? fatiguedElement : null;
+}
+
 function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
-  const aiHand = expandHandCounts(room?.guestHand);
+  const blockedFatiguedElement = getBlockedFatiguedElementForRole(room, "guest");
+  const aiHand = expandHandCounts(room?.guestHand).filter((card) => card !== blockedFatiguedElement);
   const gauntletRivalId = String(
     room?.gauntletRivalId ?? room?.guest?.gauntletRivalId ?? ""
   )
@@ -1740,9 +1771,10 @@ function getLegalMovesForRole(room, role) {
     return [];
   }
 
+  const blockedFatiguedElement = getBlockedFatiguedElementForRole(room, role);
   return Object.keys(INITIAL_HAND_COUNTS).filter(
     (element) => safeRuntimeCount(room?.[handKey]?.[element], 0) > 0
-  );
+  ).filter((element) => element !== blockedFatiguedElement);
 }
 
 function chooseLegalTimeoutMove(room, role) {
@@ -1790,6 +1822,17 @@ function applyMoveForRole(room, role, moveInput) {
       error: {
         code: "ILLEGAL_MOVE_NOT_IN_HAND",
         message: "That element is no longer available in this hand."
+      }
+    };
+  }
+
+  const blockedFatiguedElement = getBlockedFatiguedElementForRole(room, role);
+  if (blockedFatiguedElement && move === blockedFatiguedElement) {
+    return {
+      ok: false,
+      error: {
+        code: "MOVE_FATIGUED",
+        message: FATIGUE_MOVE_BLOCK_MESSAGE
       }
     };
   }

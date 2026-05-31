@@ -18,6 +18,12 @@ const MATCH_MODE = Object.freeze({
   LOCAL_PVP: "local_pvp"
 });
 const LOCAL_AUTHORITY_ELEMENT_ORDER = Object.freeze(["fire", "water", "earth", "wind"]);
+const FATIGUE_TOOLTIP = "This Elemint must rest for 1 turn.";
+
+function normalizeElementMove(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return LOCAL_AUTHORITY_ELEMENT_ORDER.includes(normalized) ? normalized : null;
+}
 
 function buildElementCountsFromCards(cards = []) {
   const counts = {
@@ -43,9 +49,37 @@ function getRecentHistoryMoves(history = [], key) {
   }
 
   return history
-    .map((entry) => String(entry?.[key] ?? "").trim().toLowerCase())
-    .filter((move) => move === "fire" || move === "water" || move === "earth" || move === "wind")
+    .map((entry) => normalizeElementMove(entry?.[key]))
+    .filter(Boolean)
     .slice(-6);
+}
+
+function deriveFatiguedElementFromRecentMoves(recentMoves = []) {
+  const normalizedMoves = Array.isArray(recentMoves)
+    ? recentMoves.map((move) => normalizeElementMove(move)).filter(Boolean)
+    : [];
+  const lastMove = normalizedMoves.at(-1) ?? null;
+  const priorMove = normalizedMoves.at(-2) ?? null;
+
+  return lastMove && lastMove === priorMove ? lastMove : null;
+}
+
+function getBlockedFatiguedElementForCounts(elementCounts = {}, recentMoves = []) {
+  const fatiguedElement = deriveFatiguedElementFromRecentMoves(recentMoves);
+  if (!fatiguedElement) {
+    return null;
+  }
+
+  const fatiguedCount = Math.max(0, Number(elementCounts?.[fatiguedElement] ?? 0));
+  if (fatiguedCount <= 0) {
+    return null;
+  }
+
+  const hasAlternative = LOCAL_AUTHORITY_ELEMENT_ORDER.some(
+    (element) => element !== fatiguedElement && Math.max(0, Number(elementCounts?.[element] ?? 0)) > 0
+  );
+
+  return hasAlternative ? fatiguedElement : null;
 }
 
 function createLocalAuthoritySocket(label) {
@@ -848,7 +882,10 @@ export class GameController {
           return;
         }
 
-        await this.playCard(0);
+        const fallbackCardIndex = this.getFirstPlayableCardIndex("p1");
+        if (fallbackCardIndex !== null) {
+          await this.playCard(fallbackCardIndex);
+        }
         return;
       }
 
@@ -880,13 +917,63 @@ export class GameController {
     return turn === "p2" ? this.match.players.p2.hand : this.match.players.p1.hand;
   }
 
-  pickRandomCardIndex(turn, rng = Math.random) {
+  getRecentMovesForTurn(turn) {
+    if (!this.match) {
+      return [];
+    }
+
+    return getRecentHistoryMoves(this.match.history, turn === "p2" ? "p2Card" : "p1Card");
+  }
+
+  getBlockedFatiguedElementForTurn(turn) {
+    return getBlockedFatiguedElementForCounts(
+      buildElementCountsFromCards(this.getHandForTurn(turn)),
+      this.getRecentMovesForTurn(turn)
+    );
+  }
+
+  isFatiguedSelectionBlocked(turn, card) {
+    const blockedElement = this.getBlockedFatiguedElementForTurn(turn);
+    return Boolean(blockedElement) && blockedElement === normalizeElementMove(card);
+  }
+
+  getSelectableCardIndices(turn) {
     const hand = this.getHandForTurn(turn);
+    const blockedElement = this.getBlockedFatiguedElementForTurn(turn);
+
     if (!Array.isArray(hand) || hand.length === 0) {
+      return [];
+    }
+
+    return hand
+      .map((card, index) => ({ card: normalizeElementMove(card), index }))
+      .filter(({ card }) => card && card !== blockedElement)
+      .map(({ index }) => index);
+  }
+
+  getFirstPlayableCardIndex(turn) {
+    return this.getSelectableCardIndices(turn)[0] ?? null;
+  }
+
+  getSelectionFatigueSummary() {
+    const activeTurn = this.isLocalPvp() ? this.hotseatTurn : "p1";
+    const blockedElement = this.getBlockedFatiguedElementForTurn(activeTurn);
+    return blockedElement
+      ? {
+          blockedElement,
+          label: "FATIGUED",
+          message: FATIGUE_TOOLTIP
+        }
+      : null;
+  }
+
+  pickRandomCardIndex(turn, rng = Math.random) {
+    const playableIndices = this.getSelectableCardIndices(turn);
+    if (playableIndices.length === 0) {
       return null;
     }
 
-    return Math.floor(rng() * hand.length);
+    return playableIndices[Math.floor(rng() * playableIndices.length)] ?? null;
   }
 
   setPendingHotseatSelection(turn, cardIndex) {
@@ -1060,6 +1147,9 @@ export class GameController {
       }
 
       const playerCard = getCardAtIndex(this.match.players.p1.hand, resolvedPlayerIndex);
+      if (this.isFatiguedSelectionBlocked("p1", playerCard)) {
+        return { skipped: true, reason: "player-card-fatigued" };
+      }
 
       if (
         this.localAuthority?.store &&
@@ -1105,6 +1195,7 @@ export class GameController {
       }
 
       const recentPlayerMoves = getRecentHistoryMoves(this.match.history, "p1Card");
+      const recentOpponentMoves = getRecentHistoryMoves(this.match.history, "p2Card");
       const publicState = {
         aiCardsRemaining: this.match.players.p2.hand.length,
         playerCardsRemaining: this.match.players.p1.hand.length,
@@ -1116,21 +1207,28 @@ export class GameController {
         pileCount: Array.isArray(this.match.currentPile) ? this.match.currentPile.length : 0,
         totalWarClashes: Number(this.match.war?.clashes ?? 0)
       };
+      const blockedOpponentElement = getBlockedFatiguedElementForCounts(
+        buildElementCountsFromCards(this.match.players.p2.hand),
+        recentOpponentMoves
+      );
+      const legalOpponentHand = this.match.players.p2.hand.filter(
+        (card) => normalizeElementMove(card) !== blockedOpponentElement
+      );
       const gauntletRival = this.gauntletMode ? getGauntletRivalById(this.gauntletRivalId) : null;
       const opponentIndex = gauntletRival
-        ? chooseGauntletRivalCardIndex(this.match.players.p2.hand, {
+        ? chooseGauntletRivalCardIndex(legalOpponentHand, {
             rival: gauntletRival,
             turnIndex: Math.max(0, Number(this.match?.round ?? 1) - 1),
             playerPreviousElement: recentPlayerMoves.at(-1) ?? null,
             publicState
           })
-        : chooseAiCardIndex(this.match.players.p2.hand, {
+        : chooseAiCardIndex(legalOpponentHand, {
             difficulty: this.aiDifficulty,
             publicState
           });
       const revealedCards = {
         p1Card: playerCard,
-        p2Card: getCardAtIndex(this.match.players.p2.hand, opponentIndex)
+        p2Card: getCardAtIndex(legalOpponentHand, opponentIndex)
       };
 
       const result = await this.finalizeRound({
@@ -1163,6 +1261,10 @@ export class GameController {
         return { status: "ignored", reason: "player-1-has-no-cards" };
       }
 
+      if (this.isFatiguedSelectionBlocked("p1", getCardAtIndex(this.match.players.p1.hand, resolvedIndex))) {
+        return { status: "ignored", reason: "player-1-card-fatigued" };
+      }
+
       this.pendingHotseatP1CardIndex = resolvedIndex;
       this.hotseatTurn = "p2";
       this.onUpdate();
@@ -1174,6 +1276,10 @@ export class GameController {
     const p2CardIndex = safeCardIndex(this.match.players.p2.hand, cardIndex);
     if (this.pendingHotseatP1CardIndex === null || p2CardIndex === null) {
       return { status: "ignored", reason: "pending-selection-missing" };
+    }
+
+    if (this.isFatiguedSelectionBlocked("p2", getCardAtIndex(this.match.players.p2.hand, p2CardIndex))) {
+      return { status: "ignored", reason: "player-2-card-fatigued" };
     }
 
     this.pendingHotseatP2CardIndex = p2CardIndex;
@@ -1337,7 +1443,8 @@ export class GameController {
       lastRound: this.lastRound,
       roundResult: this.roundResultText,
       roundOutcome,
-      canSelectCard: this.match.status === "active" && !this.isResolvingRound
+      canSelectCard: this.match.status === "active" && !this.isResolvingRound,
+      selectionFatigue: this.getSelectionFatigueSummary()
     };
   }
 }

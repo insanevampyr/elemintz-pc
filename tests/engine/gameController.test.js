@@ -1455,6 +1455,145 @@ test("gameController: PvE authoritative room store accepts multiple resolved rou
   }
 });
 
+test("gameController: local PvE fatigue blocks a third same element when another playable element exists", async () => {
+  const controller = new GameController({
+    username: "FatiguePveUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  let finalizeCalls = 0;
+  controller.match = {
+    ...createMinimalMatch(MATCH_MODE.PVE),
+    players: {
+      p1: { hand: ["fire", "fire", "water"], wonRounds: 0 },
+      p2: { hand: ["earth", "wind"], wonRounds: 0 }
+    },
+    history: [
+      { p1Card: "fire", p2Card: "earth", result: "p1" },
+      { p1Card: "fire", p2Card: "wind", result: "p1" }
+    ]
+  };
+  controller.finalizeRound = async () => {
+    finalizeCalls += 1;
+    return { status: "resolved", round: null };
+  };
+
+  const result = await controller.playCard(findCardIndexByElement(controller.match.players.p1.hand, "fire"));
+
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, "player-card-fatigued");
+  assert.equal(finalizeCalls, 0);
+});
+
+test("gameController: local PvE fatigue bypass allows the only playable element and ignores face-down WAR pile cards", async () => {
+  const controller = new GameController({
+    username: "FatigueBypassUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  let finalizeCalls = 0;
+  controller.match = {
+    ...createMinimalMatch(MATCH_MODE.PVE),
+    currentPile: ["fire", "water", "earth", "wind"],
+    war: {
+      active: true,
+      clashes: 1
+    },
+    players: {
+      p1: { hand: ["fire"], wonRounds: 0 },
+      p2: { hand: ["earth"], wonRounds: 0 }
+    },
+    history: [
+      { p1Card: "fire", p2Card: "fire", result: "none" }
+    ]
+  };
+  controller.finalizeRound = async () => {
+    finalizeCalls += 1;
+    return {
+      status: "resolved",
+      round: {
+        result: "p1",
+        p1Card: "fire",
+        p2Card: "earth",
+        capturedOpponentCards: 1
+      }
+    };
+  };
+
+  const result = await controller.playCard(0);
+
+  assert.notEqual(result.skipped, true);
+  assert.equal(finalizeCalls, 1);
+});
+
+test("gameController: local PvE fatigue counts WAR chosen cards toward the next selection", async () => {
+  const controller = new GameController({
+    username: "FatigueWarUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  controller.match = {
+    ...createMinimalMatch(MATCH_MODE.PVE),
+    players: {
+      p1: { hand: ["fire", "water"], wonRounds: 0 },
+      p2: { hand: ["fire", "earth"], wonRounds: 0 }
+    },
+    history: [
+      { p1Card: "fire", p2Card: "fire", result: "none", warClashes: 0 },
+      { p1Card: "fire", p2Card: "water", result: "none", warClashes: 1 }
+    ]
+  };
+
+  const result = await controller.playCard(findCardIndexByElement(controller.match.players.p1.hand, "fire"));
+
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, "player-card-fatigued");
+});
+
+test("gameController: local hotseat fatigue only blocks the current turn owner", async () => {
+  const controller = new GameController({
+    username: "FatigueHotseatUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.LOCAL_PVP,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  controller.match = {
+    ...createMinimalMatch(MATCH_MODE.LOCAL_PVP),
+    players: {
+      p1: { hand: ["fire", "water"], wonRounds: 0 },
+      p2: { hand: ["fire", "earth"], wonRounds: 0 }
+    },
+    history: [
+      { p1Card: "fire", p2Card: "earth", result: "p1" },
+      { p1Card: "fire", p2Card: "wind", result: "p1" }
+    ]
+  };
+  controller.hotseatTurn = "p1";
+
+  const blocked = await controller.submitHotseatSelection(
+    findCardIndexByElement(controller.match.players.p1.hand, "fire")
+  );
+  assert.equal(blocked.status, "ignored");
+  assert.equal(blocked.reason, "player-1-card-fatigued");
+
+  const p1Allowed = await controller.submitHotseatSelection(
+    findCardIndexByElement(controller.match.players.p1.hand, "water")
+  );
+  assert.equal(p1Allowed.status, "pass_to_p2");
+
+  const p2Allowed = await controller.submitHotseatSelection(
+    findCardIndexByElement(controller.match.players.p2.hand, "fire")
+  );
+  assert.equal(p2Allowed.status, "pass_to_p1");
+});
+
 test("gameController: active authoritative sync clears stale local round presentation before the next clash", () => {
   const controller = new GameController({
     username: "RoundResetUser",

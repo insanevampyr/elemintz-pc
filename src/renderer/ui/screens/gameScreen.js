@@ -55,6 +55,10 @@ export function buildGameLiveUpdateSignature(context) {
     roundResult: vm.roundResult ?? "",
     roundOutcomeKey: vm.roundOutcome?.key ?? null,
     canSelectCard: Boolean(vm.canSelectCard),
+    selectionFatigue: {
+      blockedElement: vm.selectionFatigue?.blockedElement ?? null,
+      label: vm.selectionFatigue?.label ?? null
+    },
     presentation: {
       phase: context.presentation?.phase ?? "idle",
       busy: Boolean(context.presentation?.busy),
@@ -317,6 +321,18 @@ function renderHands(vm, context, phase, names) {
   const selectedCardIndex = context.presentation?.selectedCardIndex ?? null;
   const transitionLocked = Boolean(context.presentation?.busy ?? false);
   const canSelect = vm.canSelectCard && !transitionLocked;
+  const blockedFatiguedElement = String(vm.selectionFatigue?.blockedElement ?? "").trim().toLowerCase() || null;
+  const fatigueLabel = String(vm.selectionFatigue?.label ?? "").trim() || null;
+  const fatigueMessage = String(vm.selectionFatigue?.message ?? "").trim() || null;
+  const activeHandOptions = {
+    selectable: canSelect,
+    selectedCardIndex,
+    phase,
+    getBadgeText: ({ element }) => (blockedFatiguedElement === element ? fatigueLabel : null),
+    getTitle: ({ element }) => (blockedFatiguedElement === element ? fatigueMessage : null),
+    isDisabled: ({ element, isAvailable }) =>
+      !(canSelect && isAvailable) || blockedFatiguedElement === element
+  };
   const variantRarities = {
     p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
     p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
@@ -330,9 +346,7 @@ function renderHands(vm, context, phase, names) {
       return {
         leftTitle: renderPlayerHeader(context.playerDisplay, "Player", `(${vm.playerHand.length})`),
         leftCards: renderElementHandSummary(vm.playerHand, "active", {
-          selectable: canSelect,
-          selectedCardIndex,
-          phase,
+          ...activeHandOptions,
           variantMap: context.cardImages?.p1,
           rarityMap: variantRarities.p1
         }),
@@ -359,9 +373,7 @@ function renderHands(vm, context, phase, names) {
     return {
       leftTitle: renderPlayerHeader(context.opponentDisplay, names.p2, `(${vm.opponentHand.length})`),
       leftCards: renderElementHandSummary(vm.opponentHand, "active", {
-        selectable: canSelect,
-          selectedCardIndex,
-          phase,
+          ...activeHandOptions,
           variantMap: context.cardImages?.p2,
           rarityMap: variantRarities.p2
         }),
@@ -375,9 +387,7 @@ function renderHands(vm, context, phase, names) {
   return {
     leftTitle: renderPlayerHeader(context.playerDisplay, names.p1, `(${vm.playerHand.length})`),
     leftCards: renderElementHandSummary(vm.playerHand, "active", {
-      selectable: canSelect,
-        selectedCardIndex,
-        phase,
+        ...activeHandOptions,
         variantMap: context.cardImages?.p1,
         rarityMap: variantRarities.p1
       }),

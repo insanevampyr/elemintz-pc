@@ -4919,6 +4919,48 @@ test("ui: game screen uses provided variant card images", () => {
   assert.match(html, /data-preview-type="badge"/);
 });
 
+test("ui: fatigue renders only on the local selectable hand", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Arena Rival", title: "Gauntlet Rival", avatar: "assets/avatars/default.png" },
+    gauntlet: { active: true, currentStreak: 3, rivalName: "Arena Rival", rivalTitle: "Gauntlet Rival" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Arena Rival" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 3,
+      timerSeconds: 18,
+      totalMatchSeconds: 280,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire", "water"],
+      opponentHand: ["fire", "water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      selectionFatigue: {
+        blockedElement: "fire",
+        label: "FATIGUED",
+        message: "This Elemint must rest for 1 turn."
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /id="left-hand">[\s\S]*hand-slot-fire[\s\S]*is-fatigued[\s\S]*title="This Elemint must rest for 1 turn\."[\s\S]*FATIGUED/);
+  assert.doesNotMatch(html, /id="right-hand">[\s\S]*FATIGUED/);
+  assert.equal((html.match(/hand-slot-status-badge">FATIGUED/g) ?? []).length, 1);
+});
+
 test("ui: game screen renders taunts feed and open panel without breaking the match layout", () => {
   const html = gameScreen.render({
     reducedMotion: true,

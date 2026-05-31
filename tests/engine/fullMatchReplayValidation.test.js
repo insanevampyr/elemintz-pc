@@ -229,13 +229,13 @@ const SCENARIOS = {
     sequence: [
       { hostMove: "fire", guestMove: "wind", expectedOutcomeType: "no_effect" },
       { hostMove: "fire", guestMove: "earth", expectedOutcomeType: "resolved" },
-      { hostMove: "fire", guestMove: "earth", expectedOutcomeType: "resolved" },
       { hostMove: "water", guestMove: "fire", expectedOutcomeType: "resolved" },
       { hostMove: "water", guestMove: "fire", expectedOutcomeType: "resolved" },
       { hostMove: "earth", guestMove: "wind", expectedOutcomeType: "resolved" },
       { hostMove: "earth", guestMove: "wind", expectedOutcomeType: "resolved" },
       { hostMove: "wind", guestMove: "water", expectedOutcomeType: "resolved" },
-      { hostMove: "wind", guestMove: "water", expectedOutcomeType: "resolved" }
+      { hostMove: "wind", guestMove: "water", expectedOutcomeType: "resolved" },
+      { hostMove: "fire", guestMove: "earth", expectedOutcomeType: "resolved" }
     ]
   },
   mixedReplay: {

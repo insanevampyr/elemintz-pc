@@ -187,6 +187,8 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
   const rarityMap = options.rarityMap ?? null;
   const selectableClass = options.selectableClass ?? null;
   const buttonAttributes = options.buttonAttributes ?? null;
+  const getBadgeText = typeof options.getBadgeText === "function" ? options.getBadgeText : () => null;
+  const getTitle = typeof options.getTitle === "function" ? options.getTitle : () => null;
   const isDisabled =
     typeof options.isDisabled === "function"
       ? options.isDisabled
@@ -201,6 +203,8 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
     const isSelected = isAvailable && selectedCardIndex === firstIndex;
     const classes = ["hand-slot", `hand-slot-${element}`];
     const rarity = rarityMap?.[element] ?? "Common";
+    const badgeText = getBadgeText({ element, count, isAvailable, firstIndex, owner });
+    const title = getTitle({ element, count, isAvailable, firstIndex, owner });
 
     classes.push(rarityClassName(rarity));
 
@@ -219,6 +223,10 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
       classes.push("is-playing");
     }
 
+    if (badgeText) {
+      classes.push("is-fatigued");
+    }
+
     const attrs =
       typeof buttonAttributes === "function"
         ? buttonAttributes({ element, count, isAvailable, firstIndex, owner })
@@ -233,11 +241,13 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
         type="button"
         class="${classes.join(" ")}"
         data-cosmetic-rarity="${normalizeCosmeticRarity(rarity)}"
+        ${title ? `title="${escapeHtml(title)}"` : ""}
         ${attrs}
         ${isDisabled({ element, count, isAvailable, firstIndex, owner }) ? "disabled" : ""}
       >
         <span class="card-art hand-slot-art" style="background-image: url('${getCardImage(element, variantMap)}')"></span>
         <span class="hand-slot-count-badge" aria-label="${formatElement(element)} count x${count}">x${count}</span>
+        ${badgeText ? `<span class="hand-slot-status-badge">${escapeHtml(badgeText)}</span>` : ""}
       </button>
     `;
   }).join("");

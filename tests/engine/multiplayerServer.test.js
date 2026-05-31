@@ -7069,6 +7069,69 @@ test("multiplayer rooms: illegal move is rejected when the player has no copies 
   }
 });
 
+test("multiplayer rooms: authoritative submit rejects a fatigued element when alternatives exist", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("local-fatigue-host");
+  const guest = createStoreSocket("local-fatigue-guest");
+  const created = store.createRoom(host, { username: "Host" });
+  const joined = store.joinRoom(guest, created.room.roomCode, { username: "Guest" });
+
+  assert.equal(created.ok, true);
+  assert.equal(joined.ok, true);
+
+  let result = store.submitMove(host.id, "fire");
+  assert.equal(result.ok, true);
+  result = store.submitMove(guest.id, "earth");
+  assert.equal(result.ok, true);
+
+  result = store.submitMove(host.id, "fire");
+  assert.equal(result.ok, true);
+  result = store.submitMove(guest.id, "earth");
+  assert.equal(result.ok, true);
+
+  const fatigued = store.submitMove(host.id, "fire");
+  assert.equal(fatigued.ok, false);
+  assert.deepEqual(fatigued.error, {
+    code: "MOVE_FATIGUED",
+    message: "This Elemint must rest for 1 turn."
+  });
+});
+
+test("multiplayer rooms: authoritative submit allows a fatigued element when it is the only playable option", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("local-fatigue-bypass-host");
+  const guest = createStoreSocket("local-fatigue-bypass-guest");
+  const created = store.createRoom(host, { username: "Host" });
+  const joined = store.joinRoom(guest, created.room.roomCode, { username: "Guest" });
+
+  assert.equal(created.ok, true);
+  assert.equal(joined.ok, true);
+
+  const playRound = (hostMove, guestMove) => {
+    const hostResult = store.submitMove(host.id, hostMove);
+    assert.equal(hostResult.ok, true);
+    const guestResult = store.submitMove(guest.id, guestMove);
+    assert.equal(guestResult.ok, true);
+    return guestResult;
+  };
+
+  playRound("water", "wind");
+  playRound("water", "wind");
+  playRound("earth", "fire");
+  playRound("earth", "fire");
+  playRound("wind", "earth");
+  playRound("wind", "earth");
+
+  const roomAfterLosses = store.getRoom(created.room.roomCode);
+  assert.deepEqual(roomAfterLosses.hostHand, { fire: 2, water: 0, earth: 0, wind: 0 });
+
+  playRound("fire", "wind");
+  playRound("fire", "wind");
+
+  const bypass = store.submitMove(host.id, "fire");
+  assert.equal(bypass.ok, true);
+});
+
 test("multiplayer rooms: stale submit after server resolution is rejected safely", async () => {
   const foundation = createMultiplayerFoundation({
     port: 0,
