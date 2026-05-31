@@ -50,6 +50,16 @@ const HOW_TO_PLAY_SECTIONS = [
     `
   },
   {
+    id: "elemint-fatigue",
+    title: "Elemint Fatigue",
+    preview: "Repeating the same Elemint too often forces a short rest.",
+    bodyHtml: `
+      <p>If you play the same Elemint twice in a row, that Elemint must rest for one turn.</p>
+      <p>You must choose a different Elemint if you have one available.</p>
+      <p>If it is your only playable Elemint, you may still use it.</p>
+    `
+  },
+  {
     id: "round-outcomes",
     title: "Round Outcomes",
     preview: "Win cards, lose cards, or go to WAR.",

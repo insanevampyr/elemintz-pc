@@ -10112,6 +10112,7 @@ test("ui: how to play screen renders compact accordion sections with the current
   assert.match(html, /id="how-to-play-back-btn"/);
   assert.match(html, /data-how-to-play-section="quick-start" open/);
   assert.match(html, /data-how-to-play-section="element-rules" open/);
+  assert.match(html, /data-how-to-play-section="elemint-fatigue"/);
   assert.match(html, /data-how-to-play-section="round-outcomes"/);
   assert.match(html, /data-how-to-play-section="war"/);
   assert.match(html, /data-how-to-play-section="game-modes"/);
@@ -10120,6 +10121,7 @@ test("ui: how to play screen renders compact accordion sections with the current
   assert.match(html, /data-how-to-play-section="strategy-hints"/);
   assert.match(html, />Quick Start</);
   assert.match(html, /Element Rules/);
+  assert.match(html, /Elemint Fatigue/);
   assert.match(html, /Round Outcomes/);
   assert.match(html, /WAR/);
   assert.match(html, /Game Modes/);
@@ -10132,10 +10134,14 @@ test("ui: how to play screen renders compact accordion sections with the current
   assert.match(html, /Earth<\/strong> beats Wind/);
   assert.match(html, /Wind<\/strong> beats Water/);
   assert.match(html, /Water<\/strong> beats Fire/);
+  assert.match(html, /If you play the same Elemint twice in a row, that Elemint must rest for one turn\./);
+  assert.match(html, /You must choose a different Elemint if you have one available\./);
+  assert.match(html, /If it is your only playable Elemint, you may still use it\./);
   assert.match(html, /Gauntlet Mode/);
   assert.match(html, /Featured Rival/);
   assert.match(html, /Harder AI and real players punish predictable choices\./);
   assert.doesNotMatch(html, /data-how-to-play-section="round-outcomes" open/);
+  assert.doesNotMatch(html, /data-how-to-play-section="elemint-fatigue" open/);
   assert.doesNotMatch(html, /data-how-to-play-section="war" open/);
   assert.doesNotMatch(html, /data-how-to-play-section="game-modes" open/);
   assert.doesNotMatch(html, /data-how-to-play-section="rewards" open/);
