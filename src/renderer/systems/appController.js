@@ -1154,6 +1154,7 @@ export class AppController {
       searchText: "",
       categories: new Set(["avatar", "background", "cardBack", "elementCardVariant", "title", "badge"]),
       rarities: new Set(["Common", "Rare", "Epic", "Legendary"]),
+      elements: new Set(["fire", "water", "earth", "wind"]),
       collections: new Set(),
       showNewFirst: true
     };
@@ -1265,6 +1266,10 @@ export class AppController {
       this.storeViewState.rarities instanceof Set
         ? this.storeViewState.rarities
         : new Set(this.storeViewState.rarities ?? this.createDefaultStoreViewState().rarities);
+    this.storeViewState.elements =
+      this.storeViewState.elements instanceof Set
+        ? this.storeViewState.elements
+        : new Set(this.storeViewState.elements ?? this.createDefaultStoreViewState().elements);
     this.storeViewState.collections =
       this.storeViewState.collections instanceof Set
         ? this.storeViewState.collections
@@ -1377,6 +1382,10 @@ export class AppController {
       this.cosmeticsViewState.rarities instanceof Set
         ? this.cosmeticsViewState.rarities
         : new Set(this.cosmeticsViewState.rarities ?? defaults.rarities);
+    this.cosmeticsViewState.elements =
+      this.cosmeticsViewState.elements instanceof Set
+        ? this.cosmeticsViewState.elements
+        : new Set(this.cosmeticsViewState.elements ?? defaults.elements);
     this.cosmeticsViewState.collections =
       this.cosmeticsViewState.collections instanceof Set
         ? this.cosmeticsViewState.collections

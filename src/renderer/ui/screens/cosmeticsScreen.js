@@ -2,6 +2,7 @@ import { getAssetPath } from "../../utils/dom.js";
 import {
   CATEGORY_ORDER as COSMETIC_SECTIONS,
   FILTERABLE_CATEGORIES,
+  FILTERABLE_ELEMENTS,
   FILTERABLE_RARITIES,
   RARITY_SORT_ORDER,
   normalizeCategoryViewState
@@ -98,6 +99,22 @@ function getCosmeticTypeLabel(type, item) {
 
 function normalizeCollectionKey(collection) {
   return String(collection ?? "").trim();
+}
+
+function resolveVariantElement(item) {
+  const explicitElement = String(item?.element ?? "").trim().toLowerCase();
+  if (["fire", "water", "earth", "wind"].includes(explicitElement)) {
+    return explicitElement;
+  }
+
+  const id = String(item?.id ?? "").trim().toLowerCase();
+  for (const [element] of FILTERABLE_ELEMENTS) {
+    if (id.startsWith(`${element}_variant_`)) {
+      return element;
+    }
+  }
+
+  return "";
 }
 
 function getOwnedCollectionOptions(cosmetics) {
@@ -222,7 +239,7 @@ function renderItem(type, item) {
   const newBadge = resolvedIsNew ? '<span class="store-item-badge store-item-badge-new">NEW</span>' : "";
 
   return `
-    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}" data-cosmetic-collection="${normalizeCollectionKey(item.collection).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}" data-cosmetic-is-new="${resolvedIsNew ? "true" : "false"}" data-cosmetic-original-index="${item.originalIndex ?? 0}">
+    <article class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} owned" data-cosmetic-rarity="${normalizeRarity(item.rarity)}" data-cosmetic-collection="${normalizeCollectionKey(item.collection).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}" data-cosmetic-element="${type === "elementCardVariant" ? resolveVariantElement(item).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : ""}" data-cosmetic-is-new="${resolvedIsNew ? "true" : "false"}" data-cosmetic-original-index="${item.originalIndex ?? 0}">
       ${newBadge}
       ${preview(type, item)}
       <div class="cosmetic-meta">
@@ -447,6 +464,19 @@ export const cosmeticsScreen = {
                   ).join("")}
                 </div>
               </fieldset>
+              <fieldset class="store-filter-group">
+                <legend>Element</legend>
+                <div class="store-filter-options">
+                  ${FILTERABLE_ELEMENTS.map(
+                    ([element, label]) => `
+                      <label class="store-filter-option">
+                        <input type="checkbox" data-cosmetic-element-filter="${element}" ${viewState.elements.has(element) ? "checked" : ""} />
+                        <span>${label}</span>
+                      </label>
+                    `
+                  ).join("")}
+                </div>
+              </fieldset>
               ${
                 collectionOptions.length
                   ? `<fieldset class="store-filter-group">
@@ -514,6 +544,7 @@ export const cosmeticsScreen = {
     if (context.viewState) {
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.elements = viewState.elements;
       context.viewState.collections = viewState.collections;
       context.viewState.showNewFirst = viewState.showNewFirst;
     }
@@ -522,6 +553,7 @@ export const cosmeticsScreen = {
       const sections = Array.from(scope.querySelectorAll("[data-cosmetic-section]"));
       const categoriesEnabled = viewState.categories.size > 0;
       const raritiesEnabled = viewState.rarities.size > 0;
+      const elementsEnabled = viewState.elements.size > 0;
       const collectionsEnabled = viewState.collections.size > 0;
       let anyVisible = false;
 
@@ -542,11 +574,18 @@ export const cosmeticsScreen = {
 
         for (const item of items) {
           const rarity = item.getAttribute("data-cosmetic-rarity") ?? "Common";
+          const element = String(item.getAttribute("data-cosmetic-element") ?? "").trim().toLowerCase();
           const collection = normalizeCollectionKey(item.getAttribute("data-cosmetic-collection"));
+          const matchesElement =
+            type !== "elementCardVariant" || !elementsEnabled || (element && viewState.elements.has(element));
           const matchesCollection =
             !collectionsEnabled || (collection && viewState.collections.has(collection));
           const itemVisible =
-            categoryVisible && raritiesEnabled && viewState.rarities.has(rarity) && matchesCollection;
+            categoryVisible &&
+            raritiesEnabled &&
+            viewState.rarities.has(rarity) &&
+            matchesElement &&
+            matchesCollection;
           item.hidden = !itemVisible;
           item.classList?.toggle("is-filtered-out", !itemVisible);
           if (item.style) {
@@ -616,6 +655,22 @@ export const cosmeticsScreen = {
           viewState.rarities.add(rarity);
         } else {
           viewState.rarities.delete(rarity);
+        }
+        applyFilters();
+      });
+    });
+
+    scope.querySelectorAll("[data-cosmetic-element-filter]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const element = String(input.getAttribute("data-cosmetic-element-filter") ?? "").trim().toLowerCase();
+        if (!element) {
+          applyFilters();
+          return;
+        }
+        if (input.checked) {
+          viewState.elements.add(element);
+        } else {
+          viewState.elements.delete(element);
         }
         applyFilters();
       });

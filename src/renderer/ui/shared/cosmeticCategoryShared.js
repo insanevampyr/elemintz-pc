@@ -17,6 +17,12 @@ export const FILTERABLE_CATEGORIES = Object.freeze([
 ]);
 
 export const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
+export const FILTERABLE_ELEMENTS = Object.freeze([
+  ["fire", "Fire"],
+  ["water", "Water"],
+  ["earth", "Earth"],
+  ["wind", "Wind"]
+]);
 
 export const RARITY_SORT_ORDER = Object.freeze({
   Legendary: 0,
@@ -29,6 +35,7 @@ export function createDefaultCategoryViewState() {
   return {
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
     rarities: new Set(FILTERABLE_RARITIES),
+    elements: new Set(FILTERABLE_ELEMENTS.map(([element]) => element)),
     collections: new Set(),
     showNewFirst: true
   };
@@ -45,6 +52,10 @@ export function normalizeCategoryViewState(viewState) {
       viewState?.rarities instanceof Set
         ? viewState.rarities
         : new Set(viewState?.rarities ?? defaults.rarities),
+    elements:
+      viewState?.elements instanceof Set
+        ? viewState.elements
+        : new Set(viewState?.elements ?? defaults.elements),
     collections:
       viewState?.collections instanceof Set
         ? viewState.collections

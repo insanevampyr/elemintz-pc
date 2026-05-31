@@ -2009,6 +2009,10 @@ test("ui: store screen renders cosmetic search and category/rarity filters", () 
   assert.match(html, /data-store-category-filter="badge"/);
   assert.match(html, /data-store-rarity-filter="Common"/);
   assert.match(html, /data-store-rarity-filter="Legendary"/);
+  assert.match(html, /data-store-element-filter="fire"/);
+  assert.match(html, /data-store-element-filter="water"/);
+  assert.match(html, /data-store-element-filter="earth"/);
+  assert.match(html, /data-store-element-filter="wind"/);
 });
 
 test("ui: store screen shows the Show NEW First control by default", () => {
@@ -3060,27 +3064,48 @@ test("ui: store collection filters combine with search category and rarity while
     "data-store-name": "smirk ember",
     "data-store-type": "avatar",
     "data-store-rarity": "Common",
+    "data-store-element": "",
     "data-store-collection": "Ember",
     "data-store-is-new": "true",
     "data-store-original-index": "0"
+  });
+  const fireVariant = createSortableItem({
+    "data-store-name": "ember blaze",
+    "data-store-type": "elementCardVariant",
+    "data-store-rarity": "Common",
+    "data-store-element": "fire",
+    "data-store-collection": "Ember",
+    "data-store-is-new": "false",
+    "data-store-original-index": "1"
+  });
+  const waterVariant = createSortableItem({
+    "data-store-name": "tidal bloom",
+    "data-store-type": "elementCardVariant",
+    "data-store-rarity": "Common",
+    "data-store-element": "water",
+    "data-store-collection": "Celestial",
+    "data-store-is-new": "false",
+    "data-store-original-index": "2"
   });
   const celestialAvatar = createSortableItem({
     "data-store-name": "astral archon",
     "data-store-type": "avatar",
     "data-store-rarity": "Legendary",
+    "data-store-element": "",
     "data-store-collection": "Celestial",
     "data-store-is-new": "false",
-    "data-store-original-index": "1"
+    "data-store-original-index": "3"
   });
   const ungroupedAvatar = createSortableItem({
     "data-store-name": "fire avatar classic",
     "data-store-type": "avatar",
     "data-store-rarity": "Common",
+    "data-store-element": "",
     "data-store-collection": "",
     "data-store-is-new": "false",
-    "data-store-original-index": "2"
+    "data-store-original-index": "4"
   });
-  const grid = createFakeGrid([emberAvatar, celestialAvatar, ungroupedAvatar]);
+  const grid = createFakeGrid([emberAvatar, fireVariant, waterVariant, celestialAvatar, ungroupedAvatar]);
   const section = {
     hidden: false,
     style: {},
@@ -3090,8 +3115,16 @@ test("ui: store collection filters combine with search category and rarity while
     getAttribute: () => "avatar"
   };
   const categoryInput = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "avatar" } });
+  const categoryVariantInput = createFakeCheckbox({
+    checked: true,
+    attributeMap: { "data-store-category-filter": "elementCardVariant" }
+  });
   const rarityCommon = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Common" } });
   const rarityLegendary = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Legendary" } });
+  const elementFire = createFakeCheckbox({ checked: false, attributeMap: { "data-store-element-filter": "fire" } });
+  const elementWater = createFakeCheckbox({ checked: false, attributeMap: { "data-store-element-filter": "water" } });
+  const elementEarth = createFakeCheckbox({ checked: true, attributeMap: { "data-store-element-filter": "earth" } });
+  const elementWind = createFakeCheckbox({ checked: true, attributeMap: { "data-store-element-filter": "wind" } });
   const collectionEmber = createFakeCheckbox({ checked: false, attributeMap: { "data-store-collection-filter": "Ember" } });
   const collectionCelestial = createFakeCheckbox({ checked: false, attributeMap: { "data-store-collection-filter": "Celestial" } });
   const searchInput = createFakeElement();
@@ -3102,8 +3135,9 @@ test("ui: store collection filters combine with search category and rarity while
     querySelectorAll(selector) {
       if (selector === "[data-store-item]") return grid.items;
       if (selector === "[data-store-section]") return [section];
-      if (selector === "[data-store-category-filter]") return [categoryInput];
+      if (selector === "[data-store-category-filter]") return [categoryInput, categoryVariantInput];
       if (selector === "[data-store-rarity-filter]") return [rarityCommon, rarityLegendary];
+      if (selector === "[data-store-element-filter]") return [elementFire, elementWater, elementEarth, elementWind];
       if (selector === "[data-store-collection-filter]") return [collectionEmber, collectionCelestial];
       if (selector === "[data-buy-type]" || selector === "[data-equip-type]") return [];
       return [];
@@ -3124,8 +3158,9 @@ test("ui: store collection filters combine with search category and rarity while
   try {
     const viewState = {
       searchText: "",
-      categories: new Set(["avatar"]),
+      categories: new Set(["avatar", "elementCardVariant"]),
       rarities: new Set(["Common", "Legendary"]),
+      elements: new Set(["fire", "water", "earth", "wind"]),
       collections: new Set(),
       showNewFirst: true
     };
@@ -3135,23 +3170,40 @@ test("ui: store collection filters combine with search category and rarity while
     });
 
     assert.equal(emberAvatar.hidden, false);
+    assert.equal(fireVariant.hidden, false);
+    assert.equal(waterVariant.hidden, false);
     assert.equal(celestialAvatar.hidden, false);
     assert.equal(ungroupedAvatar.hidden, false);
+
+    elementWater.checked = false;
+    elementWater.trigger("change");
+    elementEarth.checked = false;
+    elementEarth.trigger("change");
+    elementWind.checked = false;
+    elementWind.trigger("change");
+
+    assert.equal(fireVariant.hidden, false);
+    assert.equal(waterVariant.hidden, true);
+    assert.equal(emberAvatar.hidden, false);
+    assert.equal(celestialAvatar.hidden, false);
 
     collectionEmber.checked = true;
     collectionEmber.trigger("change");
 
     assert.equal(emberAvatar.hidden, false);
+    assert.equal(fireVariant.hidden, false);
+    assert.equal(waterVariant.hidden, true);
     assert.equal(celestialAvatar.hidden, true);
     assert.equal(ungroupedAvatar.hidden, true);
 
-    searchInput.value = "smirk";
+    searchInput.value = "blaze";
     searchInput.listeners.get("input")();
-    assert.equal(emberAvatar.hidden, false);
+    assert.equal(emberAvatar.hidden, true);
+    assert.equal(fireVariant.hidden, false);
 
     rarityCommon.checked = false;
     rarityCommon.trigger("change");
-    assert.equal(emberAvatar.hidden, true);
+    assert.equal(fireVariant.hidden, true);
     assert.equal(emptyState.hidden, false);
   } finally {
     global.document = previousDocument;
@@ -3162,17 +3214,19 @@ test("ui: featured store rotation respects category rarity collection and search
   const previousDocument = global.document;
 
   const featuredVoidCard = createSortableItem({
-    "data-store-name": "voidbound entity",
-    "data-store-type": "avatar",
+    "data-store-name": "void inferno",
+    "data-store-type": "elementCardVariant",
     "data-store-rarity": "Legendary",
+    "data-store-element": "fire",
     "data-store-collection": "Void",
     "data-store-is-new": "false",
     "data-store-original-index": "0"
   });
   const featuredUngroupedCard = createSortableItem({
-    "data-store-name": "fire avatar classic",
-    "data-store-type": "avatar",
+    "data-store-name": "tidal veil",
+    "data-store-type": "elementCardVariant",
     "data-store-rarity": "Common",
+    "data-store-element": "water",
     "data-store-collection": "",
     "data-store-is-new": "false",
     "data-store-original-index": "1"
@@ -3181,6 +3235,7 @@ test("ui: featured store rotation respects category rarity collection and search
     "data-store-name": "void tease",
     "data-store-type": "cardBack",
     "data-store-rarity": "Epic",
+    "data-store-element": "",
     "data-store-collection": "Void",
     "data-store-is-new": "true",
     "data-store-original-index": "0"
@@ -3203,11 +3258,15 @@ test("ui: featured store rotation respects category rarity collection and search
     querySelectorAll: (selector) => (selector === "[data-store-item]" ? mainGrid.items : []),
     getAttribute: () => "cardBack"
   };
-  const categoryAvatar = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "avatar" } });
+  const categoryVariant = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "elementCardVariant" } });
   const categoryCardBack = createFakeCheckbox({ checked: true, attributeMap: { "data-store-category-filter": "cardBack" } });
   const rarityCommon = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Common" } });
   const rarityLegendary = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Legendary" } });
   const rarityEpic = createFakeCheckbox({ checked: true, attributeMap: { "data-store-rarity-filter": "Epic" } });
+  const elementFire = createFakeCheckbox({ checked: true, attributeMap: { "data-store-element-filter": "fire" } });
+  const elementWater = createFakeCheckbox({ checked: true, attributeMap: { "data-store-element-filter": "water" } });
+  const elementEarth = createFakeCheckbox({ checked: true, attributeMap: { "data-store-element-filter": "earth" } });
+  const elementWind = createFakeCheckbox({ checked: true, attributeMap: { "data-store-element-filter": "wind" } });
   const collectionVoid = createFakeCheckbox({ checked: false, attributeMap: { "data-store-collection-filter": "Void" } });
   const searchInput = createFakeElement();
   const showNewFirstInput = createFakeCheckbox({ checked: true });
@@ -3221,8 +3280,9 @@ test("ui: featured store rotation respects category rarity collection and search
     querySelectorAll(selector) {
       if (selector === "[data-store-item]") return [...featuredGrid.items, ...mainGrid.items];
       if (selector === "[data-store-section]") return [mainSection];
-      if (selector === "[data-store-category-filter]") return [categoryAvatar, categoryCardBack];
+      if (selector === "[data-store-category-filter]") return [categoryVariant, categoryCardBack];
       if (selector === "[data-store-rarity-filter]") return [rarityCommon, rarityLegendary, rarityEpic];
+      if (selector === "[data-store-element-filter]") return [elementFire, elementWater, elementEarth, elementWind];
       if (selector === "[data-store-collection-filter]") return [collectionVoid];
       if (selector === "[data-buy-type]" || selector === "[data-equip-type]") return [];
       return [];
@@ -3244,8 +3304,9 @@ test("ui: featured store rotation respects category rarity collection and search
     storeScreen.bind({
       viewState: {
         searchText: "",
-        categories: new Set(["avatar", "cardBack"]),
+        categories: new Set(["elementCardVariant", "cardBack"]),
         rarities: new Set(["Common", "Legendary", "Epic"]),
+        elements: new Set(["fire", "water", "earth", "wind"]),
         collections: new Set(),
         showNewFirst: true
       },
@@ -3255,6 +3316,18 @@ test("ui: featured store rotation respects category rarity collection and search
     assert.equal(featuredSection.hidden, false);
     assert.equal(featuredVoidCard.hidden, false);
     assert.equal(featuredUngroupedCard.hidden, false);
+
+    elementWater.checked = false;
+    elementWater.trigger("change");
+    elementEarth.checked = false;
+    elementEarth.trigger("change");
+    elementWind.checked = false;
+    elementWind.trigger("change");
+
+    assert.equal(featuredVoidCard.hidden, false);
+    assert.equal(featuredUngroupedCard.hidden, true);
+    assert.equal(mainVoidCard.hidden, false);
+    assert.equal(featuredSection.hidden, false);
 
     collectionVoid.checked = true;
     collectionVoid.trigger("change");
@@ -3274,15 +3347,15 @@ test("ui: featured store rotation respects category rarity collection and search
 
     searchInput.value = "";
     searchInput.listeners.get("input")();
-    categoryAvatar.checked = false;
-    categoryAvatar.trigger("change");
+    categoryVariant.checked = false;
+    categoryVariant.trigger("change");
 
     assert.equal(featuredVoidCard.hidden, true);
     assert.equal(mainVoidCard.hidden, false);
     assert.equal(featuredSection.hidden, true);
 
-    categoryAvatar.checked = true;
-    categoryAvatar.trigger("change");
+    categoryVariant.checked = true;
+    categoryVariant.trigger("change");
     rarityLegendary.checked = false;
     rarityLegendary.trigger("change");
 
@@ -3383,8 +3456,179 @@ test("ui: cosmetics collection filters hide no-collection items only when a spec
     collectionRose.checked = true;
     collectionRose.trigger("change");
 
-    assert.equal(defaultAvatar.hidden, true);
-    assert.equal(roseAvatar.hidden, false);
+  assert.equal(defaultAvatar.hidden, true);
+  assert.equal(roseAvatar.hidden, false);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: cosmetics screen renders element filter controls", () => {
+  const html = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        title: [],
+        badge: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-cosmetic-element-filter="fire"/);
+  assert.match(html, /data-cosmetic-element-filter="water"/);
+  assert.match(html, /data-cosmetic-element-filter="earth"/);
+  assert.match(html, /data-cosmetic-element-filter="wind"/);
+});
+
+test("ui: cosmetics element filter hides non-matching owned variants without affecting non-variant owned items", () => {
+  const previousDocument = global.document;
+
+  const avatar = createSortableItem({
+    "data-cosmetic-rarity": "Common",
+    "data-cosmetic-collection": "",
+    "data-cosmetic-element": "",
+    "data-cosmetic-is-new": "false",
+    "data-cosmetic-original-index": "0"
+  });
+  const fireVariant = createSortableItem({
+    "data-cosmetic-rarity": "Epic",
+    "data-cosmetic-collection": "Neon Arcana",
+    "data-cosmetic-element": "fire",
+    "data-cosmetic-is-new": "true",
+    "data-cosmetic-original-index": "1"
+  });
+  const waterVariant = createSortableItem({
+    "data-cosmetic-rarity": "Epic",
+    "data-cosmetic-collection": "Neon Arcana",
+    "data-cosmetic-element": "water",
+    "data-cosmetic-is-new": "false",
+    "data-cosmetic-original-index": "2"
+  });
+  const avatarGrid = createFakeGrid([avatar]);
+  const variantGrid = createFakeGrid([fireVariant, waterVariant]);
+  const avatarSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? avatarGrid : null),
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? avatarGrid.items : []),
+    getAttribute: () => "avatar"
+  };
+  const variantSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? variantGrid : null),
+    querySelectorAll: (selector) => (selector === ".cosmetic-item" ? variantGrid.items : []),
+    getAttribute: () => "elementCardVariant"
+  };
+  const categoryAvatar = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-category-filter": "avatar" } });
+  const categoryVariant = createFakeCheckbox({
+    checked: true,
+    attributeMap: { "data-cosmetic-category-filter": "elementCardVariant" }
+  });
+  const rarityCommon = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-rarity-filter": "Common" } });
+  const rarityEpic = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-rarity-filter": "Epic" } });
+  const elementFire = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-element-filter": "fire" } });
+  const elementWater = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-element-filter": "water" } });
+  const elementEarth = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-element-filter": "earth" } });
+  const elementWind = createFakeCheckbox({ checked: true, attributeMap: { "data-cosmetic-element-filter": "wind" } });
+  const collectionNeon = createFakeCheckbox({
+    checked: false,
+    attributeMap: { "data-cosmetic-collection-filter": "Neon Arcana" }
+  });
+  const showNewFirstInput = createFakeCheckbox({ checked: true });
+  const backButton = { addEventListener() {} };
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+
+  global.document = {
+    querySelector: (selector) =>
+      selector === ".screen-cosmetics"
+        ? {
+            querySelectorAll(innerSelector) {
+              if (innerSelector === "[data-cosmetic-section]") return [avatarSection, variantSection];
+              if (innerSelector === "[data-cosmetic-category-filter]") return [categoryAvatar, categoryVariant];
+              if (innerSelector === "[data-cosmetic-rarity-filter]") return [rarityCommon, rarityEpic];
+              if (innerSelector === "[data-cosmetic-element-filter]") {
+                return [elementFire, elementWater, elementEarth, elementWind];
+              }
+              if (innerSelector === "[data-cosmetic-collection-filter]") return [collectionNeon];
+              if (
+                innerSelector === "[data-randomize-after-match]" ||
+                innerSelector === "[data-equip-type]" ||
+                innerSelector === "[data-loadout-save]" ||
+                innerSelector === "[data-loadout-apply]" ||
+                innerSelector === "[data-loadout-rename]"
+              ) {
+                return [];
+              }
+              return [];
+            }
+          }
+        : null,
+    getElementById: (id) => {
+      if (id === "cosmetics-show-new-first") return showNewFirstInput;
+      if (id === "cosmetics-back-btn") return backButton;
+      if (id === "cosmetics-empty-state") return emptyState;
+      return null;
+    },
+    querySelectorAll: () => []
+  };
+
+  try {
+    const viewState = {
+      categories: new Set(["avatar", "elementCardVariant"]),
+      rarities: new Set(["Common", "Epic"]),
+      elements: new Set(["fire", "water", "earth", "wind"]),
+      collections: new Set(),
+      showNewFirst: true
+    };
+    cosmeticsScreen.bind({
+      viewState,
+      actions: {
+        back: () => {},
+        updateRandomizationPreferences: async () => {},
+        randomizeNow: async () => {},
+        equip: async () => {},
+        saveLoadout: async () => {},
+        applyLoadout: async () => {},
+        renameLoadout: async () => {}
+      }
+    });
+
+    assert.equal(avatar.hidden, false);
+    assert.equal(fireVariant.hidden, false);
+    assert.equal(waterVariant.hidden, false);
+
+    elementWater.checked = false;
+    elementWater.trigger("change");
+    elementEarth.checked = false;
+    elementEarth.trigger("change");
+    elementWind.checked = false;
+    elementWind.trigger("change");
+
+    assert.equal(avatar.hidden, false);
+    assert.equal(fireVariant.hidden, false);
+    assert.equal(waterVariant.hidden, true);
+
+    collectionNeon.checked = true;
+    collectionNeon.trigger("change");
+
+    assert.equal(avatar.hidden, true);
+    assert.equal(fireVariant.hidden, false);
+    assert.equal(waterVariant.hidden, true);
+
+    rarityEpic.checked = false;
+    rarityEpic.trigger("change");
+
+    assert.equal(fireVariant.hidden, true);
+    assert.equal(emptyState.hidden, false);
   } finally {
     global.document = previousDocument;
   }

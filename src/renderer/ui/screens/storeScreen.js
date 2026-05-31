@@ -1,5 +1,9 @@
 import { getAssetPath } from "../../utils/dom.js";
-import { CATEGORY_ORDER as BASE_CATEGORY_ORDER, FILTERABLE_CATEGORIES } from "../shared/cosmeticCategoryShared.js";
+import {
+  CATEGORY_ORDER as BASE_CATEGORY_ORDER,
+  FILTERABLE_CATEGORIES,
+  FILTERABLE_ELEMENTS
+} from "../shared/cosmeticCategoryShared.js";
 import {
   bindCosmeticHoverPreview,
   buildHoverPreviewAttributes,
@@ -29,6 +33,7 @@ function createDefaultViewState() {
     searchText: "",
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
     rarities: new Set(FILTERABLE_RARITIES),
+    elements: new Set(FILTERABLE_ELEMENTS.map(([element]) => element)),
     collections: new Set(),
     showNewFirst: true
   };
@@ -46,6 +51,10 @@ function normalizeViewState(viewState) {
       viewState?.rarities instanceof Set
         ? viewState.rarities
         : new Set(viewState?.rarities ?? defaults.rarities),
+    elements:
+      viewState?.elements instanceof Set
+        ? viewState.elements
+        : new Set(viewState?.elements ?? defaults.elements),
     collections:
       viewState?.collections instanceof Set
         ? viewState.collections
@@ -172,6 +181,22 @@ function formatFeaturedRotationEndsAt(endsAt) {
 
 function normalizeCollectionKey(collection) {
   return String(collection ?? "").trim();
+}
+
+function resolveVariantElement(item) {
+  const explicitElement = String(item?.element ?? "").trim().toLowerCase();
+  if (["fire", "water", "earth", "wind"].includes(explicitElement)) {
+    return explicitElement;
+  }
+
+  const id = String(item?.id ?? "").trim().toLowerCase();
+  for (const [element] of FILTERABLE_ELEMENTS) {
+    if (id.startsWith(`${element}_variant_`)) {
+      return element;
+    }
+  }
+
+  return "";
 }
 
 function getStoreCollectionOptions(store) {
@@ -326,6 +351,7 @@ function renderStoreItem(type, item, originalIndex) {
       data-store-rarity="${normalizeRarity(item.rarity)}"
       data-store-name="${normalizeFilterText(item.name)}"
       data-store-collection="${escapeAttribute(normalizeCollectionKey(item.collection))}"
+      data-store-element="${escapeAttribute(type === "elementCardVariant" ? resolveVariantElement(item) : "")}"
       data-store-is-new="${item.isNew ? "true" : "false"}"
       data-store-original-index="${originalIndex}"
     >
@@ -457,6 +483,19 @@ export const storeScreen = {
                   ).join("")}
                 </div>
               </fieldset>
+              <fieldset class="store-filter-group">
+                <legend>Element</legend>
+                <div class="store-filter-options">
+                  ${FILTERABLE_ELEMENTS.map(
+                    ([element, label]) => `
+                      <label class="store-filter-option">
+                        <input type="checkbox" data-store-element-filter="${element}" ${viewState.elements.has(element) ? "checked" : ""} />
+                        <span>${label}</span>
+                      </label>
+                    `
+                  ).join("")}
+                </div>
+              </fieldset>
               ${
                 collectionOptions.length
                   ? `<fieldset class="store-filter-group">
@@ -516,6 +555,7 @@ export const storeScreen = {
       context.viewState.searchText = viewState.searchText;
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
+      context.viewState.elements = viewState.elements;
       context.viewState.collections = viewState.collections;
       context.viewState.showNewFirst = viewState.showNewFirst;
     }
@@ -526,6 +566,7 @@ export const storeScreen = {
       const featuredSection = root.querySelector?.("[data-store-featured-section]") ?? null;
       const categoriesEnabled = viewState.categories.size > 0;
       const raritiesEnabled = viewState.rarities.size > 0;
+      const elementsEnabled = viewState.elements.size > 0;
       const collectionsEnabled = viewState.collections.size > 0;
       const normalizedSearchText = normalizeFilterText(viewState.searchText);
 
@@ -533,13 +574,17 @@ export const storeScreen = {
         const name = normalizeFilterText(item.getAttribute("data-store-name"));
         const type = item.getAttribute("data-store-type");
         const rarity = item.getAttribute("data-store-rarity") ?? "Common";
+        const element = String(item.getAttribute("data-store-element") ?? "").trim().toLowerCase();
         const collection = normalizeCollectionKey(item.getAttribute("data-store-collection"));
         const matchesSearch = !normalizedSearchText || name.includes(normalizedSearchText);
         const matchesCategory = categoriesEnabled && viewState.categories.has(type);
         const matchesRarity = raritiesEnabled && viewState.rarities.has(rarity);
+        const matchesElement =
+          type !== "elementCardVariant" || !elementsEnabled || (element && viewState.elements.has(element));
         const matchesCollection =
           !collectionsEnabled || (collection && viewState.collections.has(collection));
-        const isVisible = matchesSearch && matchesCategory && matchesRarity && matchesCollection;
+        const isVisible =
+          matchesSearch && matchesCategory && matchesRarity && matchesElement && matchesCollection;
         item.hidden = !isVisible;
         item.classList?.toggle("is-filtered-out", !isVisible);
         if (item.style) {
@@ -688,6 +733,22 @@ export const storeScreen = {
           viewState.rarities.add(rarity);
         } else {
           viewState.rarities.delete(rarity);
+        }
+        applyFilters();
+      });
+    });
+
+    root.querySelectorAll("[data-store-element-filter]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const element = String(input.getAttribute("data-store-element-filter") ?? "").trim().toLowerCase();
+        if (!element) {
+          applyFilters();
+          return;
+        }
+        if (input.checked) {
+          viewState.elements.add(element);
+        } else {
+          viewState.elements.delete(element);
         }
         applyFilters();
       });
