@@ -1084,7 +1084,12 @@ export class GameController {
           p2Card: String(hostSubmit.roundResult?.guestMove ?? "").toLowerCase() || null
         };
 
-        if (this.match.status === "completed") {
+        const matchCompleted =
+          this.match.status === "completed" || Boolean(hostSubmit.room.matchComplete);
+        const warContinues =
+          hostSubmit.roundResult?.outcomeType === "war" && !matchCompleted;
+
+        if (matchCompleted) {
           await this.finalizeCompletedMatch();
         } else {
           this.resetTimer();
@@ -1093,14 +1098,8 @@ export class GameController {
         }
 
         return {
-          status:
-            hostSubmit.roundResult?.outcomeType === "war" && !hostSubmit.room.matchComplete
-              ? "war_continues"
-              : "resolved",
-          round:
-            hostSubmit.roundResult?.outcomeType === "war" && !hostSubmit.room.matchComplete
-              ? null
-              : this.lastRound,
+          status: warContinues ? "war_continues" : "resolved",
+          round: warContinues ? null : this.lastRound,
           revealedCards
         };
       }

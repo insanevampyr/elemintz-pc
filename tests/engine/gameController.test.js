@@ -13687,3 +13687,75 @@ test("gameController: PvE simultaneous WAR exhaustion resolves immediately witho
   }
 });
 
+test("gameController: PvE completed authoritative WAR result does not return war_continues", async () => {
+  const originalWindow = globalThis.window;
+  let onMatchCompleteCalls = 0;
+  const initialRoom = createAuthoritativeLocalRoom();
+  const completedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    matchComplete: true,
+    winner: "guest",
+    winReason: "hand_exhaustion",
+    hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 2 },
+    warActive: false,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+
+  const controller = new GameController({
+    username: "PveCompletedWar",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: () => ({
+          ok: true,
+          room: completedRoom,
+          roundResult: {
+            round: 1,
+            hostMove: "water",
+            guestMove: "earth",
+            outcomeType: "war",
+            hostResult: "lose",
+            guestResult: "win",
+            warRounds: [{ round: 1, outcomeType: "war" }],
+            warPot: { host: [], guest: [] }
+          }
+        })
+      }),
+    onUpdate: () => {},
+    onMatchComplete: async () => {
+      onMatchCompleteCalls += 1;
+    }
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    const result = await controller.playCard(0);
+
+    assert.equal(result.status, "resolved");
+    assert.notEqual(result.status, "war_continues");
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p2");
+    assert.equal(onMatchCompleteCalls, 1);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
