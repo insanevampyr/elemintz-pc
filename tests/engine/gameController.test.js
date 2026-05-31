@@ -8558,7 +8558,9 @@ test("appController: gauntlet loss ends the run without starting another match",
     result: "loss",
     showSummary: true,
     finalStreak: 2,
-    rivalsDefeated: 2
+    rivalsDefeated: 2,
+    rivalLabel: "Lost To",
+    rivalName: "Stonewall"
   });
   assert.equal(app.pveGauntletMode, true);
   assert.equal(app.gauntletRunState.active, false);
@@ -8598,7 +8600,9 @@ test("appController: gauntlet draw ends the run without starting another match",
     result: "draw",
     showSummary: true,
     finalStreak: 1,
-    rivalsDefeated: 1
+    rivalsDefeated: 1,
+    rivalLabel: "Final Rival",
+    rivalName: "Tide Witch"
   });
   assert.equal(app.pveGauntletMode, true);
   assert.equal(app.gauntletRunState.active, false);
@@ -8697,6 +8701,7 @@ test("appController: gauntlet match win records persistent win stats without inc
       assert.match(modalManager.shows[0].bodyHtml, /\+25 Tokens/);
       assert.match(modalManager.shows[0].bodyHtml, /Max Level Bonus: \+2 Tokens/);
       assert.match(modalManager.shows[0].bodyHtml, /Continue Gauntlet/);
+      assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Gauntlet Run Ended|Lost To/);
       assert.equal(continuedStarts.length, 0);
       assert.ok(app.pendingGauntletContinuation);
       assert.equal(app.pendingGauntletContinuationRequiresConfirm, true);
@@ -9196,6 +9201,7 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
 
     app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
     await Promise.resolve();
+    const gauntletLossRivalName = app.getCurrentGauntletRival()?.displayName ?? "";
     gauntletStatCalls.length = 0;
 
     await app.gameController.onMatchComplete({
@@ -9215,6 +9221,10 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
       ]);
     assert.equal(matchCompletePayloads.length, 1);
     assert.equal(matchCompletePayloads[0].title, "Gauntlet Run Ended");
+    assert.match(matchCompletePayloads[0].bodyHtml, /Lost To|Final Rival/);
+    if (gauntletLossRivalName) {
+      assert.match(matchCompletePayloads[0].bodyHtml, new RegExp(gauntletLossRivalName));
+    }
     assert.match(matchCompletePayloads[0].bodyHtml, /Final Streak/);
     assert.match(matchCompletePayloads[0].bodyHtml, /Best Streak/);
     assert.match(matchCompletePayloads[0].bodyHtml, /Rivals Defeated/);

@@ -1712,6 +1712,11 @@ export class AppController {
         : String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit"
             ? "quit_forfeit"
             : "loss";
+    const activeGauntletRival = this.getCurrentGauntletRival();
+    const rivalName =
+      activeGauntletRival?.displayName ??
+      (typeof this.getCurrentPveOpponentName === "function" ? this.getCurrentPveOpponentName() : "") ??
+      "";
     const finalStreak = Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0));
     const rivalsDefeated = Array.isArray(this.gauntletRunState?.defeatedRivalIds)
       ? this.gauntletRunState.defeatedRivalIds.length
@@ -1723,7 +1728,9 @@ export class AppController {
       result,
       showSummary: result !== "quit_forfeit",
       finalStreak,
-      rivalsDefeated
+      rivalsDefeated,
+      rivalLabel: result === "loss" ? "Lost To" : "Final Rival",
+      rivalName
     };
   }
 
@@ -5839,11 +5846,19 @@ export class AppController {
     }
   }
 
-  buildGauntletRunSummary({ finalStreak = 0, rivalsDefeated = 0, bestStreak = 0 } = {}) {
+  buildGauntletRunSummary({
+    finalStreak = 0,
+    rivalsDefeated = 0,
+    bestStreak = 0,
+    rivalLabel = "",
+    rivalName = ""
+  } = {}) {
     return {
       finalStreak: Math.max(0, Number(finalStreak ?? 0)),
       rivalsDefeated: Math.max(0, Number(rivalsDefeated ?? 0)),
-      bestStreak: Math.max(0, Number(bestStreak ?? 0))
+      bestStreak: Math.max(0, Number(bestStreak ?? 0)),
+      rivalLabel: String(rivalLabel ?? "").trim(),
+      rivalName: String(rivalName ?? "").trim()
     };
   }
 
@@ -5946,6 +5961,13 @@ export class AppController {
         <section class="match-complete-gauntlet-summary">
           <p class="match-complete-helper">Gauntlet Run Ended</p>
           <div class="match-complete-stats">
+            ${gauntletSummary.rivalName
+              ? `
+            <div class="match-complete-stat">
+              <span class="match-complete-stat-label">${escapeHtml(gauntletSummary.rivalLabel || "Final Rival")}</span>
+              <strong class="match-complete-stat-value">${escapeHtml(gauntletSummary.rivalName)}</strong>
+            </div>`
+              : ""}
             <div class="match-complete-stat">
               <span class="match-complete-stat-label">Final Streak</span>
               <strong class="match-complete-stat-value">${gauntletSummary.finalStreak}</strong>
@@ -6911,7 +6933,9 @@ export class AppController {
                 bestStreak:
                   finalPersisted?.profile?.gauntletBestStreak ??
                   this.profile?.gauntletBestStreak ??
-                  0
+                  0,
+                rivalLabel: gauntletCompletion.rivalLabel,
+                rivalName: gauntletCompletion.rivalName
               })
             : null;
         const modalPayload = this.buildMatchCompleteModalPayload(mode, match, finalPersisted, {
