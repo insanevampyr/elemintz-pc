@@ -8903,6 +8903,181 @@ test("appController: gauntlet match win records persistent win stats without inc
   }
 });
 
+test("appController: gauntlet time-limit win records persistent win stats and continues like a normal victory", async () => {
+  const originalWindow = globalThis.window;
+  const gauntletStatCalls = [];
+  const continuedStarts = [];
+  const modalManager = createModalCapture();
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletTimerWinner";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletTimerWinner", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.buildMatchCompleteModalPayload = () => ({ title: "unused", bodyHtml: "", mode: MATCH_MODE.PVE });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: payload.matchWon ? payload.currentStreak : 0,
+                gauntletRuns: 1,
+                gauntletWins: payload.matchWon ? 1 : 0,
+                gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
+                gauntletRivalsDefeated: payload.matchWon ? 1 : 0
+              },
+              claimedMilestoneStreaks: payload.matchWon ? [3] : payload.claimedMilestoneStreaks ?? [],
+              milestoneRewards: payload.matchWon
+                ? [{ streak: 3, xp: 0, tokens: 25, chests: [] }]
+                : [],
+              xpConversionTokenBonus: payload.matchWon ? 2 : 0
+            };
+          }
+        }
+      }
+    };
+    const originalDocument = globalThis.document;
+    const continueButton = createFakeDomElement();
+    const returnButton = createFakeDomElement();
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "gauntlet-continue-btn"
+          ? continueButton
+          : id === "gauntlet-return-menu-btn"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+
+    try {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+      app.roundPresentation = { phase: "reveal", busy: true, selectedCardIndex: 0 };
+      app.screenFlow = "game";
+      const originalStartGame = app.startGame.bind(app);
+      app.startGame = (mode, options = {}) => {
+        continuedStarts.push({ mode, options });
+        return originalStartGame(mode, options);
+      };
+
+      await app.gameController.onMatchComplete({
+        match: { winner: "p1", endReason: "time_limit" },
+        persisted: { profile: { username: "GauntletTimerWinner" } }
+      });
+
+      assert.equal(modalManager.shows.length, 0);
+      assert.ok(app.pendingGauntletVictoryPayload);
+
+      app.roundPresentation = { phase: "idle", busy: false, selectedCardIndex: null };
+      app.screenFlow = "idle";
+      assert.equal(app.flushPendingGauntletVictoryModal(), true);
+
+      assert.equal(modalManager.shows.length, 1);
+      assert.equal(modalManager.shows[0].title, "Gauntlet Victory!");
+      assert.match(modalManager.shows[0].bodyHtml, /Streak: 1/);
+      assert.match(modalManager.shows[0].bodyHtml, /Next Rival:/);
+      assert.match(modalManager.shows[0].bodyHtml, /Continue Gauntlet/);
+      assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Gauntlet Run Ended|Lost To/);
+      assert.ok(app.pendingGauntletContinuation);
+      assert.equal(app.pendingGauntletContinuationRequiresConfirm, true);
+
+      await continueButton.listeners.get("click")?.();
+
+      assert.deepEqual(gauntletStatCalls, [
+        {
+          username: "GauntletTimerWinner",
+          runStarted: true,
+          matchWon: false,
+          runEndedWithLoss: false,
+          currentStreak: 0,
+          claimedMilestoneStreaks: []
+        },
+        {
+          username: "GauntletTimerWinner",
+          runStarted: false,
+          matchWon: true,
+          runEndedWithLoss: false,
+          currentStreak: 1,
+          claimedMilestoneStreaks: []
+        }
+      ]);
+      assert.equal(app.profile.gauntletRuns, 1);
+      assert.equal(app.profile.gauntletWins, 1);
+      assert.equal(app.profile.gauntletRivalsDefeated, 1);
+      assert.equal(app.profile.gauntletBestStreak, 1);
+      assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, [3]);
+      assert.equal(continuedStarts.length, 1);
+      assert.equal(continuedStarts.at(-1)?.options?.gauntletContinue, true);
+      assert.equal(app.pendingGauntletContinuation, null);
+      assert.equal(app.pendingGauntletContinuationRequiresConfirm, false);
+      assert.equal(app.pendingGauntletVictoryPayload, null);
+    } finally {
+      globalThis.document = originalDocument;
+    }
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: gauntlet time-limit loss ends the run without starting another match", () => {
+  const starts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 2,
+    currentRivalIndex: 2,
+    currentRivalId: "stonewall",
+    rivalBag: ["storm_chaser"],
+    lastRivalId: "tide_witch",
+    claimedMilestoneStreaks: [],
+    defeatedRivalIds: ["pyro_maniac", "tide_witch"],
+    lastResult: null
+  };
+
+  const continued = app.handleGauntletMatchCompletion({ winner: "p2", endReason: "time_limit" });
+
+  assert.deepEqual(continued, {
+    handled: false,
+    type: "ended",
+    result: "loss",
+    showSummary: true,
+    finalStreak: 2,
+    rivalsDefeated: 2,
+    rivalLabel: "Lost To",
+    rivalName: "Stonewall"
+  });
+  assert.equal(app.pveGauntletMode, true);
+  assert.equal(app.gauntletRunState.active, false);
+  assert.equal(app.gauntletRunState.lastResult, "loss");
+  assert.deepEqual(starts, []);
+});
+
 test("appController: gauntlet victory return to menu clears queued continuation and temporary run state safely", async () => {
   const originalWindow = globalThis.window;
   const modalManager = createModalCapture();
@@ -13418,6 +13593,86 @@ test("gameController: PvE time-limit completion comes from the authoritative roo
     await controller.finalizeByTimeLimit();
 
     assert.deepEqual(completionCalls, [{ reason: "time_limit" }]);
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p1");
+    assert.equal(controller.match.endReason, "time_limit");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE time-limit completion deferred during resolution flushes once the round finishes", async () => {
+  const originalWindow = globalThis.window;
+  const completionCalls = [];
+  const matchCompleteCalls = [];
+  const completedRoom = createAuthoritativeLocalRoom({
+    matchComplete: true,
+    winner: "host",
+    winReason: "time_limit",
+    roundNumber: 4,
+    hostHand: { fire: 3, water: 1, earth: 1, wind: 1 },
+    guestHand: { fire: 1, water: 0, earth: 0, wind: 0 },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      },
+      {
+        round: 2,
+        hostMove: "water",
+        guestMove: "wind",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose"
+      }
+    ]
+  });
+
+  const controller = new GameController({
+    username: "DeferredTimeLimitAuthority",
+    mode: MATCH_MODE.PVE,
+    timerSeconds: 30,
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        completeMatchByCardCount: (_socketId, options) => {
+          completionCalls.push(options);
+          return { ok: true, room: completedRoom };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: ({ match }) => {
+      matchCompleteCalls.push({
+        winner: match?.winner ?? null,
+        endReason: match?.endReason ?? null
+      });
+    }
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+    controller.isResolvingRound = true;
+
+    await controller.finalizeByTimeLimit();
+
+    assert.equal(controller.pendingTimeLimitFinalization, true);
+    assert.deepEqual(completionCalls, []);
+    assert.deepEqual(matchCompleteCalls, []);
+    assert.equal(controller.match.status, "active");
+
+    controller.isResolvingRound = false;
+    assert.equal(await controller.flushPendingTimeLimitFinalization(), true);
+
+    assert.equal(controller.pendingTimeLimitFinalization, false);
+    assert.deepEqual(completionCalls, [{ reason: "time_limit" }]);
+    assert.deepEqual(matchCompleteCalls, [{ winner: "p1", endReason: "time_limit" }]);
     assert.equal(controller.match.status, "completed");
     assert.equal(controller.match.winner, "p1");
     assert.equal(controller.match.endReason, "time_limit");

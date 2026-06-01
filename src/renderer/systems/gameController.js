@@ -602,6 +602,7 @@ export class GameController {
     this.matchClockId = null;
     this.isResolvingRound = false;
     this.completionNotified = false;
+    this.pendingTimeLimitFinalization = false;
 
     this.hotseatTurn = "p1";
     this.pendingHotseatP1CardIndex = null;
@@ -778,6 +779,7 @@ export class GameController {
     this.pendingHotseatP1CardIndex = null;
     this.pendingHotseatP2CardIndex = null;
     this.completionNotified = false;
+    this.pendingTimeLimitFinalization = false;
     this.matchStartedAtMs = Date.now();
     this.localPveAuthoritativeRoundHistory = [];
 
@@ -1001,6 +1003,7 @@ export class GameController {
       return;
     }
 
+    this.pendingTimeLimitFinalization = false;
     this.completionNotified = true;
     this.stopTimer();
     this.stopMatchClock();
@@ -1036,10 +1039,17 @@ export class GameController {
   }
 
   async finalizeByTimeLimit() {
-    if (!this.match || this.match.status !== "active" || this.isResolvingRound) {
+    if (!this.match || this.match.status !== "active") {
+      this.pendingTimeLimitFinalization = false;
       return;
     }
 
+    if (this.isResolvingRound) {
+      this.pendingTimeLimitFinalization = true;
+      return;
+    }
+
+    this.pendingTimeLimitFinalization = false;
     if ((this.isLocalPvp() || this.isPve()) && this.localAuthority?.store) {
       this.completeLocalAuthorityMatchByCardCount({ reason: "time_limit" });
       this.onUpdate();
@@ -1050,6 +1060,21 @@ export class GameController {
     completeMatchByCardCount(this.match, { reason: "time_limit" });
     this.onUpdate();
     await this.finalizeCompletedMatch();
+  }
+
+  async flushPendingTimeLimitFinalization() {
+    if (!this.pendingTimeLimitFinalization) {
+      return false;
+    }
+
+    if (!this.match || this.match.status !== "active") {
+      this.pendingTimeLimitFinalization = false;
+      return false;
+    }
+
+    this.pendingTimeLimitFinalization = false;
+    await this.finalizeByTimeLimit();
+    return true;
   }
 
   async quitMatch({ quitter = "p1", reason = "forfeit" } = {}) {
@@ -1242,6 +1267,7 @@ export class GameController {
       };
     } finally {
       this.isResolvingRound = false;
+      await this.flushPendingTimeLimitFinalization();
       this.onUpdate();
     }
   }
@@ -1404,6 +1430,7 @@ export class GameController {
       };
     } finally {
       this.isResolvingRound = false;
+      await this.flushPendingTimeLimitFinalization();
       this.onUpdate();
     }
   }
