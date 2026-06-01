@@ -216,10 +216,10 @@ test("ai: hard does not depend on the player's hidden current-round choice", () 
   assert.equal(withHiddenFire, withHiddenWater);
 });
 
-test("ai: all 10 Gauntlet rival definitions exist with rival-only identity fields", () => {
+test("ai: all 15 Gauntlet rival definitions exist with rival-only identity fields", () => {
   const rivals = listGauntletRivals();
 
-  assert.equal(rivals.length, 10);
+  assert.equal(rivals.length, 15);
   assert.deepEqual(
     rivals.map((rival) => rival.id),
     [
@@ -232,9 +232,16 @@ test("ai: all 10 Gauntlet rival definitions exist with rival-only identity field
       "stone_march",
       "fourfold_monk",
       "cyclebound",
-      "mimic_rival"
+      "mimic_rival",
+      "vampire_rival",
+      "lycan_rival",
+      "street_duelist",
+      "frostveil_heir",
+      "goldbound_archon"
     ]
   );
+
+  const byId = Object.fromEntries(rivals.map((rival) => [rival.id, rival]));
 
   for (const rival of rivals) {
     assert.equal(typeof rival.id, "string");
@@ -261,9 +268,25 @@ test("ai: all 10 Gauntlet rival definitions exist with rival-only identity field
     } else if (rival.behaviorType === "loop") {
       assert.ok(rival.loop.length > 0);
     } else {
-      assert.equal(rival.copyChance, 0.5);
+      assert.ok(rival.copyChance > 0 && rival.copyChance <= 1);
     }
   }
+
+  assert.deepEqual(byId.vampire_rival.weights, {
+    water: 45,
+    wind: 30,
+    fire: 15,
+    earth: 10
+  });
+  assert.deepEqual(byId.lycan_rival.weights, {
+    fire: 45,
+    earth: 30,
+    wind: 15,
+    water: 10
+  });
+  assert.deepEqual(byId.street_duelist.loop, ["fire", "wind", "earth", "water"]);
+  assert.deepEqual(byId.frostveil_heir.loop, ["water", "wind", "water", "earth"]);
+  assert.equal(byId.goldbound_archon.copyChance, 0.65);
 });
 
 test("ai: Gauntlet rival lookup resolves known ids and safely falls back for unknown ids", () => {
@@ -330,6 +353,43 @@ test("ai: Cyclebound follows Fire -> Earth -> Wind -> Water and repeats from the
 
   assert.deepEqual(firstCycle, ["fire", "earth", "wind", "water", "fire", "earth", "wind", "water"]);
   assert.equal(hand[chooseGauntletRivalCardIndex(hand, { rivalId: "cyclebound", turnIndex: 0 })], "fire");
+});
+
+test("ai: Street Duelist follows Fire -> Wind -> Earth -> Water and repeats from the start", () => {
+  const hand = ["fire", "water", "earth", "wind"];
+  const firstCycle = Array.from({ length: 8 }, (_, turnIndex) =>
+    hand[chooseGauntletRivalCardIndex(hand, { rivalId: "street_duelist", turnIndex })]
+  );
+
+  assert.deepEqual(firstCycle, ["fire", "wind", "earth", "water", "fire", "wind", "earth", "water"]);
+});
+
+test("ai: Frostveil Heir follows Water -> Wind -> Water -> Earth and repeats from the start", () => {
+  const hand = ["fire", "water", "earth", "wind"];
+  const firstCycle = Array.from({ length: 8 }, (_, turnIndex) =>
+    hand[chooseGauntletRivalCardIndex(hand, { rivalId: "frostveil_heir", turnIndex })]
+  );
+
+  assert.deepEqual(firstCycle, ["water", "wind", "water", "earth", "water", "wind", "water", "earth"]);
+});
+
+test("ai: Goldbound Archon copies the player's previous element using its configured mimic chance", () => {
+  const hand = ["fire", "water", "earth", "wind"];
+
+  const copied = chooseGauntletRivalCardIndex(hand, {
+    rivalId: "goldbound_archon",
+    playerPreviousElement: "wind",
+    rng: () => 0.2
+  });
+  const fallback = chooseGauntletRivalCardIndex(hand, {
+    rivalId: "goldbound_archon",
+    playerPreviousElement: "wind",
+    rng: () => 0.8
+  });
+
+  assert.equal(hand[copied], "wind");
+  assert.notEqual(copied, null);
+  assert.notEqual(fallback, null);
 });
 
 test("ai: Mimic Rival copies the player's previous element 50% of the time when it is available", () => {

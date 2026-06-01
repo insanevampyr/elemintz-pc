@@ -137,6 +137,61 @@ export const GAUNTLET_RIVAL_DEFINITIONS = Object.freeze([
     hint: "Their style feels strangely familiar.",
     avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_mimic_rival.png",
     copyChance: 0.5
+  }),
+  freezeRivalDefinition({
+    id: "vampire_rival",
+    displayName: "Countess Veyra",
+    title: "Blood Court Duelist",
+    behaviorType: "weighted",
+    hint: "She studies your habits before striking.",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_vampire_rival.png",
+    weights: {
+      water: 45,
+      wind: 30,
+      fire: 15,
+      earth: 10
+    }
+  }),
+  freezeRivalDefinition({
+    id: "lycan_rival",
+    displayName: "Ravena Moonfang",
+    title: "Moon-Rage Huntress",
+    behaviorType: "weighted",
+    hint: "She attacks fast and favors raw force.",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_lycan_rival.png",
+    weights: {
+      fire: 45,
+      earth: 30,
+      wind: 15,
+      water: 10
+    }
+  }),
+  freezeRivalDefinition({
+    id: "street_duelist",
+    displayName: "Rook",
+    title: "Alley Elementalist",
+    behaviorType: "loop",
+    hint: "He fights with rhythm. Watch the pattern.",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_street_duelist.png",
+    loop: ["fire", "wind", "earth", "water"]
+  }),
+  freezeRivalDefinition({
+    id: "frostveil_heir",
+    displayName: "Nivren Frostveil",
+    title: "Frostveil Heir",
+    behaviorType: "loop",
+    hint: "Their pattern is graceful, but not random.",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_frostveil_heir.png",
+    loop: ["water", "wind", "water", "earth"]
+  }),
+  freezeRivalDefinition({
+    id: "goldbound_archon",
+    displayName: "Aurum Knox",
+    title: "Golden Pretender",
+    behaviorType: "mimic",
+    hint: "He likes turning your own rhythm against you.",
+    avatarPath: "assets/gauntlet/avatars/avatar_gauntlet_goldbound_archon.png",
+    copyChance: 0.65
   })
 ]);
 
