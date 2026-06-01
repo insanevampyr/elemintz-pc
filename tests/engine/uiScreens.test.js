@@ -793,11 +793,13 @@ test("ui: store and cosmetics render short collection filter labels when collect
   });
 
   assert.match(storeHtml, /<legend>Collections<\/legend>/);
+  assert.match(storeHtml, /class="store-filter-options store-filter-options--collections"/);
   assert.match(storeHtml, /data-store-collection-filter="Celestial"/);
   assert.match(storeHtml, /<span>Celestial<\/span>/);
   assert.doesNotMatch(storeHtml, /Celestial Collection<\/span><\/label>/);
 
   assert.match(cosmeticsHtml, /<legend>Collections<\/legend>/);
+  assert.match(cosmeticsHtml, /class="store-filter-options store-filter-options--collections"/);
   assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Celestial"/);
   assert.match(cosmeticsHtml, /<span>Celestial<\/span>/);
   assert.doesNotMatch(cosmeticsHtml, /Celestial Collection<\/span><\/label>/);

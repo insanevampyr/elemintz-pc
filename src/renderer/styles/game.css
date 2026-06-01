@@ -1358,6 +1358,14 @@ select {
   gap: 8px;
 }
 
+.store-filter-options--collections {
+  max-height: 188px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
 .store-filter-option {
   display: flex;
   align-items: center;

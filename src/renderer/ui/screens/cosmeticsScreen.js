@@ -481,7 +481,7 @@ export const cosmeticsScreen = {
                 collectionOptions.length
                   ? `<fieldset class="store-filter-group">
                 <legend>Collections</legend>
-                <div class="store-filter-options">
+                <div class="store-filter-options store-filter-options--collections">
                   ${collectionOptions
                     .map(
                       (collection) => `
