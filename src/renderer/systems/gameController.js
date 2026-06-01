@@ -1153,6 +1153,44 @@ export class GameController {
     };
   }
 
+  async maybeAutoResolveAuthoritativeWarExhaustion() {
+    if (
+      !this.localAuthority?.store ||
+      !this.localAuthority?.hostSocket?.id ||
+      !this.match ||
+      this.match.status !== "active" ||
+      !this.match.war?.active
+    ) {
+      return null;
+    }
+
+    const p1CanContinue = hasRequiredWarCards(this.match.players.p1.hand);
+    const p2CanContinue = hasRequiredWarCards(this.match.players.p2.hand);
+    if (p1CanContinue && p2CanContinue) {
+      return null;
+    }
+
+    const winner = p1CanContinue ? "host" : p2CanContinue ? "guest" : "draw";
+    const completedRoom = this.completeLocalAuthorityMatch({
+      winner,
+      reason: "hand_exhaustion"
+    });
+    if (!completedRoom?.matchComplete) {
+      return null;
+    }
+
+    await this.finalizeCompletedMatch();
+
+    return {
+      status: "resolved",
+      round: this.lastRound,
+      revealedCards: {
+        p1Card: null,
+        p2Card: null
+      }
+    };
+  }
+
   async playCard(playerCardIndex) {
     if (this.isLocalPvp()) {
       return { skipped: true, reason: "local-pvp-uses-hotseat-selection" };
@@ -1206,6 +1244,11 @@ export class GameController {
 
         if (matchCompleted) {
           await this.finalizeCompletedMatch();
+        } else if (warContinues) {
+          const forcedResolution = await this.maybeAutoResolveAuthoritativeWarExhaustion();
+          if (forcedResolution) {
+            return forcedResolution;
+          }
         } else {
           this.resetTimer();
           this.startTimer();

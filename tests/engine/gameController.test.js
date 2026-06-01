@@ -8764,6 +8764,48 @@ test("appController: gauntlet draw ends the run without starting another match",
   assert.deepEqual(starts, []);
 });
 
+test("appController: gauntlet hand-exhaustion loss ends the run without starting another match", () => {
+  const starts = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.startGame = (mode, options = {}) => {
+    starts.push({ mode, options });
+  };
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentStreak: 2,
+    currentRivalIndex: 2,
+    currentRivalId: "stonewall",
+    rivalBag: ["storm_chaser"],
+    lastRivalId: "tide_witch",
+    claimedMilestoneStreaks: [],
+    defeatedRivalIds: ["pyro_maniac", "tide_witch"],
+    lastResult: null
+  };
+
+  const continued = app.handleGauntletMatchCompletion({ winner: "p2", endReason: "hand_exhaustion" });
+
+  assert.deepEqual(continued, {
+    handled: false,
+    type: "ended",
+    result: "loss",
+    showSummary: true,
+    finalStreak: 2,
+    rivalsDefeated: 2,
+    rivalLabel: "Lost To",
+    rivalName: "Stonewall"
+  });
+  assert.equal(app.pveGauntletMode, true);
+  assert.equal(app.gauntletRunState.active, false);
+  assert.equal(app.gauntletRunState.lastResult, "loss");
+  assert.deepEqual(starts, []);
+});
+
 test("appController: gauntlet match win records persistent win stats without incrementing runs again", async () => {
   const originalWindow = globalThis.window;
   const gauntletStatCalls = [];
@@ -14099,6 +14141,188 @@ test("gameController: PvE simultaneous WAR exhaustion resolves immediately witho
     assert.equal(controller.match.status, "completed");
     assert.equal(controller.match.winner, "draw");
     assert.equal(controller.timerSeconds, 30);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE WAR exhaustion completes immediately as a loss when the player cannot continue", async () => {
+  const originalWindow = globalThis.window;
+  const completionCalls = [];
+  const matchCompleteCalls = [];
+  const initialRoom = createAuthoritativeLocalRoom();
+  const warRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: WAR_REQUIRED_CARDS, wind: 0 },
+    warActive: true,
+    warRounds: [{ round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const completedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    matchComplete: true,
+    winner: "guest",
+    winReason: "hand_exhaustion",
+    hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: WAR_REQUIRED_CARDS, wind: 0 },
+    warActive: false,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    roundHistory: warRoom.roundHistory
+  });
+
+  const controller = new GameController({
+    username: "PveWarLoseNow",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: () => ({
+          ok: true,
+          room: warRoom,
+          roundResult: {
+            round: 1,
+            hostMove: "fire",
+            guestMove: "fire",
+            outcomeType: "war",
+            hostResult: "war",
+            guestResult: "war",
+            warRounds: [{ round: 1, outcomeType: "war" }],
+            warPot: { host: ["fire"], guest: ["fire"] }
+          }
+        }),
+        completeMatch: (_socketId, options) => {
+          completionCalls.push(options);
+          return { ok: true, room: completedRoom };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: ({ match }) => {
+      matchCompleteCalls.push({
+        winner: match?.winner ?? null,
+        endReason: match?.endReason ?? null
+      });
+    }
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    const result = await controller.playCard(0);
+
+    assert.equal(result.status, "resolved");
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p2");
+    assert.equal(controller.match.endReason, "hand_exhaustion");
+    assert.deepEqual(completionCalls, [{ winner: "guest", reason: "hand_exhaustion" }]);
+    assert.deepEqual(matchCompleteCalls, [{ winner: "p2", endReason: "hand_exhaustion" }]);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE WAR exhaustion completes immediately as a win when the opponent cannot continue", async () => {
+  const originalWindow = globalThis.window;
+  const completionCalls = [];
+  const matchCompleteCalls = [];
+  const initialRoom = createAuthoritativeLocalRoom();
+  const warRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 0, water: WAR_REQUIRED_CARDS, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    warActive: true,
+    warRounds: [{ round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const completedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    matchComplete: true,
+    winner: "host",
+    winReason: "hand_exhaustion",
+    hostHand: { fire: 0, water: WAR_REQUIRED_CARDS, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    warActive: false,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    roundHistory: warRoom.roundHistory
+  });
+
+  const controller = new GameController({
+    username: "PveWarWinNow",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: () => ({
+          ok: true,
+          room: warRoom,
+          roundResult: {
+            round: 1,
+            hostMove: "fire",
+            guestMove: "fire",
+            outcomeType: "war",
+            hostResult: "war",
+            guestResult: "war",
+            warRounds: [{ round: 1, outcomeType: "war" }],
+            warPot: { host: ["fire"], guest: ["fire"] }
+          }
+        }),
+        completeMatch: (_socketId, options) => {
+          completionCalls.push(options);
+          return { ok: true, room: completedRoom };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: ({ match }) => {
+      matchCompleteCalls.push({
+        winner: match?.winner ?? null,
+        endReason: match?.endReason ?? null
+      });
+    }
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    const result = await controller.playCard(0);
+
+    assert.equal(result.status, "resolved");
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "p1");
+    assert.equal(controller.match.endReason, "hand_exhaustion");
+    assert.deepEqual(completionCalls, [{ winner: "host", reason: "hand_exhaustion" }]);
+    assert.deepEqual(matchCompleteCalls, [{ winner: "p1", endReason: "hand_exhaustion" }]);
   } finally {
     controller.stopTimer();
     controller.stopMatchClock();
