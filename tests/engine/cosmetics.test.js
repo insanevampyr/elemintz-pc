@@ -71,6 +71,20 @@ const FROSTVEIL_COURT_VARIANT_DEFINITIONS = Object.freeze([
   ["water_variant_frostbloom", "Frostbloom Water", "water", "cards/water_variant_frostbloom.png"]
 ]);
 
+const VAMPIRE_ELEGANCE_VARIANT_DEFINITIONS = Object.freeze([
+  ["fire_variant_flame_wings", "Flame Wings Fire", "fire", "cards/fire_variant_flame_wings.png"],
+  ["earth_variant_stone_graves", "Stone Graves Earth", "earth", "cards/earth_variant_stone_graves.png"],
+  ["wind_variant_wings_wind", "Wings Wind", "wind", "cards/wind_variant_wings_wind.png"],
+  ["water_variant_blood_wings", "Blood Wings Water", "water", "cards/water_variant_blood_wings.png"]
+]);
+
+const LYCAN_POWER_VARIANT_DEFINITIONS = Object.freeze([
+  ["fire_variant_fire_paw", "Fire Paw Fire", "fire", "cards/fire_variant_fire_paw.png"],
+  ["earth_variant_stone_paw", "Stone Paw Earth", "earth", "cards/earth_variant_stone_paw.png"],
+  ["wind_variant_lycan_duo", "Lycan Duo Wind", "wind", "cards/wind_variant_lycan_duo.png"],
+  ["water_variant_water_wolf", "Water Wolf Water", "water", "cards/water_variant_water_wolf.png"]
+]);
+
 function buildCompletedMatch({
   winner = "p1",
   rounds = 3,
@@ -573,7 +587,7 @@ test("cosmetics: Personality Drop avatar and title catalog entries remain presen
   assert.equal(titles.get("title_divine_menace")?.collection, "Celestial");
 });
 
-test("cosmetics: Neon Arcana entries use exact metadata across categories and collection mappings", () => {
+test("cosmetics: Neon Arcana entries keep exact metadata and collection mappings after NEW retirement", () => {
   const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
   const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
   const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
@@ -586,7 +600,7 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
     assert.equal(item.price, 600);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.isNew, true);
+    assert.equal(item.isNew, false);
     assert.equal(item.releaseTag, "neon_arcana_01");
     assert.equal(item.collection, "Neon Arcana");
     assert.match(item.image, /^avatars\//);
@@ -603,7 +617,7 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
     assert.equal(item.image, image);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.isNew, true);
+    assert.equal(item.isNew, false);
     assert.equal(item.releaseTag, "neon_arcana_01");
     assert.equal(item.collection, "Neon Arcana");
   }
@@ -615,7 +629,7 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
   assert.equal(title.rarity, "Legendary");
   assert.equal(title.price, 850);
   assert.equal(title.purchasable, true);
-  assert.equal(title.isNew, true);
+  assert.equal(title.isNew, false);
   assert.equal(title.releaseTag, "neon_arcana_01");
   assert.equal(title.collection, "Neon Arcana");
   assert.equal(title.rotationOnly ?? false, false);
@@ -628,7 +642,7 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
   assert.equal(cardBack.rarity, "Legendary");
   assert.equal(cardBack.price, 800);
   assert.equal(cardBack.purchasable, true);
-  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.isNew, false);
   assert.equal(cardBack.releaseTag, "neon_arcana_01");
   assert.equal(cardBack.collection, "Neon Arcana");
   assert.equal(cardBack.rotationOnly ?? false, false);
@@ -643,7 +657,7 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
     assert.equal(item.rarity, "Rare");
     assert.equal(item.price, 250);
     assert.equal(item.purchasable, true);
-    assert.equal(item.isNew, true);
+    assert.equal(item.isNew, false);
     assert.equal(item.releaseTag, "neon_arcana_01");
     assert.equal(item.collection, "Neon Arcana");
     assert.equal(item.rotationOnly ?? false, false);
@@ -651,7 +665,7 @@ test("cosmetics: Neon Arcana entries use exact metadata across categories and co
   }
 });
 
-test("cosmetics: Goldbound Relics entries use exact metadata across categories and collection mappings", () => {
+test("cosmetics: Goldbound Relics entries keep exact metadata and collection mappings after NEW retirement", () => {
   const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
   const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
   const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
@@ -665,7 +679,7 @@ test("cosmetics: Goldbound Relics entries use exact metadata across categories a
   assert.equal(avatar.price, 900);
   assert.equal(avatar.purchasable, true);
   assert.equal(avatar.defaultOwned, false);
-  assert.equal(avatar.isNew, true);
+  assert.equal(avatar.isNew, false);
   assert.equal(avatar.releaseTag, "goldbound_relics_01");
   assert.equal(avatar.collection, "Goldbound Relics");
   assert.equal(avatar.rotationOnly ?? false, false);
@@ -679,7 +693,7 @@ test("cosmetics: Goldbound Relics entries use exact metadata across categories a
   assert.equal(title.price, 500);
   assert.equal(title.purchasable, true);
   assert.equal(title.defaultOwned, false);
-  assert.equal(title.isNew, true);
+  assert.equal(title.isNew, false);
   assert.equal(title.releaseTag, "goldbound_relics_01");
   assert.equal(title.collection, "Goldbound Relics");
   assert.equal(title.rotationOnly ?? false, false);
@@ -693,7 +707,7 @@ test("cosmetics: Goldbound Relics entries use exact metadata across categories a
   assert.equal(cardBack.price, 800);
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.defaultOwned, false);
-  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.isNew, false);
   assert.equal(cardBack.releaseTag, "goldbound_relics_01");
   assert.equal(cardBack.collection, "Goldbound Relics");
   assert.equal(cardBack.rotationOnly ?? false, false);
@@ -709,7 +723,7 @@ test("cosmetics: Goldbound Relics entries use exact metadata across categories a
     assert.equal(item.price, 450);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.isNew, true);
+    assert.equal(item.isNew, false);
     assert.equal(item.releaseTag, "goldbound_relics_01");
     assert.equal(item.collection, "Goldbound Relics");
     assert.equal(item.rotationOnly ?? false, false);
@@ -717,7 +731,7 @@ test("cosmetics: Goldbound Relics entries use exact metadata across categories a
   }
 });
 
-test("cosmetics: Frostveil Court entries use exact metadata across categories and collection mappings while preserving multiple active NEW drops", () => {
+test("cosmetics: Frostveil Court entries keep exact metadata and collection mappings after NEW retirement", () => {
   const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
   const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
   const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
@@ -731,7 +745,7 @@ test("cosmetics: Frostveil Court entries use exact metadata across categories an
   assert.equal(avatar.price, 900);
   assert.equal(avatar.purchasable, true);
   assert.equal(avatar.defaultOwned, false);
-  assert.equal(avatar.isNew, true);
+  assert.equal(avatar.isNew, false);
   assert.equal(avatar.releaseTag, "frostveil_court_2026_05");
   assert.equal(avatar.collection, "Frostveil Court");
   assert.equal(avatar.rotationOnly ?? false, false);
@@ -745,7 +759,7 @@ test("cosmetics: Frostveil Court entries use exact metadata across categories an
   assert.equal(title.price, 500);
   assert.equal(title.purchasable, true);
   assert.equal(title.defaultOwned, false);
-  assert.equal(title.isNew, true);
+  assert.equal(title.isNew, false);
   assert.equal(title.releaseTag, "frostveil_court_2026_05");
   assert.equal(title.collection, "Frostveil Court");
   assert.equal(title.rotationOnly ?? false, false);
@@ -759,7 +773,7 @@ test("cosmetics: Frostveil Court entries use exact metadata across categories an
   assert.equal(cardBack.price, 800);
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.defaultOwned, false);
-  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.isNew, false);
   assert.equal(cardBack.releaseTag, "frostveil_court_2026_05");
   assert.equal(cardBack.collection, "Frostveil Court");
   assert.equal(cardBack.rotationOnly ?? false, false);
@@ -775,13 +789,236 @@ test("cosmetics: Frostveil Court entries use exact metadata across categories an
     assert.equal(item.price, 450);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
-    assert.equal(item.isNew, true);
+    assert.equal(item.isNew, false);
     assert.equal(item.releaseTag, "frostveil_court_2026_05");
     assert.equal(item.collection, "Frostveil Court");
     assert.equal(item.rotationOnly ?? false, false);
     assert.equal(item.storeHidden ?? false, false);
   }
 
-  assert.equal(avatars.get("avatar_neon_pyre_entity")?.isNew, true);
-  assert.equal(avatars.get("avatar_aurelian_archon")?.isNew, true);
+  assert.equal(avatars.get("avatar_neon_pyre_entity")?.isNew, false);
+  assert.equal(avatars.get("avatar_aurelian_archon")?.isNew, false);
+});
+
+test("cosmetics: Vampire Elegance entries use exact metadata across categories and collection mappings", () => {
+  const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
+  const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
+  const variants = new Map(COSMETIC_CATALOG.elementCardVariant.map((item) => [item.id, item]));
+
+  for (const [id, name] of [
+    ["avatar_vampire_female", "Vampire Female"],
+    ["avatar_vampire_male", "Vampire Male"]
+  ]) {
+    const item = avatars.get(id);
+    assert.ok(item, `missing Vampire Elegance avatar ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, "Legendary");
+    assert.equal(item.price, 900);
+    assert.equal(item.image, `avatars/${id}.png`);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "vampire_elegance_2026_05");
+    assert.equal(item.collection, "Vampire Elegance");
+  }
+
+  for (const [id, name] of [
+    ["cardback_blood_gem", "Blood Gem"],
+    ["cardback_winged_coffin", "Winged Coffin"]
+  ]) {
+    const item = cardBacks.get(id);
+    assert.ok(item, `missing Vampire Elegance card back ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, "Legendary");
+    assert.equal(item.price, 800);
+    assert.equal(item.image, `card_backs/${id}.png`);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "vampire_elegance_2026_05");
+    assert.equal(item.collection, "Vampire Elegance");
+  }
+
+  for (const [id, name, element, image] of VAMPIRE_ELEGANCE_VARIANT_DEFINITIONS) {
+    const item = variants.get(id);
+    assert.ok(item, `missing Vampire Elegance variant ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.element, element);
+    assert.equal(item.image, image);
+    assert.equal(item.rarity, "Epic");
+    assert.equal(item.price, 450);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "vampire_elegance_2026_05");
+    assert.equal(item.collection, "Vampire Elegance");
+  }
+});
+
+test("cosmetics: Lycan Power entries use exact metadata across categories and collection mappings", () => {
+  const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
+  const backgrounds = new Map(COSMETIC_CATALOG.background.map((item) => [item.id, item]));
+  const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
+  const variants = new Map(COSMETIC_CATALOG.elementCardVariant.map((item) => [item.id, item]));
+
+  for (const [id, name] of [
+    ["avatar_lycan_female", "Lycan Female"],
+    ["avatar_lycan_male", "Lycan Male"]
+  ]) {
+    const item = avatars.get(id);
+    assert.ok(item, `missing Lycan Power avatar ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, "Legendary");
+    assert.equal(item.price, 900);
+    assert.equal(item.image, `avatars/${id}.png`);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "lycan_power_2026_05");
+    assert.equal(item.collection, "Lycan Power");
+  }
+
+  const background = backgrounds.get("background_bg_lycan_law");
+  assert.ok(background);
+  assert.equal(background.name, "Lycan Law");
+  assert.equal(background.rarity, "Epic");
+  assert.equal(background.price, 700);
+  assert.equal(background.image, "backgrounds/background_bg_lycan_law.png");
+  assert.equal(background.purchasable, true);
+  assert.equal(background.defaultOwned, false);
+  assert.equal(background.isNew, true);
+  assert.equal(background.releaseTag, "lycan_power_2026_05");
+  assert.equal(background.collection, "Lycan Power");
+
+  const cardBack = cardBacks.get("cardback_lycan_pack");
+  assert.ok(cardBack);
+  assert.equal(cardBack.name, "Lycan Pack");
+  assert.equal(cardBack.rarity, "Legendary");
+  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.image, "card_backs/cardback_lycan_pack.png");
+  assert.equal(cardBack.purchasable, true);
+  assert.equal(cardBack.defaultOwned, false);
+  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.releaseTag, "lycan_power_2026_05");
+  assert.equal(cardBack.collection, "Lycan Power");
+
+  for (const [id, name, element, image] of LYCAN_POWER_VARIANT_DEFINITIONS) {
+    const item = variants.get(id);
+    assert.ok(item, `missing Lycan Power variant ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.element, element);
+    assert.equal(item.image, image);
+    assert.equal(item.rarity, "Epic");
+    assert.equal(item.price, 450);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "lycan_power_2026_05");
+    assert.equal(item.collection, "Lycan Power");
+  }
+});
+
+test("cosmetics: Vampire Elegance store purchases succeed for all approved items", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("VampireStoreUser", { tokens: 6000 });
+
+  const purchaseTargets = [
+    { type: "avatar", cosmeticId: "avatar_vampire_female", expectedPrice: 900 },
+    { type: "avatar", cosmeticId: "avatar_vampire_male", expectedPrice: 900 },
+    { type: "cardBack", cosmeticId: "cardback_blood_gem", expectedPrice: 800 },
+    { type: "cardBack", cosmeticId: "cardback_winged_coffin", expectedPrice: 800 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_stone_graves", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_flame_wings", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_blood_wings", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_wings_wind", expectedPrice: 450 }
+  ];
+
+  for (const target of purchaseTargets) {
+    const response = await state.buyStoreItem({
+      username: "VampireStoreUser",
+      type: target.type,
+      cosmeticId: target.cosmeticId
+    });
+    assert.equal(response.purchase?.status, "purchased");
+    assert.equal(response.purchase?.price, target.expectedPrice);
+  }
+
+  const profile = await state.profiles.getProfile("VampireStoreUser");
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_vampire_female"));
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_vampire_male"));
+  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_blood_gem"));
+  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_winged_coffin"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_stone_graves"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("fire_variant_flame_wings"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_blood_wings"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_wings_wind"));
+  assert.equal(profile.tokens, 800);
+});
+
+test("cosmetics: Lycan Power store purchases succeed for all approved items", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("LycanStoreUser", { tokens: 6000 });
+
+  const purchaseTargets = [
+    { type: "avatar", cosmeticId: "avatar_lycan_female", expectedPrice: 900 },
+    { type: "avatar", cosmeticId: "avatar_lycan_male", expectedPrice: 900 },
+    { type: "background", cosmeticId: "background_bg_lycan_law", expectedPrice: 700 },
+    { type: "cardBack", cosmeticId: "cardback_lycan_pack", expectedPrice: 800 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_stone_paw", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_fire_paw", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_water_wolf", expectedPrice: 450 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_lycan_duo", expectedPrice: 450 }
+  ];
+
+  for (const target of purchaseTargets) {
+    const response = await state.buyStoreItem({
+      username: "LycanStoreUser",
+      type: target.type,
+      cosmeticId: target.cosmeticId
+    });
+    assert.equal(response.purchase?.status, "purchased");
+    assert.equal(response.purchase?.price, target.expectedPrice);
+  }
+
+  const profile = await state.profiles.getProfile("LycanStoreUser");
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_lycan_female"));
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_lycan_male"));
+  assert.ok(profile.ownedCosmetics.background.includes("background_bg_lycan_law"));
+  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_lycan_pack"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_stone_paw"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("fire_variant_fire_paw"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_water_wolf"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_lycan_duo"));
+  assert.equal(profile.tokens, 900);
+});
+
+test("cosmetics: only Vampire Elegance and Lycan Power remain marked NEW", () => {
+  const expectedNewIds = new Set([
+    "avatar_vampire_female",
+    "avatar_vampire_male",
+    "cardback_blood_gem",
+    "cardback_winged_coffin",
+    "earth_variant_stone_graves",
+    "fire_variant_flame_wings",
+    "water_variant_blood_wings",
+    "wind_variant_wings_wind",
+    "avatar_lycan_female",
+    "avatar_lycan_male",
+    "background_bg_lycan_law",
+    "cardback_lycan_pack",
+    "earth_variant_stone_paw",
+    "fire_variant_fire_paw",
+    "water_variant_water_wolf",
+    "wind_variant_lycan_duo"
+  ]);
+
+  const definitions = Object.values(COSMETIC_CATALOG).flat();
+  const actualNewIds = definitions.filter((item) => item.isNew).map((item) => item.id).sort();
+  const expectedSorted = [...expectedNewIds].sort();
+
+  assert.deepEqual(actualNewIds, expectedSorted);
 });

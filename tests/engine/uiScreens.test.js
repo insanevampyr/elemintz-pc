@@ -803,7 +803,7 @@ test("ui: store and cosmetics render short collection filter labels when collect
   assert.doesNotMatch(cosmeticsHtml, /Celestial Collection<\/span><\/label>/);
 });
 
-test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmetics visibility, and correct type labels", () => {
+test("ui: Neon Arcana items render collection filters, owned cosmetics visibility, and correct type labels without NEW badges", () => {
   const storeHtml = storeScreen.render({
     store: {
       tokens: 1000,
@@ -818,7 +818,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             price: 600,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             collection: "Neon Arcana"
           }
         ],
@@ -831,7 +831,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             price: 800,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             collection: "Neon Arcana"
           }
         ],
@@ -845,7 +845,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             price: 850,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             collection: "Neon Arcana"
           }
         ],
@@ -859,7 +859,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             price: 250,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "fire",
             collection: "Neon Arcana"
           },
@@ -871,7 +871,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             price: 250,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "water",
             collection: "Neon Arcana"
           },
@@ -883,7 +883,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             price: 250,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "earth",
             collection: "Neon Arcana"
           },
@@ -895,7 +895,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             price: 250,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "wind",
             collection: "Neon Arcana"
           }
@@ -918,7 +918,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             rarity: "Epic",
             owned: true,
             equipped: true,
-            isNew: true,
+            isNew: false,
             collection: "Neon Arcana"
           }
         ],
@@ -930,7 +930,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             rarity: "Legendary",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             collection: "Neon Arcana"
           }
         ],
@@ -943,7 +943,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             rarity: "Legendary",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             collection: "Neon Arcana"
           }
         ],
@@ -956,7 +956,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             rarity: "Rare",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "fire",
             collection: "Neon Arcana"
           },
@@ -967,7 +967,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             rarity: "Rare",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "water",
             collection: "Neon Arcana"
           },
@@ -978,7 +978,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             rarity: "Rare",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "earth",
             collection: "Neon Arcana"
           },
@@ -989,7 +989,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
             rarity: "Rare",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "wind",
             collection: "Neon Arcana"
           }
@@ -1003,7 +1003,8 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
   assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Neon Arcana"/);
   assert.match(storeHtml, /Neon Arcana Collection/);
   assert.match(cosmeticsHtml, /Neon Arcana Collection/);
-  assert.ok((storeHtml.match(/store-item-badge-new">NEW<\/span>/g) ?? []).length >= 3);
+  assert.doesNotMatch(storeHtml, /store-item-badge-new">NEW<\/span>/);
+  assert.doesNotMatch(cosmeticsHtml, /store-item-badge store-item-badge-new">NEW/);
   assert.match(storeHtml, /Type: Avatar/);
   assert.match(storeHtml, /Type: Title/);
   assert.match(storeHtml, /Type: Card Back/);
@@ -1017,7 +1018,7 @@ test("ui: Neon Arcana items render NEW badges, collection filters, owned cosmeti
   assert.match(cosmeticsHtml, /Equipped: Yes/);
 });
 
-test("ui: Frostveil Court items render NEW badges, collection filters, owned cosmetics visibility, and correct type labels", () => {
+test("ui: Frostveil Court items render collection filters, owned cosmetics visibility, and correct type labels without NEW badges", () => {
   const storeHtml = storeScreen.render({
     store: {
       tokens: 1000,
@@ -1032,7 +1033,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             price: 900,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             releaseTag: "frostveil_court_2026_05",
             collection: "Frostveil Court"
           }
@@ -1046,7 +1047,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             price: 800,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             releaseTag: "frostveil_court_2026_05",
             collection: "Frostveil Court"
           }
@@ -1061,7 +1062,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             price: 500,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             releaseTag: "frostveil_court_2026_05",
             collection: "Frostveil Court"
           }
@@ -1076,7 +1077,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             price: 450,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "fire",
             releaseTag: "frostveil_court_2026_05",
             collection: "Frostveil Court"
@@ -1089,7 +1090,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             price: 450,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "earth",
             releaseTag: "frostveil_court_2026_05",
             collection: "Frostveil Court"
@@ -1102,7 +1103,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             price: 450,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "wind",
             releaseTag: "frostveil_court_2026_05",
             collection: "Frostveil Court"
@@ -1115,7 +1116,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             price: 450,
             purchasable: true,
             owned: false,
-            isNew: true,
+            isNew: false,
             element: "water",
             releaseTag: "frostveil_court_2026_05",
             collection: "Frostveil Court"
@@ -1139,7 +1140,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             rarity: "Legendary",
             owned: true,
             equipped: true,
-            isNew: true,
+            isNew: false,
             collection: "Frostveil Court"
           }
         ],
@@ -1151,7 +1152,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             rarity: "Legendary",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             collection: "Frostveil Court"
           }
         ],
@@ -1164,7 +1165,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             rarity: "Epic",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             collection: "Frostveil Court"
           }
         ],
@@ -1177,7 +1178,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             rarity: "Epic",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "fire",
             collection: "Frostveil Court"
           },
@@ -1188,7 +1189,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             rarity: "Epic",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "earth",
             collection: "Frostveil Court"
           },
@@ -1199,7 +1200,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             rarity: "Epic",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "wind",
             collection: "Frostveil Court"
           },
@@ -1210,7 +1211,7 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
             rarity: "Epic",
             owned: true,
             equipped: false,
-            isNew: true,
+            isNew: false,
             element: "water",
             collection: "Frostveil Court"
           }
@@ -1224,7 +1225,8 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
   assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Frostveil Court"/);
   assert.match(storeHtml, /Frostveil Court Collection/);
   assert.match(cosmeticsHtml, /Frostveil Court Collection/);
-  assert.ok((storeHtml.match(/store-item-badge-new">NEW<\/span>/g) ?? []).length >= 3);
+  assert.doesNotMatch(storeHtml, /store-item-badge-new">NEW<\/span>/);
+  assert.doesNotMatch(cosmeticsHtml, /store-item-badge store-item-badge-new">NEW/);
   assert.match(storeHtml, /Type: Avatar/);
   assert.match(storeHtml, /Type: Title/);
   assert.match(storeHtml, /Type: Card Back/);
@@ -1235,6 +1237,156 @@ test("ui: Frostveil Court items render NEW badges, collection filters, owned cos
   assert.match(cosmeticsHtml, /Frostveil Heir/);
   assert.match(cosmeticsHtml, /Shiverborne/);
   assert.match(cosmeticsHtml, /Equipped: Yes/);
+});
+
+test("ui: Vampire Elegance and Lycan Power items render NEW badges, collection filters, owned cosmetics visibility, and Lycan background support", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 4000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_vampire_female",
+            name: "Vampire Female",
+            image: "avatars/avatar_vampire_female.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "vampire_elegance_2026_05",
+            collection: "Vampire Elegance"
+          },
+          {
+            id: "avatar_lycan_female",
+            name: "Lycan Female",
+            image: "avatars/avatar_lycan_female.png",
+            rarity: "Legendary",
+            price: 900,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "lycan_power_2026_05",
+            collection: "Lycan Power"
+          }
+        ],
+        cardBack: [
+          {
+            id: "cardback_blood_gem",
+            name: "Blood Gem",
+            image: "card_backs/cardback_blood_gem.png",
+            rarity: "Legendary",
+            price: 800,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "vampire_elegance_2026_05",
+            collection: "Vampire Elegance"
+          },
+          {
+            id: "cardback_lycan_pack",
+            name: "Lycan Pack",
+            image: "card_backs/cardback_lycan_pack.png",
+            rarity: "Legendary",
+            price: 800,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "lycan_power_2026_05",
+            collection: "Lycan Power"
+          }
+        ],
+        background: [
+          {
+            id: "background_bg_lycan_law",
+            name: "Lycan Law",
+            image: "backgrounds/background_bg_lycan_law.png",
+            rarity: "Epic",
+            price: 700,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "lycan_power_2026_05",
+            collection: "Lycan Power"
+          }
+        ],
+        title: [],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_flame_wings",
+            name: "Flame Wings Fire",
+            image: "cards/fire_variant_flame_wings.png",
+            rarity: "Epic",
+            price: 450,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "fire",
+            releaseTag: "vampire_elegance_2026_05",
+            collection: "Vampire Elegance"
+          },
+          {
+            id: "wind_variant_lycan_duo",
+            name: "Lycan Duo Wind",
+            image: "cards/wind_variant_lycan_duo.png",
+            rarity: "Epic",
+            price: 450,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "wind",
+            releaseTag: "lycan_power_2026_05",
+            collection: "Lycan Power"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          { id: "avatar_vampire_female", name: "Vampire Female", image: "avatars/avatar_vampire_female.png", rarity: "Legendary", owned: true, equipped: true, isNew: true, collection: "Vampire Elegance" },
+          { id: "avatar_lycan_female", name: "Lycan Female", image: "avatars/avatar_lycan_female.png", rarity: "Legendary", owned: true, equipped: false, isNew: true, collection: "Lycan Power" }
+        ],
+        cardBack: [
+          { id: "cardback_blood_gem", name: "Blood Gem", image: "card_backs/cardback_blood_gem.png", rarity: "Legendary", owned: true, equipped: false, isNew: true, collection: "Vampire Elegance" },
+          { id: "cardback_lycan_pack", name: "Lycan Pack", image: "card_backs/cardback_lycan_pack.png", rarity: "Legendary", owned: true, equipped: false, isNew: true, collection: "Lycan Power" }
+        ],
+        background: [
+          { id: "background_bg_lycan_law", name: "Lycan Law", image: "backgrounds/background_bg_lycan_law.png", rarity: "Epic", owned: true, equipped: false, isNew: true, collection: "Lycan Power" }
+        ],
+        title: [],
+        badge: [],
+        elementCardVariant: [
+          { id: "fire_variant_flame_wings", name: "Flame Wings Fire", image: "cards/fire_variant_flame_wings.png", rarity: "Epic", owned: true, equipped: false, isNew: true, element: "fire", collection: "Vampire Elegance" },
+          { id: "wind_variant_lycan_duo", name: "Lycan Duo Wind", image: "cards/wind_variant_lycan_duo.png", rarity: "Epic", owned: true, equipped: false, isNew: true, element: "wind", collection: "Lycan Power" }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(storeHtml, /data-store-collection-filter="Vampire Elegance"/);
+  assert.match(storeHtml, /data-store-collection-filter="Lycan Power"/);
+  assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Vampire Elegance"/);
+  assert.match(cosmeticsHtml, /data-cosmetic-collection-filter="Lycan Power"/);
+  assert.match(storeHtml, /Vampire Elegance Collection/);
+  assert.match(storeHtml, /Lycan Power Collection/);
+  assert.match(cosmeticsHtml, /Vampire Elegance Collection/);
+  assert.match(cosmeticsHtml, /Lycan Power Collection/);
+  assert.match(storeHtml, /Type: Background/);
+  assert.match(storeHtml, /Type: Fire Variant/);
+  assert.match(storeHtml, /Type: Wind Variant/);
+  assert.match(cosmeticsHtml, /Lycan Law/);
+  assert.match(cosmeticsHtml, /Equipped: Yes/);
+  assert.ok((storeHtml.match(/store-item-badge-new">NEW<\/span>/g) ?? []).length >= 4);
 });
 
 test("ui: settings screen defaults to normal AI, random cosmetics, and a 20 second timer when fields are missing", () => {
@@ -2088,7 +2240,7 @@ test("ui: store screen renders the current featured collections banner above con
   });
 
   assert.match(html, /New Collections in the Store/);
-  assert.match(html, /Explore Neon Arcana, Goldbound Relics, and Frostveil Court cosmetics now available in EleMintz\./);
+  assert.match(html, /Vampires vs\. Lycans — what side will you choose\?/);
   assert.match(html, /Show NEW First/);
   assert.match(html, /store-item-badge-new">NEW<\/span>/);
   assert.match(html, /Price: 150 Tokens/);
@@ -4596,19 +4748,19 @@ test("ui: cosmetics screen resolves owned NEW badges from the current catalog in
       catalog: {
         avatar: [
           {
-            id: "avatar_smirk_ember",
-            name: "Smirk Ember",
-            image: "avatars/avatar_smirk_ember.png",
-            rarity: "Common",
+            id: "avatar_neon_pyre_entity",
+            name: "Neon Pyre Entity",
+            image: "avatars/avatar_neon_pyre_entity.png",
+            rarity: "Epic",
             owned: true,
             equipped: false,
             isNew: true
           },
           {
-            id: "avatar_neon_pyre_entity",
-            name: "Neon Pyre Entity",
-            image: "avatars/avatar_neon_pyre_entity.png",
-            rarity: "Epic",
+            id: "avatar_vampire_female",
+            name: "Vampire Female",
+            image: "avatars/avatar_vampire_female.png",
+            rarity: "Legendary",
             owned: true,
             equipped: false,
             isNew: false
@@ -4623,7 +4775,7 @@ test("ui: cosmetics screen resolves owned NEW badges from the current catalog in
     },
     viewState: {
       categories: new Set(["avatar"]),
-      rarities: new Set(["Common"]),
+      rarities: new Set(["Epic", "Legendary"]),
       showNewFirst: true
     },
     actions: {}
@@ -4631,18 +4783,18 @@ test("ui: cosmetics screen resolves owned NEW badges from the current catalog in
 
   const newBadges = html.match(/store-item-badge store-item-badge-new">NEW</g) ?? [];
   assert.equal(newBadges.length, 1);
-  const legacyAvatarCard =
-    (html.match(/<article[\s\S]*?<\/article>/g) ?? []).find((article) =>
-      article.includes('data-equip-id="avatar_smirk_ember"')
-    ) ?? "";
   const neonAvatarCard =
     (html.match(/<article[\s\S]*?<\/article>/g) ?? []).find((article) =>
       article.includes('data-equip-id="avatar_neon_pyre_entity"')
     ) ?? "";
-  assert.doesNotMatch(legacyAvatarCard, /store-item-badge store-item-badge-new">NEW/);
-  assert.match(neonAvatarCard, /store-item-badge store-item-badge-new">NEW/);
-  assert.match(legacyAvatarCard, /Smirk Ember/);
+  const vampireAvatarCard =
+    (html.match(/<article[\s\S]*?<\/article>/g) ?? []).find((article) =>
+      article.includes('data-equip-id="avatar_vampire_female"')
+    ) ?? "";
+  assert.doesNotMatch(neonAvatarCard, /store-item-badge store-item-badge-new">NEW/);
+  assert.match(vampireAvatarCard, /store-item-badge store-item-badge-new">NEW/);
   assert.match(neonAvatarCard, /Neon Pyre Entity/);
+  assert.match(vampireAvatarCard, /Vampire Female/);
 });
 
 test("ui: cosmetics screen Show NEW First prioritizes currently-new owned cosmetics over stale legacy metadata", () => {
@@ -8845,6 +8997,105 @@ test("ui: own and viewed profile headers render equipped Frostveil Court avatar 
   assert.match(viewedHtml, /earth_variant_icebound_crag\.png/);
   assert.match(viewedHtml, /wind_variant_sleet_spiral\.png/);
   assert.match(viewedHtml, /water_variant_frostbloom\.png/);
+});
+
+test("ui: own and viewed profile headers render equipped Vampire Elegance and Lycan Power cosmetics including Lycan Law background", () => {
+  const context = createProfileScreenContext({
+    profile: {
+      ...createProfileScreenContext().profile,
+      equippedCosmetics: {
+        ...createProfileScreenContext().profile.equippedCosmetics,
+        avatar: "avatar_lycan_female",
+        cardBack: "cardback_lycan_pack",
+        background: "background_bg_lycan_law",
+        elementCardVariant: {
+          fire: "fire_variant_flame_wings",
+          earth: "earth_variant_stone_paw",
+          wind: "wind_variant_lycan_duo",
+          water: "water_variant_blood_wings"
+        }
+      }
+    },
+    cosmetics: {
+      ...createProfileScreenContext().cosmetics,
+      equipped: {
+        ...createProfileScreenContext().cosmetics.equipped,
+        avatar: "avatar_lycan_female",
+        cardBack: "cardback_lycan_pack",
+        background: "background_bg_lycan_law",
+        elementCardVariant: {
+          fire: "fire_variant_flame_wings",
+          earth: "earth_variant_stone_paw",
+          wind: "wind_variant_lycan_duo",
+          water: "water_variant_blood_wings"
+        }
+      },
+      catalog: {
+        ...createProfileScreenContext().cosmetics.catalog,
+        avatar: [
+          ...createProfileScreenContext().cosmetics.catalog.avatar,
+          { id: "avatar_vampire_female", name: "Vampire Female", image: "avatars/avatar_vampire_female.png", owned: true },
+          { id: "avatar_lycan_female", name: "Lycan Female", image: "avatars/avatar_lycan_female.png", owned: true }
+        ],
+        cardBack: [
+          { id: "default_card_back", name: "Default", owned: true },
+          { id: "cardback_blood_gem", name: "Blood Gem", image: "card_backs/cardback_blood_gem.png", owned: true },
+          { id: "cardback_lycan_pack", name: "Lycan Pack", image: "card_backs/cardback_lycan_pack.png", owned: true }
+        ],
+        background: [
+          { id: "default_background", name: "Default", owned: true },
+          { id: "background_bg_lycan_law", name: "Lycan Law", image: "backgrounds/background_bg_lycan_law.png", owned: true }
+        ],
+        elementCardVariant: [
+          { id: "default_fire_card", name: "Core Fire", element: "fire", owned: true },
+          { id: "fire_variant_flame_wings", name: "Flame Wings Fire", image: "cards/fire_variant_flame_wings.png", element: "fire", owned: true },
+          { id: "earth_variant_stone_paw", name: "Stone Paw Earth", image: "cards/earth_variant_stone_paw.png", element: "earth", owned: true },
+          { id: "wind_variant_lycan_duo", name: "Lycan Duo Wind", image: "cards/wind_variant_lycan_duo.png", element: "wind", owned: true },
+          { id: "water_variant_blood_wings", name: "Blood Wings Water", image: "cards/water_variant_blood_wings.png", element: "water", owned: true }
+        ]
+      }
+    }
+  });
+
+  const ownHtml = profileScreen.render(context);
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "LycanProfile",
+    title: "Initiate",
+    playerLevel: 10,
+    playerXP: 300,
+    wins: 16,
+    losses: 6,
+    cardsCaptured: 42,
+    achievements: {},
+    modeStats: { pve: { wins: 12, losses: 4 }, local_pvp: { wins: 4, losses: 2 } },
+    equippedCosmetics: {
+      avatar: "avatar_vampire_female",
+      title: "Initiate",
+      background: "background_bg_lycan_law",
+      badge: "none",
+      cardBack: "cardback_blood_gem",
+      elementCardVariant: {
+        fire: "fire_variant_flame_wings",
+        earth: "earth_variant_stone_paw",
+        wind: "wind_variant_lycan_duo",
+        water: "water_variant_blood_wings"
+      }
+    }
+  });
+
+  assert.match(ownHtml, /avatar_lycan_female\.png/);
+  assert.match(ownHtml, /cardback_lycan_pack\.png/);
+  assert.match(ownHtml, /fire_variant_flame_wings\.png/);
+  assert.match(ownHtml, /earth_variant_stone_paw\.png/);
+  assert.match(ownHtml, /wind_variant_lycan_duo\.png/);
+  assert.match(ownHtml, /water_variant_blood_wings\.png/);
+  assert.match(viewedHtml, /avatar_vampire_female\.png/);
+  assert.match(viewedHtml, /background_bg_lycan_law\.png/);
+  assert.match(viewedHtml, /cardback_blood_gem\.png/);
+  assert.match(viewedHtml, /fire_variant_flame_wings\.png/);
+  assert.match(viewedHtml, /earth_variant_stone_paw\.png/);
+  assert.match(viewedHtml, /wind_variant_lycan_duo\.png/);
+  assert.match(viewedHtml, /water_variant_blood_wings\.png/);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {

@@ -659,7 +659,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_neon_pyre_entity.png",
       rarity: "Epic",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Epic
@@ -670,7 +670,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_neon_tide_entity.png",
       rarity: "Epic",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Epic
@@ -681,7 +681,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_neon_stone_entity.png",
       rarity: "Epic",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Epic
@@ -692,7 +692,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_neon_gale_entity.png",
       rarity: "Epic",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Epic
@@ -703,7 +703,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_aurelian_archon.png",
       rarity: "Legendary",
       releaseTag: "goldbound_relics_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: AVATAR_RARITY_PRICING.Legendary
@@ -714,6 +714,50 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "avatars/avatar_frostveil_heir.png",
       rarity: "Legendary",
       releaseTag: "frostveil_court_2026_05",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_vampire_female",
+      name: "Vampire Female",
+      image: "avatars/avatar_vampire_female.png",
+      rarity: "Legendary",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_vampire_male",
+      name: "Vampire Male",
+      image: "avatars/avatar_vampire_male.png",
+      rarity: "Legendary",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_lycan_female",
+      name: "Lycan Female",
+      image: "avatars/avatar_lycan_female.png",
+      rarity: "Legendary",
+      releaseTag: "lycan_power_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Legendary
+    },
+    {
+      id: "avatar_lycan_male",
+      name: "Lycan Male",
+      image: "avatars/avatar_lycan_male.png",
+      rarity: "Legendary",
+      releaseTag: "lycan_power_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -861,7 +905,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "card_backs/cardback_neon_arcana.png",
       rarity: "Legendary",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: CARD_BACK_RARITY_PRICING.Legendary
@@ -872,7 +916,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "card_backs/cardback_goldbound_relic.png",
       rarity: "Legendary",
       releaseTag: "goldbound_relics_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: CARD_BACK_RARITY_PRICING.Legendary
@@ -883,6 +927,39 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "card_backs/cardback_glacier_sigil.png",
       rarity: "Legendary",
       releaseTag: "frostveil_court_2026_05",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_blood_gem",
+      name: "Blood Gem",
+      image: "card_backs/cardback_blood_gem.png",
+      rarity: "Legendary",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_winged_coffin",
+      name: "Winged Coffin",
+      image: "card_backs/cardback_winged_coffin.png",
+      rarity: "Legendary",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_lycan_pack",
+      name: "Lycan Pack",
+      image: "card_backs/cardback_lycan_pack.png",
+      rarity: "Legendary",
+      releaseTag: "lycan_power_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -1441,6 +1518,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: false,
       price: 700
+    },
+    {
+      id: "background_bg_lycan_law",
+      name: "Lycan Law",
+      image: "backgrounds/background_bg_lycan_law.png",
+      rarity: "Epic",
+      releaseTag: "lycan_power_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Epic
     }
   ]),
   elementCardVariant: Object.freeze([
@@ -1647,7 +1735,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "earth",
       rarity: "Rare",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Rare
@@ -1680,7 +1768,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "fire",
       rarity: "Rare",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Rare
@@ -1772,7 +1860,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "water",
       rarity: "Rare",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Rare
@@ -1854,7 +1942,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "wind",
       rarity: "Rare",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Rare
@@ -1866,7 +1954,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "fire",
       rarity: "Epic",
       releaseTag: "goldbound_relics_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
@@ -1878,6 +1966,30 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "fire",
       rarity: "Epic",
       releaseTag: "frostveil_court_2026_05",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "fire_variant_flame_wings",
+      name: "Flame Wings Fire",
+      image: "cards/fire_variant_flame_wings.png",
+      element: "fire",
+      rarity: "Epic",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "fire_variant_fire_paw",
+      name: "Fire Paw Fire",
+      image: "cards/fire_variant_fire_paw.png",
+      element: "fire",
+      rarity: "Epic",
+      releaseTag: "lycan_power_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -1890,7 +2002,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "earth",
       rarity: "Epic",
       releaseTag: "goldbound_relics_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
@@ -1902,6 +2014,30 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "earth",
       rarity: "Epic",
       releaseTag: "frostveil_court_2026_05",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "earth_variant_stone_graves",
+      name: "Stone Graves Earth",
+      image: "cards/earth_variant_stone_graves.png",
+      element: "earth",
+      rarity: "Epic",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "earth_variant_stone_paw",
+      name: "Stone Paw Earth",
+      image: "cards/earth_variant_stone_paw.png",
+      element: "earth",
+      rarity: "Epic",
+      releaseTag: "lycan_power_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -1914,7 +2050,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "wind",
       rarity: "Epic",
       releaseTag: "goldbound_relics_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
@@ -1926,6 +2062,30 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "wind",
       rarity: "Epic",
       releaseTag: "frostveil_court_2026_05",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "wind_variant_wings_wind",
+      name: "Wings Wind",
+      image: "cards/wind_variant_wings_wind.png",
+      element: "wind",
+      rarity: "Epic",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "wind_variant_lycan_duo",
+      name: "Lycan Duo Wind",
+      image: "cards/wind_variant_lycan_duo.png",
+      element: "wind",
+      rarity: "Epic",
+      releaseTag: "lycan_power_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -1938,7 +2098,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "water",
       rarity: "Epic",
       releaseTag: "goldbound_relics_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
@@ -1950,6 +2110,30 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       element: "water",
       rarity: "Epic",
       releaseTag: "frostveil_court_2026_05",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "water_variant_blood_wings",
+      name: "Blood Wings Water",
+      image: "cards/water_variant_blood_wings.png",
+      element: "water",
+      rarity: "Epic",
+      releaseTag: "vampire_elegance_2026_05",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+    },
+    {
+      id: "water_variant_water_wolf",
+      name: "Water Wolf Water",
+      image: "cards/water_variant_water_wolf.png",
+      element: "water",
+      rarity: "Epic",
+      releaseTag: "lycan_power_2026_05",
       isNew: true,
       defaultOwned: false,
       purchasable: true,
@@ -2226,7 +2410,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_spellwired.png",
       rarity: "Legendary",
       releaseTag: "neon_arcana_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 850
@@ -2237,7 +2421,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_goldbound.png",
       rarity: "Epic",
       releaseTag: "goldbound_relics_01",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 500
@@ -2248,7 +2432,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       image: "titles/title_shiverborne.png",
       rarity: "Epic",
       releaseTag: "frostveil_court_2026_05",
-      isNew: true,
+      isNew: false,
       defaultOwned: false,
       purchasable: true,
       price: 500
@@ -2420,7 +2604,23 @@ const COSMETIC_COLLECTION_BY_KEY = Object.freeze({
   "elementCardVariant:fire_variant_aurora_flare": "Frostveil Court",
   "elementCardVariant:earth_variant_icebound_crag": "Frostveil Court",
   "elementCardVariant:wind_variant_sleet_spiral": "Frostveil Court",
-  "elementCardVariant:water_variant_frostbloom": "Frostveil Court"
+  "elementCardVariant:water_variant_frostbloom": "Frostveil Court",
+  "avatar:avatar_vampire_female": "Vampire Elegance",
+  "avatar:avatar_vampire_male": "Vampire Elegance",
+  "cardBack:cardback_blood_gem": "Vampire Elegance",
+  "cardBack:cardback_winged_coffin": "Vampire Elegance",
+  "elementCardVariant:earth_variant_stone_graves": "Vampire Elegance",
+  "elementCardVariant:fire_variant_flame_wings": "Vampire Elegance",
+  "elementCardVariant:water_variant_blood_wings": "Vampire Elegance",
+  "elementCardVariant:wind_variant_wings_wind": "Vampire Elegance",
+  "avatar:avatar_lycan_female": "Lycan Power",
+  "avatar:avatar_lycan_male": "Lycan Power",
+  "background:background_bg_lycan_law": "Lycan Power",
+  "cardBack:cardback_lycan_pack": "Lycan Power",
+  "elementCardVariant:earth_variant_stone_paw": "Lycan Power",
+  "elementCardVariant:fire_variant_fire_paw": "Lycan Power",
+  "elementCardVariant:water_variant_water_wolf": "Lycan Power",
+  "elementCardVariant:wind_variant_lycan_duo": "Lycan Power"
 });
 
 function applyCosmeticCollections(catalog) {

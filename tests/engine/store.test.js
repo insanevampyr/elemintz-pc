@@ -650,7 +650,7 @@ test("store: Personality Drop avatar and title cosmetics remain purchasable and 
   }
 });
 
-test("store: Neon Arcana card back and element variants are visible, purchasable, and tagged as new", async () => {
+test("store: Neon Arcana card back and element variants remain visible and purchasable after NEW retirement", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const store = await state.getStore("NeonArcanaStoreUser");
@@ -666,7 +666,7 @@ test("store: Neon Arcana card back and element variants are visible, purchasable
   assert.equal(cardBack.price, 800);
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.releaseTag, "neon_arcana_01");
-  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.isNew, false);
   assert.equal(cardBack.collection, "Neon Arcana");
   assert.equal(cardBack.rotationOnly ?? false, false);
   assert.equal(cardBack.storeHidden ?? false, false);
@@ -683,7 +683,7 @@ test("store: Neon Arcana card back and element variants are visible, purchasable
     assert.equal(item.price, 250);
     assert.equal(item.purchasable, true);
     assert.equal(item.releaseTag, "neon_arcana_01");
-    assert.equal(item.isNew, true);
+    assert.equal(item.isNew, false);
     assert.equal(item.collection, "Neon Arcana");
     assert.equal(item.element, element);
     assert.match(item.image, /^cards\//);
@@ -692,7 +692,7 @@ test("store: Neon Arcana card back and element variants are visible, purchasable
   }
 });
 
-test("store: Neon Arcana stays new while older Personality Drop cosmetics remain visible and not new", async () => {
+test("store: Neon Arcana and older Personality Drop cosmetics remain visible without NEW badges", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const store = await state.getStore("NeonArcanaSortUser");
@@ -700,8 +700,8 @@ test("store: Neon Arcana stays new while older Personality Drop cosmetics remain
   const avatars = new Map((store.catalog.avatar ?? []).map((item) => [item.id, item]));
   const titles = new Map((store.catalog.title ?? []).map((item) => [item.id, item]));
 
-  assert.equal(avatars.get("avatar_neon_pyre_entity")?.isNew, true);
+  assert.equal(avatars.get("avatar_neon_pyre_entity")?.isNew, false);
   assert.equal(avatars.get("avatar_smirk_ember")?.isNew, false);
-  assert.equal(titles.get("title_spellwired")?.isNew, true);
+  assert.equal(titles.get("title_spellwired")?.isNew, false);
   assert.equal(titles.get("title_chaos_gremlin")?.isNew, false);
 });

@@ -437,9 +437,7 @@ export const storeScreen = {
           <section class="store-feature-banner" aria-label="Featured cosmetics update">
             <p class="store-feature-banner-eyebrow">Featured Update</p>
             <h3 class="store-feature-banner-title">New Collections in the Store</h3>
-            <p class="store-feature-banner-copy">
-              Explore Neon Arcana, Goldbound Relics, and Frostveil Court cosmetics now available in EleMintz.
-            </p>
+            <p class="store-feature-banner-copy">Vampires vs. Lycans — what side will you choose?</p>
           </section>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
           <p>Badges are gameplay/achievement rewards and cannot be purchased.</p>
