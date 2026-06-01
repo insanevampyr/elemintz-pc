@@ -85,6 +85,27 @@ const LYCAN_POWER_VARIANT_DEFINITIONS = Object.freeze([
   ["water_variant_water_wolf", "Water Wolf Water", "water", "cards/water_variant_water_wolf.png"]
 ]);
 
+const ELEMENTAL_STREET_AVATAR_DEFINITIONS = Object.freeze([
+  ["avatar_fire_street_duelist", "Fire Street Duelist", "Common", 150, "avatars/avatar_fire_street_duelist.png"],
+  ["avatar_water_street_duelist", "Water Street Duelist", "Common", 150, "avatars/avatar_water_street_duelist.png"],
+  ["avatar_earth_street_duelist", "Earth Street Duelist", "Common", 150, "avatars/avatar_earth_street_duelist.png"],
+  ["avatar_wind_street_duelist", "Wind Street Duelist", "Common", 150, "avatars/avatar_wind_street_duelist.png"]
+]);
+
+const ELEMENTAL_STREET_TITLE_DEFINITIONS = Object.freeze([
+  ["title_spark", "Spark", "Common", 100, "titles/title_spark.png"],
+  ["title_drifter", "Drifter", "Common", 100, "titles/title_drifter.png"],
+  ["title_stonehand", "Stonehand", "Common", 100, "titles/title_stonehand.png"],
+  ["title_mistborn", "Mistborn", "Common", 100, "titles/title_mistborn.png"]
+]);
+
+const ELEMENTAL_STREET_VARIANT_DEFINITIONS = Object.freeze([
+  ["fire_variant_street", "Street Fire", "fire", "cards/fire_variant_street.png"],
+  ["water_variant_street", "Street Water", "water", "cards/water_variant_street.png"],
+  ["earth_variant_street", "Street Earth", "earth", "cards/earth_variant_street.png"],
+  ["wind_variant_street", "Street Wind", "wind", "cards/wind_variant_street.png"]
+]);
+
 function buildCompletedMatch({
   winner = "p1",
   rounds = 3,
@@ -918,6 +939,68 @@ test("cosmetics: Lycan Power entries use exact metadata across categories and co
   }
 });
 
+test("cosmetics: Elemental Street collectionless entries use matched Common and Rare pricing without a visible collection", () => {
+  const avatars = new Map(COSMETIC_CATALOG.avatar.map((item) => [item.id, item]));
+  const titles = new Map(COSMETIC_CATALOG.title.map((item) => [item.id, item]));
+  const cardBacks = new Map(COSMETIC_CATALOG.cardBack.map((item) => [item.id, item]));
+  const variants = new Map(COSMETIC_CATALOG.elementCardVariant.map((item) => [item.id, item]));
+
+  for (const [id, name, rarity, price, image] of ELEMENTAL_STREET_AVATAR_DEFINITIONS) {
+    const item = avatars.get(id);
+    assert.ok(item, `missing Elemental Street avatar ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, rarity);
+    assert.equal(item.price, price);
+    assert.equal(item.image, image);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "elemental_street_2026_06");
+    assert.equal("collection" in item, false);
+  }
+
+  for (const [id, name, rarity, price, image] of ELEMENTAL_STREET_TITLE_DEFINITIONS) {
+    const item = titles.get(id);
+    assert.ok(item, `missing Elemental Street title ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.rarity, rarity);
+    assert.equal(item.price, price);
+    assert.equal(item.image, image);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "elemental_street_2026_06");
+    assert.equal("collection" in item, false);
+  }
+
+  const cardBack = cardBacks.get("cardback_four_element_street_emblem");
+  assert.ok(cardBack);
+  assert.equal(cardBack.name, "Four Element Street Emblem");
+  assert.equal(cardBack.rarity, "Rare");
+  assert.equal(cardBack.price, 250);
+  assert.equal(cardBack.image, "card_backs/cardback_four_element_street_emblem.png");
+  assert.equal(cardBack.purchasable, true);
+  assert.equal(cardBack.defaultOwned, false);
+  assert.equal(cardBack.isNew, true);
+  assert.equal(cardBack.releaseTag, "elemental_street_2026_06");
+  assert.equal("collection" in cardBack, false);
+
+  for (const [id, name, element, image] of ELEMENTAL_STREET_VARIANT_DEFINITIONS) {
+    const item = variants.get(id);
+    assert.ok(item, `missing Elemental Street variant ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.element, element);
+    assert.equal(item.image, image);
+    assert.equal(item.rarity, "Rare");
+    assert.equal(item.price, 250);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "elemental_street_2026_06");
+    assert.equal("collection" in item, false);
+  }
+});
+
 test("cosmetics: Vampire Elegance store purchases succeed for all approved items", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -996,7 +1079,7 @@ test("cosmetics: Lycan Power store purchases succeed for all approved items", as
   assert.equal(profile.tokens, 900);
 });
 
-test("cosmetics: only Vampire Elegance and Lycan Power remain marked NEW", () => {
+test("cosmetics: Vampire Elegance, Lycan Power, and Elemental Street are the active NEW drops", () => {
   const expectedNewIds = new Set([
     "avatar_vampire_female",
     "avatar_vampire_male",
@@ -1013,7 +1096,20 @@ test("cosmetics: only Vampire Elegance and Lycan Power remain marked NEW", () =>
     "earth_variant_stone_paw",
     "fire_variant_fire_paw",
     "water_variant_water_wolf",
-    "wind_variant_lycan_duo"
+    "wind_variant_lycan_duo",
+    "avatar_fire_street_duelist",
+    "avatar_water_street_duelist",
+    "avatar_earth_street_duelist",
+    "avatar_wind_street_duelist",
+    "title_spark",
+    "title_drifter",
+    "title_stonehand",
+    "title_mistborn",
+    "cardback_four_element_street_emblem",
+    "fire_variant_street",
+    "water_variant_street",
+    "earth_variant_street",
+    "wind_variant_street"
   ]);
 
   const definitions = Object.values(COSMETIC_CATALOG).flat();
@@ -1021,4 +1117,53 @@ test("cosmetics: only Vampire Elegance and Lycan Power remain marked NEW", () =>
   const expectedSorted = [...expectedNewIds].sort();
 
   assert.deepEqual(actualNewIds, expectedSorted);
+});
+
+test("cosmetics: Elemental Street store purchases succeed for all approved collectionless items with matched catalog pricing", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("ElementalStreetUser", { tokens: 4000 });
+
+  const purchaseTargets = [
+    { type: "avatar", cosmeticId: "avatar_fire_street_duelist", expectedPrice: 150 },
+    { type: "avatar", cosmeticId: "avatar_water_street_duelist", expectedPrice: 150 },
+    { type: "avatar", cosmeticId: "avatar_earth_street_duelist", expectedPrice: 150 },
+    { type: "avatar", cosmeticId: "avatar_wind_street_duelist", expectedPrice: 150 },
+    { type: "title", cosmeticId: "title_spark", expectedPrice: 100 },
+    { type: "title", cosmeticId: "title_drifter", expectedPrice: 100 },
+    { type: "title", cosmeticId: "title_stonehand", expectedPrice: 100 },
+    { type: "title", cosmeticId: "title_mistborn", expectedPrice: 100 },
+    { type: "cardBack", cosmeticId: "cardback_four_element_street_emblem", expectedPrice: 250 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_street", expectedPrice: 250 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_street", expectedPrice: 250 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_street", expectedPrice: 250 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_street", expectedPrice: 250 }
+  ];
+
+  for (const target of purchaseTargets) {
+    const response = await state.buyStoreItem({
+      username: "ElementalStreetUser",
+      type: target.type,
+      cosmeticId: target.cosmeticId
+    });
+    assert.equal(response.purchase?.status, "purchased");
+    assert.equal(response.purchase?.price, target.expectedPrice);
+  }
+
+  const profile = await state.profiles.getProfile("ElementalStreetUser");
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_fire_street_duelist"));
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_water_street_duelist"));
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_earth_street_duelist"));
+  assert.ok(profile.ownedCosmetics.avatar.includes("avatar_wind_street_duelist"));
+  assert.ok(profile.ownedCosmetics.title.includes("title_spark"));
+  assert.ok(profile.ownedCosmetics.title.includes("title_drifter"));
+  assert.ok(profile.ownedCosmetics.title.includes("title_stonehand"));
+  assert.ok(profile.ownedCosmetics.title.includes("title_mistborn"));
+  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_four_element_street_emblem"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("fire_variant_street"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_street"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_street"));
+  assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_street"));
+  assert.equal(profile.tokens, 1750);
 });

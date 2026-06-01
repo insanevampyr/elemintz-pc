@@ -993,6 +993,7 @@ test("state: match renderer resolves every equippable catalog card back and non-
   assert.match(getCardBackImage("cardback_blood_gem"), /cardback_blood_gem\.png/);
   assert.match(getCardBackImage("cardback_winged_coffin"), /cardback_winged_coffin\.png/);
   assert.match(getCardBackImage("cardback_lycan_pack"), /cardback_lycan_pack\.png/);
+  assert.match(getCardBackImage("cardback_four_element_street_emblem"), /cardback_four_element_street_emblem\.png/);
   assert.match(getVariantCardImages({ fire: "fire_variant_neon_arcana" }).fire, /fire_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ water: "water_variant_neon_arcana" }).water, /water_variant_neon_arcana\.png/);
   assert.match(getVariantCardImages({ earth: "earth_variant_neon_arcana" }).earth, /earth_variant_neon_arcana\.png/);
@@ -1004,15 +1005,19 @@ test("state: match renderer resolves every equippable catalog card back and non-
   assert.match(getVariantCardImages({ fire: "fire_variant_aurora_flare" }).fire, /fire_variant_aurora_flare\.png/);
   assert.match(getVariantCardImages({ fire: "fire_variant_flame_wings" }).fire, /fire_variant_flame_wings\.png/);
   assert.match(getVariantCardImages({ fire: "fire_variant_fire_paw" }).fire, /fire_variant_fire_paw\.png/);
+  assert.match(getVariantCardImages({ fire: "fire_variant_street" }).fire, /fire_variant_street\.png/);
   assert.match(getVariantCardImages({ earth: "earth_variant_icebound_crag" }).earth, /earth_variant_icebound_crag\.png/);
   assert.match(getVariantCardImages({ earth: "earth_variant_stone_graves" }).earth, /earth_variant_stone_graves\.png/);
   assert.match(getVariantCardImages({ earth: "earth_variant_stone_paw" }).earth, /earth_variant_stone_paw\.png/);
+  assert.match(getVariantCardImages({ earth: "earth_variant_street" }).earth, /earth_variant_street\.png/);
   assert.match(getVariantCardImages({ wind: "wind_variant_sleet_spiral" }).wind, /wind_variant_sleet_spiral\.png/);
   assert.match(getVariantCardImages({ wind: "wind_variant_wings_wind" }).wind, /wind_variant_wings_wind\.png/);
   assert.match(getVariantCardImages({ wind: "wind_variant_lycan_duo" }).wind, /wind_variant_lycan_duo\.png/);
+  assert.match(getVariantCardImages({ wind: "wind_variant_street" }).wind, /wind_variant_street\.png/);
   assert.match(getVariantCardImages({ water: "water_variant_frostbloom" }).water, /water_variant_frostbloom\.png/);
   assert.match(getVariantCardImages({ water: "water_variant_blood_wings" }).water, /water_variant_blood_wings\.png/);
   assert.match(getVariantCardImages({ water: "water_variant_water_wolf" }).water, /water_variant_water_wolf\.png/);
+  assert.match(getVariantCardImages({ water: "water_variant_street" }).water, /water_variant_street\.png/);
   assert.match(getArenaBackground("background_bg_lycan_law"), /background_bg_lycan_law\.png/);
 });
 
@@ -1039,6 +1044,14 @@ test("state: Vampire Elegance and Lycan Power avatar ids resolve in the match/pr
   assert.match(getAvatarImage("avatar_vampire_male"), /avatar_vampire_male\.png/);
   assert.match(getAvatarImage("avatar_lycan_female"), /avatar_lycan_female\.png/);
   assert.match(getAvatarImage("avatar_lycan_male"), /avatar_lycan_male\.png/);
+  assert.match(getAvatarImage("not_a_real_avatar"), /avatars\/default\.png/);
+});
+
+test("state: Elemental Street avatar ids resolve in the match/profile avatar renderer and unknown ids still fall back safely", () => {
+  assert.match(getAvatarImage("avatar_fire_street_duelist"), /avatar_fire_street_duelist\.png/);
+  assert.match(getAvatarImage("avatar_water_street_duelist"), /avatar_water_street_duelist\.png/);
+  assert.match(getAvatarImage("avatar_earth_street_duelist"), /avatar_earth_street_duelist\.png/);
+  assert.match(getAvatarImage("avatar_wind_street_duelist"), /avatar_wind_street_duelist\.png/);
   assert.match(getAvatarImage("not_a_real_avatar"), /avatars\/default\.png/);
 });
 
@@ -1115,6 +1128,35 @@ test("state: Vampire Elegance and Lycan Power imported avatars stay 512x512 whil
     "assets/cards/fire_variant_fire_paw.png",
     "assets/cards/water_variant_water_wolf.png",
     "assets/cards/wind_variant_lycan_duo.png"
+  ]) {
+    const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
+    assert.equal(width, 768, `${relativePath} should be 768px wide`);
+    assert.equal(height, 1152, `${relativePath} should be 1152px tall`);
+  }
+});
+
+test("state: Elemental Street imported avatars and titles stay 512x512 while card backs and variants stay 768x1152", async () => {
+  for (const relativePath of [
+    "assets/avatars/avatar_fire_street_duelist.png",
+    "assets/avatars/avatar_water_street_duelist.png",
+    "assets/avatars/avatar_earth_street_duelist.png",
+    "assets/avatars/avatar_wind_street_duelist.png",
+    "assets/titles/title_spark.png",
+    "assets/titles/title_drifter.png",
+    "assets/titles/title_stonehand.png",
+    "assets/titles/title_mistborn.png"
+  ]) {
+    const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
+    assert.equal(width, 512, `${relativePath} should be 512px wide`);
+    assert.equal(height, 512, `${relativePath} should be 512px tall`);
+  }
+
+  for (const relativePath of [
+    "assets/card_backs/cardback_four_element_street_emblem.png",
+    "assets/cards/fire_variant_street.png",
+    "assets/cards/water_variant_street.png",
+    "assets/cards/earth_variant_street.png",
+    "assets/cards/wind_variant_street.png"
   ]) {
     const { width, height } = await readPngDimensions(path.join(process.cwd(), relativePath));
     assert.equal(width, 768, `${relativePath} should be 768px wide`);

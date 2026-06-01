@@ -764,6 +764,50 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: AVATAR_RARITY_PRICING.Legendary
     },
     {
+      id: "avatar_fire_street_duelist",
+      name: "Fire Street Duelist",
+      image: "avatars/avatar_fire_street_duelist.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_water_street_duelist",
+      name: "Water Street Duelist",
+      image: "avatars/avatar_water_street_duelist.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_earth_street_duelist",
+      name: "Earth Street Duelist",
+      image: "avatars/avatar_earth_street_duelist.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
+      id: "avatar_wind_street_duelist",
+      name: "Wind Street Duelist",
+      image: "avatars/avatar_wind_street_duelist.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: AVATAR_RARITY_PRICING.Common
+    },
+    {
       id: "avatar_golden_menace",
       name: "Golden Menace",
       image: "avatars/avatar_golden_menace.png",
@@ -964,6 +1008,17 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       price: CARD_BACK_RARITY_PRICING.Legendary
+    },
+    {
+      id: "cardback_four_element_street_emblem",
+      name: "Four Element Street Emblem",
+      image: "card_backs/cardback_four_element_street_emblem.png",
+      rarity: "Rare",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: CARD_BACK_RARITY_PRICING.Rare
     },
     {
       id: "cardback_founder_ember",
@@ -2092,6 +2147,54 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: ELEMENT_VARIANT_RARITY_PRICING.Epic
     },
     {
+      id: "fire_variant_street",
+      name: "Street Fire",
+      image: "cards/fire_variant_street.png",
+      element: "fire",
+      rarity: "Rare",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+    },
+    {
+      id: "water_variant_street",
+      name: "Street Water",
+      image: "cards/water_variant_street.png",
+      element: "water",
+      rarity: "Rare",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+    },
+    {
+      id: "earth_variant_street",
+      name: "Street Earth",
+      image: "cards/earth_variant_street.png",
+      element: "earth",
+      rarity: "Rare",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+    },
+    {
+      id: "wind_variant_street",
+      name: "Street Wind",
+      image: "cards/wind_variant_street.png",
+      element: "wind",
+      rarity: "Rare",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+    },
+    {
       id: "water_variant_goldbound_relics",
       name: "Liquid Gold Tide",
       image: "cards/water_variant_goldbound_relics.png",
@@ -2436,6 +2539,50 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       price: 500
+    },
+    {
+      id: "title_spark",
+      name: "Spark",
+      image: "titles/title_spark.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 100
+    },
+    {
+      id: "title_drifter",
+      name: "Drifter",
+      image: "titles/title_drifter.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 100
+    },
+    {
+      id: "title_stonehand",
+      name: "Stonehand",
+      image: "titles/title_stonehand.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 100
+    },
+    {
+      id: "title_mistborn",
+      name: "Mistborn",
+      image: "titles/title_mistborn.png",
+      rarity: "Common",
+      releaseTag: "elemental_street_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: 100
     },
     {
       id: "title_apprentice",

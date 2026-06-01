@@ -3617,6 +3617,111 @@ test("ui: cosmetics collection filters hide no-collection items only when a spec
   }
 });
 
+test("ui: Elemental Street collectionless items stay visible without a collection filter, hide under unrelated collection filters, and never create a None collection entry", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 2000,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          {
+            id: "avatar_fire_street_duelist",
+            name: "Fire Street Duelist",
+            image: "avatars/avatar_fire_street_duelist.png",
+            rarity: "Common",
+            price: 150,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "elemental_street_2026_06"
+          }
+        ],
+        title: [
+          {
+            id: "title_spark",
+            name: "Spark",
+            image: "titles/title_spark.png",
+            rarity: "Common",
+            price: 100,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "elemental_street_2026_06"
+          }
+        ],
+        cardBack: [
+          {
+            id: "cardback_four_element_street_emblem",
+            name: "Four Element Street Emblem",
+            image: "card_backs/cardback_four_element_street_emblem.png",
+            rarity: "Rare",
+            price: 250,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            releaseTag: "elemental_street_2026_06"
+          }
+        ],
+        background: [],
+        badge: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_street",
+            name: "Street Fire",
+            image: "cards/fire_variant_street.png",
+            rarity: "Rare",
+            price: 250,
+            purchasable: true,
+            owned: false,
+            isNew: true,
+            element: "fire",
+            releaseTag: "elemental_street_2026_06"
+          }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [
+          { id: "avatar_fire_street_duelist", name: "Fire Street Duelist", image: "avatars/avatar_fire_street_duelist.png", rarity: "Common", owned: true, equipped: true, isNew: true }
+        ],
+        title: [
+          { id: "title_spark", name: "Spark", image: "titles/title_spark.png", rarity: "Common", owned: true, equipped: false, isNew: true }
+        ],
+        cardBack: [
+          { id: "cardback_four_element_street_emblem", name: "Four Element Street Emblem", image: "card_backs/cardback_four_element_street_emblem.png", rarity: "Rare", owned: true, equipped: false, isNew: true }
+        ],
+        background: [],
+        badge: [],
+        elementCardVariant: [
+          { id: "fire_variant_street", name: "Street Fire", image: "cards/fire_variant_street.png", rarity: "Rare", owned: true, equipped: false, isNew: true, element: "fire" }
+        ]
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(storeHtml, /Fire Street Duelist/);
+  assert.match(storeHtml, /Spark/);
+  assert.match(storeHtml, /Four Element Street Emblem/);
+  assert.match(storeHtml, /Street Fire/);
+  assert.match(cosmeticsHtml, /Fire Street Duelist/);
+  assert.match(cosmeticsHtml, /Spark/);
+  assert.match(cosmeticsHtml, /Equipped: Yes/);
+  assert.doesNotMatch(storeHtml, /data-store-collection-filter="None"/);
+  assert.doesNotMatch(cosmeticsHtml, /data-cosmetic-collection-filter="None"/);
+  assert.doesNotMatch(storeHtml, /Elemental Street Collection/);
+  assert.doesNotMatch(cosmeticsHtml, /Elemental Street Collection/);
+  assert.doesNotMatch(storeHtml, /data-store-collection="[^"]+"/);
+  assert.doesNotMatch(cosmeticsHtml, /data-cosmetic-collection="[^"]+"/);
+});
+
 test("ui: cosmetics screen renders element filter controls", () => {
   const html = cosmeticsScreen.render({
     cosmetics: {
@@ -9098,6 +9203,108 @@ test("ui: own and viewed profile headers render equipped Vampire Elegance and Ly
   assert.match(viewedHtml, /earth_variant_stone_paw\.png/);
   assert.match(viewedHtml, /wind_variant_lycan_duo\.png/);
   assert.match(viewedHtml, /water_variant_blood_wings\.png/);
+});
+
+test("ui: own and viewed profile headers render equipped Elemental Street collectionless avatar title card back and variants without a collection chip", () => {
+  const context = createProfileScreenContext({
+    profile: {
+      ...createProfileScreenContext().profile,
+      title: "title_spark",
+      equippedCosmetics: {
+        ...createProfileScreenContext().profile.equippedCosmetics,
+        avatar: "avatar_fire_street_duelist",
+        title: "title_spark",
+        background: "default_background",
+        cardBack: "cardback_four_element_street_emblem",
+        elementCardVariant: {
+          fire: "fire_variant_street",
+          earth: "earth_variant_street",
+          wind: "wind_variant_street",
+          water: "water_variant_street"
+        }
+      }
+    },
+    cosmetics: {
+      ...createProfileScreenContext().cosmetics,
+      equipped: {
+        ...createProfileScreenContext().cosmetics.equipped,
+        avatar: "avatar_fire_street_duelist",
+        title: "title_spark",
+        cardBack: "cardback_four_element_street_emblem",
+        elementCardVariant: {
+          fire: "fire_variant_street",
+          earth: "earth_variant_street",
+          wind: "wind_variant_street",
+          water: "water_variant_street"
+        }
+      },
+      catalog: {
+        ...createProfileScreenContext().cosmetics.catalog,
+        avatar: [
+          ...createProfileScreenContext().cosmetics.catalog.avatar,
+          { id: "avatar_fire_street_duelist", name: "Fire Street Duelist", image: "avatars/avatar_fire_street_duelist.png", owned: true }
+        ],
+        cardBack: [
+          { id: "default_card_back", name: "Default", owned: true },
+          { id: "cardback_four_element_street_emblem", name: "Four Element Street Emblem", image: "card_backs/cardback_four_element_street_emblem.png", owned: true }
+        ],
+        elementCardVariant: [
+          { id: "default_fire_card", name: "Core Fire", element: "fire", owned: true },
+          { id: "fire_variant_street", name: "Street Fire", image: "cards/fire_variant_street.png", element: "fire", owned: true },
+          { id: "earth_variant_street", name: "Street Earth", image: "cards/earth_variant_street.png", element: "earth", owned: true },
+          { id: "wind_variant_street", name: "Street Wind", image: "cards/wind_variant_street.png", element: "wind", owned: true },
+          { id: "water_variant_street", name: "Street Water", image: "cards/water_variant_street.png", element: "water", owned: true }
+        ],
+        title: [
+          { id: "Initiate", name: "Initiate", owned: true },
+          { id: "title_spark", name: "Spark", image: "titles/title_spark.png", owned: true }
+        ]
+      }
+    }
+  });
+
+  const ownHtml = profileScreen.render(context);
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "StreetMage",
+    title: "title_spark",
+    playerLevel: 6,
+    playerXP: 120,
+    wins: 9,
+    losses: 4,
+    cardsCaptured: 18,
+    achievements: {},
+    modeStats: { pve: { wins: 6, losses: 3 }, local_pvp: { wins: 3, losses: 1 } },
+    equippedCosmetics: {
+      avatar: "avatar_fire_street_duelist",
+      title: "title_spark",
+      background: "default_background",
+      badge: "none",
+      cardBack: "cardback_four_element_street_emblem",
+      elementCardVariant: {
+        fire: "fire_variant_street",
+        earth: "earth_variant_street",
+        wind: "wind_variant_street",
+        water: "water_variant_street"
+      }
+    }
+  });
+
+  assert.match(ownHtml, /avatar_fire_street_duelist\.png/);
+  assert.match(ownHtml, /title_spark\.png/);
+  assert.match(ownHtml, /cardback_four_element_street_emblem\.png/);
+  assert.match(ownHtml, /fire_variant_street\.png/);
+  assert.match(ownHtml, /earth_variant_street\.png/);
+  assert.match(ownHtml, /wind_variant_street\.png/);
+  assert.match(ownHtml, /water_variant_street\.png/);
+  assert.doesNotMatch(ownHtml, /Elemental Street Collection/);
+  assert.match(viewedHtml, /avatar_fire_street_duelist\.png/);
+  assert.match(viewedHtml, /title_spark\.png/);
+  assert.match(viewedHtml, /cardback_four_element_street_emblem\.png/);
+  assert.match(viewedHtml, /fire_variant_street\.png/);
+  assert.match(viewedHtml, /earth_variant_street\.png/);
+  assert.match(viewedHtml, /wind_variant_street\.png/);
+  assert.match(viewedHtml, /water_variant_street\.png/);
+  assert.doesNotMatch(viewedHtml, /Elemental Street Collection/);
 });
 
 test("ui: viewed profile renders derived level correctly on first render", () => {
