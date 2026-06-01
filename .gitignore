@@ -37,3 +37,6 @@ server-data/multiplayer-sessions.json
 # Local art backup - do not ship/push
 ORIGINAL_ART_BACKUP_DO_NOT_SHIP/
 **/ORIGINAL_ART_BACKUP_DO_NOT_SHIP/
+
+# Local planning docs
+EleMintz Priority Tasks v2.1.43.docx
