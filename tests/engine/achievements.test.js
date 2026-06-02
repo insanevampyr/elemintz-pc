@@ -8,7 +8,8 @@ import {
   ACHIEVEMENT_DEFINITIONS,
   applyAchievementTokenRewards,
   buildAchievementCatalog,
-  evaluateAchievements
+  evaluateAchievements,
+  evaluateRetroactiveAchievements
 } from "../../src/state/achievementSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
@@ -55,6 +56,34 @@ function tempDirPrefix() {
 
 async function createTempDataDir() {
   return fs.mkdtemp(tempDirPrefix());
+}
+
+function evaluateLongestMatchThresholds(rounds) {
+  return evaluateAchievements({
+    profileBefore: {
+      wins: 10,
+      losses: 1,
+      gamesPlayed: 11,
+      achievements: {},
+      longestMatch: { rounds: Math.max(0, rounds - 1) }
+    },
+    profileAfter: {
+      wins: 10,
+      losses: 1,
+      gamesPlayed: 11,
+      achievements: {},
+      longestMatch: { rounds }
+    },
+    matchState: buildCompletedMatch({
+      winner: "p1",
+      rounds,
+      history: [{ result: "p1", warClashes: 0, capturedCards: 2 }]
+    }),
+    perspective: "p1",
+    matchStats: { wins: 1, losses: 0, cardsCaptured: 2 }
+  })
+    .map((item) => item.id)
+    .filter((id) => id.startsWith("long_match_"));
 }
 
 test("achievement definitions include required badges", () => {
@@ -107,6 +136,63 @@ test("achievement definitions include required badges", () => {
   assert.ok(ids.includes("rival_defeats_20"));
   assert.ok(ids.includes("rival_defeats_30"));
   assert.ok(ids.includes("rival_defeats_50"));
+  assert.ok(ids.includes("long_match_25"));
+  assert.ok(ids.includes("long_match_50"));
+  assert.ok(ids.includes("long_match_75"));
+  assert.ok(ids.includes("long_match_100"));
+});
+
+test("achievement definitions map all Longest Match achievements to the shared badge art", () => {
+  const longestMatchDefinitions = ACHIEVEMENT_DEFINITIONS.filter((item) =>
+    ["long_match_25", "long_match_50", "long_match_75", "long_match_100"].includes(item.id)
+  );
+
+  assert.equal(longestMatchDefinitions.length, 4);
+  assert.ok(
+    longestMatchDefinitions.every((item) => item.image === "badges/longest_match_badge.png")
+  );
+});
+
+test("achievement evaluator: Longest Match thresholds unlock the correct chain", () => {
+  assert.deepEqual(evaluateLongestMatchThresholds(24), []);
+  assert.deepEqual(evaluateLongestMatchThresholds(25), ["long_match_25"]);
+  assert.deepEqual(evaluateLongestMatchThresholds(50), ["long_match_25", "long_match_50"]);
+  assert.deepEqual(evaluateLongestMatchThresholds(75), [
+    "long_match_25",
+    "long_match_50",
+    "long_match_75"
+  ]);
+  assert.deepEqual(evaluateLongestMatchThresholds(97), [
+    "long_match_25",
+    "long_match_50",
+    "long_match_75"
+  ]);
+  assert.deepEqual(evaluateLongestMatchThresholds(100), [
+    "long_match_25",
+    "long_match_50",
+    "long_match_75",
+    "long_match_100"
+  ]);
+});
+
+test("achievement evaluator: Longest Match retroactive evaluation uses persisted rounds", () => {
+  const unlocked = evaluateRetroactiveAchievements({
+    username: "RetroLongestMatchUser",
+    achievements: {},
+    longestMatch: {
+      rounds: 97,
+      mode: "gauntlet",
+      opponentName: "Countess Veyra",
+      result: "timer_win",
+      capturedFor: 43,
+      capturedAgainst: 40,
+      achievedAt: "2026-06-01T00:00:00.000Z"
+    }
+  });
+
+  const ids = unlocked.map((item) => item.id);
+  assert.deepEqual(ids, ["long_match_25", "long_match_50", "long_match_75"]);
+  assert.ok(!ids.includes("long_match_100"));
 });
 
 test("achievement catalog includes numeric progress metadata for safe locked achievements", () => {
@@ -126,6 +212,7 @@ test("achievement catalog includes numeric progress metadata for safe locked ach
       local_pvp: { wins: 18, losses: 0 },
       online_pvp: { wins: 73, losses: 0 }
     },
+    longestMatch: { rounds: 97 },
     achievements: {
       comeback_win: { count: 11 },
       card_hoarder: { count: 3 }
@@ -151,6 +238,10 @@ test("achievement catalog includes numeric progress metadata for safe locked ach
   assert.deepEqual(
     catalog.find((item) => item.id === "comeback_win_25")?.progress,
     { current: 11, target: 25, label: "11 / 25", kind: "numeric" }
+  );
+  assert.deepEqual(
+    catalog.find((item) => item.id === "long_match_100")?.progress,
+    { current: 97, target: 100, label: "97 / 100", kind: "numeric" }
   );
 });
 

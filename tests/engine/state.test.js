@@ -2858,6 +2858,114 @@ test("state: public profile snapshot includes sanitized longestMatch", async () 
   });
 });
 
+test("state: VampyrLee backfill seeds the known 97-round record and first three Longest Match achievements", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.ensureProfile("VampyrLee");
+  const profile = await state.profiles.getProfile("VampyrLee");
+
+  assert.deepEqual(profile.longestMatch, {
+    rounds: 97,
+    mode: "gauntlet",
+    opponentId: "vampire_rival",
+    opponentName: "Countess Veyra",
+    result: "timer_win",
+    capturedFor: 43,
+    capturedAgainst: 40,
+    achievedAt: "2026-06-01T00:00:00.000Z"
+  });
+  assert.equal(profile.vampyrLeeLongestMatchBackfillApplied, true);
+  assert.equal(profile.achievements.long_match_25?.count, 1);
+  assert.equal(profile.achievements.long_match_50?.count, 1);
+  assert.equal(profile.achievements.long_match_75?.count, 1);
+  assert.equal(profile.achievements.long_match_100?.count ?? 0, 0);
+});
+
+test("state: VampyrLee backfill upgrades lower records, preserves higher records, and marks the repair once", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.store.write([
+    {
+      username: "VampyrLee",
+      longestMatch: {
+        rounds: 50,
+        mode: "gauntlet",
+        opponentId: "lycan_rival",
+        opponentName: "Ravena Moonfang",
+        result: "loss",
+        capturedFor: 22,
+        capturedAgainst: 29,
+        achievedAt: "2026-05-31T00:00:00.000Z"
+      },
+      achievements: {}
+    },
+    {
+      username: "VampyrLeeHigh",
+      longestMatch: {
+        rounds: 120,
+        mode: "gauntlet",
+        opponentId: "vampire_rival",
+        opponentName: "Countess Veyra",
+        result: "win",
+        capturedFor: 61,
+        capturedAgainst: 55,
+        achievedAt: "2026-06-02T00:00:00.000Z"
+      },
+      achievements: {}
+    }
+  ]);
+
+  const upgraded = await state.profiles.getProfile("VampyrLee");
+  assert.equal(upgraded.longestMatch.rounds, 97);
+  assert.equal(upgraded.vampyrLeeLongestMatchBackfillApplied, true);
+  assert.equal(upgraded.achievements.long_match_75?.count, 1);
+  assert.equal(upgraded.achievements.long_match_100?.count ?? 0, 0);
+
+  await state.profiles.store.write([
+    {
+      ...upgraded,
+      longestMatch: {
+        rounds: 120,
+        mode: "gauntlet",
+        opponentId: "vampire_rival",
+        opponentName: "Countess Veyra",
+        result: "win",
+        capturedFor: 61,
+        capturedAgainst: 55,
+        achievedAt: "2026-06-02T00:00:00.000Z"
+      },
+      vampyrLeeLongestMatchBackfillApplied: false
+    }
+  ]);
+
+  const preservedHigher = await state.profiles.getProfile("VampyrLee");
+  assert.equal(preservedHigher.longestMatch.rounds, 120);
+  assert.equal(preservedHigher.vampyrLeeLongestMatchBackfillApplied, true);
+  assert.equal(preservedHigher.achievements.long_match_100?.count, 1);
+});
+
+test("state: VampyrLee backfill does not apply to other usernames and the marker stays out of public snapshots", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await state.profiles.ensureProfile("NotVampyrLee");
+  const otherProfile = await state.profiles.getProfile("NotVampyrLee");
+  assert.equal(otherProfile.longestMatch, null);
+  assert.equal(otherProfile.vampyrLeeLongestMatchBackfillApplied, false);
+
+  await authority.coordinator.profiles.ensureProfile("VampyrLee");
+  const viewed = await authority.viewProfile("VampyrLee");
+  assert.equal("vampyrLeeLongestMatchBackfillApplied" in viewed.profile, false);
+  assert.equal(viewed.profile.longestMatch.rounds, 97);
+  assert.equal(viewed.profile.achievements.long_match_25?.count, 1);
+  assert.equal(viewed.profile.achievements.long_match_50?.count, 1);
+  assert.equal(viewed.profile.achievements.long_match_75?.count, 1);
+  assert.equal(viewed.profile.achievements.long_match_100?.count ?? 0, 0);
+});
+
 test("state: completed matches using all four elements increment matchesUsingAllElements", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });

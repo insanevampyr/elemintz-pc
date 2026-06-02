@@ -150,6 +150,34 @@ const PHASE_ONE_TIERED_ACHIEVEMENTS = Object.freeze([
 
 const APPROVED_EXPANSION_ACHIEVEMENTS = Object.freeze([
   {
+    id: "long_match_25",
+    name: "Long Fight",
+    description: "Reach 25 rounds in one match.",
+    image: "badges/longest_match_badge.png",
+    repeatable: false
+  },
+  {
+    id: "long_match_50",
+    name: "War of Attrition",
+    description: "Reach 50 rounds in one match.",
+    image: "badges/longest_match_badge.png",
+    repeatable: false
+  },
+  {
+    id: "long_match_75",
+    name: "Never Say Die",
+    description: "Reach 75 rounds in one match.",
+    image: "badges/longest_match_badge.png",
+    repeatable: false
+  },
+  {
+    id: "long_match_100",
+    name: "Bloodbath",
+    description: "Reach 100 rounds in one match.",
+    image: "badges/longest_match_badge.png",
+    repeatable: false
+  },
+  {
     id: "longest_war_5",
     name: "Endless WAR",
     description: "Survive a WAR that lasts 5 clashes.",
@@ -515,6 +543,10 @@ const NUMERIC_PROGRESS_RULES = Object.freeze({
   online_wins_25: { target: 25, current: (profile) => getModeWins(profile, "online_pvp") },
   online_wins_50: { target: 50, current: (profile) => getModeWins(profile, "online_pvp") },
   all_elements_25: { target: 25, current: (profile) => Number(profile?.matchesUsingAllElements ?? 0) },
+  long_match_25: { target: 25, current: (profile) => getLongestMatchRounds(profile) },
+  long_match_50: { target: 50, current: (profile) => getLongestMatchRounds(profile) },
+  long_match_75: { target: 75, current: (profile) => getLongestMatchRounds(profile) },
+  long_match_100: { target: 100, current: (profile) => getLongestMatchRounds(profile) },
   longest_war_5: { target: 5, current: (profile) => Number(profile?.longestWar ?? 0) },
   longest_war_7: { target: 7, current: (profile) => Number(profile?.longestWar ?? 0) },
   unbreakable_streak: { target: 5, current: (profile) => Number(profile?.winStreak ?? 0) },
@@ -707,7 +739,27 @@ function getRepeatableAchievementCount(profile, id) {
   return normalizeAchievementProgressEntry(profile?.achievements?.[id]).count;
 }
 
+function getLongestMatchRounds(profile) {
+  return Math.max(0, Number(profile?.longestMatch?.rounds ?? 0) || 0);
+}
+
 function applyApprovedExpansionUnlockRules(profileBefore, profileAfter, unlocks) {
+  if (getLongestMatchRounds(profileAfter) >= 25) {
+    unlock("long_match_25", unlocks);
+  }
+
+  if (getLongestMatchRounds(profileAfter) >= 50) {
+    unlock("long_match_50", unlocks);
+  }
+
+  if (getLongestMatchRounds(profileAfter) >= 75) {
+    unlock("long_match_75", unlocks);
+  }
+
+  if (getLongestMatchRounds(profileAfter) >= 100) {
+    unlock("long_match_100", unlocks);
+  }
+
   if ((profileAfter.longestWar ?? 0) >= 5) {
     unlock("longest_war_5", unlocks);
   }

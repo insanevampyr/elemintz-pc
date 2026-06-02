@@ -53,6 +53,41 @@ function normalizeUsername(username) {
   return normalized.length > 0 ? normalized : "Player";
 }
 
+const VAMPYRLEE_LONGEST_MATCH_BACKFILL = Object.freeze({
+  rounds: 97,
+  mode: "gauntlet",
+  opponentId: "vampire_rival",
+  opponentName: "Countess Veyra",
+  result: "timer_win",
+  capturedFor: 43,
+  capturedAgainst: 40,
+  achievedAt: "2026-06-01T00:00:00.000Z"
+});
+
+function applyVampyrLeeLongestMatchBackfill(profile) {
+  if (String(profile?.username ?? "").trim() !== "VampyrLee") {
+    return profile;
+  }
+
+  if (profile?.vampyrLeeLongestMatchBackfillApplied === true) {
+    return profile;
+  }
+
+  const currentRounds = Number(profile?.longestMatch?.rounds ?? 0) || 0;
+  if (currentRounds >= VAMPYRLEE_LONGEST_MATCH_BACKFILL.rounds) {
+    return {
+      ...profile,
+      vampyrLeeLongestMatchBackfillApplied: true
+    };
+  }
+
+  return {
+    ...profile,
+    longestMatch: { ...VAMPYRLEE_LONGEST_MATCH_BACKFILL },
+    vampyrLeeLongestMatchBackfillApplied: true
+  };
+}
+
 async function checkFileExists(filePath) {
   try {
     await fsp.access(filePath, fs.constants.F_OK);
@@ -521,6 +556,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
       )
     )
   );
+  normalized = applyVampyrLeeLongestMatchBackfill(normalized);
 
   let retroactiveMutated = false;
   if (applyRetroactive) {
