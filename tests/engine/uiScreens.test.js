@@ -11772,7 +11772,7 @@ test("ui: later local PvP WAR states also render shared WAR impact without break
   assert.match(html, /match-status-panel war-triggered[\s\S]*war-impact/);
   assert.match(html, /class="war-impact-ring"/);
   assert.match(html, /played-row compact-played-row[\s\S]*played-row-hotseat-hidden/);
-  assert.match(html, /played-slot is-facedown/);
+  assert.match(html, /played-slot [^"]*is-facedown/);
   assert.doesNotMatch(html, /clash-winner-fire/);
 });
 
@@ -12551,7 +12551,14 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
 
   assert.match(html, /played-row compact-played-row/);
   assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="resolved"/);
+  assert.match(html, /data-round-center-card-row="true"/);
+  assert.match(html, /data-round-center-clash="true"/);
+  assert.match(html, /data-round-center-card-art="left"/);
+  assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(html, /data-round-center-card="left"[^>]*data-round-center-card-state="winner"/);
+  assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
   assert.match(html, /Resolving clash\.\.\./);
   assert.match(html, /assets\/customFire\.jpg/);
   assert.match(html, /assets\/oppEarth\.jpg/);
@@ -12593,6 +12600,10 @@ test("ui: local PvE center result persists the last completed round during the n
   });
 
   assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="resolved"/);
+  assert.match(html, /data-round-center-card-row="true"/);
+  assert.match(html, /data-round-center-card-art="left"/);
+  assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
   assert.match(html, /assets\/customFire\.jpg/);
   assert.match(html, /assets\/oppEarth\.jpg/);
@@ -12638,6 +12649,44 @@ test("ui: local PvE does not render a fake center result before the first real r
   assert.match(html, /WAR status: No active WAR pile\./);
 });
 
+test("ui: first completed local PvE WAR round renders both center cards from the WAR pile with default art fallback", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Elemental AI" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: { p1: null, p2: null },
+    cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
+    game: {
+      roundOutcome: { key: "war_triggered", label: "WAR triggered" },
+      roundResult: "WAR triggered.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 294,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["earth", "wind", "water"],
+      opponentHand: ["fire", "earth", "wind"],
+      pileCount: 2,
+      totalWarClashes: 1,
+      warPileCards: ["fire", "fire"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: { result: "war", p1Card: null, p2Card: null }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="war"/);
+  assert.match(html, /data-round-center-headline="true">WAR</);
+  assert.match(html, /data-round-center-card-art="left"[^>]*assets\/cards\/fire\.jpg/);
+  assert.match(html, /data-round-center-card-art="right"[^>]*assets\/cards\/fire\.jpg/);
+  assert.doesNotMatch(html, /Player: -/);
+  assert.doesNotMatch(html, /Opponent: -/);
+});
+
 test("ui: local PvP reveal path stays hidden-safe and does not add PvE clash feedback", () => {
   const html = gameScreen.render({
     reducedMotion: false,
@@ -12672,8 +12721,13 @@ test("ui: local PvP reveal path stays hidden-safe and does not add PvE clash fee
 
   assert.match(html, /played-row compact-played-row[\s\S]*played-row-hotseat-hidden/);
   assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="no-effect"/);
+  assert.match(html, /data-round-center-card-row="true"/);
+  assert.match(html, /data-round-center-clash="true"/);
   assert.match(html, /data-round-center-headline="true">NO EFFECT</);
-  assert.match(html, /played-slot is-facedown/);
+  assert.match(html, /data-round-center-card="left"[^>]*data-round-center-card-state="neutral"/);
+  assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="neutral"/);
+  assert.match(html, /played-slot [^"]*is-facedown/);
   assert.match(html, /assets\/cards\/customP1Back\.jpg/);
   assert.match(html, /assets\/cards\/customP2Back\.jpg/);
   assert.doesNotMatch(html, /played-row-pve-reveal/);
@@ -12709,7 +12763,13 @@ test("ui: Easy AI result center falls back to default element art when no varian
   });
 
   assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="resolved"/);
+  assert.match(html, /data-round-center-card-row="true"/);
+  assert.match(html, /data-round-center-card-art="left"/);
+  assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(html, /data-round-center-card="left"[^>]*data-round-center-card-state="winner"/);
+  assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
   assert.match(html, /assets\/cards\/fire\.jpg/);
   assert.match(html, /assets\/cards\/earth\.jpg/);
 });
@@ -12777,8 +12837,12 @@ test("ui: Gauntlet and Featured Rival matches render the shared center result bl
   });
 
   assert.match(gauntletHtml, /data-round-center-result="true"/);
+  assert.match(gauntletHtml, /data-round-center-motion="resolved"/);
+  assert.match(gauntletHtml, /data-round-center-card-row="true"/);
   assert.match(gauntletHtml, /data-round-center-headline="true">FIRE BEATS EARTH</);
   assert.match(featuredHtml, /data-round-center-result="true"/);
+  assert.match(featuredHtml, /data-round-center-motion="resolved"/);
+  assert.match(featuredHtml, /data-round-center-card-row="true"/);
   assert.match(featuredHtml, /data-round-center-headline="true">WIND BEATS WATER</);
 });
 
@@ -14336,7 +14400,13 @@ test("ui: online play screen renders round result from the local player perspect
   });
 
   assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="resolved"/);
+  assert.match(html, /data-round-center-card-row="true"/);
+  assert.match(html, /data-round-center-card-art="left"/);
+  assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /WATER BEATS FIRE/);
+  assert.match(html, /data-round-center-card="left"[^>]*data-round-center-card-state="winner"/);
+  assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
   assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Changed:<\/strong>/);
 });
@@ -16825,11 +16895,21 @@ test("ui: online play screen renders no effect and war result labels", () => {
   });
 
   assert.match(noEffectHtml, /data-round-center-result="true"/);
+  assert.match(noEffectHtml, /data-round-center-motion="no-effect"/);
+  assert.match(noEffectHtml, /data-round-center-card-row="true"/);
+  assert.match(noEffectHtml, /data-round-center-clash="true"/);
+  assert.match(noEffectHtml, /data-round-center-card-art="left"/);
+  assert.match(noEffectHtml, /data-round-center-card-art="right"/);
   assert.match(noEffectHtml, /data-round-center-headline="true">NO EFFECT</);
   assert.match(noEffectHtml, /NO EFFECT/);
   assert.doesNotMatch(noEffectHtml, /Why:<\/strong>/);
   assert.doesNotMatch(noEffectHtml, /Changed:<\/strong>/);
   assert.match(warHtml, /data-round-center-result="true"/);
+  assert.match(warHtml, /data-round-center-motion="war"/);
+  assert.match(warHtml, /data-round-center-card-row="true"/);
+  assert.match(warHtml, /data-round-center-clash="true"/);
+  assert.match(warHtml, /data-round-center-card-art="left"/);
+  assert.match(warHtml, /data-round-center-card-art="right"/);
   assert.match(warHtml, /data-round-center-headline="true">WAR</);
   assert.match(warHtml, /WAR started/);
   assert.doesNotMatch(warHtml, /Why:<\/strong>/);
@@ -17186,7 +17266,15 @@ test("ui: online play screen renders war resolved result from player perspective
   });
 
   assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="war-resolved"/);
+  assert.match(html, /data-round-center-card-row="true"/);
+  assert.match(html, /data-round-center-clash="true"/);
+  assert.match(html, /data-round-center-card-art="left"/);
+  assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /data-round-center-headline="true">WATER BEATS FIRE</);
+  assert.match(html, /data-round-center-card="left"[^>]*data-round-center-card-state="winner"/);
+  assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
+  assert.match(html, /data-round-center-stack-sweep="left"/);
   assert.match(html, /WAR Won/);
   assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Changed:<\/strong>/);
@@ -17286,6 +17374,10 @@ test("ui: online play center result prefers synced equipped variant art when ava
   });
 
   assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="resolved"/);
+  assert.match(html, /data-round-center-card-row="true"/);
+  assert.match(html, /data-round-center-card-art="left"/);
+  assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
   assert.match(html, /assets\/cards\/fire_variant_phoenix\.png/);
   assert.match(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);

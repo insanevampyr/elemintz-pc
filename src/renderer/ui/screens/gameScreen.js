@@ -276,25 +276,65 @@ function renderGauntletStatus(context) {
   `;
 }
 
+function deriveCenterCardsFromWarPile(warPileCards = []) {
+  const normalizedCards = Array.isArray(warPileCards)
+    ? warPileCards.map((card) => getCardElement(card)).filter(Boolean)
+    : [];
+
+  if (normalizedCards.length < 2) {
+    return {
+      leftCard: null,
+      rightCard: null
+    };
+  }
+
+  return {
+    leftCard: normalizedCards[normalizedCards.length - 2] ?? null,
+    rightCard: normalizedCards[normalizedCards.length - 1] ?? null
+  };
+}
+
 function buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBusyReveal) {
-  const leftCard = getCardElement(vm.lastRound?.p1Card) ?? null;
-  const rightCard = getCardElement(vm.lastRound?.p2Card) ?? null;
+  let leftCard = getCardElement(vm.lastRound?.p1Card) ?? null;
+  let rightCard = getCardElement(vm.lastRound?.p2Card) ?? null;
   const war = Boolean(vm.warActive || vm.roundOutcome?.key === "war_triggered");
+
+  if (!leftCard || !rightCard) {
+    const warPilePair = deriveCenterCardsFromWarPile(vm.warPileCards);
+    leftCard = leftCard ?? warPilePair.leftCard;
+    rightCard = rightCard ?? warPilePair.rightCard;
+  }
+
   const hasCompletedRound = Boolean(leftCard && rightCard);
 
-  if (!hasCompletedRound && !war) {
+  if (!hasCompletedRound) {
     return null;
   }
 
   const noEffect =
     !war && (vm.roundOutcome?.key === "no_effect" || (vm.lastRound?.result !== "p1" && vm.lastRound?.result !== "p2"));
+  const winnerSide =
+    noEffect || war
+      ? null
+      : vm.lastRound?.result === "p1"
+        ? "left"
+        : vm.lastRound?.result === "p2"
+          ? "right"
+          : null;
+  const loserSide = winnerSide === "left" ? "right" : winnerSide === "right" ? "left" : null;
+  const warResolved = !war && !noEffect && Math.max(0, Number(vm.lastRound?.warClashes ?? 0) || 0) > 0;
+  const motionState = war ? "war" : noEffect ? "no-effect" : warResolved ? "war-resolved" : "resolved";
 
   return {
     tone: outcomeClass(vm),
+    motionState,
     leftLabel: vm.mode === "local_pvp" ? names.p1 : "Player",
     rightLabel: vm.mode === "local_pvp" ? names.p2 : "Opponent",
     leftCard,
     rightCard,
+    leftCardState: winnerSide === "left" ? "winner" : loserSide === "left" ? "loser" : "neutral",
+    rightCardState: winnerSide === "right" ? "winner" : loserSide === "right" ? "loser" : "neutral",
+    stackSweepSide: warResolved ? winnerSide : null,
     leftVariantMap: context.cardImages?.p1,
     rightVariantMap: context.cardImages?.p2 ?? getVariantCardImages(context.opponentCardVariants ?? null),
     leftBackImage: context.cardBacks?.p1,
@@ -303,7 +343,7 @@ function buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBus
     headline: buildCenterRoundHeadline({
       leftCard,
       rightCard,
-      winner: noEffect ? null : vm.lastRound?.result === "p1" ? "left" : vm.lastRound?.result === "p2" ? "right" : null,
+      winner: winnerSide,
       war,
       noEffect
     }),

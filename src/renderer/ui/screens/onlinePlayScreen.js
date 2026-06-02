@@ -222,15 +222,14 @@ function deriveSharedBattleResultView(context) {
     const outcomeType = String(roundResult.outcomeType ?? "").trim().toLowerCase();
     const leftCard = roundResult.localMove ?? null;
     const rightCard = roundResult.remoteMove ?? null;
+    const leftWins = roundResult.localPerspectiveResult === "win";
+    const rightWins = roundResult.localPerspectiveResult === "lose";
+    const winnerSide = leftWins ? "left" : rightWins ? "right" : null;
+    const loserSide = winnerSide === "left" ? "right" : winnerSide === "right" ? "left" : null;
     const headline = buildCenterRoundHeadline({
       leftCard,
       rightCard,
-      winner:
-        roundResult.winnerSide === null
-          ? null
-          : (roundResult.winnerSide === "host") === (roundResult.roleLabel === "Host")
-            ? "left"
-            : "right",
+      winner: winnerSide,
       war: outcomeType === "war",
       noEffect: outcomeType === "no_effect"
     });
@@ -241,10 +240,14 @@ function deriveSharedBattleResultView(context) {
         headline,
         centerResult: {
           tone: "war",
+          motionState: "war-resolved",
           leftLabel: "You",
           rightLabel: "Opponent",
           leftCard,
           rightCard,
+          leftCardState: winnerSide === "left" ? "winner" : loserSide === "left" ? "loser" : "neutral",
+          rightCardState: winnerSide === "right" ? "winner" : loserSide === "right" ? "loser" : "neutral",
+          stackSweepSide: winnerSide,
           headline,
           subtext: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))} - ${roundResult.perspectiveLabel}`
         },
@@ -259,10 +262,13 @@ function deriveSharedBattleResultView(context) {
         headline,
         centerResult: {
           tone: "war",
+          motionState: "war",
           leftLabel: "You",
           rightLabel: "Opponent",
           leftCard,
           rightCard,
+          leftCardState: "neutral",
+          rightCardState: "neutral",
           headline,
           subtext: "WAR started"
         },
@@ -277,10 +283,13 @@ function deriveSharedBattleResultView(context) {
         headline,
         centerResult: {
           tone: "no-effect",
+          motionState: "no-effect",
           leftLabel: "You",
           rightLabel: "Opponent",
           leftCard,
           rightCard,
+          leftCardState: "neutral",
+          rightCardState: "neutral",
           headline,
           subtext: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))}`
         },
@@ -294,10 +303,13 @@ function deriveSharedBattleResultView(context) {
       headline,
       centerResult: {
         tone: roundResult.perspectiveLabel === "You Lose" ? "opponent-win" : "player-win",
+        motionState: "resolved",
         leftLabel: "You",
         rightLabel: "Opponent",
         leftCard,
         rightCard,
+        leftCardState: winnerSide === "left" ? "winner" : loserSide === "left" ? "loser" : "neutral",
+        rightCardState: winnerSide === "right" ? "winner" : loserSide === "right" ? "loser" : "neutral",
         headline,
         subtext: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))} - ${roundResult.perspectiveLabel}`
       },
@@ -490,21 +502,13 @@ function renderSharedBattleResultPanel(battleResultView) {
       class="panel online-shared-battle-result-panel online-shared-battle-result-panel-${escapeHtml(battleResultView?.tone ?? "neutral")}"
       data-online-shared-battle-result="true"
     >
-      ${renderCenterRoundResult(battleResultView?.centerResult ?? null)}
-      <div class="online-shared-battle-result-meta">
-        <p class="online-shared-battle-result-kicker">Battle Result</p>
-        <h3 class="online-shared-battle-result-headline">${escapeHtml(battleResultView?.headline ?? "Round ready")}</h3>
-        ${
-          placeholder
-            ? ""
-            : `<p class="online-shared-battle-result-line"><strong>Why:</strong> ${escapeHtml(battleResultView?.why ?? "")}</p>`
-        }
-        ${
-          placeholder
-            ? ""
-            : `<p class="online-shared-battle-result-line"><strong>Changed:</strong> ${escapeHtml(battleResultView?.changed ?? "")}</p>`
-        }
-      </div>
+      ${
+        placeholder
+          ? `<div class="online-shared-battle-result-meta">
+              <h3 class="online-shared-battle-result-headline">${escapeHtml(battleResultView?.headline ?? "Round ready")}</h3>
+            </div>`
+          : renderCenterRoundResult(battleResultView?.centerResult ?? null)
+      }
     </article>
   `;
 }
@@ -686,7 +690,7 @@ function renderOnlineLiveBoard(
         </div>
       </article>
 
-      <article class="panel match-status-panel online-play-status-panel">
+      <article class="panel match-status-panel online-play-status-panel has-center-result">
         ${renderCenterRoundResult(centerResultView)}
         <div class="status-meta">
           <div class="online-status-header-row">
