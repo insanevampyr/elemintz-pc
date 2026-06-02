@@ -18,6 +18,7 @@ import { applyLevelMilestoneChestGrants, normalizeProfileChests } from "./chestS
 import {
   applyMatchStatsToProfile,
   createDefaultProfile,
+  normalizeLongestMatchRecord,
   normalizeProfileModeStats
 } from "./statsTracking.js";
 import { normalizeProfileStore } from "./storeSystem.js";
@@ -281,6 +282,13 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("legendaryChestGrantedLevels", defaults.legendaryChestGrantedLevels);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
   repairArraySection("cosmeticLoadouts", defaults.cosmeticLoadouts);
+
+  const normalizedLongestMatch = normalizeLongestMatchRecord(repairedProfile.longestMatch);
+  if (JSON.stringify(normalizedLongestMatch) !== JSON.stringify(repairedProfile.longestMatch ?? null)) {
+    const previousValue = repairedProfile.longestMatch;
+    repairedProfile.longestMatch = normalizedLongestMatch;
+    logFieldRepair("longestMatch", previousValue, normalizedLongestMatch);
+  }
 
   const pendingMilestoneChestRewardLevel = Number(repairedProfile.pendingMilestoneChestRewardLevel);
   if (

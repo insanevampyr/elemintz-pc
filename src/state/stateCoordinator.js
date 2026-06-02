@@ -51,6 +51,7 @@ import {
   getLevelProgress
 } from "./levelRewardsSystem.js";
 import { rollBasicChest } from "../shared/basicChestDrop.js";
+import { getGauntletRivalById } from "../engine/gauntletRivals.js";
 
 const DAILY_LOGIN_TOKENS = 5;
 const DAILY_LOGIN_XP = 2;
@@ -61,6 +62,9 @@ const FEATURED_RIVAL_DAILY_WIN_REWARD_CONFIGS = {
     label: "Crownfire First Win Bonus"
   }
 };
+const FEATURED_RIVAL_PUBLIC_NAMES = Object.freeze({
+  crownfire_duelist: "Crownfire Duelist"
+});
 const VALID_RUNTIME_MODES = new Set(["pve", "local_pvp", "online_pvp"]);
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 const GAUNTLET_MILESTONE_REWARDS = Object.freeze([
@@ -412,6 +416,132 @@ function normalizeAppliedSettlementKeys(keys, limit = 50) {
     .map((entry) => normalizeSettlementKey(entry))
     .filter(Boolean)
     .slice(-limit);
+}
+
+function sumCapturedCards(matchState, perspective = "p1") {
+  let total = 0;
+  for (const round of matchState?.history ?? []) {
+    if (round?.result !== perspective) {
+      continue;
+    }
+
+    const explicitCaptured = Number(round?.capturedOpponentCards);
+    total += Number.isFinite(explicitCaptured) && explicitCaptured >= 0
+      ? safeRuntimeCount(explicitCaptured, 0)
+      : Math.max(0, Math.floor(safeRuntimeCount(round?.capturedCards ?? 0, 0) / 2));
+  }
+
+  return total;
+}
+
+function classifyLongestMatchMode(matchState = {}) {
+  const mode = String(matchState?.mode ?? "").trim().toLowerCase();
+  if (mode === "online_pvp") {
+    return "online_pvp";
+  }
+  if (mode === "local_pvp") {
+    return "local_pvp";
+  }
+  if (String(matchState?.gauntletRivalId ?? "").trim()) {
+    return "gauntlet";
+  }
+  if (String(matchState?.featuredRivalId ?? "").trim()) {
+    return "featured_rival";
+  }
+  return "pve";
+}
+
+function classifyLongestMatchResult(matchState = {}, perspective = "p1") {
+  const winner = String(matchState?.winner ?? "").trim().toLowerCase();
+  const endReason = String(matchState?.endReason ?? "").trim().toLowerCase();
+  const timedOut = endReason === "time_limit";
+
+  if (!winner || winner === "draw") {
+    return timedOut ? "timer_draw" : "draw";
+  }
+
+  if (winner === perspective) {
+    return timedOut ? "timer_win" : "win";
+  }
+
+  return timedOut ? "timer_loss" : "loss";
+}
+
+function deriveLongestMatchOpponent(matchState = {}) {
+  const gauntletRivalId = String(matchState?.gauntletRivalId ?? "").trim().toLowerCase() || null;
+  if (gauntletRivalId) {
+    const rival = getGauntletRivalById(gauntletRivalId);
+    return {
+      opponentId: gauntletRivalId,
+      opponentName: rival?.displayName ?? null
+    };
+  }
+
+  const featuredRivalId = String(matchState?.featuredRivalId ?? "").trim().toLowerCase() || null;
+  if (featuredRivalId) {
+    return {
+      opponentId: featuredRivalId,
+      opponentName: FEATURED_RIVAL_PUBLIC_NAMES[featuredRivalId] ?? null
+    };
+  }
+
+  if (String(matchState?.mode ?? "").trim().toLowerCase() === "pve") {
+    return {
+      opponentId: null,
+      opponentName: "Elemental AI"
+    };
+  }
+
+  return {
+    opponentId: null,
+    opponentName: null
+  };
+}
+
+function buildLongestMatchCandidate({
+  matchState,
+  perspective = "p1",
+  practiceMode = false,
+  nowMs = Date.now()
+} = {}) {
+  if (practiceMode || !matchState || matchState.status !== "completed") {
+    return null;
+  }
+
+  const rounds = safeRuntimeCount(matchState.round, 0);
+  if (rounds <= 0) {
+    return null;
+  }
+
+  const opponent = deriveLongestMatchOpponent(matchState);
+  const opponentPerspective = perspective === "p2" ? "p1" : "p2";
+
+  return {
+    rounds,
+    mode: classifyLongestMatchMode(matchState),
+    opponentId: opponent.opponentId,
+    opponentName: opponent.opponentName,
+    result: classifyLongestMatchResult(matchState, perspective),
+    capturedFor: sumCapturedCards(matchState, perspective),
+    capturedAgainst: sumCapturedCards(matchState, opponentPerspective),
+    achievedAt: new Date(nowMs).toISOString()
+  };
+}
+
+function applyLongestMatchCandidate(profile, candidate) {
+  if (!candidate || !profile) {
+    return profile;
+  }
+
+  const currentRounds = safeRuntimeCount(profile?.longestMatch?.rounds, 0);
+  if (currentRounds >= candidate.rounds) {
+    return profile;
+  }
+
+  return {
+    ...profile,
+    longestMatch: candidate
+  };
 }
 
 function appendAppliedSettlementKey(keys, settlementKey, limit = 50) {
@@ -956,6 +1086,16 @@ export class StateCoordinator {
         };
       }
 
+      workingProfile = applyLongestMatchCandidate(
+        workingProfile,
+        buildLongestMatchCandidate({
+          matchState: safeMatchState,
+          perspective,
+          practiceMode,
+          nowMs
+        })
+      );
+
       const shouldPersistProfile = !profilesEqual(workingProfile, profileWithStats);
       if (shouldPersistProfile) {
         await this.profiles.updateProfile(username, workingProfile);
@@ -1151,6 +1291,13 @@ export class StateCoordinator {
         toLevel: challengeResult.levelAfter
       });
       workingProfile = levelRewardResult.profile;
+      workingProfile = applyLongestMatchCandidate(
+        workingProfile,
+        buildLongestMatchCandidate({
+          matchState: safeMatchState,
+          perspective
+        })
+      );
 
       const isQuitForfeit = String(safeMatchState.endReason ?? "") === "quit_forfeit";
       let unlockEvents = [];

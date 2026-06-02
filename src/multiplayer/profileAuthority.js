@@ -157,6 +157,42 @@ function buildSnapshotStats(profile) {
   };
 }
 
+function sanitizePublicLongestMatch(profile) {
+  const candidate = profile?.longestMatch;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+
+  const rounds = Math.max(0, Number(candidate.rounds ?? 0) || 0);
+  const mode = String(candidate.mode ?? "").trim();
+  const result = String(candidate.result ?? "").trim();
+  if (!rounds || !mode || !result) {
+    return null;
+  }
+
+  const normalizeOptionalString = (value) => {
+    const normalized = String(value ?? "").trim();
+    return normalized.length > 0 ? normalized : null;
+  };
+  const normalizeOptionalCount = (value) => {
+    if (value == null) {
+      return null;
+    }
+    return Math.max(0, Number(value ?? 0) || 0);
+  };
+
+  return {
+    rounds,
+    mode,
+    opponentId: normalizeOptionalString(candidate.opponentId),
+    opponentName: normalizeOptionalString(candidate.opponentName),
+    result,
+    capturedFor: normalizeOptionalCount(candidate.capturedFor),
+    capturedAgainst: normalizeOptionalCount(candidate.capturedAgainst),
+    achievedAt: normalizeOptionalString(candidate.achievedAt)
+  };
+}
+
 function buildProfileSnapshot({ profile, challenges }) {
   const cosmetics = buildSnapshotCosmetics(profile);
   const stats = buildSnapshotStats(profile);
@@ -227,6 +263,7 @@ function buildPublicProfileSnapshot({ profile }) {
       gauntletWins: Number(profile?.gauntletWins ?? 0),
       gauntletLosses: Number(profile?.gauntletLosses ?? 0),
       gauntletRivalsDefeated: Number(profile?.gauntletRivalsDefeated ?? 0),
+      longestMatch: sanitizePublicLongestMatch(profile),
       achievements: profile?.achievements ?? {},
       modeStats: stats.modes,
       equippedCosmetics: cosmetics.equipped,

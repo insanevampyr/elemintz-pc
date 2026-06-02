@@ -20286,6 +20286,66 @@ test("ui: viewed profile modal renders read-only top Profile Overview panels", (
   assert.match(html, /Overall Record/);
 });
 
+test("ui: viewed profile modal renders Longest Match details and hides missing lines cleanly", () => {
+  const html = profileScreen.renderViewedProfileModalBody({
+    username: "Enab",
+    title: "Elementalist",
+    playerLevel: 44,
+    playerXP: 1337,
+    tokens: 222,
+    wins: 30,
+    losses: 12,
+    gamesPlayed: 42,
+    bestWinStreak: 9,
+    featuredRivalWins: 5,
+    gauntletBestStreak: 8,
+    gauntletRuns: 9,
+    gauntletWins: 6,
+    gauntletLosses: 3,
+    gauntletRivalsDefeated: 14,
+    warsEntered: 4,
+    warsWon: 2,
+    longestWar: 3,
+    cardsCaptured: 55,
+    modeStats: {
+      pve: { wins: 10, losses: 2, gamesPlayed: 12, cardsCaptured: 24, warsEntered: 2, warsWon: 1, longestWar: 2 },
+      local_pvp: { wins: 4, losses: 3, gamesPlayed: 7, cardsCaptured: 8, warsEntered: 1, warsWon: 1, longestWar: 1 },
+      online_pvp: { wins: 16, losses: 7, gamesPlayed: 23, cardsCaptured: 23, warsEntered: 1, warsWon: 0, longestWar: 2 }
+    },
+    achievements: {},
+    longestMatch: {
+      rounds: 41,
+      mode: "online_pvp",
+      opponentId: null,
+      opponentName: null,
+      result: "win",
+      capturedFor: null,
+      capturedAgainst: null,
+      achievedAt: "2026-06-01T12:34:56.000Z"
+    },
+    equippedCosmetics: {
+      avatar: "avatar_neon_tide_entity",
+      title: "title_spellwired",
+      badge: "badge_arena_challenger",
+      background: "default_background",
+      cardBack: "cardback_neon_arcana",
+      elementCardVariant: {
+        fire: "fire_variant_neon_arcana",
+        earth: "earth_variant_neon_arcana",
+        wind: "wind_variant_neon_arcana",
+        water: "water_variant_neon_arcana"
+      }
+    }
+  });
+
+  assert.match(html, /Longest Match/);
+  assert.match(html, /41 Rounds/);
+  assert.match(html, /Mode[\s\S]*Online/);
+  assert.match(html, /Result[\s\S]*Win/);
+  assert.doesNotMatch(html, /Opponent[\s\S]*null/);
+  assert.doesNotMatch(html, /Captured[\s\S]*null/);
+});
+
 test("ui: Profile Overview falls back safely for missing cosmetics stats and progress values", () => {
   const html = profileScreen.render(
     createProfileScreenContext({
@@ -20318,6 +20378,42 @@ test("ui: Profile Overview falls back safely for missing cosmetics stats and pro
   assert.match(html, /Featured Rival Wins[\s\S]*>0</);
   assert.match(html, /Best Gauntlet Streak[\s\S]*>0</);
   assert.equal((html.match(/data-profile-flex-variant="/g) ?? []).length, 4);
+});
+
+test("ui: own profile renders Longest Match details when present", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        longestMatch: {
+          rounds: 97,
+          mode: "gauntlet",
+          opponentId: "vampire_rival",
+          opponentName: "Countess Veyra",
+          result: "timer_win",
+          capturedFor: 43,
+          capturedAgainst: 40,
+          achievedAt: "2026-06-01T12:34:56.000Z"
+        }
+      }
+    })
+  );
+
+  assert.match(html, /Longest Match/);
+  assert.match(html, /97 Rounds/);
+  assert.match(html, /Mode[\s\S]*Gauntlet/);
+  assert.match(html, /Opponent[\s\S]*Countess Veyra/);
+  assert.match(html, /Result[\s\S]*Timer Win/);
+  assert.match(html, /Captured[\s\S]*43 - 40/);
+  assert.match(html, /data-profile-longest-match="true"/);
+});
+
+test("ui: own profile renders Longest Match fallback when missing", () => {
+  const html = profileScreen.render(createProfileScreenContext());
+
+  assert.match(html, /Longest Match/);
+  assert.match(html, /No record yet/);
+  assert.match(html, /data-profile-longest-match-empty="true"/);
 });
 
 test("ui: Profile Overview shows a clean max-level capped state", () => {

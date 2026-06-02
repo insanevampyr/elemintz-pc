@@ -171,6 +171,96 @@ function defaultVariantName(element) {
   return label ? `Default ${label}` : "Default";
 }
 
+function formatLongestMatchMode(value) {
+  const mode = String(value ?? "").trim().toLowerCase();
+  switch (mode) {
+    case "online_pvp":
+      return "Online";
+    case "local_pvp":
+      return "Local PvP";
+    case "featured_rival":
+      return "Featured Rival";
+    case "gauntlet":
+      return "Gauntlet";
+    case "pve":
+      return "PvE";
+    default:
+      return "";
+  }
+}
+
+function formatLongestMatchResult(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  switch (normalized) {
+    case "timer_win":
+      return "Timer Win";
+    case "timer_loss":
+      return "Timer Loss";
+    case "timer_draw":
+      return "Timer Draw";
+    case "local_pvp":
+      return "Local PvP";
+    default:
+      return normalized ? normalized.split("_").map(titleCase).join(" ") : "";
+  }
+}
+
+function renderLongestMatchSummary(profile = {}) {
+  const longestMatch = profile?.longestMatch;
+  if (!longestMatch || typeof longestMatch !== "object") {
+    return `<div class="profile-longest-match-empty" data-profile-longest-match-empty="true">No record yet</div>`;
+  }
+
+  const rounds = Math.max(0, Number(longestMatch.rounds ?? 0) || 0);
+  if (!rounds) {
+    return `<div class="profile-longest-match-empty" data-profile-longest-match-empty="true">No record yet</div>`;
+  }
+
+  const details = [];
+  const modeLabel = formatLongestMatchMode(longestMatch.mode);
+  const opponentName = String(longestMatch.opponentName ?? "").trim();
+  const resultLabel = formatLongestMatchResult(longestMatch.result);
+  const capturedFor =
+    longestMatch.capturedFor == null ? null : Math.max(0, Number(longestMatch.capturedFor ?? 0) || 0);
+  const capturedAgainst =
+    longestMatch.capturedAgainst == null ? null : Math.max(0, Number(longestMatch.capturedAgainst ?? 0) || 0);
+
+  if (modeLabel) {
+    details.push({ label: "Mode", value: modeLabel });
+  }
+  if (opponentName) {
+    details.push({ label: "Opponent", value: opponentName });
+  }
+  if (resultLabel) {
+    details.push({ label: "Result", value: resultLabel });
+  }
+  if (capturedFor != null && capturedAgainst != null) {
+    details.push({ label: "Captured", value: `${capturedFor} - ${capturedAgainst}` });
+  }
+
+  return `
+    <div class="profile-longest-match" data-profile-longest-match="true">
+      <strong class="profile-longest-match-rounds">${rounds} Rounds</strong>
+      ${
+        details.length > 0
+          ? `<div class="profile-longest-match-details">
+              ${details
+                .map(
+                  (item) => `
+                    <div class="profile-longest-match-row">
+                      <span class="profile-stat-label">${item.label}</span>
+                      <strong class="profile-stat-value">${item.value}</strong>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>`
+          : ""
+      }
+    </div>
+  `;
+}
+
 function getTrophyTypeLabel(type, definition = {}) {
   if (type === "elementCardVariant") {
     const elementLabel = titleCase(definition?.element);
@@ -473,6 +563,13 @@ function renderProfileFlexPanels(profile = {}, options = {}) {
       </section>
       <section class="profile-summary-card stack-sm profile-flex-panel" data-profile-flex-panel="stats">
         <h3 class="section-title">Flex Stats</h3>
+        <div class="stack-sm" data-profile-flex-longest-match="true">
+          <div class="profile-stat-row">
+            <span class="profile-stat-label">Longest Match</span>
+            <span class="profile-stat-value"></span>
+          </div>
+          ${renderLongestMatchSummary(profile)}
+        </div>
         ${renderStatList([
           { label: "Best Gauntlet Streak", value: safeStat(profile.gauntletBestStreak) },
           { label: "Gauntlet Runs", value: safeStat(profile.gauntletRuns) },

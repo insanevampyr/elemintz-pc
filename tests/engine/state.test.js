@@ -33,6 +33,7 @@ import { EPIC_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSyst
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
+import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { getArenaBackground, getAvatarImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 
 async function createTempDataDir() {
@@ -2597,9 +2598,264 @@ test("state: normalizes approved achievement expansion stat fields safely", asyn
 
   const profile = await state.profiles.ensureProfile("ExpansionFieldsUser");
 
+  assert.equal(profile.longestMatch, null);
   assert.equal(profile.matchesUsingAllElements, 0);
   assert.equal(profile.modeStats.pve.wins, 0);
   assert.equal(profile.modeStats.local_pvp.wins, 0);
+});
+
+test("state: malformed longestMatch data repairs back to null", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.store.write([
+    {
+      username: "BrokenLongestMatchUser",
+      longestMatch: {
+        rounds: 0,
+        mode: "broken_mode",
+        result: "win",
+        opponentName: 12345
+      }
+    }
+  ]);
+
+  const profile = await state.profiles.getProfile("BrokenLongestMatchUser");
+  assert.equal(profile.longestMatch, null);
+});
+
+test("state: non-easy pve completed match updates longestMatch", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const result = await state.recordMatchResult({
+    username: "LongestPveUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: "time_limit",
+      mode: "pve",
+      difficulty: "hard",
+      round: 97,
+      history: [
+        { result: "p1", warClashes: 1, capturedOpponentCards: 43 },
+        { result: "p2", warClashes: 0, capturedOpponentCards: 40 }
+      ],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: [] }
+      },
+      meta: { totalCards: 16 }
+    }
+  });
+
+  assert.deepEqual(result.profile.longestMatch, {
+    rounds: 97,
+    mode: "pve",
+    opponentId: null,
+    opponentName: "Elemental AI",
+    result: "timer_win",
+    capturedFor: 43,
+    capturedAgainst: 40,
+    achievedAt: result.profile.longestMatch.achievedAt
+  });
+  assert.match(result.profile.longestMatch.achievedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("state: easy pve practice does not update longestMatch", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const result = await state.recordMatchResult({
+    username: "EasyLongestMatchUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: null,
+      mode: "pve",
+      difficulty: "easy",
+      round: 55,
+      history: [{ result: "p1", warClashes: 0, capturedOpponentCards: 5 }],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: [] }
+      },
+      meta: { totalCards: 16 }
+    }
+  });
+
+  assert.equal(result.profile.longestMatch, null);
+});
+
+test("state: featured rival gauntlet local pvp and online use the expected longestMatch modes", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  const featured = await state.recordMatchResult({
+    username: "FeaturedLongestMatchUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: null,
+      mode: "pve",
+      difficulty: "hard",
+      featuredRivalId: "crownfire_duelist",
+      round: 25,
+      history: [{ result: "p1", warClashes: 0, capturedOpponentCards: 4 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 20 }
+    }
+  });
+  assert.equal(featured.profile.longestMatch.mode, "featured_rival");
+  assert.equal(featured.profile.longestMatch.opponentId, "crownfire_duelist");
+  assert.equal(featured.profile.longestMatch.opponentName, "Crownfire Duelist");
+
+  const gauntlet = await state.recordMatchResult({
+    username: "GauntletLongestMatchUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "p2",
+      endReason: "hand_exhaustion",
+      mode: "pve",
+      difficulty: "hard",
+      gauntletRivalId: "vampire_rival",
+      round: 31,
+      history: [{ result: "p2", warClashes: 0, capturedOpponentCards: 6 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    }
+  });
+  assert.equal(gauntlet.profile.longestMatch.mode, "gauntlet");
+  assert.equal(gauntlet.profile.longestMatch.opponentId, "vampire_rival");
+  assert.equal(gauntlet.profile.longestMatch.opponentName, "Countess Veyra");
+  assert.equal(gauntlet.profile.longestMatch.result, "loss");
+
+  const localPvp = await state.recordMatchResult({
+    username: "LocalLongestMatchUser",
+    perspective: "p1",
+    matchState: {
+      status: "completed",
+      winner: "draw",
+      endReason: "time_limit",
+      mode: "local_pvp",
+      round: 28,
+      history: [{ result: "none", warClashes: 0, capturedOpponentCards: 0 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    }
+  });
+  assert.equal(localPvp.profile.longestMatch.mode, "local_pvp");
+  assert.equal(localPvp.profile.longestMatch.result, "timer_draw");
+
+  const online = await state.recordOnlineMatchResult({
+    username: "OnlineLongestMatchUser",
+    perspective: "p1",
+    settlementKey: "ROOM-LONGEST-ONLINE-1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: null,
+      mode: "online_pvp",
+      round: 41,
+      history: [{ result: "p1", warClashes: 0, capturedOpponentCards: 9 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    }
+  });
+  assert.equal(online.profile.longestMatch.mode, "online_pvp");
+  assert.equal(online.profile.longestMatch.opponentName, null);
+});
+
+test("state: longestMatch keeps the longer record and duplicate settlement does not rewrite it", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.recordOnlineMatchResult({
+    username: "LongestStickyUser",
+    perspective: "p1",
+    settlementKey: "ROOM-LONGEST-STICKY-1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: null,
+      mode: "online_pvp",
+      round: 50,
+      history: [{ result: "p1", warClashes: 0, capturedOpponentCards: 7 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    }
+  });
+
+  const duplicate = await state.recordOnlineMatchResult({
+    username: "LongestStickyUser",
+    perspective: "p1",
+    settlementKey: "ROOM-LONGEST-STICKY-1",
+    matchState: {
+      status: "completed",
+      winner: "p2",
+      endReason: null,
+      mode: "online_pvp",
+      round: 99,
+      history: [{ result: "p2", warClashes: 0, capturedOpponentCards: 12 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    }
+  });
+  assert.equal(duplicate.duplicate, true);
+
+  await state.recordOnlineMatchResult({
+    username: "LongestStickyUser",
+    perspective: "p1",
+    settlementKey: "ROOM-LONGEST-STICKY-2",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: null,
+      mode: "online_pvp",
+      round: 22,
+      history: [{ result: "p1", warClashes: 0, capturedOpponentCards: 3 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    }
+  });
+
+  const profile = await state.profiles.getProfile("LongestStickyUser");
+  assert.equal(profile.longestMatch.rounds, 50);
+});
+
+test("state: public profile snapshot includes sanitized longestMatch", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.updateProfile("PublicLongestMatchUser", (current) => ({
+    ...current,
+    longestMatch: {
+      rounds: 97,
+      mode: "gauntlet",
+      opponentId: "vampire_rival",
+      opponentName: "Countess Veyra",
+      result: "timer_win",
+      capturedFor: 43,
+      capturedAgainst: 40,
+      achievedAt: "2026-06-01T12:34:56.000Z"
+    }
+  }));
+
+  const viewed = await authority.viewProfile("PublicLongestMatchUser");
+  assert.deepEqual(viewed.profile.longestMatch, {
+    rounds: 97,
+    mode: "gauntlet",
+    opponentId: "vampire_rival",
+    opponentName: "Countess Veyra",
+    result: "timer_win",
+    capturedFor: 43,
+    capturedAgainst: 40,
+    achievedAt: "2026-06-01T12:34:56.000Z"
+  });
 });
 
 test("state: completed matches using all four elements increment matchesUsingAllElements", async () => {

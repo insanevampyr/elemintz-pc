@@ -48,6 +48,65 @@ function safeNonNegativeInt(value, fallback = 0) {
   return Math.max(0, Math.floor(numeric));
 }
 
+export const LONGEST_MATCH_MODES = Object.freeze([
+  "online_pvp",
+  "local_pvp",
+  "pve",
+  "featured_rival",
+  "gauntlet"
+]);
+
+export const LONGEST_MATCH_RESULTS = Object.freeze([
+  "win",
+  "loss",
+  "draw",
+  "timer_win",
+  "timer_loss",
+  "timer_draw"
+]);
+
+const LONGEST_MATCH_MODE_SET = new Set(LONGEST_MATCH_MODES);
+const LONGEST_MATCH_RESULT_SET = new Set(LONGEST_MATCH_RESULTS);
+
+function normalizeNullableTrimmedString(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+export function normalizeLongestMatchRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const rounds = Number(value.rounds);
+  const mode = normalizeNullableTrimmedString(value.mode);
+  const result = normalizeNullableTrimmedString(value.result);
+  if (
+    !Number.isFinite(rounds) ||
+    rounds <= 0 ||
+    !LONGEST_MATCH_MODE_SET.has(mode) ||
+    !LONGEST_MATCH_RESULT_SET.has(result)
+  ) {
+    return null;
+  }
+
+  const capturedFor = value.capturedFor == null ? null : safeNonNegativeInt(value.capturedFor, null);
+  const capturedAgainst =
+    value.capturedAgainst == null ? null : safeNonNegativeInt(value.capturedAgainst, null);
+  const achievedAt = normalizeNullableTrimmedString(value.achievedAt);
+
+  return {
+    rounds: Math.floor(rounds),
+    mode,
+    opponentId: normalizeNullableTrimmedString(value.opponentId),
+    opponentName: normalizeNullableTrimmedString(value.opponentName),
+    result,
+    capturedFor,
+    capturedAgainst,
+    achievedAt
+  };
+}
+
 export function createDefaultModeStats() {
   return {
     pve: emptyModeStats(),
@@ -87,6 +146,7 @@ export function normalizeProfileModeStats(profile) {
     gauntletWins: safeNonNegativeInt(profile.gauntletWins),
     gauntletLosses: safeNonNegativeInt(profile.gauntletLosses),
     gauntletRivalsDefeated: safeNonNegativeInt(profile.gauntletRivalsDefeated),
+    longestMatch: normalizeLongestMatchRecord(profile.longestMatch),
     matchesUsingAllElements: safeNonNegativeInt(profile.matchesUsingAllElements),
     playerXP: safeNonNegativeInt(profile.playerXP),
     playerLevel: Math.max(1, safeNonNegativeInt(profile.playerLevel, 1)),
@@ -167,6 +227,7 @@ export function createDefaultProfile(username) {
     gauntletWins: 0,
     gauntletLosses: 0,
     gauntletRivalsDefeated: 0,
+    longestMatch: null,
     matchesUsingAllElements: 0,
     playerXP: 0,
     playerLevel: 1,
