@@ -7,6 +7,7 @@ import { getUpdateSafetyState, isSafeForUpdateRestart } from "../../src/renderer
 import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
 import { buildOnlineMatchStateFromRoom } from "../../src/multiplayer/foundation.js";
 import { createRoomStore } from "../../src/multiplayer/rooms.js";
+import { buildAchievementCatalog } from "../../src/state/achievementSystem.js";
 
 function canonicalizeUsername(username) {
   const value = String(username ?? "").trim();
@@ -12076,6 +12077,157 @@ test("appController: profile view falls back to default background when not equi
     const profile = shownScreens.at(-1);
     assert.equal(profile.name, "profile");
     assert.match(profile.context.backgroundImage, /EleMintzIcon\.png/);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: own profile and viewed profile retroactively unlock the same Longest Match achievements from stale snapshots", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const baseProfile = {
+    username: "VampyrLee",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    gamesPlayed: 0,
+    bestWinStreak: 0,
+    tokens: 0,
+    playerXP: 0,
+    playerLevel: 1,
+    supporterPass: false,
+    achievements: {},
+    longestMatch: {
+      rounds: 97,
+      mode: "gauntlet",
+      opponentName: "Countess Veyra",
+      result: "timer_win",
+      capturedFor: 43,
+      capturedAgainst: 40,
+      achievedAt: "2026-06-01T00:00:00.000Z"
+    },
+    modeStats: {
+      pve: { wins: 0, losses: 0 },
+      local_pvp: { wins: 0, losses: 0 },
+      online_pvp: { wins: 0, losses: 0 }
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    },
+    ownedCosmetics: {}
+  };
+  const serverSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    username: "VampyrLee",
+    profile: baseProfile,
+    progression: { xp: null }
+  };
+  const viewedSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    username: "VampyrLee",
+    profile: baseProfile
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getCosmetics: async () => ({
+            equipped: baseProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
+          listProfiles: async () => []
+        },
+        multiplayer: {
+          getProfile: async () => serverSnapshot,
+          viewProfile: async () => viewedSnapshot,
+          getCosmetics: async () => ({
+            equipped: baseProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          })
+        }
+      }
+    };
+
+    app.username = "VampyrLee";
+    app.profile = { ...baseProfile, achievements: {} };
+    app.viewedProfileUsername = "VampyrLee";
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        username: "VampyrLee",
+        sessionId: "profile-session",
+        accountId: "profile-account",
+        profileKey: "VampyrLee",
+        authenticated: true
+      }
+    });
+
+    await app.showProfile();
+
+    const context = shownScreens.at(-1).context;
+    const ownIds = context.achievementCatalog.filter((item) => item.unlocked).map((item) => item.id);
+    const viewedIds = buildAchievementCatalog(context.viewedProfile)
+      .filter((item) => item.unlocked)
+      .map((item) => item.id);
+
+    assert.deepEqual(ownIds.filter((id) => id.startsWith("long_match_")), [
+      "long_match_25",
+      "long_match_50",
+      "long_match_75"
+    ]);
+    assert.deepEqual(viewedIds.filter((id) => id.startsWith("long_match_")), [
+      "long_match_25",
+      "long_match_50",
+      "long_match_75"
+    ]);
+    assert.ok(!ownIds.includes("long_match_100"));
+    assert.ok(!viewedIds.includes("long_match_100"));
+    assert.equal(
+      context.achievementCatalog.filter((item) => item.unlocked).length,
+      buildAchievementCatalog(context.viewedProfile).filter((item) => item.unlocked).length
+    );
   } finally {
     globalThis.window = originalWindow;
   }

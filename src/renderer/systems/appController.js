@@ -21,7 +21,11 @@ import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, ge
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
 import { SoundManager } from "./soundManager.js";
-import { buildAchievementCatalog } from "../../state/achievementSystem.js";
+import {
+  applyAchievementUnlocks,
+  buildAchievementCatalog,
+  evaluateRetroactiveAchievements
+} from "../../state/achievementSystem.js";
 import {
   COSMETIC_CATALOG,
   getCosmeticCatalogForProfile,
@@ -3384,7 +3388,7 @@ export class AppController {
     }
 
     const nextUsername = String(serverProfile?.username ?? baseProfile?.username ?? "").trim() || null;
-    return {
+    const mergedProfile = {
       ...baseProfile,
       ...(nextUsername ? { username: nextUsername } : {}),
       ...(cosmetics ? { cosmetics } : {}),
@@ -3429,6 +3433,10 @@ export class AppController {
           }
         : {})
     };
+    const retroactiveUnlocks = evaluateRetroactiveAchievements(mergedProfile);
+    return retroactiveUnlocks.length > 0
+      ? applyAchievementUnlocks(mergedProfile, retroactiveUnlocks).profile
+      : mergedProfile;
   }
 
   buildAchievementCatalogForProfile(profile) {
