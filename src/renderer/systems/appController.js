@@ -5913,6 +5913,10 @@ export class AppController {
     const roundsPlayed = Array.isArray(match?.history) ? match.history.length : 0;
     const safeValue = (value) => (value ?? "-");
     const isLocalPvp = mode === MATCH_MODE.LOCAL_PVP;
+    const isEasyPracticePve =
+      !isLocalPvp &&
+      mode === MATCH_MODE.PVE &&
+      String(match?.difficulty ?? "").trim().toLowerCase() === "easy";
     const startOptions =
       !isLocalPvp && mode === MATCH_MODE.PVE && this.pveGauntletMode
         ? { gauntletMode: true }
@@ -5925,17 +5929,19 @@ export class AppController {
 
     const leftStats = isLocalPvp ? finalPersisted?.p1?.stats : finalPersisted?.stats;
     const rightStats = isLocalPvp ? finalPersisted?.p2?.stats : null;
+    const leftDerivedStats = this.getMatchPerspectiveStats(match, "p1");
     const capturedTotals = this.getMatchCompleteCapturedTotals(mode, match, finalPersisted);
+    const leftWarStats = isEasyPracticePve ? leftDerivedStats : leftStats;
 
     const leftCaptured = safeValue(capturedTotals.left);
     const rightCaptured = safeValue(capturedTotals.right);
 
     const warsEntered = isLocalPvp
       ? `${safeValue(leftStats?.warsEntered)} | ${safeValue(rightStats?.warsEntered)}`
-      : safeValue(leftStats?.warsEntered);
+      : safeValue(leftWarStats?.warsEntered);
     const longestWar = isLocalPvp
       ? `${safeValue(leftStats?.longestWar)} | ${safeValue(rightStats?.longestWar)}`
-      : safeValue(leftStats?.longestWar);
+      : safeValue(leftWarStats?.longestWar);
     const leftFinalHand = safeValue(match?.players?.p1?.hand?.length);
     const rightFinalHand = safeValue(match?.players?.p2?.hand?.length);
     const rewardSummary = this.buildMatchCompleteRewardSummary(mode, match, finalPersisted);

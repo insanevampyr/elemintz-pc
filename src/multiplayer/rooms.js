@@ -1705,6 +1705,13 @@ export function applyRoundToMatchState(room, roundResult) {
   }
 
   room.lastOutcomeType = outcomeType;
+  const warMetadata =
+    warDepthSnapshot > 0 || warRoundsSnapshot.length > 0
+      ? {
+          warDepth: warDepthSnapshot,
+          warRounds: warRoundsSnapshot
+        }
+      : {};
   room.roundHistory.push({
     round: resolvedRoundNumber,
     hostMove: guardedRound.hostMove,
@@ -1714,8 +1721,7 @@ export function applyRoundToMatchState(room, roundResult) {
     guestResult: guardedRound.guestResult,
     capturedCards: captureStats.capturedCards,
     capturedOpponentCards: captureStats.capturedOpponentCards,
-    warDepth: warDepthSnapshot,
-    warRounds: warRoundsSnapshot
+    ...warMetadata
   });
 
   containRuntimeRoomState(room, {

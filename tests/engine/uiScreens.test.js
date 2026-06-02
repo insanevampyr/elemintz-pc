@@ -20707,7 +20707,9 @@ test("ui: easy PvE match complete payload shows practice-mode reward suppression
       endReason: "hand_exhaustion",
       mode: "pve",
       difficulty: "easy",
-      history: [],
+      history: [
+        { result: "p1", warClashes: 2, capturedCards: 4, capturedOpponentCards: 2, p1Card: "fire", p2Card: "fire" }
+      ],
       players: {
         p1: { hand: [] },
         p2: { hand: ["fire", "water"] }
@@ -20726,6 +20728,45 @@ test("ui: easy PvE match complete payload shows practice-mode reward suppression
 
   assert.match(payload.bodyHtml, /<strong>Difficulty:<\/strong> Easy \/ Practice Mode/);
   assert.match(payload.bodyHtml, /No rewards, stats, achievements, or challenge progress\./);
+  assert.match(payload.bodyHtml, /<span class="match-complete-stat-label">WARs Entered<\/span>\s*<strong class="match-complete-stat-value">1<\/strong>/);
+  assert.match(payload.bodyHtml, /<span class="match-complete-stat-label">Longest WAR<\/span>\s*<strong class="match-complete-stat-value">2<\/strong>/);
+  assert.match(payload.bodyHtml, /<span class="match-complete-stat-label">Captured Opponent Cards<\/span>\s*<strong class="match-complete-stat-value">0 \| 0<\/strong>/);
+});
+
+test("ui: tracked PvE match complete payload still prefers persisted WAR stats over match-derived values", () => {
+  const controller = createRendererController();
+  controller.username = "TrackedWarUser";
+  controller.profile = { username: "TrackedWarUser" };
+  controller.gameController = { captured: { p1: 0, p2: 0 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      mode: "pve",
+      difficulty: "hard",
+      history: [
+        { result: "p1", warClashes: 3, capturedCards: 6, capturedOpponentCards: 3, p1Card: "water", p2Card: "water" }
+      ],
+      players: {
+        p1: { hand: ["earth"] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 3,
+        warsEntered: 1,
+        longestWar: 1
+      },
+      xpDelta: 10,
+      tokenDelta: 10
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<span class="match-complete-stat-label">WARs Entered<\/span>\s*<strong class="match-complete-stat-value">1<\/strong>/);
+  assert.match(payload.bodyHtml, /<span class="match-complete-stat-label">Longest WAR<\/span>\s*<strong class="match-complete-stat-value">1<\/strong>/);
 });
 
 test("ui: match complete payload renders polished local PvP naming and draw state", () => {
