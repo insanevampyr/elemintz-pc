@@ -106,6 +106,15 @@ const ELEMENTAL_STREET_VARIANT_DEFINITIONS = Object.freeze([
   ["wind_variant_street", "Street Wind", "wind", "cards/wind_variant_street.png"]
 ]);
 
+const SIMPLE_BACKGROUNDS_DEFINITIONS = Object.freeze([
+  ["background_breezewild_meadow", "Breezewild Meadow", "backgrounds/background_breezewild_meadow.png"],
+  ["background_broken_yard", "Broken Yard", "backgrounds/background_broken_yard.png"],
+  ["background_crystal_ruins", "Crystal Ruins", "backgrounds/background_crystal_ruins.png"],
+  ["background_ember_pit", "Ember Pit", "backgrounds/background_ember_pit.png"],
+  ["background_glowtide_flats", "Glowtide Flats", "backgrounds/background_glowtide_flats.png"],
+  ["background_moonshade_grove", "Moonshade Grove", "backgrounds/background_moonshade_grove.png"]
+]);
+
 function buildCompletedMatch({
   winner = "p1",
   rounds = 3,
@@ -1079,7 +1088,31 @@ test("cosmetics: Lycan Power store purchases succeed for all approved items", as
   assert.equal(profile.tokens, 900);
 });
 
-test("cosmetics: Vampire Elegance, Lycan Power, and Elemental Street are the active NEW drops", () => {
+test("cosmetics: Simple Backgrounds collectionless entries use exact Common metadata without a visible collection", async () => {
+  const backgrounds = new Map(COSMETIC_CATALOG.background.map((item) => [item.id, item]));
+
+  for (const [id, name, image] of SIMPLE_BACKGROUNDS_DEFINITIONS) {
+    const item = backgrounds.get(id);
+    assert.ok(item, `missing Simple Backgrounds item ${id}`);
+    assert.equal(item.name, name);
+    assert.equal(item.image, image);
+    assert.equal(item.rarity, "Common");
+    assert.equal(item.price, 90);
+    assert.equal(item.purchasable, true);
+    assert.equal(item.defaultOwned, false);
+    assert.equal(item.isNew, true);
+    assert.equal(item.releaseTag, "simple_backgrounds_2026_06");
+    assert.equal("collection" in item, false);
+    assert.equal(item.rotationOnly ?? false, false);
+    assert.equal(item.storeHidden ?? false, false);
+    assert.equal(item.grantOnly ?? false, false);
+    assert.equal(item.chestOnly ?? false, false);
+    assert.equal(item.supporterOnly ?? false, false);
+    await fs.access(path.join(process.cwd(), "assets", image));
+  }
+});
+
+test("cosmetics: Vampire Elegance, Lycan Power, Elemental Street, and Simple Backgrounds are the active NEW drops", () => {
   const expectedNewIds = new Set([
     "avatar_vampire_female",
     "avatar_vampire_male",
@@ -1109,7 +1142,13 @@ test("cosmetics: Vampire Elegance, Lycan Power, and Elemental Street are the act
     "fire_variant_street",
     "water_variant_street",
     "earth_variant_street",
-    "wind_variant_street"
+    "wind_variant_street",
+    "background_breezewild_meadow",
+    "background_broken_yard",
+    "background_crystal_ruins",
+    "background_ember_pit",
+    "background_glowtide_flats",
+    "background_moonshade_grove"
   ]);
 
   const definitions = Object.values(COSMETIC_CATALOG).flat();
@@ -1166,4 +1205,36 @@ test("cosmetics: Elemental Street store purchases succeed for all approved colle
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_street"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_street"));
   assert.equal(profile.tokens, 1750);
+});
+
+test("cosmetics: Simple Backgrounds store purchases and background equip succeed for all approved items", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("SimpleBackgroundsUser", { tokens: 1200 });
+
+  for (const [id] of SIMPLE_BACKGROUNDS_DEFINITIONS) {
+    const response = await state.buyStoreItem({
+      username: "SimpleBackgroundsUser",
+      type: "background",
+      cosmeticId: id
+    });
+    assert.equal(response.purchase?.status, "purchased");
+    assert.equal(response.purchase?.price, 90);
+  }
+
+  const equipped = await state.equipCosmetic({
+    username: "SimpleBackgroundsUser",
+    type: "background",
+    cosmeticId: "background_glowtide_flats"
+  });
+
+  const profile = await state.profiles.getProfile("SimpleBackgroundsUser");
+  for (const [id] of SIMPLE_BACKGROUNDS_DEFINITIONS) {
+    assert.ok(profile.ownedCosmetics.background.includes(id), `missing owned background ${id}`);
+  }
+  assert.equal(equipped.profile.equippedCosmetics.background, "background_glowtide_flats");
+  assert.equal(profile.equippedCosmetics.background, "background_glowtide_flats");
+  assert.equal(profile.cosmetics.background, "background_glowtide_flats");
+  assert.equal(profile.tokens, 660);
 });

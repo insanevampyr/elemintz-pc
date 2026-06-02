@@ -1584,6 +1584,72 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       price: BACKGROUND_RARITY_PRICING.Epic
+    },
+    {
+      id: "background_breezewild_meadow",
+      name: "Breezewild Meadow",
+      image: "backgrounds/background_breezewild_meadow.png",
+      rarity: "Common",
+      releaseTag: "simple_backgrounds_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
+    },
+    {
+      id: "background_broken_yard",
+      name: "Broken Yard",
+      image: "backgrounds/background_broken_yard.png",
+      rarity: "Common",
+      releaseTag: "simple_backgrounds_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
+    },
+    {
+      id: "background_crystal_ruins",
+      name: "Crystal Ruins",
+      image: "backgrounds/background_crystal_ruins.png",
+      rarity: "Common",
+      releaseTag: "simple_backgrounds_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
+    },
+    {
+      id: "background_ember_pit",
+      name: "Ember Pit",
+      image: "backgrounds/background_ember_pit.png",
+      rarity: "Common",
+      releaseTag: "simple_backgrounds_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
+    },
+    {
+      id: "background_glowtide_flats",
+      name: "Glowtide Flats",
+      image: "backgrounds/background_glowtide_flats.png",
+      rarity: "Common",
+      releaseTag: "simple_backgrounds_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
+    },
+    {
+      id: "background_moonshade_grove",
+      name: "Moonshade Grove",
+      image: "backgrounds/background_moonshade_grove.png",
+      rarity: "Common",
+      releaseTag: "simple_backgrounds_2026_06",
+      isNew: true,
+      defaultOwned: false,
+      purchasable: true,
+      price: BACKGROUND_RARITY_PRICING.Common
     }
   ]),
   elementCardVariant: Object.freeze([

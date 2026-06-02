@@ -341,7 +341,13 @@ export const ASSET_CATALOG = Object.freeze({
     background_ancient_arena: getAssetPath("backgrounds/background_ancient_arena.png"),
     background_storm_citadel: getAssetPath("backgrounds/background_storm_citadel.png"),
     background_sky_temple: getAssetPath("backgrounds/background_sky_temple.png"),
-    background_bg_lycan_law: getAssetPath("backgrounds/background_bg_lycan_law.png")
+    background_bg_lycan_law: getAssetPath("backgrounds/background_bg_lycan_law.png"),
+    background_breezewild_meadow: getAssetPath("backgrounds/background_breezewild_meadow.png"),
+    background_broken_yard: getAssetPath("backgrounds/background_broken_yard.png"),
+    background_crystal_ruins: getAssetPath("backgrounds/background_crystal_ruins.png"),
+    background_ember_pit: getAssetPath("backgrounds/background_ember_pit.png"),
+    background_glowtide_flats: getAssetPath("backgrounds/background_glowtide_flats.png"),
+    background_moonshade_grove: getAssetPath("backgrounds/background_moonshade_grove.png")
   }),
   avatars: AVATAR_MAP,
   sounds: Object.freeze({

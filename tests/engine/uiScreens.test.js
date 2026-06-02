@@ -1624,6 +1624,155 @@ test("ui: store screen renders NEW badges only for cosmetics marked as new", () 
   assert.doesNotMatch(legacyAvatarCard, /store-item-badge-new">NEW<\/span>/);
 });
 
+test("ui: Simple Backgrounds render as collectionless purchasable NEW backgrounds in Store and Owned Cosmetics", () => {
+  const simpleBackgroundIds = [
+    "background_breezewild_meadow",
+    "background_broken_yard",
+    "background_crystal_ruins",
+    "background_ember_pit",
+    "background_glowtide_flats",
+    "background_moonshade_grove"
+  ];
+  const simpleBackgroundNames = [
+    "Breezewild Meadow",
+    "Broken Yard",
+    "Crystal Ruins",
+    "Ember Pit",
+    "Glowtide Flats",
+    "Moonshade Grove"
+  ];
+  const storeView = getStoreViewForProfile({
+    username: "SimpleBackgroundStoreUser",
+    tokens: 1000,
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  });
+  const storeHtml = storeScreen.render({
+    store: {
+      ...storeView,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: storeView.catalog.background.filter((item) => simpleBackgroundIds.includes(item.id)),
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+  const ownedCatalog = getCosmeticCatalogForProfile({
+    username: "SimpleBackgroundOwner",
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background", ...simpleBackgroundIds],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "background_glowtide_flats",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "Initiate"
+    }
+  });
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: ownedCatalog.background.filter((item) => simpleBackgroundIds.includes(item.id)),
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {
+      categories: new Set(["background"]),
+      rarities: new Set(["Common"]),
+      collections: new Set(),
+      showNewFirst: true
+    }
+  });
+
+  for (const name of simpleBackgroundNames) {
+    assert.match(storeHtml, new RegExp(name));
+    assert.match(cosmeticsHtml, new RegExp(name));
+  }
+
+  assert.equal((storeHtml.match(/store-item-badge-new">NEW<\/span>/g) ?? []).length, 6);
+  assert.equal((storeHtml.match(/Type: Background/g) ?? []).length, 6);
+  assert.equal((storeHtml.match(/Price: 90 Tokens/g) ?? []).length, 6);
+  assert.equal((storeHtml.match(/Rarity: <span class="cosmetic-rarity-label[^"]*">Common<\/span>/g) ?? []).length, 6);
+  assert.doesNotMatch(storeHtml, /Simple Backgrounds Collection|n\/a Collection|None Collection/);
+  assert.doesNotMatch(storeHtml, /data-store-collection-filter=/);
+  assert.doesNotMatch(cosmeticsHtml, /Simple Backgrounds Collection|n\/a Collection|None Collection/);
+  assert.doesNotMatch(cosmeticsHtml, /data-cosmetic-collection-filter=/);
+  assert.match(cosmeticsHtml, /Glowtide Flats[\s\S]*Equipped: Yes|Equipped: Yes[\s\S]*Glowtide Flats/);
+});
+
+test("ui: Simple Backgrounds resolver drives own and read-only profile background display", () => {
+  const expectedBackground = getArenaBackground("background_glowtide_flats");
+  const escapedBackground = new RegExp(expectedBackground.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const ownHtml = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        equippedCosmetics: {
+          ...createProfileScreenContext().profile.equippedCosmetics,
+          background: "background_glowtide_flats"
+        }
+      },
+      backgroundImage: expectedBackground
+    })
+  );
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "SimpleBackgroundViewer",
+    title: "Initiate",
+    tokens: 0,
+    wins: 0,
+    losses: 0,
+    gamesPlayed: 0,
+    achievements: {},
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "background_glowtide_flats",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  });
+
+  assert.match(getArenaBackground("background_breezewild_meadow"), /assets\/backgrounds\/background_breezewild_meadow\.png/);
+  assert.match(expectedBackground, /assets\/backgrounds\/background_glowtide_flats\.png/);
+  assert.match(ownHtml, escapedBackground);
+  assert.match(viewedHtml, escapedBackground);
+  assert.match(viewedHtml, /Read-only player profile/);
+});
+
 test("ui: screen back buttons render inside the shared topbar", () => {
   const achievementsHtml = achievementsScreen.render({ achievements: [] });
   const cosmeticsHtml = cosmeticsScreen.render({
