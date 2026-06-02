@@ -11,6 +11,7 @@ import {
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
+import { buildCenterRoundHeadline, renderCenterRoundResult } from "../shared/roundResultPresentation.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
@@ -316,6 +317,35 @@ function renderGauntletStatus(context) {
   `;
 }
 
+function buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBusyReveal) {
+  const leftCard = getCardElement(vm.lastRound?.p1Card) ?? null;
+  const rightCard = getCardElement(vm.lastRound?.p2Card) ?? null;
+  const war = Boolean(vm.warActive || vm.roundOutcome?.key === "war_triggered");
+  const noEffect =
+    !war && (vm.roundOutcome?.key === "no_effect" || (vm.lastRound?.result !== "p1" && vm.lastRound?.result !== "p2"));
+
+  return {
+    tone: outcomeClass(vm),
+    leftLabel: vm.mode === "local_pvp" ? names.p1 : "Player",
+    rightLabel: vm.mode === "local_pvp" ? names.p2 : "Opponent",
+    leftCard,
+    rightCard,
+    leftVariantMap: context.cardImages?.p1,
+    rightVariantMap: context.cardImages?.p2 ?? getVariantCardImages(context.opponentCardVariants ?? null),
+    leftBackImage: context.cardBacks?.p1,
+    rightBackImage: context.cardBacks?.p2,
+    cardsHidden: hotseatBusyReveal,
+    headline: buildCenterRoundHeadline({
+      leftCard,
+      rightCard,
+      winner: noEffect ? null : vm.lastRound?.result === "p1" ? "left" : vm.lastRound?.result === "p2" ? "right" : null,
+      war,
+      noEffect
+    }),
+    subtext: roundMessage
+  };
+}
+
 function renderHands(vm, context, phase, names) {
   const hotseat = context.hotseat;
   const selectedCardIndex = context.presentation?.selectedCardIndex ?? null;
@@ -431,6 +461,7 @@ export const gameScreen = {
       roundMessage = "Resolving clash...";
     }
     const roundChangeMessage = buildRoundChangeLine(vm, labels);
+    const centerResultView = buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBusyReveal);
 
     const compactTurnLabel = escapeHtml(context.hotseat?.turnLabel ?? "Player Turn");
     const capturedLeftName = escapeHtml(labels.left);
@@ -482,22 +513,7 @@ export const gameScreen = {
 
             <article class="panel match-status-panel ${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}">
               ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
-              <div class="played-row compact-played-row ${hotseatBusyReveal ? "played-row-hotseat-hidden" : ""}">
-                ${renderPlayedCard(vm.mode === "local_pvp" ? names.p1 : "Player", vm.lastRound?.p1Card, {
-                  faceDown: hotseatBusyReveal,
-                  emphasize: emphasizePlayed,
-                  variantMap: context.cardImages?.p1,
-                  backImage: context.cardBacks?.p1,
-                  rarity: playedVariantRarities.p1[getCardElement(vm.lastRound?.p1Card) ?? "fire"]
-                })}
-                ${renderPlayedCard(vm.mode === "local_pvp" ? names.p2 : "Opponent", vm.lastRound?.p2Card, {
-                  faceDown: hotseatBusyReveal,
-                  emphasize: emphasizePlayed,
-                  variantMap: context.cardImages?.p2,
-                  backImage: context.cardBacks?.p2,
-                  rarity: playedVariantRarities.p2[getCardElement(vm.lastRound?.p2Card) ?? "fire"]
-                })}
-              </div>
+              ${renderCenterRoundResult(centerResultView)}
               <div class="status-meta">
                 <div class="round-result-banner ${outcomeClass(vm)} ${resultBannerActive ? "is-active is-emphasized" : ""}">
                   <strong>${roundOutcomeLabel(vm, names)}</strong>

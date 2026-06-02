@@ -12546,6 +12546,11 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
   });
 
   assert.match(html, /played-row compact-played-row/);
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(html, /Resolving clash\.\.\./);
+  assert.match(html, /assets\/customFire\.jpg/);
+  assert.match(html, /assets\/oppEarth\.jpg/);
   assert.doesNotMatch(html, /played-row-pve-reveal/);
   assert.match(html, /match-status-panel player-win clash-winner-fire/);
   assert.match(html, /round-result-banner player-win is-active is-emphasized/);
@@ -12584,9 +12589,115 @@ test("ui: local PvP reveal path stays hidden-safe and does not add PvE clash fee
   });
 
   assert.match(html, /played-row compact-played-row[\s\S]*played-row-hotseat-hidden/);
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-headline="true">NO EFFECT</);
   assert.match(html, /played-slot is-facedown/);
+  assert.match(html, /assets\/cards\/customP1Back\.jpg/);
+  assert.match(html, /assets\/cards\/customP2Back\.jpg/);
   assert.doesNotMatch(html, /played-row-pve-reveal/);
   assert.doesNotMatch(html, /clash-winner-fire/);
+});
+
+test("ui: Easy AI result center falls back to default element art when no variants are equipped", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Elemental AI" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: { p1: null, p2: null },
+    game: {
+      roundOutcome: { key: "player_win", label: "Player wins" },
+      roundResult: "Player wins.",
+      round: 5,
+      timerSeconds: 20,
+      totalMatchSeconds: 220,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 2, p2: 0 },
+      lastRound: { result: "p1", p1Card: "fire", p2Card: "earth" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(html, /assets\/cards\/fire\.jpg/);
+  assert.match(html, /assets\/cards\/earth\.jpg/);
+});
+
+test("ui: Gauntlet and Featured Rival matches render the shared center result block", () => {
+  const gauntletHtml = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Stone March", title: "Mountain Step", avatar: "assets/gauntlet/avatars/avatar_gauntlet_stone_march.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Stone March" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    gauntlet: { active: true, currentStreak: 3, rivalName: "Stone March", rivalTitle: "Mountain Step" },
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    game: {
+      roundOutcome: { key: "player_win", label: "Player wins" },
+      roundResult: "Player wins.",
+      round: 2,
+      timerSeconds: 20,
+      totalMatchSeconds: 260,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 1, p2: 0 },
+      lastRound: { result: "p1", p1Card: "fire", p2Card: "earth" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+  const featuredHtml = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Crownfire Duelist", title: "Inferno Regent", avatar: "assets/rivals/Crownfire/rival_crownfire_duelist_avatar.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Crownfire Duelist" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    gauntlet: null,
+    cardImages: {
+      p1: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" },
+      p2: { fire: "assets/cards/fire.jpg", water: "assets/cards/water.jpg", earth: "assets/cards/earth.jpg", wind: "assets/cards/wind.jpg" }
+    },
+    game: {
+      roundOutcome: { key: "opponent_win", label: "Opponent wins" },
+      roundResult: "Opponent wins.",
+      round: 2,
+      timerSeconds: 20,
+      totalMatchSeconds: 260,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["water"],
+      opponentHand: ["wind"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 1 },
+      lastRound: { result: "p2", p1Card: "water", p2Card: "wind" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(gauntletHtml, /data-round-center-result="true"/);
+  assert.match(gauntletHtml, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(featuredHtml, /data-round-center-result="true"/);
+  assert.match(featuredHtml, /data-round-center-headline="true">WIND BEATS WATER</);
 });
 
 test("ui: local PvP opposing side remains a compact hidden-hand summary during Player 2 turns", () => {
@@ -14142,9 +14253,8 @@ test("ui: online play screen renders round result from the local player perspect
     actions: {}
   });
 
-  assert.match(html, /data-online-shared-battle-result="true"/);
-  assert.match(html, /Battle Result/);
-  assert.match(html, /Round 2 - You Win/);
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /WATER BEATS FIRE/);
   assert.match(html, /Why:<\/strong> Host played Fire and Guest played Water\./);
   assert.match(html, /Changed:<\/strong> The round result has been applied to the online match score and captured-card state\./);
 });
@@ -16632,11 +16742,13 @@ test("ui: online play screen renders no effect and war result labels", () => {
     actions: {}
   });
 
-  assert.match(noEffectHtml, /Battle Result/);
-  assert.match(noEffectHtml, /No Effect/);
+  assert.match(noEffectHtml, /data-round-center-result="true"/);
+  assert.match(noEffectHtml, /data-round-center-headline="true">NO EFFECT</);
+  assert.match(noEffectHtml, /NO EFFECT/);
   assert.match(noEffectHtml, /Why:<\/strong> Host played Fire and Guest played Wind, so neither card overpowered the other\./);
   assert.match(noEffectHtml, /Changed:<\/strong> No cards changed sides and both players kept control of the round\./);
-  assert.match(warHtml, /Battle Result/);
+  assert.match(warHtml, /data-round-center-result="true"/);
+  assert.match(warHtml, /data-round-center-headline="true">WAR</);
   assert.match(warHtml, /WAR started/);
   assert.match(warHtml, /Why:<\/strong> Host played Fire and Guest played Fire, so neither side broke the tie\./);
   assert.match(warHtml, /Changed:<\/strong> The tied cards rolled into WAR and both players must resolve the next clash\./);
@@ -16688,8 +16800,7 @@ test("ui: online play screen keeps rendering the preserved battle log after live
     actions: {}
   });
 
-  assert.match(html, /Battle Result/);
-  assert.match(html, /Round 2 - You Win/);
+  assert.match(html, /WATER BEATS FIRE/);
   assert.match(html, /Why:<\/strong> Host played Fire and Guest played Water\./);
   assert.match(html, /Changed:<\/strong> The round result has been applied to the online match score and captured-card state\./);
   assert.doesNotMatch(html, /Battle log will appear here\./);
@@ -16741,7 +16852,7 @@ test("ui: online play screen keeps rendering a preserved no-effect battle log af
     actions: {}
   });
 
-  assert.match(html, /No Effect/);
+  assert.match(html, /NO EFFECT/);
   assert.match(html, /Why:<\/strong> Host played Fire and Guest played Wind, so neither card overpowered the other\./);
   assert.doesNotMatch(html, /Battle log will appear here\./);
 });
@@ -16792,7 +16903,7 @@ test("ui: online play screen keeps rendering a preserved war resolved battle log
     actions: {}
   });
 
-  assert.match(html, /WAR Lost/);
+  assert.match(html, /WATER BEATS FIRE/);
   assert.match(html, /Why:<\/strong> WAR resolved after Host played Water and Guest played Fire\./);
   assert.doesNotMatch(html, /Battle log will appear here\./);
 });
@@ -16902,9 +17013,9 @@ test("ui: online play screen still shows move controls for full rooms when moveS
     actions: {}
   });
 
-  assert.match(html, /data-online-shared-battle-result="true"/);
-  assert.match(html, /Battle Result/);
-  assert.match(html, /Battle log will appear here\./);
+  assert.doesNotMatch(html, /data-round-center-result="true"/);
+  assert.doesNotMatch(html, /Battle log will appear here\./);
+  assert.doesNotMatch(html, /Battle Result/);
   assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Changed:<\/strong>/);
   assert.match(html, /1 Fire · 2 Earth · 3 Wind · 4 Water/);
@@ -16992,10 +17103,110 @@ test("ui: online play screen renders war resolved result from player perspective
     actions: {}
   });
 
-  assert.match(html, /Battle Result/);
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-headline="true">WATER BEATS FIRE</);
   assert.match(html, /WAR Won/);
   assert.match(html, /Why:<\/strong> WAR resolved after Host played Water and Guest played Fire\./);
   assert.match(html, /Changed:<\/strong> The WAR pile was awarded and the round score has been updated\./);
+});
+
+test("ui: online play center result prefers synced equipped variant art when available", () => {
+  const hostResolvedIdentity = {
+    slotLabel: "Host",
+    username: "LocalUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_fourfold_lord"),
+    backgroundImage: getArenaBackground("bg_elemental_throne"),
+    cardBackId: "cardback_elemental_nexus",
+    cardBackImage: getCardBackImage("cardback_elemental_nexus"),
+    titleLabel: "War Master",
+    variantSelection: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_crystal",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_phoenix",
+      water: "water_variant_crystal",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    })
+  };
+  const guestResolvedIdentity = {
+    slotLabel: "Guest",
+    username: "RemoteUser",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_storm_oracle"),
+    backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackId: "cardback_storm_spiral",
+    cardBackImage: getCardBackImage("cardback_storm_spiral"),
+    titleLabel: "Element Sovereign",
+    variantSelection: {
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    },
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    })
+  };
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "host-1",
+      latestAuthoritativeRoundResult: {
+        outcomeType: "resolved",
+        submittedCards: { host: "fire", guest: "earth" },
+        roundResult: {
+          hostMove: "fire",
+          guestMove: "earth",
+          outcomeType: "resolved",
+          hostResult: "win",
+          guestResult: "lose",
+          roundNumber: 3
+        }
+      },
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        host: { socketId: "host-1", username: "LocalUser" },
+        guest: { socketId: "guest-1", username: "RemoteUser" },
+        hostResolvedIdentity,
+        guestResolvedIdentity,
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        hostScore: 1,
+        guestScore: 0,
+        roundNumber: 3,
+        lastOutcomeType: "resolved",
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(html, /assets\/cards\/fire_variant_phoenix\.png/);
+  assert.match(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
 });
 
 test("ui: online play screen renders a server-authoritative turn timer label in the status panel", () => {

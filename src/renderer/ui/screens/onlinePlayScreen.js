@@ -11,6 +11,7 @@ import {
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
+import { buildCenterRoundHeadline, renderCenterRoundResult } from "../shared/roundResultPresentation.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const DEFAULT_ONLINE_EQUIPPED_COSMETICS = Object.freeze({
@@ -129,6 +130,11 @@ function formatMoveLabel(move) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function normalizeMove(move) {
+  const normalized = String(move ?? "").trim().toLowerCase();
+  return normalized || null;
+}
+
 function resolveBattleLogResultSource(context) {
   const persistedResult = context.multiplayer?.lastCompletedBattleResult ?? null;
   if (persistedResult) {
@@ -181,10 +187,26 @@ function deriveRoundResultView(context) {
     return null;
   }
 
+  const hostMove = normalizeMove(authoritativeResult?.submittedCards?.host ?? result.hostMove);
+  const guestMove = normalizeMove(authoritativeResult?.submittedCards?.guest ?? result.guestMove);
+  const isHost = roleLabel === "Host";
+
   return {
     outcomeType: authoritativeResult?.outcomeType ?? result.outcomeType ?? null,
-    hostMove: formatMoveLabel(authoritativeResult?.submittedCards?.host ?? result.hostMove),
-    guestMove: formatMoveLabel(authoritativeResult?.submittedCards?.guest ?? result.guestMove),
+    hostMove,
+    guestMove,
+    hostMoveLabel: formatMoveLabel(hostMove),
+    guestMoveLabel: formatMoveLabel(guestMove),
+    localMove: isHost ? hostMove : guestMove,
+    remoteMove: isHost ? guestMove : hostMove,
+    localPerspectiveResult: perspectiveResult,
+    winnerSide:
+      result.hostResult === "win"
+        ? "host"
+        : result.guestResult === "win"
+          ? "guest"
+          : null,
+    roleLabel,
     roundNumber: Number(result.roundNumber ?? 0) || null,
     perspectiveLabel
   };
@@ -195,14 +217,37 @@ function deriveSharedBattleResultView(context) {
   const room = context.multiplayer?.room ?? null;
 
   if (roundResult) {
-    const hostMoveText = roundResult.hostMove || "Unknown";
-    const guestMoveText = roundResult.guestMove || "Unknown";
+    const hostMoveText = roundResult.hostMoveLabel || "Unknown";
+    const guestMoveText = roundResult.guestMoveLabel || "Unknown";
     const outcomeType = String(roundResult.outcomeType ?? "").trim().toLowerCase();
+    const leftCard = roundResult.localMove ?? null;
+    const rightCard = roundResult.remoteMove ?? null;
+    const headline = buildCenterRoundHeadline({
+      leftCard,
+      rightCard,
+      winner:
+        roundResult.winnerSide === null
+          ? null
+          : (roundResult.winnerSide === "host") === (roundResult.roleLabel === "Host")
+            ? "left"
+            : "right",
+      war: outcomeType === "war",
+      noEffect: outcomeType === "no_effect"
+    });
 
     if (outcomeType === "war_resolved") {
       return {
         tone: "war",
-        headline: roundResult.perspectiveLabel,
+        headline,
+        centerResult: {
+          tone: "war",
+          leftLabel: "You",
+          rightLabel: "Opponent",
+          leftCard,
+          rightCard,
+          headline,
+          subtext: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))} - ${roundResult.perspectiveLabel}`
+        },
         why: `WAR resolved after Host played ${hostMoveText} and Guest played ${guestMoveText}.`,
         changed: "The WAR pile was awarded and the round score has been updated."
       };
@@ -211,7 +256,16 @@ function deriveSharedBattleResultView(context) {
     if (outcomeType === "war") {
       return {
         tone: "war",
-        headline: "WAR started",
+        headline,
+        centerResult: {
+          tone: "war",
+          leftLabel: "You",
+          rightLabel: "Opponent",
+          leftCard,
+          rightCard,
+          headline,
+          subtext: "WAR started"
+        },
         why: `Host played ${hostMoveText} and Guest played ${guestMoveText}, so neither side broke the tie.`,
         changed: "The tied cards rolled into WAR and both players must resolve the next clash."
       };
@@ -220,7 +274,16 @@ function deriveSharedBattleResultView(context) {
     if (outcomeType === "no_effect" || roundResult.perspectiveLabel === "No Effect") {
       return {
         tone: "neutral",
-        headline: "No Effect",
+        headline,
+        centerResult: {
+          tone: "no-effect",
+          leftLabel: "You",
+          rightLabel: "Opponent",
+          leftCard,
+          rightCard,
+          headline,
+          subtext: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))}`
+        },
         why: `Host played ${hostMoveText} and Guest played ${guestMoveText}, so neither card overpowered the other.`,
         changed: "No cards changed sides and both players kept control of the round."
       };
@@ -228,7 +291,16 @@ function deriveSharedBattleResultView(context) {
 
     return {
       tone: roundResult.perspectiveLabel === "You Lose" ? "loss" : "win",
-      headline: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))} - ${roundResult.perspectiveLabel}`,
+      headline,
+      centerResult: {
+        tone: roundResult.perspectiveLabel === "You Lose" ? "opponent-win" : "player-win",
+        leftLabel: "You",
+        rightLabel: "Opponent",
+        leftCard,
+        rightCard,
+        headline,
+        subtext: `Round ${Math.max(1, Number(roundResult.roundNumber ?? room?.roundNumber ?? 1))} - ${roundResult.perspectiveLabel}`
+      },
       why: `Host played ${hostMoveText} and Guest played ${guestMoveText}.`,
       changed: "The round result has been applied to the online match score and captured-card state."
     };
@@ -418,6 +490,7 @@ function renderSharedBattleResultPanel(battleResultView) {
       class="panel online-shared-battle-result-panel online-shared-battle-result-panel-${escapeHtml(battleResultView?.tone ?? "neutral")}"
       data-online-shared-battle-result="true"
     >
+      ${renderCenterRoundResult(battleResultView?.centerResult ?? null)}
       <div class="online-shared-battle-result-meta">
         <p class="online-shared-battle-result-kicker">Battle Result</p>
         <h3 class="online-shared-battle-result-headline">${escapeHtml(battleResultView?.headline ?? "Round ready")}</h3>
@@ -566,6 +639,13 @@ function renderOnlineLiveBoard(
   const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
   const localCardBackRarity = getCardBackRarity(boardView.localIdentity.cardBackId);
   const remoteCardBackRarity = getCardBackRarity(boardView.remoteIdentity.cardBackId);
+  const centerResultView = battleResultView?.centerResult
+    ? {
+        ...battleResultView.centerResult,
+        leftVariantMap: boardView.localVariantMap,
+        rightVariantMap: boardView.remoteIdentity.variantImages ?? getVariantCardImages(boardView.opponentCardVariants ?? null)
+      }
+    : null;
 
   return `
     <section class="grid game-grid online-play-live-grid">
@@ -588,7 +668,6 @@ function renderOnlineLiveBoard(
             </div>
             <p class="keyboard-hint">1 Fire · 2 Earth · 3 Wind · 4 Water</p>
           </div>
-          ${renderSharedBattleResultPanel(battleResultView)}
         </div>
       </article>
 
@@ -608,6 +687,7 @@ function renderOnlineLiveBoard(
       </article>
 
       <article class="panel match-status-panel online-play-status-panel">
+        ${renderCenterRoundResult(centerResultView)}
         <div class="status-meta">
           <div class="online-status-header-row">
             <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
