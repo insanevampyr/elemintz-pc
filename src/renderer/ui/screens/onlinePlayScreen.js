@@ -647,7 +647,7 @@ function renderOnlineLiveBoard(
     ? {
         ...battleResultView.centerResult,
         leftVariantMap: boardView.localVariantMap,
-        rightVariantMap: boardView.remoteIdentity.variantImages ?? getVariantCardImages(boardView.opponentCardVariants ?? null)
+        rightVariantMap: getVariantCardImages(boardView.opponentCardVariants ?? null)
       }
     : null;
 

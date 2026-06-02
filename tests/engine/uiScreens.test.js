@@ -12489,6 +12489,12 @@ test("ui: hidden hand remains hidden while WAR pile is face-up", () => {
       p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
       p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
     },
+    opponentCardVariants: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
     cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
     game: {
       roundOutcome: { key: "war_triggered", label: "WAR triggered" },
@@ -12529,6 +12535,12 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
       p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
       p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
     },
+    opponentCardVariants: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
     cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
     game: {
       roundOutcome: { key: "player_win", label: "Player wins" },
@@ -12561,7 +12573,8 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
   assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
   assert.match(html, /Resolving clash\.\.\./);
   assert.match(html, /assets\/customFire\.jpg/);
-  assert.match(html, /assets\/oppEarth\.jpg/);
+  assert.match(html, /assets\/cards\/earth_variant_titan\.png/);
+  assert.doesNotMatch(html, /assets\/oppEarth\.jpg/);
   assert.doesNotMatch(html, /played-row-pve-reveal/);
   assert.match(html, /match-status-panel player-win clash-winner-fire/);
   assert.match(html, /Round update: Captured totals are now Hero 1 and Elemental AI 0\./);
@@ -12578,6 +12591,12 @@ test("ui: local PvE center result persists the last completed round during the n
     cardImages: {
       p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
       p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    opponentCardVariants: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
     },
     cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
     game: {
@@ -12606,10 +12625,54 @@ test("ui: local PvE center result persists the last completed round during the n
   assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
   assert.match(html, /assets\/customFire\.jpg/);
-  assert.match(html, /assets\/oppEarth\.jpg/);
+  assert.match(html, /assets\/cards\/earth_variant_titan\.png/);
+  assert.doesNotMatch(html, /assets\/oppEarth\.jpg/);
   assert.doesNotMatch(html, /Player: -/);
   assert.doesNotMatch(html, /Opponent: -/);
   assert.match(html, /Round update: Captured totals are now Hero 1 and Elemental AI 0\./);
+});
+
+test("ui: local PvE center result opponent art matches the same opponent variant source used by the WAR tracker", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Elemental AI" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    opponentCardVariants: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
+    game: {
+      roundOutcome: { key: "player_win", label: "Player win" },
+      roundResult: "Hero wins the clash.",
+      round: 2,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      warActive: false,
+      playerHand: ["water", "earth"],
+      opponentHand: ["wind", "water"],
+      pileCount: 1,
+      totalWarClashes: 1,
+      warPileCards: ["earth"],
+      captured: { p1: 1, p2: 0 },
+      lastRound: { result: "p1", p1Card: "fire", p2Card: "earth" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /data-round-center-card-art="right"[^>]*assets\/cards\/earth_variant_titan\.png/);
+  assert.match(html, /assets\/cards\/earth_variant_titan\.png/);
+  assert.doesNotMatch(html, /data-round-center-card-art="right"[^>]*assets\/oppEarth\.jpg/);
 });
 
 test("ui: local PvE does not render a fake center result before the first real round", () => {
@@ -17280,7 +17343,7 @@ test("ui: online play screen renders war resolved result from player perspective
   assert.doesNotMatch(html, /Changed:<\/strong>/);
 });
 
-test("ui: online play center result prefers synced equipped variant art when available", () => {
+test("ui: online play center result opponent art matches the same authoritative variant source used by the opponent tracker", () => {
   const hostResolvedIdentity = {
     slotLabel: "Host",
     username: "LocalUser",
@@ -17353,6 +17416,12 @@ test("ui: online play center result prefers synced equipped variant art when ava
         guestResolvedIdentity,
         hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
         guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        opponentCardVariants: {
+          fire: "fire_variant_ember",
+          water: "water_variant_tidal_spirit",
+          earth: "earth_variant_titan",
+          wind: "wind_variant_sky_serpent"
+        },
         hostScore: 1,
         guestScore: 0,
         roundNumber: 3,
@@ -17380,7 +17449,8 @@ test("ui: online play center result prefers synced equipped variant art when ava
   assert.match(html, /data-round-center-card-art="right"/);
   assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
   assert.match(html, /assets\/cards\/fire_variant_phoenix\.png/);
-  assert.match(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
+  assert.match(html, /assets\/cards\/earth_variant_titan\.png/);
+  assert.doesNotMatch(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
 });
 
 test("ui: online play screen renders a server-authoritative turn timer label in the status panel", () => {

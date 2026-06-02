@@ -325,6 +325,8 @@ function buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBus
   const warResolved = !war && !noEffect && Math.max(0, Number(vm.lastRound?.warClashes ?? 0) || 0) > 0;
   const motionState = war ? "war" : noEffect ? "no-effect" : warResolved ? "war-resolved" : "resolved";
 
+  const opponentVariantImages = getVariantCardImages(context.opponentCardVariants ?? null);
+
   return {
     tone: outcomeClass(vm),
     motionState,
@@ -336,7 +338,7 @@ function buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBus
     rightCardState: winnerSide === "right" ? "winner" : loserSide === "right" ? "loser" : "neutral",
     stackSweepSide: warResolved ? winnerSide : null,
     leftVariantMap: context.cardImages?.p1,
-    rightVariantMap: context.cardImages?.p2 ?? getVariantCardImages(context.opponentCardVariants ?? null),
+    rightVariantMap: opponentVariantImages,
     leftBackImage: context.cardBacks?.p1,
     rightBackImage: context.cardBacks?.p2,
     cardsHidden: hotseatBusyReveal,

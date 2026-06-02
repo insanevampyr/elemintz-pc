@@ -375,7 +375,7 @@ export function getCardBackImage(cardBackId = "default_card_back") {
 
 export function getCardImage(element, variantMap = null) {
   const map = variantMap ?? DEFAULT_ELEMENT_IMAGES;
-  return map[element] ?? CARD_BACKS.default_card_back;
+  return map[element] ?? DEFAULT_ELEMENT_IMAGES[element] ?? CARD_BACKS.default_card_back;
 }
 
 export function getArenaBackground(theme = "default_background") {

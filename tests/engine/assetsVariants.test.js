@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { getAssetPath } from "../../src/renderer/utils/dom.js";
-import { getAvatarImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
+import { getAvatarImage, getCardBackImage, getCardImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 
 test("assets: per-element variant selection affects only selected element", () => {
   const map = getVariantCardImages({
@@ -52,6 +52,23 @@ test("assets: default and founder card backs resolve to card_backs assets", () =
     getCardBackImage("supporter_card_back"),
     /card_backs\/founder_deluxe_card_back\.png$/
   );
+});
+
+test("assets: getCardImage falls back to default element art when a partial variant map misses an element", () => {
+  const image = getCardImage("water", {
+    fire: "assets/cards/fire_variant_phoenix.png"
+  });
+
+  assert.match(image, /cards\/water\.jpg$/);
+  assert.doesNotMatch(image, /card_backs\/default_back\.jpg$/);
+});
+
+test("assets: getCardImage still falls back to the default card back when the element is invalid", () => {
+  const image = getCardImage("void", {
+    fire: "assets/cards/fire_variant_phoenix.png"
+  });
+
+  assert.match(image, /card_backs\/default_back\.jpg$/);
 });
 
 test("assets: getAssetPath resolves assets from module location as a file URL", () => {
