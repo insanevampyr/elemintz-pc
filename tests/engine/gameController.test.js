@@ -1595,7 +1595,7 @@ test("gameController: local hotseat fatigue only blocks the current turn owner",
   assert.equal(p2Allowed.status, "pass_to_p1");
 });
 
-test("gameController: active authoritative sync clears stale local round presentation before the next clash", () => {
+test("gameController: active authoritative sync keeps the last completed local round presentation before the next clash", () => {
   const controller = new GameController({
     username: "RoundResetUser",
     timerSeconds: 30,
@@ -1622,7 +1622,14 @@ test("gameController: active authoritative sync clears stale local round present
 
     controller.syncLocalAuthorityState(createAuthoritativeLocalRoom(), null);
 
-    assert.equal(controller.lastRound, null);
+    assert.deepEqual(controller.lastRound, {
+      round: 1,
+      p1Card: "fire",
+      p2Card: "earth",
+      result: "p1",
+      warClashes: 0,
+      capturedOpponentCards: 1
+    });
     assert.equal(controller.roundResultText, "Choose a card to begin the next clash.");
   } finally {
     controller.stopTimer();
@@ -13589,7 +13596,14 @@ test("gameController: rearming an active local WAR clears stale cards while pres
 
     controller.rearmActiveRoundPresentation();
 
-    assert.equal(controller.lastRound, null);
+    assert.deepEqual(controller.lastRound, {
+      round: 1,
+      p1Card: "fire",
+      p2Card: "fire",
+      result: "none",
+      warClashes: 1,
+      capturedOpponentCards: 0
+    });
     assert.equal(controller.roundResultText, "WAR continues. Choose new cards for the next clash.");
   } finally {
     controller.stopTimer();

@@ -5545,7 +5545,10 @@ test("ui: game screen uses provided variant card images", () => {
 
   assert.match(html, /assets\/customFire\.jpg/);
   assert.match(html, /Round 1 \| Turn: 20s \| Match: 05:00 \| Player Turn/);
-  assert.match(html, /Why:<\/strong> No effect\./);
+  assert.doesNotMatch(html, /data-round-center-result="true"/);
+  assert.doesNotMatch(html, /data-round-center-headline="true"/);
+  assert.doesNotMatch(html, /Player: -/);
+  assert.doesNotMatch(html, /Opponent: -/);
   assert.match(html, /WAR status: No active WAR pile\./);
   assert.match(html, /Captured totals: Hero 0 \| Elemental AI 0/);
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
@@ -11804,7 +11807,8 @@ test("ui: first visible local PvP WAR uses warActive to render the shared WAR im
 
   assert.match(html, /match-status-panel war-triggered[\s\S]*war-impact/);
   assert.match(html, /class="war-impact-ring"/);
-  assert.match(html, /<strong>WAR is active<\/strong>/);
+  assert.match(html, /data-round-center-headline="true">WAR</);
+  assert.match(html, /WAR status: 2 cards in the pile across 1 clash\./);
 });
 
 test("ui: bind arms WAR impact on the first PvE WAR render", () => {
@@ -12553,7 +12557,85 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
   assert.match(html, /assets\/oppEarth\.jpg/);
   assert.doesNotMatch(html, /played-row-pve-reveal/);
   assert.match(html, /match-status-panel player-win clash-winner-fire/);
-  assert.match(html, /round-result-banner player-win is-active is-emphasized/);
+  assert.match(html, /Round update: Captured totals are now Hero 1 and Elemental AI 0\./);
+});
+
+test("ui: local PvE center result persists the last completed round during the next card selection state", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Elemental AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
+    game: {
+      roundOutcome: { key: "player_win", label: "Player wins" },
+      roundResult: "Choose a card to begin the next clash.",
+      round: 4,
+      timerSeconds: 18,
+      totalMatchSeconds: 270,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["water", "earth"],
+      opponentHand: ["wind", "water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 1, p2: 0 },
+      lastRound: { result: "p1", p1Card: "fire", p2Card: "earth" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(html, /assets\/customFire\.jpg/);
+  assert.match(html, /assets\/oppEarth\.jpg/);
+  assert.doesNotMatch(html, /Player: -/);
+  assert.doesNotMatch(html, /Opponent: -/);
+  assert.match(html, /Round update: Captured totals are now Hero 1 and Elemental AI 0\./);
+});
+
+test("ui: local PvE does not render a fake center result before the first real round", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Elemental AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: null, p2: null },
+    cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "Choose a card to begin the next clash.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.doesNotMatch(html, /data-round-center-result="true"/);
+  assert.doesNotMatch(html, /data-round-center-headline="true"/);
+  assert.doesNotMatch(html, /Player: -/);
+  assert.doesNotMatch(html, /Opponent: -/);
+  assert.match(html, /Round update: Captured totals are now Hero 0 and Elemental AI 0\./);
+  assert.match(html, /WAR status: No active WAR pile\./);
 });
 
 test("ui: local PvP reveal path stays hidden-safe and does not add PvE clash feedback", () => {
@@ -14255,8 +14337,8 @@ test("ui: online play screen renders round result from the local player perspect
 
   assert.match(html, /data-round-center-result="true"/);
   assert.match(html, /WATER BEATS FIRE/);
-  assert.match(html, /Why:<\/strong> Host played Fire and Guest played Water\./);
-  assert.match(html, /Changed:<\/strong> The round result has been applied to the online match score and captured-card state\./);
+  assert.doesNotMatch(html, /Why:<\/strong>/);
+  assert.doesNotMatch(html, /Changed:<\/strong>/);
 });
 
 test("ui: online play screen keeps settled guest rewards after host migration", () => {
@@ -16745,13 +16827,13 @@ test("ui: online play screen renders no effect and war result labels", () => {
   assert.match(noEffectHtml, /data-round-center-result="true"/);
   assert.match(noEffectHtml, /data-round-center-headline="true">NO EFFECT</);
   assert.match(noEffectHtml, /NO EFFECT/);
-  assert.match(noEffectHtml, /Why:<\/strong> Host played Fire and Guest played Wind, so neither card overpowered the other\./);
-  assert.match(noEffectHtml, /Changed:<\/strong> No cards changed sides and both players kept control of the round\./);
+  assert.doesNotMatch(noEffectHtml, /Why:<\/strong>/);
+  assert.doesNotMatch(noEffectHtml, /Changed:<\/strong>/);
   assert.match(warHtml, /data-round-center-result="true"/);
   assert.match(warHtml, /data-round-center-headline="true">WAR</);
   assert.match(warHtml, /WAR started/);
-  assert.match(warHtml, /Why:<\/strong> Host played Fire and Guest played Fire, so neither side broke the tie\./);
-  assert.match(warHtml, /Changed:<\/strong> The tied cards rolled into WAR and both players must resolve the next clash\./);
+  assert.doesNotMatch(warHtml, /Why:<\/strong>/);
+  assert.doesNotMatch(warHtml, /Changed:<\/strong>/);
 });
 
 test("ui: online play screen keeps rendering the preserved battle log after live sync fields clear", () => {
@@ -16801,8 +16883,8 @@ test("ui: online play screen keeps rendering the preserved battle log after live
   });
 
   assert.match(html, /WATER BEATS FIRE/);
-  assert.match(html, /Why:<\/strong> Host played Fire and Guest played Water\./);
-  assert.match(html, /Changed:<\/strong> The round result has been applied to the online match score and captured-card state\./);
+  assert.doesNotMatch(html, /Why:<\/strong>/);
+  assert.doesNotMatch(html, /Changed:<\/strong>/);
   assert.doesNotMatch(html, /Battle log will appear here\./);
 });
 
@@ -16853,7 +16935,7 @@ test("ui: online play screen keeps rendering a preserved no-effect battle log af
   });
 
   assert.match(html, /NO EFFECT/);
-  assert.match(html, /Why:<\/strong> Host played Fire and Guest played Wind, so neither card overpowered the other\./);
+  assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Battle log will appear here\./);
 });
 
@@ -16904,7 +16986,7 @@ test("ui: online play screen keeps rendering a preserved war resolved battle log
   });
 
   assert.match(html, /WATER BEATS FIRE/);
-  assert.match(html, /Why:<\/strong> WAR resolved after Host played Water and Guest played Fire\./);
+  assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Battle log will appear here\./);
 });
 
@@ -17106,8 +17188,8 @@ test("ui: online play screen renders war resolved result from player perspective
   assert.match(html, /data-round-center-result="true"/);
   assert.match(html, /data-round-center-headline="true">WATER BEATS FIRE</);
   assert.match(html, /WAR Won/);
-  assert.match(html, /Why:<\/strong> WAR resolved after Host played Water and Guest played Fire\./);
-  assert.match(html, /Changed:<\/strong> The WAR pile was awarded and the round score has been updated\./);
+  assert.doesNotMatch(html, /Why:<\/strong>/);
+  assert.doesNotMatch(html, /Changed:<\/strong>/);
 });
 
 test("ui: online play center result prefers synced equipped variant art when available", () => {

@@ -709,10 +709,8 @@ export class GameController {
       this.roundResultText = formatRoundResult(this.lastRound);
       this.onRoundResolved(this.lastRound);
     } else if (roundResult?.outcomeType === "war") {
-      this.lastRound = null;
       this.roundResultText = "WAR continues. Choose new cards for the next clash.";
     } else if (this.match?.status === "active") {
-      this.lastRound = null;
       this.roundResultText = this.match.war?.active
         ? "WAR continues. Choose new cards for the next clash."
         : "Choose a card to begin the next clash.";
@@ -730,7 +728,6 @@ export class GameController {
       return;
     }
 
-    this.lastRound = null;
     this.roundResultText = this.match.war?.active
       ? "WAR continues. Choose new cards for the next clash."
       : "Choose a card to begin the next clash.";

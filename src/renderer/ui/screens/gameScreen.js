@@ -211,47 +211,6 @@ function getPerspectiveNames(vm, context, names) {
   };
 }
 
-function roundOutcomeLabel(vm, names) {
-  const result = vm.lastRound?.result ?? null;
-  if (vm.mode !== "local_pvp") {
-    if (vm.warActive) {
-      return "WAR is active";
-    }
-
-    if (result === "p1") {
-      return "You won the clash";
-    }
-
-    if (result === "p2") {
-      return "Opponent won the clash";
-    }
-
-    return vm.roundOutcome?.label ?? "Round resolved";
-  }
-
-  if (!vm.lastRound) {
-    if (vm.warActive) {
-      return "WAR is active";
-    }
-
-    return "Round resolved";
-  }
-
-  if (vm.roundOutcome?.key === "war_triggered" || vm.warActive) {
-    return "WAR is active";
-  }
-
-  if (result === "p1") {
-    return `${escapeHtml(names.p1)} wins`;
-  }
-
-  if (result === "p2") {
-    return `${escapeHtml(names.p2)} wins`;
-  }
-
-  return "Round resolved";
-}
-
 function buildRoundReasonLine(vm) {
   const reason = String(vm.roundResult ?? "").trim();
 
@@ -321,6 +280,12 @@ function buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBus
   const leftCard = getCardElement(vm.lastRound?.p1Card) ?? null;
   const rightCard = getCardElement(vm.lastRound?.p2Card) ?? null;
   const war = Boolean(vm.warActive || vm.roundOutcome?.key === "war_triggered");
+  const hasCompletedRound = Boolean(leftCard && rightCard);
+
+  if (!hasCompletedRound && !war) {
+    return null;
+  }
+
   const noEffect =
     !war && (vm.roundOutcome?.key === "no_effect" || (vm.lastRound?.result !== "p1" && vm.lastRound?.result !== "p2"));
 
@@ -446,7 +411,6 @@ export const gameScreen = {
     };
     const labels = getPerspectiveNames(vm, context, names);
     const hotseatBusyReveal = vm.mode === "local_pvp" && phase === "reveal" && (context.presentation?.busy ?? false);
-    const resultBannerActive = phase === "result" || phase === "reveal";
     const clashWinnerClass =
       vm.mode === "pve" && (phase === "reveal" || phase === "result")
         ? vm.lastRound?.result === "p1"
@@ -515,11 +479,7 @@ export const gameScreen = {
               ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
               ${renderCenterRoundResult(centerResultView)}
               <div class="status-meta">
-                <div class="round-result-banner ${outcomeClass(vm)} ${resultBannerActive ? "is-active is-emphasized" : ""}">
-                  <strong>${roundOutcomeLabel(vm, names)}</strong>
-                </div>
-                <p class="round-result-text"><strong>Why:</strong> ${escapeHtml(roundMessage)}</p>
-                <p class="round-result-detail"><strong>What changed:</strong> ${escapeHtml(roundChangeMessage)}</p>
+                <p class="round-status-line">Round update: ${escapeHtml(roundChangeMessage)}</p>
                 <p class="round-status-line">${warStatus}</p>
                 <p class="round-status-line">${capturedStatus}</p>
                 ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
