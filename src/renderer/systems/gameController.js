@@ -190,17 +190,33 @@ function countWarResolutionClashes(roundHistory, resolvedIndex) {
   return 1 + priorChainOutcomes.length;
 }
 
-function buildLocalHistoryFromRoundHistory(roundHistory = [], roomWinner = null) {
+function resolveTerminalWarClashes(entry) {
+  const explicitDepth = Number(entry?.warDepth);
+  if (Number.isFinite(explicitDepth) && explicitDepth > 0) {
+    return Math.max(1, Math.floor(explicitDepth));
+  }
+
+  const roundCount = Array.isArray(entry?.warRounds) ? entry.warRounds.length : 0;
+  if (roundCount > 0) {
+    return Math.max(1, roundCount);
+  }
+
+  return 1;
+}
+
+function buildLocalHistoryFromRoundHistory(roundHistory = [], roomWinner = null, matchComplete = false) {
   const history = [];
 
   for (let index = 0; index < roundHistory.length; index += 1) {
     const entry = roundHistory[index];
     const outcomeType = String(entry?.outcomeType ?? "");
+    const isTerminalCompletedWar =
+      matchComplete && outcomeType === "war" && index === roundHistory.length - 1;
 
     if (outcomeType === "war") {
       history.push({
-        result: "none",
-        warClashes: 0,
+        result: isTerminalCompletedWar ? resolveLocalRoundResult(entry, roomWinner) : "none",
+        warClashes: isTerminalCompletedWar ? resolveTerminalWarClashes(entry) : 0,
         capturedCards: 0,
         capturedOpponentCards: 0,
         p1Card: String(entry?.hostMove ?? "").toLowerCase(),
@@ -357,7 +373,11 @@ function buildLocalMatchFromAuthoritativeRoom(
     room?.roomCode ??
     existingMatch?.id ??
     (mode === MATCH_MODE.PVE ? "local-pve-authoritative" : "local-pvp-authoritative");
-  const history = buildLocalHistoryFromRoundHistory(room?.roundHistory ?? [], room?.winner ?? null);
+  const history = buildLocalHistoryFromRoundHistory(
+    room?.roundHistory ?? [],
+    room?.winner ?? null,
+    Boolean(room?.matchComplete)
+  );
   const p1Hand = expandAuthoritativeHand(room?.hostHand);
   const p2Hand = expandAuthoritativeHand(room?.guestHand);
   const currentPile = room?.warActive ? interleaveWarPotCards(room?.warPot) : [];

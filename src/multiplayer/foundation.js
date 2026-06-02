@@ -495,17 +495,33 @@ function countWarResolutionClashes(roundHistory, resolvedIndex) {
   return 1 + priorChainOutcomes.length;
 }
 
-function buildOnlineHistoryFromRoundHistory(roundHistory = []) {
+function resolveTerminalWarClashes(entry) {
+  const explicitDepth = Number(entry?.warDepth);
+  if (Number.isFinite(explicitDepth) && explicitDepth > 0) {
+    return Math.max(1, Math.floor(explicitDepth));
+  }
+
+  const roundCount = Array.isArray(entry?.warRounds) ? entry.warRounds.length : 0;
+  if (roundCount > 0) {
+    return Math.max(1, roundCount);
+  }
+
+  return 1;
+}
+
+function buildOnlineHistoryFromRoundHistory(roundHistory = [], roomWinner = null, matchComplete = false) {
   const history = [];
 
   for (let index = 0; index < roundHistory.length; index += 1) {
     const entry = roundHistory[index];
     const outcomeType = String(entry?.outcomeType ?? "");
+    const isTerminalCompletedWar =
+      matchComplete && outcomeType === "war" && index === roundHistory.length - 1;
 
     if (outcomeType === "war") {
       history.push({
-        result: "none",
-        warClashes: 0,
+        result: isTerminalCompletedWar ? resolvePerspectiveResultFromRoomWinner(roomWinner) : "none",
+        warClashes: isTerminalCompletedWar ? resolveTerminalWarClashes(entry) : 0,
         capturedCards: 0,
         capturedOpponentCards: 0,
         p1Card: String(entry?.hostMove ?? "").toLowerCase(),
@@ -559,7 +575,11 @@ function buildOnlineHistoryFromRoundHistory(roundHistory = []) {
 }
 
 function buildOnlineMatchStateFromRoom(room) {
-  const history = buildOnlineHistoryFromRoundHistory(room?.roundHistory ?? []);
+  const history = buildOnlineHistoryFromRoundHistory(
+    room?.roundHistory ?? [],
+    room?.winner ?? null,
+    Boolean(room?.matchComplete)
+  );
 
   return {
     status: "completed",

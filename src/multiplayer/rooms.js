@@ -1632,6 +1632,8 @@ export function applyRoundToMatchState(room, roundResult) {
     capturedCards: 0,
     capturedOpponentCards: 0
   };
+  let warDepthSnapshot = 0;
+  let warRoundsSnapshot = [];
 
   if (outcomeType === "war") {
     appendWarPot(room, guardedRound.hostMove, guardedRound.guestMove);
@@ -1649,6 +1651,8 @@ export function applyRoundToMatchState(room, roundResult) {
       guestMove: guardedRound.guestMove,
       outcomeType
     });
+    warDepthSnapshot = Math.max(1, safeRuntimeCount(room.warDepth, 0));
+    warRoundsSnapshot = room.warRounds.map((entry) => ({ ...entry }));
     containRuntimeRoomState(room, {
       logMessage: "[RuntimeInvariant] contained malformed war transition state"
     });
@@ -1660,6 +1664,8 @@ export function applyRoundToMatchState(room, roundResult) {
       guestMove: guardedRound.guestMove,
       outcomeType
     });
+    warDepthSnapshot = Math.max(1, safeRuntimeCount(room.warDepth, 0));
+    warRoundsSnapshot = room.warRounds.map((entry) => ({ ...entry }));
     containRuntimeRoomState(room, {
       logMessage: "[RuntimeInvariant] contained malformed war transition state"
     });
@@ -1671,6 +1677,8 @@ export function applyRoundToMatchState(room, roundResult) {
       guestMove: guardedRound.guestMove,
       outcomeType
     });
+    warDepthSnapshot = Math.max(1, safeRuntimeCount(room.warDepth, 0));
+    warRoundsSnapshot = room.warRounds.map((entry) => ({ ...entry }));
     containRuntimeRoomState(room, {
       logMessage: "[RuntimeInvariant] contained malformed war transition state"
     });
@@ -1705,7 +1713,9 @@ export function applyRoundToMatchState(room, roundResult) {
     hostResult: guardedRound.hostResult,
     guestResult: guardedRound.guestResult,
     capturedCards: captureStats.capturedCards,
-    capturedOpponentCards: captureStats.capturedOpponentCards
+    capturedOpponentCards: captureStats.capturedOpponentCards,
+    warDepth: warDepthSnapshot,
+    warRounds: warRoundsSnapshot
   });
 
   containRuntimeRoomState(room, {

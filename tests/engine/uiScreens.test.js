@@ -20547,6 +20547,41 @@ test("ui: PvE match complete payload prefers authoritative live capture totals o
   assert.doesNotMatch(payload.bodyHtml, /Crownfire First Win Bonus/);
 });
 
+test("ui: PvE match complete payload reflects persisted terminal WAR stats for hand exhaustion", () => {
+  const controller = createRendererController();
+  controller.username = "TerminalWarUser";
+  controller.profile = { username: "TerminalWarUser" };
+  controller.gameController = { captured: { p1: 0, p2: 0 } };
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "draw",
+      endReason: "hand_exhaustion",
+      mode: "pve",
+      difficulty: "normal",
+      history: [
+        { result: "draw", warClashes: 3, capturedCards: 0, capturedOpponentCards: 0, p1Card: "fire", p2Card: "fire" }
+      ],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: [] }
+      }
+    },
+    {
+      stats: {
+        cardsCaptured: 0,
+        warsEntered: 1,
+        longestWar: 3
+      }
+    }
+  );
+
+  assert.match(payload.bodyHtml, /<span class="match-complete-stat-label">WARs Entered<\/span>\s*<strong class="match-complete-stat-value">1<\/strong>/);
+  assert.match(payload.bodyHtml, /<span class="match-complete-stat-label">Longest WAR<\/span>\s*<strong class="match-complete-stat-value">3<\/strong>/);
+  assert.match(payload.bodyHtml, /<strong>End Reason:<\/strong> hand_exhaustion/);
+});
+
 test("ui: PvE match complete payload shows boost line when only XP boost applies", () => {
   const controller = createRendererController();
   controller.username = "BoostXPOnly";

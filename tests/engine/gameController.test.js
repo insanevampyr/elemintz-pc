@@ -8,6 +8,7 @@ import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
 import { buildOnlineMatchStateFromRoom } from "../../src/multiplayer/foundation.js";
 import { createRoomStore } from "../../src/multiplayer/rooms.js";
 import { buildAchievementCatalog } from "../../src/state/achievementSystem.js";
+import { deriveMatchStats } from "../../src/state/statsTracking.js";
 
 function canonicalizeUsername(username) {
   const value = String(username ?? "").trim();
@@ -14494,6 +14495,135 @@ test("gameController: PvE WAR exhaustion completes immediately as a win when the
     controller.stopMatchClock();
     globalThis.window = originalWindow;
   }
+});
+
+test("gameController: completed authoritative terminal PvE WAR rebuild preserves countable WAR stats for draw, win, and loss", () => {
+  const scenarios = [
+    {
+      label: "draw",
+      winner: "draw",
+      expectedWinner: "draw",
+      warDepth: 2,
+      expectedWarsWon: 0,
+      hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+      guestHand: { fire: 0, water: 0, earth: 0, wind: 0 }
+    },
+    {
+      label: "win",
+      winner: "host",
+      expectedWinner: "p1",
+      warDepth: 1,
+      expectedWarsWon: 1,
+      hostHand: { fire: 0, water: WAR_REQUIRED_CARDS, earth: 0, wind: 0 },
+      guestHand: { fire: 0, water: 0, earth: 0, wind: 0 }
+    },
+    {
+      label: "loss",
+      winner: "guest",
+      expectedWinner: "p2",
+      warDepth: 3,
+      expectedWarsWon: 0,
+      hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+      guestHand: { fire: 0, water: 0, earth: WAR_REQUIRED_CARDS, wind: 0 }
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    const initialRoom = createAuthoritativeLocalRoom();
+    const controller = new GameController({
+      username: `PveTerminalWar-${scenario.label}`,
+      timerSeconds: 30,
+      mode: MATCH_MODE.PVE,
+      persistMatchResults: false,
+      localAuthorityStoreFactory: () => createAuthoritativePveStore({ initialRoom }),
+      onUpdate: () => {},
+      onMatchComplete: () => {}
+    });
+
+    try {
+      controller.startNewMatch();
+
+      const warRoundEntry = {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        warDepth: scenario.warDepth,
+        warRounds: Array.from({ length: scenario.warDepth }, (_, index) => ({
+          round: index + 1,
+          outcomeType: index === 0 ? "war" : "no_effect"
+        }))
+      };
+      const completedRoom = createAuthoritativeLocalRoom({
+        roundNumber: 2,
+        matchComplete: true,
+        winner: scenario.winner,
+        winReason: "hand_exhaustion",
+        hostHand: scenario.hostHand,
+        guestHand: scenario.guestHand,
+        warActive: false,
+        warRounds: [],
+        warPot: { host: [], guest: [] },
+        roundHistory: [warRoundEntry]
+      });
+
+      controller.syncLocalAuthorityState(completedRoom, null);
+
+      const stats = deriveMatchStats(controller.match, "p1");
+      assert.equal(controller.match?.status, "completed", `${scenario.label}: match should complete`);
+      assert.equal(controller.match?.winner, scenario.expectedWinner, `${scenario.label}: winner should map correctly`);
+      assert.equal(controller.match?.history?.at(-1)?.warClashes, scenario.warDepth, `${scenario.label}: history should retain terminal WAR depth`);
+      assert.equal(stats?.warsEntered, 1, `${scenario.label}: warsEntered should count terminal WAR`);
+      assert.equal(stats?.longestWar, scenario.warDepth, `${scenario.label}: longestWar should match terminal WAR depth`);
+      assert.equal(stats?.warsWon, scenario.expectedWarsWon, `${scenario.label}: warsWon should follow final perspective result`);
+    } finally {
+      controller.stopTimer();
+      controller.stopMatchClock();
+    }
+  }
+});
+
+test("foundation: completed terminal online WAR rows reconstruct countable WAR stats", () => {
+  const room = {
+    roomCode: "ROOMWAR",
+    matchComplete: true,
+    winner: "guest",
+    winReason: "hand_exhaustion",
+    roundNumber: 2,
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war",
+        warDepth: 4,
+        warRounds: Array.from({ length: 4 }, (_, index) => ({
+          round: index + 1,
+          outcomeType: index === 0 ? "war" : "no_effect"
+        }))
+      }
+    ]
+  };
+
+  const match = buildOnlineMatchStateFromRoom(room);
+  assert.equal(match.history.length, 1);
+  assert.deepEqual(match.history[0], {
+    result: "p2",
+    warClashes: 4,
+    capturedCards: 0,
+    capturedOpponentCards: 0,
+    p1Card: "fire",
+    p2Card: "fire"
+  });
+
+  const stats = deriveMatchStats(match, "p1");
+  assert.equal(stats.warsEntered, 1);
+  assert.equal(stats.longestWar, 4);
+  assert.equal(stats.warsWon, 0);
 });
 
 test("gameController: PvE completed authoritative WAR result does not return war_continues", async () => {
