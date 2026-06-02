@@ -2862,7 +2862,12 @@ test("state: VampyrLee backfill seeds the known 97-round record and first three 
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
-  await state.profiles.ensureProfile("VampyrLee");
+  const created = await state.profiles.ensureProfile("VampyrLee");
+  assert.equal(created.achievements.long_match_25?.count, 1);
+  assert.equal(created.achievements.long_match_50?.count, 1);
+  assert.equal(created.achievements.long_match_75?.count, 1);
+  assert.equal(created.achievements.long_match_100?.count ?? 0, 0);
+
   const profile = await state.profiles.getProfile("VampyrLee");
 
   assert.deepEqual(profile.longestMatch, {

@@ -790,10 +790,13 @@ export class ProfileSystem {
           username: normalized
         };
 
-        const created = normalizeProfile({
-          ...createDefaultProfile(normalized),
-          ...createdSeed
-        });
+        const created = normalizeProfile(
+          {
+            ...createDefaultProfile(normalized),
+            ...createdSeed
+          },
+          { applyRetroactive: true }
+        );
 
         const nextProfiles = [...profiles, created];
 
@@ -806,11 +809,14 @@ export class ProfileSystem {
 
         return created;
       } catch (error) {
-        const fallbackCreated = normalizeProfile({
-          ...createDefaultProfile(normalized),
-          ...seed,
-          username: normalized
-        });
+        const fallbackCreated = normalizeProfile(
+          {
+            ...createDefaultProfile(normalized),
+            ...seed,
+            username: normalized
+          },
+          { applyRetroactive: true }
+        );
 
         const hasFallback = this.inMemoryProfiles.some(
           (profile) => profile.username === normalized

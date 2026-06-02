@@ -195,6 +195,54 @@ test("achievement evaluator: Longest Match retroactive evaluation uses persisted
   assert.ok(!ids.includes("long_match_100"));
 });
 
+test("achievement catalog: Longest Match unlock state and progress stay aligned for a 97-round record", () => {
+  const catalog = buildAchievementCatalog({
+    achievements: {
+      long_match_25: { count: 1, firstUnlockedAt: "2026-06-01T00:00:00.000Z", lastUnlockedAt: "2026-06-01T00:00:00.000Z" },
+      long_match_50: { count: 1, firstUnlockedAt: "2026-06-01T00:00:00.000Z", lastUnlockedAt: "2026-06-01T00:00:00.000Z" },
+      long_match_75: { count: 1, firstUnlockedAt: "2026-06-01T00:00:00.000Z", lastUnlockedAt: "2026-06-01T00:00:00.000Z" }
+    },
+    longestMatch: {
+      rounds: 97,
+      mode: "gauntlet",
+      opponentName: "Countess Veyra",
+      result: "timer_win",
+      capturedFor: 43,
+      capturedAgainst: 40,
+      achievedAt: "2026-06-01T00:00:00.000Z"
+    }
+  });
+
+  assert.equal(catalog.find((item) => item.id === "long_match_25")?.unlocked, true);
+  assert.equal(catalog.find((item) => item.id === "long_match_50")?.unlocked, true);
+  assert.equal(catalog.find((item) => item.id === "long_match_75")?.unlocked, true);
+  assert.equal(catalog.find((item) => item.id === "long_match_100")?.unlocked, false);
+  assert.deepEqual(catalog.find((item) => item.id === "long_match_25")?.progress, {
+    current: 25,
+    target: 25,
+    label: "25 / 25",
+    kind: "numeric"
+  });
+  assert.deepEqual(catalog.find((item) => item.id === "long_match_50")?.progress, {
+    current: 50,
+    target: 50,
+    label: "50 / 50",
+    kind: "numeric"
+  });
+  assert.deepEqual(catalog.find((item) => item.id === "long_match_75")?.progress, {
+    current: 75,
+    target: 75,
+    label: "75 / 75",
+    kind: "numeric"
+  });
+  assert.deepEqual(catalog.find((item) => item.id === "long_match_100")?.progress, {
+    current: 97,
+    target: 100,
+    label: "97 / 100",
+    kind: "numeric"
+  });
+});
+
 test("achievement catalog includes numeric progress metadata for safe locked achievements", () => {
   const catalog = buildAchievementCatalog({
     wins: 73,
