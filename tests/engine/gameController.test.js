@@ -14626,6 +14626,129 @@ test("foundation: completed terminal online WAR rows reconstruct countable WAR s
   assert.equal(stats.warsWon, 0);
 });
 
+test("gameController: completed authoritative match counts resolved and terminal active-WAR no-effect chains", () => {
+  const controller = new GameController({
+    username: "TerminalWarChainUser",
+    timerSeconds: 30,
+    matchTimeLimitSeconds: 300,
+    mode: MATCH_MODE.PVE,
+    localAuthorityStoreFactory: () => createAuthoritativePveStore({
+      initialRoom: createAuthoritativeLocalRoom()
+    }),
+    onUpdate: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+
+    const completedRoom = createAuthoritativeLocalRoom({
+      roundNumber: 7,
+      matchComplete: true,
+      winner: "host",
+      winReason: "hand_exhaustion",
+      hostHand: { fire: 1, water: 0, earth: 0, wind: 0 },
+      guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+      warActive: false,
+      warRounds: [],
+      warPot: { host: [], guest: [] },
+      roundHistory: [
+        {
+          round: 2,
+          hostMove: "fire",
+          guestMove: "water",
+          outcomeType: "war_resolved",
+          hostResult: "lose",
+          guestResult: "win",
+          capturedCards: 4,
+          capturedOpponentCards: 2
+        },
+        {
+          round: 6,
+          hostMove: "earth",
+          guestMove: "fire",
+          outcomeType: "no_effect",
+          hostResult: "no_effect",
+          guestResult: "no_effect",
+          warDepth: 4,
+          warRounds: [
+            { round: 3, outcomeType: "war" },
+            { round: 4, outcomeType: "no_effect" },
+            { round: 5, outcomeType: "no_effect" },
+            { round: 6, outcomeType: "no_effect" }
+          ]
+        }
+      ]
+    });
+
+    controller.syncLocalAuthorityState(completedRoom, null);
+
+    const stats = deriveMatchStats(controller.match, "p1");
+    assert.equal(controller.match?.history?.length, 2);
+    assert.equal(controller.match?.history?.[0]?.warClashes, 1);
+    assert.equal(controller.match?.history?.[1]?.warClashes, 4);
+    assert.equal(stats?.warsEntered, 2);
+    assert.equal(stats?.longestWar, 4);
+    assert.equal(stats?.warsWon, 1);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("foundation: completed terminal online active-WAR no-effect rows reconstruct countable WAR stats", () => {
+  const room = {
+    roomCode: "ROOMWARNOEFFECT",
+    matchComplete: true,
+    winner: "host",
+    winReason: "hand_exhaustion",
+    roundNumber: 7,
+    roundHistory: [
+      {
+        round: 2,
+        hostMove: "fire",
+        guestMove: "water",
+        outcomeType: "war_resolved",
+        hostResult: "lose",
+        guestResult: "win",
+        capturedCards: 4,
+        capturedOpponentCards: 2
+      },
+      {
+        round: 6,
+        hostMove: "earth",
+        guestMove: "fire",
+        outcomeType: "no_effect",
+        hostResult: "no_effect",
+        guestResult: "no_effect",
+        warDepth: 4,
+        warRounds: [
+          { round: 3, outcomeType: "war" },
+          { round: 4, outcomeType: "no_effect" },
+          { round: 5, outcomeType: "no_effect" },
+          { round: 6, outcomeType: "no_effect" }
+        ]
+      }
+    ]
+  };
+
+  const match = buildOnlineMatchStateFromRoom(room);
+  assert.equal(match.history.length, 2);
+  assert.equal(match.history[0].warClashes, 1);
+  assert.deepEqual(match.history[1], {
+    result: "p1",
+    warClashes: 4,
+    capturedCards: 0,
+    capturedOpponentCards: 0,
+    p1Card: "earth",
+    p2Card: "fire"
+  });
+
+  const stats = deriveMatchStats(match, "p1");
+  assert.equal(stats.warsEntered, 2);
+  assert.equal(stats.longestWar, 4);
+  assert.equal(stats.warsWon, 1);
+});
+
 test("gameController: PvE completed authoritative WAR result does not return war_continues", async () => {
   const originalWindow = globalThis.window;
   let onMatchCompleteCalls = 0;

@@ -509,6 +509,15 @@ function resolveTerminalWarClashes(entry) {
   return 1;
 }
 
+function hasTerminalWarMetadata(entry) {
+  const explicitDepth = Number(entry?.warDepth);
+  if (Number.isFinite(explicitDepth) && explicitDepth > 0) {
+    return true;
+  }
+
+  return Array.isArray(entry?.warRounds) && entry.warRounds.length > 0;
+}
+
 function buildOnlineHistoryFromRoundHistory(roundHistory = [], roomWinner = null, matchComplete = false) {
   const history = [];
 
@@ -516,9 +525,14 @@ function buildOnlineHistoryFromRoundHistory(roundHistory = [], roomWinner = null
     const entry = roundHistory[index];
     const outcomeType = String(entry?.outcomeType ?? "");
     const isTerminalCompletedWar =
-      matchComplete && outcomeType === "war" && index === roundHistory.length - 1;
+      matchComplete &&
+      index === roundHistory.length - 1 &&
+      (
+        outcomeType === "war" ||
+        (outcomeType === "no_effect" && hasTerminalWarMetadata(entry))
+      );
 
-    if (outcomeType === "war") {
+    if (outcomeType === "war" || isTerminalCompletedWar) {
       history.push({
         result: isTerminalCompletedWar ? resolvePerspectiveResultFromRoomWinner(roomWinner) : "none",
         warClashes: isTerminalCompletedWar ? resolveTerminalWarClashes(entry) : 0,
