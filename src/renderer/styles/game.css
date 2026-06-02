@@ -755,9 +755,12 @@ input[type="number"] {
   isolation: isolate;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  justify-self: center;
   justify-items: center;
   align-items: start;
-  gap: 4px;
+  width: fit-content;
+  max-width: 248px;
+  gap: 10px;
   overflow: visible;
   border: 1px solid rgba(123, 171, 212, 0.28);
   border-radius: 14px;
@@ -788,11 +791,12 @@ input[type="number"] {
   position: relative;
   grid-row: 2;
   z-index: 4;
-  width: min(100%, 392px);
+  width: min(100%, 228px);
   min-height: 116px;
-  grid-template-columns: minmax(84px, 112px) auto minmax(84px, 112px);
+  grid-template-columns: 82px 36px 82px;
   align-items: center;
   justify-items: center;
+  justify-content: center;
   gap: 2px;
   overflow: visible;
 }
@@ -805,7 +809,7 @@ input[type="number"] {
   justify-items: center;
   gap: 3px;
   text-align: center;
-  max-width: 392px;
+  max-width: 228px;
   padding: 0 4px;
   position: relative;
   z-index: 2;
@@ -840,13 +844,14 @@ input[type="number"] {
   min-height: 100%;
   position: relative;
   z-index: 5;
-  width: min(100%, 106px);
-  max-width: 106px;
+  width: 82px;
+  max-width: 82px;
+  min-width: 82px;
   display: grid;
   justify-items: center;
   align-content: start;
-  gap: 3px;
-  padding: 5px 5px 6px;
+  gap: 1px;
+  padding: 1px 1px 2px;
   background: linear-gradient(180deg, rgba(9, 21, 33, 0.96), rgba(13, 29, 44, 0.96));
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
   will-change: transform, opacity, box-shadow, filter;
@@ -855,7 +860,7 @@ input[type="number"] {
 .round-center-result-slot::after {
   content: "";
   position: absolute;
-  inset: 6px;
+  inset: 3px;
   border-radius: 10px;
   pointer-events: none;
   opacity: 0;
@@ -873,16 +878,21 @@ input[type="number"] {
   text-align: center;
   font-size: 0.66rem;
   font-weight: 700;
-  line-height: 1.14;
+  line-height: 1.08;
 }
 
 .round-center-result-slot .played-art {
-  width: min(100%, 70px);
-  max-width: 70px;
-  min-width: 58px;
+  width: 76px;
+  max-width: 76px;
+  min-width: 76px;
+  aspect-ratio: 2 / 3;
   margin-inline: auto;
   background-size: cover;
-  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.28);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px rgba(216, 235, 251, 0.42),
+    0 0 0 2px rgba(12, 24, 36, 0.78),
+    0 8px 14px rgba(0, 0, 0, 0.28);
 }
 
 .round-center-result-clash {
@@ -890,15 +900,21 @@ input[type="number"] {
   z-index: 6;
   display: grid;
   place-items: center;
-  min-width: 28px;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
 }
 
 .round-center-result-clash-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
-  min-height: 30px;
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
   padding: 0 5px;
   border-radius: 999px;
   border: 1px solid rgba(167, 204, 231, 0.38);
@@ -908,9 +924,12 @@ input[type="number"] {
   color: #f2f8ff;
   font-size: 0.54rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
+  line-height: 1;
   text-transform: uppercase;
   box-shadow: 0 7px 12px rgba(0, 0, 0, 0.24);
+  text-align: center;
+  overflow: hidden;
 }
 
 .round-center-result.motion-resolved .round-center-result-slot-left,
@@ -1191,23 +1210,30 @@ input[type="number"] {
   grid-column: 1;
   grid-row: 1;
   display: grid;
-  gap: 6px;
+  gap: 8px;
+  justify-self: center;
+  width: min(100%, 320px);
 }
 
 .war-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(4, minmax(84px, 88px));
+  gap: 6px;
+  justify-content: center;
+  align-items: start;
 }
 
 .war-slot {
   position: relative;
-  border: 1px solid rgba(220, 165, 95, 0.46);
+  border: 1px solid rgba(220, 165, 95, 0.28);
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(42, 29, 18, 0.82), rgba(24, 17, 10, 0.88));
-  padding: 3px;
+  box-sizing: border-box;
+  width: 84px;
+  padding: 5px;
   display: grid;
-  gap: 3px;
+  gap: 4px;
+  justify-items: center;
   min-width: 0;
 }
 
@@ -1217,16 +1243,25 @@ input[type="number"] {
 }
 
 .war-slot-art {
-  width: 100%;
+  width: 72px;
+  max-width: 72px;
+  min-width: 72px;
+  aspect-ratio: 2 / 3;
+  background-size: cover;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px rgba(255, 224, 178, 0.42),
+    0 0 0 2px rgba(42, 24, 10, 0.82),
+    0 8px 14px rgba(0, 0, 0, 0.24);
 }
 
 .war-slot-count-badge {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  min-width: 24px;
-  height: 20px;
-  padding: 0 6px;
+  top: 6px;
+  right: 6px;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1234,7 +1269,7 @@ input[type="number"] {
   border: 1px solid rgba(255, 224, 178, 0.72);
   background: linear-gradient(180deg, rgba(38, 22, 10, 0.95), rgba(63, 37, 17, 0.96));
   color: #fff0d6;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 800;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
   pointer-events: none;
@@ -1242,7 +1277,7 @@ input[type="number"] {
 
 .war-slot-name {
   color: #ffe6bf;
-  font-size: 0.68rem;
+  font-size: 0.76rem;
   font-weight: 700;
   text-align: center;
 }
@@ -1366,30 +1401,30 @@ input[type="number"] {
 
   48% {
     opacity: 1;
-    transform: translateY(-3px) scale(1.03);
+    transform: translateY(-1px) scale(1.02);
   }
 
   100% {
     opacity: 1;
-    transform: translateY(-5px) scale(1.04);
+    transform: translateY(-2px) scale(1.04);
   }
 }
 
 @keyframes center-card-winner-pulse {
   0% {
-    transform: translateY(-5px) scale(1.04);
+    transform: translateY(-2px) scale(1.04);
     box-shadow: none;
     filter: brightness(1);
   }
 
   55% {
-    transform: translateY(-7px) scale(1.06);
+    transform: translateY(-3px) scale(1.04);
     box-shadow: 0 0 0 1px rgba(117, 224, 179, 0.3), 0 0 20px rgba(98, 220, 170, 0.2);
     filter: brightness(1.08);
   }
 
   100% {
-    transform: translateY(-5px) scale(1.04);
+    transform: translateY(-2px) scale(1.04);
     box-shadow: none;
     filter: brightness(1);
   }
