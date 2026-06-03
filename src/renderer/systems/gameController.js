@@ -628,6 +628,7 @@ export class GameController {
 
     this.match = null;
     this.lastRound = null;
+    this.activeWarClashCards = null;
     this.roundResultText = "No round played yet.";
     this.captured = { p1: 0, p2: 0 };
     this.timerSeconds = this.timerDefault;
@@ -738,6 +739,14 @@ export class GameController {
       this.mode,
       this.aiDifficulty
     );
+    if (room?.warActive && roundResult?.hostMove && roundResult?.guestMove) {
+      this.activeWarClashCards = {
+        p1Card: String(roundResult.hostMove ?? "").toLowerCase() || null,
+        p2Card: String(roundResult.guestMove ?? "").toLowerCase() || null
+      };
+    } else if (!room?.warActive) {
+      this.activeWarClashCards = null;
+    }
     if (roundResult && (roundResult.outcomeType !== "war" || room.matchComplete)) {
       this.lastRound = buildLocalRoundFromAuthoritativeResult(roundResult, room);
       this.roundResultText = formatRoundResult(this.lastRound);
@@ -804,6 +813,7 @@ export class GameController {
       ? null
       : createMatch({ difficulty: this.aiDifficulty, mode: this.mode });
     this.lastRound = null;
+    this.activeWarClashCards = null;
     this.roundResultText = "Match started.";
     this.captured = { p1: 0, p2: 0 };
     this.hotseatTurn = "p1";
@@ -1540,6 +1550,9 @@ export class GameController {
       totalWarClashes: summary.wars,
       warPileCards: committedWarPile,
       warPileSizes: warActive ? [...(this.match.war?.pendingPileSizes ?? [])] : [],
+      activeWarClashCards: warActive && this.activeWarClashCards
+        ? { ...this.activeWarClashCards }
+        : null,
       captured: { ...this.captured },
       lastRound: this.lastRound,
       roundResult: this.roundResultText,

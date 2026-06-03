@@ -12675,6 +12675,58 @@ test("ui: local PvE center result opponent art matches the same opponent variant
   assert.doesNotMatch(html, /data-round-center-card-art="right"[^>]*assets\/oppEarth\.jpg/);
 });
 
+test("ui: local PvE active WAR center result prefers the latest clash cards over stale lastRound data", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Elemental AI" },
+    presentation: { phase: "result", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    opponentCardVariants: {
+      fire: "fire_variant_phoenix",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_titan",
+      wind: "wind_variant_storm_eye"
+    },
+    game: {
+      roundOutcome: { key: "war_triggered", label: "WAR triggered" },
+      roundResult: "WAR continues. Choose new cards for the next clash.",
+      round: 3,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      warActive: true,
+      pileCount: 4,
+      totalWarClashes: 2,
+      warPileSizes: [2, 4],
+      warPileCards: ["wind", "wind", "earth", "water"],
+      activeWarClashCards: { p1Card: "earth", p2Card: "water" },
+      playerHand: ["fire", "wind"],
+      opponentHand: ["earth", "water"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: { result: "none", p1Card: "wind", p2Card: "wind" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-motion="war"/);
+  assert.match(html, /data-round-center-headline="true">WAR</);
+  assert.match(html, /Player: Earth/);
+  assert.match(html, /Opponent: Water/);
+  assert.match(html, /assets\/customEarth\.jpg/);
+  assert.match(html, /assets\/cards\/water_variant_tidal_spirit\.png/);
+  assert.doesNotMatch(html, /Player: Wind/);
+  assert.doesNotMatch(html, /Opponent: Wind/);
+  assert.match(html, /WAR progression: 2 -> 4/);
+});
+
 test("ui: local PvE does not render a fake center result before the first real round", () => {
   const html = gameScreen.render({
     reducedMotion: true,

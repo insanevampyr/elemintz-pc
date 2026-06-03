@@ -298,6 +298,12 @@ function buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBus
   let leftCard = getCardElement(vm.lastRound?.p1Card) ?? null;
   let rightCard = getCardElement(vm.lastRound?.p2Card) ?? null;
   const war = Boolean(vm.warActive || vm.roundOutcome?.key === "war_triggered");
+  const activeWarCards = war ? vm.activeWarClashCards ?? null : null;
+
+  if (activeWarCards?.p1Card && activeWarCards?.p2Card) {
+    leftCard = getCardElement(activeWarCards.p1Card) ?? leftCard;
+    rightCard = getCardElement(activeWarCards.p2Card) ?? rightCard;
+  }
 
   if (!leftCard || !rightCard) {
     const warPilePair = deriveCenterCardsFromWarPile(vm.warPileCards);

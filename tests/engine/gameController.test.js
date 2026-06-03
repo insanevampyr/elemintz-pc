@@ -1862,6 +1862,116 @@ test("gameController: local PvE WAR stats ignore pre-WAR no-effect rows when res
   }
 });
 
+test("gameController: local PvE active WAR exposes the latest authoritative clash cards without reusing stale lastRound data", () => {
+  const controller = new GameController({
+    username: "PveWarClashCardsUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  const preWarRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "wind",
+        guestMove: "earth",
+        outcomeType: "resolved",
+        hostResult: "win",
+        guestResult: "lose",
+        capturedCards: 2,
+        capturedOpponentCards: 1
+      }
+    ]
+  });
+
+  const warStartRow = {
+    round: 2,
+    hostMove: "water",
+    guestMove: "water",
+    outcomeType: "war",
+    hostResult: "war",
+    guestResult: "war",
+    capturedCards: 0,
+    capturedOpponentCards: 0
+  };
+  const warStartRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    warActive: true,
+    warDepth: 1,
+    warRounds: [{ round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" }],
+    warPot: { host: ["water"], guest: ["water"] },
+    roundHistory: [...preWarRoom.roundHistory, warStartRow]
+  });
+
+  const warContinueRow = {
+    round: 2,
+    hostMove: "earth",
+    guestMove: "fire",
+    outcomeType: "no_effect",
+    hostResult: "no_effect",
+    guestResult: "no_effect",
+    capturedCards: 0,
+    capturedOpponentCards: 0
+  };
+  const warContinueRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    warActive: true,
+    warDepth: 2,
+    warRounds: [
+      { round: 2, hostMove: "water", guestMove: "water", outcomeType: "war" },
+      { round: 2, hostMove: "earth", guestMove: "fire", outcomeType: "no_effect" }
+    ],
+    warPot: { host: ["water", "earth"], guest: ["water", "fire"] },
+    roundHistory: [...preWarRoom.roundHistory, warStartRow, warContinueRow]
+  });
+
+  const warResolvedRow = {
+    round: 2,
+    hostMove: "wind",
+    guestMove: "water",
+    outcomeType: "war_resolved",
+    hostResult: "lose",
+    guestResult: "win",
+    capturedCards: 6,
+    capturedOpponentCards: 3
+  };
+  const warResolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 3,
+    roundHistory: [...warContinueRoom.roundHistory, warResolvedRow]
+  });
+
+  try {
+    controller.syncLocalAuthorityState(preWarRoom, null);
+    assert.equal(controller.getViewModel().activeWarClashCards, null);
+
+    controller.syncLocalAuthorityState(warStartRoom, warStartRow);
+    let vm = controller.getViewModel();
+    assert.deepEqual(vm.activeWarClashCards, { p1Card: "water", p2Card: "water" });
+    assert.deepEqual(vm.warPileSizes, [2]);
+    assert.equal(controller.lastRound, null);
+
+    controller.syncLocalAuthorityState(warContinueRoom, warContinueRow);
+    vm = controller.getViewModel();
+    assert.deepEqual(vm.activeWarClashCards, { p1Card: "earth", p2Card: "fire" });
+    assert.deepEqual(vm.warPileSizes, [2, 4]);
+    assert.equal(controller.lastRound.p1Card, "earth");
+    assert.equal(controller.lastRound.p2Card, "fire");
+
+    controller.syncLocalAuthorityState(warResolvedRoom, warResolvedRow);
+    vm = controller.getViewModel();
+    assert.equal(vm.activeWarClashCards, null);
+    assert.equal(controller.lastRound.p1Card, "wind");
+    assert.equal(controller.lastRound.p2Card, "water");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
 test("gameController: local PvE live captured tally uses derived match stats without preserving higher prior values", () => {
   const controller = new GameController({
     username: "PveLiveCaptureUser",
