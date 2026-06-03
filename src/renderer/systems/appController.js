@@ -1690,8 +1690,35 @@ export class AppController {
     this.pendingGauntletContinuationRequiresConfirm = false;
   }
 
-  handleGauntletMatchCompletion(match) {
-    if (!this.pveGauntletMode || !this.gauntletRunState?.active) {
+  captureGauntletCompletionContext() {
+    const runState = this.gauntletRunState
+      ? {
+          ...this.gauntletRunState,
+          rivalBag: Array.isArray(this.gauntletRunState.rivalBag) ? [...this.gauntletRunState.rivalBag] : [],
+          defeatedRivalIds: Array.isArray(this.gauntletRunState.defeatedRivalIds)
+            ? [...this.gauntletRunState.defeatedRivalIds]
+            : [],
+          claimedMilestoneStreaks: Array.isArray(this.gauntletRunState.claimedMilestoneStreaks)
+            ? [...this.gauntletRunState.claimedMilestoneStreaks]
+            : []
+        }
+      : null;
+    const activeGauntletRival = this.getCurrentGauntletRival();
+    return {
+      isGauntletMatch: Boolean(this.pveGauntletMode && runState?.active),
+      runState,
+      rivalName:
+        activeGauntletRival?.displayName ??
+        (typeof this.getCurrentPveOpponentName === "function" ? this.getCurrentPveOpponentName() : "") ??
+        ""
+    };
+  }
+
+  handleGauntletMatchCompletion(match, completionContext = null) {
+    const effectiveRunState = completionContext?.runState ?? this.gauntletRunState;
+    const isGauntletMatch =
+      completionContext?.isGauntletMatch ?? Boolean(this.pveGauntletMode && effectiveRunState?.active);
+    if (!isGauntletMatch || !effectiveRunState?.active) {
       return { handled: false };
     }
 
@@ -1725,14 +1752,14 @@ export class AppController {
         : String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit"
             ? "quit_forfeit"
             : "loss";
-    const activeGauntletRival = this.getCurrentGauntletRival();
     const rivalName =
-      activeGauntletRival?.displayName ??
+      completionContext?.rivalName ??
+      this.getCurrentGauntletRival()?.displayName ??
       (typeof this.getCurrentPveOpponentName === "function" ? this.getCurrentPveOpponentName() : "") ??
       "";
-    const finalStreak = Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0));
-    const rivalsDefeated = Array.isArray(this.gauntletRunState?.defeatedRivalIds)
-      ? this.gauntletRunState.defeatedRivalIds.length
+    const finalStreak = Math.max(0, Number(effectiveRunState?.currentStreak ?? 0));
+    const rivalsDefeated = Array.isArray(effectiveRunState?.defeatedRivalIds)
+      ? effectiveRunState.defeatedRivalIds.length
       : 0;
     this.endGauntletRun(result);
     return {
@@ -6825,6 +6852,8 @@ export class AppController {
       },
       onMatchComplete: async ({ match, persisted }) => {
         this.clearPassTimer();
+        const gauntletCompletionContext =
+          mode === MATCH_MODE.PVE ? this.captureGauntletCompletionContext() : null;
         const previousPveProfile = this.profile ? { ...this.profile } : null;
         const previousLocalProfiles = this.localProfiles
           ? {
@@ -6864,71 +6893,74 @@ export class AppController {
         } else {
           this.emitRewardToastsForResult(finalPersisted, this.username, previousPveProfile);
         }
-          if (mode === MATCH_MODE.PVE && this.pveGauntletMode && this.gauntletRunState?.active) {
-            const isQuitForfeit = String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit";
-            if (match?.winner === "p1") {
-              const nextStreak = Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)) + 1;
-              const gauntletStatsResult = await this.recordGauntletProfileStats({
-                matchWon: true,
-                currentStreak: nextStreak,
-                claimedMilestoneStreaks: this.gauntletRunState?.claimedMilestoneStreaks ?? []
-              });
-              if (gauntletStatsResult?.profile) {
-                finalPersisted = {
-                  ...(finalPersisted ?? {}),
-                  profile: gauntletStatsResult.profile
-                };
-              }
-              if (Array.isArray(gauntletStatsResult?.claimedMilestoneStreaks)) {
-                this.gauntletRunState = {
-                  ...this.gauntletRunState,
-                  claimedMilestoneStreaks: [...gauntletStatsResult.claimedMilestoneStreaks]
-                };
-              }
-              const gauntletLevelBefore = Math.max(
-                1,
-                Number(gauntletStatsResult?.levelBefore ?? 1) || 1
-              );
-              const gauntletLevelAfter = Math.max(
-                1,
-                Number(gauntletStatsResult?.levelAfter ?? gauntletLevelBefore) || gauntletLevelBefore
-              );
-              if (gauntletLevelAfter > gauntletLevelBefore) {
-                this.toastManager.showLevelUp?.({
-                  fromLevel: gauntletLevelBefore,
-                  toLevel: gauntletLevelAfter,
-                  rewards: Array.isArray(gauntletStatsResult?.levelRewards)
-                    ? gauntletStatsResult.levelRewards
-                    : [],
-                  playerName: this.username
-                });
-              }
-              if (gauntletStatsResult) {
-                finalPersisted = {
-                  ...(finalPersisted ?? {}),
-                  gauntletMilestoneRewards: Array.isArray(gauntletStatsResult.milestoneRewards)
-                    ? gauntletStatsResult.milestoneRewards
-                    : [],
-                  gauntletXpConversionTokenBonus: Math.max(
-                    0,
-                    Number(gauntletStatsResult.xpConversionTokenBonus ?? 0)
-                  )
-                };
-              }
-            } else if (!isQuitForfeit) {
-              const gauntletStatsResult = await this.recordGauntletProfileStats({
-                runEndedWithLoss: true
-              });
+        if (mode === MATCH_MODE.PVE && gauntletCompletionContext?.isGauntletMatch) {
+          const isQuitForfeit = String(match?.endReason ?? "").trim().toLowerCase() === "quit_forfeit";
+          if (match?.winner === "p1") {
+            const nextStreak =
+              Math.max(0, Number(gauntletCompletionContext?.runState?.currentStreak ?? 0)) + 1;
+            const gauntletStatsResult = await this.recordGauntletProfileStats({
+              matchWon: true,
+              currentStreak: nextStreak,
+              claimedMilestoneStreaks: gauntletCompletionContext?.runState?.claimedMilestoneStreaks ?? []
+            });
             if (gauntletStatsResult?.profile) {
               finalPersisted = {
                 ...(finalPersisted ?? {}),
                 profile: gauntletStatsResult.profile
               };
             }
+            if (Array.isArray(gauntletStatsResult?.claimedMilestoneStreaks)) {
+              this.gauntletRunState = {
+                ...this.gauntletRunState,
+                claimedMilestoneStreaks: [...gauntletStatsResult.claimedMilestoneStreaks]
+              };
+            }
+            const gauntletLevelBefore = Math.max(
+              1,
+              Number(gauntletStatsResult?.levelBefore ?? 1) || 1
+            );
+            const gauntletLevelAfter = Math.max(
+              1,
+              Number(gauntletStatsResult?.levelAfter ?? gauntletLevelBefore) || gauntletLevelBefore
+            );
+            if (gauntletLevelAfter > gauntletLevelBefore) {
+              this.toastManager.showLevelUp?.({
+                fromLevel: gauntletLevelBefore,
+                toLevel: gauntletLevelAfter,
+                rewards: Array.isArray(gauntletStatsResult?.levelRewards)
+                  ? gauntletStatsResult.levelRewards
+                  : [],
+                playerName: this.username
+              });
+            }
+            if (gauntletStatsResult) {
+              finalPersisted = {
+                ...(finalPersisted ?? {}),
+                gauntletMilestoneRewards: Array.isArray(gauntletStatsResult.milestoneRewards)
+                  ? gauntletStatsResult.milestoneRewards
+                  : [],
+                gauntletXpConversionTokenBonus: Math.max(
+                  0,
+                  Number(gauntletStatsResult.xpConversionTokenBonus ?? 0)
+                )
+              };
+            }
+          } else if (!isQuitForfeit) {
+            const gauntletStatsResult = await this.recordGauntletProfileStats({
+              runEndedWithLoss: true
+            });
+            if (gauntletStatsResult?.profile) {
+              finalPersisted = {
+                ...(finalPersisted ?? {}),
+                profile: gauntletStatsResult.profile
+              };
+            }
+          }
         }
-      }
         const gauntletCompletion =
-          mode === MATCH_MODE.PVE ? this.handleGauntletMatchCompletion(match) : { handled: false };
+          mode === MATCH_MODE.PVE
+            ? this.handleGauntletMatchCompletion(match, gauntletCompletionContext)
+            : { handled: false };
         if (mode === MATCH_MODE.PVE && gauntletCompletion?.type === "victory") {
           const gauntletVictoryPayload = {
             streak: gauntletCompletion.streak,

@@ -9740,6 +9740,145 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
   }
 });
 
+test("appController: gauntlet loss wrap-up survives async completion context resets", async () => {
+  const originalWindow = globalThis.window;
+  const gauntletStatCalls = [];
+  const matchCompletePayloads = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletContext";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletContext", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {
+    app.clearGauntletRunState();
+  };
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+  app.showMatchCompleteModal = (payload) => {
+    matchCompletePayloads.push(payload);
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: 0,
+                gauntletRuns: 1,
+                gauntletWins: 0,
+                gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
+                gauntletRivalsDefeated: 0
+              }
+            };
+          }
+        }
+      }
+    };
+
+    const scenarios = [
+      {
+        match: { winner: "p2", endReason: "normal" },
+        expectedTitle: "Gauntlet Run Ended",
+        expectedResult: "loss",
+        expectedLabel: /Lost To/
+      },
+      {
+        match: { winner: "p2", endReason: "hand_exhaustion" },
+        expectedTitle: "Gauntlet Run Ended",
+        expectedResult: "loss",
+        expectedLabel: /Lost To/
+      },
+      {
+        match: { winner: "p2", endReason: "time_limit" },
+        expectedTitle: "Gauntlet Run Ended",
+        expectedResult: "loss",
+        expectedLabel: /Lost To/
+      },
+      {
+        match: { winner: "draw", endReason: "hand_exhaustion" },
+        expectedTitle: "Gauntlet Run Ended",
+        expectedResult: "draw",
+        expectedLabel: /Final Rival/
+      }
+    ];
+
+    for (const scenario of scenarios) {
+      app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+      await Promise.resolve();
+      const rivalName = app.getCurrentGauntletRival()?.displayName ?? "";
+      gauntletStatCalls.length = 0;
+      matchCompletePayloads.length = 0;
+
+      await app.gameController.onMatchComplete({
+        match: scenario.match,
+        persisted: { profile: { username: "GauntletContext" } }
+      });
+
+      assert.deepEqual(gauntletStatCalls, [
+        {
+          username: "GauntletContext",
+          runStarted: false,
+          matchWon: false,
+          runEndedWithLoss: true,
+          currentStreak: 0,
+          claimedMilestoneStreaks: []
+        }
+      ]);
+      assert.equal(matchCompletePayloads.length, 1);
+      assert.equal(matchCompletePayloads[0].title, scenario.expectedTitle);
+      assert.match(matchCompletePayloads[0].bodyHtml, scenario.expectedLabel);
+      if (rivalName) {
+        assert.match(matchCompletePayloads[0].bodyHtml, new RegExp(rivalName));
+      }
+      assert.equal(app.gauntletRunState.lastResult, scenario.expectedResult);
+    }
+
+    app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+    await Promise.resolve();
+    gauntletStatCalls.length = 0;
+    matchCompletePayloads.length = 0;
+
+    await app.gameController.onMatchComplete({
+      match: { winner: "p2", endReason: "quit_forfeit" },
+      persisted: { profile: { username: "GauntletContext" } }
+    });
+
+    assert.deepEqual(gauntletStatCalls, []);
+    assert.equal(matchCompletePayloads.length, 1);
+    assert.equal(matchCompletePayloads[0].title, "Match Complete");
+
+    app.startGame(MATCH_MODE.PVE, {});
+    await Promise.resolve();
+    gauntletStatCalls.length = 0;
+    matchCompletePayloads.length = 0;
+
+    await app.gameController.onMatchComplete({
+      match: { winner: "p2", endReason: "hand_exhaustion" },
+      persisted: { profile: { username: "GauntletContext" } }
+    });
+
+    assert.deepEqual(gauntletStatCalls, []);
+    assert.equal(matchCompletePayloads.length, 1);
+    assert.equal(matchCompletePayloads[0].title, "Match Complete");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: gauntlet victory modal does not show milestone reward text when no milestone is earned", async () => {
   const originalWindow = globalThis.window;
   const modalManager = createModalCapture();
