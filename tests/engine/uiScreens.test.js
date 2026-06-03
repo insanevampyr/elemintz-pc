@@ -4346,13 +4346,15 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
   let profileOpenCount = 0;
 
   const dailyLoginLabel = createFakeElement();
-  dailyLoginLabel.textContent = "Daily Login Reward: --:--";
+  dailyLoginLabel.textContent = "Daily Login Streak: Day 3 of 7";
+  const dailyLoginDetail = createFakeElement();
+  dailyLoginDetail.textContent = "Already claimed today · Next reset: 01:01";
   const dailyResetLabel = createFakeElement();
   dailyResetLabel.textContent = "Reset in: --:--";
   const weeklyResetLabel = createFakeElement();
   weeklyResetLabel.textContent = "Reset in: --:--";
   const dailyLoginPanel = createFakeElement();
-  dailyLoginPanel.innerHTML = '<p class="muted">Daily Login Reward status unavailable.</p>';
+  dailyLoginPanel.innerHTML = '<p class="muted">Daily Login Streak status unavailable.</p>';
   const dailyPreviewPanel = createFakeElement();
   dailyPreviewPanel.innerHTML = '<p class="muted">Challenges are loading...</p>';
   const weeklyPreviewPanel = createFakeElement();
@@ -4379,7 +4381,13 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     elemintz: {
       state: {
         getDailyChallenges: async () => ({
-          dailyLogin: { eligible: false, msUntilReset: 3660000 },
+          dailyLogin: {
+            eligible: false,
+            msUntilReset: 3660000,
+            streakDay: 3,
+            nowMs: Date.parse("2026-05-14T18:59:00.000Z"),
+            lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z"
+          },
           daily: { challenges: [], msUntilReset: 3660000 },
           weekly: { challenges: [], msUntilReset: 3660000 }
         })
@@ -4388,7 +4396,12 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
   };
 
   global.document = {
-    getElementById: (id) => elements[id] ?? null,
+    getElementById: (id) => {
+      if (id === "menu-daily-login-detail") {
+        return dailyLoginDetail;
+      }
+      return elements[id] ?? null;
+    },
     querySelector: (selector) => {
       if (selector === '[data-menu-daily-login-panel="true"]') {
         return dailyLoginPanel;
@@ -4460,7 +4473,8 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
 
     assert.equal(shown.length, 1);
     assert.equal(typeof intervalHandler, "function");
-    assert.equal(dailyLoginLabel.textContent, "Daily Login Reward: 01:01");
+    assert.equal(dailyLoginLabel.textContent, "Daily Login Streak: Day 3 of 7");
+    assert.equal(dailyLoginDetail.textContent, "Already claimed today · Next reset: 01:01");
     assert.equal(dailyResetLabel.textContent, "Reset in: 01:01");
     assert.equal(weeklyResetLabel.textContent, "Reset in: 01:01");
     assert.match(dailyLoginPanel.innerHTML, /menu-daily-login/);
@@ -4472,7 +4486,8 @@ test("ui: menu countdown refresh updates labels in place without rerendering or 
     intervalHandler();
 
     assert.equal(shown.length, 1);
-    assert.equal(dailyLoginLabel.textContent, "Daily Login Reward: 01:00");
+    assert.equal(dailyLoginLabel.textContent, "Daily Login Streak: Day 3 of 7");
+    assert.equal(dailyLoginDetail.textContent, "Already claimed today · Next reset: 01:00");
     assert.equal(dailyResetLabel.textContent, "Reset in: 01:00");
     assert.equal(weeklyResetLabel.textContent, "Reset in: 01:00");
     assert.equal(typeof profileButton.listeners.get("click"), "function");
@@ -10402,7 +10417,8 @@ test("ui: menu shows daily and weekly challenge preview panels", () => {
     backgroundImage: "assets/EleMintzIcon.png",
     dailyChallenges: {
       dailyLogin: {
-        stateLabel: "Next Daily Login Reward: 00:30",
+        stateLabel: "Daily Login Streak: Day 3 of 7",
+        detailLabel: "Already claimed today · Next reset: 00:30",
         resetLabel: "00:30"
       },
       daily: {
@@ -10424,7 +10440,8 @@ test("ui: menu shows daily and weekly challenge preview panels", () => {
 
   assert.match(html, /Daily/);
   assert.match(html, /Weekly/);
-  assert.match(html, /Daily Login Reward: 00:30/);
+  assert.match(html, /Daily Login Streak: Day 3 of 7/);
+  assert.match(html, /Already claimed today · Next reset: 00:30/);
   assert.match(html, /Daily - 1\/2/);
   assert.match(html, /Weekly - 0\/1/);
   assert.match(html, /menu-challenge-columns/);
@@ -10476,7 +10493,8 @@ test("ui: menu uses challenge panel heading and challenge icons", () => {
     backgroundImage: "assets/EleMintzIcon.png",
     dailyChallenges: {
       dailyLogin: {
-        stateLabel: "Daily Login Reward Available Now",
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: "Day 2 of 7",
         resetLabel: "01:00"
       },
       daily: {
@@ -10493,7 +10511,8 @@ test("ui: menu uses challenge panel heading and challenge icons", () => {
 
   assert.doesNotMatch(html, />Challenges<\/button>/);
   assert.match(html, /<h3 class="section-title">Challenges<\/h3>/);
-  assert.match(html, /Daily Login Reward Available Now/);
+  assert.match(html, /Daily Login Streak: Ready/);
+  assert.match(html, /Day 2 of 7/);
   assert.ok(html.includes("\u2B50"));
   assert.ok(html.includes("\uD83C\uDFC6"));
   assert.ok(html.includes("\u2714"));
@@ -10505,7 +10524,8 @@ test("ui: menu right panel places daily and weekly previews side by side with ce
     backgroundImage: "assets/EleMintzIcon.png",
     dailyChallenges: {
       dailyLogin: {
-        stateLabel: "Next Daily Login Reward: 00:30",
+        stateLabel: "Daily Login Streak: Day 3 of 7",
+        detailLabel: "Already claimed today · Next reset: 00:30",
         resetLabel: "00:30"
       },
       daily: {
@@ -10524,7 +10544,7 @@ test("ui: menu right panel places daily and weekly previews side by side with ce
     actions: {}
   });
 
-  assert.ok(html.indexOf("Daily Login Reward: 00:30") < html.indexOf("Daily - 0/1"));
+  assert.ok(html.indexOf("Daily Login Streak: Day 3 of 7") < html.indexOf("Daily - 0/1"));
   assert.ok(html.indexOf("Daily - 0/1") < html.indexOf('id="open-daily-challenges-btn"'));
   assert.ok(html.indexOf("Weekly - 0/1") < html.indexOf('id="open-daily-challenges-btn"'));
   assert.match(html, /class="menu-challenges-heading"/);
@@ -10539,7 +10559,8 @@ test("ui: menu renders buttons in requested order without standalone challenges 
     backgroundImage: "assets/EleMintzIcon.png",
     dailyChallenges: {
       dailyLogin: {
-        stateLabel: "Daily Login Reward Available Now",
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: "Day 2 of 7",
         resetLabel: "01:00"
       },
       daily: { resetLabel: "01:00", challenges: [] },
@@ -10577,7 +10598,8 @@ test("ui: menu action buttons use menu tile artwork backgrounds", () => {
     backgroundImage: "assets/EleMintzIcon.png",
     dailyChallenges: {
       dailyLogin: {
-        stateLabel: "Daily Login Reward Available Now",
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: "Day 2 of 7",
         resetLabel: "01:00"
       },
       daily: { resetLabel: "01:00", challenges: [] },
@@ -10613,7 +10635,8 @@ test("ui: menu shows Daily Login section above the Challenges heading", () => {
     backgroundImage: "assets/EleMintzIcon.png",
     dailyChallenges: {
       dailyLogin: {
-        stateLabel: "Daily Login Reward Available Now",
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: "Day 2 of 7",
         resetLabel: "01:00"
       },
       daily: {
@@ -10628,7 +10651,7 @@ test("ui: menu shows Daily Login section above the Challenges heading", () => {
     actions: {}
   });
 
-  assert.ok(html.indexOf("Daily Login Reward") < html.indexOf("<h3 class=\"section-title\">Challenges</h3>"));
+  assert.ok(html.indexOf("Daily Login Streak") < html.indexOf("<h3 class=\"section-title\">Challenges</h3>"));
 });
 
 test("ui: viewed profile renders gauntlet stat fallbacks as 0 when missing", () => {

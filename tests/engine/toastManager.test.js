@@ -295,7 +295,7 @@ test("toast: unknown chest types fall back to the basic opened chest art safely"
   assert.equal(getChestOpenRewardImagePath("mystery"), getChestOpenRewardImagePath("basic"));
 });
 
-test("toast: daily login reward includes max level bonus line only when conversion occurs", () => {
+test("toast: daily login streak reward shows day and mixed XP-token reward details", () => {
   const appended = [];
   const root = {
     appendChild(node) {
@@ -317,12 +317,83 @@ test("toast: daily login reward includes max level bonus line only when conversi
   };
 
   const manager = new ToastManager(root);
-  manager.showDailyLoginReward({ tokens: 5, xp: 0, xpConversionTokenBonus: 1 });
-  manager.showDailyLoginReward({ tokens: 5, xp: 2, xpConversionTokenBonus: 0 });
+  manager.showDailyLoginReward({
+    tokens: 4,
+    xp: 2,
+    streakDay: 1,
+    rewardSummary: { day: 1, tokens: 4, xp: 2, chestAwarded: null },
+    xpConversionTokenBonus: 1
+  });
+  manager.showDailyLoginReward({
+    tokens: 0,
+    xp: 10,
+    streakDay: 7,
+    rewardSummary: { day: 7, tokens: 0, xp: 10, chestAwarded: null },
+    xpConversionTokenBonus: 0
+  });
 
   assert.equal(appended.length, 2);
+  assert.match(appended[0].innerHTML, /Daily Login Streak/);
+  assert.match(appended[0].innerHTML, /Day 1 of 7/);
+  assert.match(appended[0].innerHTML, /Reward: 2 XP \+ 4 Tokens/);
   assert.match(appended[0].innerHTML, /Max Level Bonus: \+1 Tokens/);
+  assert.match(appended[1].innerHTML, /Day 7 of 7/);
+  assert.match(appended[1].innerHTML, /Reward: 10 XP/);
   assert.doesNotMatch(appended[1].innerHTML, /Max Level Bonus:/);
+
+  globalThis.document = originalDocument;
+  globalThis.requestAnimationFrame = originalRaf;
+  globalThis.setTimeout = originalSetTimeout;
+});
+
+test("toast: daily login streak reward shows Day 7 chest outcomes and XP fallback clearly", () => {
+  const appended = [];
+  const root = {
+    appendChild(node) {
+      appended.push(node);
+    }
+  };
+
+  const originalDocument = globalThis.document;
+  const originalRaf = globalThis.requestAnimationFrame;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  globalThis.document = {
+    createElement: () => makeFakeElement()
+  };
+  globalThis.requestAnimationFrame = (callback) => callback();
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return 0;
+  };
+
+  const manager = new ToastManager(root);
+  manager.showDailyLoginReward({
+    tokens: 0,
+    xp: 0,
+    streakDay: 7,
+    rewardSummary: { day: 7, tokens: 0, xp: 0, chestAwarded: { chestType: "legendary", chestLabel: "Legendary Chest" } },
+    chestAwarded: { chestType: "legendary", chestLabel: "Legendary Chest" }
+  });
+  manager.showDailyLoginReward({
+    tokens: 0,
+    xp: 0,
+    streakDay: 7,
+    rewardSummary: { day: 7, tokens: 0, xp: 0, chestAwarded: { chestType: "epic", chestLabel: "Epic Chest" } },
+    chestAwarded: { chestType: "epic", chestLabel: "Epic Chest" }
+  });
+  manager.showDailyLoginReward({
+    tokens: 0,
+    xp: 20,
+    streakDay: 7,
+    rewardSummary: { day: 7, tokens: 0, xp: 20, chestAwarded: null }
+  });
+
+  assert.equal(appended.length, 3);
+  assert.match(appended[0].innerHTML, /Day 7 of 7/);
+  assert.match(appended[0].innerHTML, /Reward: Legendary Chest/);
+  assert.match(appended[1].innerHTML, /Reward: Epic Chest/);
+  assert.match(appended[2].innerHTML, /Reward: 20 XP/);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;

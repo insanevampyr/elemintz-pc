@@ -163,12 +163,17 @@ export function renderMenuChallengePreview(title, iconText, bucket) {
 
 export function renderMenuDailyLoginStatus(status) {
   if (!status) {
-    return '<p class="muted">Daily Login Reward status unavailable.</p>';
+    return '<p class="muted">Daily Login Streak status unavailable.</p>';
   }
 
   return `
     <div class="menu-daily-login">
-      <p><strong id="menu-daily-login-status">${status.stateLabel.replace("Next Daily Login Reward", "Daily Login Reward")}</strong></p>
+      <p><strong id="menu-daily-login-status">${escapeHtml(status.stateLabel ?? "")}</strong></p>
+      ${
+        status.detailLabel
+          ? `<p class="muted" id="menu-daily-login-detail">${escapeHtml(status.detailLabel)}</p>`
+          : ""
+      }
     </div>
   `;
 }

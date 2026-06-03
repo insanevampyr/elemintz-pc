@@ -7638,7 +7638,8 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
     refreshDailyChallenges: 0,
     refreshMenuAnnouncement: 0,
     refreshMenuBoostEvent: 0,
-    showDailyLoginReward: 0
+    showDailyLoginReward: 0,
+    dailyLoginRewardPayloads: []
   };
 
   const app = new AppController({
@@ -7646,8 +7647,9 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
     modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
     toastManager: {
       showAchievement: () => {},
-      showDailyLoginReward: () => {
+      showDailyLoginReward: (payload) => {
         calls.showDailyLoginReward += 1;
+        calls.dailyLoginRewardPayloads.push(payload);
       },
       showTokenReward: () => {},
       showXpBreakdown: () => {},
@@ -7662,16 +7664,22 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
           claimDailyLoginReward: async (username) => ({
             granted: true,
             profile: { username, tokens: 140, playerXP: 10, playerLevel: 1, equippedCosmetics: {} },
+            streakDay: 7,
+            rewardSummary: {
+              day: 7,
+              tokens: 0,
+              xp: 0,
+              chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 }
+            },
+            rewardTokens: 0,
+            rewardXp: 0,
+            chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 },
             dailyLoginStatus: {
               eligible: false,
+              streakDay: 7,
               loginDayKey: "2026-05-14T00:00:00.000Z",
               lastDailyLoginClaimDate: "2026-05-14T00:00:00.000Z",
               msUntilReset: 3600000
-            },
-            rewards: {
-              tokens: 40,
-              xp: 10,
-              levelUps: []
             }
           })
         }
@@ -7709,6 +7717,19 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
     assert.equal(calls.refreshMenuAnnouncement, 1);
     assert.equal(calls.refreshMenuBoostEvent, 1);
     assert.equal(calls.showDailyLoginReward, 1);
+    assert.deepEqual(calls.dailyLoginRewardPayloads, [{
+      tokens: 0,
+      xp: 0,
+      xpConversionTokenBonus: 0,
+      streakDay: 7,
+      rewardSummary: {
+        day: 7,
+        tokens: 0,
+        xp: 0,
+        chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 }
+      },
+      chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 }
+    }]);
     assert.equal(app.profile.tokens, 140);
   } finally {
     globalThis.window = originalWindow;

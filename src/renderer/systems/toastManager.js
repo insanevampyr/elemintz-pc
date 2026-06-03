@@ -15,6 +15,7 @@ const CHEST_OPEN_REWARD_IMAGE_PATHS = Object.freeze({
 });
 
 const LEVEL_UP_ICON_PATH = "icons/level_up.png";
+const DAILY_LOGIN_STREAK_MAX_DAY = 7;
 
 function resolveAchievementImage(image) {
   if (!image) {
@@ -69,6 +70,33 @@ function resolveOptionalAssetPath(value) {
   }
 
   return getAssetPath(safeValue);
+}
+
+function getSafeDailyLoginToastDay({ streakDay = 0, rewardSummary = null } = {}) {
+  const safeDay = Math.floor(Number(rewardSummary?.day ?? streakDay ?? 0) || 0);
+  return Math.min(DAILY_LOGIN_STREAK_MAX_DAY, Math.max(1, safeDay || 1));
+}
+
+function formatDailyLoginRewardLabel({ rewardSummary = null, chestAwarded = null, tokens = 0, xp = 0 } = {}) {
+  const resolvedChestAward = chestAwarded ?? rewardSummary?.chestAwarded ?? null;
+  const chestLabel = String(
+    resolvedChestAward?.chestLabel ?? resolvedChestAward?.label ?? resolvedChestAward?.name ?? ""
+  ).trim();
+  if (chestLabel) {
+    return chestLabel;
+  }
+
+  const safeXp = Math.max(0, Number(rewardSummary?.xp ?? xp) || 0);
+  const safeTokens = Math.max(0, Number(rewardSummary?.tokens ?? tokens) || 0);
+  const rewardParts = [];
+  if (safeXp > 0) {
+    rewardParts.push(`${safeXp} XP`);
+  }
+  if (safeTokens > 0) {
+    rewardParts.push(`${safeTokens} Token${safeTokens === 1 ? "" : "s"}`);
+  }
+
+  return rewardParts.join(" + ") || "No reward";
 }
 
 export class ToastManager {
@@ -148,12 +176,30 @@ export class ToastManager {
     });
   }
 
-  showDailyLoginReward({ tokens = 5, xp = 2, xpConversionTokenBonus = 0 } = {}) {
+  showDailyLoginReward({
+    tokens = 5,
+    xp = 2,
+    xpConversionTokenBonus = 0,
+    streakDay = 1,
+    rewardSummary = null,
+    chestAwarded = null
+  } = {}) {
     console.info("[DailyLogin][Renderer] toast display path ran", {
       tokens,
       xp,
-      xpConversionTokenBonus
+      xpConversionTokenBonus,
+      streakDay,
+      rewardSummary,
+      chestAwarded
     });
+
+    const rewardLabel = formatDailyLoginRewardLabel({
+      rewardSummary,
+      chestAwarded,
+      tokens,
+      xp
+    });
+    const resolvedStreakDay = getSafeDailyLoginToastDay({ streakDay, rewardSummary });
 
     this.enqueueToast({
       className: "reward-toast daily-login-toast",
@@ -161,9 +207,9 @@ export class ToastManager {
       html: `
         <div class="reward-toast-icon">\u2B50</div>
         <div>
-          <h4>Daily Login Reward</h4>
-          <p>+${Math.max(0, Number(tokens) || 0)} Tokens</p>
-          <p>+${Math.max(0, Number(xp) || 0)} XP</p>
+          <h4>Daily Login Streak</h4>
+          <p>Day ${resolvedStreakDay} of ${DAILY_LOGIN_STREAK_MAX_DAY}</p>
+          <p>Reward: ${rewardLabel}</p>
           ${Math.max(0, Number(xpConversionTokenBonus) || 0) > 0 ? `<p>Max Level Bonus: +${Math.max(0, Number(xpConversionTokenBonus) || 0)} Tokens</p>` : ""}
         </div>
       `

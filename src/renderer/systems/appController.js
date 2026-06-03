@@ -45,6 +45,7 @@ import {
   buildUpdateDiagnosticsSnapshot,
   refreshUpdateCoordinatorState as loadUpdateCoordinatorState
 } from "./updateCoordinator.js";
+import { getDailyResetWindow } from "../../state/dailyChallengesSystem.js";
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
@@ -134,6 +135,18 @@ const FEATURED_RIVAL_CONFIGS = Object.freeze({
     totalCards: 20
   })
 });
+const DAILY_LOGIN_STREAK_MAX_DAY = 7;
+
+function getSafeDailyLoginStreakDay(value) {
+  const safeDay = Math.floor(Number(value ?? 0) || 0);
+  return Math.min(DAILY_LOGIN_STREAK_MAX_DAY, Math.max(0, safeDay));
+}
+
+function getPreviousDailyLoginWindowKey(nowMs = Date.now()) {
+  const currentWindow = getDailyResetWindow(nowMs);
+  const previousWindow = getDailyResetWindow(currentWindow.lastResetMs - 1);
+  return new Date(previousWindow.lastResetMs).toISOString();
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1896,21 +1909,35 @@ export class AppController {
   formatDailyLoginStatus(status) {
     if (!status) {
       return {
-        stateLabel: "Checking Daily Login Reward...",
+        stateLabel: "Checking Daily Login Streak...",
+        detailLabel: "",
         resetLabel: "--:--"
       };
     }
 
+    const safeCurrentStreakDay = getSafeDailyLoginStreakDay(status.streakDay);
+    const safeLastClaimDate = String(status.lastDailyLoginClaimDate ?? "").trim();
+    const previousWindowKey = getPreviousDailyLoginWindowKey(status.nowMs ?? Date.now());
+    const upcomingStreakDay =
+      safeLastClaimDate && safeLastClaimDate === previousWindowKey
+        ? safeCurrentStreakDay >= DAILY_LOGIN_STREAK_MAX_DAY
+          ? 1
+          : Math.max(1, safeCurrentStreakDay + 1)
+        : 1;
+    const safeResetLabel = this.formatDuration(status.msUntilReset);
+
     if (status.eligible) {
       return {
-        stateLabel: "Daily Login Reward Available Now",
-        resetLabel: this.formatDuration(status.msUntilReset)
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: `Day ${upcomingStreakDay} of ${DAILY_LOGIN_STREAK_MAX_DAY}`,
+        resetLabel: safeResetLabel
       };
     }
 
     return {
-      stateLabel: `Next Daily Login Reward: ${this.formatDuration(status.msUntilReset)}`,
-      resetLabel: this.formatDuration(status.msUntilReset)
+      stateLabel: `Daily Login Streak: Day ${Math.max(1, safeCurrentStreakDay || 1)} of ${DAILY_LOGIN_STREAK_MAX_DAY}`,
+      detailLabel: `Already claimed today · Next reset: ${safeResetLabel}`,
+      resetLabel: safeResetLabel
     };
   }
 
@@ -2378,15 +2405,17 @@ export class AppController {
     }
 
     const dailyLoginLabel = globalThis.document.getElementById("menu-daily-login-status");
+    const dailyLoginDetail = globalThis.document.getElementById("menu-daily-login-detail");
     const dailyResetLabel = globalThis.document.querySelector?.('[data-menu-reset-label="daily"]');
     const weeklyResetLabel = globalThis.document.querySelector?.('[data-menu-reset-label="weekly"]');
     const dailyLogin = this.formatDailyLoginStatus(this.dailyChallenges?.dailyLogin);
 
     if (dailyLoginLabel) {
-      dailyLoginLabel.textContent = dailyLogin.stateLabel.replace(
-        "Next Daily Login Reward",
-        "Daily Login Reward"
-      );
+      dailyLoginLabel.textContent = dailyLogin.stateLabel;
+    }
+
+    if (dailyLoginDetail) {
+      dailyLoginDetail.textContent = dailyLogin.detailLabel ?? "";
     }
 
     if (dailyResetLabel) {
@@ -5440,7 +5469,10 @@ export class AppController {
       this.toastManager.showDailyLoginReward?.({
         tokens: reward.rewardTokens ?? 0,
         xp: reward.rewardXp ?? 0,
-        xpConversionTokenBonus: reward.xpConversionTokenBonus ?? 0
+        xpConversionTokenBonus: reward.xpConversionTokenBonus ?? 0,
+        streakDay: reward.streakDay ?? reward.dailyLoginStatus?.streakDay ?? 1,
+        rewardSummary: reward.rewardSummary ?? null,
+        chestAwarded: reward.chestAwarded ?? null
       });
 
       const totalTokens =
