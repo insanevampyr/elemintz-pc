@@ -33,16 +33,22 @@ const DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
   badge: "none"
 });
 const MATCH_TAUNT_PRESETS = Object.freeze([
-  "Your move.",
-  "Bold choice.",
-  "Interesting.",
-  "You got lucky.",
-  "Well played.",
-  "This isn't over.",
-  "I saw that coming.",
-  "Let's finish this.",
-  "A risky play.",
-  "Not bad."
+  "⚔️ WAR!",
+  "😤 Not done yet.",
+  "💀 That hurt.",
+  "🏆 Clean win.",
+  "✨ Nice play.",
+  "🎲 Lucky clash.",
+  "💀 Errrrrrr.",
+  "💀 I don’t fold.",
+  "🔥 Burn it down!",
+  "🌍 Stone solid.",
+  "🌪️ Wind shift!",
+  "💧 Washed out!",
+  "😤 Elemint resting...",
+  "⚖️ No effect.",
+  "👀 I saw that.",
+  "🏆 Wooohooo!"
 ]);
 const ROOM_TAUNT_HISTORY_LIMIT = 8;
 const MAX_USERNAME_LENGTH = 32;
@@ -2930,7 +2936,7 @@ export function createRoomStore({ random = Math.random } = {}) {
           ok: false,
           error: {
             code: "ROOM_UNAVAILABLE",
-            message: "This room is no longer accepting taunts."
+            message: "This room is no longer accepting expressions."
           }
         };
       }
@@ -2941,7 +2947,7 @@ export function createRoomStore({ random = Math.random } = {}) {
           ok: false,
           error: {
             code: "TAUNT_INVALID",
-            message: "Taunt line is invalid."
+            message: "Expression line is invalid."
           }
         };
       }

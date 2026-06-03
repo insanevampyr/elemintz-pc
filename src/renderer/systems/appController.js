@@ -106,13 +106,13 @@ const FEEDBACK_CATEGORIES = Object.freeze([
 ]);
 const FEEDBACK_MAX_MESSAGE_LENGTH = 2000;
 const PVE_AI_TAUNT_LINES = Object.freeze({
-  match_start: Object.freeze(["Your move.", "Let's finish this.", "I saw that coming."]),
-  player_win: Object.freeze(["Interesting.", "Not bad.", "Bold choice."]),
-  player_loss: Object.freeze(["You got lucky.", "This isn't over.", "A risky play."]),
-  war_start: Object.freeze(["Interesting.", "Bold choice.", "Let's finish this."]),
-  war_resolved: Object.freeze(["Well played.", "Not bad.", "I saw that coming."]),
-  near_victory: Object.freeze(["This isn't over.", "Let's finish this.", "Your move."]),
-  match_end: Object.freeze(["Well played.", "Not bad.", "This isn't over."])
+  match_start: Object.freeze(["👀 I saw that.", "😤 Not done yet.", "🔥 Burn it down!"]),
+  player_win: Object.freeze(["💀 That hurt.", "😤 Not done yet.", "💀 I don’t fold."]),
+  player_loss: Object.freeze(["🏆 Clean win.", "🎲 Lucky clash.", "💧 Washed out!"]),
+  war_start: Object.freeze(["⚔️ WAR!", "😤 Not done yet.", "👀 I saw that."]),
+  war_resolved: Object.freeze(["⚔️ WAR!", "🏆 Clean win.", "💀 I don’t fold."]),
+  near_victory: Object.freeze(["🏆 Clean win.", "🔥 Burn it down!", "🌍 Stone solid."]),
+  match_end: Object.freeze(["🏆 Clean win.", "✨ Nice play.", "😤 Not done yet."])
 });
 const FEATURED_RIVAL_CONFIGS = Object.freeze({
   crownfire_duelist: Object.freeze({

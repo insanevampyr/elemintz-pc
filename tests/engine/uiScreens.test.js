@@ -5628,10 +5628,10 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
     taunts: {
       panelOpen: true,
       messages: [
-        { id: "taunt-1", speaker: "Hero", text: "Well played.", kind: "player", isFading: true },
-        { speaker: "Elemental AI", text: "Your move.", kind: "ai" }
+        { id: "taunt-1", speaker: "Hero", text: "✨ Nice play.", kind: "player", isFading: true },
+        { speaker: "Elemental AI", text: "⚔️ WAR!", kind: "ai" }
       ],
-      presetLines: ["Your move.", "Well played."],
+      presetLines: ["⚔️ WAR!", "✨ Nice play."],
       cooldownRemainingMs: 6500,
       canSend: false
     },
@@ -5658,14 +5658,17 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
   assert.match(html, /data-match-taunt-shell="game"/);
   assert.match(html, /data-taunt-message-id="taunt-1"/);
   assert.match(html, /match-taunt-entry [^"]*is-fading/);
-  assert.match(html, /Hero<\/strong>\s*<span>Well played\.<\/span>/);
-  assert.match(html, /Elemental AI<\/strong>\s*<span>Your move\.<\/span>/);
+  assert.match(html, /Hero<\/strong>\s*<span>✨ Nice play\.<\/span>/);
+  assert.match(html, /Elemental AI<\/strong>\s*<span>⚔️ WAR!<\/span>/);
   assert.match(html, /data-match-taunt-panel="game"/);
   assert.match(html, /data-taunt-cooldown-state="cooldown"/);
   assert.match(html, />\s*7s\s*</);
-  assert.match(html, /data-taunt-line="Your move\."/);
-  assert.match(html, /data-taunt-line="Your move\."[^>]*disabled/);
-  assert.match(html, /data-taunt-line="Well played\."/);
+  assert.match(html, /Recent expressions/);
+  assert.match(html, /Expressions\s*<\/button>/);
+  assert.match(html, /aria-label="Match Expressions"/);
+  assert.match(html, /data-taunt-line="⚔️ WAR!"/);
+  assert.match(html, /data-taunt-line="⚔️ WAR!"[^>]*disabled/);
+  assert.match(html, /data-taunt-line="✨ Nice play\."/);
   assert.match(html, /data-card-owner="active"/);
 });
 
@@ -11914,7 +11917,7 @@ test("ui: game screen taunt controls use stable button targets and send immediat
   const tauntToggleButton = createFakeElement();
   const tauntOptionButton = {
     listeners: new Map(),
-    getAttribute: (name) => (name === "data-taunt-line" ? "Bold choice." : null),
+    getAttribute: (name) => (name === "data-taunt-line" ? "⚔️ WAR!" : null),
     addEventListener(type, handler) {
       this.listeners.set(type, handler);
     }
@@ -11964,7 +11967,7 @@ test("ui: game screen taunt controls use stable button targets and send immediat
     await tauntOptionButton.listeners.get("click")();
 
     assert.equal(calls.toggle, 1);
-    assert.deepEqual(calls.send, ["Bold choice."]);
+    assert.deepEqual(calls.send, ["⚔️ WAR!"]);
   } finally {
     global.document = previousDocument;
   }
@@ -12042,11 +12045,11 @@ test("ui: appController local PvP taunts use the active hotseat speaker", async 
     })
   };
 
-  await app.sendCurrentMatchTaunt("Bold choice.");
+  await app.sendCurrentMatchTaunt("⚔️ WAR!");
 
   assert.equal(showCalls, 1);
   assert.equal(app.matchTaunts.at(-1).speaker, "Beta");
-  assert.equal(app.matchTaunts.at(-1).text, "Bold choice.");
+  assert.equal(app.matchTaunts.at(-1).text, "⚔️ WAR!");
   assert.equal(app.matchTauntPanelOpen, false);
 });
 
@@ -12055,7 +12058,7 @@ test("ui: appController taunt messages expire individually after the visible lif
   let now = 1000;
   app.getTauntNow = () => now;
 
-  app.appendMatchTaunt({ speaker: "Hero", text: "Your move.", kind: "player" });
+  app.appendMatchTaunt({ speaker: "Hero", text: "⚔️ WAR!", kind: "player" });
   now = 21100;
   assert.equal(app.getRenderableMatchTaunts()[0].isFading, true);
 
@@ -12063,7 +12066,7 @@ test("ui: appController taunt messages expire individually after the visible lif
   now = 21350;
   const stillVisible = app.getRenderableMatchTaunts();
   assert.equal(stillVisible.length, 2);
-  assert.equal(stillVisible[0].text, "Your move.");
+  assert.equal(stillVisible[0].text, "⚔️ WAR!");
   assert.equal(stillVisible[1].text, "Interesting.");
 
   now = 21700;
@@ -12090,18 +12093,18 @@ test("ui: appController PVE player taunts enforce the 12 second cooldown", async
     })
   };
 
-  await app.sendCurrentMatchTaunt("Bold choice.");
+  await app.sendCurrentMatchTaunt("⚔️ WAR!");
   assert.equal(app.matchTaunts.length, 1);
 
   now = 7000;
-  await app.sendCurrentMatchTaunt("Well played.");
+  await app.sendCurrentMatchTaunt("✨ Nice play.");
   assert.equal(app.matchTaunts.length, 1);
   assert.equal(app.getCurrentTauntHudState().canSend, false);
 
   now = 13050;
-  await app.sendCurrentMatchTaunt("Well played.");
+  await app.sendCurrentMatchTaunt("✨ Nice play.");
   assert.equal(app.matchTaunts.length, 2);
-  assert.equal(app.matchTaunts.at(-1).text, "Well played.");
+  assert.equal(app.matchTaunts.at(-1).text, "✨ Nice play.");
   assert.equal(showCalls, 3);
 });
 
@@ -12119,13 +12122,13 @@ test("ui: appController local PvP taunt cooldown applies per active side", async
     })
   };
 
-  await app.sendCurrentMatchTaunt("Bold choice.");
+  await app.sendCurrentMatchTaunt("⚔️ WAR!");
   now = 5000;
-  await app.sendCurrentMatchTaunt("Well played.");
+  await app.sendCurrentMatchTaunt("✨ Nice play.");
   assert.equal(app.matchTaunts.length, 1);
 
   hotseatTurn = "p2";
-  await app.sendCurrentMatchTaunt("Interesting.");
+  await app.sendCurrentMatchTaunt("🎲 Lucky clash.");
   assert.equal(app.matchTaunts.length, 2);
   assert.equal(app.matchTaunts.at(-1).speaker, "Beta");
 });
@@ -12146,12 +12149,14 @@ test("ui: appController PVE AI taunts respect cooldown and avoid consecutive eve
 
   assert.equal(app.maybeEmitPveAiTaunt("match_start"), true);
   assert.equal(app.matchTaunts.length, 1);
+  assert.equal(app.matchTaunts[0].text, "👀 I saw that.");
   assert.equal(app.maybeEmitPveAiTaunt("match_start"), false);
   assert.equal(app.maybeEmitPveAiTaunt("war_start"), false);
 
   app.getTauntNow = () => 40000;
   assert.equal(app.maybeEmitPveAiTaunt("war_start"), true);
   assert.equal(app.matchTaunts.length, 2);
+  assert.equal(app.matchTaunts[1].text, "⚔️ WAR!");
 });
 
 test("ui: appController online taunt action routes through multiplayer state and rerenders the feed", async () => {
@@ -12233,15 +12238,15 @@ test("ui: appController online taunt action routes through multiplayer state and
     };
 
     controller.renderOnlinePlayScreen();
-    await shown.at(-1).actions.sendTaunt("Your move.");
-    assert.deepEqual(sendTauntCalls, [{ line: "Your move." }]);
-    await shown.at(-1).actions.sendTaunt("Well played.");
-    assert.deepEqual(sendTauntCalls, [{ line: "Your move." }]);
+    await shown.at(-1).actions.sendTaunt("⚔️ WAR!");
+    assert.deepEqual(sendTauntCalls, [{ line: "⚔️ WAR!" }]);
+    await shown.at(-1).actions.sendTaunt("✨ Nice play.");
+    assert.deepEqual(sendTauntCalls, [{ line: "⚔️ WAR!" }]);
     now = 13100;
-    await shown.at(-1).actions.sendTaunt("Well played.");
+    await shown.at(-1).actions.sendTaunt("✨ Nice play.");
 
-    assert.deepEqual(sendTauntCalls, [{ line: "Your move." }, { line: "Well played." }]);
-    assert.equal(shown.at(-1).taunts.messages.at(-1).text, "Well played.");
+    assert.deepEqual(sendTauntCalls, [{ line: "⚔️ WAR!" }, { line: "✨ Nice play." }]);
+    assert.equal(shown.at(-1).taunts.messages.at(-1).text, "✨ Nice play.");
     assert.equal(shown.at(-1).taunts.messages.at(-1).speaker, "Hero");
     assert.equal(shown.at(-1).taunts.canSend, false);
   } finally {
@@ -15865,7 +15870,7 @@ test("ui: taunt HUD ticks refresh the active game screen in place without callin
   const toggleButton = createFakeElement();
   const tauntOption = {
     listeners: new Map(),
-    getAttribute: (name) => (name === "data-taunt-line" ? "Your move." : null),
+    getAttribute: (name) => (name === "data-taunt-line" ? "⚔️ WAR!" : null),
     addEventListener(type, handler) {
       this.listeners.set(type, handler);
     }
@@ -15901,7 +15906,7 @@ test("ui: taunt HUD ticks refresh the active game screen in place without callin
     {
       id: "taunt-1",
       speaker: "Hero",
-      text: "Well played.",
+      text: "✨ Nice play.",
       kind: "player",
       createdAt: fixedNow,
       fadeAt: fixedNow + 1000,
@@ -15924,7 +15929,7 @@ test("ui: taunt HUD ticks refresh the active game screen in place without callin
     controller.refreshTauntHudIfNeeded();
     assert.equal(shown.length, 0);
     assert.match(shell.className, /is-open/);
-    assert.match(shell.innerHTML, /Well played\./);
+    assert.match(shell.innerHTML, /Nice play\./);
     assert.match(shell.innerHTML, />\s*7s\s*</);
 
     await toggleButton.listeners.get("click")();
@@ -15978,7 +15983,7 @@ test("ui: taunt HUD ticks refresh the active online screen in place without call
         {
           id: "taunt-online-1",
           speaker: "HostUser",
-          text: "Your move.",
+          text: "⚔️ WAR!",
           kind: "player",
           sentAt: new Date(fixedNow).toISOString()
         }
@@ -15993,7 +15998,7 @@ test("ui: taunt HUD ticks refresh the active online screen in place without call
     controller.refreshTauntHudIfNeeded();
 
     assert.equal(renderCalls, 0);
-    assert.match(shell.innerHTML, /Your move\./);
+    assert.match(shell.innerHTML, /WAR!/);
     assert.match(shell.innerHTML, />\s*5s\s*</);
   } finally {
     global.document = previousDocument;
@@ -17192,10 +17197,10 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
     taunts: {
       panelOpen: true,
       messages: [
-        { speaker: "Hero", text: "Your move.", kind: "player" },
-        { speaker: "Rival", text: "Interesting.", kind: "opponent" }
+        { speaker: "Hero", text: "⚔️ WAR!", kind: "player" },
+        { speaker: "Rival", text: "🎲 Lucky clash.", kind: "opponent" }
       ],
-      presetLines: ["Your move.", "Interesting."]
+      presetLines: ["⚔️ WAR!", "🎲 Lucky clash."]
     },
     multiplayer: {
       connectionStatus: "connected",
@@ -17219,9 +17224,11 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   });
 
   assert.match(html, /id="online-taunts-toggle-btn"/);
-  assert.match(html, /Hero<\/strong>\s*<span>Your move\.<\/span>/);
-  assert.match(html, /Rival<\/strong>\s*<span>Interesting\.<\/span>/);
+  assert.match(html, /Hero<\/strong>\s*<span>.*WAR!<\/span>/);
+  assert.match(html, /Rival<\/strong>\s*<span>.*Lucky clash\.<\/span>/);
   assert.match(html, /data-match-taunt-panel="online"/);
+  assert.match(html, /Recent expressions/);
+  assert.match(html, /Expressions\s*<\/button>/);
 });
 
 test("ui: online play screen still shows move controls for full rooms when moveSync is missing", () => {
@@ -17606,7 +17613,7 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
   };
   const tauntOptionButton = {
     listeners: new Map(),
-    getAttribute: (name) => (name === "data-taunt-line" ? "Your move." : null),
+    getAttribute: (name) => (name === "data-taunt-line" ? "⚔️ WAR!" : null),
     addEventListener(type, handler) {
       this.listeners.set(type, handler);
     }
@@ -17738,7 +17745,7 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
     await tauntOptionButton.listeners.get("click")();
 
     assert.deepEqual(calls, ["fire"]);
-    assert.deepEqual(tauntCalls, ["toggle", "Your move."]);
+    assert.deepEqual(tauntCalls, ["toggle", "⚔️ WAR!"]);
     assert.deepEqual(visibilityCalls, ["private", "public"]);
     assert.deepEqual(joinCalls, ["browse", "PUB123", "ROOM42"]);
   } finally {

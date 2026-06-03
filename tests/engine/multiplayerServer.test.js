@@ -5479,21 +5479,37 @@ test("multiplayer rooms: preset taunts broadcast through the existing room updat
 
     const hostTauntUpdate = waitForEvent(host, "room:update");
     const guestTauntUpdate = waitForEvent(guest, "room:update");
-    host.emit("room:sendTaunt", { line: "Your move." });
+    host.emit("room:sendTaunt", { line: "⚔️ WAR!" });
 
     const hostRoom = await hostTauntUpdate;
     const guestRoom = await guestTauntUpdate;
 
     assert.equal(hostRoom.taunts.length, 1);
     assert.equal(hostRoom.taunts[0].speaker, "HostTaunter");
-    assert.equal(hostRoom.taunts[0].text, "Your move.");
+    assert.equal(hostRoom.taunts[0].text, "⚔️ WAR!");
     assert.equal(guestRoom.taunts[0].speaker, "HostTaunter");
-    assert.equal(guestRoom.taunts[0].text, "Your move.");
+    assert.equal(guestRoom.taunts[0].text, "⚔️ WAR!");
   } finally {
     host?.disconnect();
     guest?.disconnect();
     await foundation.stop();
   }
+});
+
+test("multiplayer rooms: removed taunt presets are rejected by room validation", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("host-expressions");
+  const guest = createStoreSocket("guest-expressions");
+
+  const created = store.createRoom(host, { username: "HostTaunter" });
+  assert.equal(created.ok, true);
+  const joined = store.joinRoom(guest, created.room.roomCode, { username: "GuestTaunter" });
+  assert.equal(joined.ok, true);
+
+  const rejected = store.sendTaunt(host.id, "Your move.");
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error?.code, "TAUNT_INVALID");
+  assert.equal(rejected.error?.message, "Expression line is invalid.");
 });
 
 test("multiplayer rooms: synced equipped cosmetics persist through room snapshots and reconnect resume", async () => {

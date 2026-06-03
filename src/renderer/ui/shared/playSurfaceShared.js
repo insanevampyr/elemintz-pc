@@ -5,16 +5,22 @@ import { buildHoverPreviewAttributes, hasRenderablePreviewSource } from "./cosme
 
 export const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 export const MATCH_TAUNT_PRESETS = Object.freeze([
-  "Your move.",
-  "Bold choice.",
-  "Interesting.",
-  "You got lucky.",
-  "Well played.",
-  "This isn't over.",
-  "I saw that coming.",
-  "Let's finish this.",
-  "A risky play.",
-  "Not bad."
+  "⚔️ WAR!",
+  "😤 Not done yet.",
+  "💀 That hurt.",
+  "🏆 Clean win.",
+  "✨ Nice play.",
+  "🎲 Lucky clash.",
+  "💀 Errrrrrr.",
+  "💀 I don’t fold.",
+  "🔥 Burn it down!",
+  "🌍 Stone solid.",
+  "🌪️ Wind shift!",
+  "💧 Washed out!",
+  "😤 Elemint resting...",
+  "⚖️ No effect.",
+  "👀 I saw that.",
+  "🏆 Wooohooo!"
 ]);
 export const MATCH_TAUNT_FEED_LIMIT = 4;
 const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary"]);
@@ -324,7 +330,7 @@ export function renderMatchTauntHudContents({
   const cooldownLabel = safeCooldownMs > 0 ? `${cooldownSeconds}s` : "Ready";
 
   return `
-    <div class="match-taunt-feed" aria-live="polite" aria-label="Recent taunts">
+    <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
       ${safeMessages
         .map(
           (message) => `
@@ -341,7 +347,7 @@ export function renderMatchTauntHudContents({
     </div>
     <div class="match-taunt-controls">
       <button id="${escapeHtml(idPrefix)}-taunts-toggle-btn" type="button" class="btn btn-secondary match-taunts-toggle-btn" aria-expanded="${panelOpen ? "true" : "false"}">
-        Taunts
+        Expressions
       </button>
       <p class="match-taunt-cooldown" data-taunt-cooldown-state="${safeCooldownMs > 0 ? "cooldown" : "ready"}">
         ${escapeHtml(cooldownLabel)}
@@ -349,7 +355,7 @@ export function renderMatchTauntHudContents({
       ${
         panelOpen
           ? `
-            <div id="${escapeHtml(idPrefix)}-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="${escapeHtml(idPrefix)}">
+            <div id="${escapeHtml(idPrefix)}-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="${escapeHtml(idPrefix)}" aria-label="Match Expressions">
               ${safePresetLines
                 .map(
                   (line, index) => `
