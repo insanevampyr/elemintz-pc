@@ -155,6 +155,16 @@ export function normalizeProfileModeStats(profile) {
       typeof profile.lastDailyLoginClaimDate === "string" && profile.lastDailyLoginClaimDate.trim()
         ? profile.lastDailyLoginClaimDate
         : null,
+    dailyLoginStreakDay: Math.min(
+      7,
+      Math.max(
+        0,
+        safeNonNegativeInt(
+          profile.dailyLoginStreakDay,
+          typeof profile.lastDailyLoginClaimDate === "string" && profile.lastDailyLoginClaimDate.trim() ? 1 : 0
+        )
+      )
+    ),
     localPvpRewardTracking: {
       rewardWindowKey:
         typeof localPvpRewardTracking.rewardWindowKey === "string" &&
@@ -234,6 +244,7 @@ export function createDefaultProfile(username) {
     playerXP: 0,
     playerLevel: 1,
     lastDailyLoginClaimDate: null,
+    dailyLoginStreakDay: 0,
     localPvpRewardTracking: emptyLocalPvpRewardTracking(),
     modeStats: createDefaultModeStats(),
     achievements: {},

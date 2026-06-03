@@ -36,6 +36,7 @@ import {
   EPIC_CHEST_TYPE,
   grantChest,
   getChestLabel,
+  LEGENDARY_CHEST_TYPE,
   MILESTONE_CHEST_TYPE,
   openChest
 } from "./chestSystem.js";
@@ -53,8 +54,24 @@ import {
 import { rollBasicChest } from "../shared/basicChestDrop.js";
 import { getGauntletRivalById } from "../engine/gauntletRivals.js";
 
-const DAILY_LOGIN_TOKENS = 5;
-const DAILY_LOGIN_XP = 2;
+const DAILY_LOGIN_STREAK_REWARDS = Object.freeze([
+  Object.freeze({ day: 1, xp: 2, tokens: 4 }),
+  Object.freeze({ day: 2, xp: 4, tokens: 0 }),
+  Object.freeze({ day: 3, xp: 0, tokens: 10 }),
+  Object.freeze({ day: 4, xp: 8, tokens: 0 }),
+  Object.freeze({ day: 5, xp: 0, tokens: 20 }),
+  Object.freeze({ day: 6, xp: 16, tokens: 0 }),
+  Object.freeze({
+    day: 7,
+    xp: 20,
+    tokens: 0,
+    chestRolls: Object.freeze([
+      Object.freeze({ chestType: LEGENDARY_CHEST_TYPE, chance: 0.01 }),
+      Object.freeze({ chestType: EPIC_CHEST_TYPE, chance: 0.08 })
+    ])
+  })
+]);
+const DAILY_LOGIN_STREAK_MAX_DAY = DAILY_LOGIN_STREAK_REWARDS.length;
 const FEATURED_RIVAL_DAILY_WIN_REWARD_CONFIGS = {
   crownfire_duelist: {
     xpDelta: 30,
@@ -83,6 +100,20 @@ function profilesEqual(a, b) {
 function getDailyLoginDateKey(nowMs = Date.now()) {
   const { lastResetMs } = getDailyResetWindow(nowMs);
   return new Date(lastResetMs).toISOString();
+}
+
+function getPreviousDailyLoginDateKey(nowMs = Date.now()) {
+  const { lastResetMs } = getDailyResetWindow(nowMs);
+  return getDailyLoginDateKey(lastResetMs - 1);
+}
+
+function getSafeDailyLoginStreakDay(profile) {
+  const safeDay = Math.max(0, Math.floor(Number(profile?.dailyLoginStreakDay ?? 0) || 0));
+  return Math.min(DAILY_LOGIN_STREAK_MAX_DAY, safeDay);
+}
+
+function getDailyLoginRewardForDay(day) {
+  return DAILY_LOGIN_STREAK_REWARDS.find((entry) => entry.day === day) ?? DAILY_LOGIN_STREAK_REWARDS[0];
 }
 
 function getLocalPvpRewardWindowKey(nowMs = Date.now()) {
@@ -131,6 +162,7 @@ function getDailyLoginStatus(profile, nowMs = Date.now()) {
     nowMs,
     loginDayKey,
     lastDailyLoginClaimDate: lastClaim || null,
+    streakDay: getSafeDailyLoginStreakDay(profile),
     eligible,
     nextResetAt: new Date(resetWindow.nextResetMs).toISOString(),
     msUntilReset: Math.max(0, resetWindow.nextResetMs - nowMs)
@@ -764,7 +796,7 @@ export class StateCoordinator {
     };
   }
 
-  async claimDailyLoginReward(username, nowMs = Date.now()) {
+  async claimDailyLoginReward(username, nowMs = Date.now(), { random = Math.random } = {}) {
     const profileBefore = await this.profiles.ensureProfile(username);
     const statusBefore = getDailyLoginStatus(profileBefore, nowMs);
     const claimDate = statusBefore.loginDayKey;
@@ -785,10 +817,15 @@ export class StateCoordinator {
       });
       return {
         granted: false,
+        eligible: statusBefore.eligible,
         profile: profileBefore,
         dailyLoginStatus: statusBefore,
+        streakDay: getSafeDailyLoginStreakDay(profileBefore),
+        rewardSummary: null,
         rewardTokens: 0,
         rewardXp: 0,
+        chestAwarded: null,
+        chestGrants: [],
         xpConversionTokenBonus: 0,
         overflowXp: 0,
         xpBreakdown: { lines: [], total: 0 },
@@ -799,36 +836,91 @@ export class StateCoordinator {
       };
     }
 
-    const xpAwardSummary = applyXpAwardToProfile(profileBefore, DAILY_LOGIN_XP, DAILY_LOGIN_TOKENS);
-    const workingProfile = {
-      ...xpAwardSummary.profile,
-      lastDailyLoginClaimDate: claimDate
+    const previousWindowKey = getPreviousDailyLoginDateKey(nowMs);
+    const priorStreakDay = getSafeDailyLoginStreakDay(profileBefore);
+    const streakDay =
+      profileBefore.lastDailyLoginClaimDate === previousWindowKey
+        ? priorStreakDay >= DAILY_LOGIN_STREAK_MAX_DAY
+          ? 1
+          : Math.max(1, priorStreakDay + 1)
+        : 1;
+    const rewardPlan = getDailyLoginRewardForDay(streakDay);
+    const hasChestBranch = Array.isArray(rewardPlan?.chestRolls) && rewardPlan.chestRolls.length > 0;
+    let xpAwardSummary = applyXpAwardToProfile(
+      profileBefore,
+      hasChestBranch ? 0 : Number(rewardPlan?.xp ?? 0) || 0,
+      Number(rewardPlan?.tokens ?? 0) || 0
+    );
+    let workingProfile = xpAwardSummary.profile;
+    let chestAwarded = null;
+    const chestGrants = [];
+
+    for (const roll of rewardPlan?.chestRolls ?? []) {
+      if ((typeof random === "function" ? random() : Math.random()) < Number(roll?.chance ?? 0)) {
+        const chestType = String(roll?.chestType ?? "").trim() || DEFAULT_CHEST_TYPE;
+        workingProfile = grantChest(workingProfile, { chestType, amount: 1 });
+        chestAwarded = {
+          chestType,
+          chestLabel: getChestLabel(chestType),
+          amount: 1
+        };
+        chestGrants.push({ chestType, amount: 1 });
+        xpAwardSummary = applyXpAwardToProfile(profileBefore, 0, Number(rewardPlan?.tokens ?? 0) || 0);
+        break;
+      }
+    }
+
+    if (!chestAwarded && hasChestBranch && Number(rewardPlan?.xp ?? 0) > 0) {
+      xpAwardSummary = applyXpAwardToProfile(
+        profileBefore,
+        Number(rewardPlan?.xp ?? 0) || 0,
+        Number(rewardPlan?.tokens ?? 0) || 0
+      );
+      workingProfile = xpAwardSummary.profile;
+    }
+
+    const committedCandidateProfile = {
+      ...workingProfile,
+      lastDailyLoginClaimDate: claimDate,
+      dailyLoginStreakDay: streakDay
     };
 
-    const committedProfile = await this.profiles.updateProfile(username, workingProfile);
+    const committedProfile = await this.profiles.updateProfile(username, committedCandidateProfile);
     const statusAfter = getDailyLoginStatus(committedProfile, nowMs);
 
     console.info("[DailyLogin] grant_applied", {
       username,
       resetWindowKey: statusAfter.loginDayKey,
       granted: true,
-      rewardTokens: DAILY_LOGIN_TOKENS,
-      rewardXp: DAILY_LOGIN_XP,
+      streakDay,
+      rewardTokens: Number(rewardPlan?.tokens ?? 0) || 0,
+      rewardXp: xpAwardSummary.xpDelta,
+      chestAwarded: chestAwarded?.chestType ?? null,
       nextResetAt: statusAfter.nextResetAt
     });
 
     return {
       granted: true,
+      eligible: statusAfter.eligible,
       profile: committedProfile,
       dailyLoginStatus: statusAfter,
-      rewardTokens: DAILY_LOGIN_TOKENS,
+      streakDay,
+      rewardSummary: {
+        day: streakDay,
+        tokens: Number(rewardPlan?.tokens ?? 0) || 0,
+        xp: chestAwarded ? 0 : Number(rewardPlan?.xp ?? 0) || 0,
+        chestAwarded
+      },
+      rewardTokens: Number(rewardPlan?.tokens ?? 0) || 0,
       rewardXp: xpAwardSummary.xpDelta,
+      chestAwarded,
+      chestGrants,
       xpConversionTokenBonus: xpAwardSummary.xpConversionTokenBonus,
       overflowXp: xpAwardSummary.overflowXp,
       xpBreakdown: {
         lines:
           xpAwardSummary.xpDelta > 0
-            ? [{ key: "daily_login", label: "Daily Login", amount: xpAwardSummary.xpDelta }]
+            ? [{ key: "daily_login", label: `Daily Login Day ${streakDay}`, amount: xpAwardSummary.xpDelta }]
             : [],
         total: xpAwardSummary.xpDelta
       },

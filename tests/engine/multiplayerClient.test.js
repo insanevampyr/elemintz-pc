@@ -603,11 +603,12 @@ class FakeSocket {
           ok: true,
           result: {
             granted: true,
-            rewardTokens: 5,
+            rewardTokens: 4,
             rewardXp: 2,
+            streakDay: 1,
             profile: {
               username: this.sessionUsername ?? payload?.username ?? null,
-              tokens: 230,
+              tokens: 229,
               playerXP: 20,
               playerLevel: 1,
               equippedCosmetics: createEquippedCosmetics(),
@@ -625,7 +626,7 @@ class FakeSocket {
               source: "multiplayer",
               profile: {
                 username: this.sessionUsername ?? payload?.username ?? null,
-                tokens: 230,
+                tokens: 229,
                 playerXP: 20,
                 playerLevel: 1,
                 equippedCosmetics: createEquippedCosmetics(),
@@ -1552,8 +1553,9 @@ test("multiplayer client: authoritative daily login claims return updated server
     payload: {}
   });
   assert.equal(result?.granted, true);
-  assert.equal(result?.rewardTokens, 5);
-  assert.equal(result?.snapshot?.profile?.tokens, 230);
+  assert.equal(result?.rewardTokens, 4);
+  assert.equal(result?.streakDay, 1);
+  assert.equal(result?.snapshot?.profile?.tokens, 229);
   assert.equal(result?.snapshot?.progression?.dailyLogin?.eligible, false);
 });
 
@@ -3364,11 +3366,12 @@ test("app controller: authenticated online daily login claim uses multiplayer au
           assert.equal(username, "AuthorityUser");
           return {
             granted: true,
-            rewardTokens: 5,
+            rewardTokens: 4,
             rewardXp: 2,
+            streakDay: 1,
             profile: {
               username: "AuthorityUser",
-              tokens: 230,
+              tokens: 229,
               playerXP: 20,
               playerLevel: 1
             },
@@ -3377,7 +3380,7 @@ test("app controller: authenticated online daily login claim uses multiplayer au
               source: "multiplayer",
               profile: {
                 username: "AuthorityUser",
-                tokens: 230,
+                tokens: 229,
                 playerXP: 20,
                 playerLevel: 1,
                 equippedCosmetics: {},
@@ -3417,7 +3420,7 @@ test("app controller: authenticated online daily login claim uses multiplayer au
   assert.equal(multiplayerClaims, 1);
   assert.equal(localClaims, 0);
   assert.equal(result?.granted, true);
-  assert.equal(controller.profile?.tokens, 230);
+  assert.equal(controller.profile?.tokens, 229);
   assert.equal(controller.dailyChallenges?.dailyLogin?.eligible, false);
 });
 

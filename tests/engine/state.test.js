@@ -29,7 +29,7 @@ import {
   deriveLevelFromXp,
   getMaxLevelXpThreshold
 } from "../../src/state/levelRewardsSystem.js";
-import { EPIC_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
+import { EPIC_CHEST_TYPE, LEGENDARY_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
@@ -3195,29 +3195,47 @@ test("state: first login of day grants daily login reward once", async () => {
   const second = await state.claimDailyLoginReward("LoginUser", nowMs + 1000);
 
   assert.equal(first.granted, true);
-  assert.equal(first.rewardTokens, 5);
+  assert.equal(first.streakDay, 1);
+  assert.equal(first.rewardTokens, 4);
   assert.equal(first.rewardXp, 2);
-  assert.equal(first.profile.tokens, 205);
+  assert.equal(first.profile.tokens, 204);
   assert.equal(first.profile.playerXP, 2);
+  assert.equal(first.profile.dailyLoginStreakDay, 1);
   assert.equal(second.granted, false);
-  assert.equal(second.profile.tokens, 205);
+  assert.equal(second.profile.tokens, 204);
   assert.equal(second.profile.playerXP, 2);
 });
 
-test("state: daily login reward grants again after the next 6 PM Central reset window", async () => {
+test("state: consecutive daily login claims progress through the 7-day reward table", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
+  const firstWindowMs = Date.parse("2026-01-16T00:30:00.000Z"); // Jan 15, 6:30 PM CT
+  const expected = [
+    { day: 1, tokens: 4, xp: 2 },
+    { day: 2, tokens: 0, xp: 4 },
+    { day: 3, tokens: 10, xp: 0 },
+    { day: 4, tokens: 0, xp: 8 },
+    { day: 5, tokens: 20, xp: 0 },
+    { day: 6, tokens: 0, xp: 16 },
+    { day: 7, tokens: 0, xp: 20 }
+  ];
 
-  const firstDayMs = Date.parse("2026-01-15T23:30:00.000Z"); // Jan 15, 5:30 PM CT
-  const nextWindowMs = Date.parse("2026-01-16T00:30:00.000Z"); // Jan 15, 6:30 PM CT
+  for (const [index, entry] of expected.entries()) {
+    const result = await state.claimDailyLoginReward(
+      "NextDayUser",
+      firstWindowMs + index * 86400000,
+      { random: () => 0.99 }
+    );
+    assert.equal(result.granted, true);
+    assert.equal(result.streakDay, entry.day);
+    assert.equal(result.rewardTokens, entry.tokens);
+    assert.equal(result.rewardXp, entry.xp);
+    assert.equal(result.profile.dailyLoginStreakDay, entry.day);
+  }
 
-  await state.claimDailyLoginReward("NextDayUser", firstDayMs);
-  const nextDay = await state.claimDailyLoginReward("NextDayUser", nextWindowMs);
-
-  assert.equal(nextDay.granted, true);
-  assert.equal(nextDay.profile.tokens, 210);
-  assert.equal(nextDay.profile.playerXP, 4);
-  assert.ok(nextDay.profile.lastDailyLoginClaimDate);
+  const finalProfile = await state.profiles.getProfile("NextDayUser");
+  assert.equal(finalProfile.dailyLoginStreakDay, 7);
+  assert.ok(finalProfile.lastDailyLoginClaimDate);
 });
 
 test("state: daily login reward persists across reload", async () => {
@@ -3231,10 +3249,11 @@ test("state: daily login reward persists across reload", async () => {
   const profile = await second.profiles.getProfile("ReloadLoginUser");
   const sameDay = await second.claimDailyLoginReward("ReloadLoginUser", nowMs + 60000);
 
-  assert.equal(profile.tokens, 205);
+  assert.equal(profile.tokens, 204);
   assert.equal(profile.playerXP, 2);
+  assert.equal(profile.dailyLoginStreakDay, 1);
   assert.equal(sameDay.granted, false);
-  assert.equal(sameDay.profile.tokens, 205);
+  assert.equal(sameDay.profile.tokens, 204);
   assert.equal(sameDay.profile.playerXP, 2);
 });
 
@@ -3250,7 +3269,7 @@ test("state: daily login reward does not reset before 6 PM Central", async () =>
 
   assert.equal(first.granted, true);
   assert.equal(second.granted, false);
-  assert.equal(second.profile.tokens, 205);
+  assert.equal(second.profile.tokens, 204);
   assert.equal(second.profile.playerXP, 2);
 });
 
@@ -3273,7 +3292,148 @@ test("state: daily login reward converts xp into max level bonus tokens at the c
   assert.equal(reward.xpConversionTokenBonus, 1);
   assert.equal(reward.overflowXp, 2);
   assert.equal(reward.profile.playerXP, maxThreshold);
-  assert.equal(reward.profile.tokens, 206);
+  assert.equal(reward.profile.tokens, 205);
+});
+
+test("state: missed daily login reset window resets the streak to Day 1", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+  const staleWindowKey = new Date(getDailyResetWindow(nowMs - (2 * 86400000)).lastResetMs).toISOString();
+
+  await state.profiles.updateProfile("ResetLoginUser", (current) => ({
+    ...current,
+    lastDailyLoginClaimDate: staleWindowKey,
+    dailyLoginStreakDay: 5
+  }));
+
+  const result = await state.claimDailyLoginReward("ResetLoginUser", nowMs);
+  assert.equal(result.streakDay, 1);
+  assert.equal(result.rewardTokens, 4);
+  assert.equal(result.rewardXp, 2);
+  assert.equal(result.profile.dailyLoginStreakDay, 1);
+});
+
+test("state: daily login reward loops back to Day 1 after Day 7 on the next consecutive claim", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+  const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
+
+  await state.profiles.updateProfile("LoopLoginUser", (current) => ({
+    ...current,
+    lastDailyLoginClaimDate: previousWindowKey,
+    dailyLoginStreakDay: 7
+  }));
+
+  const result = await state.claimDailyLoginReward("LoopLoginUser", nowMs);
+  assert.equal(result.streakDay, 1);
+  assert.equal(result.rewardTokens, 4);
+  assert.equal(result.rewardXp, 2);
+  assert.equal(result.profile.dailyLoginStreakDay, 1);
+});
+
+test("state: day 7 legendary branch grants only a legendary chest", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+  const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
+
+  await state.profiles.updateProfile("LegendaryLoginUser", (current) => ({
+    ...current,
+    lastDailyLoginClaimDate: previousWindowKey,
+    dailyLoginStreakDay: 6
+  }));
+
+  const result = await state.claimDailyLoginReward("LegendaryLoginUser", nowMs, {
+    random: () => 0
+  });
+
+  assert.equal(result.streakDay, 7);
+  assert.equal(result.rewardTokens, 0);
+  assert.equal(result.rewardXp, 0);
+  assert.deepEqual(result.chestGrants, [{ chestType: LEGENDARY_CHEST_TYPE, amount: 1 }]);
+  assert.equal(result.chestAwarded?.chestType, LEGENDARY_CHEST_TYPE);
+  assert.equal(result.profile.chests[LEGENDARY_CHEST_TYPE], 1);
+  assert.equal(result.profile.playerXP, 0);
+});
+
+test("state: day 7 epic branch grants only an epic chest after a legendary miss", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+  const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
+  const rolls = [0.5, 0];
+
+  await state.profiles.updateProfile("EpicLoginUser", (current) => ({
+    ...current,
+    lastDailyLoginClaimDate: previousWindowKey,
+    dailyLoginStreakDay: 6
+  }));
+
+  const result = await state.claimDailyLoginReward("EpicLoginUser", nowMs, {
+    random: () => rolls.shift() ?? 0.99
+  });
+
+  assert.equal(result.streakDay, 7);
+  assert.equal(result.rewardTokens, 0);
+  assert.equal(result.rewardXp, 0);
+  assert.deepEqual(result.chestGrants, [{ chestType: EPIC_CHEST_TYPE, amount: 1 }]);
+  assert.equal(result.chestAwarded?.chestType, EPIC_CHEST_TYPE);
+  assert.equal(result.profile.chests[EPIC_CHEST_TYPE], 1);
+  assert.equal(result.profile.playerXP, 0);
+});
+
+test("state: day 7 fallback grants 20 XP only when no chest drops", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+  const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
+  const rolls = [0.5, 0.5];
+
+  await state.profiles.updateProfile("FallbackLoginUser", (current) => ({
+    ...current,
+    lastDailyLoginClaimDate: previousWindowKey,
+    dailyLoginStreakDay: 6
+  }));
+
+  const result = await state.claimDailyLoginReward("FallbackLoginUser", nowMs, {
+    random: () => rolls.shift() ?? 0.99
+  });
+
+  assert.equal(result.streakDay, 7);
+  assert.equal(result.rewardTokens, 0);
+  assert.equal(result.rewardXp, 20);
+  assert.equal(result.chestAwarded, null);
+  assert.deepEqual(result.chestGrants, []);
+  assert.equal(result.profile.playerXP, 20);
+  assert.equal(result.profile.chests[EPIC_CHEST_TYPE], 0);
+  assert.equal(result.profile.chests[LEGENDARY_CHEST_TYPE], 0);
+});
+
+test("state: legacy daily login profiles without streak fields normalize safely and continue at Day 2", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+  const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
+
+  await state.profiles.updateProfile("LegacyLoginUser", (current) => {
+    const next = {
+      ...current,
+      lastDailyLoginClaimDate: previousWindowKey
+    };
+    delete next.dailyLoginStreakDay;
+    return next;
+  });
+
+  const normalizedProfile = await state.profiles.getProfile("LegacyLoginUser");
+  assert.equal(normalizedProfile.dailyLoginStreakDay, 1);
+
+  const result = await state.claimDailyLoginReward("LegacyLoginUser", nowMs);
+  assert.equal(result.streakDay, 2);
+  assert.equal(result.rewardTokens, 0);
+  assert.equal(result.rewardXp, 4);
+  assert.equal(result.profile.dailyLoginStreakDay, 2);
 });
 
 test("state: daily challenges payload includes daily login status from the shared 6 PM reset window", async () => {
@@ -4911,7 +5071,7 @@ test("boost events: daily login and admin grants stay unboosted", async () => {
   const state = new StateCoordinator({ dataDir });
 
   const dailyLogin = await state.claimDailyLoginReward("DailyLoginBoostUser", Date.parse("2026-05-16T12:00:00.000Z"));
-  assert.equal(dailyLogin.rewardTokens, 5);
+  assert.equal(dailyLogin.rewardTokens, 4);
   assert.equal(dailyLogin.rewardXp, 2);
 
   const adminGrant = await state.applyAdminGrant({

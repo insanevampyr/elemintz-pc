@@ -4515,7 +4515,7 @@ test("multiplayer foundation: server-authoritative daily login claim grants once
     assert.equal(firstClaim?.ok, true);
     assert.equal(firstClaim?.result?.granted, true);
     assert.equal(firstClaim?.result?.snapshot?.progression?.dailyLogin?.eligible, false);
-    assert.equal(profileAfterFirst?.tokens, (beforeProfile?.tokens ?? 0) + 5);
+    assert.equal(profileAfterFirst?.tokens, (beforeProfile?.tokens ?? 0) + 4);
     assert.equal(profileAfterFirst?.playerXP, (beforeProfile?.playerXP ?? 0) + 2);
 
     assert.equal(secondClaim?.ok, true);
