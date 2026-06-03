@@ -2839,6 +2839,58 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
   }
 });
 
+test("multiplayer foundation: profile:view rejects missing and unknown usernames without creating default profiles", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let viewerClient = null;
+
+  try {
+    const port = await foundation.start();
+    viewerClient = await connectClient(port);
+
+    const viewerRegister = await registerAccount(viewerClient, {
+      username: "PublicViewer",
+      email: "public-viewer@example.com",
+      password: "PublicViewerPass123"
+    });
+    assert.equal(viewerRegister?.ok, true);
+
+    const missingUsername = await emitWithAck(viewerClient, "profile:view", {});
+    const unknownProfile = await emitWithAck(viewerClient, "profile:view", {
+      username: "MissingRemoteUser"
+    });
+
+    assert.equal(missingUsername?.ok, false);
+    assert.equal(missingUsername?.error?.code, "PROFILE_VIEW_FAILED");
+    assert.match(String(missingUsername?.error?.message ?? ""), /username is required/i);
+
+    assert.equal(unknownProfile?.ok, false);
+    assert.equal(unknownProfile?.error?.code, "PROFILE_NOT_FOUND");
+    assert.match(String(unknownProfile?.error?.message ?? ""), /MissingRemoteUser/);
+
+    const created = await coordinator.profiles.getProfile("MissingRemoteUser");
+    assert.equal(created, null);
+  } finally {
+    viewerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: admin lookup returns the authoritative profile snapshot by username", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

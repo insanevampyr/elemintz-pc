@@ -2971,6 +2971,27 @@ test("state: VampyrLee backfill does not apply to other usernames and the marker
   assert.equal(viewed.profile.achievements.long_match_100?.count ?? 0, 0);
 });
 
+test("state: authoritative viewed-profile reads reject missing usernames and do not create unknown profiles", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await assert.rejects(
+    () => authority.viewProfile(""),
+    /username is required/
+  );
+
+  await assert.rejects(async () => {
+    await authority.viewProfile("UnknownRemoteUser");
+  }, (error) => {
+    assert.equal(error?.code, "PROFILE_NOT_FOUND");
+    assert.match(String(error?.message ?? ""), /UnknownRemoteUser/);
+    return true;
+  });
+
+  const created = await authority.coordinator.profiles.getProfile("UnknownRemoteUser");
+  assert.equal(created, null);
+});
+
 test("state: completed matches using all four elements increment matchesUsingAllElements", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });

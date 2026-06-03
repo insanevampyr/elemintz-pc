@@ -1986,7 +1986,9 @@ export class MultiplayerClient {
       return null;
     }
     const sanitizedPayload = { ...payload };
-    delete sanitizedPayload.username;
+    if (!options?.preserveUsername) {
+      delete sanitizedPayload.username;
+    }
     delete sanitizedPayload.sessionToken;
     const response = await this.emitRequest(eventName, sanitizedPayload, options);
     if (this.isInvalidSessionError(response?.error) && (this.state.session?.authenticated || this.sessionToken)) {
@@ -2237,9 +2239,15 @@ export class MultiplayerClient {
       return null;
     }
 
-    const response = await this.runServerRequest("profile:view", { username: safeUsername }, { serverUrl });
+    const response = await this.runServerRequest(
+      "profile:view",
+      { username: safeUsername },
+      { serverUrl, preserveUsername: true }
+    );
     if (!response?.ok) {
-      throw new Error(response?.error?.message ?? "Unable to load the viewed profile.");
+      const error = new Error(response?.error?.message ?? "Unable to load the viewed profile.");
+      error.code = String(response?.error?.code ?? "PROFILE_VIEW_FAILED");
+      throw error;
     }
 
     return response.profile ?? null;

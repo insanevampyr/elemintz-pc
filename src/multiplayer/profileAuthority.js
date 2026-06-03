@@ -312,11 +312,12 @@ export class MultiplayerProfileAuthority {
     }
 
     this.logger.info?.(`[ProfileAuthority] viewProfile -> ${safeUsername} (server)`);
-    await this.coordinator.profiles.ensureProfile(safeUsername);
     const profile = await this.coordinator.profiles.getProfile(safeUsername);
 
     if (!profile) {
-      throw new Error(`Failed to load server-authoritative viewed profile for ${safeUsername}.`);
+      const error = new Error(`Profile ${safeUsername} was not found.`);
+      error.code = "PROFILE_NOT_FOUND";
+      throw error;
     }
 
     return buildPublicProfileSnapshot({ profile });

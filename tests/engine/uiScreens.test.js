@@ -136,6 +136,7 @@ function createProfileScreenContext(overrides = {}) {
     titleIcon: null,
     backgroundImage: "assets/EleMintzIcon.png",
     searchQuery: "",
+    searchError: "",
     searchResults: [],
     profileAchievementsExpanded: true,
     viewedProfileAchievementsExpanded: false,
@@ -8902,6 +8903,243 @@ test("ui: authenticated profile view uses authoritative viewed-profile data for 
     assert.match(modalCalls[0].bodyHtml, /Best Gauntlet Streak/);
     assert.match(modalCalls[0].bodyHtml, />3</);
     assert.match(modalCalls[0].bodyHtml, /avatar_neon_pyre_entity\.png/);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: authenticated typed profile lookup works without any local profile suggestions", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const viewedCalls = [];
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => ({
+          authority: "server",
+          username: "Owner",
+          profile: {
+            ...createProfileScreenContext().profile,
+            username: "Owner"
+          },
+          cosmetics: { equipped: createProfileScreenContext().profile.equippedCosmetics, owned: {}, loadouts: [], preferences: {} },
+          stats: { summary: {}, modes: {} },
+          currency: { tokens: 200 },
+          progression: { xp: {} }
+        }),
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        viewProfile: async ({ username }) => {
+          viewedCalls.push(username);
+          return {
+            authority: "server",
+            source: "multiplayer",
+            username,
+            profile: {
+              username,
+              title: "Initiate",
+              playerLevel: 4,
+              playerXP: 40,
+              tokens: 222,
+              wins: 5,
+              losses: 1,
+              gamesPlayed: 6,
+              warsEntered: 2,
+              warsWon: 1,
+              cardsCaptured: 12,
+              longestWar: 3,
+              bestWinStreak: 4,
+              featuredRivalWins: 1,
+              gauntletBestStreak: 0,
+              gauntletRuns: 0,
+              gauntletWins: 0,
+              gauntletLosses: 0,
+              gauntletRivalsDefeated: 0,
+              achievements: {},
+              modeStats: { pve: { wins: 5, losses: 1 }, local_pvp: { wins: 0, losses: 0 } },
+              equippedCosmetics: {
+                avatar: "default_avatar",
+                title: "Initiate",
+                badge: "none",
+                background: "default_background",
+                cardBack: "default_card_back",
+                elementCardVariant: {
+                  fire: "default_fire_card",
+                  water: "default_water_card",
+                  earth: "default_earth_card",
+                  wind: "default_wind_card"
+                }
+              },
+              trophyShelf: []
+            },
+            cosmetics: {
+              equipped: {
+                avatar: "default_avatar",
+                title: "Initiate",
+                badge: "none",
+                background: "default_background",
+                cardBack: "default_card_back",
+                elementCardVariant: {
+                  fire: "default_fire_card",
+                  water: "default_water_card",
+                  earth: "default_earth_card",
+                  wind: "default_wind_card"
+                }
+              },
+              trophyShelf: []
+            },
+            stats: {
+              summary: {
+                wins: 5,
+                losses: 1,
+                gamesPlayed: 6,
+                warsEntered: 2,
+                warsWon: 1,
+                cardsCaptured: 12
+              },
+              modes: { pve: { wins: 5, losses: 1 }, local_pvp: { wins: 0, losses: 0 } }
+            },
+            currency: { tokens: 222 },
+            progression: { xp: { playerXP: 40, playerLevel: 4 } }
+          };
+        }
+      },
+      state: {
+        getProfile: async () => {
+          throw new Error("local viewed-profile lookup should not be used in authenticated mode");
+        },
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => []
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "Owner";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "Owner"
+      }
+    };
+
+    await controller.showProfile();
+    await shown.at(-1).context.actions.viewProfile("YourUnclesFinger");
+
+    assert.deepEqual(viewedCalls, ["YourUnclesFinger"]);
+    assert.equal(modalCalls.length, 1);
+    assert.match(modalCalls[0].title, /Viewing: YourUnclesFinger/);
+    assert.match(modalCalls[0].bodyHtml, /data-profile-overview-tokens="true">222</);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: authenticated viewed-profile failures show a clear not-found message and do not render a default local profile", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  let localViewedReads = 0;
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => ({
+          authority: "server",
+          username: "Owner",
+          profile: {
+            ...createProfileScreenContext().profile,
+            username: "Owner"
+          },
+          cosmetics: { equipped: createProfileScreenContext().profile.equippedCosmetics, owned: {}, loadouts: [], preferences: {} },
+          stats: { summary: {}, modes: {} },
+          currency: { tokens: 200 },
+          progression: { xp: {} }
+        }),
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        viewProfile: async () => {
+          const error = new Error("Profile MissingRemoteUser was not found.");
+          error.code = "PROFILE_NOT_FOUND";
+          throw error;
+        }
+      },
+      state: {
+        getProfile: async (username) => {
+          localViewedReads += 1;
+          return {
+            username,
+            tokens: 0,
+            wins: 0,
+            losses: 0,
+            gamesPlayed: 0,
+            warsEntered: 0,
+            warsWon: 0,
+            longestWar: 0,
+            featuredRivalWins: 0,
+            gauntletBestStreak: 0,
+            gauntletRuns: 0,
+            gauntletWins: 0,
+            gauntletLosses: 0,
+            gauntletRivalsDefeated: 0,
+            achievements: {},
+            equippedCosmetics: { avatar: "default_avatar", title: "Initiate", background: "default_background" },
+            modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } }
+          };
+        },
+        getCosmetics: async () => createProfileScreenContext().cosmetics,
+        getDailyChallenges: async () => ({ xp: {} }),
+        listProfiles: async () => []
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "Owner";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "Owner"
+      }
+    };
+
+    await controller.showProfile();
+    await shown.at(-1).context.actions.viewProfile("MissingRemoteUser");
+
+    const profileHtml = profileScreen.render(shown.at(-1).context);
+    assert.equal(localViewedReads, 0);
+    assert.equal(modalCalls.length, 0);
+    assert.match(profileHtml, /Profile "MissingRemoteUser" was not found\./);
+    assert.doesNotMatch(profileHtml, /Viewing: MissingRemoteUser/);
   } finally {
     global.window = previousWindow;
   }
@@ -18208,6 +18446,79 @@ test("ui: profile shows the new milestone chest popup with the exact grant messa
   } finally {
     global.window = previousWindow;
   }
+});
+
+test("ui: profile search submit triggers both local suggestions refresh and authoritative viewed-profile lookup for the typed username", async () => {
+  const previousDocument = global.document;
+  const actionCalls = [];
+  let submitHandler = null;
+  const searchForm = {
+    addEventListener: (type, handler) => {
+      if (type === "submit") {
+        submitHandler = handler;
+      }
+    }
+  };
+
+  global.document = {
+    getElementById: (id) => {
+      if (id === "profile-back-btn") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "open-basic-chest-btn" || id === "open-milestone-chest-btn" || id === "open-epic-chest-btn" || id === "open-legendary-chest-btn") {
+        return null;
+      }
+      if (id === "profile-search-form") {
+        return searchForm;
+      }
+      if (id === "profile-search-input" || id === "clear-viewed-profile-btn") {
+        return null;
+      }
+      return null;
+    },
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+
+  class FakeFormData {
+    constructor() {}
+    get(name) {
+      return name === "profileSearch" ? "CopyCell" : "";
+    }
+  }
+
+  const previousFormData = global.FormData;
+  global.FormData = FakeFormData;
+
+  try {
+    profileScreen.bind(
+      createProfileScreenContext({
+        actions: {
+          openBasicChest: () => {},
+          openMilestoneChest: () => {},
+          openEpicChest: () => {},
+          openLegendaryChest: () => {},
+          searchProfiles: async (value) => actionCalls.push(["searchProfiles", value]),
+          viewProfile: async (value) => actionCalls.push(["viewProfile", value]),
+          clearViewed: () => {},
+          back: () => {}
+        }
+      })
+    );
+
+    await submitHandler?.({
+      preventDefault: () => {},
+      currentTarget: searchForm
+    });
+  } finally {
+    global.document = previousDocument;
+    global.FormData = previousFormData;
+  }
+
+  assert.deepEqual(actionCalls, [
+    ["searchProfiles", "CopyCell"],
+    ["viewProfile", "CopyCell"]
+  ]);
 });
 
 test("ui: modal manager supports large profile modal classes without changing default modal markup", () => {

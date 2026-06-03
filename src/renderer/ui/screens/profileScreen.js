@@ -816,7 +816,7 @@ function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, tit
   `;
 }
 
-function renderProfileSearchBlock({ searchQuery = "", searchResults = [] } = {}) {
+function renderProfileSearchBlock({ searchQuery = "", searchResults = [], searchError = "" } = {}) {
   return `
     <section class="profile-summary-card stack-sm profile-search-card">
       <h3 class="section-title">Search Player</h3>
@@ -832,6 +832,7 @@ function renderProfileSearchBlock({ searchQuery = "", searchResults = [] } = {})
         />
         <button type="submit" class="btn">View Profile</button>
       </form>
+      ${searchError ? `<p class="text-muted">${searchError}</p>` : ""}
       ${
         searchResults.length
           ? `<div class="stack-sm profile-search-results">${searchResults
@@ -1016,6 +1017,7 @@ export const profileScreen = {
           })}
           ${renderProfileSearchBlock({
             searchQuery: context.searchQuery ?? "",
+            searchError: context.searchError ?? "",
             searchResults
           })}
           ${renderProfileFlexPanels(profile, {
@@ -1119,6 +1121,9 @@ export const profileScreen = {
       const formData = new FormData(event.currentTarget);
       const query = String(formData.get("profileSearch") ?? "").trim();
       await context.actions.searchProfiles(query);
+      if (query) {
+        await context.actions.viewProfile(query);
+      }
     });
 
     document.querySelectorAll("[data-view-profile]").forEach((button) => {

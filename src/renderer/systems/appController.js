@@ -200,6 +200,7 @@ export class AppController {
     this.localProfiles = null;
     this.localPlayerAuthorities = null;
     this.profileSearchQuery = "";
+    this.profileSearchError = "";
     this.viewedProfileUsername = null;
     this.profileAchievementsExpanded = false;
     this.viewedProfileAchievementsExpanded = false;
@@ -7766,6 +7767,7 @@ export class AppController {
         basicChestVisualState: this.profileChestVisualState,
         profileChestOpenInFlight: this.profileChestOpenInFlight,
         searchQuery: this.profileSearchQuery,
+        searchError: this.profileSearchError,
         searchResults,
         viewedProfile,
         profileAchievementsExpanded: this.profileAchievementsExpanded,
@@ -7824,12 +7826,14 @@ export class AppController {
         },
         searchProfiles: async (queryValue) => {
           this.profileSearchQuery = queryValue;
+          this.profileSearchError = "";
           this.clearViewedProfileSelection();
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         viewProfile: async (username) => {
           const safeUsername = String(username ?? "").trim();
           if (!safeUsername) {
+            this.profileSearchError = "";
             this.clearViewedProfileSelection();
             await this.showProfile({
               preserveAchievementVisibility: true,
@@ -7842,11 +7846,14 @@ export class AppController {
             return;
           }
 
+          this.profileSearchQuery = safeUsername;
+          this.profileSearchError = "";
           this.viewedProfileUsername = safeUsername;
           this.viewedProfileAchievementsExpanded = false;
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         clearViewed: async () => {
+          this.profileSearchError = "";
           this.clearViewedProfileSelection();
           await this.showProfile({
             preserveAchievementVisibility: true,
@@ -7872,6 +7879,16 @@ export class AppController {
     this.viewedProfileAchievementsExpanded = false;
   }
 
+  buildViewedProfileLookupMessage(username, error) {
+    const safeUsername = String(username ?? "").trim();
+    const code = String(error?.code ?? "").trim().toUpperCase();
+    if (code === "PROFILE_NOT_FOUND") {
+      return `Profile "${safeUsername}" was not found.`;
+    }
+
+    return `Unable to load profile "${safeUsername}".`;
+  }
+
   async loadViewedProfile(username) {
     const safeUsername = String(username ?? "").trim();
     if (!safeUsername) {
@@ -7887,16 +7904,25 @@ export class AppController {
         const snapshot = await window.elemintz.multiplayer.viewProfile({ username: safeUsername });
         const profile = this.buildProfileFromServerSnapshot(snapshot);
         if (profile) {
+          this.profileSearchError = "";
           return profile;
         }
+        this.profileSearchError = this.buildViewedProfileLookupMessage(safeUsername, {
+          code: "PROFILE_VIEW_FAILED"
+        });
+        return null;
       } catch (error) {
-        console.warn("Falling back to local viewed profile after authoritative read failed", {
+        this.profileSearchError = this.buildViewedProfileLookupMessage(safeUsername, error);
+        console.warn("Viewed profile lookup failed", {
           username: safeUsername,
+          code: String(error?.code ?? "").trim().toUpperCase() || null,
           message: String(error?.message ?? error ?? "Unknown viewed profile failure.")
         });
+        return null;
       }
     }
 
+    this.profileSearchError = "";
     return window.elemintz.state.getProfile(safeUsername);
   }
 

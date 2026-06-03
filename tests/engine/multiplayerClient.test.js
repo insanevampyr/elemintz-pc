@@ -485,6 +485,68 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "profile:view") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          profile: {
+            authority: "server",
+            source: "multiplayer",
+            username: payload?.username ?? null,
+            profile: {
+              username: payload?.username ?? null,
+              title: "Initiate",
+              playerXP: 18,
+              playerLevel: 1,
+              tokens: 125,
+              wins: 0,
+              losses: 0,
+              gamesPlayed: 0,
+              warsEntered: 0,
+              warsWon: 0,
+              cardsCaptured: 0,
+              longestWar: 0,
+              bestWinStreak: 0,
+              featuredRivalWins: 0,
+              gauntletBestStreak: 0,
+              gauntletRuns: 0,
+              gauntletWins: 0,
+              gauntletLosses: 0,
+              gauntletRivalsDefeated: 0,
+              achievements: {},
+              modeStats: {},
+              equippedCosmetics: createEquippedCosmetics(),
+              trophyShelf: []
+            },
+            cosmetics: {
+              equipped: createEquippedCosmetics(),
+              trophyShelf: []
+            },
+            stats: {
+              summary: {
+                wins: 0,
+                losses: 0,
+                gamesPlayed: 0,
+                warsEntered: 0,
+                warsWon: 0,
+                cardsCaptured: 0
+              },
+              modes: {}
+            },
+            currency: {
+              tokens: 125
+            },
+            progression: {
+              xp: {
+                playerXP: 18,
+                playerLevel: 1
+              }
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "announcements:list") {
       queueMicrotask(() => {
         ack?.({
@@ -1371,6 +1433,37 @@ test("multiplayer client: server profile requests return authoritative snapshots
   assert.equal(snapshot?.authority, "server");
   assert.equal(snapshot?.profile?.username, "ServerOwnedUser");
   assert.equal(snapshot?.progression?.xp?.playerXP, 18);
+});
+
+test("multiplayer client: viewed profile requests preserve the typed username payload", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const snapshot = await client.viewProfile({
+    username: "CopyCell"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "CopyCell"
+    }
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:view",
+    payload: {
+      username: "CopyCell"
+    }
+  });
+  assert.equal(snapshot?.profile?.username, "CopyCell");
+  assert.equal(snapshot?.profile?.tokens, 125);
 });
 
 test("multiplayer client: announcements list returns active server announcements", async () => {

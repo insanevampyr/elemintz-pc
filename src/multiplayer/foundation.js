@@ -2151,7 +2151,7 @@ export function createMultiplayerFoundation({
         respond({
           ok: false,
           error: {
-            code: "PROFILE_VIEW_FAILED",
+            code: String(error?.code ?? "PROFILE_VIEW_FAILED"),
             message: String(error?.message ?? "Unable to read viewed profile.")
           }
         });
