@@ -372,7 +372,7 @@ input[type="number"] {
   top: 84px;
   right: 18px;
   z-index: 5;
-  width: min(250px, calc(100vw - 32px));
+  width: min(288px, calc(100vw - 32px));
   display: grid;
   gap: 8px;
   pointer-events: none;
@@ -442,22 +442,27 @@ input[type="number"] {
 
 .match-taunt-panel {
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 8px;
   padding: 10px;
   border-radius: 12px;
   border: 1px solid rgba(125, 171, 211, 0.34);
-  background: rgba(8, 18, 30, 0.96);
+  background: rgba(8, 18, 30, 0.8);
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.26);
+  max-height: min(420px, calc(100vh - 180px));
+  overflow-y: auto;
 }
 
 .match-taunt-option {
   width: 100%;
+  min-height: 40px;
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid rgba(110, 152, 189, 0.34);
   background: rgba(16, 34, 52, 0.92);
   color: #e6f3ff;
   text-align: left;
+  line-height: 1.2;
   cursor: pointer;
   transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
 }
