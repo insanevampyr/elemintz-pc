@@ -7761,6 +7761,8 @@ test("ui: online play screen renders the opponent variant showcase from authorit
     },
     actions: {}
   });
+  const opponentVariantTrackerMatch = html.match(/<section class="stack-sm" data-online-opponent-variant-tracker="true">[\s\S]*?<\/section>/);
+  const opponentVariantTrackerHtml = opponentVariantTrackerMatch?.[0] ?? "";
 
   assert.match(html, /data-online-opponent-variant-tracker="true"/);
   assert.match(html, /Opponent Card Style/);
@@ -7772,11 +7774,12 @@ test("ui: online play screen renders the opponent variant showcase from authorit
   assert.match(html, /Opponent Earth card style/);
   assert.match(html, /Opponent Wind card style/);
   assert.match(html, /Opponent Water card style/);
-  assert.doesNotMatch(html, /war-slot-count-badge/);
-  assert.doesNotMatch(html, /Opponent Fire x\d+/);
-  assert.doesNotMatch(html, /Opponent Earth x\d+/);
-  assert.doesNotMatch(html, /Opponent Wind x\d+/);
-  assert.doesNotMatch(html, /Opponent Water x\d+/);
+  assert.ok(opponentVariantTrackerHtml);
+  assert.doesNotMatch(opponentVariantTrackerHtml, /war-slot-count-badge/);
+  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Fire x\d+/);
+  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Earth x\d+/);
+  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Wind x\d+/);
+  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Water x\d+/);
 });
 
 test("ui: moved element card variants resolve from assets/cards", () => {
@@ -14932,6 +14935,115 @@ test("ui: online play screen renders round result from the local player perspect
   assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
   assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Changed:<\/strong>/);
+});
+
+test("ui: online play live board renders WAR visuals on the left using the authoritative WAR pile summary", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "SignedInGuest",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Resolving WAR in room ABC123",
+      lastError: null,
+      latestAuthoritativeRoundResult: {
+        outcomeType: "war",
+        submittedCards: { host: "fire", guest: "fire" },
+        roundResult: {
+          roomCode: "ABC123",
+          hostMove: "fire",
+          guestMove: "fire",
+          outcomeType: "war",
+          hostResult: "war",
+          guestResult: "war",
+          roundNumber: 3
+        }
+      },
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "SignedInGuest" },
+        hostResolvedIdentity: {
+          username: "HostUser",
+          backgroundImage: "assets/arenas/host.jpg",
+          cardBackId: "default_card_back",
+          cardBackImage: "assets/cards/back.jpg",
+          variantSelection: {
+            fire: "fire_variant_phoenix",
+            water: "water_variant_tidal_spirit",
+            earth: "earth_variant_titan",
+            wind: "wind_variant_storm_eye"
+          },
+          variantImages: getVariantCardImages({
+            fire: "fire_variant_phoenix",
+            water: "water_variant_tidal_spirit",
+            earth: "earth_variant_titan",
+            wind: "wind_variant_storm_eye"
+          })
+        },
+        guestResolvedIdentity: {
+          username: "SignedInGuest",
+          backgroundImage: "assets/arenas/guest.jpg",
+          cardBackId: "default_card_back",
+          cardBackImage: "assets/cards/back.jpg",
+          variantSelection: {
+            fire: "fire_variant_ember",
+            water: "water_variant_crystal",
+            earth: "earth_variant_rooted_monolith",
+            wind: "wind_variant_sky_serpent"
+          },
+          variantImages: getVariantCardImages({
+            fire: "fire_variant_ember",
+            water: "water_variant_crystal",
+            earth: "earth_variant_rooted_monolith",
+            wind: "wind_variant_sky_serpent"
+          })
+        },
+        hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
+        opponentCardVariants: {
+          fire: "fire_variant_phoenix",
+          water: "water_variant_tidal_spirit",
+          earth: "earth_variant_titan",
+          wind: "wind_variant_storm_eye"
+        },
+        hostScore: 1,
+        guestScore: 1,
+        roundNumber: 3,
+        lastOutcomeType: "war",
+        warActive: true,
+        warDepth: 2,
+        pileCount: 4,
+        warPileSizes: [2, 4],
+        warPileCards: ["fire", "fire", "earth", "water"],
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /match-status-panel online-play-status-panel has-center-result/);
+  assert.match(html, /war-pile-inline online-war-pile-inline war-highlight/);
+  assert.match(html, /WAR progression: 2 -> 4/);
+  assert.match(html, /WAR Fire x2/);
+  assert.match(html, /WAR Earth x1/);
+  assert.match(html, /WAR Water x1/);
+  assert.match(html, /assets\/cards\/fire_variant_phoenix\.png/);
+  assert.match(html, /assets\/cards\/earth_variant_titan\.png/);
+  assert.match(html, /assets\/cards\/water_variant_tidal_spirit\.png/);
+  assert.match(html, /data-round-center-motion="war"/);
+  assert.ok(html.indexOf("war-pile-inline online-war-pile-inline") < html.indexOf('data-round-center-result="true"'));
 });
 
 test("ui: online play screen keeps settled guest rewards after host migration", () => {

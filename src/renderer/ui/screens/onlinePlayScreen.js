@@ -423,6 +423,10 @@ function deriveOnlineBoardView(context) {
     remoteCount: sumHandCount(remoteHand),
     localVariantMap: localIdentity.variantImages ?? null,
     opponentCardVariants: room.opponentCardVariants ?? null,
+    warActive: Boolean(room.warActive),
+    pileCount: Math.max(0, Number(room.pileCount ?? 0) || 0),
+    warPileCards: Array.isArray(room.warPileCards) ? room.warPileCards : [],
+    warPileSizes: Array.isArray(room.warPileSizes) ? room.warPileSizes : [],
     remoteCardBack: remoteIdentity.cardBackImage ?? null,
     selectable: room.status === "full" && !room.matchComplete && Boolean(moveSync) && !moveSync.ownSubmitted,
     ownSubmitted: Boolean(moveSync?.ownSubmitted)
@@ -492,6 +496,34 @@ function renderOnlineOpponentVariantTracker(opponentCardVariants) {
         `).join("")}
       </div>
     </section>
+  `;
+}
+
+function renderOnlineWarPileSummary(pileCards, opponentCardVariants, emphasize) {
+  const normalizedCards = Array.isArray(pileCards)
+    ? pileCards.map((card) => String(card ?? "").trim().toLowerCase()).filter(Boolean)
+    : [];
+  const opponentVariantImages = getVariantCardImages(opponentCardVariants ?? null);
+
+  return `
+    <div class="war-summary-grid ${emphasize ? "is-emphasized" : ""}">
+      ${ELEMENT_ORDER.map((element) => {
+        const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
+        const classes = ["war-slot", `war-slot-${element}`];
+
+        if (count === 0) {
+          classes.push("is-empty");
+        }
+
+        return `
+          <div class="${classes.join(" ")}" aria-label="WAR ${formatElement(element)} x${count}">
+            <span class="card-art war-slot-art" style="background-image: url('${getCardImage(element, opponentVariantImages)}')"></span>
+            <span class="war-slot-count-badge">x${count}</span>
+            <span class="war-slot-name">${formatElement(element)}</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
   `;
 }
 
@@ -650,6 +682,7 @@ function renderOnlineLiveBoard(
         rightVariantMap: getVariantCardImages(boardView.opponentCardVariants ?? null)
       }
     : null;
+  const warTriggered = Boolean(boardView.warActive);
 
   return `
     <section class="grid game-grid online-play-live-grid">
@@ -691,6 +724,9 @@ function renderOnlineLiveBoard(
       </article>
 
       <article class="panel match-status-panel online-play-status-panel has-center-result">
+        <div class="war-pile-inline online-war-pile-inline ${warTriggered ? "war-highlight" : ""}">
+          ${renderOnlineWarPileSummary(boardView.warPileCards, boardView.opponentCardVariants, warTriggered)}
+        </div>
         ${renderCenterRoundResult(centerResultView)}
         <div class="status-meta">
           <div class="online-status-header-row">
@@ -710,6 +746,7 @@ function renderOnlineLiveBoard(
           <p class="round-result-text">${escapeHtml(roomStateView.detail)}</p>
           ${matchStatus ? `<p class="round-status-line">Round ${escapeHtml(String(matchStatus.roundNumber))} | Host ${escapeHtml(String(matchStatus.hostScore))} - Guest ${escapeHtml(String(matchStatus.guestScore))}</p>` : ""}
           ${moveSyncLabel ? `<p class="round-status-line">Move Sync: ${escapeHtml(moveSyncLabel)}</p>` : ""}
+          ${boardView.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${boardView.warPileSizes.join(" -> ")}</p>` : ""}
           ${roomLifecycle?.primaryLabel ? `<p class="round-status-line">${escapeHtml(roomLifecycle.primaryLabel)}</p>` : ""}
         </div>
       </article>

@@ -1122,6 +1122,27 @@ input[type="number"] {
   grid-template-columns: minmax(160px, 220px) minmax(280px, 1fr) minmax(180px, 240px);
 }
 
+.online-play-status-panel.has-center-result .war-pile-inline {
+  grid-column: 1;
+  justify-self: center;
+  width: min(100%, 292px);
+}
+
+.online-play-status-panel.has-center-result .war-summary-grid {
+  grid-template-columns: repeat(4, minmax(76px, 80px));
+}
+
+.online-play-status-panel.has-center-result .war-slot {
+  width: 78px;
+  padding: 4px;
+}
+
+.online-play-status-panel.has-center-result .war-slot-art {
+  width: 66px;
+  max-width: 66px;
+  min-width: 66px;
+}
+
 .online-play-status-panel.has-center-result .round-center-result {
   grid-column: 2;
 }
