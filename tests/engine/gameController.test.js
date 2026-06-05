@@ -4800,6 +4800,126 @@ test("appController: authenticated online profile load preserves the remembered 
   }
 });
 
+test("appController: authenticated own profile view after online disconnect reuses the remembered authoritative profile instead of local fallback", async () => {
+  const originalWindow = globalThis.window;
+  let multiplayerProfileReads = 0;
+  let localProfileReads = 0;
+  let localCosmeticsReads = 0;
+
+  const shown = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => {
+            multiplayerProfileReads += 1;
+            return null;
+          }
+        },
+        state: {
+          getProfile: async () => {
+            localProfileReads += 1;
+            return {
+              username: "SignedInUser",
+              tokens: 200,
+              playerXP: 0,
+              playerLevel: 1,
+              equippedCosmetics: {
+                background: "default_background"
+              }
+            };
+          },
+          getCosmetics: async () => {
+            localCosmeticsReads += 1;
+            return {
+              equipped: {
+                background: "default_background"
+              },
+              catalog: {
+                avatar: [],
+                cardBack: [],
+                background: [],
+                elementCardVariant: [],
+                badge: [],
+                title: []
+              }
+            };
+          },
+          getDailyChallenges: async () => ({ xp: {} }),
+          listProfiles: async () => []
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.onlinePlayState = {
+      connectionStatus: "disconnected",
+      session: {
+        authenticated: true,
+        username: "SignedInUser"
+      }
+    };
+    app.profile = {
+      username: "SignedInUser",
+      tokens: 315,
+      playerXP: 1353,
+      playerLevel: 18,
+      equippedCosmetics: {
+        avatar: "avatar_aurelian_archon",
+        title: "title_goldbound",
+        cardBack: "cardback_goldbound_relic",
+        background: "celestial_chamber_background"
+      }
+    };
+    app.setOwnProfileHydrationState("ready", { username: "SignedInUser" });
+    app.rememberAuthoritativeOwnProfile(app.profile, {
+      username: "SignedInUser",
+      onlineState: {
+        connectionStatus: "connected",
+        session: {
+          authenticated: true,
+          username: "SignedInUser"
+        }
+      }
+    });
+    app.profile = {
+      username: "SignedInUser",
+      tokens: 200,
+      playerXP: 0,
+      playerLevel: 1,
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate",
+        cardBack: "default_card_back",
+        background: "default_background"
+      }
+    };
+
+    await app.showProfile();
+
+    assert.equal(multiplayerProfileReads, 0);
+    assert.equal(localProfileReads, 0);
+    assert.equal(localCosmeticsReads, 0);
+    assert.equal(app.profile?.tokens, 315);
+    assert.equal(app.profile?.playerXP, 1353);
+    assert.equal(app.profile?.playerLevel, 18);
+    assert.equal(app.profile?.equippedCosmetics?.background, "celestial_chamber_background");
+    assert.equal(shown.at(-1)?.profile?.tokens, 315);
+    assert.equal(shown.at(-1)?.profile?.equippedCosmetics?.cardBack, "cardback_goldbound_relic");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online menu challenge refresh prefers the multiplayer profile snapshot", async () => {
   const originalWindow = globalThis.window;
   const app = new AppController({

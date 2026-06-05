@@ -18700,6 +18700,136 @@ test("ui: own profile after authenticated online settlement reuses the remembere
   }
 });
 
+test("ui: authenticated own profile after online disconnect reuses the remembered authoritative profile and skips local default fallback", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  let multiplayerProfileReads = 0;
+  let localProfileReads = 0;
+  let localCosmeticsReads = 0;
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => {
+          multiplayerProfileReads += 1;
+          return null;
+        }
+      },
+      state: {
+        getProfile: async () => {
+          localProfileReads += 1;
+          return {
+            username: "VampyrLee",
+            tokens: 200,
+            playerXP: 0,
+            playerLevel: 1,
+            chests: { basic: 0 },
+            achievements: {},
+            equippedCosmetics: {
+              avatar: "default_avatar",
+              title: "Initiate",
+              cardBack: "default_card_back",
+              background: "default_background"
+            }
+          };
+        },
+        getDailyChallenges: async () => ({
+          daily: { msUntilReset: 1000, challenges: [] },
+          weekly: { msUntilReset: 2000, challenges: [] },
+          dailyLogin: null,
+          xp: {}
+        }),
+        getCosmetics: async () => {
+          localCosmeticsReads += 1;
+          return {
+            equipped: {
+              avatar: "default_avatar",
+              title: "Initiate",
+              cardBack: "default_card_back",
+              background: "default_background"
+            },
+            catalog: { avatar: [], cardBack: [], background: [], elementCardVariant: [], badge: [], title: [] }
+          };
+        },
+        listProfiles: async () => []
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "VampyrLee";
+    controller.onlinePlayState = {
+      connectionStatus: "disconnected",
+      session: {
+        authenticated: true,
+        username: "VampyrLee"
+      }
+    };
+    controller.profile = {
+      username: "VampyrLee",
+      tokens: 315,
+      playerXP: 1353,
+      playerLevel: 18,
+      chests: { basic: 0 },
+      achievements: {},
+      equippedCosmetics: {
+        avatar: "avatar_aurelian_archon",
+        title: "title_goldbound",
+        cardBack: "cardback_goldbound_relic",
+        background: "celestial_chamber_background"
+      }
+    };
+    controller.setOwnProfileHydrationState("ready", { username: "VampyrLee" });
+    controller.rememberAuthoritativeOwnProfile(controller.profile, {
+      username: "VampyrLee",
+      onlineState: {
+        connectionStatus: "connected",
+        session: {
+          authenticated: true,
+          username: "VampyrLee"
+        }
+      }
+    });
+    controller.profile = {
+      username: "VampyrLee",
+      tokens: 200,
+      playerXP: 0,
+      playerLevel: 1,
+      chests: { basic: 0 },
+      achievements: {},
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate",
+        cardBack: "default_card_back",
+        background: "default_background"
+      }
+    };
+
+    await controller.showProfile();
+
+    const profileContext = shown.at(-1);
+    assert.equal(multiplayerProfileReads, 0);
+    assert.equal(localProfileReads, 0);
+    assert.equal(localCosmeticsReads, 0);
+    assert.equal(profileContext.profile.tokens, 315);
+    assert.equal(profileContext.profile.playerXP, 1353);
+    assert.equal(profileContext.profile.playerLevel, 18);
+    assert.equal(profileContext.profile.equippedCosmetics.avatar, "avatar_aurelian_archon");
+    assert.equal(profileContext.profile.equippedCosmetics.background, "celestial_chamber_background");
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: profile search submit triggers both local suggestions refresh and authoritative viewed-profile lookup for the typed username", async () => {
   const previousDocument = global.document;
   const actionCalls = [];

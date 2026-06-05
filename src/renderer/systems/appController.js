@@ -3170,7 +3170,7 @@ export class AppController {
   }
 
   getRememberedAuthoritativeOwnProfile(username = this.username, onlineState = this.onlinePlayState) {
-    if (!this.isAuthenticatedOnlineProfileFlow(onlineState, username) || !this.lastAuthoritativeOwnProfile) {
+    if (!this.hasAuthenticatedMultiplayerSessionForUsername(username, onlineState) || !this.lastAuthoritativeOwnProfile) {
       return null;
     }
 
@@ -3188,7 +3188,7 @@ export class AppController {
     onlineState = this.onlinePlayState,
     reason = "unknown"
   } = {}) {
-    if (!this.isAuthenticatedOnlineProfileFlow(onlineState, username)) {
+    if (!this.hasAuthenticatedMultiplayerSessionForUsername(username, onlineState)) {
       return this.profile;
     }
 
@@ -8564,6 +8564,10 @@ export class AppController {
       }
     });
     const isAuthenticatedOwnProfileFlow = this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username);
+    const hasAuthenticatedOwnProfileSession = this.hasAuthenticatedMultiplayerSessionForUsername(
+      this.username,
+      this.onlinePlayState
+    );
     if (isAuthenticatedOwnProfileFlow && !this.isOwnProfileHydrated()) {
       await this.loadPreferredProfileForOnlineSession({
         username: this.username,
@@ -8595,12 +8599,12 @@ export class AppController {
         shouldRefreshProfile
       }
     });
-    const rememberedAuthoritativeProfile = isAuthenticatedOwnProfileFlow
+    const rememberedAuthoritativeProfile = hasAuthenticatedOwnProfileSession
       ? this.getRememberedAuthoritativeOwnProfile(this.username, this.onlinePlayState)
       : null;
     const hasAuthoritativeServerProfile = Boolean(serverProfile);
     let resolvedProfile = profileOverride;
-    if (!resolvedProfile && isAuthenticatedOwnProfileFlow) {
+    if (!resolvedProfile && hasAuthenticatedOwnProfileSession) {
       if (hasAuthoritativeServerProfile) {
         resolvedProfile = this.applyServerProfileSnapshot(serverProfile, {
           fallbackProfile: rememberedAuthoritativeProfile ?? this.profile ?? null
@@ -8638,7 +8642,11 @@ export class AppController {
     const rawCosmetics = cosmeticsOverride
       ? null
       : shouldRefreshProfile
-        ? this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+        ? hasAuthenticatedOwnProfileSession
+          ? this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+            ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
+            : null
+          : this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
           ? await window.elemintz.multiplayer.getCosmetics({ username: this.username })
           : await window.elemintz.state.getCosmetics(this.username)
         : null;
@@ -8650,7 +8658,11 @@ export class AppController {
         cosmeticsOverride
           ? "this.profile"
           : shouldRefreshProfile
-            ? this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+            ? hasAuthenticatedOwnProfileSession
+              ? this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
+                ? "freshServer"
+                : "lastAuthoritativeOwnProfile"
+              : this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
               ? "freshServer"
               : "localState"
             : "this.profile",
@@ -8688,11 +8700,11 @@ export class AppController {
       renderSource:
         profileOverride
           ? "this.profile"
-          : serverProfile
+            : serverProfile
             ? "freshServer"
             : rememberedAuthoritativeProfile
               ? "lastAuthoritativeOwnProfile"
-              : isAuthenticatedOwnProfileFlow
+              : hasAuthenticatedOwnProfileSession
                 ? "null/error"
                 : shouldRefreshProfile
                   ? "localState"
