@@ -301,112 +301,7 @@ export class AppController {
       this.updateReadyPromptVersion = null;
       this.updateReadyPromptVisible = false;
 
-    this.installProfileTraceAccessors();
     this.registerScreens();
-  }
-
-  installProfileTraceAccessors() {
-    this._profileTraceProfileStorage = this.profile;
-    this._profileTraceLastAuthoritativeOwnProfileStorage = this.lastAuthoritativeOwnProfile;
-
-    Object.defineProperty(this, "profile", {
-      configurable: true,
-      enumerable: true,
-      get: () => this._profileTraceProfileStorage,
-      set: (value) => {
-        this._profileTraceProfileStorage = value;
-        this.emitProfileTrace("profile:set", {
-          renderTarget: "own",
-          renderSource: this.describeProfileTraceValueSource(value),
-          profile: value,
-          lastAuthoritativeOwnProfile: this._profileTraceLastAuthoritativeOwnProfileStorage,
-          extra: {
-            field: "profile",
-            callSite: this.getProfileTraceCallSite()
-          }
-        });
-      }
-    });
-
-    Object.defineProperty(this, "lastAuthoritativeOwnProfile", {
-      configurable: true,
-      enumerable: true,
-      get: () => this._profileTraceLastAuthoritativeOwnProfileStorage,
-      set: (value) => {
-        this._profileTraceLastAuthoritativeOwnProfileStorage = value;
-        this.emitProfileTrace("lastAuthoritativeOwnProfile:assign", {
-          renderTarget: "own",
-          renderSource: this.describeProfileTraceValueSource(value),
-          profile: this._profileTraceProfileStorage,
-          lastAuthoritativeOwnProfile: value,
-          extra: {
-            field: "lastAuthoritativeOwnProfile",
-            callSite: this.getProfileTraceCallSite()
-          }
-        });
-      }
-    });
-  }
-
-  getProfileTraceAppVersion() {
-    const explicitVersion = String(globalThis.window?.elemintz?.version ?? "").trim();
-    if (explicitVersion) {
-      return explicitVersion.startsWith("v") ? explicitVersion : `v${explicitVersion}`;
-    }
-
-    try {
-      return this.getAppVersionDisplay?.() || null;
-    } catch {
-      return null;
-    }
-  }
-
-  getProfileTraceCallSite() {
-    try {
-      const stack = String(new Error().stack ?? "")
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      return (
-        stack.find((line) =>
-          line !== "Error" &&
-          !line.includes("getProfileTraceCallSite") &&
-          !line.includes("emitProfileTrace") &&
-          !line.includes("installProfileTraceAccessors") &&
-          !line.includes("set [as profile]") &&
-          !line.includes("set [as lastAuthoritativeOwnProfile]")
-        ) ?? null
-      );
-    } catch {
-      return null;
-    }
-  }
-
-  describeProfileTraceValueSource(profile) {
-    if (!profile) {
-      return "null/error";
-    }
-
-    if (this.isFallbackLikeAuthenticatedProfile(profile)) {
-      return "fallback/default";
-    }
-
-    const safeUsername = String(this.username ?? "").trim().toLowerCase();
-    const profileUsername = String(profile?.username ?? "").trim().toLowerCase();
-    const rememberedUsername = String(this.lastAuthoritativeOwnProfile?.username ?? "").trim().toLowerCase();
-    if (safeUsername && profileUsername === safeUsername) {
-      if (rememberedUsername && profileUsername === rememberedUsername) {
-        return "lastAuthoritativeOwnProfile";
-      }
-
-      return "server";
-    }
-
-    if (profileUsername && this.viewedProfileUsername && profileUsername === String(this.viewedProfileUsername).trim().toLowerCase()) {
-      return "viewedProfile";
-    }
-
-    return "unknown";
   }
 
   cloneOnlineBattleLogResult(result) {
@@ -2132,16 +2027,6 @@ export class AppController {
 
   renderMenuScreen() {
     const dailyLogin = this.formatDailyLoginStatus(this.dailyChallenges?.dailyLogin);
-    this.emitProfileTrace("renderMenuScreen:beforeRender", {
-      functionName: "renderMenuScreen",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile),
-      extra: {
-        hasAnnouncement: Boolean(this.menuAnnouncement),
-        hasDailyChallenges: Boolean(this.dailyChallenges)
-      }
-    });
 
     this.screenManager.show("menu", {
       username: this.username,
@@ -2946,14 +2831,6 @@ export class AppController {
       username: safeUsername,
       message: String(message ?? "").trim()
     };
-    this.emitProfileTrace("hydration:set", {
-      argUsername: safeUsername,
-      renderTarget: "own",
-      renderSource: "this.profile",
-      extra: {
-        message: this.ownProfileHydration.message || null
-      }
-    });
     return this.ownProfileHydration;
   }
 
@@ -2970,77 +2847,6 @@ export class AppController {
       safeUsername === hydratedUsername &&
       String(this.profile?.username ?? "").trim().toLowerCase() === safeUsername
     );
-  }
-
-  buildProfileTraceProfileSummary(profile) {
-    if (!profile || typeof profile !== "object") {
-      return null;
-    }
-
-    const stats = profile.stats && typeof profile.stats === "object" ? profile.stats : {};
-    const modeStats = profile.modeStats && typeof profile.modeStats === "object" ? profile.modeStats : {};
-    const equippedCosmetics =
-      profile.equippedCosmetics && typeof profile.equippedCosmetics === "object"
-        ? profile.equippedCosmetics
-        : {};
-    const level = Number(profile.playerLevel ?? 0) || 0;
-    const xp = Number(profile.playerXP ?? 0) || 0;
-    const tokens = Number(profile.tokens ?? 0) || 0;
-    const gamesPlayed = Number(stats.gamesPlayed ?? profile.gamesPlayed ?? 0) || 0;
-    const wins = Number(stats.wins ?? profile.wins ?? 0) || 0;
-    const losses = Number(stats.losses ?? profile.losses ?? 0) || 0;
-    const cardsCaptured = Number(profile.cardsCaptured ?? stats.cardsCaptured ?? 0) || 0;
-    const warsEntered = Number(profile.warsEntered ?? stats.warsEntered ?? 0) || 0;
-    const avatar = String(equippedCosmetics.avatar ?? "").trim() || null;
-    const title = String(equippedCosmetics.title ?? "").trim() || null;
-    const cardBack = String(equippedCosmetics.cardBack ?? "").trim() || null;
-    const defaultish =
-      level <= 1 &&
-      xp <= 0 &&
-      tokens <= 0 &&
-      gamesPlayed <= 0 &&
-      wins <= 0 &&
-      losses <= 0 &&
-      cardsCaptured <= 0 &&
-      warsEntered <= 0 &&
-      avatar === "default_avatar" &&
-      cardBack === "default_card_back" &&
-      title === "Initiate";
-
-    return {
-      username: String(profile.username ?? "").trim() || null,
-      level,
-      xp,
-      tokens,
-      wins,
-      losses,
-      gamesPlayed,
-      cardsCaptured,
-      warsEntered,
-      gauntletRuns: Number(modeStats.gauntlet?.runs ?? 0) || 0,
-      featuredRivalWins: Number(modeStats.featuredRival?.wins ?? 0) || 0,
-      avatar,
-      title,
-      cardBack,
-      background: String(equippedCosmetics.background ?? "").trim() || null,
-      defaultish
-    };
-  }
-
-  buildProfileTraceCosmeticsSummary(cosmetics) {
-    if (!cosmetics || typeof cosmetics !== "object") {
-      return null;
-    }
-
-    const equipped = cosmetics.equipped && typeof cosmetics.equipped === "object" ? cosmetics.equipped : {};
-    return {
-      avatar: String(equipped.avatar ?? "").trim() || null,
-      title: String(equipped.title ?? "").trim() || null,
-      cardBack: String(equipped.cardBack ?? "").trim() || null,
-      background: String(equipped.background ?? "").trim() || null,
-      badge: String(equipped.badge ?? "").trim() || null,
-      loadouts: Array.isArray(cosmetics.loadouts) ? cosmetics.loadouts.length : 0
-    };
   }
 
   isFallbackLikeAuthenticatedProfile(profile) {
@@ -3082,68 +2888,6 @@ export class AppController {
     return zeroishStats && defaultOrMissingCosmetics;
   }
 
-  emitProfileTrace(event, {
-    argUsername = null,
-    functionName = null,
-    renderTarget = null,
-    renderSource = null,
-    profile = this.profile,
-    lastAuthoritativeOwnProfile = this.lastAuthoritativeOwnProfile,
-    serverProfile = undefined,
-    cosmetics = undefined,
-    fallbackUsed = false,
-    extra = null
-  } = {}) {
-    try {
-      const serverProfileSummary =
-        serverProfile === undefined
-          ? undefined
-          : this.buildProfileTraceProfileSummary(
-              serverProfile && typeof serverProfile === "object" && "progression" in serverProfile
-                ? this.buildProfileFromServerSnapshot(serverProfile)
-                : serverProfile
-            );
-      const tracePayload = {
-        event: String(event ?? "").trim() || "unknown",
-        functionName: String(functionName ?? "").trim() || null,
-        callSite: this.getProfileTraceCallSite(),
-        appVersion: this.getProfileTraceAppVersion(),
-        argUsername: String(argUsername ?? "").trim() || null,
-        currentUsername: String(this.username ?? "").trim() || null,
-        authenticated: Boolean(this.onlinePlayState?.session?.authenticated),
-        onlineConnected: String(this.onlinePlayState?.connectionStatus ?? "").trim().toLowerCase() === "connected",
-        hydration: {
-          status: this.ownProfileHydration?.status ?? null,
-          username: String(this.ownProfileHydration?.username ?? "").trim() || null
-        },
-        viewedProfileUsername: String(this.viewedProfileUsername ?? "").trim() || null,
-        renderTarget,
-        renderSource,
-        profile: this.buildProfileTraceProfileSummary(profile),
-        lastAuthoritativeOwnProfile: this.buildProfileTraceProfileSummary(lastAuthoritativeOwnProfile),
-        serverProfile: serverProfileSummary,
-        cosmetics:
-          cosmetics === undefined
-            ? undefined
-            : this.buildProfileTraceCosmeticsSummary(cosmetics),
-        fallbackUsed: Boolean(fallbackUsed),
-        extra
-      };
-      console.info("[ProfileTrace]", tracePayload);
-      globalThis.window?.elemintz?.diagnostics?.writeProfileTrace?.(tracePayload).catch?.((error) => {
-        console.warn("[ProfileTrace]", {
-          event: "trace_file_write_failed",
-          message: String(error?.message ?? error ?? "Unknown trace file write failure.")
-        });
-      });
-    } catch (error) {
-      console.warn("[ProfileTrace]", {
-        event: "trace_failed",
-        message: String(error?.message ?? error ?? "Unknown trace failure.")
-      });
-    }
-  }
-
   rememberAuthoritativeOwnProfile(profile, {
     username = this.username,
     onlineState = this.onlinePlayState
@@ -3159,13 +2903,6 @@ export class AppController {
     }
 
     this.lastAuthoritativeOwnProfile = JSON.parse(JSON.stringify(profile));
-    this.emitProfileTrace("lastAuthoritativeOwnProfile:set", {
-      argUsername: username,
-      renderTarget: "own",
-      renderSource: "lastAuthoritativeOwnProfile",
-      profile,
-      lastAuthoritativeOwnProfile: this.lastAuthoritativeOwnProfile
-    });
     return profile;
   }
 
@@ -3199,8 +2936,6 @@ export class AppController {
 
     const safeUsername = String(username ?? "").trim().toLowerCase();
     const currentUsername = String(this.profile?.username ?? "").trim().toLowerCase();
-    const currentSummary = this.buildProfileTraceProfileSummary(this.profile);
-    const rememberedSummary = this.buildProfileTraceProfileSummary(rememberedProfile);
     const shouldRestoreRememberedProfile =
       !this.profile ||
       !safeUsername ||
@@ -3217,17 +2952,6 @@ export class AppController {
     this.profile = rememberedProfile;
     this.setOwnProfileHydrationState("ready", {
       username: rememberedProfile.username ?? username
-    });
-    this.emitProfileTrace("authenticatedOwnProfile:preserved", {
-      argUsername: username,
-      renderTarget: "own",
-      renderSource: "lastAuthoritativeOwnProfile",
-      profile: this.profile,
-      lastAuthoritativeOwnProfile: rememberedProfile,
-      fallbackUsed: true,
-      extra: {
-        reason
-      }
     });
     return this.profile;
   }
@@ -4006,16 +3730,6 @@ export class AppController {
   }
 
   applyServerProfileSnapshot(serverProfile, { fallbackProfile = null } = {}) {
-    this.emitProfileTrace("applyServerProfileSnapshot:enter", {
-      argUsername: serverProfile?.username ?? this.username,
-      renderTarget: "own",
-      renderSource: "freshServer",
-      serverProfile,
-      fallbackUsed: Boolean(fallbackProfile),
-      extra: {
-        fallbackProfile: this.buildProfileTraceProfileSummary(fallbackProfile)
-      }
-    });
     const nextProfile = this.mergeSeenAnnouncementsIntoProfile(
       this.buildProfileFromServerSnapshot(serverProfile),
       fallbackProfile ?? this.profile
@@ -4062,15 +3776,6 @@ export class AppController {
       }
     }
 
-    this.emitProfileTrace("applyServerProfileSnapshot:exit", {
-      argUsername: nextProfile?.username ?? this.username,
-      renderTarget: "own",
-      renderSource: nextProfile ? "freshServer" : "null/error",
-      profile: nextProfile,
-      lastAuthoritativeOwnProfile: this.lastAuthoritativeOwnProfile,
-      serverProfile,
-      fallbackUsed: Boolean(fallbackProfile)
-    });
     return this.profile;
   }
 
@@ -4227,14 +3932,6 @@ export class AppController {
     allowEnsureLocal = false
   } = {}) {
     const safeUsername = String(username ?? "").trim();
-    this.emitProfileTrace("loadPreferredProfileForOnlineSession:enter", {
-      argUsername: safeUsername,
-      renderTarget: "own",
-      renderSource: null,
-      extra: {
-        allowEnsureLocal: Boolean(allowEnsureLocal)
-      }
-    });
     if (!safeUsername) {
       return this.profile;
     }
@@ -4261,12 +3958,6 @@ export class AppController {
 
     if (onlineConnected && window.elemintz?.multiplayer?.getProfile) {
       const serverProfile = await window.elemintz.multiplayer.getProfile({ username: safeUsername });
-      this.emitProfileTrace("loadPreferredProfileForOnlineSession:serverProfile", {
-        argUsername: safeUsername,
-        renderTarget: "own",
-        renderSource: serverProfile ? "freshServer" : "null/error",
-        serverProfile
-      });
       const fallbackProfileForServer =
         serverProfile &&
         isAuthenticatedOwnProfileFlow &&
@@ -4279,23 +3970,11 @@ export class AppController {
         fallbackProfile: fallbackProfileForServer
       });
       if (nextProfile) {
-        const preservedProfile = this.preserveAuthenticatedOwnProfileIfSafer({
+        return this.preserveAuthenticatedOwnProfileIfSafer({
           username: safeUsername,
           onlineState,
           reason: "loadPreferredProfileForOnlineSession:serverProfile"
         });
-        this.emitProfileTrace("loadPreferredProfileForOnlineSession:return", {
-          argUsername: safeUsername,
-          renderTarget: "own",
-          renderSource:
-            preservedProfile === nextProfile
-              ? "freshServer"
-              : "lastAuthoritativeOwnProfile",
-          profile: preservedProfile,
-          serverProfile,
-          fallbackUsed: Boolean(fallbackProfileForServer)
-        });
-        return preservedProfile;
       }
     }
 
@@ -4306,13 +3985,6 @@ export class AppController {
         reason: "loadPreferredProfileForOnlineSession:nullServer"
       });
       if (preservedProfile) {
-        this.emitProfileTrace("loadPreferredProfileForOnlineSession:return", {
-          argUsername: safeUsername,
-          renderTarget: "own",
-          renderSource: "lastAuthoritativeOwnProfile",
-          profile: preservedProfile,
-          fallbackUsed: true
-        });
         return preservedProfile;
       }
       if (!hadHydratedOwnProfile) {
@@ -4322,38 +3994,17 @@ export class AppController {
         username: safeUsername,
         message: "Unable to load the authenticated profile snapshot."
       });
-      this.emitProfileTrace("loadPreferredProfileForOnlineSession:return", {
-        argUsername: safeUsername,
-        renderTarget: "own",
-        renderSource: "null/error",
-        profile: this.profile
-      });
       return this.profile;
     }
 
     if (allowEnsureLocal && window.elemintz?.state?.ensureProfile) {
       this.profile = await window.elemintz.state.ensureProfile(safeUsername);
-      this.emitProfileTrace("loadPreferredProfileForOnlineSession:return", {
-        argUsername: safeUsername,
-        renderTarget: "own",
-        renderSource: "localState",
-        profile: this.profile,
-        fallbackUsed: true
-      });
       return this.profile;
     }
 
     if (localProfile) {
       this.profile = localProfile;
     }
-
-    this.emitProfileTrace("loadPreferredProfileForOnlineSession:return", {
-      argUsername: safeUsername,
-      renderTarget: "own",
-      renderSource: localProfile ? "localState" : "this.profile",
-      profile: this.profile,
-      fallbackUsed: Boolean(localProfile)
-    });
     return this.profile;
   }
 
@@ -5449,16 +5100,6 @@ export class AppController {
     const hasHydratedAuthenticatedOwnProfile =
       this.isOwnProfileHydrated(this.username, state) ||
       this.isOwnProfileHydrated(this.username, this.onlinePlayState);
-    this.emitProfileTrace("refreshLocalProfileAfterOnlineSettlement:enter", {
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: null,
-      extra: {
-        refreshKey,
-        isAuthenticatedOwnProfileFlow,
-        hasHydratedAuthenticatedOwnProfile
-      }
-    });
 
     if (!refreshKey) {
       return this.profile;
@@ -5483,15 +5124,6 @@ export class AppController {
         (window.elemintz?.multiplayer?.getProfile
           ? await window.elemintz.multiplayer.getProfile({ username: this.username })
           : null);
-      this.emitProfileTrace("refreshLocalProfileAfterOnlineSettlement:serverProfile", {
-        argUsername: this.username,
-        renderTarget: "own",
-        renderSource: serverProfile ? "freshServer" : "null/error",
-        serverProfile,
-        extra: {
-          refreshKey
-        }
-      });
       const nextProfile = serverProfile
         ? this.applyServerProfileSnapshot(serverProfile, {
             fallbackProfile: this.profile
@@ -5526,17 +5158,6 @@ export class AppController {
           message: "Unable to refresh the authenticated profile snapshot after online settlement."
         });
       }
-      this.emitProfileTrace("refreshLocalProfileAfterOnlineSettlement:exit", {
-        argUsername: this.username,
-        renderTarget: "own",
-        renderSource: nextProfile ? "freshServer" : this.profile ? "this.profile" : "null/error",
-        profile: this.profile,
-        serverProfile,
-        fallbackUsed: !serverProfile && Boolean(this.profile),
-        extra: {
-          refreshKey
-        }
-      });
 
       const providedChallengeStatus =
         options?.challengeStatus && (options.challengeStatus.daily || options.challengeStatus.weekly)
@@ -5583,15 +5204,6 @@ export class AppController {
   }
 
   async refreshOnlineSettlementStateFromServer(state = this.onlinePlayState) {
-    this.emitProfileTrace("refreshOnlineSettlementStateFromServer:enter", {
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: null,
-      extra: {
-        roomCode: state?.room?.roomCode ?? null,
-        matchComplete: Boolean(state?.room?.matchComplete)
-      }
-    });
     if (!this.username) {
       return {
         challengeSummary: this.onlinePlayChallengeSummary,
@@ -5615,18 +5227,6 @@ export class AppController {
             dailyLogin: this.dailyChallenges?.dailyLogin ?? null
           }
         : null
-    });
-
-    this.emitProfileTrace("refreshOnlineSettlementStateFromServer:exit", {
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: profile ? "this.profile" : "null/error",
-      profile,
-      serverProfile,
-      extra: {
-        dailyChallengeCount: Array.isArray(challengeSummary?.daily?.challenges) ? challengeSummary.daily.challenges.length : 0,
-        weeklyChallengeCount: Array.isArray(challengeSummary?.weekly?.challenges) ? challengeSummary.weekly.challenges.length : 0
-      }
     });
 
     return {
@@ -5914,25 +5514,10 @@ export class AppController {
   async syncOnlinePlayState() {
     if (!window.elemintz?.multiplayer?.getState) {
       this.onlinePlayState = this.normalizeOnlinePlayState(null);
-      this.emitProfileTrace("syncOnlinePlayState:return", {
-        renderTarget: "own",
-        renderSource: "null/error",
-        extra: {
-          hasGetState: false
-        }
-      });
       return this.onlinePlayState;
     }
 
     this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.getState());
-    this.emitProfileTrace("syncOnlinePlayState:return", {
-      renderTarget: "own",
-      renderSource: "this.profile",
-      extra: {
-        connectionStatus: this.onlinePlayState?.connectionStatus ?? null,
-        roomCode: this.onlinePlayState?.room?.roomCode ?? null
-      }
-    });
     return this.onlinePlayState;
   }
 
@@ -5954,18 +5539,6 @@ export class AppController {
       const sessionErrorCode = String(this.onlinePlayState?.lastError?.code ?? "").trim().toUpperCase();
       const invalidatedSession =
         ["SESSION_NOT_FOUND", "SESSION_TOKEN_REQUIRED", "SESSION_INVALID", "SESSION_EXPIRED", "AUTH_REQUIRED"].includes(sessionErrorCode);
-      this.emitProfileTrace("bindOnlinePlayUpdates:onUpdate", {
-        argUsername: this.username,
-        renderTarget: "own",
-        renderSource: "this.profile",
-        extra: {
-          previousConnectionStatus: previousState?.connectionStatus ?? null,
-          nextConnectionStatus: this.onlinePlayState?.connectionStatus ?? null,
-          previousRoomCode: previousState?.room?.roomCode ?? null,
-          nextRoomCode: this.onlinePlayState?.room?.roomCode ?? null,
-          roomMatchComplete: Boolean(this.onlinePlayState?.room?.matchComplete)
-        }
-      });
       if (lostAuthenticatedSession && invalidatedSession && this.screenFlow !== "login") {
         void this.forceReturnToLoginForInvalidSession(
           this.onlinePlayState?.lastError?.message ?? "Session expired. Please sign in again."
@@ -6091,25 +5664,9 @@ export class AppController {
           this.renderOnlinePlayScreen();
         },
         back: async () => {
-          this.emitProfileTrace("showOnlinePlay:backRequested", {
-            functionName: "renderOnlinePlayScreen.actions.back",
-            argUsername: this.username,
-            renderTarget: "own",
-            renderSource: this.describeProfileTraceValueSource(this.profile),
-            extra: {
-              willDisconnect: Boolean(window.elemintz?.multiplayer?.disconnect)
-            }
-          });
           if (window.elemintz?.multiplayer?.disconnect) {
             await window.elemintz.multiplayer.disconnect();
           }
-
-          this.emitProfileTrace("showOnlinePlay:backAfterDisconnect", {
-            functionName: "renderOnlinePlayScreen.actions.back",
-            argUsername: this.username,
-            renderTarget: "own",
-            renderSource: this.describeProfileTraceValueSource(this.profile)
-          });
           this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
         }
       }
@@ -6993,26 +6550,10 @@ export class AppController {
       console.info("[Renderer] AppController.init() skipped", {
         alreadyInitialized: true
       });
-      this.emitProfileTrace("init:skipped", {
-        functionName: "init",
-        renderTarget: "own",
-        renderSource: this.describeProfileTraceValueSource(this.profile),
-        extra: {
-          alreadyInitialized: true
-        }
-      });
       return this.initPromise;
     }
 
     console.info("[Renderer] AppController.init() entered");
-    this.emitProfileTrace("init:enter", {
-      functionName: "init",
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile),
-      extra: {
-        screenFlow: this.screenFlow
-      }
-    });
     this.initPromise = (async () => {
       let restoreResult = null;
       try {
@@ -7026,17 +6567,6 @@ export class AppController {
         this.settings = await window.elemintz.state.getSettings();
         await this.syncOnlinePlayState();
         restoreResult = await window.elemintz?.multiplayer?.restoreSession?.();
-        this.emitProfileTrace("init:restoreSession", {
-          functionName: "init",
-          renderTarget: "own",
-          renderSource: this.describeProfileTraceValueSource(this.profile),
-          extra: {
-            hasRestoreState: Boolean(restoreResult?.state),
-            invalid: Boolean(restoreResult?.invalid),
-            restoreUsername:
-              String(restoreResult?.state?.session?.username ?? restoreResult?.session?.username ?? "").trim() || null
-          }
-        });
         if (restoreResult?.state) {
           this.onlinePlayState = this.normalizeOnlinePlayState(restoreResult.state);
         }
@@ -7061,15 +6591,6 @@ export class AppController {
           username: this.username,
           onlineState: this.onlinePlayState,
           allowEnsureLocal: false
-        });
-        this.emitProfileTrace("init:authenticatedProfileLoaded", {
-          functionName: "init",
-          argUsername: this.username,
-          renderTarget: "own",
-          renderSource: this.describeProfileTraceValueSource(this.profile),
-          extra: {
-            restorePath: true
-          }
         });
         await this.ensureDailyLoginAutoClaim({
           showToasts: true,
@@ -7224,18 +6745,6 @@ export class AppController {
       username: this.username,
       onlineState: this.onlinePlayState,
       reason: "showMenu"
-    });
-    this.emitProfileTrace("showMenu:enter", {
-      functionName: "showMenu",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile),
-      extra: {
-        previousScreenFlow,
-        autoClaimDailyLogin,
-        showDailyLoginToasts,
-        skipInitialDailyChallengesRefresh
-      }
     });
 
     this.renderMenuScreen();
@@ -7412,39 +6921,15 @@ export class AppController {
   }
 
   async showOnlinePlay() {
-    this.emitProfileTrace("showOnlinePlay:enter", {
-      functionName: "showOnlinePlay",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile),
-      extra: {
-        previousScreenFlow: this.screenFlow
-      }
-    });
     this.clearPassTimer();
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "onlinePlay";
     this.matchTauntPanelOpen = false;
     await this.syncOnlinePlayState();
-    this.emitProfileTrace("showOnlinePlay:afterSync", {
-      functionName: "showOnlinePlay",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile)
-    });
     await this.loadPreferredProfileForOnlineSession({
       username: this.username,
       onlineState: this.onlinePlayState,
       allowEnsureLocal: false
-    });
-    this.emitProfileTrace("showOnlinePlay:afterProfileLoad", {
-      functionName: "showOnlinePlay",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile),
-      extra: {
-        stage: "pre-connect"
-      }
     });
       await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
       this.ensureOnlineReconnectUiTimer();
@@ -7453,53 +6938,20 @@ export class AppController {
       void this.refreshOnlinePlayLobbyData();
 
       if (!window.elemintz?.multiplayer?.connect) {
-        this.emitProfileTrace("showOnlinePlay:return", {
-          functionName: "showOnlinePlay",
-          argUsername: this.username,
-          renderTarget: "own",
-          renderSource: this.describeProfileTraceValueSource(this.profile),
-          extra: {
-            stage: "no-connect-bridge"
-          }
-        });
         return;
       }
 
     this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.connect());
-    this.emitProfileTrace("showOnlinePlay:afterConnect", {
-      functionName: "showOnlinePlay",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile),
-      extra: {
-        connectionStatus: this.onlinePlayState?.connectionStatus ?? null
-      }
-    });
     await this.loadPreferredProfileForOnlineSession({
       username: this.username,
       onlineState: this.onlinePlayState,
       allowEnsureLocal: false
-    });
-    this.emitProfileTrace("showOnlinePlay:afterConnectedProfileLoad", {
-      functionName: "showOnlinePlay",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile)
     });
       await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
       this.ensureOnlineReconnectUiTimer();
       this.renderOnlinePlayScreen();
       this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
       void this.refreshOnlinePlayLobbyData();
-    this.emitProfileTrace("showOnlinePlay:return", {
-      functionName: "showOnlinePlay",
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: this.describeProfileTraceValueSource(this.profile),
-      extra: {
-        stage: "connected"
-      }
-    });
     }
 
   showLocalSetup({ errorMessage = "", setupDefaults = null } = {}) {
@@ -8552,17 +8004,6 @@ export class AppController {
     viewedProfileOverride,
     skipAuthoritativeProfileRefresh = false
   } = {}) {
-    this.emitProfileTrace("showProfile:enter", {
-      argUsername: this.username,
-      renderTarget: viewedProfileOverride !== undefined || this.viewedProfileUsername ? "own+viewed" : "own",
-      renderSource: profileOverride ? "this.profile" : null,
-      extra: {
-        preserveModal: Boolean(preserveModal),
-        skipAuthoritativeProfileRefresh: Boolean(skipAuthoritativeProfileRefresh),
-        profileOverride: Boolean(profileOverride),
-        cosmeticsOverride: Boolean(cosmeticsOverride)
-      }
-    });
     const isAuthenticatedOwnProfileFlow = this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username);
     const hasAuthenticatedOwnProfileSession = this.hasAuthenticatedMultiplayerSessionForUsername(
       this.username,
@@ -8590,15 +8031,6 @@ export class AppController {
     const serverProfile = shouldRefreshProfile && this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
       : null;
-    this.emitProfileTrace("showProfile:serverProfile", {
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource: serverProfile ? "freshServer" : "null/error",
-      serverProfile,
-      extra: {
-        shouldRefreshProfile
-      }
-    });
     const rememberedAuthoritativeProfile = hasAuthenticatedOwnProfileSession
       ? this.getRememberedAuthoritativeOwnProfile(this.username, this.onlinePlayState)
       : null;
@@ -8616,11 +8048,6 @@ export class AppController {
           this.setOwnProfileHydrationState("error", {
             username: this.username,
             message: "Unable to refresh your online profile."
-          });
-          this.emitProfileTrace("showProfile:block", {
-            argUsername: this.username,
-            renderTarget: "own",
-            renderSource: "null/error"
           });
           this.requireOwnProfileHydratedForAction("show_profile");
           return;
@@ -8651,24 +8078,6 @@ export class AppController {
           : await window.elemintz.state.getCosmetics(this.username)
         : null;
     const cosmetics = cosmeticsOverride ?? this.buildSafeCosmeticsPayload(rawCosmetics, this.profile);
-    this.emitProfileTrace("showProfile:cosmetics", {
-      argUsername: this.username,
-      renderTarget: "own",
-      renderSource:
-        cosmeticsOverride
-          ? "this.profile"
-          : shouldRefreshProfile
-            ? hasAuthenticatedOwnProfileSession
-              ? this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
-                ? "freshServer"
-                : "lastAuthoritativeOwnProfile"
-              : this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.getCosmetics
-              ? "freshServer"
-              : "localState"
-            : "this.profile",
-      cosmetics,
-      fallbackUsed: !rawCosmetics && !cosmeticsOverride
-    });
     if (shouldRefreshProfile && (serverProfile?.progression?.xp || window.elemintz.state.getDailyChallenges)) {
       const challengeStatus = serverProfile
         ? { xp: serverProfile.progression?.xp ?? null }
@@ -8693,26 +8102,6 @@ export class AppController {
         : this.viewedProfileUsername
           ? await this.loadViewedProfile(this.viewedProfileUsername)
           : null;
-
-    this.emitProfileTrace("showProfile:render", {
-      argUsername: this.username,
-      renderTarget: viewedProfile ? "own+viewed" : "own",
-      renderSource:
-        profileOverride
-          ? "this.profile"
-            : serverProfile
-            ? "freshServer"
-            : rememberedAuthoritativeProfile
-              ? "lastAuthoritativeOwnProfile"
-              : hasAuthenticatedOwnProfileSession
-                ? "null/error"
-                : shouldRefreshProfile
-                  ? "localState"
-                  : "this.profile",
-      serverProfile,
-      cosmetics,
-      fallbackUsed: !serverProfile && Boolean(rememberedAuthoritativeProfile)
-    });
 
     this.screenManager.show("profile", {
       profile: this.profile,
@@ -8783,37 +8172,13 @@ export class AppController {
           });
         },
         searchProfiles: async (queryValue) => {
-          this.emitProfileTrace("profileSearch:submit", {
-            functionName: "showProfile.actions.searchProfiles",
-            argUsername: queryValue,
-            renderTarget: this.viewedProfileUsername ? "viewedProfile" : "own",
-            renderSource: this.describeProfileTraceValueSource(this.profile),
-            extra: {
-              query: String(queryValue ?? "").trim() || null
-            }
-          });
           this.profileSearchQuery = queryValue;
           this.profileSearchError = "";
           this.clearViewedProfileSelection();
           await this.showProfile({ preserveAchievementVisibility: true });
-          this.emitProfileTrace("profileSearch:afterShowProfile", {
-            functionName: "showProfile.actions.searchProfiles",
-            argUsername: queryValue,
-            renderTarget: this.viewedProfileUsername ? "viewedProfile" : "own",
-            renderSource: this.viewedProfileUsername ? "viewedProfile" : this.describeProfileTraceValueSource(this.profile),
-            extra: {
-              query: String(queryValue ?? "").trim() || null,
-              profileSearchError: this.profileSearchError || null
-            }
-          });
         },
         viewProfile: async (username) => {
           const safeUsername = String(username ?? "").trim();
-          this.emitProfileTrace("viewedProfile:openRequested", {
-            argUsername: safeUsername,
-            renderTarget: "viewedProfile",
-            renderSource: "viewedProfile"
-          });
           if (!safeUsername) {
             this.profileSearchError = "";
             this.clearViewedProfileSelection();
@@ -8835,11 +8200,6 @@ export class AppController {
           await this.showProfile({ preserveAchievementVisibility: true });
         },
         clearViewed: async () => {
-          this.emitProfileTrace("viewedProfile:clearRequested", {
-            argUsername: this.viewedProfileUsername,
-            renderTarget: "viewedProfile",
-            renderSource: "viewedProfile"
-          });
           this.profileSearchError = "";
           this.clearViewedProfileSelection();
           await this.showProfile({
@@ -8862,11 +8222,6 @@ export class AppController {
   }
 
   clearViewedProfileSelection() {
-    this.emitProfileTrace("viewedProfile:clear", {
-      argUsername: this.viewedProfileUsername,
-      renderTarget: "viewedProfile",
-      renderSource: "viewedProfile"
-    });
     this.viewedProfileUsername = null;
     this.viewedProfileAchievementsExpanded = false;
   }
@@ -8883,11 +8238,6 @@ export class AppController {
 
   async loadViewedProfile(username) {
     const safeUsername = String(username ?? "").trim();
-    this.emitProfileTrace("loadViewedProfile:enter", {
-      argUsername: safeUsername,
-      renderTarget: "viewedProfile",
-      renderSource: "viewedProfile"
-    });
     if (!safeUsername) {
       return null;
     }
@@ -8900,20 +8250,8 @@ export class AppController {
       try {
         const snapshot = await window.elemintz.multiplayer.viewProfile({ username: safeUsername });
         const profile = this.buildProfileFromServerSnapshot(snapshot);
-        this.emitProfileTrace("loadViewedProfile:serverProfile", {
-          argUsername: safeUsername,
-          renderTarget: "viewedProfile",
-          renderSource: snapshot ? "viewedProfile" : "null/error",
-          serverProfile: snapshot
-        });
         if (profile) {
           this.profileSearchError = "";
-          this.emitProfileTrace("loadViewedProfile:return", {
-            argUsername: safeUsername,
-            renderTarget: "viewedProfile",
-            renderSource: "viewedProfile",
-            profile
-          });
           return profile;
         }
         this.profileSearchError = this.buildViewedProfileLookupMessage(safeUsername, {
@@ -8927,27 +8265,12 @@ export class AppController {
           code: String(error?.code ?? "").trim().toUpperCase() || null,
           message: String(error?.message ?? error ?? "Unknown viewed profile failure.")
         });
-        this.emitProfileTrace("loadViewedProfile:return", {
-          argUsername: safeUsername,
-          renderTarget: "viewedProfile",
-          renderSource: "null/error",
-          extra: {
-            errorCode: String(error?.code ?? "").trim().toUpperCase() || null
-          }
-        });
         return null;
       }
     }
 
     this.profileSearchError = "";
     const localViewedProfile = await window.elemintz.state.getProfile(safeUsername);
-    this.emitProfileTrace("loadViewedProfile:return", {
-      argUsername: safeUsername,
-      renderTarget: "viewedProfile",
-      renderSource: "localState",
-      profile: localViewedProfile,
-      fallbackUsed: true
-    });
     return localViewedProfile;
   }
 
@@ -8979,13 +8302,6 @@ export class AppController {
       return;
     }
 
-    this.emitProfileTrace("viewedProfile:modalOpen", {
-      argUsername: viewedProfile.username,
-      renderTarget: "viewedProfile",
-      renderSource: "viewedProfile",
-      profile: viewedProfile
-    });
-
     this.modalManager.show({
       title: `Viewing: ${viewedProfile.username}`,
       bodyHtml: profileScreen.renderViewedProfileModalBody(viewedProfile, {
@@ -8997,11 +8313,6 @@ export class AppController {
         {
           label: "Close",
           onClick: async () => {
-            this.emitProfileTrace("viewedProfile:modalClose", {
-              argUsername: viewedProfile.username,
-              renderTarget: "viewedProfile",
-              renderSource: "viewedProfile"
-            });
             this.modalManager.hide();
             this.clearViewedProfileSelection();
             await this.showProfile({ preserveAchievementVisibility: true, preserveModal: true });

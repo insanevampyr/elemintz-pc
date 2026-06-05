@@ -14,9 +14,6 @@ function subscribeToChannel(ipcRenderer, subscribeChannel, eventChannel, listene
 function buildElemintzBridge(ipcRenderer, { appVersion = "unknown" } = {}) {
   return {
     version: appVersion,
-    diagnostics: {
-      writeProfileTrace: (payload) => ipcRenderer.invoke("diagnostics:writeProfileTrace", payload)
-    },
     state: {
       recordMatchResult: (payload) => ipcRenderer.invoke("state:recordMatchResult", payload),
       recordGauntletStats: (payload) => ipcRenderer.invoke("state:recordGauntletStats", payload),
