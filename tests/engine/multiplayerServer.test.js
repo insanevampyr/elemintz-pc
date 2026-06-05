@@ -644,6 +644,7 @@ test("multiplayer foundation: presence:getOnlineCount returns only authenticated
   const accountStore = new MultiplayerAccountStore({ dataDir });
   const profileAuthority = new MultiplayerProfileAuthority({
     coordinator,
+    accountStore,
     logger: { info: () => {} }
   });
   const foundation = createMultiplayerFoundation({
@@ -2848,6 +2849,7 @@ test("multiplayer foundation: profile:view rejects missing and unknown usernames
   });
   const profileAuthority = new MultiplayerProfileAuthority({
     coordinator,
+    accountStore,
     logger: { info: () => {} }
   });
   const foundation = createMultiplayerFoundation({
@@ -2884,6 +2886,80 @@ test("multiplayer foundation: profile:view rejects missing and unknown usernames
 
     const created = await coordinator.profiles.getProfile("MissingRemoteUser");
     assert.equal(created, null);
+  } finally {
+    viewerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: profile:view resolves visible account usernames through account profileKey", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: { info: () => {}, warn: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let viewerClient = null;
+
+  try {
+    const port = await foundation.start();
+    viewerClient = await connectClient(port);
+
+    const viewerRegister = await registerAccount(viewerClient, {
+      username: "PublicViewer",
+      email: "public-viewer@example.com",
+      password: "PublicViewerPass123"
+    });
+    assert.equal(viewerRegister?.ok, true);
+
+    await coordinator.profiles.ensureProfile("ProfileKeyOnlyUser");
+    await coordinator.profiles.updateProfile("ProfileKeyOnlyUser", (current) => ({
+      ...current,
+      tokens: 404,
+      wins: 17,
+      warsEntered: 9,
+      cardsCaptured: 31,
+      gauntletBestStreak: 6,
+      equippedCosmetics: {
+        ...(current?.equippedCosmetics ?? {}),
+        avatar: "avatar_neon_tide_entity",
+        title: "title_spellwired",
+        badge: "war_machine_badge",
+        cardBack: "cardback_neon_arcana"
+      }
+    }));
+    await accountStore.register({
+      username: "VisibleSearchName",
+      profileKey: "ProfileKeyOnlyUser",
+      email: "visible-search@example.com",
+      password: "VisibleSearchPass123"
+    });
+
+    const viewedProfile = await emitWithAck(viewerClient, "profile:view", {
+      username: "VisibleSearchName"
+    });
+
+    assert.equal(viewedProfile?.ok, true);
+    assert.equal(viewedProfile?.profile?.profile?.username, "ProfileKeyOnlyUser");
+    assert.equal(viewedProfile?.profile?.profile?.tokens, 404);
+    assert.equal(viewedProfile?.profile?.profile?.wins, 17);
+    assert.equal(viewedProfile?.profile?.profile?.warsEntered, 9);
+    assert.equal(viewedProfile?.profile?.profile?.cardsCaptured, 31);
+    assert.equal(viewedProfile?.profile?.profile?.gauntletBestStreak, 6);
+    assert.equal(viewedProfile?.profile?.profile?.equippedCosmetics?.title, "title_spellwired");
+    assert.equal("linkedAccountId" in (viewedProfile?.profile?.profile ?? {}), false);
   } finally {
     viewerClient?.disconnect();
     await foundation.stop();

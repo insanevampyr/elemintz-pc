@@ -279,10 +279,11 @@ function buildPublicProfileSnapshot({ profile }) {
 }
 
 export class MultiplayerProfileAuthority {
-  constructor({ coordinator = null, logger = console, announcementStore = null, ...options } = {}) {
+  constructor({ coordinator = null, logger = console, announcementStore = null, accountStore = null, ...options } = {}) {
     this.coordinator = coordinator ?? new StateCoordinator(options);
     this.logger = logger;
     this.announcementStore = announcementStore;
+    this.accountStore = accountStore;
     this.founderGrantFlights = new Map();
   }
 
@@ -312,15 +313,101 @@ export class MultiplayerProfileAuthority {
     }
 
     this.logger.info?.(`[ProfileAuthority] viewProfile -> ${safeUsername} (server)`);
-    const profile = await this.coordinator.profiles.getProfile(safeUsername);
+    const resolved = await this.resolveViewedProfileIdentity(safeUsername);
+    const profile = resolved?.profile ?? null;
 
     if (!profile) {
+      this.logger.info?.("[ProfileAuthority] viewProfile miss", {
+        requestedUsername: safeUsername,
+        normalizedUsername: safeUsername,
+        resolutionPath: "notFound",
+        reason: resolved?.reason ?? "unknown"
+      });
       const error = new Error(`Profile ${safeUsername} was not found.`);
       error.code = "PROFILE_NOT_FOUND";
       throw error;
     }
 
+    this.logger.info?.("[ProfileAuthority] viewProfile resolved", {
+      requestedUsername: safeUsername,
+      normalizedUsername: safeUsername,
+      resolutionPath: resolved?.resolutionPath ?? "directProfile",
+      resolvedProfileKey: resolved?.resolvedProfileKey ?? profile?.username ?? safeUsername,
+      resolvedProfileUsername: profile?.username ?? null
+    });
+
     return buildPublicProfileSnapshot({ profile });
+  }
+
+  async resolveViewedProfileIdentity(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      return {
+        profile: null,
+        resolutionPath: "notFound",
+        reason: "missingUsername",
+        resolvedProfileKey: null
+      };
+    }
+
+    try {
+      const directProfile = await this.coordinator.profiles.getProfile(safeUsername);
+      if (directProfile) {
+        return {
+          profile: directProfile,
+          resolutionPath: "directProfile",
+          reason: null,
+          resolvedProfileKey: directProfile?.username ?? safeUsername
+        };
+      }
+
+      if (typeof this.accountStore?.getAccountByUsername !== "function") {
+        return {
+          profile: null,
+          resolutionPath: "notFound",
+          reason: "noDirectProfileOrAccountMatch",
+          resolvedProfileKey: null
+        };
+      }
+
+      const account = await this.accountStore.getAccountByUsername(safeUsername);
+      const profileKey = normalizeAuthorityUsername(account?.profileKey);
+      if (!profileKey) {
+        return {
+          profile: null,
+          resolutionPath: "notFound",
+          reason: account ? "accountMissingProfileKey" : "noDirectProfileOrAccountMatch",
+          resolvedProfileKey: null
+        };
+      }
+
+      const resolvedProfile = await this.coordinator.profiles.getProfile(profileKey);
+      if (!resolvedProfile) {
+        return {
+          profile: null,
+          resolutionPath: "notFound",
+          reason: "accountProfileKeyMissingProfile",
+          resolvedProfileKey: profileKey
+        };
+      }
+
+      return {
+        profile: resolvedProfile,
+        resolutionPath: "accountProfileKey",
+        reason: null,
+        resolvedProfileKey: profileKey
+      };
+    } catch (error) {
+      this.logger.warn?.("[ProfileAuthority] viewProfile resolution failed", {
+        requestedUsername: safeUsername,
+        normalizedUsername: safeUsername,
+        resolutionPath: "notFound",
+        reason: "profileReadFailure",
+        message: String(error?.message ?? "Unknown profile read failure."),
+        code: String(error?.code ?? "").trim() || null
+      });
+      throw error;
+    }
   }
 
   async isProfileClaimed(username) {

@@ -33,6 +33,7 @@ import { EPIC_CHEST_TYPE, LEGENDARY_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
+import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { getArenaBackground, getAvatarImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 
@@ -2990,6 +2991,47 @@ test("state: authoritative viewed-profile reads reject missing usernames and do 
 
   const created = await authority.coordinator.profiles.getProfile("UnknownRemoteUser");
   assert.equal(created, null);
+});
+
+test("state: authoritative viewed-profile reads resolve account usernames through profileKey without creating defaults", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info() {} }
+  });
+  const authority = new MultiplayerProfileAuthority({
+    dataDir,
+    accountStore,
+    logger: { info() {}, warn() {} }
+  });
+
+  await authority.coordinator.profiles.ensureProfile("StoredProfileKey");
+  await authority.coordinator.profiles.updateProfile("StoredProfileKey", (current) => ({
+    ...current,
+    tokens: 321,
+    wins: 12,
+    gauntletBestStreak: 4,
+    equippedCosmetics: {
+      ...(current?.equippedCosmetics ?? {}),
+      avatar: "avatar_neon_tide_entity",
+      title: "title_spellwired",
+      cardBack: "cardback_neon_arcana"
+    }
+  }));
+  await accountStore.register({
+    username: "VisibleAccountName",
+    profileKey: "StoredProfileKey",
+    email: "visible-account@example.com",
+    password: "VisibleAccountPass123"
+  });
+
+  const viewed = await authority.viewProfile("VisibleAccountName");
+
+  assert.equal(viewed.profile.username, "StoredProfileKey");
+  assert.equal(viewed.profile.tokens, 321);
+  assert.equal(viewed.profile.wins, 12);
+  assert.equal(viewed.profile.gauntletBestStreak, 4);
+  assert.equal(viewed.profile.equippedCosmetics?.avatar, "avatar_neon_tide_entity");
 });
 
 test("state: completed matches using all four elements increment matchesUsingAllElements", async () => {

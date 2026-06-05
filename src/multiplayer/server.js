@@ -45,14 +45,15 @@ const stateCoordinator = new StateCoordinator({
   dataDir,
   getActiveBoostEvent: (options) => boostEventStore.getActiveEvent(options)
 });
-const profileAuthority = new MultiplayerProfileAuthority({
-  coordinator: stateCoordinator,
-  logger,
-  announcementStore
-});
 const accountStore = new MultiplayerAccountStore({
   dataDir,
   logger
+});
+const profileAuthority = new MultiplayerProfileAuthority({
+  coordinator: stateCoordinator,
+  logger,
+  announcementStore,
+  accountStore
 });
 const adminGrantStore = new AdminGrantStore({
   dataDir

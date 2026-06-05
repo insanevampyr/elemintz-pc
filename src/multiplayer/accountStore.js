@@ -217,6 +217,17 @@ export class MultiplayerAccountStore {
     const account = state.accounts.find((entry) => normalizeEmail(entry?.email) === safeEmail) ?? null;
     return sanitizeAccount(account);
   }
+
+  async getAccountByUsername(username) {
+    const safeUsername = normalizeUsername(username);
+    if (!safeUsername) {
+      return null;
+    }
+
+    const state = await this.readState();
+    const account = state.accounts.find((entry) => normalizeUsername(entry?.username) === safeUsername) ?? null;
+    return sanitizeAccount(account);
+  }
 }
 
 export {
