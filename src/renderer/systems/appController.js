@@ -301,7 +301,112 @@ export class AppController {
       this.updateReadyPromptVersion = null;
       this.updateReadyPromptVisible = false;
 
+    this.installProfileTraceAccessors();
     this.registerScreens();
+  }
+
+  installProfileTraceAccessors() {
+    this._profileTraceProfileStorage = this.profile;
+    this._profileTraceLastAuthoritativeOwnProfileStorage = this.lastAuthoritativeOwnProfile;
+
+    Object.defineProperty(this, "profile", {
+      configurable: true,
+      enumerable: true,
+      get: () => this._profileTraceProfileStorage,
+      set: (value) => {
+        this._profileTraceProfileStorage = value;
+        this.emitProfileTrace("profile:set", {
+          renderTarget: "own",
+          renderSource: this.describeProfileTraceValueSource(value),
+          profile: value,
+          lastAuthoritativeOwnProfile: this._profileTraceLastAuthoritativeOwnProfileStorage,
+          extra: {
+            field: "profile",
+            callSite: this.getProfileTraceCallSite()
+          }
+        });
+      }
+    });
+
+    Object.defineProperty(this, "lastAuthoritativeOwnProfile", {
+      configurable: true,
+      enumerable: true,
+      get: () => this._profileTraceLastAuthoritativeOwnProfileStorage,
+      set: (value) => {
+        this._profileTraceLastAuthoritativeOwnProfileStorage = value;
+        this.emitProfileTrace("lastAuthoritativeOwnProfile:assign", {
+          renderTarget: "own",
+          renderSource: this.describeProfileTraceValueSource(value),
+          profile: this._profileTraceProfileStorage,
+          lastAuthoritativeOwnProfile: value,
+          extra: {
+            field: "lastAuthoritativeOwnProfile",
+            callSite: this.getProfileTraceCallSite()
+          }
+        });
+      }
+    });
+  }
+
+  getProfileTraceAppVersion() {
+    const explicitVersion = String(globalThis.window?.elemintz?.version ?? "").trim();
+    if (explicitVersion) {
+      return explicitVersion.startsWith("v") ? explicitVersion : `v${explicitVersion}`;
+    }
+
+    try {
+      return this.getAppVersionDisplay?.() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  getProfileTraceCallSite() {
+    try {
+      const stack = String(new Error().stack ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      return (
+        stack.find((line) =>
+          line !== "Error" &&
+          !line.includes("getProfileTraceCallSite") &&
+          !line.includes("emitProfileTrace") &&
+          !line.includes("installProfileTraceAccessors") &&
+          !line.includes("set [as profile]") &&
+          !line.includes("set [as lastAuthoritativeOwnProfile]")
+        ) ?? null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  describeProfileTraceValueSource(profile) {
+    if (!profile) {
+      return "null/error";
+    }
+
+    if (this.isFallbackLikeAuthenticatedProfile(profile)) {
+      return "fallback/default";
+    }
+
+    const safeUsername = String(this.username ?? "").trim().toLowerCase();
+    const profileUsername = String(profile?.username ?? "").trim().toLowerCase();
+    const rememberedUsername = String(this.lastAuthoritativeOwnProfile?.username ?? "").trim().toLowerCase();
+    if (safeUsername && profileUsername === safeUsername) {
+      if (rememberedUsername && profileUsername === rememberedUsername) {
+        return "lastAuthoritativeOwnProfile";
+      }
+
+      return "server";
+    }
+
+    if (profileUsername && this.viewedProfileUsername && profileUsername === String(this.viewedProfileUsername).trim().toLowerCase()) {
+      return "viewedProfile";
+    }
+
+    return "unknown";
   }
 
   cloneOnlineBattleLogResult(result) {
@@ -2027,6 +2132,16 @@ export class AppController {
 
   renderMenuScreen() {
     const dailyLogin = this.formatDailyLoginStatus(this.dailyChallenges?.dailyLogin);
+    this.emitProfileTrace("renderMenuScreen:beforeRender", {
+      functionName: "renderMenuScreen",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile),
+      extra: {
+        hasAnnouncement: Boolean(this.menuAnnouncement),
+        hasDailyChallenges: Boolean(this.dailyChallenges)
+      }
+    });
 
     this.screenManager.show("menu", {
       username: this.username,
@@ -2969,6 +3084,7 @@ export class AppController {
 
   emitProfileTrace(event, {
     argUsername = null,
+    functionName = null,
     renderTarget = null,
     renderSource = null,
     profile = this.profile,
@@ -2989,6 +3105,9 @@ export class AppController {
             );
       console.info("[ProfileTrace]", {
         event: String(event ?? "").trim() || "unknown",
+        functionName: String(functionName ?? "").trim() || null,
+        callSite: this.getProfileTraceCallSite(),
+        appVersion: this.getProfileTraceAppVersion(),
         argUsername: String(argUsername ?? "").trim() || null,
         currentUsername: String(this.username ?? "").trim() || null,
         authenticated: Boolean(this.onlinePlayState?.session?.authenticated),
@@ -5965,10 +6084,25 @@ export class AppController {
           this.renderOnlinePlayScreen();
         },
         back: async () => {
+          this.emitProfileTrace("showOnlinePlay:backRequested", {
+            functionName: "renderOnlinePlayScreen.actions.back",
+            argUsername: this.username,
+            renderTarget: "own",
+            renderSource: this.describeProfileTraceValueSource(this.profile),
+            extra: {
+              willDisconnect: Boolean(window.elemintz?.multiplayer?.disconnect)
+            }
+          });
           if (window.elemintz?.multiplayer?.disconnect) {
             await window.elemintz.multiplayer.disconnect();
           }
 
+          this.emitProfileTrace("showOnlinePlay:backAfterDisconnect", {
+            functionName: "renderOnlinePlayScreen.actions.back",
+            argUsername: this.username,
+            renderTarget: "own",
+            renderSource: this.describeProfileTraceValueSource(this.profile)
+          });
           this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
         }
       }
@@ -6852,10 +6986,26 @@ export class AppController {
       console.info("[Renderer] AppController.init() skipped", {
         alreadyInitialized: true
       });
+      this.emitProfileTrace("init:skipped", {
+        functionName: "init",
+        renderTarget: "own",
+        renderSource: this.describeProfileTraceValueSource(this.profile),
+        extra: {
+          alreadyInitialized: true
+        }
+      });
       return this.initPromise;
     }
 
     console.info("[Renderer] AppController.init() entered");
+    this.emitProfileTrace("init:enter", {
+      functionName: "init",
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile),
+      extra: {
+        screenFlow: this.screenFlow
+      }
+    });
     this.initPromise = (async () => {
       let restoreResult = null;
       try {
@@ -6869,6 +7019,17 @@ export class AppController {
         this.settings = await window.elemintz.state.getSettings();
         await this.syncOnlinePlayState();
         restoreResult = await window.elemintz?.multiplayer?.restoreSession?.();
+        this.emitProfileTrace("init:restoreSession", {
+          functionName: "init",
+          renderTarget: "own",
+          renderSource: this.describeProfileTraceValueSource(this.profile),
+          extra: {
+            hasRestoreState: Boolean(restoreResult?.state),
+            invalid: Boolean(restoreResult?.invalid),
+            restoreUsername:
+              String(restoreResult?.state?.session?.username ?? restoreResult?.session?.username ?? "").trim() || null
+          }
+        });
         if (restoreResult?.state) {
           this.onlinePlayState = this.normalizeOnlinePlayState(restoreResult.state);
         }
@@ -6893,6 +7054,15 @@ export class AppController {
           username: this.username,
           onlineState: this.onlinePlayState,
           allowEnsureLocal: false
+        });
+        this.emitProfileTrace("init:authenticatedProfileLoaded", {
+          functionName: "init",
+          argUsername: this.username,
+          renderTarget: "own",
+          renderSource: this.describeProfileTraceValueSource(this.profile),
+          extra: {
+            restorePath: true
+          }
         });
         await this.ensureDailyLoginAutoClaim({
           showToasts: true,
@@ -7035,6 +7205,7 @@ export class AppController {
     showDailyLoginToasts = true,
     skipInitialDailyChallengesRefresh = false
   } = {}) {
+    const previousScreenFlow = this.screenFlow;
     this.clearPassTimer();
     this.clearTransientUiBeforeScreenTransition();
     this.clearGauntletRunState();
@@ -7046,6 +7217,18 @@ export class AppController {
       username: this.username,
       onlineState: this.onlinePlayState,
       reason: "showMenu"
+    });
+    this.emitProfileTrace("showMenu:enter", {
+      functionName: "showMenu",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile),
+      extra: {
+        previousScreenFlow,
+        autoClaimDailyLogin,
+        showDailyLoginToasts,
+        skipInitialDailyChallengesRefresh
+      }
     });
 
     this.renderMenuScreen();
@@ -7222,15 +7405,39 @@ export class AppController {
   }
 
   async showOnlinePlay() {
+    this.emitProfileTrace("showOnlinePlay:enter", {
+      functionName: "showOnlinePlay",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile),
+      extra: {
+        previousScreenFlow: this.screenFlow
+      }
+    });
     this.clearPassTimer();
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "onlinePlay";
     this.matchTauntPanelOpen = false;
     await this.syncOnlinePlayState();
+    this.emitProfileTrace("showOnlinePlay:afterSync", {
+      functionName: "showOnlinePlay",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile)
+    });
     await this.loadPreferredProfileForOnlineSession({
       username: this.username,
       onlineState: this.onlinePlayState,
       allowEnsureLocal: false
+    });
+    this.emitProfileTrace("showOnlinePlay:afterProfileLoad", {
+      functionName: "showOnlinePlay",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile),
+      extra: {
+        stage: "pre-connect"
+      }
     });
       await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
       this.ensureOnlineReconnectUiTimer();
@@ -7239,20 +7446,53 @@ export class AppController {
       void this.refreshOnlinePlayLobbyData();
 
       if (!window.elemintz?.multiplayer?.connect) {
+        this.emitProfileTrace("showOnlinePlay:return", {
+          functionName: "showOnlinePlay",
+          argUsername: this.username,
+          renderTarget: "own",
+          renderSource: this.describeProfileTraceValueSource(this.profile),
+          extra: {
+            stage: "no-connect-bridge"
+          }
+        });
         return;
       }
 
     this.onlinePlayState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.connect());
+    this.emitProfileTrace("showOnlinePlay:afterConnect", {
+      functionName: "showOnlinePlay",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile),
+      extra: {
+        connectionStatus: this.onlinePlayState?.connectionStatus ?? null
+      }
+    });
     await this.loadPreferredProfileForOnlineSession({
       username: this.username,
       onlineState: this.onlinePlayState,
       allowEnsureLocal: false
+    });
+    this.emitProfileTrace("showOnlinePlay:afterConnectedProfileLoad", {
+      functionName: "showOnlinePlay",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile)
     });
       await this.refreshOnlinePlayChallengeSummary(this.onlinePlayState);
       this.ensureOnlineReconnectUiTimer();
       this.renderOnlinePlayScreen();
       this.maybeShowPendingAdminGrantNotice(this.onlinePlayState);
       void this.refreshOnlinePlayLobbyData();
+    this.emitProfileTrace("showOnlinePlay:return", {
+      functionName: "showOnlinePlay",
+      argUsername: this.username,
+      renderTarget: "own",
+      renderSource: this.describeProfileTraceValueSource(this.profile),
+      extra: {
+        stage: "connected"
+      }
+    });
     }
 
   showLocalSetup({ errorMessage = "", setupDefaults = null } = {}) {
@@ -8524,10 +8764,29 @@ export class AppController {
           });
         },
         searchProfiles: async (queryValue) => {
+          this.emitProfileTrace("profileSearch:submit", {
+            functionName: "showProfile.actions.searchProfiles",
+            argUsername: queryValue,
+            renderTarget: this.viewedProfileUsername ? "viewedProfile" : "own",
+            renderSource: this.describeProfileTraceValueSource(this.profile),
+            extra: {
+              query: String(queryValue ?? "").trim() || null
+            }
+          });
           this.profileSearchQuery = queryValue;
           this.profileSearchError = "";
           this.clearViewedProfileSelection();
           await this.showProfile({ preserveAchievementVisibility: true });
+          this.emitProfileTrace("profileSearch:afterShowProfile", {
+            functionName: "showProfile.actions.searchProfiles",
+            argUsername: queryValue,
+            renderTarget: this.viewedProfileUsername ? "viewedProfile" : "own",
+            renderSource: this.viewedProfileUsername ? "viewedProfile" : this.describeProfileTraceValueSource(this.profile),
+            extra: {
+              query: String(queryValue ?? "").trim() || null,
+              profileSearchError: this.profileSearchError || null
+            }
+          });
         },
         viewProfile: async (username) => {
           const safeUsername = String(username ?? "").trim();
