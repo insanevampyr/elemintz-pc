@@ -240,6 +240,11 @@ export class AppController {
     this.profileMilestoneChestNoticeOpen = false;
     this.profileChestOpenInFlight = false;
     this.onlinePlayState = null;
+    this.ownProfileHydration = {
+      status: "ready",
+      username: null,
+      message: ""
+    };
     this.activeAdminGrantNoticeId = null;
     this.queuedAdminGrantNoticeIds = [];
     this.onlinePlayJoinCode = "";
@@ -2792,6 +2797,73 @@ export class AppController {
     return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
   }
 
+  setOwnProfileHydrationState(status, { username = this.username, message = "" } = {}) {
+    const safeStatus = ["pending", "ready", "error"].includes(String(status ?? "").trim().toLowerCase())
+      ? String(status).trim().toLowerCase()
+      : "error";
+    const safeUsername = String(username ?? "").trim() || null;
+    this.ownProfileHydration = {
+      status: safeStatus,
+      username: safeUsername,
+      message: String(message ?? "").trim()
+    };
+    return this.ownProfileHydration;
+  }
+
+  isOwnProfileHydrated(username = this.username, onlineState = this.onlinePlayState) {
+    if (!this.isAuthenticatedOnlineProfileFlow(onlineState, username)) {
+      return true;
+    }
+
+    const safeUsername = String(username ?? "").trim().toLowerCase();
+    const hydratedUsername = String(this.ownProfileHydration?.username ?? "").trim().toLowerCase();
+    return (
+      this.ownProfileHydration?.status === "ready" &&
+      Boolean(safeUsername) &&
+      safeUsername === hydratedUsername &&
+      String(this.profile?.username ?? "").trim().toLowerCase() === safeUsername
+    );
+  }
+
+  getOwnProfileHydrationBlockMessage(username = this.username, onlineState = this.onlinePlayState) {
+    if (this.isOwnProfileHydrated(username, onlineState)) {
+      return "";
+    }
+
+    return this.ownProfileHydration?.status === "pending"
+      ? "Profile is still loading. Please wait."
+      : "Unable to load your online profile. Please reconnect or log in again.";
+  }
+
+  requireOwnProfileHydratedForAction(actionName = "continue", {
+    username = this.username,
+    onlineState = this.onlinePlayState,
+    showMessage = true
+  } = {}) {
+    if (!this.isAuthenticatedOnlineProfileFlow(onlineState, username)) {
+      return true;
+    }
+
+    if (this.isOwnProfileHydrated(username, onlineState)) {
+      return true;
+    }
+
+    if (showMessage) {
+      this.modalManager.show({
+        title: this.ownProfileHydration?.status === "pending" ? "Profile Loading" : "Profile Unavailable",
+        body: this.getOwnProfileHydrationBlockMessage(username, onlineState),
+        actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
+    }
+
+    console.warn("[ProfileHydration] blocked action", {
+      actionName,
+      username: String(username ?? "").trim() || null,
+      status: this.ownProfileHydration?.status ?? null
+    });
+    return false;
+  }
+
   clearProtectedLocalMatchSessionState() {
     this.protectedLocalMatchSessionRequestId += 1;
     this.currentProtectedLocalMatchSession = null;
@@ -3534,6 +3606,11 @@ export class AppController {
     if (nextProfile) {
       this.profile = nextProfile;
       this.username = nextProfile.username ?? this.username;
+      if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, nextProfile.username ?? this.username)) {
+        this.setOwnProfileHydrationState("ready", {
+          username: nextProfile.username ?? this.username
+        });
+      }
     }
 
     const progression = serverProfile?.progression ?? null;
@@ -3712,27 +3789,51 @@ export class AppController {
     }
 
     const onlineConnected = String(onlineState?.connectionStatus ?? "").toLowerCase() === "connected";
+    const isAuthenticatedOwnProfileFlow = this.isAuthenticatedOnlineProfileFlow(onlineState, safeUsername);
+    const hadHydratedOwnProfile =
+      isAuthenticatedOwnProfileFlow && this.isOwnProfileHydrated(safeUsername, onlineState);
+    if (isAuthenticatedOwnProfileFlow) {
+      this.setOwnProfileHydrationState("pending", { username: safeUsername });
+    }
+
     const activeProfileMatches =
       String(this.profile?.username ?? "").trim().toLowerCase() === safeUsername.toLowerCase();
-    const localProfile = onlineConnected && activeProfileMatches
-      ? this.profile
-      : (
-        window.elemintz?.state?.getProfile
-          ? await window.elemintz.state.getProfile(safeUsername)
-          : null
-      );
+    const localProfile = isAuthenticatedOwnProfileFlow
+      ? null
+      : onlineConnected && activeProfileMatches
+        ? this.profile
+        : (
+          window.elemintz?.state?.getProfile
+            ? await window.elemintz.state.getProfile(safeUsername)
+            : null
+        );
 
     if (onlineConnected && window.elemintz?.multiplayer?.getProfile) {
       const serverProfile = await window.elemintz.multiplayer.getProfile({ username: safeUsername });
+      const fallbackProfileForServer =
+        serverProfile &&
+        isAuthenticatedOwnProfileFlow &&
+        this.screenFlow === "menu" &&
+        !localProfile &&
+        window.elemintz?.state?.getProfile
+          ? await window.elemintz.state.getProfile(safeUsername)
+          : localProfile;
       const nextProfile = this.applyServerProfileSnapshot(serverProfile, {
-        fallbackProfile: localProfile
+        fallbackProfile: fallbackProfileForServer
       });
       if (nextProfile) {
         return nextProfile;
       }
     }
 
-    if (this.isAuthenticatedOnlineProfileFlow(onlineState, safeUsername)) {
+    if (isAuthenticatedOwnProfileFlow) {
+      if (!hadHydratedOwnProfile) {
+        this.profile = null;
+      }
+      this.setOwnProfileHydrationState("error", {
+        username: safeUsername,
+        message: "Unable to load the authenticated profile snapshot."
+      });
       return this.profile;
     }
 
@@ -6809,6 +6910,10 @@ export class AppController {
   }
 
   startGame(mode = MATCH_MODE.PVE, options = {}) {
+    if (!this.requireOwnProfileHydratedForAction("start_game")) {
+      return;
+    }
+
     this.clearPassTimer();
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
@@ -6887,7 +6992,12 @@ export class AppController {
         this.clearPassTimer();
         const gauntletCompletionContext =
           mode === MATCH_MODE.PVE ? this.captureGauntletCompletionContext() : null;
-        const previousPveProfile = this.profile ? { ...this.profile } : null;
+        const previousPveProfile =
+          mode === MATCH_MODE.PVE && this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username)
+            ? (this.isOwnProfileHydrated(this.username, this.onlinePlayState) && this.profile
+                ? { ...this.profile }
+                : null)
+            : (this.profile ? { ...this.profile } : null);
         const previousLocalProfiles = this.localProfiles
           ? {
               p1: this.localProfiles.p1 ? { ...this.localProfiles.p1 } : null,
@@ -7703,6 +7813,17 @@ export class AppController {
     viewedProfileOverride,
     skipAuthoritativeProfileRefresh = false
   } = {}) {
+    if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username) && !this.isOwnProfileHydrated()) {
+      await this.loadPreferredProfileForOnlineSession({
+        username: this.username,
+        onlineState: this.onlinePlayState,
+        allowEnsureLocal: false
+      });
+      if (!this.requireOwnProfileHydratedForAction("show_profile")) {
+        return;
+      }
+    }
+
     const enteringFresh = this.screenFlow !== "profile";
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     if (!preserveAchievementVisibility || enteringFresh) {
@@ -8223,21 +8344,34 @@ export class AppController {
     skipProfileRefresh = false,
     preferCachedFeaturedRotation = true
   } = {}) {
+    let hydratedProfileForStore = null;
+    if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username) && !this.isOwnProfileHydrated()) {
+      hydratedProfileForStore = await this.loadPreferredProfileForOnlineSession({
+        username: this.username,
+        onlineState: this.onlinePlayState,
+        allowEnsureLocal: false
+      });
+      if (!this.requireOwnProfileHydratedForAction("show_store")) {
+        return;
+      }
+    }
+
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "store";
     const viewState = this.ensureStoreViewState();
-    const serverProfile = !skipProfileRefresh && !profileOverride && this.hasMultiplayerProfileAccess()
+    const serverProfile = !skipProfileRefresh && !profileOverride && !hydratedProfileForStore && this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
       : null;
     const profileForStore =
       profileOverride ??
+      hydratedProfileForStore ??
       this.buildProfileFromServerSnapshot(serverProfile) ??
       serverProfile?.profile ??
       this.profile ??
       {};
     const store =
       storeOverride ??
-      (serverProfile || profileOverride
+      (serverProfile || profileOverride || hydratedProfileForStore
         ? getStoreViewForProfile(profileForStore)
         : await window.elemintz.state.getStore(this.username));
     const featuredRotation = this.buildFeaturedStoreRotationContext(

@@ -965,6 +965,9 @@ test("gameController: AI selection is independent from player's current card", a
       elemintz: {
         state: {
           recordMatchResult: async () => ({})
+        },
+        multiplayer: {
+          getProfile: async () => null
         }
       }
     };
@@ -6410,6 +6413,7 @@ test("appController: account login uses the multiplayer auth path and hydrates t
     assert.equal(calls.getDailyChallenges, 0);
     assert.equal(app.username, "AccountUser");
     assert.equal(app.profile.tokens, 260);
+    assert.equal(app.ownProfileHydration.status, "ready");
   } finally {
     globalThis.window = originalWindow;
   }
@@ -7849,7 +7853,7 @@ test("appController: idle menu after completed daily login claim is updater-safe
   }
 });
 
-test("appController: online profile load keeps local fallback when multiplayer snapshot is unavailable", async () => {
+test("appController: non-authenticated online profile load keeps local fallback when multiplayer snapshot is unavailable", async () => {
   const originalWindow = globalThis.window;
   const calls = {
     multiplayerGetProfile: 0,
@@ -7895,6 +7899,110 @@ test("appController: online profile load keeps local fallback when multiplayer s
     assert.equal(calls.localGetProfile, 1);
     assert.equal(result.tokens, 150);
     assert.equal(app.profile.tokens, 150);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: authenticated online profile load rejects local fallback when multiplayer snapshot is unavailable", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetProfile: 0
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "FallbackUser";
+  app.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "FallbackUser"
+    }
+  };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          getProfile: async (username) => {
+            calls.localGetProfile += 1;
+            return { username, tokens: 150, playerXP: 5, playerLevel: 1, equippedCosmetics: {} };
+          }
+        },
+        multiplayer: {
+          getProfile: async () => {
+            calls.multiplayerGetProfile += 1;
+            return null;
+          }
+        }
+      }
+    };
+
+    const result = await app.loadPreferredProfileForOnlineSession({
+      username: "FallbackUser",
+      onlineState: app.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetProfile, 0);
+    assert.equal(result, null);
+    assert.equal(app.profile, null);
+    assert.equal(app.ownProfileHydration.status, "error");
+    assert.equal(app.ownProfileHydration.username, "FallbackUser");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: authenticated startGame is blocked while own profile hydration is not ready", async () => {
+  const originalWindow = globalThis.window;
+  const modalCalls = [];
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {}
+    },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "HydrationGateUser";
+  app.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "HydrationGateUser"
+    }
+  };
+  app.setOwnProfileHydrationState("pending", { username: "HydrationGateUser" });
+  app.profile = null;
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        },
+        multiplayer: {
+          getProfile: async () => null
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE);
+
+    assert.equal(app.gameController, null);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Profile Loading");
+    assert.match(modalCalls[0].body, /Profile is still loading\. Please wait\./);
   } finally {
     globalThis.window = originalWindow;
   }

@@ -9145,6 +9145,148 @@ test("ui: authenticated viewed-profile failures show a clear not-found message a
   }
 });
 
+test("ui: authenticated own profile view is blocked until the authoritative profile hydration is ready", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetProfile: 0
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getProfile: async () => {
+          calls.localGetProfile += 1;
+          return createProfileScreenContext().profile;
+        }
+      },
+      multiplayer: {
+        getProfile: async () => {
+          calls.multiplayerGetProfile += 1;
+          return null;
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "Owner";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "Owner"
+      }
+    };
+    controller.setOwnProfileHydrationState("error", {
+      username: "Owner",
+      message: "Unable to load the authenticated profile snapshot."
+    });
+    controller.profile = null;
+
+    await controller.showProfile();
+
+    assert.equal(shown.length, 0);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Profile Unavailable");
+    assert.match(modalCalls[0].body, /Unable to load your online profile/i);
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetProfile, 0);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: authenticated store view is blocked until the authoritative profile hydration is ready", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const modalCalls = [];
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetStore: 0
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => {
+          calls.localGetStore += 1;
+          return {
+            tokens: 0,
+            supporterPass: false,
+            catalog: {
+              avatar: [],
+              title: [],
+              badge: [],
+              cardBack: [],
+              background: [],
+              elementCardVariant: []
+            }
+          };
+        }
+      },
+      multiplayer: {
+        getProfile: async () => {
+          calls.multiplayerGetProfile += 1;
+          return null;
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screenId, context) => shown.push({ screenId, context })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "Owner";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "Owner"
+      }
+    };
+    controller.setOwnProfileHydrationState("pending", { username: "Owner" });
+    controller.profile = null;
+
+    await controller.showStore();
+
+    assert.equal(shown.length, 0);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Profile Unavailable");
+    assert.match(modalCalls[0].body, /Unable to load your online profile/i);
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetStore, 0);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: viewed profile modal binds hover preview behavior after render without duplicating listeners on reopen", () => {
   const previousDocument = global.document;
   const modalBodyListeners = new Map();
