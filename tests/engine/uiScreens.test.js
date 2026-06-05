@@ -18590,7 +18590,7 @@ test("ui: profile shows the new milestone chest popup with the exact grant messa
   }
 });
 
-test("ui: own profile after authenticated online settlement keeps the preserved authoritative profile when refresh fails", async () => {
+test("ui: own profile after authenticated online settlement reuses the remembered authoritative profile when refresh fails", async () => {
   const previousWindow = global.window;
   const shown = [];
   let multiplayerProfileReads = 0;
@@ -18676,6 +18676,15 @@ test("ui: own profile after authenticated online settlement keeps the preserved 
         }
       }
     });
+    controller.profile = {
+      username: "ProfileWinner",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      chests: { basic: 0 },
+      achievements: {},
+      equippedCosmetics: { background: "default_background" }
+    };
     await controller.showProfile();
 
     const profileContext = shown.at(-1);

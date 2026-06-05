@@ -245,6 +245,7 @@ export class AppController {
       username: null,
       message: ""
     };
+    this.lastAuthoritativeOwnProfile = null;
     this.activeAdminGrantNoticeId = null;
     this.queuedAdminGrantNoticeIds = [];
     this.onlinePlayJoinCode = "";
@@ -2363,6 +2364,7 @@ export class AppController {
   clearAuthenticatedExperienceState() {
     this.username = null;
     this.profile = null;
+    this.lastAuthoritativeOwnProfile = null;
     this.dailyChallenges = null;
     this.menuBoostEvent = null;
     this.localPlayers = null;
@@ -2823,6 +2825,38 @@ export class AppController {
       safeUsername === hydratedUsername &&
       String(this.profile?.username ?? "").trim().toLowerCase() === safeUsername
     );
+  }
+
+  rememberAuthoritativeOwnProfile(profile, {
+    username = this.username,
+    onlineState = this.onlinePlayState
+  } = {}) {
+    if (!this.isAuthenticatedOnlineProfileFlow(onlineState, username) || !profile) {
+      return profile;
+    }
+
+    const safeUsername = String(username ?? "").trim().toLowerCase();
+    const profileUsername = String(profile?.username ?? "").trim().toLowerCase();
+    if (!safeUsername || profileUsername !== safeUsername) {
+      return profile;
+    }
+
+    this.lastAuthoritativeOwnProfile = JSON.parse(JSON.stringify(profile));
+    return profile;
+  }
+
+  getRememberedAuthoritativeOwnProfile(username = this.username, onlineState = this.onlinePlayState) {
+    if (!this.isAuthenticatedOnlineProfileFlow(onlineState, username) || !this.lastAuthoritativeOwnProfile) {
+      return null;
+    }
+
+    const safeUsername = String(username ?? "").trim().toLowerCase();
+    const profileUsername = String(this.lastAuthoritativeOwnProfile?.username ?? "").trim().toLowerCase();
+    if (!safeUsername || profileUsername !== safeUsername) {
+      return null;
+    }
+
+    return JSON.parse(JSON.stringify(this.lastAuthoritativeOwnProfile));
   }
 
   getOwnProfileHydrationBlockMessage(username = this.username, onlineState = this.onlinePlayState) {
@@ -3607,6 +3641,10 @@ export class AppController {
       this.profile = nextProfile;
       this.username = nextProfile.username ?? this.username;
       if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, nextProfile.username ?? this.username)) {
+        this.rememberAuthoritativeOwnProfile(nextProfile, {
+          username: nextProfile.username ?? this.username,
+          onlineState: this.onlinePlayState
+        });
         this.setOwnProfileHydrationState("ready", {
           username: nextProfile.username ?? this.username
         });
@@ -4938,6 +4976,9 @@ export class AppController {
     const isAuthenticatedOwnProfileFlow =
       this.isAuthenticatedOnlineProfileFlow(state, this.username) ||
       this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username);
+    const hasHydratedAuthenticatedOwnProfile =
+      this.isOwnProfileHydrated(this.username, state) ||
+      this.isOwnProfileHydrated(this.username, this.onlinePlayState);
 
     if (!refreshKey) {
       return this.profile;
@@ -4978,7 +5019,18 @@ export class AppController {
           ? await this.maybeRandomizeCosmeticsAfterMatchFor(this.username, nextProfile)
           : nextProfile;
         this.username = this.profile?.username ?? this.username;
-      } else if (isAuthenticatedOwnProfileFlow && !this.isOwnProfileHydrated(this.username, state)) {
+        if (isAuthenticatedOwnProfileFlow) {
+          this.rememberAuthoritativeOwnProfile(this.profile, {
+            username: this.username,
+            onlineState: this.onlinePlayState
+          });
+        }
+      } else if (isAuthenticatedOwnProfileFlow && this.profile && hasHydratedAuthenticatedOwnProfile) {
+        this.rememberAuthoritativeOwnProfile(this.profile, {
+          username: this.username,
+          onlineState: this.onlinePlayState
+        });
+      } else if (isAuthenticatedOwnProfileFlow && !hasHydratedAuthenticatedOwnProfile) {
         this.profile = null;
         this.setOwnProfileHydrationState("error", {
           username: this.username,
@@ -7826,7 +7878,8 @@ export class AppController {
     viewedProfileOverride,
     skipAuthoritativeProfileRefresh = false
   } = {}) {
-    if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username) && !this.isOwnProfileHydrated()) {
+    const isAuthenticatedOwnProfileFlow = this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username);
+    if (isAuthenticatedOwnProfileFlow && !this.isOwnProfileHydrated()) {
       await this.loadPreferredProfileForOnlineSession({
         username: this.username,
         onlineState: this.onlinePlayState,
@@ -7848,14 +7901,40 @@ export class AppController {
     const serverProfile = shouldRefreshProfile && this.hasMultiplayerProfileAccess()
       ? await window.elemintz.multiplayer.getProfile({ username: this.username })
       : null;
-    const localProfile = profileOverride ?? (
-      this.isAuthenticatedOnlineProfileFlow()
-        ? this.profile ?? null
-        : shouldRefreshProfile
-          ? await window.elemintz.state.getProfile(this.username)
-          : this.profile ?? null
-    );
-    this.profile = profileOverride ?? this.mergeServerOwnedProfileDomains(localProfile, serverProfile);
+    const rememberedAuthoritativeProfile = isAuthenticatedOwnProfileFlow
+      ? this.getRememberedAuthoritativeOwnProfile(this.username, this.onlinePlayState)
+      : null;
+    const hasAuthoritativeServerProfile = Boolean(serverProfile);
+    let resolvedProfile = profileOverride;
+    if (!resolvedProfile && isAuthenticatedOwnProfileFlow) {
+      if (hasAuthoritativeServerProfile) {
+        resolvedProfile = this.applyServerProfileSnapshot(serverProfile, {
+          fallbackProfile: rememberedAuthoritativeProfile ?? this.profile ?? null
+        });
+      } else {
+        resolvedProfile = rememberedAuthoritativeProfile;
+        if (!resolvedProfile) {
+          this.profile = null;
+          this.setOwnProfileHydrationState("error", {
+            username: this.username,
+            message: "Unable to refresh your online profile."
+          });
+          this.requireOwnProfileHydratedForAction("show_profile");
+          return;
+        }
+        this.profile = resolvedProfile;
+      }
+    }
+
+    if (!resolvedProfile) {
+      const localProfile = shouldRefreshProfile
+        ? await window.elemintz.state.getProfile(this.username)
+        : this.profile ?? null;
+      resolvedProfile = this.mergeServerOwnedProfileDomains(localProfile, serverProfile);
+      this.profile = resolvedProfile;
+    } else if (profileOverride) {
+      this.profile = profileOverride;
+    }
     const achievementCatalog = this.buildAchievementCatalogForProfile(this.profile);
     const cosmetics = cosmeticsOverride ?? this.buildSafeCosmeticsPayload(
       shouldRefreshProfile
