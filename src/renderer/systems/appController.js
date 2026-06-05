@@ -2087,7 +2087,18 @@ export class AppController {
         });
         const snapshot = result?.snapshot ?? null;
         if (snapshot) {
-          this.profile = this.mergeServerOwnedProfileDomains(this.profile ?? {}, snapshot);
+          const baseProfile =
+            this.preserveAuthenticatedOwnProfileIfSafer({
+              username: this.username,
+              onlineState: this.onlinePlayState,
+              reason: "refreshMenuAnnouncement:base"
+            }) ??
+            this.profile ??
+            {};
+          this.profile = this.mergeSeenAnnouncementsIntoProfile(
+            baseProfile,
+            this.buildProfileFromServerSnapshot(snapshot)
+          );
         }
 
         const announcement = Array.isArray(result?.announcements) ? result.announcements[0] ?? null : null;
@@ -2190,7 +2201,18 @@ export class AppController {
       id: safeId
     });
     if (result?.snapshot) {
-      this.profile = this.mergeServerOwnedProfileDomains(this.profile ?? {}, result.snapshot);
+      const baseProfile =
+        this.preserveAuthenticatedOwnProfileIfSafer({
+          username: this.username,
+          onlineState: this.onlinePlayState,
+          reason: "dismissMenuAnnouncement:base"
+        }) ??
+        this.profile ??
+        {};
+      this.profile = this.mergeSeenAnnouncementsIntoProfile(
+        baseProfile,
+        this.buildProfileFromServerSnapshot(result.snapshot)
+      );
     }
     this.menuAnnouncement = Array.isArray(result?.announcements) ? result.announcements[0] ?? null : null;
     if (this.screenFlow === "menu") {
@@ -2906,6 +2928,45 @@ export class AppController {
     };
   }
 
+  isFallbackLikeAuthenticatedProfile(profile) {
+    if (!profile || typeof profile !== "object") {
+      return true;
+    }
+
+    const stats = profile.stats && typeof profile.stats === "object" ? profile.stats : {};
+    const equippedCosmetics =
+      profile.equippedCosmetics && typeof profile.equippedCosmetics === "object"
+        ? profile.equippedCosmetics
+        : {};
+    const level = Number(profile.playerLevel ?? 0) || 0;
+    const xp = Number(profile.playerXP ?? 0) || 0;
+    const tokens = Number(profile.tokens ?? 0) || 0;
+    const gamesPlayed = Number(stats.gamesPlayed ?? profile.gamesPlayed ?? 0) || 0;
+    const wins = Number(stats.wins ?? profile.wins ?? 0) || 0;
+    const losses = Number(stats.losses ?? profile.losses ?? 0) || 0;
+    const cardsCaptured = Number(profile.cardsCaptured ?? stats.cardsCaptured ?? 0) || 0;
+    const warsEntered = Number(profile.warsEntered ?? stats.warsEntered ?? 0) || 0;
+    const avatar = String(equippedCosmetics.avatar ?? "").trim() || null;
+    const title = String(equippedCosmetics.title ?? "").trim() || null;
+    const cardBack = String(equippedCosmetics.cardBack ?? "").trim() || null;
+
+    const zeroishStats =
+      level <= 1 &&
+      xp <= 0 &&
+      tokens <= 0 &&
+      gamesPlayed <= 0 &&
+      wins <= 0 &&
+      losses <= 0 &&
+      cardsCaptured <= 0 &&
+      warsEntered <= 0;
+    const defaultOrMissingCosmetics =
+      (!avatar || avatar === "default_avatar") &&
+      (!cardBack || cardBack === "default_card_back") &&
+      (!title || title === "Initiate");
+
+    return zeroishStats && defaultOrMissingCosmetics;
+  }
+
   emitProfileTrace(event, {
     argUsername = null,
     renderTarget = null,
@@ -2994,6 +3055,55 @@ export class AppController {
     }
 
     return JSON.parse(JSON.stringify(this.lastAuthoritativeOwnProfile));
+  }
+
+  preserveAuthenticatedOwnProfileIfSafer({
+    username = this.username,
+    onlineState = this.onlinePlayState,
+    reason = "unknown"
+  } = {}) {
+    if (!this.isAuthenticatedOnlineProfileFlow(onlineState, username)) {
+      return this.profile;
+    }
+
+    const rememberedProfile = this.getRememberedAuthoritativeOwnProfile(username, onlineState);
+    if (!rememberedProfile) {
+      return this.profile;
+    }
+
+    const safeUsername = String(username ?? "").trim().toLowerCase();
+    const currentUsername = String(this.profile?.username ?? "").trim().toLowerCase();
+    const currentSummary = this.buildProfileTraceProfileSummary(this.profile);
+    const rememberedSummary = this.buildProfileTraceProfileSummary(rememberedProfile);
+    const shouldRestoreRememberedProfile =
+      !this.profile ||
+      !safeUsername ||
+      currentUsername !== safeUsername ||
+      Boolean(
+        this.isFallbackLikeAuthenticatedProfile(this.profile) &&
+        !this.isFallbackLikeAuthenticatedProfile(rememberedProfile)
+      );
+
+    if (!shouldRestoreRememberedProfile) {
+      return this.profile;
+    }
+
+    this.profile = rememberedProfile;
+    this.setOwnProfileHydrationState("ready", {
+      username: rememberedProfile.username ?? username
+    });
+    this.emitProfileTrace("authenticatedOwnProfile:preserved", {
+      argUsername: username,
+      renderTarget: "own",
+      renderSource: "lastAuthoritativeOwnProfile",
+      profile: this.profile,
+      lastAuthoritativeOwnProfile: rememberedProfile,
+      fallbackUsed: true,
+      extra: {
+        reason
+      }
+    });
+    return this.profile;
   }
 
   getOwnProfileHydrationBlockMessage(username = this.username, onlineState = this.onlinePlayState) {
@@ -3785,15 +3895,28 @@ export class AppController {
       fallbackProfile ?? this.profile
     );
     if (nextProfile) {
-      this.profile = nextProfile;
-      this.username = nextProfile.username ?? this.username;
-      if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, nextProfile.username ?? this.username)) {
-        this.rememberAuthoritativeOwnProfile(nextProfile, {
-          username: nextProfile.username ?? this.username,
-          onlineState: this.onlinePlayState
-        });
+      const nextProfileUsername = nextProfile.username ?? this.username;
+      const rememberedAuthoritativeProfile = this.getRememberedAuthoritativeOwnProfile(
+        nextProfileUsername,
+        this.onlinePlayState
+      );
+      const shouldPreserveRememberedProfile =
+        rememberedAuthoritativeProfile &&
+        Boolean(
+          this.isFallbackLikeAuthenticatedProfile(nextProfile) &&
+          !this.isFallbackLikeAuthenticatedProfile(rememberedAuthoritativeProfile)
+        );
+      this.profile = shouldPreserveRememberedProfile ? rememberedAuthoritativeProfile : nextProfile;
+      this.username = this.profile?.username ?? nextProfileUsername ?? this.username;
+      if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, nextProfileUsername)) {
+        if (!shouldPreserveRememberedProfile) {
+          this.rememberAuthoritativeOwnProfile(nextProfile, {
+            username: nextProfileUsername,
+            onlineState: this.onlinePlayState
+          });
+        }
         this.setOwnProfileHydrationState("ready", {
-          username: nextProfile.username ?? this.username
+          username: this.profile?.username ?? nextProfileUsername
         });
       }
     }
@@ -4030,19 +4153,42 @@ export class AppController {
         fallbackProfile: fallbackProfileForServer
       });
       if (nextProfile) {
+        const preservedProfile = this.preserveAuthenticatedOwnProfileIfSafer({
+          username: safeUsername,
+          onlineState,
+          reason: "loadPreferredProfileForOnlineSession:serverProfile"
+        });
         this.emitProfileTrace("loadPreferredProfileForOnlineSession:return", {
           argUsername: safeUsername,
           renderTarget: "own",
-          renderSource: "freshServer",
-          profile: nextProfile,
+          renderSource:
+            preservedProfile === nextProfile
+              ? "freshServer"
+              : "lastAuthoritativeOwnProfile",
+          profile: preservedProfile,
           serverProfile,
           fallbackUsed: Boolean(fallbackProfileForServer)
         });
-        return nextProfile;
+        return preservedProfile;
       }
     }
 
     if (isAuthenticatedOwnProfileFlow) {
+      const preservedProfile = this.preserveAuthenticatedOwnProfileIfSafer({
+        username: safeUsername,
+        onlineState,
+        reason: "loadPreferredProfileForOnlineSession:nullServer"
+      });
+      if (preservedProfile) {
+        this.emitProfileTrace("loadPreferredProfileForOnlineSession:return", {
+          argUsername: safeUsername,
+          renderTarget: "own",
+          renderSource: "lastAuthoritativeOwnProfile",
+          profile: preservedProfile,
+          fallbackUsed: true
+        });
+        return preservedProfile;
+      }
       if (!hadHydratedOwnProfile) {
         this.profile = null;
       }
@@ -6896,6 +7042,11 @@ export class AppController {
     this.localPlayers = null;
     this.localProfiles = null;
     this.localPlayerAuthorities = null;
+    this.preserveAuthenticatedOwnProfileIfSafer({
+      username: this.username,
+      onlineState: this.onlinePlayState,
+      reason: "showMenu"
+    });
 
     this.renderMenuScreen();
     this.updateOnlineReconnectReminderModal();

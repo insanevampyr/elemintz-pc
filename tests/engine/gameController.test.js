@@ -3320,6 +3320,93 @@ test("appController: menu announcements fetch and dismiss through the multiplaye
   }
 });
 
+test("appController: refreshMenuAnnouncement does not degrade a hydrated authenticated profile with a partial snapshot", async () => {
+  const originalWindow = globalThis.window;
+  let renderCount = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({}),
+          listAnnouncements: async ({ username }) => ({
+            announcements: [
+              {
+                id: "patch-2-1-58",
+                title: "v2.1.58",
+                message: "Patch live.",
+                dismissible: true
+              }
+            ],
+            snapshot: {
+              authority: "server",
+              profile: {
+                username,
+                tokens: 0,
+                playerXP: 0,
+                playerLevel: 1,
+                equippedCosmetics: {
+                  background: "default_background"
+                },
+                seenAnnouncements: {}
+              },
+              progression: {}
+            }
+          })
+        }
+      }
+    };
+
+    app.username = "AnnouncementUser";
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "AnnouncementUser"
+      }
+    });
+    app.profile = {
+      username: "AnnouncementUser",
+      tokens: 245,
+      playerXP: 83,
+      playerLevel: 4,
+      equippedCosmetics: {
+        background: "authority_bg"
+      },
+      seenAnnouncements: {}
+    };
+    app.setOwnProfileHydrationState("ready", { username: "AnnouncementUser" });
+    app.rememberAuthoritativeOwnProfile(app.profile, {
+      username: "AnnouncementUser",
+      onlineState: app.onlinePlayState
+    });
+    app.screenFlow = "menu";
+    app.renderMenuScreen = () => {
+      renderCount += 1;
+    };
+
+    await app.refreshMenuAnnouncement();
+
+    assert.equal(app.menuAnnouncement?.id, "patch-2-1-58");
+    assert.equal(app.profile?.tokens, 245);
+    assert.equal(app.profile?.playerXP, 83);
+    assert.equal(app.profile?.playerLevel, 4);
+    assert.equal(app.profile?.equippedCosmetics?.background, "authority_bg");
+    assert.equal(renderCount, 1);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: menu boost event refreshes through the multiplayer profile path", async () => {
   const originalWindow = globalThis.window;
   const calls = {
@@ -3640,6 +3727,111 @@ test("appController: boost banner survives online play return to menu when boost
 
     assert.equal(shownScreens.at(-1)?.name, "menu");
     assert.deepEqual(app.menuBoostEvent, { title: "Persisted Boost" });
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: returning from online play to menu preserves the remembered authoritative profile", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getState: async () => ({ connectionStatus: "disconnected" }),
+          connect: async () => ({
+            connectionStatus: "connected",
+            session: {
+              authenticated: true,
+              username: "MenuUser"
+            }
+          }),
+          disconnect: async () => ({}),
+          getProfile: async () => ({
+            authority: "server",
+            profile: {
+              username: "MenuUser",
+              tokens: 0,
+              playerXP: 0,
+              playerLevel: 1,
+              equippedCosmetics: {
+                background: "default_background"
+              }
+            },
+            progression: {}
+          }),
+          listPublicRooms: async () => [],
+          getOnlineCount: async () => 1
+        }
+      }
+    };
+
+    app.username = "MenuUser";
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "MenuUser"
+      }
+    });
+    app.profile = {
+      username: "MenuUser",
+      tokens: 245,
+      playerXP: 83,
+      playerLevel: 4,
+      equippedCosmetics: {
+        background: "authority_bg"
+      }
+    };
+    app.setOwnProfileHydrationState("ready", { username: "MenuUser" });
+    app.rememberAuthoritativeOwnProfile(app.profile, {
+      username: "MenuUser",
+      onlineState: app.onlinePlayState
+    });
+    app.refreshDailyChallengesForMenu = async () => {};
+    app.refreshMenuAnnouncement = async () => {};
+    app.refreshMenuBoostEvent = async () => {};
+    app.updateOnlineReconnectReminderModal = () => {};
+    app.releaseQueuedAdminGrantNotice = () => {};
+    app.maybeShowLoadoutUnlockNotice = async () => {};
+    app.maybeShowNewCosmeticsAnnouncement = async () => {};
+    app.dailyChallenges = {
+      daily: { msUntilReset: 0, challenges: [] },
+      weekly: { msUntilReset: 0, challenges: [] },
+      dailyLogin: { eligible: false, msUntilReset: 0 }
+    };
+
+    await app.showOnlinePlay();
+
+    app.profile = {
+      username: "MenuUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      equippedCosmetics: {
+        background: "default_background"
+      }
+    };
+    app.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+
+    const menuContext = shownScreens.at(-1)?.context;
+    assert.equal(shownScreens.at(-1)?.name, "menu");
+    assert.equal(app.profile?.tokens, 245);
+    assert.equal(app.profile?.playerXP, 83);
+    assert.equal(app.profile?.playerLevel, 4);
+    assert.equal(app.profile?.equippedCosmetics?.background, "authority_bg");
+    assert.equal(menuContext?.backgroundImage, app.getBackgroundFromProfile(app.profile));
   } finally {
     globalThis.window = originalWindow;
   }
@@ -4507,6 +4699,102 @@ test("appController: authenticated online settlement refresh preserves the last 
     assert.equal(app.profile?.tokens, 245);
     assert.equal(app.profile?.equippedCosmetics?.background, "authority_bg");
     assert.equal(app.ownProfileHydration.status, "ready");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: authenticated online profile load preserves the remembered own profile when online play returns a default-like snapshot", async () => {
+  const originalWindow = globalThis.window;
+  let localProfileReads = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => ({
+            authority: "server",
+            profile: {
+              username: "SignedInUser",
+              tokens: 0,
+              playerXP: 0,
+              playerLevel: 1,
+              equippedCosmetics: {
+                background: "default_background"
+              }
+            },
+            progression: {}
+          })
+        },
+        state: {
+          getProfile: async () => {
+            localProfileReads += 1;
+            return {
+              username: "SignedInUser",
+              tokens: 0,
+              equippedCosmetics: {
+                background: "local_background"
+              }
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "SignedInUser"
+      }
+    };
+    app.profile = {
+      username: "SignedInUser",
+      tokens: 245,
+      playerXP: 83,
+      playerLevel: 4,
+      equippedCosmetics: {
+        background: "authority_bg"
+      }
+    };
+    app.setOwnProfileHydrationState("ready", { username: "SignedInUser" });
+    app.rememberAuthoritativeOwnProfile(app.profile, {
+      username: "SignedInUser",
+      onlineState: app.onlinePlayState
+    });
+    app.profile = {
+      username: "SignedInUser",
+      tokens: 0,
+      playerXP: 0,
+      playerLevel: 1,
+      equippedCosmetics: {
+        background: "default_background"
+      }
+    };
+
+    const profile = await app.loadPreferredProfileForOnlineSession({
+      username: "SignedInUser",
+      onlineState: app.onlinePlayState,
+      allowEnsureLocal: false
+    });
+
+    assert.equal(localProfileReads, 0);
+    assert.equal(profile?.tokens, 245);
+    assert.equal(profile?.playerXP, 83);
+    assert.equal(profile?.playerLevel, 4);
+    assert.equal(profile?.equippedCosmetics?.background, "authority_bg");
+    assert.equal(app.profile?.tokens, 245);
+    assert.equal(app.ownProfileHydration?.status, "ready");
   } finally {
     globalThis.window = originalWindow;
   }
