@@ -4935,6 +4935,9 @@ export class AppController {
 
   async refreshLocalProfileAfterOnlineSettlement(state = this.onlinePlayState, options = {}) {
     const refreshKey = this.deriveOnlineSettlementRefreshKey(state);
+    const isAuthenticatedOwnProfileFlow =
+      this.isAuthenticatedOnlineProfileFlow(state, this.username) ||
+      this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username);
 
     if (!refreshKey) {
       return this.profile;
@@ -4960,17 +4963,27 @@ export class AppController {
           ? await window.elemintz.multiplayer.getProfile({ username: this.username })
           : null);
       const nextProfile = serverProfile
-        ? this.buildProfileFromServerSnapshot(serverProfile)
-        : (
-        window.elemintz?.state?.getProfile
-          ? await window.elemintz.state.getProfile(this.username)
-          : null
-      );
+        ? this.applyServerProfileSnapshot(serverProfile, {
+            fallbackProfile: this.profile
+          })
+        : isAuthenticatedOwnProfileFlow
+          ? null
+          : (
+            window.elemintz?.state?.getProfile
+              ? await window.elemintz.state.getProfile(this.username)
+              : null
+          );
       if (nextProfile) {
         this.profile = this.onlinePlayProfileRefreshKey === refreshKey
           ? await this.maybeRandomizeCosmeticsAfterMatchFor(this.username, nextProfile)
           : nextProfile;
         this.username = this.profile?.username ?? this.username;
+      } else if (isAuthenticatedOwnProfileFlow && !this.isOwnProfileHydrated(this.username, state)) {
+        this.profile = null;
+        this.setOwnProfileHydrationState("error", {
+          username: this.username,
+          message: "Unable to refresh the authenticated profile snapshot after online settlement."
+        });
       }
 
       const providedChallengeStatus =

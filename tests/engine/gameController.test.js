@@ -4424,6 +4424,94 @@ test("appController: online settlement refresh prefers the multiplayer-authorita
   }
 });
 
+test("appController: authenticated online settlement refresh preserves the last authoritative own profile when the server snapshot is unavailable", async () => {
+  const originalWindow = globalThis.window;
+  const calls = {
+    multiplayerGetProfile: 0,
+    localGetProfile: 0
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          getProfile: async () => {
+            calls.multiplayerGetProfile += 1;
+            return null;
+          }
+        },
+        state: {
+          getProfile: async () => {
+            calls.localGetProfile += 1;
+            return {
+              username: "SignedInUser",
+              tokens: 0,
+              playerXP: 0,
+              playerLevel: 1,
+              equippedCosmetics: {}
+            };
+          }
+        }
+      }
+    };
+
+    app.username = "SignedInUser";
+    app.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "SignedInUser"
+      }
+    };
+    app.profile = {
+      username: "SignedInUser",
+      tokens: 245,
+      playerXP: 18,
+      playerLevel: 2,
+      equippedCosmetics: {
+        background: "authority_bg"
+      }
+    };
+    app.setOwnProfileHydrationState("ready", { username: "SignedInUser" });
+
+    const settledState = {
+      connectionStatus: "connected",
+      room: {
+        roomCode: "ABC123",
+        matchComplete: true,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-28T18:00:00.000Z",
+          summary: {
+            settledHostUsername: "SignedInUser",
+            settledGuestUsername: "OtherPlayer"
+          }
+        }
+      }
+    };
+
+    const refreshedProfile = await app.refreshLocalProfileAfterOnlineSettlement(settledState);
+
+    assert.equal(calls.multiplayerGetProfile, 1);
+    assert.equal(calls.localGetProfile, 0);
+    assert.equal(refreshedProfile?.tokens, 245);
+    assert.equal(app.profile?.tokens, 245);
+    assert.equal(app.profile?.equippedCosmetics?.background, "authority_bg");
+    assert.equal(app.ownProfileHydration.status, "ready");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online menu challenge refresh prefers the multiplayer profile snapshot", async () => {
   const originalWindow = globalThis.window;
   const app = new AppController({

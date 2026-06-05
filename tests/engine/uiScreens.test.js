@@ -18590,6 +18590,107 @@ test("ui: profile shows the new milestone chest popup with the exact grant messa
   }
 });
 
+test("ui: own profile after authenticated online settlement keeps the preserved authoritative profile when refresh fails", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  let multiplayerProfileReads = 0;
+  let localProfileReads = 0;
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => {
+          multiplayerProfileReads += 1;
+          return null;
+        }
+      },
+      state: {
+        getProfile: async () => {
+          localProfileReads += 1;
+          return {
+            username: "ProfileWinner",
+            tokens: 0,
+            playerXP: 0,
+            playerLevel: 1,
+            chests: { basic: 0 },
+            achievements: {},
+            equippedCosmetics: { background: "default_background" }
+          };
+        },
+        getDailyChallenges: async () => ({
+          daily: { msUntilReset: 1000, challenges: [] },
+          weekly: { msUntilReset: 2000, challenges: [] },
+          dailyLogin: null,
+          xp: {}
+        }),
+        getCosmetics: async () => ({
+          equipped: { background: "authority_bg" },
+          catalog: { avatar: [], cardBack: [], background: [], elementCardVariant: [], badge: [], title: [] }
+        }),
+        listProfiles: async () => []
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "ProfileWinner";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        authenticated: true,
+        username: "ProfileWinner"
+      }
+    };
+    controller.profile = {
+      username: "ProfileWinner",
+      tokens: 245,
+      playerXP: 83,
+      playerLevel: 4,
+      chests: { basic: 2 },
+      achievements: {},
+      equippedCosmetics: { background: "authority_bg" }
+    };
+    controller.setOwnProfileHydrationState("ready", { username: "ProfileWinner" });
+
+    await controller.refreshLocalProfileAfterOnlineSettlement({
+      connectionStatus: "connected",
+      room: {
+        roomCode: "ABC123",
+        matchComplete: true,
+        rewardSettlement: {
+          granted: true,
+          grantedAt: "2026-03-20T12:03:00.000Z",
+          summary: {
+            settledHostUsername: "ProfileWinner",
+            settledGuestUsername: "OtherUser"
+          }
+        }
+      }
+    });
+    await controller.showProfile();
+
+    const profileContext = shown.at(-1);
+    assert.equal(multiplayerProfileReads, 2);
+    assert.equal(localProfileReads, 0);
+    assert.equal(profileContext.profile.tokens, 245);
+    assert.equal(profileContext.profile.playerXP, 83);
+    assert.equal(profileContext.profile.playerLevel, 4);
+    assert.equal(profileContext.profile.chests.basic, 2);
+    assert.equal(profileContext.profile.equippedCosmetics.background, "authority_bg");
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: profile search submit triggers both local suggestions refresh and authoritative viewed-profile lookup for the typed username", async () => {
   const previousDocument = global.document;
   const actionCalls = [];
