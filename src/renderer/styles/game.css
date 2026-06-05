@@ -759,6 +759,7 @@ input[type="number"] {
   grid-template-columns: minmax(160px, 220px) minmax(280px, 1fr) minmax(180px, 240px);
   gap: 12px;
   align-items: center;
+  pointer-events: none;
 }
 
 .round-center-result {
