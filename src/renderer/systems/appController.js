@@ -3103,7 +3103,7 @@ export class AppController {
                 ? this.buildProfileFromServerSnapshot(serverProfile)
                 : serverProfile
             );
-      console.info("[ProfileTrace]", {
+      const tracePayload = {
         event: String(event ?? "").trim() || "unknown",
         functionName: String(functionName ?? "").trim() || null,
         callSite: this.getProfileTraceCallSite(),
@@ -3128,6 +3128,13 @@ export class AppController {
             : this.buildProfileTraceCosmeticsSummary(cosmetics),
         fallbackUsed: Boolean(fallbackUsed),
         extra
+      };
+      console.info("[ProfileTrace]", tracePayload);
+      globalThis.window?.elemintz?.diagnostics?.writeProfileTrace?.(tracePayload).catch?.((error) => {
+        console.warn("[ProfileTrace]", {
+          event: "trace_file_write_failed",
+          message: String(error?.message ?? error ?? "Unknown trace file write failure.")
+        });
       });
     } catch (error) {
       console.warn("[ProfileTrace]", {

@@ -49,6 +49,23 @@ function appendStartupLogEntry(startupLogPath, level, message, details = null) {
   );
 }
 
+function appendJsonLine(logPath, payload) {
+  if (!logPath) {
+    return;
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, `${JSON.stringify(payload)}\n`, "utf8");
+  } catch (error) {
+    console.warn("[ProfileTrace][Main] failed to append profile trace log", {
+      logPath,
+      message: error?.message,
+      stack: error?.stack
+    });
+  }
+}
+
 function createStartupLogger(startupLogPath) {
   return {
     info(message, details = {}) {
@@ -174,6 +191,7 @@ app.whenReady().then(() => {
   const userDataPath = app.getPath("userData");
   const startupLogPath = path.join(appDataPath, "elemintz-pc", "logs", "startup.log");
   const multiplayerClientLogPath = path.join(appDataPath, "elemintz-pc", "logs", "multiplayer-client.log");
+  const profileTraceLogPath = path.join(appDataPath, "elemintz-pc", "logs", "profile-trace.log");
 
   writeStartupLogLine({
     appDataPath,
@@ -199,6 +217,13 @@ app.whenReady().then(() => {
   });
   ipcMain.on("app:getVersionSync", (event) => {
     event.returnValue = app.getVersion();
+  });
+  ipcMain.handle("diagnostics:writeProfileTrace", async (_event, payload) => {
+    appendJsonLine(profileTraceLogPath, {
+      timestamp: new Date().toISOString(),
+      ...(payload && typeof payload === "object" ? payload : { payload })
+    });
+    return { ok: true, path: profileTraceLogPath };
   });
 
   console.info("[Startup] Electron userData", {
