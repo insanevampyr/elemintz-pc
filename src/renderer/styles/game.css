@@ -1245,8 +1245,27 @@ input[type="number"] {
   grid-row: 1;
   display: grid;
   gap: 8px;
+  justify-items: center;
+  text-align: center;
   justify-self: center;
   width: min(100%, 320px);
+}
+
+.war-summary-shell {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+  width: 100%;
+}
+
+.war-summary-label {
+  margin: 0;
+  color: #ffe6bf;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .war-summary-grid {
@@ -1314,6 +1333,14 @@ input[type="number"] {
   font-size: 0.76rem;
   font-weight: 700;
   text-align: center;
+}
+
+.war-summary-helper {
+  margin: 0;
+  color: rgba(255, 230, 191, 0.72);
+  font-size: 0.68rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .war-panel h3 {

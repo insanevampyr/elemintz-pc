@@ -109,24 +109,28 @@ function renderWarPileSummary(pileCards, opponentCardVariantImages, emphasize) {
   const normalizedCards = Array.isArray(pileCards) ? pileCards.map((card) => getCardElement(card)) : [];
 
   return `
-    <div class="war-summary-grid ${emphasize ? "is-emphasized" : ""}">
-      ${ELEMENT_ORDER.map((element) => {
-        const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
-        const variantMap = opponentCardVariantImages ?? null;
-        const classes = ["war-slot", `war-slot-${element}`];
+    <div class="war-summary-shell">
+      <p class="war-summary-label">Opponent Cards</p>
+      <div class="war-summary-grid ${emphasize ? "is-emphasized" : ""}">
+        ${ELEMENT_ORDER.map((element) => {
+          const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
+          const variantMap = opponentCardVariantImages ?? null;
+          const classes = ["war-slot", `war-slot-${element}`];
 
-        if (count === 0) {
-          classes.push("is-empty");
-        }
+          if (count === 0) {
+            classes.push("is-empty");
+          }
 
-        return `
-          <div class="${classes.join(" ")}" aria-label="WAR ${formatElement(element)} x${count}">
-            <span class="card-art war-slot-art" style="background-image: url('${getCardImage(element, variantMap)}')"></span>
-            <span class="war-slot-count-badge">x${count}</span>
-            <span class="war-slot-name">${formatElement(element)}</span>
-          </div>
-        `;
-      }).join("")}
+          return `
+            <div class="${classes.join(" ")}" aria-label="WAR ${formatElement(element)} x${count}">
+              <span class="card-art war-slot-art" style="background-image: url('${getCardImage(element, variantMap)}')"></span>
+              <span class="war-slot-count-badge">x${count}</span>
+              <span class="war-slot-name">${formatElement(element)}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+      <p class="war-summary-helper">WAR pile tracks committed cards.</p>
     </div>
   `;
 }

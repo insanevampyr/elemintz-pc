@@ -13434,6 +13434,8 @@ test("ui: WAR summary keeps zero-count slots visible and dimmed", () => {
     actions: { playCard: async () => {}, backToMenu: () => {} }
   });
 
+  assert.match(html, /Opponent Cards/);
+  assert.match(html, /WAR pile tracks committed cards\./);
   assert.match(html, /WAR Fire x2/);
   assert.match(html, /WAR Earth x1/);
   assert.match(html, /WAR Wind x0/);
@@ -15021,6 +15023,8 @@ test("ui: online play live board renders WAR visuals on the left using the autho
 
   assert.match(html, /match-status-panel online-play-status-panel has-center-result/);
   assert.match(html, /war-pile-inline online-war-pile-inline war-highlight/);
+  assert.match(html, /Opponent Cards/);
+  assert.match(html, /WAR pile tracks committed cards\./);
   assert.match(html, /WAR progression: 2 -> 4/);
   assert.match(html, /WAR Fire x2/);
   assert.match(html, /WAR Earth x1/);
