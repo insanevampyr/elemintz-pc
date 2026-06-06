@@ -7676,7 +7676,7 @@ test("ui: online authoritative opponent variants can drive the gameplay WAR trac
   assert.match(html, /assets\/customFire\.jpg/);
 });
 
-test("ui: online play screen renders the opponent variant showcase from authoritative room data without counts", () => {
+test("ui: online play screen removes the redundant opponent card style section while preserving the live match HUD", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "ABC123",
@@ -7761,25 +7761,11 @@ test("ui: online play screen renders the opponent variant showcase from authorit
     },
     actions: {}
   });
-  const opponentVariantTrackerMatch = html.match(/<section class="stack-sm" data-online-opponent-variant-tracker="true">[\s\S]*?<\/section>/);
-  const opponentVariantTrackerHtml = opponentVariantTrackerMatch?.[0] ?? "";
-
-  assert.match(html, /data-online-opponent-variant-tracker="true"/);
-  assert.match(html, /Opponent Card Style/);
-  assert.match(html, /assets\/cards\/fire_variant_ember\.png/);
-  assert.match(html, /assets\/cards\/water\.jpg/);
-  assert.match(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
-  assert.match(html, /assets\/cards\/wind_variant_sky_serpent\.png/);
-  assert.match(html, /Opponent Fire card style/);
-  assert.match(html, /Opponent Earth card style/);
-  assert.match(html, /Opponent Wind card style/);
-  assert.match(html, /Opponent Water card style/);
-  assert.ok(opponentVariantTrackerHtml);
-  assert.doesNotMatch(opponentVariantTrackerHtml, /war-slot-count-badge/);
-  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Fire x\d+/);
-  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Earth x\d+/);
-  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Wind x\d+/);
-  assert.doesNotMatch(opponentVariantTrackerHtml, /Opponent Water x\d+/);
+  assert.doesNotMatch(html, /data-online-opponent-variant-tracker="true"/);
+  assert.doesNotMatch(html, /Opponent Card Style/);
+  assert.match(html, /match-status-panel online-play-status-panel has-center-result/);
+  assert.match(html, /war-pile-inline online-war-pile-inline war-highlight/);
+  assert.match(html, /WAR Fire x\d+/);
 });
 
 test("ui: moved element card variants resolve from assets/cards", () => {
@@ -17917,7 +17903,7 @@ test("ui: online play screen renders war resolved result from player perspective
   assert.doesNotMatch(html, /Changed:<\/strong>/);
 });
 
-test("ui: online play center result opponent art matches the same authoritative variant source used by the opponent tracker", () => {
+test("ui: online play center result opponent art matches the same authoritative variant source used by the WAR visuals", () => {
   const hostResolvedIdentity = {
     slotLabel: "Host",
     username: "LocalUser",

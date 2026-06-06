@@ -477,28 +477,6 @@ function getCardBackRarity(cardBackId) {
   return normalizeCosmeticRarity(getCosmeticDefinition("cardBack", cardBackId)?.rarity ?? "Common");
 }
 
-function renderOnlineOpponentVariantTracker(opponentCardVariants) {
-  const opponentVariantImages = getVariantCardImages(opponentCardVariants ?? null);
-
-  return `
-    <section class="stack-sm" data-online-opponent-variant-tracker="true">
-      <h3 class="section-title">Opponent Card Style</h3>
-      <div class="online-waiting-preview-grid">
-        ${ELEMENT_ORDER.map((element) => `
-          <article class="online-waiting-preview-card" aria-label="Opponent ${formatElement(element)} variant">
-            <img
-              class="online-waiting-preview-art"
-              src="${getCardImage(element, opponentVariantImages)}"
-              alt="Opponent ${escapeHtml(formatElement(element))} card style"
-            />
-            <p class="online-waiting-preview-label">${escapeHtml(formatElement(element))}</p>
-          </article>
-        `).join("")}
-      </div>
-    </section>
-  `;
-}
-
 function renderOnlineWarPileSummary(pileCards, opponentCardVariants, emphasize) {
   const normalizedCards = Array.isArray(pileCards)
     ? pileCards.map((card) => String(card ?? "").trim().toLowerCase()).filter(Boolean)
@@ -719,7 +697,6 @@ function renderOnlineLiveBoard(
               ${renderHiddenHandSummary(boardView.remoteCount, boardView.remoteCardBack, remoteCardBackRarity)}
             </div>
           </div>
-          ${renderOnlineOpponentVariantTracker(boardView.opponentCardVariants)}
         </div>
       </article>
 
