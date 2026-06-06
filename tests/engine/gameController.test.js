@@ -106,6 +106,49 @@ function createAuthoritativePveStore({
   };
 }
 
+function createOnlineSoundState({
+  socketId = "guest-1",
+  sessionUsername = "SignedInUser",
+  roomOverrides = {},
+  latestRoundResult = null,
+  latestAuthoritativeRoundResult = null
+} = {}) {
+  return {
+    connectionStatus: "connected",
+    socketId,
+    session: {
+      authenticated: true,
+      username: sessionUsername
+    },
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      host: { socketId: "host-1", username: "HostUser" },
+      guest: { socketId: "guest-1", username: "SignedInUser" },
+      hostScore: 0,
+      guestScore: 0,
+      roundNumber: 2,
+      lastOutcomeType: "resolved",
+      warActive: false,
+      warDepth: 0,
+      warRounds: [],
+      roundHistory: [],
+      moveSync: {
+        hostSubmitted: true,
+        guestSubmitted: true,
+        submittedCount: 2,
+        bothSubmitted: true,
+        updatedAt: "2026-03-19T12:00:05.000Z"
+      },
+      ...roomOverrides
+    },
+    latestRoundResult,
+    latestAuthoritativeRoundResult,
+    lastError: null,
+    statusMessage: ""
+  };
+}
+
 function createUpdateSafetyController() {
   return new AppController({
     screenManager: { register: () => {}, show: () => {} },
@@ -6490,6 +6533,304 @@ test("appController: reveal sounds are mode-aware and war start only plays when 
     { type: "reveal", payload: { mode: MATCH_MODE.PVE, cards: ["fire"] } },
     { type: "play", key: "warStart" },
     { type: "reveal", payload: { mode: MATCH_MODE.LOCAL_PVP, cards: ["earth", "wind"] } }
+  ]);
+});
+
+test("appController: online play reveal uses only the local player's element sound and dedupes identical WAR-start updates", () => {
+  const calls = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {}
+  });
+
+  app.sound = {
+    playReveal: (payload) => calls.push({ type: "reveal", payload }),
+    play: (key) => calls.push({ type: "play", key }),
+    playRoundResolved: () => {},
+    playMatchComplete: () => {}
+  };
+  app.username = "SignedInUser";
+
+  const previousState = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 2,
+        lastOutcomeType: "",
+        warActive: false
+      }
+    })
+  );
+  const nextState = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 2,
+        lastOutcomeType: "war",
+        warActive: true,
+        warDepth: 1
+      },
+      latestAuthoritativeRoundResult: {
+        outcomeType: "war",
+        submittedCards: { host: "earth", guest: "fire" },
+        roundResult: {
+          hostMove: "earth",
+          guestMove: "fire",
+          hostResult: "war",
+          guestResult: "war",
+          outcomeType: "war",
+          roundNumber: 2
+        }
+      }
+    })
+  );
+
+  app.handleOnlinePlaySoundTransitions(previousState, nextState);
+  app.handleOnlinePlaySoundTransitions(nextState, nextState);
+
+  assert.deepEqual(calls, [
+    { type: "reveal", payload: { mode: MATCH_MODE.PVE, cards: ["fire"] } },
+    { type: "play", key: "warStart" }
+  ]);
+});
+
+test("appController: online play round outcome sounds match PvE baseline for win loss and WAR resolution", () => {
+  const calls = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {}
+  });
+
+  app.sound = {
+    playReveal: () => {},
+    play: () => {},
+    playRoundResolved: (payload) => calls.push(payload),
+    playMatchComplete: () => {}
+  };
+  app.username = "SignedInUser";
+
+  const basePrevious = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 1,
+        lastOutcomeType: ""
+      }
+    })
+  );
+
+  const nonWarWin = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 2,
+        hostScore: 0,
+        guestScore: 1,
+        lastOutcomeType: "resolved"
+      },
+      latestAuthoritativeRoundResult: {
+        outcomeType: "resolved",
+        submittedCards: { host: "fire", guest: "water" },
+        roundResult: {
+          hostMove: "fire",
+          guestMove: "water",
+          hostResult: "lose",
+          guestResult: "win",
+          outcomeType: "resolved",
+          roundNumber: 2
+        }
+      }
+    })
+  );
+  app.handleOnlinePlaySoundTransitions(basePrevious, nonWarWin);
+
+  const nonWarLoss = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 3,
+        hostScore: 1,
+        guestScore: 1,
+        lastOutcomeType: "resolved"
+      },
+      latestAuthoritativeRoundResult: {
+        outcomeType: "resolved",
+        submittedCards: { host: "earth", guest: "wind" },
+        roundResult: {
+          hostMove: "earth",
+          guestMove: "wind",
+          hostResult: "win",
+          guestResult: "lose",
+          outcomeType: "resolved",
+          roundNumber: 3
+        }
+      }
+    })
+  );
+  app.handleOnlinePlaySoundTransitions(nonWarWin, nonWarLoss);
+
+  const warLoss = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 4,
+        hostScore: 2,
+        guestScore: 1,
+        lastOutcomeType: "war_resolved"
+      },
+      latestAuthoritativeRoundResult: {
+        outcomeType: "war_resolved",
+        submittedCards: { host: "water", guest: "fire" },
+        roundResult: {
+          hostMove: "water",
+          guestMove: "fire",
+          hostResult: "win",
+          guestResult: "lose",
+          outcomeType: "war_resolved",
+          roundNumber: 4
+        }
+      }
+    })
+  );
+  app.handleOnlinePlaySoundTransitions(nonWarLoss, warLoss);
+
+  const warWin = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 5,
+        hostScore: 2,
+        guestScore: 2,
+        lastOutcomeType: "war_resolved"
+      },
+      latestAuthoritativeRoundResult: {
+        outcomeType: "war_resolved",
+        submittedCards: { host: "fire", guest: "water" },
+        roundResult: {
+          hostMove: "fire",
+          guestMove: "water",
+          hostResult: "lose",
+          guestResult: "win",
+          outcomeType: "war_resolved",
+          roundNumber: 5
+        }
+      }
+    })
+  );
+  app.handleOnlinePlaySoundTransitions(warLoss, warWin);
+
+  assert.deepEqual(calls, [
+    { mode: MATCH_MODE.PVE, round: { result: "p1", warClashes: 0 } },
+    { mode: MATCH_MODE.PVE, round: { result: "p2", warClashes: 0 } },
+    { mode: MATCH_MODE.PVE, round: { result: "p2", warClashes: 1 } },
+    { mode: MATCH_MODE.PVE, round: { result: "p1", warClashes: 1 } }
+  ]);
+});
+
+test("appController: online play match complete sounds map to local win loss and do not repeat on identical updates", () => {
+  const calls = [];
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: {}
+  });
+
+  app.sound = {
+    playReveal: () => {},
+    play: () => {},
+    playRoundResolved: () => {},
+    playMatchComplete: (payload) => calls.push(payload)
+  };
+  app.username = "SignedInUser";
+
+  const previousState = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 6,
+        hostScore: 2,
+        guestScore: 2,
+        matchComplete: false,
+        lastOutcomeType: "resolved"
+      }
+    })
+  );
+  const winState = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roundNumber: 7,
+        hostScore: 2,
+        guestScore: 3,
+        matchComplete: true,
+        winner: "guest",
+        winReason: "hand_exhaustion",
+        lastOutcomeType: "resolved"
+      },
+      latestAuthoritativeRoundResult: {
+        outcomeType: "resolved",
+        submittedCards: { host: "fire", guest: "water" },
+        roundResult: {
+          hostMove: "fire",
+          guestMove: "water",
+          hostResult: "lose",
+          guestResult: "win",
+          outcomeType: "resolved",
+          roundNumber: 7,
+          matchComplete: true
+        }
+      }
+    })
+  );
+
+  app.handleOnlinePlaySoundTransitions(previousState, winState);
+  app.handleOnlinePlaySoundTransitions(winState, winState);
+
+  const nextPrevious = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roomCode: "XYZ789",
+        host: { socketId: "host-2", username: "OtherHost" },
+        guest: { socketId: "guest-2", username: "SignedInUser" },
+        roundNumber: 4,
+        hostScore: 1,
+        guestScore: 1,
+        matchComplete: false,
+        lastOutcomeType: "resolved"
+      },
+      socketId: "guest-2"
+    })
+  );
+  const lossState = app.normalizeOnlinePlayState(
+    createOnlineSoundState({
+      roomOverrides: {
+        roomCode: "XYZ789",
+        host: { socketId: "host-2", username: "OtherHost" },
+        guest: { socketId: "guest-2", username: "SignedInUser" },
+        roundNumber: 5,
+        hostScore: 2,
+        guestScore: 1,
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        lastOutcomeType: "resolved"
+      },
+      socketId: "guest-2",
+      latestAuthoritativeRoundResult: {
+        outcomeType: "resolved",
+        submittedCards: { host: "earth", guest: "wind" },
+        roundResult: {
+          hostMove: "earth",
+          guestMove: "wind",
+          hostResult: "win",
+          guestResult: "lose",
+          outcomeType: "resolved",
+          roundNumber: 5,
+          matchComplete: true
+        }
+      }
+    })
+  );
+
+  app.handleOnlinePlaySoundTransitions(nextPrevious, lossState);
+  app.handleOnlinePlaySoundTransitions(lossState, lossState);
+
+  assert.deepEqual(calls, [
+    { mode: MATCH_MODE.PVE, match: { status: "completed", winner: "p1" } },
+    { mode: MATCH_MODE.PVE, match: { status: "completed", winner: "p2" } }
   ]);
 });
 

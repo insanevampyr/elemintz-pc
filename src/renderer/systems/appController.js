@@ -267,6 +267,13 @@ export class AppController {
     this.onlineReconnectUiTimerId = null;
     this.onlineTurnTimerUiId = null;
     this.onlineMoveSubmitPromise = null;
+    this.onlinePlaySoundState = {
+      roomCode: null,
+      revealKey: null,
+      warStartKey: null,
+      roundResolvedKey: null,
+      matchCompleteKey: null
+    };
     this.matchTaunts = [];
     this.matchTauntPanelOpen = false;
     this.matchTauntSequence = 0;
@@ -5531,6 +5538,7 @@ export class AppController {
       const nextState = this.normalizeOnlinePlayState(state);
       const previousAdminNoticeSignature = this.getAdminGrantNoticeSignature(previousState);
       this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+      this.handleOnlinePlaySoundTransitions(previousState, this.onlinePlayState);
       const nextAdminNoticeSignature = this.getAdminGrantNoticeSignature(this.onlinePlayState);
       const adminNoticeStateChanged = previousAdminNoticeSignature !== nextAdminNoticeSignature;
       const lostAuthenticatedSession =
@@ -6114,6 +6122,233 @@ export class AppController {
     }
 
     return playedReveal;
+  }
+
+  resetOnlinePlaySoundState(roomCode = null) {
+    this.onlinePlaySoundState = {
+      roomCode: roomCode ? String(roomCode).trim() : null,
+      revealKey: null,
+      warStartKey: null,
+      roundResolvedKey: null,
+      matchCompleteKey: null
+    };
+  }
+
+  getOnlineLocalRole(state = this.onlinePlayState) {
+    const room = state?.room ?? null;
+    if (!room) {
+      return null;
+    }
+
+    const activeSocketId = String(state?.socketId ?? this.onlinePlayState?.socketId ?? "").trim();
+    const activeUsername = String(state?.session?.username ?? this.username ?? "").trim();
+    const hostSocketId = String(room?.host?.socketId ?? "").trim();
+    const guestSocketId = String(room?.guest?.socketId ?? "").trim();
+    const hostUsername = String(room?.host?.username ?? "").trim();
+    const guestUsername = String(room?.guest?.username ?? "").trim();
+
+    if (activeSocketId && activeSocketId === hostSocketId) {
+      return "host";
+    }
+    if (activeSocketId && activeSocketId === guestSocketId) {
+      return "guest";
+    }
+    if (activeUsername && activeUsername === hostUsername) {
+      return "host";
+    }
+    if (activeUsername && activeUsername === guestUsername) {
+      return "guest";
+    }
+
+    return null;
+  }
+
+  buildOnlineSoundPerspective(state = this.onlinePlayState) {
+    const roomCode = String(state?.room?.roomCode ?? "").trim();
+    const battleResult = this.extractCompletedOnlineBattleLogResult(state);
+    const localRole = this.getOnlineLocalRole(state);
+    if (!roomCode || !battleResult || !localRole) {
+      return null;
+    }
+
+    const outcomeType = String(battleResult?.outcomeType ?? "").trim().toLowerCase();
+    const roundNumber = Number(battleResult?.roundNumber ?? 0) || 0;
+    const localMove = localRole === "host" ? battleResult?.hostMove ?? null : battleResult?.guestMove ?? null;
+    const localResult = localRole === "host" ? battleResult?.hostResult ?? null : battleResult?.guestResult ?? null;
+
+    return {
+      roomCode,
+      roundNumber,
+      outcomeType,
+      hostMove: battleResult?.hostMove ?? null,
+      guestMove: battleResult?.guestMove ?? null,
+      hostResult: battleResult?.hostResult ?? null,
+      guestResult: battleResult?.guestResult ?? null,
+      localRole,
+      localMove,
+      localResult,
+      matchComplete: Boolean(state?.room?.matchComplete ?? battleResult?.matchComplete),
+      winner: String(state?.room?.winner ?? "").trim().toLowerCase(),
+      hostScore: Math.max(0, Number(state?.room?.hostScore ?? 0) || 0),
+      guestScore: Math.max(0, Number(state?.room?.guestScore ?? 0) || 0),
+      winReason: String(state?.room?.winReason ?? "").trim().toLowerCase()
+    };
+  }
+
+  buildOnlineRoundSoundKey(perspective) {
+    if (!perspective?.roomCode || !perspective?.roundNumber || !perspective?.outcomeType) {
+      return null;
+    }
+
+    return [
+      perspective.roomCode,
+      perspective.roundNumber,
+      perspective.outcomeType,
+      perspective.hostMove ?? "",
+      perspective.guestMove ?? "",
+      perspective.hostResult ?? "",
+      perspective.guestResult ?? "",
+      perspective.hostScore,
+      perspective.guestScore
+    ].join("|");
+  }
+
+  buildOnlineWarStartSoundKey(perspective) {
+    if (perspective?.outcomeType !== "war" || !perspective?.roomCode || !perspective?.roundNumber) {
+      return null;
+    }
+
+    return [perspective.roomCode, perspective.roundNumber, "war_start"].join("|");
+  }
+
+  buildOnlineMatchCompleteSoundKey(perspective) {
+    if (!perspective?.matchComplete || !perspective?.winner || !perspective?.roomCode || !perspective?.roundNumber) {
+      return null;
+    }
+
+    return [
+      perspective.roomCode,
+      perspective.roundNumber,
+      perspective.winner,
+      perspective.hostScore,
+      perspective.guestScore,
+      perspective.winReason,
+      "match_complete"
+    ].join("|");
+  }
+
+  getOnlinePerspectiveMatchWinner(perspective) {
+    if (!perspective?.winner || !perspective?.localRole) {
+      return null;
+    }
+
+    if (perspective.winner === "host") {
+      return perspective.localRole === "host" ? "p1" : "p2";
+    }
+
+    if (perspective.winner === "guest") {
+      return perspective.localRole === "guest" ? "p1" : "p2";
+    }
+
+    return null;
+  }
+
+  handleOnlinePlaySoundTransitions(previousState, nextState) {
+    const previousRoomCode = String(previousState?.room?.roomCode ?? "").trim();
+    const nextRoomCode = String(nextState?.room?.roomCode ?? "").trim();
+
+    if (!nextRoomCode) {
+      if (previousRoomCode || this.onlinePlaySoundState.roomCode) {
+        this.resetOnlinePlaySoundState();
+      }
+      return;
+    }
+
+    const previousRoundNumber = Number(previousState?.room?.roundNumber ?? 0) || 0;
+    const nextRoundNumber = Number(nextState?.room?.roundNumber ?? 0) || 0;
+    const previousMatchComplete = Boolean(previousState?.room?.matchComplete);
+    const nextMatchComplete = Boolean(nextState?.room?.matchComplete);
+
+    if (this.onlinePlaySoundState.roomCode !== nextRoomCode) {
+      this.resetOnlinePlaySoundState(nextRoomCode);
+    }
+
+    if (
+      (previousRoomCode && nextRoomCode && previousRoomCode !== nextRoomCode) ||
+      (previousMatchComplete && !nextMatchComplete) ||
+      (previousRoundNumber > 0 && nextRoundNumber > 0 && nextRoundNumber < previousRoundNumber)
+    ) {
+      this.resetOnlinePlaySoundState(nextRoomCode);
+      if (previousRoomCode && previousRoomCode !== nextRoomCode) {
+        return;
+      }
+    }
+
+    if (!previousRoomCode || previousRoomCode !== nextRoomCode) {
+      return;
+    }
+
+    const nextPerspective = this.buildOnlineSoundPerspective(nextState);
+    if (!nextPerspective) {
+      return;
+    }
+
+    const previousPerspective = this.buildOnlineSoundPerspective(previousState);
+    const previousRoundKey = this.buildOnlineRoundSoundKey(previousPerspective);
+    const nextRoundKey = this.buildOnlineRoundSoundKey(nextPerspective);
+
+    if (nextRoundKey && nextRoundKey !== previousRoundKey && nextRoundKey !== this.onlinePlaySoundState.revealKey) {
+      this.sound.playReveal({
+        mode: MATCH_MODE.PVE,
+        cards: [nextPerspective.localMove].filter(Boolean)
+      });
+      this.onlinePlaySoundState.revealKey = nextRoundKey;
+    }
+
+    const warStartKey = this.buildOnlineWarStartSoundKey(nextPerspective);
+    if (
+      warStartKey &&
+      nextPerspective.outcomeType === "war" &&
+      previousPerspective?.outcomeType !== "war" &&
+      warStartKey !== this.onlinePlaySoundState.warStartKey
+    ) {
+      this.sound.play("warStart");
+      this.onlinePlaySoundState.warStartKey = warStartKey;
+    }
+
+    if (
+      nextRoundKey &&
+      nextRoundKey !== previousRoundKey &&
+      nextRoundKey !== this.onlinePlaySoundState.roundResolvedKey &&
+      ["resolved", "war_resolved"].includes(nextPerspective.outcomeType) &&
+      ["win", "lose"].includes(String(nextPerspective.localResult ?? "").trim().toLowerCase())
+    ) {
+      this.sound.playRoundResolved({
+        mode: MATCH_MODE.PVE,
+        round: {
+          result: nextPerspective.localResult === "win" ? "p1" : "p2",
+          warClashes: nextPerspective.outcomeType === "war_resolved" ? 1 : 0
+        }
+      });
+      this.onlinePlaySoundState.roundResolvedKey = nextRoundKey;
+    }
+
+    const matchCompleteKey = this.buildOnlineMatchCompleteSoundKey(nextPerspective);
+    const matchWinner = this.getOnlinePerspectiveMatchWinner(nextPerspective);
+    if (
+      matchCompleteKey &&
+      matchWinner &&
+      matchCompleteKey !== this.onlinePlaySoundState.matchCompleteKey
+    ) {
+      this.sound.playMatchComplete({
+        mode: MATCH_MODE.PVE,
+        match: {
+          status: "completed",
+          winner: matchWinner
+        }
+      });
+      this.onlinePlaySoundState.matchCompleteKey = matchCompleteKey;
+    }
   }
 
   buildResolutionPopupContent(result, mode = MATCH_MODE.PVE) {
