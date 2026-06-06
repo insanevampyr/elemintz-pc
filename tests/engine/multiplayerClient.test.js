@@ -31,6 +31,7 @@ function createMockRoom({ roomCode, host, guest = null, status = "waiting", visi
       guestReady: false
     },
     rewardSettlement: null,
+    matchTimer: null,
     hostHand: { fire: 2, water: 2, earth: 2, wind: 2 },
     guestHand: { fire: 2, water: 2, earth: 2, wind: 2 },
     warPot: { host: [], guest: [] },
@@ -55,6 +56,13 @@ function createAuthoritativeMatchState({
   currentRound = 1,
   activeStepId = `${matchId}:round:${currentRound}:step:round:warDepth:0`,
   lastResolvedOutcome = null,
+  matchTimer = {
+    active: true,
+    durationMs: 300000,
+    startedAt: "2026-05-07T12:00:00.000Z",
+    expiresAt: "2026-05-07T12:05:00.000Z",
+    remainingMs: 300000
+  },
   turnTimer = {
     active: false,
     stepId: activeStepId,
@@ -92,6 +100,7 @@ function createAuthoritativeMatchState({
     },
     matchStatus: "active",
     lastResolvedOutcome,
+    matchTimer,
     turnTimer,
     turnState: {
       waitingOn: ["host", "guest"],
@@ -3211,6 +3220,44 @@ test("multiplayer client: room snapshots preserve authoritative reward decisions
 
   assert.deepEqual(client.getState().room?.rewardSettlement?.decision, room.rewardSettlement.decision);
   assert.equal(client.getState().room?.rewardSettlement?.settlementKey, "ABC123:match:1");
+});
+
+test("multiplayer client: room snapshots preserve authoritative online match timer state for renderer display", async () => {
+  const client = new MultiplayerClient({
+    socketFactory: () => new FakeSocket(),
+    logger: { info: () => {}, error: () => {} },
+    persistSession: false
+  });
+
+  await client.connect();
+
+  const room = createMockRoom({
+    roomCode: "ABC123",
+    status: "full",
+    host: { socketId: "host-1", username: "HostPlayer" },
+    guest: { socketId: "guest-1", username: "GuestPlayer" }
+  });
+  room.matchTimer = {
+    active: true,
+    durationMs: 300000,
+    startedAt: "2026-05-07T12:00:00.000Z",
+    expiresAt: "2026-05-07T12:05:00.000Z",
+    remainingMs: 299000
+  };
+  room.serverMatchState = createAuthoritativeMatchState({
+    matchTimer: {
+      active: true,
+      durationMs: 300000,
+      startedAt: "2026-05-07T12:00:00.000Z",
+      expiresAt: "2026-05-07T12:05:00.000Z",
+      remainingMs: 299000
+    }
+  });
+
+  client.socket.serverEmit("room:update", room);
+
+  assert.deepEqual(client.getState().room?.matchTimer, room.matchTimer);
+  assert.deepEqual(client.getState().room?.serverMatchState?.matchTimer, room.serverMatchState.matchTimer);
 });
 
 test("app controller: online cosmetic helpers prefer authoritative server snapshot over stale local cosmetic state", () => {

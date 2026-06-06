@@ -3,7 +3,11 @@ import http from "node:http";
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 
-import { ONLINE_TURN_TIMER_DURATION_MS, createRoomStore } from "./rooms.js";
+import {
+  ONLINE_MATCH_TIMER_DURATION_MS,
+  ONLINE_TURN_TIMER_DURATION_MS,
+  createRoomStore
+} from "./rooms.js";
 import { createSessionStore } from "./sessionStore.js";
 import { createLocalMatchSessionStore } from "./localMatchSessions.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
@@ -17,6 +21,7 @@ const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
 const ROOM_CLEANUP_DELAY_MS = 30000;
 const ROOM_RECONNECT_TIMEOUT_MS = 60000;
+const ONLINE_MATCH_TIMER_DURATION_MS_DEFAULT = ONLINE_MATCH_TIMER_DURATION_MS;
 const ONLINE_TURN_TIMER_DURATION_MS_DEFAULT = ONLINE_TURN_TIMER_DURATION_MS;
 const MAX_SETTLED_USERNAME_LENGTH = 32;
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
@@ -691,6 +696,7 @@ export function createMultiplayerFoundation({
   roundResetDelayMs = ROUND_RESET_DELAY_MS,
   roomCleanupDelayMs = ROOM_CLEANUP_DELAY_MS,
   roomReconnectTimeoutMs = ROOM_RECONNECT_TIMEOUT_MS,
+  onlineMatchTimerDurationMs = ONLINE_MATCH_TIMER_DURATION_MS_DEFAULT,
   onlineTurnTimerDurationMs = ONLINE_TURN_TIMER_DURATION_MS_DEFAULT,
   disconnectTracker = null,
   rewardPersister = null,
@@ -719,6 +725,7 @@ export function createMultiplayerFoundation({
     }
   });
   const roomResetTimers = new Map();
+  const roomMatchTimers = new Map();
   const roomTurnTimers = new Map();
   const roomCleanupTimers = new Map();
   const roomReconnectTimers = new Map();
@@ -789,6 +796,20 @@ export function createMultiplayerFoundation({
     roomResetTimers.delete(roomCode);
   }
 
+  function clearMatchTimerSchedule(roomCode) {
+    if (!roomCode) {
+      return;
+    }
+
+    const existingTimer = roomMatchTimers.get(roomCode);
+    if (!existingTimer) {
+      return;
+    }
+
+    clearTimeout(existingTimer);
+    roomMatchTimers.delete(roomCode);
+  }
+
   function clearTurnTimerSchedule(roomCode) {
     if (!roomCode) {
       return;
@@ -811,6 +832,44 @@ export function createMultiplayerFoundation({
     });
   }
 
+  function clearRoomMatchTimer(roomCode, options = {}) {
+    clearMatchTimerSchedule(roomCode);
+    return roomStore.clearMatchTimer(roomCode, {
+      durationMs: onlineMatchTimerDurationMs,
+      ...options
+    });
+  }
+
+  async function handleRoomMatchTimerExpired(roomCode) {
+    clearRoundReset(roomCode);
+    clearMatchTimerSchedule(roomCode);
+    clearTurnTimerSchedule(roomCode);
+    clearRoomTurnTimer(roomCode);
+
+    const result = roomStore.expireMatchTimer(roomCode);
+    if (!result?.room) {
+      return;
+    }
+
+    if (!result.ok) {
+      io.to(result.room.roomCode).emit("room:update", result.room);
+      return;
+    }
+
+    if (result.room.matchComplete) {
+      result.room = await settleCompletedMatchRewards(result.room);
+      logMatchEvent(logger, "End", {
+        roomCode: result.room.roomCode,
+        winner: result.room.winner ?? "draw",
+        hostUsername: result.room.host?.username ?? null,
+        guestUsername: result.room.guest?.username ?? null,
+        winReason: result.room.winReason ?? null
+      });
+    }
+
+    io.to(result.room.roomCode).emit("room:update", result.room);
+  }
+
   async function handleRoomTurnTimerExpired(roomCode, expectedStepId) {
     clearTurnTimerSchedule(roomCode);
     const result = roomStore.expireTurnTimer(roomCode, { stepId: expectedStepId });
@@ -826,6 +885,7 @@ export function createMultiplayerFoundation({
     }
 
     if (result.room.matchComplete) {
+      clearRoomMatchTimer(result.room.roomCode);
       const settledRoom = await settleCompletedMatchRewards(result.room);
       result.room = settledRoom;
       logMatchEvent(logger, "End", {
@@ -877,6 +937,26 @@ export function createMultiplayerFoundation({
     }, delayMs);
     timerId.unref?.();
     roomTurnTimers.set(roomCode, timerId);
+    return activation.room;
+  }
+
+  function ensureRoomMatchTimer(roomCode) {
+    clearMatchTimerSchedule(roomCode);
+    const activation = roomStore.activateMatchTimer(roomCode, {
+      durationMs: onlineMatchTimerDurationMs
+    });
+
+    if (!activation?.ok || !activation.room?.serverMatchState?.matchTimer?.active) {
+      return activation?.room ?? null;
+    }
+
+    const matchTimer = activation.room.serverMatchState.matchTimer;
+    const delayMs = Math.max(0, Date.parse(matchTimer.expiresAt ?? "") - Date.now());
+    const timerId = setTimeout(() => {
+      void handleRoomMatchTimerExpired(roomCode);
+    }, delayMs);
+    timerId.unref?.();
+    roomMatchTimers.set(roomCode, timerId);
     return activation.room;
   }
 
@@ -1684,10 +1764,24 @@ export function createMultiplayerFoundation({
             clearWarState: result.room.lastOutcomeType === "war_resolved"
           });
         }
-        const roomWithTimer =
-          result.room.status === "full" && !result.room.matchComplete && !result.room.moveSync?.bothSubmitted
-            ? ensureRoomTurnTimer(result.room.roomCode) ?? result.room
-            : clearRoomTurnTimer(result.room.roomCode) ?? result.room;
+        let roomWithTimer = result.room;
+        if (result.room.status === "full" && !result.room.matchComplete) {
+          if (!result.room.moveSync?.bothSubmitted) {
+            ensureRoomTurnTimer(result.room.roomCode);
+          } else {
+            clearRoomTurnTimer(result.room.roomCode);
+          }
+          roomWithTimer =
+            ensureRoomMatchTimer(result.room.roomCode) ??
+            roomStore.getRoom(result.room.roomCode) ??
+            result.room;
+        } else {
+          clearRoomTurnTimer(result.room.roomCode);
+          roomWithTimer =
+            clearRoomMatchTimer(result.room.roomCode, {
+              preserveRemaining: result.room.status === "paused"
+            }) ?? result.room;
+        }
         socket.emit("room:joined", roomWithTimer);
         socket.to(roomWithTimer.roomCode).emit("room:update", roomWithTimer);
         logRoomEvent(logger, result.reconnected ? "Player rejoined room" : "Player joined room", {
@@ -2004,6 +2098,7 @@ export function createMultiplayerFoundation({
       }
 
       if (result.room?.matchComplete) {
+        clearRoomMatchTimer(result.room.roomCode);
         const settledRoom = await settleCompletedMatchRewards(result.room);
         result.room = settledRoom;
         logMatchEvent(logger, "End", {
@@ -2063,11 +2158,16 @@ export function createMultiplayerFoundation({
       }
 
       clearRoundReset(result.room.roomCode);
+      clearMatchTimerSchedule(result.room.roomCode);
       clearTurnTimerSchedule(result.room.roomCode);
-      const roomWithTimer =
-        result.room.status === "full" && !result.room.matchComplete
-          ? ensureRoomTurnTimer(result.room.roomCode) ?? result.room
-          : result.room;
+      let roomWithTimer = result.room;
+      if (result.room.status === "full" && !result.room.matchComplete) {
+        ensureRoomTurnTimer(result.room.roomCode);
+        roomWithTimer =
+          ensureRoomMatchTimer(result.room.roomCode) ??
+          roomStore.getRoom(result.room.roomCode) ??
+          result.room;
+      }
       io.to(roomWithTimer.roomCode).emit("room:update", roomWithTimer);
     });
 
@@ -3917,6 +4017,7 @@ export function createMultiplayerFoundation({
       sessionStore.disconnectSocket(socket.id);
       const roomResult = roomStore.removeSocket(socket.id);
       clearRoundReset(roomResult.removedRoomCode ?? roomResult.room?.roomCode ?? null);
+      clearMatchTimerSchedule(roomResult.removedRoomCode ?? roomResult.room?.roomCode ?? null);
       clearTurnTimerSchedule(roomResult.removedRoomCode ?? roomResult.room?.roomCode ?? null);
       void (async () => {
         let nextRoom = roomResult.room;
@@ -3998,6 +4099,9 @@ export function createMultiplayerFoundation({
       io.removeAllListeners();
       for (const roomCode of roomResetTimers.keys()) {
         clearRoundReset(roomCode);
+      }
+      for (const roomCode of roomMatchTimers.keys()) {
+        clearMatchTimerSchedule(roomCode);
       }
       for (const roomCode of roomTurnTimers.keys()) {
         clearTurnTimerSchedule(roomCode);

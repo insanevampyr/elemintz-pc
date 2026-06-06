@@ -54,6 +54,7 @@ const ROOM_TAUNT_HISTORY_LIMIT = 8;
 const MAX_USERNAME_LENGTH = 32;
 const MAX_COSMETIC_ID_LENGTH = 128;
 export const ONLINE_TURN_TIMER_DURATION_MS = 20000;
+export const ONLINE_MATCH_TIMER_DURATION_MS = 300000;
 const FATIGUE_MOVE_BLOCK_MESSAGE = "This Elemint must rest for 1 turn.";
 
 function normalizeRoomVisibility(value) {
@@ -696,6 +697,54 @@ function createInactiveTurnTimerState(stepId = null, durationMs = ONLINE_TURN_TI
   };
 }
 
+function normalizeMatchTimerDurationMs(value, fallback = ONLINE_MATCH_TIMER_DURATION_MS) {
+  return Math.max(0, safeRuntimeCount(value, fallback)) || fallback;
+}
+
+function createInactiveMatchTimerState(
+  durationMs = ONLINE_MATCH_TIMER_DURATION_MS,
+  remainingMs = durationMs
+) {
+  const safeDurationMs = normalizeMatchTimerDurationMs(durationMs);
+  const safeRemainingMs = Math.min(
+    safeDurationMs,
+    Math.max(0, safeRuntimeCount(remainingMs, safeDurationMs))
+  );
+
+  return {
+    active: false,
+    durationMs: safeDurationMs,
+    startedAt: null,
+    expiresAt: null,
+    remainingMs: safeRemainingMs
+  };
+}
+
+function getRemainingMatchTimerMs(matchTimer, nowMs = Date.now()) {
+  const safeDurationMs = normalizeMatchTimerDurationMs(matchTimer?.durationMs);
+  const expiresAtMs = Date.parse(matchTimer?.expiresAt ?? "");
+  if (Boolean(matchTimer?.active) && Number.isFinite(expiresAtMs)) {
+    return Math.min(safeDurationMs, Math.max(0, expiresAtMs - nowMs));
+  }
+
+  return Math.min(
+    safeDurationMs,
+    Math.max(0, safeRuntimeCount(matchTimer?.remainingMs, safeDurationMs))
+  );
+}
+
+function cloneMatchTimerState(matchTimer) {
+  const safeDurationMs = normalizeMatchTimerDurationMs(matchTimer?.durationMs);
+
+  return {
+    active: Boolean(matchTimer?.active),
+    durationMs: safeDurationMs,
+    startedAt: matchTimer?.startedAt ?? null,
+    expiresAt: matchTimer?.expiresAt ?? null,
+    remainingMs: getRemainingMatchTimerMs(matchTimer)
+  };
+}
+
 function cloneTurnTimerState(turnTimer, fallbackStepId = null) {
   const durationMs = Math.max(
     0,
@@ -716,11 +765,31 @@ function setRoomTurnTimer(room, turnTimer) {
   return room.turnTimer;
 }
 
+function setRoomMatchTimer(room, matchTimer) {
+  room.matchTimer = cloneMatchTimerState(matchTimer);
+  return room.matchTimer;
+}
+
 function clearRoomTurnTimer(room, {
   stepId = buildServerResolutionStepId(room),
   durationMs = room?.turnTimer?.durationMs ?? ONLINE_TURN_TIMER_DURATION_MS
 } = {}) {
   return setRoomTurnTimer(room, createInactiveTurnTimerState(stepId, durationMs));
+}
+
+function resetRoomMatchTimer(room, {
+  durationMs = room?.matchTimer?.durationMs ?? ONLINE_MATCH_TIMER_DURATION_MS
+} = {}) {
+  return setRoomMatchTimer(room, createInactiveMatchTimerState(durationMs, durationMs));
+}
+
+function pauseRoomMatchTimer(room, {
+  durationMs = room?.matchTimer?.durationMs ?? ONLINE_MATCH_TIMER_DURATION_MS,
+  nowMs = Date.now()
+} = {}) {
+  const safeDurationMs = normalizeMatchTimerDurationMs(durationMs);
+  const remainingMs = getRemainingMatchTimerMs(room?.matchTimer, nowMs);
+  return setRoomMatchTimer(room, createInactiveMatchTimerState(safeDurationMs, remainingMs));
 }
 
 function buildServerTurnState(room) {
@@ -893,6 +962,7 @@ function buildServerMatchState(room) {
     },
     matchStatus: deriveServerMatchStatus(room),
     lastResolvedOutcome: buildLastResolvedOutcome(room),
+    matchTimer: cloneMatchTimerState(room?.matchTimer),
     turnTimer: cloneTurnTimerState(room?.turnTimer, activeStepId),
     turnState
   };
@@ -1065,6 +1135,7 @@ function resetMatchState(room) {
   resetWarState(room);
   resetHandState(room);
   resetMoveState(room);
+  resetRoomMatchTimer(room);
   guards.lastCompletionSignature = null;
   syncServerMatchState(room);
 }
@@ -1137,6 +1208,7 @@ function pauseRoomForReconnect(room, {
   remainingSessionId = null,
   expiresAt = null
 } = {}) {
+  pauseRoomMatchTimer(room);
   room.status = "paused";
   room.disconnectState = {
     active: true,
@@ -1158,6 +1230,7 @@ function expireRoomAsNoContest(room) {
   room.matchComplete = false;
   room.winner = null;
   room.winReason = null;
+  resetRoomMatchTimer(room);
   resetRematchState(room);
   room.disconnectState = {
     active: true,
@@ -1423,6 +1496,7 @@ function forceCompleteRoomMatch(room, { winner = "draw", reason = "manual" } = {
   }
 
   resetMoveState(room);
+  resetRoomMatchTimer(room);
   room.matchComplete = true;
   room.winner = winner;
   room.winReason = reason;
@@ -1931,6 +2005,7 @@ function cloneRoom(room) {
     warDepth: room.warDepth,
     warRounds: room.warRounds.map((entry) => ({ ...entry })),
     roundHistory: room.roundHistory.map((entry) => ({ ...entry })),
+    matchTimer: cloneMatchTimerState(room.matchTimer),
     moveSync: cloneMoveState(room),
     serverMatchState: serverMatchState
       ? {
@@ -1955,6 +2030,9 @@ function cloneRoom(room) {
           activeStep: { ...(serverMatchState.activeStep ?? {}) },
           lastResolvedOutcome: serverMatchState.lastResolvedOutcome
             ? { ...serverMatchState.lastResolvedOutcome }
+            : null,
+          matchTimer: serverMatchState.matchTimer
+            ? { ...serverMatchState.matchTimer }
             : null,
           turnTimer: serverMatchState.turnTimer
             ? { ...serverMatchState.turnTimer }
@@ -2064,6 +2142,7 @@ export function createRoomStore({ random = Math.random } = {}) {
         ...createInitialWarState(),
         moves: createEmptyMoveState(),
         latestRoundResult: createEmptyRoundResult(),
+        matchTimer: createInactiveMatchTimerState(),
         turnTimer: createInactiveTurnTimerState()
       };
       syncServerMatchState(room);
@@ -2342,6 +2421,7 @@ export function createRoomStore({ random = Math.random } = {}) {
           };
           room.closingAt = null;
           resetMoveState(room);
+          resetRoomMatchTimer(room);
           return {
             removedRoomCode: null,
             room: cloneRoom(room)
@@ -2405,6 +2485,7 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
         room.closingAt = null;
         resetMoveState(room);
+        resetRoomMatchTimer(room);
       }
 
       if (!room.host && !room.guest) {
@@ -2515,6 +2596,81 @@ export function createRoomStore({ random = Math.random } = {}) {
       };
     },
 
+    activateMatchTimer(roomCodeInput, {
+      durationMs = ONLINE_MATCH_TIMER_DURATION_MS,
+      startedAt = new Date().toISOString()
+    } = {}) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return {
+          ok: false,
+          reason: "room_not_found",
+          room: null
+        };
+      }
+
+      const normalizedDurationMs = normalizeMatchTimerDurationMs(durationMs);
+      if (
+        room.status !== "full" ||
+        !room.host ||
+        !room.guest ||
+        !room.host.connected ||
+        !room.guest.connected ||
+        room.matchComplete ||
+        room.status === "paused" ||
+        room.status === "closing" ||
+        room.status === "expired"
+      ) {
+        pauseRoomMatchTimer(room, { durationMs: normalizedDurationMs });
+        syncServerMatchState(room);
+        return {
+          ok: false,
+          reason: "not_playable",
+          room: cloneRoom(room)
+        };
+      }
+
+      if (room.matchTimer?.active && room.matchTimer?.expiresAt) {
+        syncServerMatchState(room);
+        return {
+          ok: true,
+          reused: true,
+          room: cloneRoom(room)
+        };
+      }
+
+      const startedAtMs = Date.parse(startedAt);
+      const safeStartedAt = Number.isFinite(startedAtMs)
+        ? new Date(startedAtMs).toISOString()
+        : new Date().toISOString();
+      const remainingMs = Math.max(
+        0,
+        getRemainingMatchTimerMs(
+          {
+            ...room.matchTimer,
+            durationMs: normalizedDurationMs
+          },
+          Date.parse(safeStartedAt)
+        )
+      ) || normalizedDurationMs;
+
+      setRoomMatchTimer(room, {
+        active: true,
+        durationMs: normalizedDurationMs,
+        startedAt: safeStartedAt,
+        expiresAt: new Date(Date.parse(safeStartedAt) + remainingMs).toISOString(),
+        remainingMs
+      });
+      syncServerMatchState(room);
+
+      return {
+        ok: true,
+        reused: false,
+        room: cloneRoom(room)
+      };
+    },
+
     clearTurnTimer(roomCodeInput, {
       stepId = null,
       durationMs = ONLINE_TURN_TIMER_DURATION_MS
@@ -2529,6 +2685,25 @@ export function createRoomStore({ random = Math.random } = {}) {
         stepId: stepId ?? buildServerResolutionStepId(room),
         durationMs
       });
+      syncServerMatchState(room);
+      return cloneRoom(room);
+    },
+
+    clearMatchTimer(roomCodeInput, {
+      durationMs = ONLINE_MATCH_TIMER_DURATION_MS,
+      preserveRemaining = false
+    } = {}) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return null;
+      }
+
+      if (preserveRemaining) {
+        pauseRoomMatchTimer(room, { durationMs });
+      } else {
+        resetRoomMatchTimer(room, { durationMs });
+      }
       syncServerMatchState(room);
       return cloneRoom(room);
     },
@@ -2640,6 +2815,47 @@ export function createRoomStore({ random = Math.random } = {}) {
         room: cloneRoom(room),
         roundResult: responseRoundResult,
         autoPickedMoves
+      };
+    },
+
+    expireMatchTimer(roomCodeInput) {
+      const roomCode = sanitizeRoomCode(roomCodeInput);
+      const room = rooms.get(roomCode);
+      if (!room) {
+        return {
+          ok: false,
+          reason: "room_not_found",
+          room: null
+        };
+      }
+
+      if (
+        room.status !== "full" ||
+        !room.host ||
+        !room.guest ||
+        !room.host.connected ||
+        !room.guest.connected ||
+        room.matchComplete ||
+        room.status === "paused" ||
+        room.status === "closing" ||
+        room.status === "expired" ||
+        !room.matchTimer?.active
+      ) {
+        pauseRoomMatchTimer(room);
+        syncServerMatchState(room);
+        return {
+          ok: false,
+          reason: "stale_or_unavailable",
+          room: cloneRoom(room)
+        };
+      }
+
+      const snapshot = forceCompleteRoomMatchByCardCount(room, {
+        reason: "time_limit"
+      });
+      return {
+        ok: true,
+        room: snapshot
       };
     },
 

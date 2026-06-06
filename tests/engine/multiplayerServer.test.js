@@ -5815,6 +5815,13 @@ test("multiplayer rooms: room creation returns a short waiting room", async () =
       },
       matchStatus: "waiting",
       lastResolvedOutcome: null,
+      matchTimer: {
+        active: false,
+        durationMs: 300000,
+        startedAt: null,
+        expiresAt: null,
+        remainingMs: 300000
+      },
       turnTimer: {
         active: false,
         stepId: `${room.roomCode}:match:1:round:1:step:round:warDepth:0`,
@@ -5892,6 +5899,10 @@ test("multiplayer rooms: room join succeeds, notifies both players, and starts t
       bothSubmitted: false,
       updatedAt: null
     });
+    assert.equal(joinedRoom.matchTimer?.active, true);
+    assert.equal(joinedRoom.matchTimer?.durationMs, 300000);
+    assert.equal(joinedRoom.serverMatchState?.matchTimer?.active, true);
+    assert.equal(joinedRoom.serverMatchState?.matchTimer?.durationMs, 300000);
     assert.equal(joinedRoom.serverMatchState?.turnTimer?.active, true);
     assert.equal(
       joinedRoom.serverMatchState?.turnTimer?.stepId,
@@ -6019,6 +6030,13 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
       },
       matchStatus: "active",
       lastResolvedOutcome: null,
+      matchTimer: {
+        active: true,
+        durationMs: 300000,
+        startedAt: hostMoveSync.serverMatchState.matchTimer.startedAt,
+        expiresAt: hostMoveSync.serverMatchState.matchTimer.expiresAt,
+        remainingMs: hostMoveSync.serverMatchState.matchTimer.remainingMs
+      },
       turnTimer: {
         active: true,
         stepId: `${room.roomCode}:match:1:round:1:step:round:warDepth:0`,
@@ -6239,6 +6257,133 @@ test("multiplayer foundation: authoritative turn timer auto-picks both missing m
     guest?.disconnect();
     await foundation.stop();
   }
+});
+
+test("multiplayer rooms: match timer timeout uses the existing owned-card rule and resolves active WAR cleanly", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("host-match-timer-war");
+  const guest = createStoreSocket("guest-match-timer-war");
+
+  const created = store.createRoom(host, { username: "HostTimerWar" });
+  assert.equal(created.ok, true);
+  const joined = store.joinRoom(guest, created.room.roomCode, { username: "GuestTimerWar" });
+  assert.equal(joined.ok, true);
+
+  const activated = store.activateMatchTimer(created.room.roomCode, {
+    durationMs: 300000,
+    startedAt: "2026-05-07T12:00:00.000Z"
+  });
+  assert.equal(activated.ok, true);
+  assert.equal(activated.room.serverMatchState?.matchTimer?.active, true);
+
+  const firstHostMove = store.submitMove(host.id, "fire");
+  assert.equal(firstHostMove.ok, true);
+  const firstRound = store.submitMove(guest.id, "earth");
+  assert.equal(firstRound.ok, true);
+  assert.equal(firstRound.roundResult?.hostResult, "win");
+  assert.equal(firstRound.room.hostScore, 1);
+  assert.equal(firstRound.room.guestScore, 0);
+
+  const reset = store.resetRound(created.room.roomCode);
+  assert.equal(reset.matchComplete, false);
+
+  const warHostMove = store.submitMove(host.id, "fire");
+  assert.equal(warHostMove.ok, true);
+  const warRound = store.submitMove(guest.id, "fire");
+  assert.equal(warRound.ok, true);
+  assert.equal(warRound.roundResult?.outcomeType, "war");
+  assert.equal(warRound.room.warActive, true);
+  assert.deepEqual(warRound.room.warPot, {
+    host: ["fire"],
+    guest: ["fire"]
+  });
+
+  const expired = store.expireMatchTimer(created.room.roomCode);
+  assert.equal(expired.ok, true);
+  assert.equal(expired.room.matchComplete, true);
+  assert.equal(expired.room.winner, "host");
+  assert.equal(expired.room.winReason, "time_limit");
+  assert.equal(expired.room.warActive, false);
+  assert.deepEqual(expired.room.warPot, { host: [], guest: [] });
+  assert.equal(expired.room.matchTimer?.active, false);
+  assert.equal(expired.room.serverMatchState?.matchTimer?.active, false);
+  assert.equal(
+    getTotalOwnedCards(expired.room.hostHand, expired.room.warPot?.host),
+    9
+  );
+  assert.equal(
+    getTotalOwnedCards(expired.room.guestHand, expired.room.warPot?.guest),
+    7
+  );
+});
+
+test("multiplayer rooms: match timer timeout draws on tied owned-card counts and stays single-complete after manual completion", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("host-match-timer-draw");
+  const guest = createStoreSocket("guest-match-timer-draw");
+
+  const created = store.createRoom(host, { username: "HostTimerDraw" });
+  const joined = store.joinRoom(guest, created.room.roomCode, { username: "GuestTimerDraw" });
+  assert.equal(created.ok, true);
+  assert.equal(joined.ok, true);
+
+  const activated = store.activateMatchTimer(created.room.roomCode, {
+    durationMs: 300000,
+    startedAt: "2026-05-07T12:00:00.000Z"
+  });
+  assert.equal(activated.ok, true);
+
+  const expired = store.expireMatchTimer(created.room.roomCode);
+  assert.equal(expired.ok, true);
+  assert.equal(expired.room.matchComplete, true);
+  assert.equal(expired.room.winner, "draw");
+  assert.equal(expired.room.winReason, "time_limit");
+  assert.equal(expired.room.matchTimer?.active, false);
+
+  const afterCompletionExpiry = store.expireMatchTimer(created.room.roomCode);
+  assert.equal(afterCompletionExpiry.ok, false);
+  assert.equal(afterCompletionExpiry.reason, "stale_or_unavailable");
+  assert.equal(afterCompletionExpiry.room.matchComplete, true);
+  assert.equal(afterCompletionExpiry.room.winner, "draw");
+});
+
+test("multiplayer rooms: rematch resets the authoritative match timer to a fresh inactive 5-minute state", () => {
+  const store = createRoomStore({ random: () => 0 });
+  const host = createStoreSocket("host-match-timer-rematch");
+  const guest = createStoreSocket("guest-match-timer-rematch");
+
+  const created = store.createRoom(host, { username: "HostTimerRematch" });
+  const joined = store.joinRoom(guest, created.room.roomCode, { username: "GuestTimerRematch" });
+  assert.equal(created.ok, true);
+  assert.equal(joined.ok, true);
+
+  const activated = store.activateMatchTimer(created.room.roomCode, {
+    durationMs: 300000,
+    startedAt: "2026-05-07T12:00:00.000Z"
+  });
+  assert.equal(activated.ok, true);
+
+  const completed = store.completeMatch(host.id, {
+    winner: "host",
+    reason: "manual_test"
+  });
+  assert.equal(completed.ok, true);
+  assert.equal(completed.room.matchTimer?.active, false);
+
+  const firstReady = store.readyRematch(host.id);
+  assert.equal(firstReady.ok, true);
+  assert.equal(firstReady.rematchStarted, false);
+
+  const secondReady = store.readyRematch(guest.id);
+  assert.equal(secondReady.ok, true);
+  assert.equal(secondReady.rematchStarted, true);
+  assert.equal(secondReady.room.matchComplete, false);
+  assert.equal(secondReady.room.matchTimer?.active, false);
+  assert.equal(secondReady.room.matchTimer?.durationMs, 300000);
+  assert.equal(secondReady.room.matchTimer?.remainingMs, 300000);
+  assert.equal(secondReady.room.serverMatchState?.matchTimer?.active, false);
+  assert.equal(secondReady.room.serverMatchState?.matchTimer?.durationMs, 300000);
+  assert.equal(secondReady.room.serverMatchState?.matchTimer?.remainingMs, 300000);
 });
 
 test("multiplayer rooms: near-simultaneous and same-tick submits resolve one round exactly once", async () => {

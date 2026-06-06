@@ -1045,18 +1045,69 @@ export class AppController {
     };
   }
 
+  getOnlineMatchTimerViewState(state = this.onlinePlayState, now = Date.now()) {
+    const room = state?.room ?? null;
+    const matchTimer = room?.serverMatchState?.matchTimer ?? room?.matchTimer ?? null;
+
+    if (
+      String(state?.connectionStatus ?? "").trim().toLowerCase() !== "connected" ||
+      !room ||
+      room.status !== "full" ||
+      room.matchComplete ||
+      room.disconnectState?.active ||
+      !matchTimer?.active ||
+      !matchTimer?.expiresAt
+    ) {
+      return {
+        visible: false,
+        label: "",
+        lowTime: false
+      };
+    }
+
+    const expiresAtMs = Date.parse(matchTimer.expiresAt);
+    if (!Number.isFinite(expiresAtMs)) {
+      return {
+        visible: false,
+        label: "",
+        lowTime: false
+      };
+    }
+
+    const totalSecondsRemaining = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
+    const minutes = Math.floor(totalSecondsRemaining / 60);
+    const seconds = totalSecondsRemaining % 60;
+    return {
+      visible: true,
+      label: `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`,
+      lowTime: totalSecondsRemaining <= 60
+    };
+  }
+
   syncOnlineTurnTimerUi() {
-    const shell = globalThis.document?.querySelector?.("[data-online-turn-timer-shell='true']");
-    const label = globalThis.document?.querySelector?.("[data-online-turn-timer-label='true']");
-    if (!shell || !label) {
+    const turnShell = globalThis.document?.querySelector?.("[data-online-turn-timer-shell='true']");
+    const turnLabel = globalThis.document?.querySelector?.("[data-online-turn-timer-label='true']");
+    const matchShell = globalThis.document?.querySelector?.("[data-online-match-timer-shell='true']");
+    const matchLabel = globalThis.document?.querySelector?.("[data-online-match-timer-label='true']");
+    if ((!turnShell || !turnLabel) && (!matchShell || !matchLabel)) {
       return false;
     }
 
-    const timerView = this.getOnlineTurnTimerViewState();
-    shell.classList.toggle("is-hidden", !timerView.visible);
-    shell.classList.toggle("is-low-time", Boolean(timerView.lowTime && timerView.visible));
-    label.textContent = timerView.visible ? timerView.label : "";
-    return timerView.visible;
+    const turnTimerView = this.getOnlineTurnTimerViewState();
+    if (turnShell && turnLabel) {
+      turnShell.classList.toggle("is-hidden", !turnTimerView.visible);
+      turnShell.classList.toggle("is-low-time", Boolean(turnTimerView.lowTime && turnTimerView.visible));
+      turnLabel.textContent = turnTimerView.visible ? turnTimerView.label : "";
+    }
+
+    const matchTimerView = this.getOnlineMatchTimerViewState();
+    if (matchShell && matchLabel) {
+      matchShell.classList.toggle("is-hidden", !matchTimerView.visible);
+      matchShell.classList.toggle("is-low-time", Boolean(matchTimerView.lowTime && matchTimerView.visible));
+      matchLabel.textContent = matchTimerView.visible ? matchTimerView.label : "";
+    }
+
+    return turnTimerView.visible || matchTimerView.visible;
   }
 
   ensureOnlineTurnTimerUi() {
@@ -5583,6 +5634,7 @@ export class AppController {
     const tauntHud = this.getCurrentTauntHudState();
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
+      onlineMatchTimer: this.getOnlineMatchTimerViewState(),
       onlineTurnTimer: this.getOnlineTurnTimerViewState(),
       formattedErrorMessage: this.formatPlayerFacingMultiplayerError(this.onlinePlayState?.lastError, ""),
       onlineChallengeSummary: this.onlinePlayChallengeSummary,

@@ -18017,10 +18017,15 @@ test("ui: online play center result opponent art matches the same authoritative 
   assert.doesNotMatch(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
 });
 
-test("ui: online play screen renders a server-authoritative turn timer label in the status panel", () => {
+test("ui: online play screen renders a server-authoritative match timer above the board while keeping the turn timer in the status panel", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "ABC123",
+    onlineMatchTimer: {
+      visible: true,
+      label: "04:59",
+      lowTime: false
+    },
     onlineTurnTimer: {
       visible: true,
       label: "Time to choose: 20s",
@@ -18073,7 +18078,21 @@ test("ui: online play screen renders a server-authoritative turn timer label in 
           bothSubmitted: false,
           updatedAt: null
         },
+        matchTimer: {
+          active: true,
+          durationMs: 300000,
+          startedAt: "2026-05-07T12:00:00.000Z",
+          expiresAt: "2026-05-07T12:05:00.000Z",
+          remainingMs: 299000
+        },
         serverMatchState: {
+          matchTimer: {
+            active: true,
+            durationMs: 300000,
+            startedAt: "2026-05-07T12:00:00.000Z",
+            expiresAt: "2026-05-07T12:05:00.000Z",
+            remainingMs: 299000
+          },
           turnTimer: {
             active: true,
             stepId: "ABC123:match:1:round:1:step:round:warDepth:0",
@@ -18087,6 +18106,10 @@ test("ui: online play screen renders a server-authoritative turn timer label in 
     actions: {}
   });
 
+  assert.match(html, /Match Timer/);
+  assert.match(html, /04:59/);
+  assert.match(html, /data-online-match-timer-label="true"/);
+  assert.match(html, /data-online-match-timer-shell="true"/);
   assert.match(html, /Time to choose: 20s/);
   assert.match(html, /online-status-header-row/);
   assert.match(html, /data-online-turn-timer-label="true"/);

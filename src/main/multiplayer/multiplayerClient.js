@@ -81,6 +81,15 @@ function cloneServerMatchState(matchState) {
               guestMove: matchState.lastResolvedOutcome.guestMove ?? null
             }
           : null,
+        matchTimer: matchState.matchTimer
+          ? {
+              active: Boolean(matchState.matchTimer.active),
+              durationMs: Number(matchState.matchTimer.durationMs ?? 300000),
+              startedAt: matchState.matchTimer.startedAt ?? null,
+              expiresAt: matchState.matchTimer.expiresAt ?? null,
+              remainingMs: Number(matchState.matchTimer.remainingMs ?? 300000)
+            }
+          : null,
         turnTimer: matchState.turnTimer
           ? {
               active: Boolean(matchState.turnTimer.active),
@@ -404,6 +413,15 @@ function cloneRoom(room) {
         },
         rewardSettlement: room.rewardSettlement
           ? cloneRewardSettlement(room.rewardSettlement)
+          : null,
+        matchTimer: room.matchTimer
+          ? {
+              active: Boolean(room.matchTimer.active),
+              durationMs: Number(room.matchTimer.durationMs ?? 300000),
+              startedAt: room.matchTimer.startedAt ?? null,
+              expiresAt: room.matchTimer.expiresAt ?? null,
+              remainingMs: Number(room.matchTimer.remainingMs ?? 300000)
+            }
           : null,
         hostHand: { ...(room.hostHand ?? {}) },
         guestHand: { ...(room.guestHand ?? {}) },

@@ -651,7 +651,8 @@ function renderOnlineLiveBoard(
   matchStatus,
   moveSyncLabel,
   roomLifecycle,
-  onlineTurnTimer
+  onlineTurnTimer,
+  onlineMatchTimer
 ) {
   const battleResultView = boardView.battleResultView ?? null;
   const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
@@ -667,7 +668,19 @@ function renderOnlineLiveBoard(
   const warTriggered = Boolean(boardView.warActive);
 
   return `
-    <section class="grid game-grid online-play-live-grid">
+    <section class="online-play-live-board-stack">
+      <div
+        class="${`online-match-timer-shell ${onlineMatchTimer?.visible ? "" : "is-hidden"} ${onlineMatchTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
+        data-online-match-timer-shell="true"
+        aria-live="polite"
+      >
+        <span class="online-match-timer-label">Match Timer</span>
+        <span class="online-match-timer-value" data-online-match-timer-label="true">
+          ${escapeHtml(onlineMatchTimer?.visible ? onlineMatchTimer.label : "")}
+        </span>
+      </div>
+
+      <section class="grid game-grid online-play-live-grid">
       <article class="panel online-play-player-panel" style="background-image: url('${boardView.localIdentity.backgroundImage}')">
         <div class="online-play-player-panel-overlay">
           ${renderPlayerHeader(toPlayerDisplay(boardView.localIdentity), "Player", `(${boardView.localCount})`)}
@@ -731,6 +744,7 @@ function renderOnlineLiveBoard(
           ${roomLifecycle?.primaryLabel ? `<p class="round-status-line">${escapeHtml(roomLifecycle.primaryLabel)}</p>` : ""}
         </div>
       </article>
+      </section>
     </section>
   `;
 }
@@ -1217,6 +1231,7 @@ export const onlinePlayScreen = {
     const roomStateView = deriveRoomStateView(context);
     const battleResultView = deriveSharedBattleResultView(context);
     const connectionBanner = deriveConnectionBannerView(context);
+    const onlineMatchTimer = context.onlineMatchTimer ?? { visible: false, label: "", lowTime: false };
     const onlineTurnTimer = context.onlineTurnTimer ?? { visible: false, label: "", lowTime: false };
     const selectedVisibility =
       String(context.onlineCreateRoomVisibility ?? "").trim().toLowerCase() === "public"
@@ -1356,7 +1371,8 @@ export const onlinePlayScreen = {
                     matchStatus,
                     moveSyncLabel,
                     roomLifecycle,
-                    onlineTurnTimer
+                    onlineTurnTimer,
+                    onlineMatchTimer
                   )
                 : ""
             }
