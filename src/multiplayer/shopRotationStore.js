@@ -73,7 +73,8 @@ function buildCatalogIdMap() {
         type,
         id,
         storeHidden: Boolean(item?.storeHidden),
-        rotationOnly: Boolean(item?.rotationOnly)
+        rotationOnly: Boolean(item?.rotationOnly),
+        shopEligible: item?.shopEligible !== false
       });
     }
   }
@@ -102,6 +103,11 @@ function normalizeCosmeticIds(ids, logger, { reasonLabel = "cosmetic id" } = {})
 
     if (catalogEntry.storeHidden) {
       logger?.warn?.(`[ShopRotation] skipping storeHidden ${reasonLabel}`, { id });
+      continue;
+    }
+
+    if (!catalogEntry.shopEligible) {
+      logger?.warn?.(`[ShopRotation] skipping non-shop-eligible ${reasonLabel}`, { id });
       continue;
     }
 

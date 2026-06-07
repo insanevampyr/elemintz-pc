@@ -737,6 +737,16 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async getDailyElementChestStatus(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Daily Element Chest status.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] getDailyElementChestStatus -> ${safeUsername} (server)`);
+    return this.coordinator.getDailyElementChestStatus(safeUsername);
+  }
+
   async acknowledgeMilestoneChestReward({ username, level = null }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -786,6 +796,25 @@ export class MultiplayerProfileAuthority {
     const result = await this.coordinator.openChest({
       username: safeUsername,
       chestType
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async openDailyElementChest({ username, openType }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Daily Element Chest opening.");
+    }
+
+    this.logger.info?.(
+      `[ProfileAuthority] openDailyElementChest -> ${safeUsername} (${String(openType ?? "free")})`
+    );
+    const result = await this.coordinator.openDailyElementChest({
+      username: safeUsername,
+      openType
     });
     return {
       ...result,

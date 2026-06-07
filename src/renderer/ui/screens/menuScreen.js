@@ -1,4 +1,5 @@
 import { getAssetPath } from "../../utils/dom.js";
+import { renderDailyElementChestMiniCard } from "./dailyElementChestScreen.js";
 
 const MENU_TILE_IMAGE_MAP = Object.freeze({
   "start-pve-btn": "menu_tiles/tile_play_ai.png",
@@ -369,6 +370,9 @@ export const menuScreen = {
                 <div data-menu-daily-login-panel="true">
                   ${renderMenuDailyLoginStatus(context.dailyChallenges?.dailyLogin)}
                 </div>
+                <div data-menu-daily-element-chest-panel="true">
+                  ${renderDailyElementChestMiniCard(context.dailyElementChest)}
+                </div>
                 <div class="menu-challenges-heading">
                   <h3 class="section-title">Challenges</h3>
                 </div>
@@ -406,6 +410,9 @@ export const menuScreen = {
     document.getElementById("how-to-play-btn").addEventListener("click", context.actions.openHowToPlay);
     document.getElementById("feedback-btn").addEventListener("click", context.actions.openFeedback);
     document.getElementById("logout-btn").addEventListener("click", context.actions.logout);
+    document
+      .getElementById("open-daily-element-chest-btn")
+      ?.addEventListener("click", context.actions.openDailyElementChest);
     const dismissAnnouncementButton = document.getElementById("dismiss-announcement-btn");
     if (dismissAnnouncementButton) {
       dismissAnnouncementButton.addEventListener("click", () =>

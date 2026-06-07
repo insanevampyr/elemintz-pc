@@ -46,6 +46,10 @@ import {
   getDailyResetWindow
 } from "./dailyChallengesSystem.js";
 import {
+  getDailyElementChestStatus,
+  openDailyElementChest
+} from "./dailyElementChestSystem.js";
+import {
   applyLevelRewardsForLevelChange,
   applyXpWithMaxLevelFallback,
   deriveLevelFromXp,
@@ -1609,6 +1613,11 @@ export class StateCoordinator {
     return getStoreViewForProfile(profile);
   }
 
+  async getDailyElementChestStatus(username, nowMs = Date.now()) {
+    const profile = await this.profiles.ensureProfile(username);
+    return getDailyElementChestStatus(profile, nowMs);
+  }
+
   async acknowledgeAnnouncement({ username, key }) {
     const safeKey = String(key ?? "").trim();
     if (!safeKey) {
@@ -1989,6 +1998,26 @@ export class StateCoordinator {
       levelBefore,
       levelAfter,
       levelRewards
+    };
+  }
+
+  async openDailyElementChest({ username, openType = "free", nowMs = Date.now() }) {
+    let openResult = null;
+
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      openResult = openDailyElementChest(current, {
+        openType,
+        nowMs,
+        random: this.random
+      });
+      return openResult.profile;
+    });
+
+    return {
+      ...openResult,
+      profile,
+      dailyElementChest: profile.dailyElementChest,
+      status: getDailyElementChestStatus(profile, nowMs)
     };
   }
 

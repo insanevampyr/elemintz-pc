@@ -17,6 +17,9 @@ import {
 } from "../ui/screens/index.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature } from "../ui/screens/gameScreen.js";
 import { renderMenuChallengePreview, renderMenuDailyLoginStatus } from "../ui/screens/menuScreen.js";
+import {
+  renderDailyElementChestModalBody
+} from "../ui/screens/dailyElementChestScreen.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../utils/assets.js";
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
@@ -106,6 +109,7 @@ const FEEDBACK_CATEGORIES = Object.freeze([
   "Other"
 ]);
 const FEEDBACK_MAX_MESSAGE_LENGTH = 2000;
+const DAILY_ELEMENT_CHEST_RESULT_VISIBILITY_MS = 1000;
 const PVE_AI_TAUNT_LINES = Object.freeze({
   match_start: Object.freeze(["👀 I saw that.", "😤 Not done yet.", "🔥 Burn it down!"]),
   player_win: Object.freeze(["💀 That hurt.", "😤 Not done yet.", "💀 I don’t fold."]),
@@ -287,6 +291,14 @@ export class AppController {
     this.menuAnnouncementRefreshPromise = null;
     this.menuBoostEvent = null;
     this.menuBoostEventRefreshPromise = null;
+    this.dailyElementChestStatus = null;
+    this.dailyElementChestStatusRefreshPromise = null;
+    this.dailyElementChestOpenInFlight = false;
+    this.dailyElementChestPendingOpenType = null;
+    this.dailyElementChestLastResult = null;
+    this.dailyElementChestResultVisualActive = false;
+    this.dailyElementChestResultVisualTimeoutId = null;
+    this.dailyElementChestUiError = "";
     this.tauntRandom = Math.random;
     this.gauntletRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
@@ -2104,12 +2116,14 @@ export class AppController {
             }
           }
         : null,
+      dailyElementChest: this.buildDailyElementChestMenuView(),
       actions: {
         startPveGame: () => this.showAiDifficultySelect(),
         startLocalGame: () => this.showLocalSetup(),
         openOnlinePlay: async () => this.showOnlinePlay(),
         openProfile: async () => this.showProfile(),
         openAchievements: async () => this.showAchievements(),
+        openDailyElementChest: async () => this.showDailyElementChestModal(),
         openDailyChallenges: async () => this.showDailyChallenges(),
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
@@ -2122,6 +2136,228 @@ export class AppController {
         logout: async () => this.logoutToLogin({ noticeMessage: "Signed out." })
       }
     });
+  }
+
+  hasDailyElementChestApiAccess() {
+    return Boolean(
+      this.username &&
+      globalThis.window?.elemintz?.multiplayer?.getDailyElementChestStatus &&
+      globalThis.window?.elemintz?.multiplayer?.openDailyElementChest
+    );
+  }
+
+  formatDailyElementChestCountdown(nextFreeResetAt) {
+    const expiresAtMs = Date.parse(String(nextFreeResetAt ?? "").trim());
+    if (!Number.isFinite(expiresAtMs)) {
+      return "--";
+    }
+
+    const remainingMs = Math.max(0, expiresAtMs - Date.now());
+    const totalMinutes = Math.ceil(remainingMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  }
+
+  buildDailyElementChestMenuView() {
+    if (!this.hasDailyElementChestApiAccess()) {
+      return {
+        loading: false,
+        canOpenFree: false,
+        nextFreeLabel: "--",
+        paidOpenCost: 100
+      };
+    }
+
+    if (!this.dailyElementChestStatus) {
+      return {
+        loading: true,
+        canOpenFree: false,
+        nextFreeLabel: "--",
+        paidOpenCost: 100
+      };
+    }
+
+    return {
+      loading: false,
+      canOpenFree: this.dailyElementChestStatus.canOpenFree === true,
+      nextFreeLabel: this.formatDailyElementChestCountdown(this.dailyElementChestStatus.nextFreeResetAt),
+      paidOpenCost: this.dailyElementChestStatus.paidOpenCost ?? 100
+    };
+  }
+
+  buildDailyElementChestModalView() {
+    const status = this.dailyElementChestStatus ?? null;
+    const pity = status?.pity ?? status?.dailyElementChest?.pity ?? {};
+    const epicProgress = Math.min(10, Math.max(0, Number(pity.opensSinceEpicPlus ?? 0) || 0));
+    const legendaryProgress = Math.min(30, Math.max(0, Number(pity.opensSinceLegendary ?? 0) || 0));
+    const result = this.dailyElementChestLastResult ?? null;
+    let resultDisplayName = "";
+    if (result?.cosmetic?.type && result?.cosmetic?.cosmeticId) {
+      resultDisplayName =
+        getCosmeticDisplayName(result.cosmetic.type, result.cosmetic.cosmeticId) ??
+        result.cosmetic.cosmeticId;
+    }
+
+    return {
+      loading: !status,
+      canOpenFree: status?.canOpenFree === true,
+      nextFreeLabel: this.formatDailyElementChestCountdown(status?.nextFreeResetAt),
+      paidOpenCost: status?.paidOpenCost ?? 100,
+      tokens: status?.tokens ?? this.profile?.tokens ?? 0,
+      odds: status?.odds ?? {},
+      poolSummary: status?.poolSummary ?? {},
+      collectionProgress: status?.collectionProgress ?? null,
+      epicProgressLabel: `${epicProgress} / 10`,
+      legendaryProgressLabel: `${legendaryProgress} / 30`,
+      openInFlight: this.dailyElementChestOpenInFlight,
+      pendingOpenType: this.dailyElementChestPendingOpenType,
+      result,
+      resultVisualActive: this.dailyElementChestResultVisualActive,
+      resultDisplayName,
+      errorMessage: this.dailyElementChestUiError
+    };
+  }
+
+  clearDailyElementChestResultVisualTimer() {
+    if (this.dailyElementChestResultVisualTimeoutId) {
+      clearTimeout(this.dailyElementChestResultVisualTimeoutId);
+      this.dailyElementChestResultVisualTimeoutId = null;
+    }
+  }
+
+  setDailyElementChestResultVisualActive(active) {
+    this.clearDailyElementChestResultVisualTimer();
+    this.dailyElementChestResultVisualActive = active === true;
+  }
+
+  armDailyElementChestResultVisualState() {
+    this.setDailyElementChestResultVisualActive(true);
+    this.dailyElementChestResultVisualTimeoutId = setTimeout(() => {
+      this.dailyElementChestResultVisualTimeoutId = null;
+      this.dailyElementChestResultVisualActive = false;
+      if (this.isDailyElementChestModalOpen()) {
+        this.showDailyElementChestModal();
+      }
+    }, DAILY_ELEMENT_CHEST_RESULT_VISIBILITY_MS);
+  }
+
+  isDailyElementChestModalOpen() {
+    return Boolean(globalThis.document?.querySelector?.("[data-daily-element-chest-modal='true']"));
+  }
+
+  async refreshDailyElementChestStatus({ shouldRenderMenu = true, shouldRenderModal = true } = {}) {
+    if (!this.hasDailyElementChestApiAccess()) {
+      this.dailyElementChestStatus = null;
+      return null;
+    }
+
+    if (this.dailyElementChestStatusRefreshPromise) {
+      return this.dailyElementChestStatusRefreshPromise;
+    }
+
+    this.dailyElementChestStatusRefreshPromise = (async () => {
+      try {
+        const status = await window.elemintz.multiplayer.getDailyElementChestStatus({
+          username: this.username
+        });
+        this.dailyElementChestStatus = status ?? null;
+        if (shouldRenderMenu && this.screenFlow === "menu") {
+          this.renderMenuScreen();
+        }
+        if (shouldRenderModal && this.isDailyElementChestModalOpen()) {
+          this.showDailyElementChestModal();
+        }
+        return this.dailyElementChestStatus;
+      } catch (error) {
+        console.warn("[DailyElementChest][Renderer] failed to refresh status", {
+          username: this.username,
+          message: error?.message ?? String(error)
+        });
+        this.dailyElementChestStatus = null;
+        if (shouldRenderModal && this.isDailyElementChestModalOpen()) {
+          this.dailyElementChestUiError = String(error?.message ?? "Unable to load Daily EleMintz Chest status.");
+          this.showDailyElementChestModal();
+        }
+        return null;
+      } finally {
+        this.dailyElementChestStatusRefreshPromise = null;
+      }
+    })();
+
+    return this.dailyElementChestStatusRefreshPromise;
+  }
+
+  async openDailyElementChest(openType) {
+    if (this.dailyElementChestOpenInFlight || !this.hasDailyElementChestApiAccess()) {
+      return;
+    }
+
+    this.dailyElementChestOpenInFlight = true;
+    this.dailyElementChestPendingOpenType = openType;
+    this.dailyElementChestUiError = "";
+    this.setDailyElementChestResultVisualActive(false);
+    this.showDailyElementChestModal();
+
+    try {
+      const result = await window.elemintz.multiplayer.openDailyElementChest({
+        username: this.username,
+        openType
+      });
+      if (result?.snapshot) {
+        this.applyServerProfileSnapshot(result.snapshot, {
+          fallbackProfile: result?.profile ?? this.profile ?? null
+        });
+      } else if (result?.profile) {
+        this.profile = result.profile;
+      }
+
+      this.dailyElementChestLastResult = result ?? null;
+      this.armDailyElementChestResultVisualState();
+      this.dailyElementChestStatus = result?.status ?? this.dailyElementChestStatus;
+      if (!this.dailyElementChestStatus) {
+        await this.refreshDailyElementChestStatus({
+          shouldRenderMenu: false,
+          shouldRenderModal: false
+        });
+      }
+
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+    } catch (error) {
+      this.dailyElementChestUiError = String(error?.message ?? "Unable to open Daily EleMintz Chest.");
+      await this.refreshDailyElementChestStatus({
+        shouldRenderMenu: false,
+        shouldRenderModal: false
+      });
+    } finally {
+      this.dailyElementChestOpenInFlight = false;
+      this.dailyElementChestPendingOpenType = null;
+      this.showDailyElementChestModal();
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+    }
+  }
+
+  showDailyElementChestModal() {
+    const modalView = this.buildDailyElementChestModalView();
+    this.modalManager.show({
+      title: "Daily EleMintz Chest",
+      bodyHtml: renderDailyElementChestModalBody(modalView),
+      actions: [{ label: "Close", onClick: () => this.modalManager.hide() }],
+      modalClassName: "daily-element-chest-modal-shell"
+    });
+
+    const freeOpenButton = globalThis.document?.getElementById?.("daily-chest-free-open-btn") ?? null;
+    const paidOpenButton = globalThis.document?.getElementById?.("daily-chest-paid-open-btn") ?? null;
+    freeOpenButton?.addEventListener("click", async () => this.openDailyElementChest("free"));
+    paidOpenButton?.addEventListener("click", async () => this.openDailyElementChest("paid"));
+
+    if (!this.dailyElementChestStatus && this.hasDailyElementChestApiAccess() && !this.dailyElementChestStatusRefreshPromise) {
+      void this.refreshDailyElementChestStatus();
+    }
   }
 
   async refreshMenuAnnouncement() {
@@ -2446,6 +2682,12 @@ export class AppController {
     this.profile = null;
     this.lastAuthoritativeOwnProfile = null;
     this.dailyChallenges = null;
+    this.dailyElementChestStatus = null;
+    this.dailyElementChestLastResult = null;
+    this.setDailyElementChestResultVisualActive(false);
+    this.dailyElementChestUiError = "";
+    this.dailyElementChestOpenInFlight = false;
+    this.dailyElementChestPendingOpenType = null;
     this.menuBoostEvent = null;
     this.localPlayers = null;
     this.localProfiles = null;
@@ -7039,6 +7281,7 @@ export class AppController {
     if (!skipInitialDailyChallengesRefresh) {
       this.refreshDailyChallengesForMenu();
     }
+    this.refreshDailyElementChestStatus();
     this.refreshMenuAnnouncement();
     this.refreshMenuBoostEvent();
     Promise.resolve().then(() => this.releaseQueuedAdminGrantNotice(this.onlinePlayState));

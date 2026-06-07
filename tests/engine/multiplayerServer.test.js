@@ -4657,6 +4657,123 @@ test("multiplayer foundation: server-authoritative daily login claim grants once
   }
 });
 
+test("multiplayer foundation: Daily Element Chest status and opening use the authenticated authoritative route", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    random: () => 0
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("DailyChestAuthorityUser", (current) => ({
+      ...current,
+      tokens: 500,
+      chests: {
+        ...(current?.chests ?? {}),
+        basic: 2,
+        milestone: 1,
+        epic: 1,
+        legendary: 1
+      }
+    }));
+
+    const beforeProfile = await coordinator.profiles.getProfile("DailyChestAuthorityUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "DailyChestAuthorityUser");
+    assert.equal(session?.ok, true);
+
+    const status = await new Promise((resolve) => {
+      client.emit("profile:getDailyElementChestStatus", {}, resolve);
+    });
+    const opened = await new Promise((resolve) => {
+      client.emit("profile:openDailyElementChest", { openType: "paid" }, resolve);
+    });
+    const profileAfterOpen = await coordinator.profiles.getProfile("DailyChestAuthorityUser");
+
+    assert.equal(status?.ok, true);
+    assert.equal(status?.result?.canOpenFree, true);
+    assert.equal(status?.result?.paidOpenCost, 100);
+    assert.equal(status?.result?.collectionProgress?.totalAvailable, 12);
+    assert.equal(status?.result?.collectionProgress?.byRarity?.common?.total, 3);
+
+    assert.equal(opened?.ok, true);
+    assert.equal(opened?.result?.source, "daily_element_chest");
+    assert.equal(opened?.result?.openType, "paid");
+    assert.equal(opened?.result?.rarity, "common");
+    assert.equal(opened?.result?.cosmetic?.cosmeticId, "title_first_light");
+    assert.equal(opened?.result?.status?.paidOpenCost, 100);
+    assert.equal(opened?.result?.status?.collectionProgress?.totalOwned, 1);
+    assert.equal(opened?.result?.status?.collectionProgress?.byRarity?.common?.owned, 1);
+    assert.equal(profileAfterOpen?.tokens, (beforeProfile?.tokens ?? 0) - 100);
+    assert.ok(profileAfterOpen?.ownedCosmetics?.title?.includes("title_first_light"));
+    assert.deepEqual(profileAfterOpen?.chests, beforeProfile?.chests);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: Daily Element Chest rejects invalid open types cleanly without mutating existing chest counts", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    await coordinator.profiles.updateProfile("DailyChestRejectUser", (current) => ({
+      ...current,
+      chests: {
+        ...(current?.chests ?? {}),
+        basic: 3,
+        milestone: 2,
+        epic: 1,
+        legendary: 4
+      }
+    }));
+
+    const beforeProfile = await coordinator.profiles.getProfile("DailyChestRejectUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "DailyChestRejectUser");
+    assert.equal(session?.ok, true);
+
+    const rejected = await new Promise((resolve) => {
+      client.emit("profile:openDailyElementChest", { openType: "bonus" }, resolve);
+    });
+    const profileAfterReject = await coordinator.profiles.getProfile("DailyChestRejectUser");
+
+    assert.equal(rejected?.ok, false);
+    assert.equal(rejected?.error?.code, "PROFILE_DAILY_CHEST_WRITE_FAILED");
+    assert.match(rejected?.error?.message ?? "", /openType/i);
+    assert.deepEqual(profileAfterReject?.chests, beforeProfile?.chests);
+    assert.deepEqual(profileAfterReject?.dailyElementChest, beforeProfile?.dailyElementChest);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: authoritative milestone reward acknowledgement clears the pending level server-side", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

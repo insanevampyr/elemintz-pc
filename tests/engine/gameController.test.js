@@ -4571,6 +4571,305 @@ test("appController: feedback submission failure shows a readable error modal", 
   }
 });
 
+test("appController: Daily EleMintz Chest modal wires free and paid opens through the multiplayer bridge", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const modalCalls = [];
+  const openCalls = [];
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  const elements = {
+    "daily-chest-free-open-btn": createFakeDomElement(),
+    "daily-chest-paid-open-btn": createFakeDomElement()
+  };
+  const modalRoot = createFakeDomElement();
+
+  globalThis.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelector: (selector) =>
+      selector === "[data-daily-element-chest-modal='true']" ? modalRoot : null
+  };
+
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        getDailyElementChestStatus: async () => ({
+          canOpenFree: true,
+          nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+          paidOpenCost: 100,
+          tokens: 250,
+          pity: { opensSinceEpicPlus: 0, opensSinceLegendary: 0 },
+          odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+          poolSummary: { common: [], rare: [], epic: [], legendary: [] }
+        }),
+        openDailyElementChest: async ({ openType }) => {
+          openCalls.push(openType);
+          return {
+            openType,
+            rarity: "common",
+            profile: {
+              username: "ChestUser",
+              tokens: openType === "paid" ? 150 : 250,
+              playerXP: 0,
+              playerLevel: 1,
+              equippedCosmetics: {}
+            },
+            status: {
+              canOpenFree: false,
+              nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+              paidOpenCost: 100,
+              tokens: openType === "paid" ? 150 : 250,
+              pity: { opensSinceEpicPlus: 1, opensSinceLegendary: 1 },
+              odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+              poolSummary: { common: [], rare: [], epic: [], legendary: [] }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "ChestUser";
+    app.dailyElementChestStatus = {
+      canOpenFree: true,
+      nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+      paidOpenCost: 100,
+      tokens: 250,
+      pity: { opensSinceEpicPlus: 0, opensSinceLegendary: 0 },
+      odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+      poolSummary: { common: [], rare: [], epic: [], legendary: [] }
+    };
+
+    app.showDailyElementChestModal();
+    await elements["daily-chest-free-open-btn"].listeners.get("click")?.();
+    await elements["daily-chest-paid-open-btn"].listeners.get("click")?.();
+
+    assert.deepEqual(openCalls, ["free", "paid"]);
+    assert.equal(modalCalls.at(0)?.title, "Daily EleMintz Chest");
+    assert.match(modalCalls.at(0)?.bodyHtml ?? "", /icons\/daily_chest\.png/);
+    assert.doesNotMatch(modalCalls.at(0)?.bodyHtml ?? "", /Using the existing chest icon placeholder/);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  }
+});
+
+test("appController: Daily EleMintz Chest suppresses duplicate opens while one request is in flight", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const openCalls = [];
+  let resolveOpen;
+
+  const pendingOpen = new Promise((resolve) => {
+    resolveOpen = resolve;
+  });
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  const elements = {
+    "daily-chest-free-open-btn": createFakeDomElement(),
+    "daily-chest-paid-open-btn": createFakeDomElement()
+  };
+  const modalRoot = createFakeDomElement();
+
+  globalThis.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelector: (selector) =>
+      selector === "[data-daily-element-chest-modal='true']" ? modalRoot : null
+  };
+
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        getDailyElementChestStatus: async () => ({
+          canOpenFree: true,
+          nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+          paidOpenCost: 100,
+          tokens: 250,
+          pity: { opensSinceEpicPlus: 0, opensSinceLegendary: 0 },
+          odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+          poolSummary: { common: [], rare: [], epic: [], legendary: [] }
+        }),
+        openDailyElementChest: async ({ openType }) => {
+          openCalls.push(openType);
+          await pendingOpen;
+          return {
+            openType,
+            rarity: "common",
+            profile: {
+              username: "ChestUser",
+              tokens: 250,
+              playerXP: 0,
+              playerLevel: 1,
+              equippedCosmetics: {}
+            },
+            status: {
+              canOpenFree: false,
+              nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+              paidOpenCost: 100,
+              tokens: 250,
+              pity: { opensSinceEpicPlus: 1, opensSinceLegendary: 1 },
+              odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+              poolSummary: { common: [], rare: [], epic: [], legendary: [] }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "ChestUser";
+    app.dailyElementChestStatus = {
+      canOpenFree: true,
+      nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+      paidOpenCost: 100,
+      tokens: 250,
+      pity: { opensSinceEpicPlus: 0, opensSinceLegendary: 0 },
+      odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+      poolSummary: { common: [], rare: [], epic: [], legendary: [] }
+    };
+
+    app.showDailyElementChestModal();
+    const clickFree = elements["daily-chest-free-open-btn"].listeners.get("click");
+    const firstOpen = clickFree?.();
+    const secondOpen = clickFree?.();
+    await Promise.resolve();
+
+    assert.deepEqual(openCalls, ["free"]);
+    resolveOpen();
+    await firstOpen;
+    await secondOpen;
+    assert.equal(app.dailyElementChestOpenInFlight, false);
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  }
+});
+
+test("appController: Daily EleMintz Chest modal shows result details and readable open errors", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const modalCalls = [];
+  let openCount = 0;
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  const elements = {
+    "daily-chest-free-open-btn": createFakeDomElement(),
+    "daily-chest-paid-open-btn": createFakeDomElement()
+  };
+  const modalRoot = createFakeDomElement();
+
+  globalThis.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelector: (selector) =>
+      selector === "[data-daily-element-chest-modal='true']" ? modalRoot : null
+  };
+
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        getDailyElementChestStatus: async () => ({
+          canOpenFree: false,
+          nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+          paidOpenCost: 100,
+          tokens: 400,
+          pity: { opensSinceEpicPlus: 9, opensSinceLegendary: 29 },
+          odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+          poolSummary: {
+            common: [{ name: "First Light" }],
+            rare: [{ name: "Morning Sanctum" }],
+            epic: [{ name: "Daily Element Chest" }],
+            legendary: [{ name: "Element Chosen" }]
+          }
+        }),
+        openDailyElementChest: async () => {
+          openCount += 1;
+          if (openCount === 1) {
+            return {
+              openType: "paid",
+              rarity: "legendary",
+              duplicateConversion: { tokensGranted: 400 },
+              cosmetic: {
+                type: "elementCardVariant",
+                cosmeticId: "wind_variant_cloudcoil"
+              },
+              pityApplied: { epicPlus: false, legendary: true },
+              profile: {
+                username: "ChestUser",
+                tokens: 700,
+                playerXP: 0,
+                playerLevel: 1,
+                equippedCosmetics: {}
+              },
+              status: {
+                canOpenFree: false,
+                nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+                paidOpenCost: 100,
+                tokens: 700,
+                pity: { opensSinceEpicPlus: 0, opensSinceLegendary: 0 },
+                odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+                poolSummary: {
+                  common: [{ name: "First Light" }],
+                  rare: [{ name: "Morning Sanctum" }],
+                  epic: [{ name: "Daily Element Chest" }],
+                  legendary: [{ name: "Element Chosen" }]
+                }
+              }
+            };
+          }
+
+          throw new Error("Insufficient tokens for a Daily Element Chest open.");
+        }
+      }
+    }
+  };
+
+  try {
+    app.username = "ChestUser";
+    app.dailyElementChestStatus = await globalThis.window.elemintz.multiplayer.getDailyElementChestStatus();
+
+    app.showDailyElementChestModal();
+    await elements["daily-chest-paid-open-btn"].listeners.get("click")?.();
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Latest Result/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-daily-chest-rarity-class="legendary"/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Cloudcoil/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Duplicate Converted/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /\+400 Tokens/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Legendary pity activated/);
+
+    await elements["daily-chest-paid-open-btn"].listeners.get("click")?.();
+    assert.match(
+      modalCalls.at(-1)?.bodyHtml ?? "",
+      /Insufficient tokens for a Daily Element Chest open\./
+    );
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  }
+});
+
 test("appController: online settlement refresh prefers the multiplayer-authoritative profile snapshot", async () => {
   const originalWindow = globalThis.window;
   const calls = {

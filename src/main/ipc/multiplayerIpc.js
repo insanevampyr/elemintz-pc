@@ -124,6 +124,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.claimDailyLoginReward(payload);
   });
 
+  ipcMain.handle("multiplayer:getDailyElementChestStatus", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getDailyElementChestStatus(payload);
+  });
+
   ipcMain.handle("multiplayer:startLocalPveMatch", async (event, payload) => {
     subscribers.add(event.sender);
     return client.startLocalPveMatch(payload);
@@ -177,6 +182,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
   ipcMain.handle("multiplayer:openChest", async (event, payload) => {
     subscribers.add(event.sender);
     return client.openChest(payload);
+  });
+
+  ipcMain.handle("multiplayer:openDailyElementChest", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.openDailyElementChest(payload);
   });
 
   ipcMain.handle("multiplayer:confirmAdminGrantNotice", async (event, payload) => {

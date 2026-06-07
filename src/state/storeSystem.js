@@ -126,7 +126,7 @@ export function buildStoreCatalog(profile) {
   return Object.fromEntries(
     Object.entries(catalog).map(([type, items]) => [
       type,
-      items.filter((item) => !item.storeHidden && !item.rotationOnly)
+      items.filter((item) => !item.storeHidden && !item.rotationOnly && item.shopEligible !== false)
     ])
   );
 }
@@ -143,7 +143,12 @@ export function buildFeaturedRotationCatalog(profile, { allowLimitedCosmeticIds 
   return Object.fromEntries(
     Object.entries(catalog).map(([type, items]) => [
       type,
-      items.filter((item) => !item.storeHidden && (!item.rotationOnly || allowedLimitedIds.has(item.id)))
+      items.filter(
+        (item) =>
+          !item.storeHidden &&
+          item.shopEligible !== false &&
+          (!item.rotationOnly || allowedLimitedIds.has(item.id))
+      )
     ])
   );
 }

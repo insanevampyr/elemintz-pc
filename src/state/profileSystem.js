@@ -15,6 +15,7 @@ import {
   normalizeProfileCosmetics
 } from "./cosmeticSystem.js";
 import { applyLevelMilestoneChestGrants, normalizeProfileChests } from "./chestSystem.js";
+import { normalizeProfileDailyElementChest } from "./dailyElementChestSystem.js";
 import {
   applyMatchStatsToProfile,
   createDefaultProfile,
@@ -313,6 +314,7 @@ function validateAndRepairProfile(profile) {
       : defaults.acknowledgedLoadoutUnlockSlots
   );
   repairObjectSection("chests", defaults.chests);
+  repairObjectSection("dailyElementChest", defaults.dailyElementChest);
   repairObjectSection("milestoneChestGrantedLevels", defaults.milestoneChestGrantedLevels);
   repairObjectSection("legendaryChestGrantedLevels", defaults.legendaryChestGrantedLevels);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
@@ -544,6 +546,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
 
   let normalized = normalizeProfileDailyChallenges(
     normalizeProfileLevelRewards(
+      normalizeProfileDailyElementChest(
       normalizeProfileChests(
         normalizeProfileStore(
           normalizeProfileCosmetics({
@@ -553,6 +556,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
             onlineRewardSettlements: normalizedOnlineRewardSettlements
           })
         )
+      )
       )
     )
   );

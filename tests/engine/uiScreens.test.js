@@ -6,6 +6,10 @@ import { achievementsScreen } from "../../src/renderer/ui/screens/achievementsSc
 import { aiDifficultyScreen } from "../../src/renderer/ui/screens/aiDifficultyScreen.js";
 import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.js";
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
+import {
+  renderDailyElementChestMiniCard,
+  renderDailyElementChestModalBody
+} from "../../src/renderer/ui/screens/dailyElementChestScreen.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature, gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
 import { howToPlayScreen } from "../../src/renderer/ui/screens/howToPlayScreen.js";
 import { loginScreen } from "../../src/renderer/ui/screens/loginScreen.js";
@@ -11021,6 +11025,265 @@ test("ui: menu shows Daily Login section above the Challenges heading", () => {
   });
 
   assert.ok(html.indexOf("Daily Login Streak") < html.indexOf("<h3 class=\"section-title\">Challenges</h3>"));
+});
+
+test("ui: menu shows the Daily EleMintz Chest card between Daily Login and Challenges", () => {
+  const html = menuScreen.render({
+    username: "ChestUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    dailyElementChest: {
+      loading: false,
+      canOpenFree: true,
+      nextFreeLabel: "04h 59m",
+      paidOpenCost: 100
+    },
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: "Day 2 of 7",
+        resetLabel: "01:00"
+      },
+      daily: {
+        resetLabel: "01:00",
+        challenges: []
+      },
+      weekly: {
+        resetLabel: "2d 03:00",
+        challenges: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-menu-daily-element-chest-panel="true"/);
+  assert.match(html, /Daily EleMintz Chest/);
+  assert.match(html, /data-daily-chest-ready="true"/);
+  assert.ok(html.indexOf('data-menu-daily-login-panel="true"') < html.indexOf('data-menu-daily-element-chest-panel="true"'));
+  assert.ok(html.indexOf('data-menu-daily-element-chest-panel="true"') < html.indexOf('<h3 class="section-title">Challenges</h3>'));
+});
+
+test("ui: Daily EleMintz Chest renders cooldown mini-card and result modal states", () => {
+  const cardHtml = renderDailyElementChestMiniCard({
+    loading: false,
+    canOpenFree: false,
+    nextFreeLabel: "03h 12m",
+    paidOpenCost: 100
+  });
+  const modalHtml = renderDailyElementChestModalBody({
+    loading: false,
+    canOpenFree: false,
+    nextFreeLabel: "03h 12m",
+    paidOpenCost: 100,
+    tokens: 245,
+    odds: {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.01
+    },
+    poolSummary: {
+      common: [{ name: "First Light" }],
+      rare: [{ name: "Morning Sanctum" }],
+      epic: [{ name: "Daily Element Chest" }],
+      legendary: [{ name: "Element Chosen" }]
+    },
+    collectionProgress: {
+      totalOwned: 4,
+      totalAvailable: 12,
+      isComplete: false,
+      byRarity: {
+        common: { owned: 2, total: 3, isComplete: false },
+        rare: { owned: 1, total: 2, isComplete: false },
+        epic: { owned: 1, total: 5, isComplete: false },
+        legendary: { owned: 0, total: 2, isComplete: false }
+      },
+      items: {
+        common: [
+          { cosmeticId: "title_first_light", name: "First Light", owned: true },
+          { cosmeticId: "title_element_touched", name: "Element Touched", owned: false }
+        ],
+        rare: [{ cosmeticId: "background_morning_sanctum", name: "Morning Sanctum", owned: true }],
+        epic: [{ cosmeticId: "cardback_daily_element_chest", name: "Daily Element Chest", owned: false }],
+        legendary: [{ cosmeticId: "avatar_element_chosen", name: "Element Chosen", owned: false }]
+      }
+    },
+    epicProgressLabel: "9 / 10",
+    legendaryProgressLabel: "29 / 30",
+    resultVisualActive: true,
+    resultDisplayName: "Cloudcoil",
+    result: {
+      rarity: "legendary",
+      duplicateConversion: { tokensGranted: 400 },
+      pityApplied: { legendary: true }
+    },
+    errorMessage: "Insufficient tokens."
+  });
+
+  assert.match(cardHtml, /icons\/daily_chest\.png/);
+  assert.match(cardHtml, /onerror="this\.onerror=null;this\.src='[^']*loot_chest\.png';"/);
+  assert.match(cardHtml, /data-daily-chest-next-free="true"/);
+  assert.match(cardHtml, /Open for 100 Tokens/);
+  assert.match(modalHtml, /icons\/daily_chest_open\.png/);
+  assert.match(modalHtml, /onerror="this\.onerror=null;this\.src='[^']*loot_chest_open\.png';"/);
+  assert.match(modalHtml, /data-daily-chest-token-count="true">245</);
+  assert.match(modalHtml, /data-daily-chest-next-reset="true">Next free: 03h 12m</);
+  assert.match(modalHtml, /Epic\+ guarantee: 9 \/ 10/);
+  assert.match(modalHtml, /Legendary guarantee: 29 \/ 30/);
+  assert.match(modalHtml, /data-daily-chest-collection-summary="true">4 \/ 12 Collected</);
+  assert.match(modalHtml, /data-daily-chest-rarity-progress="common">Common 2\/3</);
+  assert.match(modalHtml, /data-daily-chest-rarity-progress="rare">Rare 1\/2</);
+  assert.match(modalHtml, /data-daily-chest-rarity-progress="epic">Epic 1\/5</);
+  assert.match(modalHtml, /data-daily-chest-rarity-progress="legendary">Legendary 0\/2</);
+  assert.match(modalHtml, /data-daily-chest-owned-state="owned"[\s\S]*?>[\s\S]*Owned/);
+  assert.match(modalHtml, /data-daily-chest-owned-state="missing"[\s\S]*?>[\s\S]*Missing/);
+  assert.match(modalHtml, /data-daily-chest-rarity-class="legendary"/);
+  assert.match(modalHtml, /data-daily-chest-rarity="legendary">LEGENDARY</);
+  assert.match(modalHtml, /data-daily-chest-hero-toast="true"/);
+  assert.match(modalHtml, /data-daily-chest-hero-rarity="legendary"/);
+  assert.match(modalHtml, /data-daily-chest-hero-rarity-label="legendary">LEGENDARY</);
+  assert.match(modalHtml, /data-daily-chest-hero-result-name="true">[\s\S]*<strong>New Reward:<\/strong>[\s\S]*<span>Cloudcoil<\/span>/);
+  assert.match(modalHtml, /data-daily-chest-hero-duplicate-result="true">[\s\S]*<strong>Duplicate Converted:<\/strong>[\s\S]*<span>\+400 Tokens<\/span>/);
+  assert.match(modalHtml, /data-daily-chest-hero-pity-result="legendary">Legendary pity activated!/);
+  assert.match(modalHtml, /data-daily-chest-result-name="true">[\s\S]*<strong>New Reward<\/strong>[\s\S]*<span>Cloudcoil<\/span>/);
+  assert.match(modalHtml, /data-daily-chest-duplicate-result="true">[\s\S]*<strong>Duplicate Converted<\/strong>[\s\S]*<span>\+400 Tokens<\/span>/);
+  assert.match(modalHtml, /data-daily-chest-pity-result="legendary"/);
+  assert.match(modalHtml, /data-daily-chest-error="true">Insufficient tokens\./);
+  assert.doesNotMatch(modalHtml, /Using the existing chest icon placeholder/);
+});
+
+test("ui: Daily EleMintz Chest keeps the open chest visible briefly for fresh result toasts", () => {
+  const html = renderDailyElementChestModalBody({
+    loading: false,
+    canOpenFree: false,
+    nextFreeLabel: "05h 00m",
+    paidOpenCost: 100,
+    tokens: 170,
+    odds: {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.01
+    },
+    poolSummary: {
+      common: [],
+      rare: [],
+      epic: [],
+      legendary: []
+    },
+    epicProgressLabel: "4 / 10",
+    legendaryProgressLabel: "11 / 30",
+    resultVisualActive: true,
+    result: {
+      rarity: "rare",
+      duplicateConversion: { tokensGranted: 60 },
+      pityApplied: { epicPlus: true }
+    }
+  });
+
+  assert.match(html, /daily-element-chest-modal--hero-result-visible/);
+  assert.match(html, /icons\/daily_chest_open\.png/);
+  assert.match(html, /daily-element-chest-modal__image--open/);
+  assert.match(html, /data-daily-chest-hero-toast="true"/);
+  assert.match(html, /data-daily-chest-hero-rarity="rare"/);
+  assert.match(html, /data-daily-chest-hero-duplicate-result="true">[\s\S]*\+60 Tokens/);
+  assert.match(html, /data-daily-chest-hero-pity-result="epic-plus">Epic\+ pity activated!/);
+});
+
+test("ui: Daily EleMintz Chest opening state renders glow-safe opening copy and disabled buttons", () => {
+  const html = renderDailyElementChestModalBody({
+    loading: false,
+    canOpenFree: true,
+    openInFlight: true,
+    pendingOpenType: "paid",
+    paidOpenCost: 100,
+    tokens: 145,
+    odds: {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.01
+    },
+    poolSummary: {
+      common: [],
+      rare: [],
+      epic: [],
+      legendary: []
+    },
+    epicProgressLabel: "2 / 10",
+    legendaryProgressLabel: "7 / 30"
+  });
+
+  assert.match(html, /daily-element-chest-modal--opening/);
+  assert.match(html, /data-daily-chest-opening="true">Opening\.\.\.<\/p>/);
+  assert.match(html, /id="daily-chest-free-open-btn"[\s\S]*disabled="disabled"[\s\S]*>[\s\S]*Opening\.\.\./);
+  assert.match(html, /id="daily-chest-paid-open-btn"[\s\S]*disabled="disabled"[\s\S]*>[\s\S]*Opening\.\.\./);
+  assert.match(html, /daily-element-chest-modal__image--open/);
+});
+
+test("ui: Daily EleMintz Chest renders collection complete copy and hides progress safely when missing", () => {
+  const completeHtml = renderDailyElementChestModalBody({
+    loading: false,
+    canOpenFree: true,
+    paidOpenCost: 100,
+    tokens: 500,
+    odds: {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.01
+    },
+    poolSummary: {
+      common: [],
+      rare: [],
+      epic: [],
+      legendary: []
+    },
+    collectionProgress: {
+      totalOwned: 12,
+      totalAvailable: 12,
+      isComplete: true,
+      byRarity: {
+        common: { owned: 3, total: 3, isComplete: true },
+        rare: { owned: 2, total: 2, isComplete: true },
+        epic: { owned: 5, total: 5, isComplete: true },
+        legendary: { owned: 2, total: 2, isComplete: true }
+      },
+      items: {
+        common: [],
+        rare: [],
+        epic: [],
+        legendary: []
+      }
+    },
+    epicProgressLabel: "0 / 10",
+    legendaryProgressLabel: "0 / 30"
+  });
+
+  const fallbackHtml = renderDailyElementChestModalBody({
+    loading: false,
+    canOpenFree: true,
+    paidOpenCost: 100,
+    tokens: 500,
+    odds: {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.01
+    },
+    poolSummary: {
+      common: [{ name: "First Light" }],
+      rare: [],
+      epic: [],
+      legendary: []
+    },
+    epicProgressLabel: "0 / 10",
+    legendaryProgressLabel: "0 / 30"
+  });
+
+  assert.match(completeHtml, /data-daily-chest-collection-complete="true"/);
+  assert.match(completeHtml, /Collection Complete/);
+  assert.match(completeHtml, /Future rewards convert to tokens\./);
+  assert.doesNotMatch(fallbackHtml, /data-daily-chest-collection-progress="true"/);
 });
 
 test("ui: viewed profile renders gauntlet stat fallbacks as 0 when missing", () => {

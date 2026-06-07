@@ -48,7 +48,8 @@ const CARD_BACKS = Object.freeze({
   cardback_stay_mad: getAssetPath("card_backs/cardback_stay_mad.png"),
   cardback_void_tease: getAssetPath("card_backs/cardback_void_tease.png"),
   cardback_lucky_you: getAssetPath("card_backs/cardback_lucky_you.png"),
-  cardback_king_energy: getAssetPath("card_backs/cardback_king_energy.png")
+  cardback_king_energy: getAssetPath("card_backs/cardback_king_energy.png"),
+  cardback_daily_element_chest: getAssetPath("card_backs/cardback_daily_element_chest.png")
 });
 
 const DEFAULT_ELEMENT_IMAGES = Object.freeze({
@@ -88,6 +89,7 @@ const ELEMENT_VARIANT_IMAGES = Object.freeze({
   fire_variant_ember_core: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_ember_core.png") }),
   fire_variant_phoenix: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_phoenix.png") }),
   fire_variant_transparent_flame: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_transparent_flame.png") }),
+  fire_variant_sunflare: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_sunflare.png") }),
   water_variant_crystal: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_crystal.png") }),
   water_variant_abyss_wave: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_abyss_wave.png") }),
   water_variant_crystal_iceburst: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_crystal_iceburst.png") }),
@@ -95,6 +97,7 @@ const ELEMENT_VARIANT_IMAGES = Object.freeze({
   water_variant_transparent_wave: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_transparent_wave.png") }),
   water_variant_water_pillar: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_water_pillar.png") }),
   water_variant_neon_arcana: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_neon_arcana.png") }),
+  water_variant_tideglass: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_tideglass.png") }),
   water_variant_goldbound_relics: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_goldbound_relics.png") }),
   water_variant_frostbloom: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_frostbloom.png") }),
   water_variant_blood_wings: Object.freeze({ element: "water", image: getAssetPath("cards/water_variant_blood_wings.png") }),
@@ -112,6 +115,7 @@ const ELEMENT_VARIANT_IMAGES = Object.freeze({
   earth_variant_rooted_monolith: Object.freeze({ element: "earth", image: getAssetPath("cards/earth_variant_rooted_monolith.png") }),
   earth_variant_stone_colossus: Object.freeze({ element: "earth", image: getAssetPath("cards/earth_variant_stone_colossus.png") }),
   earth_variant_transparent_crystal: Object.freeze({ element: "earth", image: getAssetPath("cards/earth_variant_transparent_crystal.png") }),
+  earth_variant_verdant_core: Object.freeze({ element: "earth", image: getAssetPath("cards/earth_variant_verdant_core.png") }),
   wind_variant_sky_serpent: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_sky_serpent.png") }),
   wind_variant_storm_eye: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_storm_eye.png") }),
   wind_variant_neon_arcana: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_neon_arcana.png") }),
@@ -122,7 +126,8 @@ const ELEMENT_VARIANT_IMAGES = Object.freeze({
   wind_variant_street: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_street.png") }),
   wind_variant_transparent_vortex: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_transparent_vortex.png") }),
   wind_variant_vortex_spirit: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_vortex_spirit.png") }),
-  wind_variant_whisper_spiral: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_whisper_spiral.png") })
+  wind_variant_whisper_spiral: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_whisper_spiral.png") }),
+  wind_variant_cloudcoil: Object.freeze({ element: "wind", image: getAssetPath("cards/wind_variant_cloudcoil.png") })
 });
 
 const LEGACY_VARIANT_BUNDLES = Object.freeze({
@@ -216,7 +221,9 @@ const AVATAR_MAP = Object.freeze({
   avatar_riot_halo: getAssetPath("avatars/avatar_riot_halo.png"),
   avatar_golden_menace: getAssetPath("avatars/avatar_golden_menace.png"),
   avatar_chaos_monarch: getAssetPath("avatars/avatar_chaos_monarch.png"),
-  avatar_rose_riot: getAssetPath("avatars/avatar_rose_riot.png")
+  avatar_rose_riot: getAssetPath("avatars/avatar_rose_riot.png"),
+  avatar_chestbound_adept: getAssetPath("avatars/avatar_chestbound_adept.png"),
+  avatar_element_chosen: getAssetPath("avatars/avatar_element_chosen.png")
 });
 
 const BADGE_IMAGES = Object.freeze({
@@ -347,7 +354,9 @@ export const ASSET_CATALOG = Object.freeze({
     background_crystal_ruins: getAssetPath("backgrounds/background_crystal_ruins.png"),
     background_ember_pit: getAssetPath("backgrounds/background_ember_pit.png"),
     background_glowtide_flats: getAssetPath("backgrounds/background_glowtide_flats.png"),
-    background_moonshade_grove: getAssetPath("backgrounds/background_moonshade_grove.png")
+    background_moonshade_grove: getAssetPath("backgrounds/background_moonshade_grove.png"),
+    background_morning_sanctum: getAssetPath("backgrounds/background_morning_sanctum.png"),
+    background_chamber_of_the_four: getAssetPath("backgrounds/background_chamber_of_the_four.png")
   }),
   avatars: AVATAR_MAP,
   sounds: Object.freeze({

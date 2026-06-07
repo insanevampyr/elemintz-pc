@@ -3602,7 +3602,7 @@ export function createMultiplayerFoundation({
         }
       });
 
-      socket.on("profile:claimDailyLoginReward", async (payload = {}, respond = () => {}) => {
+    socket.on("profile:claimDailyLoginReward", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
         const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
           allowBootstrap: true
@@ -3726,7 +3726,47 @@ export function createMultiplayerFoundation({
       }
     });
 
-      socket.on("profile:openChest", async (payload = {}, respond = () => {}) => {
+    socket.on("profile:getDailyElementChestStatus", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.getDailyElementChestStatus !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.getDailyElementChestStatus(
+          sessionResult.session?.profileKey ?? sessionResult.session?.username
+        );
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_DAILY_CHEST_READ_FAILED",
+            message: String(error?.message ?? "Unable to load Daily Element Chest status.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:openChest", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
         allowBootstrap: true
@@ -3762,6 +3802,47 @@ export function createMultiplayerFoundation({
           error: {
             code: "PROFILE_CHEST_WRITE_FAILED",
             message: String(error?.message ?? "Unable to open authoritative chest.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:openDailyElementChest", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: true
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.openDailyElementChest !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.openDailyElementChest({
+          ...payload,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_DAILY_CHEST_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to open Daily Element Chest.")
           }
         });
       }

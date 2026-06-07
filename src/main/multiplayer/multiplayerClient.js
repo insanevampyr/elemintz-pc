@@ -808,6 +808,7 @@ export class MultiplayerClient {
     this.sessionToken = null;
     this.sessionBoundSocketId = null;
     this.isOpeningChest = false;
+    this.isOpeningDailyElementChest = false;
     this.logger.info?.("[Multiplayer][Electron] persistent client log ready", {
       logPath: this.logPath
     });
@@ -2615,6 +2616,41 @@ export class MultiplayerClient {
       return response.result ?? null;
     } finally {
       this.isOpeningChest = false;
+    }
+  }
+
+  async getDailyElementChestStatus({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:getDailyElementChestStatus",
+      { username },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load Daily Element Chest status.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async openDailyElementChest({ username, openType, serverUrl } = {}) {
+    if (this.isOpeningDailyElementChest) {
+      throw new Error("A Daily Element Chest is already being opened.");
+    }
+
+    this.isOpeningDailyElementChest = true;
+    try {
+      const response = await this.runServerRequest(
+        "profile:openDailyElementChest",
+        { username, openType },
+        { serverUrl }
+      );
+      if (!response?.ok) {
+        throw new Error(response?.error?.message ?? "Unable to open Daily Element Chest.");
+      }
+
+      return response.result ?? null;
+    } finally {
+      this.isOpeningDailyElementChest = false;
     }
   }
 

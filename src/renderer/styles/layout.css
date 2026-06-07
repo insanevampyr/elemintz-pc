@@ -2221,6 +2221,71 @@ body {
   color: #d7edff;
 }
 
+.daily-element-chest-card {
+  width: 100%;
+  border: 1px solid rgba(238, 198, 109, 0.32);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(29, 47, 83, 0.92), rgba(13, 24, 48, 0.96));
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  color: #eef6ff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.daily-element-chest-card:hover,
+.daily-element-chest-card:focus-visible {
+  border-color: rgba(247, 208, 110, 0.68);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.22), 0 0 16px rgba(247, 208, 110, 0.18);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.daily-element-chest-card__art {
+  display: grid;
+  place-items: center;
+}
+
+.daily-element-chest-card__image {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.24));
+}
+
+.daily-element-chest-card__content {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.daily-element-chest-card__eyebrow {
+  margin: 0;
+  font-size: 0.94rem;
+  font-weight: 800;
+  color: #fff3cb;
+}
+
+.daily-element-chest-card__status,
+.daily-element-chest-card__cost {
+  margin: 0;
+}
+
+.daily-element-chest-card__status {
+  color: #eef6ff;
+  font-weight: 700;
+}
+
+.daily-element-chest-card__cost {
+  color: rgba(219, 232, 248, 0.84);
+  font-size: 0.82rem;
+}
+
 .menu-challenges-heading {
   padding-top: 2px;
   margin-bottom: 3px;

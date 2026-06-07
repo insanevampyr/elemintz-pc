@@ -1146,9 +1146,21 @@ test("cosmetics: Vampire Elegance, Lycan Power, Elemental Street, and Simple Bac
     "background_breezewild_meadow",
     "background_broken_yard",
     "background_crystal_ruins",
+    "background_chamber_of_the_four",
     "background_ember_pit",
     "background_glowtide_flats",
-    "background_moonshade_grove"
+    "background_moonshade_grove",
+    "background_morning_sanctum",
+    "avatar_chestbound_adept",
+    "avatar_element_chosen",
+    "badge_daily_emblem",
+    "cardback_daily_element_chest",
+    "earth_variant_verdant_core",
+    "fire_variant_sunflare",
+    "title_element_touched",
+    "title_first_light",
+    "water_variant_tideglass",
+    "wind_variant_cloudcoil"
   ]);
 
   const definitions = Object.values(COSMETIC_CATALOG).flat();

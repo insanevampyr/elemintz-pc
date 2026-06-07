@@ -724,6 +724,60 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "profile:getDailyElementChestStatus") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            canOpenFree: true,
+            nextFreeResetAt: "2026-06-07T23:00:00.000Z",
+            paidOpenCost: 100,
+            tokens: 200,
+            pity: {
+              opensSinceEpicPlus: 3,
+              opensSinceLegendary: 12
+            },
+            dailyElementChest: {
+              lastFreeOpenDateKey: null,
+              totalOpens: 15,
+              paidOpens: 11,
+              freeOpens: 4,
+              pity: {
+                opensSinceEpicPlus: 3,
+                opensSinceLegendary: 12
+              }
+            },
+            odds: {
+              common: 0.7,
+              rare: 0.22,
+              epic: 0.07,
+              legendary: 0.01
+            },
+            collectionProgress: {
+              totalOwned: 4,
+              totalAvailable: 12,
+              isComplete: false,
+              byRarity: {
+                common: { owned: 2, total: 3, isComplete: false },
+                rare: { owned: 1, total: 2, isComplete: false },
+                epic: { owned: 1, total: 5, isComplete: false },
+                legendary: { owned: 0, total: 2, isComplete: false }
+              },
+              items: {
+                common: [{ type: "title", cosmeticId: "title_first_light", name: "First Light", owned: true }],
+                rare: [],
+                epic: [],
+                legendary: []
+              }
+            },
+            poolSummary: {
+              common: [{ type: "title", cosmeticId: "title_first_light", name: "First Light" }]
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:acknowledgeMilestoneChestReward") {
       queueMicrotask(() => {
         ack?.({
@@ -840,6 +894,135 @@ class FakeSocket {
                   milestone: 0,
                   epic: 0,
                   legendary: 0
+                },
+                equippedCosmetics: createEquippedCosmetics()
+              },
+              progression: {}
+            }
+          }
+        });
+      });
+    }
+
+    if (eventName === "profile:openDailyElementChest") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            source: "daily_element_chest",
+            openType: payload?.openType ?? "free",
+            rarity: "epic",
+            cosmetic: {
+              type: "cardBack",
+              cosmeticId: "cardback_daily_element_chest"
+            },
+            duplicateConversion: null,
+            pityApplied: {
+              epicPlus: false,
+              legendary: false
+            },
+          dailyElementChest: {
+            lastFreeOpenDateKey: payload?.openType === "free" ? "2026-06-06T23:00:00.000Z" : null,
+            totalOpens: 1,
+            paidOpens: payload?.openType === "paid" ? 1 : 0,
+            freeOpens: payload?.openType === "free" ? 1 : 0,
+              pity: {
+                opensSinceEpicPlus: 0,
+                opensSinceLegendary: 1
+              }
+            },
+            status: {
+              canOpenFree: payload?.openType !== "free",
+              nextFreeResetAt: "2026-06-07T23:00:00.000Z",
+              paidOpenCost: 100,
+              tokens: payload?.openType === "paid" ? 100 : 200,
+              pity: {
+                opensSinceEpicPlus: 0,
+                opensSinceLegendary: 1
+              },
+              dailyElementChest: {
+                lastFreeOpenDateKey: payload?.openType === "free" ? "2026-06-06T23:00:00.000Z" : null,
+                totalOpens: 1,
+                paidOpens: payload?.openType === "paid" ? 1 : 0,
+                freeOpens: payload?.openType === "free" ? 1 : 0,
+                pity: {
+                  opensSinceEpicPlus: 0,
+                  opensSinceLegendary: 1
+                }
+              },
+              odds: {
+                common: 0.7,
+                rare: 0.22,
+                epic: 0.07,
+                legendary: 0.01
+              },
+              collectionProgress: {
+                totalOwned: 2,
+                totalAvailable: 12,
+                isComplete: false,
+                byRarity: {
+                  common: { owned: 0, total: 3, isComplete: false },
+                  rare: { owned: 0, total: 2, isComplete: false },
+                  epic: { owned: 1, total: 5, isComplete: false },
+                  legendary: { owned: 0, total: 2, isComplete: false }
+                },
+                items: {
+                  common: [],
+                  rare: [],
+                  epic: [
+                    {
+                      type: "cardBack",
+                      cosmeticId: "cardback_daily_element_chest",
+                      name: "Daily Element Chest",
+                      owned: true
+                    }
+                  ],
+                  legendary: []
+                }
+              },
+              poolSummary: {
+                epic: [
+                  {
+                    type: "cardBack",
+                    cosmeticId: "cardback_daily_element_chest",
+                    name: "Daily Element Chest"
+                  }
+                ]
+              }
+            },
+            profile: {
+              username: this.sessionUsername ?? payload?.username ?? null,
+              tokens: payload?.openType === "paid" ? 100 : 200,
+              ownedCosmetics: {
+                cardBack: ["default_card_back", "cardback_daily_element_chest"]
+              },
+              dailyElementChest: {
+                lastFreeOpenDateKey: payload?.openType === "free" ? "2026-06-06T23:00:00.000Z" : null,
+                totalOpens: 1,
+                paidOpens: payload?.openType === "paid" ? 1 : 0,
+                freeOpens: payload?.openType === "free" ? 1 : 0,
+                pity: {
+                  opensSinceEpicPlus: 0,
+                  opensSinceLegendary: 1
+                }
+              },
+              equippedCosmetics: createEquippedCosmetics()
+            },
+            snapshot: {
+              authority: "server",
+              source: "multiplayer",
+              profile: {
+                username: this.sessionUsername ?? payload?.username ?? null,
+                tokens: payload?.openType === "paid" ? 100 : 200,
+                dailyElementChest: {
+                  lastFreeOpenDateKey: payload?.openType === "free" ? "2026-06-06T23:00:00.000Z" : null,
+                  totalOpens: 1,
+                  paidOpens: payload?.openType === "paid" ? 1 : 0,
+                  freeOpens: payload?.openType === "free" ? 1 : 0,
+                  pity: {
+                    opensSinceEpicPlus: 0,
+                    opensSinceLegendary: 1
+                  }
                 },
                 equippedCosmetics: createEquippedCosmetics()
               },
@@ -1039,6 +1222,138 @@ class DeferredChestSocket extends FakeSocket {
               username: this.sessionUsername ?? next.payload?.username ?? null,
               chests: {
                 ...this.remainingChests
+              },
+              equippedCosmetics: createEquippedCosmetics()
+            },
+            progression: {}
+          }
+        }
+      });
+    });
+  }
+}
+
+class DeferredDailyElementChestSocket extends FakeSocket {
+  constructor() {
+    super();
+    this.pendingDailyChestAcks = [];
+  }
+
+  emit(eventName, payload, ack) {
+    if (eventName === "profile:openDailyElementChest") {
+      this.sentEvents.push({ eventName, payload });
+      this.pendingDailyChestAcks.push({ payload, ack });
+      return this;
+    }
+
+    return super.emit(eventName, payload, ack);
+  }
+
+  resolveNextDailyChestOpen() {
+    const next = this.pendingDailyChestAcks.shift();
+    if (!next) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      next.ack?.({
+        ok: true,
+        result: {
+          source: "daily_element_chest",
+          openType: next.payload?.openType ?? "free",
+          rarity: "rare",
+          cosmetic: {
+            type: "avatar",
+            cosmeticId: "avatar_chestbound_adept"
+          },
+          duplicateConversion: null,
+          pityApplied: {
+            epicPlus: false,
+            legendary: false
+          },
+          dailyElementChest: {
+            lastFreeOpenDateKey: next.payload?.openType === "free" ? "2026-06-06T23:00:00.000Z" : null,
+            totalOpens: 1,
+            paidOpens: next.payload?.openType === "paid" ? 1 : 0,
+            freeOpens: next.payload?.openType === "free" ? 1 : 0,
+            pity: {
+              opensSinceEpicPlus: 1,
+              opensSinceLegendary: 1
+            }
+          },
+          status: {
+            canOpenFree: next.payload?.openType !== "free",
+            nextFreeResetAt: "2026-06-07T23:00:00.000Z",
+            paidOpenCost: 100,
+            tokens: 200,
+            pity: {
+              opensSinceEpicPlus: 1,
+              opensSinceLegendary: 1
+            },
+            dailyElementChest: {
+              lastFreeOpenDateKey: next.payload?.openType === "free" ? "2026-06-06T23:00:00.000Z" : null,
+              totalOpens: 1,
+              paidOpens: next.payload?.openType === "paid" ? 1 : 0,
+              freeOpens: next.payload?.openType === "free" ? 1 : 0,
+              pity: {
+                opensSinceEpicPlus: 1,
+                opensSinceLegendary: 1
+              }
+            },
+            odds: {
+              common: 0.7,
+              rare: 0.22,
+              epic: 0.07,
+              legendary: 0.01
+            },
+            collectionProgress: {
+              totalOwned: 1,
+              totalAvailable: 12,
+              isComplete: false,
+              byRarity: {
+                common: { owned: 0, total: 3, isComplete: false },
+                rare: { owned: 1, total: 2, isComplete: false },
+                epic: { owned: 0, total: 5, isComplete: false },
+                legendary: { owned: 0, total: 2, isComplete: false }
+              },
+              items: {
+                common: [],
+                rare: [
+                  {
+                    type: "avatar",
+                    cosmeticId: "avatar_chestbound_adept",
+                    name: "Chestbound Adept",
+                    owned: true
+                  }
+                ],
+                epic: [],
+                legendary: []
+              }
+            },
+            poolSummary: {
+              rare: [
+                {
+                  type: "avatar",
+                  cosmeticId: "avatar_chestbound_adept",
+                  name: "Chestbound Adept"
+                }
+              ]
+            }
+          },
+          snapshot: {
+            authority: "server",
+            source: "multiplayer",
+            profile: {
+              username: this.sessionUsername ?? next.payload?.username ?? null,
+              dailyElementChest: {
+                lastFreeOpenDateKey: next.payload?.openType === "free" ? "2026-06-06T23:00:00.000Z" : null,
+                totalOpens: 1,
+                paidOpens: next.payload?.openType === "paid" ? 1 : 0,
+                freeOpens: next.payload?.openType === "free" ? 1 : 0,
+                pity: {
+                  opensSinceEpicPlus: 1,
+                  opensSinceLegendary: 1
+                }
               },
               equippedCosmetics: createEquippedCosmetics()
             },
@@ -1792,6 +2107,70 @@ test("multiplayer client: server-authoritative legendary chest opening returns u
   assert.equal(result?.snapshot?.profile?.chests?.legendary, 0);
 });
 
+test("multiplayer client: Daily Element Chest status uses the authoritative route", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.getDailyElementChestStatus({
+    username: "DailyChestAuthorityUser"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "DailyChestAuthorityUser"
+    }
+  });
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:getDailyElementChestStatus",
+    payload: {}
+  });
+  assert.equal(result?.canOpenFree, true);
+  assert.equal(result?.paidOpenCost, 100);
+  assert.equal(result?.dailyElementChest?.totalOpens, 15);
+  assert.equal(result?.collectionProgress?.totalOwned, 4);
+  assert.equal(result?.collectionProgress?.byRarity?.common?.total, 3);
+});
+
+test("multiplayer client: Daily Element Chest opening returns updated profile state", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const result = await client.openDailyElementChest({
+    username: "DailyChestAuthorityUser",
+    openType: "paid"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(0), {
+    eventName: "session:bootstrap",
+    payload: {
+      username: "DailyChestAuthorityUser"
+    }
+  });
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:openDailyElementChest",
+    payload: {
+      openType: "paid"
+    }
+  });
+  assert.equal(result?.source, "daily_element_chest");
+  assert.equal(result?.openType, "paid");
+  assert.equal(result?.snapshot?.profile?.tokens, 100);
+  assert.equal(result?.status?.collectionProgress?.byRarity?.epic?.owned, 1);
+});
+
 test("multiplayer client: feedback submission uses the authoritative feedback route", async () => {
   let lastSocket = null;
   const client = new MultiplayerClient({
@@ -1907,6 +2286,45 @@ test("multiplayer client: sequential and mixed chest opens complete after each p
     requestOrder
   );
   assert.equal(client.isOpeningChest, false);
+});
+
+test("multiplayer client: rejects concurrent Daily Element Chest opens while a request is already in flight", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new DeferredDailyElementChestSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const firstOpenPromise = client.openDailyElementChest({
+    username: "DailyChestAuthorityUser",
+    openType: "paid"
+  });
+  assert.equal(await waitFor(() => lastSocket?.pendingDailyChestAcks?.length === 1), true);
+
+  const secondResult = await client
+    .openDailyElementChest({
+      username: "DailyChestAuthorityUser",
+      openType: "paid"
+    })
+    .then(
+      () => ({ ok: true }),
+      (error) => ({ ok: false, message: String(error?.message ?? "") })
+    );
+
+  assert.equal(
+    lastSocket.sentEvents.filter((event) => event.eventName === "profile:openDailyElementChest").length,
+    1
+  );
+  assert.equal(secondResult.ok, false);
+  assert.match(secondResult.message, /already being opened/i);
+
+  lastSocket.resolveNextDailyChestOpen();
+  const firstResult = await firstOpenPromise;
+  assert.equal(firstResult?.source, "daily_element_chest");
+  assert.equal(client.isOpeningDailyElementChest, false);
 });
 
 test("multiplayer client: receives admin grant notices and confirms them through the authoritative socket path", async () => {
