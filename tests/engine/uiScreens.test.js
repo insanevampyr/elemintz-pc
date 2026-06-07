@@ -11577,18 +11577,24 @@ test("ui: roadmap screen renders the static player-facing roadmap content", () =
 
   assert.match(html, /EleMintz Roadmap/);
   assert.match(html, /id="roadmap-back-btn"/);
-  assert.match(html, /A look at features planned or being explored\. Details may change as EleMintz grows\./);
-  assert.match(html, />COMING SOON</);
-  assert.match(html, />LATER</);
-  assert.match(html, /New cosmetic drops/);
-  assert.match(html, /More Gauntlet rivals/);
-  assert.match(html, /Challenge reward improvements/);
-  assert.match(html, /Quality-of-life polish/);
+  assert.match(html, /These are planned ideas and active development goals\. They are not listed in release order, and some may change as EleMintz grows\./);
+  assert.match(html, />PLANNED IDEAS</);
+  assert.match(html, /More Gauntlet Rivals/);
+  assert.match(html, /New rivals, streak goals, and special Gauntlet rewards\./);
+  assert.match(html, /Collection Albums/);
+  assert.match(html, /Track themed cosmetic sets and earn completion rewards\./);
   assert.match(html, /Alpha Season Track/);
-  assert.match(html, /Referral bonuses/);
-  assert.match(html, /Leaderboards/);
-  assert.match(html, /Tournaments/);
-  assert.match(html, /Deck Builder experiments/);
+  assert.match(html, /Play matches and complete missions to unlock seasonal rewards\./);
+  assert.match(html, /Blood Moon Mode/);
+  assert.match(html, /A future Vampire vs Lycan vs Player chaos mode\./);
+  assert.match(html, /Friends List/);
+  assert.match(html, /Add friends from matches or searched profiles\./);
+  assert.match(html, /More Achievements/);
+  assert.match(html, /New long-term goals for Gauntlet, Online Play, cosmetics, and Featured Rivals\./);
+  assert.match(html, /Limited-Time Events/);
+  assert.match(html, /Temporary reward tracks, special cosmetics, and themed challenges\./);
+  assert.match(html, /More Affordable Cosmetics/);
+  assert.match(html, /More Common and Rare avatars, titles, card backs, and variants\./);
 });
 
 test("ui: roadmap screen back button binds to the provided action", () => {
