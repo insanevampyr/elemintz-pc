@@ -9642,7 +9642,7 @@ test("appController: gameplay uses equipped profile background", async () => {
     app.startGame(MATCH_MODE.PVE);
     const last = shownScreens.at(-1);
     assert.equal(last.name, "game");
-    assert.match(last.context.arenaBackground, /EleMintzIcon\.png/);
+    assert.match(last.context.arenaBackground, /default_background\.png/);
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();
@@ -13640,7 +13640,7 @@ test("appController: menu uses default background when profile has none", () => 
 
   const menu = shownScreens.at(-1);
   assert.equal(menu.name, "menu");
-  assert.match(menu.context.backgroundImage, /EleMintzIcon\.png/);
+  assert.match(menu.context.backgroundImage, /default_background\.png/);
 });
 
 test("appController: profile view falls back to default background when not equipped", async () => {
@@ -13672,7 +13672,7 @@ test("appController: profile view falls back to default background when not equi
     await app.showProfile();
     const profile = shownScreens.at(-1);
     assert.equal(profile.name, "profile");
-    assert.match(profile.context.backgroundImage, /EleMintzIcon\.png/);
+    assert.match(profile.context.backgroundImage, /default_background\.png/);
   } finally {
     globalThis.window = originalWindow;
   }
@@ -14264,7 +14264,7 @@ test("appController: background change is reflected immediately across screens",
   app.profile = { username: "BgSwap", equippedCosmetics: { background: "default_background" } };
 
   app.showMenu();
-  assert.match(shown.at(-1).context.backgroundImage, /EleMintzIcon\.png/);
+  assert.match(shown.at(-1).context.backgroundImage, /default_background\.png/);
 
   app.profile = { username: "BgSwap", equippedCosmetics: { background: "wind_background" } };
   app.showMenu();

@@ -1,3 +1,5 @@
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
+
 function escapeAttribute(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -146,7 +148,7 @@ export const loginScreen = {
     if (mode === "choice") {
       return `
         <section class="screen screen-login">
-          <section class="arena-board screen-themed-surface auth-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "", auth: true })}" style="background-image: url('${context.backgroundImage ?? ""}')">
             <div class="panel hero-panel themed-screen-panel">
               <h2 class="view-title">EleMintz Login</h2>
               <p>Choose how you'd like to access your EleMintz account.</p>
@@ -171,7 +173,7 @@ export const loginScreen = {
 
     return `
       <section class="screen screen-login">
-        <section class="arena-board screen-themed-surface auth-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "", auth: true })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel hero-panel themed-screen-panel">
             <h2 class="view-title">${title}</h2>
             <p>${instruction}</p>

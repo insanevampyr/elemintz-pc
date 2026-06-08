@@ -2,6 +2,7 @@ import { getAvatarImage, getCardBackImage, getCardImage, getVariantCardImages } 
 import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
 import { escapeHtml } from "../../utils/dom.js";
 import { formatElement } from "../../utils/index.js";
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import {
   normalizeCosmeticRarity,
   rarityClassName,
@@ -1278,7 +1279,7 @@ export const onlinePlayScreen = {
             })
               : ""
           }
-          <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
+          <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage}')">
               <div class="panel themed-screen-panel stack-sm">
               <section class="online-connection-banner online-connection-banner-${escapeHtml(connectionBanner.tone)}" aria-live="polite">
                 <strong class="online-connection-banner-label">${escapeHtml(connectionBanner.label)}</strong>

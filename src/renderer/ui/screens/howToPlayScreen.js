@@ -1,3 +1,5 @@
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
+
 function renderAccordionSection({ id, title, preview, bodyHtml, open = false }) {
   return `
     <details class="panel how-to-play-accordion" data-how-to-play-section="${id}" ${open ? "open" : ""}>
@@ -150,7 +152,7 @@ export const howToPlayScreen = {
   render(context) {
     return `
       <section class="screen screen-how-to-play">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel themed-screen-panel stack-md">
             <div class="screen-topbar">
               <h2 class="view-title">How to Play EleMintz</h2>

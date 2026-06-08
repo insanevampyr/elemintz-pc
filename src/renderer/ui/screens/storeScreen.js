@@ -9,6 +9,7 @@ import {
   buildHoverPreviewAttributes,
   hasRenderablePreviewSource
 } from "../shared/cosmeticHoverPreview.js";
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import { getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
 const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
 const CATEGORY_ORDER = BASE_CATEGORY_ORDER.map(([type, label]) => [
@@ -421,7 +422,7 @@ export const storeScreen = {
 
     return `
       <section class="screen screen-store">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel themed-screen-panel">
           <div class="screen-topbar store-topbar">
             <div class="store-topbar-heading">

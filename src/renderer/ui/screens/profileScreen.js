@@ -12,6 +12,7 @@ import {
   buildHoverPreviewAttributes,
   hasRenderablePreviewSource
 } from "../shared/cosmeticHoverPreview.js";
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import { getLevelProgress, MAX_LEVEL } from "../../../state/levelRewardsSystem.js";
 
 function resolveImagePath(image) {
@@ -1003,7 +1004,7 @@ export const profileScreen = {
           <h2 class="view-title">Profile</h2>
           <button id="profile-back-btn" class="btn screen-back-btn">Back</button>
         </div>
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage}')">
           <div class="panel themed-screen-panel">
           ${renderProfileIdentityHeader({
             username: profile.username,

@@ -1,4 +1,5 @@
 import { getAssetPath } from "../../utils/dom.js";
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 
 function badgePreview(image, name) {
   if (!image) {
@@ -40,7 +41,7 @@ export const achievementsScreen = {
 
     return `
       <section class="screen screen-achievements">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel themed-screen-panel">
             <div class="screen-topbar">
               <h2 class="view-title">Achievements</h2>

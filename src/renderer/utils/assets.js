@@ -317,7 +317,7 @@ export const ASSET_CATALOG = Object.freeze({
     earthArena: getAssetPath("backgrounds/earthBattleArena.png"),
     windArena: getAssetPath("backgrounds/windBattleArena.png"),
     voidArena: getAssetPath("backgrounds/celestialVoidBattleArena.png"),
-    default_background: getAssetPath("EleMintzIcon.png"),
+    default_background: getAssetPath("backgrounds/default_background.png"),
     fire_background: getAssetPath("backgrounds/fireBattleArena.png"),
     water_background: getAssetPath("backgrounds/waterBattleArena.png"),
     earth_background: getAssetPath("backgrounds/earthBattleArena.png"),

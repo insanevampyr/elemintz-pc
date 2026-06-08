@@ -3014,22 +3014,22 @@ test("ui: auth choice screen renders Sign In, Create Account, and version badge"
   const html = loginScreen.render({
     mode: "choice",
     version: "2.1.20",
-    backgroundImage: "assets/EleMintzIcon.png"
+    backgroundImage: "assets/backgrounds/default_background.png"
   });
 
   assert.match(html, /EleMintz Login/);
   assert.match(html, />Sign In</);
   assert.match(html, />Create Account</);
   assert.match(html, />v2\.1\.20</);
-  assert.match(html, /arena-board screen-themed-surface auth-themed-surface/);
-  assert.ok(html.includes("background-image: url('assets/EleMintzIcon.png')"));
+  assert.match(html, /arena-board screen-themed-surface default-themed-surface auth-themed-surface/);
+  assert.ok(html.includes("background-image: url('assets/backgrounds/default_background.png')"));
 });
 
 test("ui: sign in screen renders Email, Password, and the keep-signed-in controls", () => {
   const html = loginScreen.render({
     mode: "login",
     defaults: { email: "player@example.com" },
-    backgroundImage: "assets/EleMintzIcon.png"
+    backgroundImage: "assets/backgrounds/default_background.png"
   });
 
   assert.match(html, /<h2 class="view-title">Sign In<\/h2>/);
@@ -3041,14 +3041,14 @@ test("ui: sign in screen renders Email, Password, and the keep-signed-in control
   assert.match(html, /Stay signed in after closing the game\. Logging out clears this\./);
   assert.match(html, /type="checkbox"/);
   assert.match(html, /checked/);
-  assert.match(html, /arena-board screen-themed-surface auth-themed-surface/);
+  assert.match(html, /arena-board screen-themed-surface default-themed-surface auth-themed-surface/);
 });
 
 test("ui: create account screen renders Username, Email, and Password", () => {
   const html = loginScreen.render({
     mode: "register",
     defaults: { username: "PlayerOne", email: "player@example.com" },
-    backgroundImage: "assets/EleMintzIcon.png"
+    backgroundImage: "assets/backgrounds/default_background.png"
   });
 
   assert.match(html, /<h2 class="view-title">Create Account<\/h2>/);
@@ -3057,7 +3057,7 @@ test("ui: create account screen renders Username, Email, and Password", () => {
   assert.match(html, /Email/);
   assert.match(html, /Password/);
   assert.match(html, /Keep me signed in for 30 days/);
-  assert.match(html, /arena-board screen-themed-surface auth-themed-surface/);
+  assert.match(html, /arena-board screen-themed-surface default-themed-surface auth-themed-surface/);
 });
 
 test("ui: auth forms submit the remember-session preference", async () => {
@@ -10026,7 +10026,7 @@ test("ui: viewed profile panel falls back to default background and keeps owner 
 
   assert.match(ownerHtml, /background-image: url\('assets\/backgrounds\/lava_throne_background\.png'\)/);
   assert.match(viewedHtml, /viewed-profile-panel/);
-  assert.match(viewedHtml, /background-image: url\('(?:file:.*\/)?assets\/EleMintzIcon\.png'\)/);
+  assert.match(viewedHtml, /background-image: url\('(?:file:.*\/)?assets\/backgrounds\/default_background\.png'\)/);
 });
 
 test("ui: title reward renders icon and text on profile and game headers", () => {
@@ -10654,13 +10654,13 @@ test("ui: achievements screen uses 3-column catalog grid class", () => {
 test("ui: menu and profile screens render themed background surfaces", () => {
   const menuHtml = menuScreen.render({
     username: "ThemeUser",
-    backgroundImage: "assets/EleMintzIcon.png",
+    backgroundImage: "assets/backgrounds/default_background.png",
     actions: {}
   });
 
   assert.match(menuHtml, /screen-menu/);
   assert.match(menuHtml, /arena-board screen-themed-surface/);
-  assert.match(menuHtml, /background-image: url\('assets\/EleMintzIcon\.png'\)/);
+  assert.match(menuHtml, /background-image: url\('assets\/backgrounds\/default_background\.png'\)/);
   assert.match(menuHtml, /panel themed-screen-panel/);
 
   const profileHtml = profileScreen.render({
@@ -10696,7 +10696,7 @@ test("ui: menu and profile screens render themed background surfaces", () => {
     searchResults: [],
     searchQuery: "",
     viewedProfile: null,
-    backgroundImage: "assets/EleMintzIcon.png"
+    backgroundImage: "assets/backgrounds/default_background.png"
   });
 
   assert.match(profileHtml, /screen-profile/);
@@ -10795,8 +10795,8 @@ test("ui: login auth screens render the default themed background surface", () =
   ];
 
   for (const html of htmls) {
-    assert.match(html, /arena-board screen-themed-surface/);
-    assert.match(html, /background-image: url\('[^']*EleMintzIcon\.png'\)/);
+    assert.match(html, /arena-board screen-themed-surface default-themed-surface auth-themed-surface/);
+    assert.match(html, /background-image: url\('[^']*default_background\.png'\)/);
     assert.match(html, /panel hero-panel themed-screen-panel/);
   }
 });
@@ -10900,9 +10900,39 @@ test("ui: normal authenticated screens render player-selected themed backgrounds
 
   for (const html of htmls) {
     assert.match(html, /arena-board screen-themed-surface/);
+    assert.doesNotMatch(html, /default-themed-surface/);
     assert.doesNotMatch(html, /auth-themed-surface/);
     assert.ok(html.includes(`background-image: url('${selected}')`));
     assert.match(html, /themed-screen-panel/);
+  }
+});
+
+test("ui: fallback default-background screens render the default fit treatment outside auth", () => {
+  const defaultBackground = getArenaBackground("default_background");
+  const htmls = [
+    settingsScreen.render({
+      settings: {
+        gameplay: { timerSeconds: 20 },
+        ui: { reducedMotion: false },
+        audio: { enabled: true },
+        aiDifficulty: "normal",
+        aiOpponentStyle: "random"
+      },
+      backgroundImage: defaultBackground
+    }),
+    dailyChallengesScreen.render({
+      daily: { challenges: [], msUntilReset: 0 },
+      weekly: { challenges: [], msUntilReset: 0 },
+      tokens: 5,
+      backgroundImage: defaultBackground
+    }),
+    roadmapScreen.render({ backgroundImage: defaultBackground })
+  ];
+
+  for (const html of htmls) {
+    assert.match(html, /default-themed-surface/);
+    assert.doesNotMatch(html, /auth-themed-surface/);
+    assert.match(html, /background-image: url\('[^']*default_background\.png'\)/);
   }
 });
 

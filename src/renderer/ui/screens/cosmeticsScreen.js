@@ -12,6 +12,7 @@ import {
   buildHoverPreviewAttributes,
   hasRenderablePreviewSource
 } from "../shared/cosmeticHoverPreview.js";
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import { getCosmeticDefinition, getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
 
 const RANDOMIZE_AFTER_MATCH_OPTIONS = Object.freeze([
@@ -419,7 +420,7 @@ export const cosmeticsScreen = {
 
     return `
       <section class="screen screen-cosmetics">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel themed-screen-panel">
           <div class="screen-topbar">
             <h2 class="view-title">Cosmetics / Rewards</h2>

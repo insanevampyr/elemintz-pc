@@ -1,3 +1,5 @@
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
+
 function formatReset(ms, includeDays = false) {
   const safe = Math.max(0, Number(ms) || 0);
   const totalMinutes = Math.floor(safe / 60000);
@@ -61,7 +63,7 @@ export const dailyChallengesScreen = {
 
     return `
       <section class="screen screen-daily-challenges">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel themed-screen-panel">
             <div class="screen-topbar">
               <h2 class="view-title">Challenges</h2>

@@ -1,3 +1,5 @@
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
+
 function renderRoadmapSection(title, items) {
   return `
     <section class="panel stack-sm">
@@ -64,7 +66,7 @@ export const roadmapScreen = {
   render(context) {
     return `
       <section class="screen screen-roadmap">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel themed-screen-panel stack-md">
             <div class="screen-topbar">
               <h2 class="view-title">EleMintz Roadmap</h2>

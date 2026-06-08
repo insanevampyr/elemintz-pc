@@ -1,5 +1,6 @@
 import { getAssetPath } from "../../utils/dom.js";
 import { renderDailyElementChestMiniCard } from "./dailyElementChestScreen.js";
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 
 const MENU_TILE_IMAGE_MAP = Object.freeze({
   "start-pve-btn": "menu_tiles/tile_play_ai.png",
@@ -345,7 +346,7 @@ export const menuScreen = {
   render(context) {
     return `
       <section class="screen screen-menu">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage}')">
           <div class="panel themed-screen-panel">
             <h2 class="view-title">Main Menu</h2>
             <p>Signed in as <strong>${context.username}</strong></p>

@@ -1,4 +1,5 @@
 import { getAssetPath } from "../../utils/dom.js";
+import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 
 function renderRadioOption({ name, id, value, checked, title, subtitle, warning = null }) {
   return `
@@ -78,7 +79,7 @@ export const aiDifficultyScreen = {
 
     return `
       <section class="screen screen-ai-difficulty">
-        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+        <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage ?? ""}')">
           <div class="panel themed-screen-panel">
             <div class="screen-topbar">
               <h2 class="view-title">Choose AI Challenge</h2>
