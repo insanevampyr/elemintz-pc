@@ -486,7 +486,7 @@ function renderOnlineWarPileSummary(pileCards, opponentCardVariants, emphasize) 
 
   return `
     <div class="war-summary-shell">
-      <p class="war-summary-label">Opponent Cards</p>
+      <p class="war-summary-label">WAR Pile</p>
       <div class="war-summary-grid ${emphasize ? "is-emphasized" : ""}">
         ${ELEMENT_ORDER.map((element) => {
           const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
@@ -505,7 +505,7 @@ function renderOnlineWarPileSummary(pileCards, opponentCardVariants, emphasize) 
           `;
         }).join("")}
       </div>
-      <p class="war-summary-helper">WAR pile tracks committed cards.</p>
+      <p class="war-summary-helper">Tracks committed WAR cards.</p>
     </div>
   `;
 }

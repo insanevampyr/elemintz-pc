@@ -5068,12 +5068,14 @@ export class AppController {
                 kind: entry?.kind ?? "player",
                 sentAt: entry?.sentAt ?? null
               }))
-              : []
+            : []
           }
         : null;
     if (normalizedRoom) {
+      const onlineWarPileSummary = this.buildOnlineWarPileSummary(normalizedRoom);
       normalizedRoom = {
         ...normalizedRoom,
+        ...onlineWarPileSummary,
         opponentCardVariants: this.buildOnlineOpponentCardVariants(
           normalizedRoom,
           {
@@ -5148,6 +5150,50 @@ export class AppController {
       lastCompletedBattleResult: state?.lastCompletedBattleResult
         ? this.cloneOnlineBattleLogResult(state.lastCompletedBattleResult)
         : extractedCompletedBattleResult ?? preservedBattleLogResult
+    };
+  }
+
+  buildOnlineWarPileSummary(room) {
+    const normalizedHostPot = Array.isArray(room?.warPot?.host)
+      ? room.warPot.host
+          .map((card) => String(card ?? "").trim().toLowerCase())
+          .filter((card) => ELEMENT_CARD_VARIANT_ELEMENTS.includes(card))
+      : [];
+    const normalizedGuestPot = Array.isArray(room?.warPot?.guest)
+      ? room.warPot.guest
+          .map((card) => String(card ?? "").trim().toLowerCase())
+          .filter((card) => ELEMENT_CARD_VARIANT_ELEMENTS.includes(card))
+      : [];
+    const derivedPileCards = [];
+    const committedRoundCount = Math.max(normalizedHostPot.length, normalizedGuestPot.length);
+
+    for (let index = 0; index < committedRoundCount; index += 1) {
+      const hostCard = normalizedHostPot[index] ?? null;
+      const guestCard = normalizedGuestPot[index] ?? null;
+
+      if (hostCard) {
+        derivedPileCards.push(hostCard);
+      }
+
+      if (guestCard) {
+        derivedPileCards.push(guestCard);
+      }
+    }
+
+    const derivedPileCount = derivedPileCards.length;
+    const derivedWarPileSizes = Array.isArray(room?.warRounds) && room.warRounds.length > 0
+      ? room.warRounds
+          .map((_, index) => Math.min(derivedPileCount, (index + 1) * 2))
+          .filter((size, index, values) => size > 0 && (index === 0 || size !== values[index - 1]))
+      : [];
+    const existingPileCount = Math.max(0, Number(room?.pileCount ?? 0) || 0);
+    const existingWarPileCards = Array.isArray(room?.warPileCards) ? room.warPileCards : [];
+    const existingWarPileSizes = Array.isArray(room?.warPileSizes) ? room.warPileSizes : [];
+
+    return {
+      pileCount: derivedPileCount > 0 ? derivedPileCount : existingPileCount,
+      warPileCards: derivedPileCards.length > 0 ? derivedPileCards : existingWarPileCards,
+      warPileSizes: derivedWarPileSizes.length > 0 ? derivedWarPileSizes : existingWarPileSizes
     };
   }
 

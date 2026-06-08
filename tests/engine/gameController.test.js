@@ -6714,6 +6714,50 @@ test("appController: online play update preserves war state for the online play 
   }
 });
 
+test("appController: online play derives WAR pile summary from authoritative room warPot and warRounds", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  const normalized = app.normalizeOnlinePlayState({
+    connectionStatus: "connected",
+    socketId: "guest-1",
+    room: {
+      roomCode: "ABC123",
+      status: "full",
+      host: { socketId: "host-1", username: "HostUser" },
+      guest: { socketId: "guest-1", username: "SignedInGuest" },
+      hostHand: { fire: 1, water: 1, earth: 2, wind: 2 },
+      guestHand: { fire: 1, water: 1, earth: 2, wind: 2 },
+      moveSync: {
+        hostSubmitted: true,
+        guestSubmitted: true,
+        submittedCount: 2,
+        bothSubmitted: true,
+        updatedAt: "2026-03-19T12:00:05.000Z"
+      },
+      warPot: {
+        host: ["fire", "earth"],
+        guest: ["fire", "water"]
+      },
+      warActive: true,
+      warDepth: 2,
+      warRounds: [
+        { round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" },
+        { round: 2, hostMove: "earth", guestMove: "water", outcomeType: "war" }
+      ],
+      matchComplete: false,
+      rematch: { hostReady: false, guestReady: false }
+    }
+  });
+
+  assert.equal(normalized.room.pileCount, 4);
+  assert.deepEqual(normalized.room.warPileCards, ["fire", "fire", "earth", "water"]);
+  assert.deepEqual(normalized.room.warPileSizes, [2, 4]);
+});
+
 test("appController: online play room snapshot resolved result updates lastCompletedBattleResult without a live latestRoundResult payload", () => {
   const app = new AppController({
     screenManager: { register: () => {}, show: () => {} },

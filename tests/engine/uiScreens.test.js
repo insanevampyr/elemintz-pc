@@ -15522,10 +15522,17 @@ test("ui: online play live board renders WAR visuals on the left using the autho
         lastOutcomeType: "war",
         warActive: true,
         warDepth: 2,
+        warPot: {
+          host: ["fire", "earth"],
+          guest: ["fire", "water"]
+        },
         pileCount: 4,
         warPileSizes: [2, 4],
         warPileCards: ["fire", "fire", "earth", "water"],
-        warRounds: [],
+        warRounds: [
+          { round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" },
+          { round: 2, hostMove: "earth", guestMove: "water", outcomeType: "war" }
+        ],
         roundHistory: [],
         moveSync: {
           hostSubmitted: true,
@@ -15541,8 +15548,8 @@ test("ui: online play live board renders WAR visuals on the left using the autho
 
   assert.match(html, /match-status-panel online-play-status-panel has-center-result/);
   assert.match(html, /war-pile-inline online-war-pile-inline war-highlight/);
-  assert.match(html, /Opponent Cards/);
-  assert.match(html, /WAR pile tracks committed cards\./);
+  assert.match(html, /WAR Pile/);
+  assert.match(html, /Tracks committed WAR cards\./);
   assert.match(html, /WAR progression: 2 -> 4/);
   assert.match(html, /WAR Fire x2/);
   assert.match(html, /WAR Earth x1/);
