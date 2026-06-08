@@ -4810,7 +4810,7 @@ test("appController: Daily EleMintz Chest modal shows result details and readabl
             return {
               openType: "paid",
               rarity: "legendary",
-              duplicateConversion: { tokensGranted: 400 },
+              duplicateConversion: null,
               cosmetic: {
                 type: "elementCardVariant",
                 cosmeticId: "wind_variant_cloudcoil"
@@ -4854,10 +4854,12 @@ test("appController: Daily EleMintz Chest modal shows result details and readabl
     await elements["daily-chest-paid-open-btn"].listeners.get("click")?.();
     assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Latest Result/);
     assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-daily-chest-rarity-class="legendary"/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-daily-chest-hero-preview="true"/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-daily-chest-hero-preview-label="true">NEW REWARD</);
     assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Cloudcoil/);
-    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Duplicate Converted/);
-    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /\+400 Tokens/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /wind_variant_cloudcoil\.png/);
     assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Legendary pity activated/);
+    assert.equal(app.dailyElementChestOpenInFlight, false);
 
     await elements["daily-chest-paid-open-btn"].listeners.get("click")?.();
     assert.match(
@@ -4868,6 +4870,78 @@ test("appController: Daily EleMintz Chest modal shows result details and readabl
     globalThis.window = originalWindow;
     globalThis.document = originalDocument;
   }
+});
+
+test("appController: Daily EleMintz Chest resolves new-reward preview images for supported cosmetic types", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  const cases = [
+    {
+      result: {
+        rarity: "rare",
+        cosmetic: { type: "avatar", cosmeticId: "avatar_chestbound_adept" },
+        duplicateConversion: null
+      },
+      expectedPath: "avatars/avatar_chestbound_adept.png",
+      expectedKind: "square"
+    },
+    {
+      result: {
+        rarity: "common",
+        cosmetic: { type: "title", cosmeticId: "title_first_light" },
+        duplicateConversion: null
+      },
+      expectedPath: "titles/title_first_light.png",
+      expectedKind: "square"
+    },
+    {
+      result: {
+        rarity: "rare",
+        cosmetic: { type: "background", cosmeticId: "background_morning_sanctum" },
+        duplicateConversion: null
+      },
+      expectedPath: "backgrounds/background_morning_sanctum.png",
+      expectedKind: "landscape"
+    },
+    {
+      result: {
+        rarity: "epic",
+        cosmetic: { type: "cardBack", cosmeticId: "cardback_daily_element_chest" },
+        duplicateConversion: null
+      },
+      expectedPath: "card_backs/cardback_daily_element_chest.png",
+      expectedKind: "portrait"
+    },
+    {
+      result: {
+        rarity: "epic",
+        cosmetic: { type: "elementCardVariant", cosmeticId: "wind_variant_cloudcoil" },
+        duplicateConversion: null
+      },
+      expectedPath: "cards/wind_variant_cloudcoil.png",
+      expectedKind: "portrait"
+    }
+  ];
+
+  for (const testCase of cases) {
+    const preview = app.buildDailyElementChestRewardPreview(testCase.result);
+    assert.ok(preview);
+    assert.match(preview.imageSrc, new RegExp(testCase.expectedPath.replace(/\./g, "\\.")));
+    assert.equal(preview.mediaKind, testCase.expectedKind);
+  }
+
+  assert.equal(
+    app.buildDailyElementChestRewardPreview({
+      rarity: "legendary",
+      cosmetic: { type: "elementCardVariant", cosmeticId: "wind_variant_cloudcoil" },
+      duplicateConversion: { tokensGranted: 400 }
+    }),
+    null
+  );
 });
 
 test("appController: online settlement refresh prefers the multiplayer-authoritative profile snapshot", async () => {

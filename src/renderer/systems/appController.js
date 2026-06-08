@@ -109,7 +109,7 @@ const FEEDBACK_CATEGORIES = Object.freeze([
   "Other"
 ]);
 const FEEDBACK_MAX_MESSAGE_LENGTH = 2000;
-const DAILY_ELEMENT_CHEST_RESULT_VISIBILITY_MS = 1000;
+const DAILY_ELEMENT_CHEST_RESULT_VISIBILITY_MS = 3000;
 const PVE_AI_TAUNT_LINES = Object.freeze({
   match_start: Object.freeze(["👀 I saw that.", "😤 Not done yet.", "🔥 Burn it down!"]),
   player_win: Object.freeze(["💀 That hurt.", "😤 Not done yet.", "💀 I don’t fold."]),
@@ -2193,6 +2193,7 @@ export class AppController {
     const epicProgress = Math.min(10, Math.max(0, Number(pity.opensSinceEpicPlus ?? 0) || 0));
     const legendaryProgress = Math.min(30, Math.max(0, Number(pity.opensSinceLegendary ?? 0) || 0));
     const result = this.dailyElementChestLastResult ?? null;
+    const rewardPreview = this.buildDailyElementChestRewardPreview(result);
     let resultDisplayName = "";
     if (result?.cosmetic?.type && result?.cosmetic?.cosmeticId) {
       resultDisplayName =
@@ -2215,8 +2216,65 @@ export class AppController {
       pendingOpenType: this.dailyElementChestPendingOpenType,
       result,
       resultVisualActive: this.dailyElementChestResultVisualActive,
+      rewardPreview,
       resultDisplayName,
       errorMessage: this.dailyElementChestUiError
+    };
+  }
+
+  buildDailyElementChestRewardPreview(result) {
+    if (!result?.cosmetic?.type || !result?.cosmetic?.cosmeticId || result?.duplicateConversion) {
+      return null;
+    }
+
+    const type = result.cosmetic.type;
+    const cosmeticId = result.cosmetic.cosmeticId;
+    const definition = getCosmeticDefinition(type, cosmeticId);
+    const displayName = getCosmeticDisplayName(type, cosmeticId) ?? cosmeticId;
+    let imageSrc = null;
+    let mediaKind = "square";
+
+    switch (type) {
+      case "avatar":
+        imageSrc = getAvatarImage(cosmeticId);
+        break;
+      case "badge":
+        imageSrc = getBadgeImage(cosmeticId);
+        break;
+      case "cardBack":
+        imageSrc = getCardBackImage(cosmeticId);
+        mediaKind = "portrait";
+        break;
+      case "elementCardVariant": {
+        const element = definition?.element ?? null;
+        const variantMap = getVariantCardImages(cosmeticId);
+        imageSrc = element ? variantMap?.[element] ?? null : null;
+        mediaKind = "portrait";
+        break;
+      }
+      case "background":
+        imageSrc = getArenaBackground(cosmeticId);
+        mediaKind = "landscape";
+        break;
+      case "title":
+        imageSrc = definition?.image ? getAssetPath(definition.image) : null;
+        break;
+      default:
+        return null;
+    }
+
+    if (!imageSrc) {
+      return null;
+    }
+
+    return {
+      type,
+      cosmeticId,
+      displayName,
+      rarity: String(result.rarity ?? "common").toLowerCase(),
+      imageSrc,
+      imageAlt: `${displayName} reward preview`,
+      mediaKind
     };
   }
 

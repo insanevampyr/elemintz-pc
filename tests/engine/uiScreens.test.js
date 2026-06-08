@@ -11230,9 +11230,22 @@ test("ui: Daily EleMintz Chest renders cooldown mini-card and result modal state
     legendaryProgressLabel: "29 / 30",
     resultVisualActive: true,
     resultDisplayName: "Cloudcoil",
+    rewardPreview: {
+      type: "elementCardVariant",
+      cosmeticId: "wind_variant_cloudcoil",
+      displayName: "Cloudcoil",
+      rarity: "legendary",
+      imageSrc: "assets/cards/wind_variant_cloudcoil.png",
+      imageAlt: "Cloudcoil reward preview",
+      mediaKind: "portrait"
+    },
     result: {
       rarity: "legendary",
-      duplicateConversion: { tokensGranted: 400 },
+      duplicateConversion: null,
+      cosmetic: {
+        type: "elementCardVariant",
+        cosmeticId: "wind_variant_cloudcoil"
+      },
       pityApplied: { legendary: true }
     },
     errorMessage: "Insufficient tokens."
@@ -11257,14 +11270,17 @@ test("ui: Daily EleMintz Chest renders cooldown mini-card and result modal state
   assert.match(modalHtml, /data-daily-chest-owned-state="missing"[\s\S]*?>[\s\S]*Missing/);
   assert.match(modalHtml, /data-daily-chest-rarity-class="legendary"/);
   assert.match(modalHtml, /data-daily-chest-rarity="legendary">LEGENDARY</);
-  assert.match(modalHtml, /data-daily-chest-hero-toast="true"/);
+  assert.match(modalHtml, /data-daily-chest-hero-preview="true"/);
   assert.match(modalHtml, /data-daily-chest-hero-rarity="legendary"/);
+  assert.match(modalHtml, /data-daily-chest-hero-preview-label="true">NEW REWARD</);
   assert.match(modalHtml, /data-daily-chest-hero-rarity-label="legendary">LEGENDARY</);
-  assert.match(modalHtml, /data-daily-chest-hero-result-name="true">[\s\S]*<strong>New Reward:<\/strong>[\s\S]*<span>Cloudcoil<\/span>/);
-  assert.match(modalHtml, /data-daily-chest-hero-duplicate-result="true">[\s\S]*<strong>Duplicate Converted:<\/strong>[\s\S]*<span>\+400 Tokens<\/span>/);
+  assert.match(modalHtml, /data-daily-chest-hero-preview-media="portrait"/);
+  assert.match(modalHtml, /src="assets\/cards\/wind_variant_cloudcoil\.png"/);
+  assert.match(modalHtml, /alt="Cloudcoil reward preview"/);
+  assert.match(modalHtml, /data-daily-chest-hero-result-name="true">Cloudcoil</);
   assert.match(modalHtml, /data-daily-chest-hero-pity-result="legendary">Legendary pity activated!/);
   assert.match(modalHtml, /data-daily-chest-result-name="true">[\s\S]*<strong>New Reward<\/strong>[\s\S]*<span>Cloudcoil<\/span>/);
-  assert.match(modalHtml, /data-daily-chest-duplicate-result="true">[\s\S]*<strong>Duplicate Converted<\/strong>[\s\S]*<span>\+400 Tokens<\/span>/);
+  assert.doesNotMatch(modalHtml, /data-daily-chest-duplicate-result="true"/);
   assert.match(modalHtml, /data-daily-chest-pity-result="legendary"/);
   assert.match(modalHtml, /data-daily-chest-error="true">Insufficient tokens\./);
   assert.doesNotMatch(modalHtml, /Using the existing chest icon placeholder/);
@@ -11304,8 +11320,84 @@ test("ui: Daily EleMintz Chest keeps the open chest visible briefly for fresh re
   assert.match(html, /daily-element-chest-modal__image--open/);
   assert.match(html, /data-daily-chest-hero-toast="true"/);
   assert.match(html, /data-daily-chest-hero-rarity="rare"/);
-  assert.match(html, /data-daily-chest-hero-duplicate-result="true">[\s\S]*\+60 Tokens/);
+  assert.match(html, /data-daily-chest-hero-duplicate-result="true">[\s\S]*DUPLICATE CONVERTED[\s\S]*\+60 Tokens/);
   assert.match(html, /data-daily-chest-hero-pity-result="epic-plus">Epic\+ pity activated!/);
+});
+
+test("ui: Daily EleMintz Chest hero preview supports mixed new-reward media shapes", () => {
+  const avatarHtml = renderDailyElementChestModalBody({
+    loading: false,
+    resultVisualActive: true,
+    rewardPreview: {
+      displayName: "Chestbound Adept",
+      imageSrc: "assets/avatars/avatar_chestbound_adept.png",
+      imageAlt: "Chestbound Adept reward preview",
+      mediaKind: "square"
+    },
+    result: {
+      rarity: "rare",
+      cosmetic: { type: "avatar", cosmeticId: "avatar_chestbound_adept" },
+      duplicateConversion: null,
+      pityApplied: {}
+    }
+  });
+  const titleHtml = renderDailyElementChestModalBody({
+    loading: false,
+    resultVisualActive: true,
+    rewardPreview: {
+      displayName: "First Light",
+      imageSrc: "assets/titles/title_first_light.png",
+      imageAlt: "First Light reward preview",
+      mediaKind: "square"
+    },
+    result: {
+      rarity: "common",
+      cosmetic: { type: "title", cosmeticId: "title_first_light" },
+      duplicateConversion: null,
+      pityApplied: {}
+    }
+  });
+  const backgroundHtml = renderDailyElementChestModalBody({
+    loading: false,
+    resultVisualActive: true,
+    rewardPreview: {
+      displayName: "Morning Sanctum",
+      imageSrc: "assets/backgrounds/background_morning_sanctum.png",
+      imageAlt: "Morning Sanctum reward preview",
+      mediaKind: "landscape"
+    },
+    result: {
+      rarity: "rare",
+      cosmetic: { type: "background", cosmeticId: "background_morning_sanctum" },
+      duplicateConversion: null,
+      pityApplied: {}
+    }
+  });
+  const cardBackHtml = renderDailyElementChestModalBody({
+    loading: false,
+    resultVisualActive: true,
+    rewardPreview: {
+      displayName: "Daily Element Chest",
+      imageSrc: "assets/card_backs/cardback_daily_element_chest.png",
+      imageAlt: "Daily Element Chest reward preview",
+      mediaKind: "portrait"
+    },
+    result: {
+      rarity: "epic",
+      cosmetic: { type: "cardBack", cosmeticId: "cardback_daily_element_chest" },
+      duplicateConversion: null,
+      pityApplied: {}
+    }
+  });
+
+  assert.match(avatarHtml, /data-daily-chest-hero-preview-media="square"/);
+  assert.match(avatarHtml, /assets\/avatars\/avatar_chestbound_adept\.png/);
+  assert.match(titleHtml, /data-daily-chest-hero-preview-media="square"/);
+  assert.match(titleHtml, /assets\/titles\/title_first_light\.png/);
+  assert.match(backgroundHtml, /data-daily-chest-hero-preview-media="landscape"/);
+  assert.match(backgroundHtml, /assets\/backgrounds\/background_morning_sanctum\.png/);
+  assert.match(cardBackHtml, /data-daily-chest-hero-preview-media="portrait"/);
+  assert.match(cardBackHtml, /assets\/card_backs\/cardback_daily_element_chest\.png/);
 });
 
 test("ui: Daily EleMintz Chest opening state renders glow-safe opening copy and disabled buttons", () => {

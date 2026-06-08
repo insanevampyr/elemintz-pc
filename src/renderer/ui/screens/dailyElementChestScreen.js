@@ -36,6 +36,11 @@ function getDailyChestRarityClass(rarity) {
   return ["common", "rare", "epic", "legendary"].includes(safeRarity) ? safeRarity : "common";
 }
 
+function getDailyChestPreviewMediaKind(mediaKind) {
+  const safeKind = String(mediaKind ?? "").trim().toLowerCase();
+  return ["square", "portrait", "landscape"].includes(safeKind) ? safeKind : "square";
+}
+
 function renderPoolSection(title, entries = []) {
   const hasEntries = Array.isArray(entries) && entries.length > 0;
   return `
@@ -120,6 +125,8 @@ export function renderDailyElementChestModalBody(view = {}) {
   const hasNewReward = Boolean(rewardName);
   const hasDuplicateConversion = duplicateTokens > 0;
   const showHeroToast = view.resultVisualActive === true && Boolean(view.result);
+  const rewardPreview = showHeroToast && !hasDuplicateConversion ? view.rewardPreview ?? null : null;
+  const rewardPreviewKind = getDailyChestPreviewMediaKind(rewardPreview?.mediaKind);
   const collectionProgress = view.collectionProgress ?? null;
   const totalOwned = Math.max(0, Number(collectionProgress?.totalOwned ?? 0));
   const totalAvailable = Math.max(0, Number(collectionProgress?.totalAvailable ?? 0));
@@ -145,45 +152,76 @@ export function renderDailyElementChestModalBody(view = {}) {
             : ""
         }
         ${
-          showHeroToast
+          rewardPreview
             ? `
               <div
-                class="daily-element-chest-modal__hero-toast daily-element-chest-modal__hero-toast--${rarityClass}"
-                data-daily-chest-hero-toast="true"
+                class="daily-element-chest-modal__hero-preview daily-element-chest-modal__hero-preview--${rarityClass}"
+                data-daily-chest-hero-preview="true"
                 data-daily-chest-hero-rarity="${rarityClass}"
               >
-                <div class="daily-element-chest-modal__hero-toast-header">
+                <div class="daily-element-chest-modal__hero-preview-header">
+                  <strong data-daily-chest-hero-preview-label="true">NEW REWARD</strong>
                   <span class="daily-element-chest-modal__rarity-badge daily-element-chest-modal__rarity-badge--${rarityClass}" data-daily-chest-hero-rarity-label="${rarityClass}">${rarityLabel}</span>
                 </div>
-                ${
-                  hasNewReward
-                    ? `
-                      <p class="daily-element-chest-modal__hero-toast-line" data-daily-chest-hero-result-name="true">
-                        <strong>New Reward:</strong>
-                        <span>${rewardName}</span>
-                      </p>
-                    `
-                    : ""
-                }
-                ${
-                  hasDuplicateConversion
-                    ? `
-                      <p class="daily-element-chest-modal__hero-toast-line" data-daily-chest-hero-duplicate-result="true">
-                        <strong>Duplicate Converted:</strong>
-                        <span>+${duplicateTokens} Tokens</span>
-                      </p>
-                    `
-                    : ""
-                }
+                <div
+                  class="daily-element-chest-modal__hero-preview-media daily-element-chest-modal__hero-preview-media--${rewardPreviewKind}"
+                  data-daily-chest-hero-preview-media="${rewardPreviewKind}"
+                >
+                  <img
+                    class="daily-element-chest-modal__hero-preview-image"
+                    src="${escapeHtml(rewardPreview.imageSrc)}"
+                    alt="${escapeHtml(rewardPreview.imageAlt ?? `${rewardPreview.displayName} reward preview`)}"
+                  />
+                </div>
+                <p class="daily-element-chest-modal__hero-preview-name" data-daily-chest-hero-result-name="true">${escapeHtml(rewardPreview.displayName)}</p>
                 ${
                   view.result?.pityApplied?.legendary
-                    ? `<p class="daily-element-chest-modal__hero-toast-pity" data-daily-chest-hero-pity-result="legendary">Legendary pity activated!</p>`
+                    ? `<p class="daily-element-chest-modal__hero-preview-pity" data-daily-chest-hero-pity-result="legendary">Legendary pity activated!</p>`
                     : view.result?.pityApplied?.epicPlus
-                      ? `<p class="daily-element-chest-modal__hero-toast-pity" data-daily-chest-hero-pity-result="epic-plus">Epic+ pity activated!</p>`
+                      ? `<p class="daily-element-chest-modal__hero-preview-pity" data-daily-chest-hero-pity-result="epic-plus">Epic+ pity activated!</p>`
                       : ""
                 }
               </div>
             `
+            : showHeroToast
+              ? `
+                <div
+                  class="daily-element-chest-modal__hero-toast daily-element-chest-modal__hero-toast--${rarityClass}"
+                  data-daily-chest-hero-toast="true"
+                  data-daily-chest-hero-rarity="${rarityClass}"
+                >
+                  <div class="daily-element-chest-modal__hero-toast-header">
+                    <span class="daily-element-chest-modal__rarity-badge daily-element-chest-modal__rarity-badge--${rarityClass}" data-daily-chest-hero-rarity-label="${rarityClass}">${rarityLabel}</span>
+                  </div>
+                  ${
+                    hasNewReward
+                      ? `
+                        <p class="daily-element-chest-modal__hero-toast-line" data-daily-chest-hero-result-name="true">
+                          <strong>NEW REWARD</strong>
+                          <span>${rewardName}</span>
+                        </p>
+                      `
+                      : ""
+                  }
+                  ${
+                    hasDuplicateConversion
+                      ? `
+                        <p class="daily-element-chest-modal__hero-toast-line" data-daily-chest-hero-duplicate-result="true">
+                          <strong>DUPLICATE CONVERTED</strong>
+                          <span>+${duplicateTokens} Tokens</span>
+                        </p>
+                      `
+                      : ""
+                  }
+                  ${
+                    view.result?.pityApplied?.legendary
+                      ? `<p class="daily-element-chest-modal__hero-toast-pity" data-daily-chest-hero-pity-result="legendary">Legendary pity activated!</p>`
+                      : view.result?.pityApplied?.epicPlus
+                        ? `<p class="daily-element-chest-modal__hero-toast-pity" data-daily-chest-hero-pity-result="epic-plus">Epic+ pity activated!</p>`
+                        : ""
+                  }
+                </div>
+              `
             : ""
         }
       </div>

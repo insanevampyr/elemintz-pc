@@ -134,6 +134,98 @@
   animation: daily-chest-result-fade-in 0.18s ease-out;
 }
 
+.daily-element-chest-modal__hero-preview {
+  margin-top: 10px;
+  width: min(340px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(214, 232, 245, 0.2);
+  background: linear-gradient(180deg, rgba(17, 31, 54, 0.9), rgba(8, 17, 32, 0.94));
+  box-shadow: 0 14px 26px rgba(4, 10, 22, 0.26);
+  animation: daily-chest-result-fade-in 0.18s ease-out;
+}
+
+.daily-element-chest-modal__hero-preview--common {
+  border-color: rgba(194, 208, 226, 0.28);
+}
+
+.daily-element-chest-modal__hero-preview--rare {
+  border-color: rgba(120, 208, 255, 0.34);
+}
+
+.daily-element-chest-modal__hero-preview--epic {
+  border-color: rgba(198, 139, 255, 0.36);
+}
+
+.daily-element-chest-modal__hero-preview--legendary {
+  border-color: rgba(246, 203, 103, 0.42);
+}
+
+.daily-element-chest-modal__hero-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.daily-element-chest-modal__hero-preview-header strong {
+  color: rgba(214, 232, 245, 0.8);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.daily-element-chest-modal__hero-preview-media {
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(214, 232, 245, 0.16);
+  background: rgba(5, 14, 27, 0.52);
+}
+
+.daily-element-chest-modal__hero-preview-media--square {
+  width: min(180px, 100%);
+  aspect-ratio: 1;
+}
+
+.daily-element-chest-modal__hero-preview-media--portrait {
+  width: min(150px, 100%);
+  aspect-ratio: 0.72;
+}
+
+.daily-element-chest-modal__hero-preview-media--landscape {
+  width: min(280px, 100%);
+  aspect-ratio: 16 / 9;
+}
+
+.daily-element-chest-modal__hero-preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.daily-element-chest-modal__hero-preview-name,
+.daily-element-chest-modal__hero-preview-pity {
+  margin: 0;
+  text-align: center;
+}
+
+.daily-element-chest-modal__hero-preview-name {
+  color: #f6fbff;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.daily-element-chest-modal__hero-preview-pity {
+  color: #fff1c8;
+  font-weight: 700;
+}
+
 .daily-element-chest-modal__hero-toast--common {
   border-color: rgba(194, 208, 226, 0.28);
 }
