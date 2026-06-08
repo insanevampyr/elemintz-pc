@@ -638,14 +638,24 @@ function renderOnlineMatchTauntRail(taunts = {}) {
       data-online-match-taunt-rail="true"
     >
       <div class="match-taunt-controls online-match-taunt-rail-header" data-online-match-taunt-rail-header="true">
-        <button id="online-taunts-toggle-btn" type="button" class="btn btn-secondary match-taunts-toggle-btn" aria-expanded="${panelOpen ? "true" : "false"}">
+        <button
+          id="online-taunts-toggle-btn"
+          type="button"
+          class="btn btn-secondary match-taunts-toggle-btn"
+          data-online-match-taunt-rail-trigger="true"
+          aria-expanded="${panelOpen ? "true" : "false"}"
+        >
           Expressions
         </button>
         <p class="match-taunt-cooldown" data-taunt-cooldown-state="${safeCooldownMs > 0 ? "cooldown" : "ready"}">
           ${escapeHtml(cooldownLabel)}
         </p>
       </div>
-      <div class="online-match-taunt-rail-body" data-online-match-taunt-rail-body="true">
+      <div
+        class="online-match-taunt-rail-body"
+        data-online-match-taunt-rail-body="true"
+        data-online-match-taunt-body-scroll="true"
+      >
         <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
           ${safeMessages
             .map(
@@ -829,30 +839,40 @@ function renderOnlineLiveStatusPanel(
 
   return `
     <article class="panel match-status-panel online-play-status-panel has-center-result" data-online-active-match-status="true">
-      <div class="war-pile-inline online-war-pile-inline ${warTriggered ? "war-highlight" : ""}">
-        ${renderOnlineWarPileSummary(boardView.warPileCards, boardView.opponentCardVariants, warTriggered)}
-      </div>
-      ${renderCenterRoundResult(centerResultView)}
-      <div class="status-meta">
-        <div class="online-status-header-row">
-          <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
-            <strong>${escapeHtml(roomStateView.label)}</strong>
-          </div>
-          <div
-            class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
-            data-online-turn-timer-shell="true"
-            aria-live="polite"
-          >
-            <span class="online-turn-timer-label" data-online-turn-timer-label="true">
-              ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
-            </span>
-          </div>
+      <div class="online-play-status-zone online-play-status-zone-left" data-online-status-zone="left">
+        <div class="war-pile-inline online-war-pile-inline ${warTriggered ? "war-highlight" : ""}">
+          ${renderOnlineWarPileSummary(boardView.warPileCards, boardView.opponentCardVariants, warTriggered)}
         </div>
-        <p class="round-result-text">${escapeHtml(roomStateView.detail)}</p>
-        ${matchStatus ? `<p class="round-status-line">Round ${escapeHtml(String(matchStatus.roundNumber))} | Host ${escapeHtml(String(matchStatus.hostScore))} - Guest ${escapeHtml(String(matchStatus.guestScore))}</p>` : ""}
-        ${moveSyncLabel ? `<p class="round-status-line">Move Sync: ${escapeHtml(moveSyncLabel)}</p>` : ""}
-        ${boardView.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${boardView.warPileSizes.join(" -> ")}</p>` : ""}
-        ${roomLifecycle?.primaryLabel ? `<p class="round-status-line">${escapeHtml(roomLifecycle.primaryLabel)}</p>` : ""}
+      </div>
+      <div
+        class="online-play-status-zone online-play-status-zone-center"
+        data-online-status-zone="center"
+        data-online-status-center-result="true"
+      >
+        ${renderCenterRoundResult(centerResultView)}
+      </div>
+      <div class="online-play-status-zone online-play-status-zone-right" data-online-status-zone="right">
+        <div class="status-meta">
+          <div class="online-status-header-row">
+            <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
+              <strong>${escapeHtml(roomStateView.label)}</strong>
+            </div>
+            <div
+              class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
+              data-online-turn-timer-shell="true"
+              aria-live="polite"
+            >
+              <span class="online-turn-timer-label" data-online-turn-timer-label="true">
+                ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
+              </span>
+            </div>
+          </div>
+          <p class="round-result-text">${escapeHtml(roomStateView.detail)}</p>
+          ${matchStatus ? `<p class="round-status-line">Round ${escapeHtml(String(matchStatus.roundNumber))} | Host ${escapeHtml(String(matchStatus.hostScore))} - Guest ${escapeHtml(String(matchStatus.guestScore))}</p>` : ""}
+          ${moveSyncLabel ? `<p class="round-status-line">Move Sync: ${escapeHtml(moveSyncLabel)}</p>` : ""}
+          ${boardView.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${escapeHtml(boardView.warPileSizes.join(" -> "))}</p>` : ""}
+          ${roomLifecycle?.primaryLabel ? `<p class="round-status-line">${escapeHtml(roomLifecycle.primaryLabel)}</p>` : ""}
+        </div>
       </div>
     </article>
   `;

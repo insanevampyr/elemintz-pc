@@ -1082,6 +1082,7 @@ input[type="number"] {
   display: grid;
   min-width: 0;
   align-self: stretch;
+  min-height: 0;
   padding: 10px 10px 12px;
   border-radius: 16px;
   border: 1px solid rgba(118, 165, 203, 0.18);
@@ -1101,31 +1102,47 @@ input[type="number"] {
   right: auto;
   z-index: 5;
   width: 100%;
+  height: min(100%, calc(100vh - 250px));
+  max-height: calc(100vh - 250px);
+  min-height: 0;
   gap: 8px;
+  grid-template-rows: auto minmax(0, 1fr);
   align-content: start;
+  overflow: hidden;
   pointer-events: auto;
 }
 
 .online-active-match-expressions .online-match-taunt-rail-header {
-  align-items: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
 }
 
 .online-active-match-expressions .online-match-taunt-rail-body {
   display: grid;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   align-content: start;
+  align-self: stretch;
+  padding-right: 2px;
 }
 
 .online-active-match-expressions .match-taunts-toggle-btn {
-  width: 100%;
-  min-width: 0;
-  justify-self: stretch;
+  width: auto;
+  min-width: 108px;
+  justify-self: start;
+  flex: 0 0 auto;
   position: relative;
   z-index: 1;
 }
 
 .online-active-match-expressions .match-taunt-cooldown {
-  justify-self: end;
+  justify-self: auto;
+  flex: 0 0 auto;
   margin-top: 0;
 }
 
@@ -1239,20 +1256,36 @@ input[type="number"] {
   align-content: center;
   align-self: stretch;
   min-width: 0;
-  grid-column: 3;
-  grid-row: 1;
   padding: 6px 0;
 }
 
 .online-play-status-panel.has-center-result {
-  grid-template-columns: minmax(152px, 208px) max-content minmax(168px, 208px);
-  justify-content: center;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+  justify-content: stretch;
+  gap: 12px;
+}
+
+.online-play-status-zone {
+  min-width: 0;
+  display: grid;
+  align-items: center;
+}
+
+.online-play-status-zone-left {
+  justify-items: start;
+}
+
+.online-play-status-zone-center {
+  justify-items: center;
+  position: relative;
+}
+
+.online-play-status-zone-right {
+  justify-items: end;
 }
 
 .online-play-status-panel.has-center-result .war-pile-inline {
-  grid-column: 1;
-  justify-self: center;
+  justify-self: start;
   width: min(100%, 292px);
 }
 
@@ -1272,13 +1305,12 @@ input[type="number"] {
 }
 
 .online-play-status-panel.has-center-result .round-center-result {
-  grid-column: 2;
+  grid-column: auto;
 }
 
 .online-play-status-panel.has-center-result .status-meta {
-  grid-column: 3;
-  justify-self: start;
   width: min(100%, 208px);
+  justify-self: end;
 }
 
 .online-play-status-panel:not(.has-center-result) .status-meta {
@@ -1948,6 +1980,9 @@ input[type="number"] {
 
   .online-active-match-expressions .match-taunt-shell {
     position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
 
   .online-active-match-expressions .match-taunt-panel {

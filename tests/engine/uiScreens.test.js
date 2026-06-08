@@ -13639,7 +13639,7 @@ test("ui: local PvE active WAR center result prefers the latest clash cards over
   assert.match(html, /assets\/cards\/water_variant_tidal_spirit\.png/);
   assert.doesNotMatch(html, /Player: Wind/);
   assert.doesNotMatch(html, /Opponent: Wind/);
-  assert.match(html, /WAR progression: 2 -> 4/);
+  assert.match(html, /WAR progression: 2 (?:-&gt;|->) 4/);
 });
 
 test("ui: local PvE does not render a fake center result before the first real round", () => {
@@ -15049,6 +15049,10 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /Round 1 \| Host 0 - Guest 0/);
   assert.match(html, /Move Sync: 1\/2 submitted\./);
   assert.match(html, /data-online-active-match-status="true"/);
+  assert.match(html, /data-online-status-zone="left"/);
+  assert.match(html, /data-online-status-zone="center"/);
+  assert.match(html, /data-online-status-center-result="true"/);
+  assert.match(html, /data-online-status-zone="right"/);
   assert.doesNotMatch(html, /Online Now:/);
   assert.doesNotMatch(html, /Public Rooms:/);
   assert.match(html, /class="player-header"/);
@@ -15608,8 +15612,12 @@ test("ui: online play live board renders WAR visuals on the left using the autho
   assert.match(html, /match-status-panel online-play-status-panel has-center-result/);
   assert.match(html, /war-pile-inline online-war-pile-inline war-highlight/);
   assert.match(html, /WAR Pile/);
+  assert.match(html, /data-online-status-zone="left"/);
+  assert.match(html, /data-online-status-zone="center"/);
+  assert.match(html, /data-online-status-center-result="true"/);
+  assert.match(html, /data-online-status-zone="right"/);
   assert.match(html, /Tracks committed WAR cards\./);
-  assert.match(html, /WAR progression: 2 -> 4/);
+  assert.match(html, /WAR progression: 2 (?:-&gt;|->) 4/);
   assert.match(html, /WAR Fire x2/);
   assert.match(html, /WAR Earth x1/);
   assert.match(html, /WAR Water x1/);
@@ -18352,6 +18360,8 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /data-online-match-taunt-rail="true"/);
   assert.match(html, /data-online-match-taunt-rail-header="true"/);
   assert.match(html, /data-online-match-taunt-rail-body="true"/);
+  assert.match(html, /data-online-match-taunt-body-scroll="true"/);
+  assert.match(html, /data-online-match-taunt-rail-trigger="true"/);
   assert.match(html, /data-match-taunt-panel="online"/);
   assert.match(html, /data-online-active-match-expressions="true"/);
   assert.match(html, /data-online-active-match-status="true"/);
@@ -18360,6 +18370,7 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /Expressions\s*<\/button>/);
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf("Recent expressions"));
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-match-taunt-panel="online"'));
+  assert.ok(html.indexOf('data-online-match-taunt-rail-header="true"') < html.indexOf('data-online-match-taunt-rail-body="true"'));
 });
 
 test("ui: online play screen still shows move controls for full rooms when moveSync is missing", () => {
