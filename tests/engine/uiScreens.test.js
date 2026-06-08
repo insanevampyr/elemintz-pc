@@ -18359,20 +18359,30 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /Rival<\/strong>\s*<span>.*Lucky clash\.<\/span>/);
   assert.match(html, /data-online-match-taunt-rail="true"/);
   assert.match(html, /data-online-match-taunt-rail-header="true"/);
+  assert.match(html, /data-online-match-taunt-controls="true"/);
+  assert.match(html, /data-online-match-taunt-box="true"/);
   assert.match(html, /data-online-match-taunt-rail-body="true"/);
   assert.match(html, /data-online-match-taunt-body-scroll="true"/);
+  assert.match(html, /data-online-match-taunt-scroll="true"/);
   assert.match(html, /data-online-match-taunt-rail-trigger="true"/);
+  assert.match(html, /data-online-match-taunt-trigger="true"/);
   assert.match(html, /class="btn btn-secondary match-taunts-toggle-btn online-match-taunt-rail-trigger"/);
-  assert.match(html, /class="online-match-taunt-rail-body online-match-taunt-rail-scroll-body"/);
+  assert.match(html, /class="online-match-taunt-rail-body online-match-taunt-rail-scroll-body online-match-taunt-box-scroll"/);
   assert.match(html, /data-match-taunt-panel="online"/);
   assert.match(html, /data-online-active-match-expressions="true"/);
   assert.match(html, /data-online-active-match-status="true"/);
   assert.match(html, /data-online-active-match-status-shell="true"/);
   assert.match(html, /Recent expressions/);
   assert.match(html, /Expressions\s*<\/button>/);
+  assert.ok(html.indexOf('data-online-match-taunt-controls="true"') < html.indexOf('data-online-match-taunt-box="true"'));
+  assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-online-match-taunt-box="true"'));
+  assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-online-match-taunt-scroll="true"'));
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf("Recent expressions"));
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-match-taunt-panel="online"'));
-  assert.ok(html.indexOf('data-online-match-taunt-rail-header="true"') < html.indexOf('data-online-match-taunt-rail-body="true"'));
+  assert.ok(html.indexOf('data-online-match-taunt-box="true"') < html.indexOf('data-online-match-taunt-scroll="true"'));
+  assert.ok(html.indexOf('data-online-match-taunt-scroll="true"') < html.indexOf("Recent expressions"));
+  assert.ok(html.indexOf('data-online-match-taunt-scroll="true"') < html.indexOf('data-match-taunt-panel="online"'));
+  assert.ok(html.indexOf('data-online-match-taunt-rail-header="true"') < html.indexOf('data-online-match-taunt-box="true"'));
 });
 
 test("ui: online play screen still shows move controls for full rooms when moveSync is missing", () => {

@@ -637,12 +637,17 @@ function renderOnlineMatchTauntRail(taunts = {}) {
       data-match-taunt-shell="online"
       data-online-match-taunt-rail="true"
     >
-      <div class="online-match-taunt-rail-header" data-online-match-taunt-rail-header="true">
+      <div
+        class="online-match-taunt-rail-header online-match-taunt-controls-row"
+        data-online-match-taunt-rail-header="true"
+        data-online-match-taunt-controls="true"
+      >
         <button
           id="online-taunts-toggle-btn"
           type="button"
           class="btn btn-secondary match-taunts-toggle-btn online-match-taunt-rail-trigger"
           data-online-match-taunt-rail-trigger="true"
+          data-online-match-taunt-trigger="true"
           aria-expanded="${panelOpen ? "true" : "false"}"
         >
           Expressions
@@ -652,48 +657,54 @@ function renderOnlineMatchTauntRail(taunts = {}) {
         </p>
       </div>
       <div
-        class="online-match-taunt-rail-body online-match-taunt-rail-scroll-body"
-        data-online-match-taunt-rail-body="true"
-        data-online-match-taunt-body-scroll="true"
+        class="online-match-taunt-box"
+        data-online-match-taunt-box="true"
       >
-        <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
-          ${safeMessages
-            .map(
-              (message) => `
-                <div
-                  class="match-taunt-entry ${message?.isAi ? "is-ai" : message?.isOpponent ? "is-opponent" : "is-player"} ${message?.isFading ? "is-fading" : ""}"
-                  data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
-                >
-                  <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
-                  <span>${escapeHtml(message?.text ?? "")}</span>
+        <div
+          class="online-match-taunt-rail-body online-match-taunt-rail-scroll-body online-match-taunt-box-scroll"
+          data-online-match-taunt-rail-body="true"
+          data-online-match-taunt-body-scroll="true"
+          data-online-match-taunt-scroll="true"
+        >
+          <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
+            ${safeMessages
+              .map(
+                (message) => `
+                  <div
+                    class="match-taunt-entry ${message?.isAi ? "is-ai" : message?.isOpponent ? "is-opponent" : "is-player"} ${message?.isFading ? "is-fading" : ""}"
+                    data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
+                  >
+                    <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
+                    <span>${escapeHtml(message?.text ?? "")}</span>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+          ${
+            panelOpen
+              ? `
+                <div id="online-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="online" aria-label="Match Expressions">
+                  ${safePresetLines
+                    .map(
+                      (line, index) => `
+                        <button
+                          type="button"
+                          class="match-taunt-option"
+                          data-taunt-line="${escapeHtml(line)}"
+                          data-taunt-index="${String(index)}"
+                          ${canSend ? "" : "disabled"}
+                        >
+                          ${escapeHtml(line)}
+                        </button>
+                      `
+                    )
+                    .join("")}
                 </div>
               `
-            )
-            .join("")}
+              : ""
+          }
         </div>
-        ${
-          panelOpen
-            ? `
-              <div id="online-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="online" aria-label="Match Expressions">
-                ${safePresetLines
-                  .map(
-                    (line, index) => `
-                      <button
-                        type="button"
-                        class="match-taunt-option"
-                        data-taunt-line="${escapeHtml(line)}"
-                        data-taunt-index="${String(index)}"
-                        ${canSend ? "" : "disabled"}
-                      >
-                        ${escapeHtml(line)}
-                      </button>
-                    `
-                  )
-                  .join("")}
-              </div>
-            `
-            : ""
-        }
       </div>
     </aside>
   `;
