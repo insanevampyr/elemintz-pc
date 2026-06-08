@@ -638,9 +638,10 @@ function renderOnlineMatchTauntRail(taunts = {}) {
       data-online-match-taunt-rail="true"
     >
       <div
-        class="online-match-taunt-rail-header online-match-taunt-controls-row"
+        class="online-match-taunt-rail-header online-match-taunt-controls-row online-match-taunt-topbar"
         data-online-match-taunt-rail-header="true"
         data-online-match-taunt-controls="true"
+        data-online-match-taunt-topbar="true"
       >
         <button
           id="online-taunts-toggle-btn"
@@ -657,8 +658,9 @@ function renderOnlineMatchTauntRail(taunts = {}) {
         </p>
       </div>
       <div
-        class="online-match-taunt-box"
+        class="online-match-taunt-box online-match-taunt-fixed-box"
         data-online-match-taunt-box="true"
+        data-online-match-taunt-fixed-box="true"
       >
         <div
           class="online-match-taunt-rail-body online-match-taunt-rail-scroll-body online-match-taunt-box-scroll"

@@ -18360,7 +18360,9 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /data-online-match-taunt-rail="true"/);
   assert.match(html, /data-online-match-taunt-rail-header="true"/);
   assert.match(html, /data-online-match-taunt-controls="true"/);
+  assert.match(html, /data-online-match-taunt-topbar="true"/);
   assert.match(html, /data-online-match-taunt-box="true"/);
+  assert.match(html, /data-online-match-taunt-fixed-box="true"/);
   assert.match(html, /data-online-match-taunt-rail-body="true"/);
   assert.match(html, /data-online-match-taunt-body-scroll="true"/);
   assert.match(html, /data-online-match-taunt-scroll="true"/);
@@ -18375,7 +18377,9 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /Recent expressions/);
   assert.match(html, /Expressions\s*<\/button>/);
   assert.ok(html.indexOf('data-online-match-taunt-controls="true"') < html.indexOf('data-online-match-taunt-box="true"'));
+  assert.ok(html.indexOf('data-online-match-taunt-topbar="true"') < html.indexOf('data-online-match-taunt-fixed-box="true"'));
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-online-match-taunt-box="true"'));
+  assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-online-match-taunt-fixed-box="true"'));
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-online-match-taunt-scroll="true"'));
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf("Recent expressions"));
   assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-match-taunt-panel="online"'));

@@ -1071,11 +1071,13 @@ input[type="number"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(248px, 280px);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .online-active-match-main {
+  display: grid;
   min-width: 0;
+  min-height: 0;
 }
 
 .online-active-match-expressions {
@@ -1084,6 +1086,7 @@ input[type="number"] {
   min-width: 0;
   align-self: stretch;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   padding: 0;
   border: 0;
@@ -1097,19 +1100,17 @@ input[type="number"] {
 }
 
 .online-active-match-expressions .match-taunt-shell {
-  position: sticky;
-  top: 10px;
-  right: auto;
+  position: static;
   display: flex;
   flex-direction: column;
   z-index: 5;
   width: 100%;
-  height: clamp(320px, calc(100vh - 250px), 560px);
-  max-height: calc(100vh - 250px);
+  height: 100%;
+  max-height: none;
   min-height: 0;
   gap: 10px;
   align-content: stretch;
-  align-self: start;
+  align-self: stretch;
   overflow: visible;
   pointer-events: auto;
 }
@@ -1126,8 +1127,10 @@ input[type="number"] {
 
 .online-active-match-expressions .online-match-taunt-box {
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   flex: 1 1 auto;
+  height: 100%;
   overflow: hidden;
   padding: 10px 10px 12px;
   border-radius: 16px;
@@ -1140,6 +1143,7 @@ input[type="number"] {
 .online-active-match-expressions .online-match-taunt-rail-body {
   display: grid;
   gap: 10px;
+  height: 100%;
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
