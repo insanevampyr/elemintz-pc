@@ -110,6 +110,7 @@ const FEEDBACK_CATEGORIES = Object.freeze([
 ]);
 const FEEDBACK_MAX_MESSAGE_LENGTH = 2000;
 const DAILY_ELEMENT_CHEST_RESULT_VISIBILITY_MS = 3000;
+const DAILY_LOGIN_UPDATE_SAFETY_STALE_MS = 20000;
 const PVE_AI_TAUNT_LINES = Object.freeze({
   match_start: Object.freeze(["👀 I saw that.", "😤 Not done yet.", "🔥 Burn it down!"]),
   player_win: Object.freeze(["💀 That hurt.", "😤 Not done yet.", "💀 I don’t fold."]),
@@ -218,6 +219,7 @@ export class AppController {
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
     this.dailyLoginAutoClaimSessionGateKey = null;
+    this.dailyLoginAutoClaimStartedAt = 0;
     this.passCompletionResolve = null;
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletVictoryPayload = null;
@@ -431,6 +433,31 @@ export class AppController {
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
     this.dailyLoginAutoClaimSessionGateKey = null;
+    this.dailyLoginAutoClaimStartedAt = 0;
+  }
+
+  hasActiveDailyLoginAutoClaimForUpdateSafety(nowMs = Date.now()) {
+    if (!this.dailyLoginAutoClaimPromise) {
+      return false;
+    }
+
+    const startedAt = Number(this.dailyLoginAutoClaimStartedAt ?? 0);
+    if (!Number.isFinite(startedAt) || startedAt <= 0) {
+      return true;
+    }
+
+    if (nowMs - startedAt < DAILY_LOGIN_UPDATE_SAFETY_STALE_MS) {
+      return true;
+    }
+
+    console.warn("[DailyLogin][Renderer] clearing stale auto-claim update-safety guard", {
+      username: this.username,
+      startedAt,
+      nowMs,
+      ageMs: nowMs - startedAt
+    });
+    this.resetDailyLoginAutoClaimGuard();
+    return false;
   }
 
   getTauntNow() {
@@ -2049,6 +2076,7 @@ export class AppController {
     this.dailyLoginAutoClaimSessionGateKey = sessionGateKey;
     const claimPromise = this.claimDailyLoginRewardFor(this.username, { showToasts });
     this.dailyLoginAutoClaimPromise = claimPromise;
+    this.dailyLoginAutoClaimStartedAt = Date.now();
     let reward = null;
 
     try {
@@ -2059,6 +2087,7 @@ export class AppController {
         this.dailyLoginAutoClaimPromise === claimPromise
       ) {
         this.dailyLoginAutoClaimPromise = null;
+        this.dailyLoginAutoClaimStartedAt = 0;
       }
     }
 

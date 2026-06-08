@@ -40,6 +40,14 @@ function hasPendingOnlineRewardSettlement(state) {
   return Boolean(settlement && settlement.granted !== true);
 }
 
+function hasActiveDailyLoginClaimForUpdateSafety(state) {
+  if (typeof state?.hasActiveDailyLoginAutoClaimForUpdateSafety === "function") {
+    return Boolean(state.hasActiveDailyLoginAutoClaimForUpdateSafety());
+  }
+
+  return Boolean(state?.dailyLoginAutoClaimPromise);
+}
+
 export function getUpdateSafetyState(state = {}) {
   const reasons = [];
   const viewModel = state?.gameController?.getViewModel?.() ?? null;
@@ -96,7 +104,7 @@ export function getUpdateSafetyState(state = {}) {
     reasons.push("pending_reward_settlement");
   }
 
-  if (state?.dailyLoginAutoClaimPromise) {
+  if (hasActiveDailyLoginClaimForUpdateSafety(state)) {
     reasons.push("daily_login_claim_in_flight");
   }
 

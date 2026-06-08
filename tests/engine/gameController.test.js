@@ -445,6 +445,25 @@ test("appController: update safety blocks chest, pending admin notice, reconnect
   ]);
 });
 
+test("appController: update safety clears a stale daily login auto-claim blocker after the conservative timeout", () => {
+  const app = createUpdateSafetyController();
+  app.username = "SafetyUser";
+  app.screenFlow = "menu";
+  app.dailyLoginAutoClaimPromise = Promise.resolve();
+  app.dailyLoginAutoClaimStartedAt = Date.now() - 25000;
+  app.dailyLoginAutoClaimKey = "menu:SafetyUser";
+  app.dailyLoginAutoClaimSessionGateKey = "user:SafetyUser";
+
+  const safety = app.getUpdateSafetyState();
+
+  assert.equal(safety.safe, true);
+  assert.deepEqual(safety.reasons, []);
+  assert.equal(app.dailyLoginAutoClaimPromise, null);
+  assert.equal(app.dailyLoginAutoClaimStartedAt, 0);
+  assert.equal(app.dailyLoginAutoClaimKey, null);
+  assert.equal(app.dailyLoginAutoClaimSessionGateKey, null);
+});
+
 test("appController: update safety blocks active online match, reconnect paused state, and pending room actions", () => {
   const app = createUpdateSafetyController();
   app.onlinePlayState = {
@@ -8841,6 +8860,49 @@ test("appController: daily login auto-claim promise clears after a failed claim 
     );
     assert.equal(app.dailyLoginAutoClaimPromise, null);
     assert.equal(app.getUpdateSafetyState().reasons.includes("daily_login_claim_in_flight"), false);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: stale daily login auto-claim guard no longer blocks update install, but a real in-flight claim still does", async () => {
+  const originalWindow = globalThis.window;
+  const updateBridge = createMockUpdateBridge();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        updates: updateBridge
+      }
+    };
+
+    const staleApp = createUpdateSafetyController();
+    staleApp.screenFlow = "menu";
+    staleApp.bindUpdateLifecycleUpdates();
+    await staleApp.devSimulateDownloadedUpdate({ version: "2.1.5" });
+    staleApp.dailyLoginAutoClaimPromise = Promise.resolve();
+    staleApp.dailyLoginAutoClaimStartedAt = Date.now() - 25000;
+    staleApp.dailyLoginAutoClaimKey = "menu:StaleDailyUser";
+    staleApp.dailyLoginAutoClaimSessionGateKey = "user:StaleDailyUser";
+
+    let coordinator = await staleApp.requestUpdateInstall();
+    assert.equal(coordinator.installAllowedNow, true);
+    assert.deepEqual(coordinator.blockedReasons, []);
+    assert.equal(updateBridge.calls.quitAndInstall, 1);
+
+    const inflightApp = createUpdateSafetyController();
+    inflightApp.screenFlow = "menu";
+    inflightApp.bindUpdateLifecycleUpdates();
+    await inflightApp.devSimulateDownloadedUpdate({ version: "2.1.6" });
+    inflightApp.dailyLoginAutoClaimPromise = new Promise(() => {});
+    inflightApp.dailyLoginAutoClaimStartedAt = Date.now();
+    inflightApp.dailyLoginAutoClaimKey = "menu:InflightDailyUser";
+    inflightApp.dailyLoginAutoClaimSessionGateKey = "user:InflightDailyUser";
+
+    coordinator = await inflightApp.requestUpdateInstall();
+    assert.equal(coordinator.installAllowedNow, false);
+    assert.deepEqual(coordinator.blockedReasons, ["daily_login_claim_in_flight"]);
+    assert.equal(updateBridge.calls.quitAndInstall, 1);
   } finally {
     globalThis.window = originalWindow;
   }
