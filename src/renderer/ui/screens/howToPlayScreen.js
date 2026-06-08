@@ -150,15 +150,17 @@ export const howToPlayScreen = {
   render(context) {
     return `
       <section class="screen screen-how-to-play">
-        <div class="panel stack-md">
-          <div class="screen-topbar">
-            <h2 class="view-title">How to Play EleMintz</h2>
-            <button id="how-to-play-back-btn" class="btn screen-back-btn">Back</button>
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel stack-md">
+            <div class="screen-topbar">
+              <h2 class="view-title">How to Play EleMintz</h2>
+              <button id="how-to-play-back-btn" class="btn screen-back-btn">Back</button>
+            </div>
+            <div class="how-to-play-guide stack-sm">
+              ${HOW_TO_PLAY_SECTIONS.map((section) => renderAccordionSection(section)).join("")}
+            </div>
           </div>
-          <div class="how-to-play-guide stack-sm">
-            ${HOW_TO_PLAY_SECTIONS.map((section) => renderAccordionSection(section)).join("")}
-          </div>
-        </div>
+        </section>
       </section>
     `;
   },

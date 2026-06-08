@@ -61,25 +61,27 @@ export const dailyChallengesScreen = {
 
     return `
       <section class="screen screen-daily-challenges">
-        <div class="panel">
-          <div class="screen-topbar">
-            <h2 class="view-title">Challenges</h2>
-            <button id="daily-challenges-back-btn" class="btn screen-back-btn">Back to Menu</button>
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel">
+            <div class="screen-topbar">
+              <h2 class="view-title">Challenges</h2>
+              <button id="daily-challenges-back-btn" class="btn screen-back-btn">Back to Menu</button>
+            </div>
+            <p>Tokens: <strong>${context.tokens ?? 0}</strong></p>
+            ${renderSection({
+              title: "Daily Challenges",
+              iconText: "\u2B50",
+              bucket: daily,
+              includeDays: false
+            })}
+            ${renderSection({
+              title: "Weekly Challenges",
+              iconText: "\uD83C\uDFC6",
+              bucket: weekly,
+              includeDays: true
+            })}
           </div>
-          <p>Tokens: <strong>${context.tokens ?? 0}</strong></p>
-          ${renderSection({
-            title: "Daily Challenges",
-            iconText: "\u2B50",
-            bucket: daily,
-            includeDays: false
-          })}
-          ${renderSection({
-            title: "Weekly Challenges",
-            iconText: "\uD83C\uDFC6",
-            bucket: weekly,
-            includeDays: true
-          })}
-        </div>
+        </section>
       </section>
     `;
   },

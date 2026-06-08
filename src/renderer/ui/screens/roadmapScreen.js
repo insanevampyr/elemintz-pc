@@ -64,18 +64,20 @@ export const roadmapScreen = {
   render(context) {
     return `
       <section class="screen screen-roadmap">
-        <div class="panel stack-md">
-          <div class="screen-topbar">
-            <h2 class="view-title">EleMintz Roadmap</h2>
-            <button id="roadmap-back-btn" class="btn screen-back-btn">Back</button>
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel stack-md">
+            <div class="screen-topbar">
+              <h2 class="view-title">EleMintz Roadmap</h2>
+              <button id="roadmap-back-btn" class="btn screen-back-btn">Back</button>
+            </div>
+            <p class="muted">
+              These are planned ideas and active development goals. They are not listed in release order, and some may change as EleMintz grows.
+            </p>
+            <div class="stack-sm">
+              ${ROADMAP_SECTIONS.map((section) => renderRoadmapSection(section.title, section.items)).join("")}
+            </div>
           </div>
-          <p class="muted">
-            These are planned ideas and active development goals. They are not listed in release order, and some may change as EleMintz grows.
-          </p>
-          <div class="stack-sm">
-            ${ROADMAP_SECTIONS.map((section) => renderRoadmapSection(section.title, section.items)).join("")}
-          </div>
-        </div>
+        </section>
       </section>
     `;
   },

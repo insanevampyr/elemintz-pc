@@ -146,16 +146,18 @@ export const loginScreen = {
     if (mode === "choice") {
       return `
         <section class="screen screen-login">
-          <div class="panel hero-panel">
-            <h2 class="view-title">EleMintz Login</h2>
-            <p>Choose how you'd like to access your EleMintz account.</p>
-            ${renderStatusAndError(statusMessage, errorMessage)}
-            <div class="stack-md">
-              <button id="auth-choice-sign-in-btn" type="button" class="btn btn-primary">Sign In</button>
-              <button id="auth-choice-create-account-btn" type="button" class="btn btn-secondary">Create Account</button>
+          <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+            <div class="panel hero-panel themed-screen-panel">
+              <h2 class="view-title">EleMintz Login</h2>
+              <p>Choose how you'd like to access your EleMintz account.</p>
+              ${renderStatusAndError(statusMessage, errorMessage)}
+              <div class="stack-md">
+                <button id="auth-choice-sign-in-btn" type="button" class="btn btn-primary">Sign In</button>
+                <button id="auth-choice-create-account-btn" type="button" class="btn btn-secondary">Create Account</button>
+              </div>
+              ${renderVersionBadge(versionLabel)}
             </div>
-            ${renderVersionBadge(versionLabel)}
-          </div>
+          </section>
         </section>
       `;
     }
@@ -169,13 +171,15 @@ export const loginScreen = {
 
     return `
       <section class="screen screen-login">
-        <div class="panel hero-panel">
-          <h2 class="view-title">${title}</h2>
-          <p>${instruction}</p>
-          ${renderStatusAndError(statusMessage, errorMessage)}
-          ${formHtml}
-          ${renderVersionBadge(versionLabel)}
-        </div>
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel hero-panel themed-screen-panel">
+            <h2 class="view-title">${title}</h2>
+            <p>${instruction}</p>
+            ${renderStatusAndError(statusMessage, errorMessage)}
+            ${formHtml}
+            ${renderVersionBadge(versionLabel)}
+          </div>
+        </section>
       </section>
     `;
   },

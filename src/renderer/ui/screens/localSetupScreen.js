@@ -71,42 +71,44 @@ export const localSetupScreen = {
 
     return `
       <section class="screen screen-local-setup">
-        <div class="panel hero-panel">
-          <div class="screen-topbar">
-            <h2 class="view-title">Local 2-Player Setup</h2>
-            <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel hero-panel themed-screen-panel">
+            <div class="screen-topbar">
+              <h2 class="view-title">Local 2-Player Setup</h2>
+              <button id="local-setup-back-btn" class="btn screen-back-btn">Back to Menu</button>
+            </div>
+            <p>Both players must authenticate with EleMintz accounts before a local hotseat match can start.</p>
+            <p>Local 2-Player rewards are casual and capped daily.</p>
+            <p>No chests are awarded in this mode.</p>
+            ${context.errorMessage ? `<p class="auth-inline-error" role="alert">${context.errorMessage}</p>` : ""}
+            <form id="local-setup-form" class="stack-sm">
+              <fieldset class="stack-sm">
+                <legend>Player 1 Account</legend>
+                ${
+                  player1.authenticated
+                    ? `
+                      <p><strong>${player1.username ?? "Signed-in Player 1"}</strong></p>
+                      <p class="muted">Player 1 will use the currently authenticated account.</p>
+                    `
+                    : renderCredentialFields("p1", player1.defaults, {
+                        includeUsername: true,
+                        selectedMode: player1.mode ?? "login"
+                      })
+                }
+              </fieldset>
+
+              <fieldset class="stack-sm">
+                <legend>Player 2 Account</legend>
+                ${renderCredentialFields("p2", player2.defaults, {
+                  includeUsername: true,
+                  selectedMode: player2.mode ?? "login"
+                })}
+              </fieldset>
+
+              <button type="submit" class="btn btn-primary">Start Local Match</button>
+            </form>
           </div>
-          <p>Both players must authenticate with EleMintz accounts before a local hotseat match can start.</p>
-          <p>Local 2-Player rewards are casual and capped daily.</p>
-          <p>No chests are awarded in this mode.</p>
-          ${context.errorMessage ? `<p class="auth-inline-error" role="alert">${context.errorMessage}</p>` : ""}
-          <form id="local-setup-form" class="stack-sm">
-            <fieldset class="stack-sm">
-              <legend>Player 1 Account</legend>
-              ${
-                player1.authenticated
-                  ? `
-                    <p><strong>${player1.username ?? "Signed-in Player 1"}</strong></p>
-                    <p class="muted">Player 1 will use the currently authenticated account.</p>
-                  `
-                  : renderCredentialFields("p1", player1.defaults, {
-                      includeUsername: true,
-                      selectedMode: player1.mode ?? "login"
-                    })
-              }
-            </fieldset>
-
-            <fieldset class="stack-sm">
-              <legend>Player 2 Account</legend>
-              ${renderCredentialFields("p2", player2.defaults, {
-                includeUsername: true,
-                selectedMode: player2.mode ?? "login"
-              })}
-            </fieldset>
-
-            <button type="submit" class="btn btn-primary">Start Local Match</button>
-          </form>
-        </div>
+        </section>
       </section>
     `;
   },

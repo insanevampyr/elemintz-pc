@@ -1224,6 +1224,7 @@ export class AppController {
     this.clearTransientUiBeforeScreenTransition();
     this.screenFlow = "aiDifficulty";
     this.screenManager.show("aiDifficulty", {
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
       selectedDifficulty: this.getConfiguredAiDifficulty(),
       selectedGauntletMode: Boolean(this.pveGauntletMode),
       selectedFeaturedRivalId: this.pveFeaturedRivalId,
@@ -7151,6 +7152,7 @@ export class AppController {
     this.clearPassTimer();
     this.screenFlow = "login";
     this.screenManager.show("login", {
+      backgroundImage: getArenaBackground("default_background"),
       errorMessage,
       statusMessage,
       version: this.getAppVersionDisplay(),
@@ -7490,6 +7492,7 @@ export class AppController {
     const playerOneDefaults = setupDefaults?.p1 ?? null;
     const playerTwoDefaults = setupDefaults?.p2 ?? null;
     this.screenManager.show("localSetup", {
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
       errorMessage,
       player1: {
         authenticated: Boolean(this.onlinePlayState?.session?.authenticated && String(this.username ?? "").trim()),
@@ -8875,6 +8878,7 @@ export class AppController {
     this.dailyChallenges = { daily: result.daily, weekly: result.weekly };
 
     this.screenManager.show("dailyChallenges", {
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
       daily: result.daily,
       weekly: result.weekly,
       tokens: result.tokens ?? this.profile?.tokens ?? 0,
@@ -8901,6 +8905,7 @@ export class AppController {
       : (await window.elemintz.state.getAchievements(this.username)).achievements;
 
     this.screenManager.show("achievements", {
+      backgroundImage: this.getBackgroundFromProfile(authoritativeProfile ?? this.profile),
       achievements,
       actions: {
         back: () => this.showMenu()
@@ -8922,6 +8927,7 @@ export class AppController {
     const viewState = this.ensureCosmeticsViewState();
 
     this.screenManager.show("cosmetics", {
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
       cosmetics,
       viewState,
       actions: {
@@ -9140,6 +9146,7 @@ export class AppController {
     );
 
     this.screenManager.show("store", {
+      backgroundImage: this.getBackgroundFromProfile(profileForStore),
       store,
       featuredRotation,
       viewState,
@@ -9240,6 +9247,7 @@ export class AppController {
     this.applyMotionPreference();
 
     this.screenManager.show("settings", {
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
       settings: this.settings,
       actions: {
         save: async (patch) => {
@@ -9263,6 +9271,7 @@ export class AppController {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "howToPlay";
     this.screenManager.show("howToPlay", {
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
       actions: {
         back: () => this.showMenu()
       }
@@ -9274,6 +9283,7 @@ export class AppController {
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
     this.screenFlow = "roadmap";
     this.screenManager.show("roadmap", {
+      backgroundImage: this.getBackgroundFromProfile(this.profile),
       actions: {
         back: () => this.showMenu()
       }

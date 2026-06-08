@@ -421,7 +421,8 @@ export const storeScreen = {
 
     return `
       <section class="screen screen-store">
-        <div class="panel">
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel">
           <div class="screen-topbar store-topbar">
             <div class="store-topbar-heading">
               <h2 class="view-title">Store</h2>
@@ -537,7 +538,8 @@ export const storeScreen = {
             ).join("")}
           </div>
           <p id="store-empty-state" class="store-empty-state" hidden>No cosmetics match the current search and filters.</p>
-        </div>
+          </div>
+        </section>
       </section>
     `;
   },

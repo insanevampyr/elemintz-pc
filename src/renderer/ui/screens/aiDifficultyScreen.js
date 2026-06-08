@@ -78,57 +78,59 @@ export const aiDifficultyScreen = {
 
     return `
       <section class="screen screen-ai-difficulty">
-        <div class="panel">
-          <div class="screen-topbar">
-            <h2 class="view-title">Choose AI Challenge</h2>
-            <button id="ai-difficulty-back-btn" class="btn screen-back-btn">Back</button>
-          </div>
-          <form id="ai-difficulty-form" class="stack-sm">
-            <p class="text-muted">
-              Choose your PvE opponent difficulty before starting the match.
-            </p>
-
-            <div class="settings-group">
-              ${renderRadioOption({
-                name: "pveOpponentChoice",
-                id: "ai-difficulty-select-easy",
-                value: "easy",
-                checked: selectedOption === "easy",
-                title: "Easy Practice",
-                subtitle: "Practice mode. No stats, quests, achievements, rewards, or chest progress.",
-                warning: "Easy AI is practice-only and does not count toward progression."
-              })}
-              ${renderRadioOption({
-                name: "pveOpponentChoice",
-                id: "ai-difficulty-select-normal",
-                value: "normal",
-                checked: selectedOption === "normal",
-                title: "Normal AI",
-                subtitle: "Standard rewards and progression."
-              })}
-              ${renderRadioOption({
-                name: "pveOpponentChoice",
-                id: "ai-difficulty-select-hard",
-                value: "hard",
-                checked: selectedOption === "hard",
-                title: "Hard AI",
-                subtitle: "Smarter, tougher AI. Win for +5 XP, +5 tokens, and improved chest chance."
-              })}
-              ${renderGauntletOption({
-                name: "pveOpponentChoice",
-                id: "ai-difficulty-select-gauntlet",
-                checked: selectedOption === "gauntlet_mode"
-              })}
-              ${renderFeaturedRivalOption({
-                name: "pveOpponentChoice",
-                id: "ai-difficulty-select-featured-rival",
-                checked: selectedOption === "featured_rival_crownfire"
-              })}
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel">
+            <div class="screen-topbar">
+              <h2 class="view-title">Choose AI Challenge</h2>
+              <button id="ai-difficulty-back-btn" class="btn screen-back-btn">Back</button>
             </div>
+            <form id="ai-difficulty-form" class="stack-sm">
+              <p class="text-muted">
+                Choose your PvE opponent difficulty before starting the match.
+              </p>
 
-            <button type="submit" class="btn btn-primary">Start Match</button>
-          </form>
-        </div>
+              <div class="settings-group">
+                ${renderRadioOption({
+                  name: "pveOpponentChoice",
+                  id: "ai-difficulty-select-easy",
+                  value: "easy",
+                  checked: selectedOption === "easy",
+                  title: "Easy Practice",
+                  subtitle: "Practice mode. No stats, quests, achievements, rewards, or chest progress.",
+                  warning: "Easy AI is practice-only and does not count toward progression."
+                })}
+                ${renderRadioOption({
+                  name: "pveOpponentChoice",
+                  id: "ai-difficulty-select-normal",
+                  value: "normal",
+                  checked: selectedOption === "normal",
+                  title: "Normal AI",
+                  subtitle: "Standard rewards and progression."
+                })}
+                ${renderRadioOption({
+                  name: "pveOpponentChoice",
+                  id: "ai-difficulty-select-hard",
+                  value: "hard",
+                  checked: selectedOption === "hard",
+                  title: "Hard AI",
+                  subtitle: "Smarter, tougher AI. Win for +5 XP, +5 tokens, and improved chest chance."
+                })}
+                ${renderGauntletOption({
+                  name: "pveOpponentChoice",
+                  id: "ai-difficulty-select-gauntlet",
+                  checked: selectedOption === "gauntlet_mode"
+                })}
+                ${renderFeaturedRivalOption({
+                  name: "pveOpponentChoice",
+                  id: "ai-difficulty-select-featured-rival",
+                  checked: selectedOption === "featured_rival_crownfire"
+                })}
+              </div>
+
+              <button type="submit" class="btn btn-primary">Start Match</button>
+            </form>
+          </div>
+        </section>
       </section>
     `;
   },

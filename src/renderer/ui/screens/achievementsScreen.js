@@ -40,16 +40,18 @@ export const achievementsScreen = {
 
     return `
       <section class="screen screen-achievements">
-        <div class="panel">
-          <div class="screen-topbar">
-            <h2 class="view-title">Achievements</h2>
-            <button id="achievements-back-btn" class="btn screen-back-btn">Back to Menu</button>
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel">
+            <div class="screen-topbar">
+              <h2 class="view-title">Achievements</h2>
+              <button id="achievements-back-btn" class="btn screen-back-btn">Back to Menu</button>
+            </div>
+            <p>Unlocked: ${entries.filter((item) => item.unlocked).length} / ${entries.length}</p>
+            <div class="achievement-grid achievement-grid-catalog">
+              ${entries.map(renderAchievement).join("")}
+            </div>
           </div>
-          <p>Unlocked: ${entries.filter((item) => item.unlocked).length} / ${entries.length}</p>
-          <div class="achievement-grid achievement-grid-catalog">
-            ${entries.map(renderAchievement).join("")}
-          </div>
-        </div>
+        </section>
       </section>
     `;
   },

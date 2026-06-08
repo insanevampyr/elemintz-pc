@@ -10779,6 +10779,125 @@ test("ui: selected background value is applied consistently in menu, profile, an
   assert.match(gameHtml, /assets\/backgrounds\/lava_throne_background\.png/);
 });
 
+test("ui: login auth screens render the default themed background surface", () => {
+  const defaultBackground = getArenaBackground("default_background");
+  const htmls = [
+    loginScreen.render({ mode: "choice", backgroundImage: defaultBackground }),
+    loginScreen.render({ mode: "login", backgroundImage: defaultBackground }),
+    loginScreen.render({ mode: "register", backgroundImage: defaultBackground })
+  ];
+
+  for (const html of htmls) {
+    assert.match(html, /arena-board screen-themed-surface/);
+    assert.match(html, /background-image: url\('[^']*EleMintzIcon\.png'\)/);
+    assert.match(html, /panel hero-panel themed-screen-panel/);
+  }
+});
+
+test("ui: normal authenticated screens render player-selected themed backgrounds", () => {
+  const selected = getArenaBackground("bg_storm_temple");
+  const storeView = getStoreViewForProfile({
+    username: "BgUser",
+    tokens: 120,
+    supporterPass: false,
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background", "bg_storm_temple"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "bg_storm_temple",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "Initiate"
+    }
+  });
+  const cosmeticsView = {
+    equipped: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "bg_storm_temple",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "Initiate"
+    },
+    catalog: getCosmeticCatalogForProfile({
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        cardBack: ["default_card_back"],
+        background: ["default_background", "bg_storm_temple"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none"],
+        title: ["Initiate"]
+      },
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "bg_storm_temple",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      }
+    }),
+    loadouts: []
+  };
+  const htmls = [
+    achievementsScreen.render({ achievements: [], backgroundImage: selected }),
+    cosmeticsScreen.render({ cosmetics: cosmeticsView, viewState: {}, backgroundImage: selected }),
+    storeScreen.render({ store: storeView, viewState: {}, featuredRotation: null, backgroundImage: selected }),
+    settingsScreen.render({
+      settings: {
+        gameplay: { timerSeconds: 20 },
+        ui: { reducedMotion: false },
+        audio: { enabled: true },
+        aiDifficulty: "normal",
+        aiOpponentStyle: "random"
+      },
+      backgroundImage: selected
+    }),
+    dailyChallengesScreen.render({
+      daily: { challenges: [], msUntilReset: 0 },
+      weekly: { challenges: [], msUntilReset: 0 },
+      tokens: 5,
+      backgroundImage: selected
+    }),
+    aiDifficultyScreen.render({ selectedDifficulty: "normal", backgroundImage: selected }),
+    localSetupScreen.render({
+      player1: { authenticated: true, username: "BgUser", defaults: {}, mode: "login" },
+      player2: { defaults: {}, mode: "login" },
+      backgroundImage: selected
+    }),
+    howToPlayScreen.render({ backgroundImage: selected }),
+    roadmapScreen.render({ backgroundImage: selected })
+  ];
+
+  for (const html of htmls) {
+    assert.match(html, /arena-board screen-themed-surface/);
+    assert.ok(html.includes(`background-image: url('${selected}')`));
+    assert.match(html, /themed-screen-panel/);
+  }
+});
+
 
 
 

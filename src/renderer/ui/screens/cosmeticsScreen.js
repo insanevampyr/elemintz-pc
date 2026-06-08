@@ -419,7 +419,8 @@ export const cosmeticsScreen = {
 
     return `
       <section class="screen screen-cosmetics">
-        <div class="panel">
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel">
           <div class="screen-topbar">
             <h2 class="view-title">Cosmetics / Rewards</h2>
             <button id="cosmetics-back-btn" class="btn screen-back-btn">Back to Menu</button>
@@ -528,7 +529,8 @@ export const cosmeticsScreen = {
             }).join("")}
           </div>
           <p id="cosmetics-empty-state" class="store-empty-state" hidden>No owned cosmetics match the current category filter.</p>
-        </div>
+          </div>
+        </section>
       </section>
     `;
   },

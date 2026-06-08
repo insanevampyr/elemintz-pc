@@ -19,87 +19,89 @@ export const settingsScreen = {
 
     return `
       <section class="screen screen-settings">
-        <div class="panel">
-          <div class="screen-topbar">
-            <h2 class="view-title">Settings</h2>
-            <button id="settings-back-btn" class="btn screen-back-btn">Back</button>
+        <section class="arena-board screen-themed-surface" style="background-image: url('${context.backgroundImage ?? ""}')">
+          <div class="panel themed-screen-panel">
+            <div class="screen-topbar">
+              <h2 class="view-title">Settings</h2>
+              <button id="settings-back-btn" class="btn screen-back-btn">Back</button>
+            </div>
+            <form id="settings-form" class="stack-sm">
+              <div class="settings-group">
+                <label for="timer-seconds">Round Timer (seconds)</label>
+                <input id="timer-seconds" name="timerSeconds" type="number" min="5" max="120" value="${settings.gameplay.timerSeconds ?? 20}" />
+                <span class="settings-option-description text-muted">
+                  Adjusts PvE and local PvP turn timing only.
+                </span>
+                <span class="settings-option-description text-muted">
+                  Online Play always uses a server-controlled 20-second turn timer and is not affected by local timer or speed settings.
+                </span>
+              </div>
+
+              <div class="settings-group">
+                <span class="settings-group-title"><strong>AI Difficulty</strong></span>
+                ${renderRadioOption({
+                  name: "aiDifficulty",
+                  id: "ai-difficulty-easy",
+                  value: "easy",
+                  checked: aiDifficulty === "easy",
+                  title: "Easy",
+                  subtitle: "Practice Mode. No rewards, stats, achievements, or challenge progress.",
+                  warning: "Easy AI is practice-only and grants no XP, tokens, or chest drops."
+                })}
+                ${renderRadioOption({
+                  name: "aiDifficulty",
+                  id: "ai-difficulty-normal",
+                  value: "normal",
+                  checked: aiDifficulty === "normal",
+                  title: "Normal",
+                  subtitle: "Standard rewards and progression."
+                })}
+                ${renderRadioOption({
+                  name: "aiDifficulty",
+                  id: "ai-difficulty-hard",
+                  value: "hard",
+                  checked: aiDifficulty === "hard",
+                  title: "Hard",
+                  subtitle: "Smarter AI. Win for +5 XP, +5 tokens, and improved basic chest chance."
+                })}
+              </div>
+
+              <div class="settings-group">
+                <span class="settings-group-title"><strong>AI Opponent Style</strong></span>
+                ${renderRadioOption({
+                  name: "aiOpponentStyle",
+                  id: "ai-style-default",
+                  value: "default",
+                  checked: aiOpponentStyle === "default",
+                  title: "Default",
+                  subtitle: "Use the standard Elemental AI presentation"
+                })}
+                ${renderRadioOption({
+                  name: "aiOpponentStyle",
+                  id: "ai-style-random",
+                  value: "random",
+                  checked: aiOpponentStyle === "random",
+                  title: "Random",
+                  subtitle: "Randomize AI avatar, title, and card back from the global cosmetic pool each PvE match"
+                })}
+              </div>
+
+              <div class="settings-group">
+                <label class="toggle-row" for="reduced-motion">
+                  <input id="reduced-motion" name="reducedMotion" type="checkbox" ${settings.ui.reducedMotion ? "checked" : ""} />
+                  Reduced Motion
+                </label>
+
+                <label class="toggle-row" for="sound-enabled">
+                  <input id="sound-enabled" name="soundEnabled" type="checkbox" ${settings.audio?.enabled !== false ? "checked" : ""} />
+                  Sound Effects
+                </label>
+              </div>
+
+              <button type="submit" class="btn btn-primary">Save Settings</button>
+            </form>
           </div>
-          <form id="settings-form" class="stack-sm">
-            <div class="settings-group">
-              <label for="timer-seconds">Round Timer (seconds)</label>
-              <input id="timer-seconds" name="timerSeconds" type="number" min="5" max="120" value="${settings.gameplay.timerSeconds ?? 20}" />
-              <span class="settings-option-description text-muted">
-                Adjusts PvE and local PvP turn timing only.
-              </span>
-              <span class="settings-option-description text-muted">
-                Online Play always uses a server-controlled 20-second turn timer and is not affected by local timer or speed settings.
-              </span>
-            </div>
-
-            <div class="settings-group">
-              <span class="settings-group-title"><strong>AI Difficulty</strong></span>
-              ${renderRadioOption({
-                name: "aiDifficulty",
-                id: "ai-difficulty-easy",
-                value: "easy",
-                checked: aiDifficulty === "easy",
-                title: "Easy",
-                subtitle: "Practice Mode. No rewards, stats, achievements, or challenge progress.",
-                warning: "Easy AI is practice-only and grants no XP, tokens, or chest drops."
-              })}
-              ${renderRadioOption({
-                name: "aiDifficulty",
-                id: "ai-difficulty-normal",
-                value: "normal",
-                checked: aiDifficulty === "normal",
-                title: "Normal",
-                subtitle: "Standard rewards and progression."
-              })}
-              ${renderRadioOption({
-                name: "aiDifficulty",
-                id: "ai-difficulty-hard",
-                value: "hard",
-                checked: aiDifficulty === "hard",
-                title: "Hard",
-                subtitle: "Smarter AI. Win for +5 XP, +5 tokens, and improved basic chest chance."
-              })}
-            </div>
-
-            <div class="settings-group">
-              <span class="settings-group-title"><strong>AI Opponent Style</strong></span>
-              ${renderRadioOption({
-                name: "aiOpponentStyle",
-                id: "ai-style-default",
-                value: "default",
-                checked: aiOpponentStyle === "default",
-                title: "Default",
-                subtitle: "Use the standard Elemental AI presentation"
-              })}
-              ${renderRadioOption({
-                name: "aiOpponentStyle",
-                id: "ai-style-random",
-                value: "random",
-                checked: aiOpponentStyle === "random",
-                title: "Random",
-                subtitle: "Randomize AI avatar, title, and card back from the global cosmetic pool each PvE match"
-              })}
-            </div>
-
-            <div class="settings-group">
-              <label class="toggle-row" for="reduced-motion">
-                <input id="reduced-motion" name="reducedMotion" type="checkbox" ${settings.ui.reducedMotion ? "checked" : ""} />
-                Reduced Motion
-              </label>
-
-              <label class="toggle-row" for="sound-enabled">
-                <input id="sound-enabled" name="soundEnabled" type="checkbox" ${settings.audio?.enabled !== false ? "checked" : ""} />
-                Sound Effects
-              </label>
-            </div>
-
-            <button type="submit" class="btn btn-primary">Save Settings</button>
-          </form>
-        </div>
+        </section>
       </section>
     `;
   },
