@@ -13298,7 +13298,6 @@ test("appController: authenticated profile chest opening still uses multiplayer 
   const modalCalls = [];
   const multiplayerOpenCalls = [];
   const localOpenCalls = [];
-  let localProfileReads = 0;
 
   const initialProfile = {
     username: "BlockedLocalChestUser",
@@ -13333,6 +13332,14 @@ test("appController: authenticated profile chest opening still uses multiplayer 
     profile: openedProfile,
     progression: {}
   };
+  let serverProfileSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      ...initialProfile
+    },
+    progression: {}
+  };
 
   const app = new AppController({
     screenManager: {
@@ -13356,10 +13363,7 @@ test("appController: authenticated profile chest opening still uses multiplayer 
     globalThis.window = {
       elemintz: {
         state: {
-          getProfile: async () => {
-            localProfileReads += 1;
-            return localProfileReads === 1 ? initialProfile : openedProfile;
-          },
+          getProfile: async () => initialProfile,
           getCosmetics: async () => ({
             equipped: initialProfile.equippedCosmetics,
             catalog: {
@@ -13379,8 +13383,21 @@ test("appController: authenticated profile chest opening still uses multiplayer 
           }
         },
         multiplayer: {
+          getProfile: async () => serverProfileSnapshot,
+          getCosmetics: async () => ({
+            equipped: initialProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
           openChest: async (payload) => {
             multiplayerOpenCalls.push(payload);
+            serverProfileSnapshot = openedSnapshot;
             return {
               chestType: "basic",
               consumed: 1,
@@ -13396,7 +13413,7 @@ test("appController: authenticated profile chest opening still uses multiplayer 
     app.username = "BlockedLocalChestUser";
     app.profile = initialProfile;
     app.onlinePlayState = app.normalizeOnlinePlayState({
-      connectionStatus: "disconnected",
+      connectionStatus: "connected",
       session: {
         active: true,
         username: "BlockedLocalChestUser",
@@ -13449,6 +13466,14 @@ test("appController: authenticated profile chest opening shows readable server e
     equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
     ownedCosmetics: {}
   };
+  const serverProfileSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      ...initialProfile
+    },
+    progression: {}
+  };
 
   const app = new AppController({
     screenManager: {
@@ -13492,6 +13517,18 @@ test("appController: authenticated profile chest opening shows readable server e
           }
         },
         multiplayer: {
+          getProfile: async () => serverProfileSnapshot,
+          getCosmetics: async () => ({
+            equipped: initialProfile.equippedCosmetics,
+            catalog: {
+              avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+              cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+              background: [{ id: "default_background", name: "Default", owned: true }],
+              elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+              badge: [{ id: "none", name: "No Badge", owned: true }],
+              title: [{ id: "Initiate", name: "Initiate", owned: true }]
+            }
+          }),
           openChest: async (payload) => {
             multiplayerOpenCalls.push(payload);
             throw new Error("Unable to open authoritative chest.");
@@ -13503,7 +13540,7 @@ test("appController: authenticated profile chest opening shows readable server e
     app.username = "OnlineChestErrorUser";
     app.profile = initialProfile;
     app.onlinePlayState = app.normalizeOnlinePlayState({
-      connectionStatus: "disconnected",
+      connectionStatus: "connected",
       session: {
         active: true,
         username: "OnlineChestErrorUser",
