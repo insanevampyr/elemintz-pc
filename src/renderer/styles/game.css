@@ -1080,9 +1080,11 @@ input[type="number"] {
 
 .online-active-match-expressions {
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   align-self: stretch;
   min-height: 0;
+  overflow: hidden;
   padding: 10px 10px 12px;
   border-radius: 16px;
   border: 1px solid rgba(118, 165, 203, 0.18);
@@ -1100,14 +1102,16 @@ input[type="number"] {
   position: sticky;
   top: 10px;
   right: auto;
+  display: flex;
+  flex-direction: column;
   z-index: 5;
   width: 100%;
-  height: min(100%, calc(100vh - 250px));
+  height: clamp(320px, calc(100vh - 250px), 560px);
   max-height: calc(100vh - 250px);
   min-height: 0;
   gap: 8px;
-  grid-template-rows: auto minmax(0, 1fr);
-  align-content: start;
+  align-content: stretch;
+  align-self: start;
   overflow: hidden;
   pointer-events: auto;
 }
@@ -1118,12 +1122,15 @@ input[type="number"] {
   justify-content: space-between;
   gap: 10px;
   flex: 0 0 auto;
+  min-height: 0;
+  pointer-events: auto;
 }
 
 .online-active-match-expressions .online-match-taunt-rail-body {
   display: grid;
   gap: 10px;
   min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
   align-content: start;
@@ -1134,8 +1141,13 @@ input[type="number"] {
 .online-active-match-expressions .match-taunts-toggle-btn {
   width: auto;
   min-width: 108px;
+  max-width: 100%;
+  min-height: 40px;
+  max-height: 40px;
+  padding: 0 16px;
   justify-self: start;
   flex: 0 0 auto;
+  align-self: flex-start;
   position: relative;
   z-index: 1;
 }
@@ -1154,6 +1166,7 @@ input[type="number"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   max-height: none;
   overflow: visible;
+  align-self: start;
   padding: 10px;
   background: rgba(8, 18, 30, 0.52);
   backdrop-filter: blur(6px);

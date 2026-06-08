@@ -637,11 +637,11 @@ function renderOnlineMatchTauntRail(taunts = {}) {
       data-match-taunt-shell="online"
       data-online-match-taunt-rail="true"
     >
-      <div class="match-taunt-controls online-match-taunt-rail-header" data-online-match-taunt-rail-header="true">
+      <div class="online-match-taunt-rail-header" data-online-match-taunt-rail-header="true">
         <button
           id="online-taunts-toggle-btn"
           type="button"
-          class="btn btn-secondary match-taunts-toggle-btn"
+          class="btn btn-secondary match-taunts-toggle-btn online-match-taunt-rail-trigger"
           data-online-match-taunt-rail-trigger="true"
           aria-expanded="${panelOpen ? "true" : "false"}"
         >
@@ -652,7 +652,7 @@ function renderOnlineMatchTauntRail(taunts = {}) {
         </p>
       </div>
       <div
-        class="online-match-taunt-rail-body"
+        class="online-match-taunt-rail-body online-match-taunt-rail-scroll-body"
         data-online-match-taunt-rail-body="true"
         data-online-match-taunt-body-scroll="true"
       >
