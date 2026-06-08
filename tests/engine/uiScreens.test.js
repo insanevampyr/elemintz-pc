@@ -3013,19 +3013,23 @@ test("ui: ai difficulty screen binds the Gauntlet start payload", async () => {
 test("ui: auth choice screen renders Sign In, Create Account, and version badge", () => {
   const html = loginScreen.render({
     mode: "choice",
-    version: "2.1.20"
+    version: "2.1.20",
+    backgroundImage: "assets/EleMintzIcon.png"
   });
 
   assert.match(html, /EleMintz Login/);
   assert.match(html, />Sign In</);
   assert.match(html, />Create Account</);
   assert.match(html, />v2\.1\.20</);
+  assert.match(html, /arena-board screen-themed-surface auth-themed-surface/);
+  assert.ok(html.includes("background-image: url('assets/EleMintzIcon.png')"));
 });
 
 test("ui: sign in screen renders Email, Password, and the keep-signed-in controls", () => {
   const html = loginScreen.render({
     mode: "login",
-    defaults: { email: "player@example.com" }
+    defaults: { email: "player@example.com" },
+    backgroundImage: "assets/EleMintzIcon.png"
   });
 
   assert.match(html, /<h2 class="view-title">Sign In<\/h2>/);
@@ -3037,12 +3041,14 @@ test("ui: sign in screen renders Email, Password, and the keep-signed-in control
   assert.match(html, /Stay signed in after closing the game\. Logging out clears this\./);
   assert.match(html, /type="checkbox"/);
   assert.match(html, /checked/);
+  assert.match(html, /arena-board screen-themed-surface auth-themed-surface/);
 });
 
 test("ui: create account screen renders Username, Email, and Password", () => {
   const html = loginScreen.render({
     mode: "register",
-    defaults: { username: "PlayerOne", email: "player@example.com" }
+    defaults: { username: "PlayerOne", email: "player@example.com" },
+    backgroundImage: "assets/EleMintzIcon.png"
   });
 
   assert.match(html, /<h2 class="view-title">Create Account<\/h2>/);
@@ -3051,6 +3057,7 @@ test("ui: create account screen renders Username, Email, and Password", () => {
   assert.match(html, /Email/);
   assert.match(html, /Password/);
   assert.match(html, /Keep me signed in for 30 days/);
+  assert.match(html, /arena-board screen-themed-surface auth-themed-surface/);
 });
 
 test("ui: auth forms submit the remember-session preference", async () => {
@@ -10893,6 +10900,7 @@ test("ui: normal authenticated screens render player-selected themed backgrounds
 
   for (const html of htmls) {
     assert.match(html, /arena-board screen-themed-surface/);
+    assert.doesNotMatch(html, /auth-themed-surface/);
     assert.ok(html.includes(`background-image: url('${selected}')`));
     assert.match(html, /themed-screen-panel/);
   }

@@ -1614,6 +1614,17 @@ body {
   position: relative;
 }
 
+.auth-themed-surface {
+  width: min(960px, 100%);
+  min-height: clamp(520px, 78vh, 760px);
+  aspect-ratio: 4 / 3;
+  margin-inline: auto;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-color: #050c16;
+}
+
 .screen-menu .arena-board::before,
 .screen-profile .arena-board::before,
 .screen-game .arena-board::before {
