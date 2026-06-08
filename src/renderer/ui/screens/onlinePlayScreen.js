@@ -581,6 +581,47 @@ function renderOnlinePresenceSummary(context = {}) {
   `;
 }
 
+function renderActiveMatchMetaStrip({ roomCode = "", roleLabel = "", moveSyncLabel = "" } = {}) {
+  const chips = [];
+
+  if (roomCode) {
+    chips.push(`
+      <div class="online-active-meta-chip" data-online-active-meta-key="room-code">
+        <span class="online-active-meta-label">Room</span>
+        <code class="online-active-meta-value">${escapeHtml(roomCode)}</code>
+      </div>
+    `);
+  }
+
+  if (roleLabel) {
+    chips.push(`
+      <div class="online-active-meta-chip" data-online-active-meta-key="role">
+        <span class="online-active-meta-label">Role</span>
+        <span class="online-active-meta-value">${escapeHtml(roleLabel)}</span>
+      </div>
+    `);
+  }
+
+  if (moveSyncLabel) {
+    chips.push(`
+      <div class="online-active-meta-chip" data-online-active-meta-key="sync">
+        <span class="online-active-meta-label">Sync</span>
+        <span class="online-active-meta-value">${escapeHtml(moveSyncLabel)}</span>
+      </div>
+    `);
+  }
+
+  if (chips.length === 0) {
+    return "";
+  }
+
+  return `
+    <section class="online-active-meta-strip" data-online-active-meta-strip="true" aria-label="Live room details">
+      ${chips.join("")}
+    </section>
+  `;
+}
+
 function renderPublicRoomBrowser(context = {}) {
   const rooms = Array.isArray(context.onlinePublicRooms) ? context.onlinePublicRooms : [];
   const status = String(context.onlinePublicRoomsStatus ?? "idle").trim().toLowerCase();
@@ -1258,6 +1299,10 @@ export const onlinePlayScreen = {
         ? "Both players submitted."
         : `${moveSync.submittedCount}/2 submitted.`
       : "";
+    const compactSyncLabel =
+      moveSync && !moveSync.bothSubmitted && Number(moveSync.submittedCount ?? 0) > 0
+        ? moveSyncLabel
+        : "";
 
     if (roundResult) {
       console.info("[OnlinePlay][Renderer] rendering round result block", roundResult);
@@ -1269,33 +1314,21 @@ export const onlinePlayScreen = {
             <h2 class="view-title">Online Play</h2>
             <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
           </div>
-          ${
-            room?.status === "full" && !matchComplete
-          ? renderMatchTauntHud({
-              idPrefix: "online",
-              panelOpen: Boolean(context.taunts?.panelOpen),
-              messages: context.taunts?.messages ?? [],
-              presetLines: context.taunts?.presetLines ?? [],
-              cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
-              canSend: context.taunts?.canSend ?? true
-            })
-              : ""
-          }
           <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage}')">
               <div class="panel themed-screen-panel stack-sm">
-              <section class="online-connection-banner online-connection-banner-${escapeHtml(connectionBanner.tone)}" aria-live="polite">
+              <section class="online-connection-banner online-connection-banner-${escapeHtml(connectionBanner.tone)} ${activeBoardVisible ? "is-compact" : ""}" aria-live="polite">
                 <strong class="online-connection-banner-label">${escapeHtml(connectionBanner.label)}</strong>
                 <span class="online-connection-banner-detail">${escapeHtml(connectionBanner.detail)}</span>
               </section>
-              ${renderOnlinePresenceSummary(context)}
+              ${activeBoardVisible ? renderActiveMatchMetaStrip({ roomCode, roleLabel, moveSyncLabel: compactSyncLabel }) : renderOnlinePresenceSummary(context)}
               ${
                 room
                 ? `
-                  <section class="stack-sm">
+                  <section class="stack-sm ${activeBoardVisible ? "online-room-detail-stack is-compact-live" : "online-room-detail-stack"}">
                     <p><strong>Room Code:</strong> ${roomCode}</p>
                     <p><strong>Match State:</strong> ${escapeHtml(roomStateView.label)}</p>
                     ${safeRoleLabel ? `<p><strong>Role:</strong> ${safeRoleLabel}</p>` : ""}
-                    ${moveSyncLabel && activeBoardVisible ? `<p><strong>Sync:</strong> ${escapeHtml(moveSyncLabel)}</p>` : ""}
+                    ${moveSyncLabel && !activeBoardVisible ? `<p><strong>Sync:</strong> ${escapeHtml(moveSyncLabel)}</p>` : ""}
                     ${
                       roomLifecycle
                         ? `
@@ -1365,18 +1398,34 @@ export const onlinePlayScreen = {
             }
             ${
               activeBoardVisible
-                ? renderOnlineLiveBoard(
-                    {
-                      ...boardView,
-                      battleResultView
-                    },
-                    roomStateView,
-                    matchStatus,
-                    moveSyncLabel,
-                    roomLifecycle,
-                    onlineTurnTimer,
-                    onlineMatchTimer
-                  )
+                ? `
+                  <section class="online-active-match-shell" data-online-active-match-shell="true">
+                    <div class="online-active-match-main">
+                      ${renderOnlineLiveBoard(
+                        {
+                          ...boardView,
+                          battleResultView
+                        },
+                        roomStateView,
+                        matchStatus,
+                        moveSyncLabel,
+                        roomLifecycle,
+                        onlineTurnTimer,
+                        onlineMatchTimer
+                      )}
+                    </div>
+                    <div class="online-active-match-expressions" data-online-active-match-expressions="true">
+                      ${renderMatchTauntHud({
+                        idPrefix: "online",
+                        panelOpen: Boolean(context.taunts?.panelOpen),
+                        messages: context.taunts?.messages ?? [],
+                        presetLines: context.taunts?.presetLines ?? [],
+                        cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
+                        canSend: context.taunts?.canSend ?? true
+                      })}
+                    </div>
+                  </section>
+                `
                 : ""
             }
             ${battleResultView && !activeBoardVisible && room?.status === "full" && !matchComplete ? renderSharedBattleResultPanel(battleResultView) : ""}

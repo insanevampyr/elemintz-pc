@@ -1067,6 +1067,56 @@ input[type="number"] {
   gap: 12px;
 }
 
+.online-active-match-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 232px);
+  gap: 12px;
+  align-items: start;
+}
+
+.online-active-match-main {
+  min-width: 0;
+}
+
+.online-active-match-expressions {
+  min-width: 0;
+  align-self: stretch;
+}
+
+.online-active-match-expressions .match-taunt-shell {
+  position: sticky;
+  top: 12px;
+  right: auto;
+  z-index: 3;
+  width: 100%;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.online-active-match-expressions .match-taunt-feed {
+  justify-items: stretch;
+}
+
+.online-active-match-expressions .match-taunt-controls {
+  justify-self: stretch;
+  justify-items: stretch;
+}
+
+.online-active-match-expressions .match-taunts-toggle-btn {
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+}
+
+.online-active-match-expressions .match-taunt-cooldown {
+  justify-self: end;
+}
+
+.online-active-match-expressions .match-taunt-panel {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: min(340px, calc(100vh - 220px));
+}
+
 .online-match-timer-shell {
   justify-self: center;
   min-height: 2.25rem;
@@ -1281,6 +1331,10 @@ input[type="number"] {
   color: #cfe4f5;
   font-size: 0.84rem;
   line-height: 1.28;
+}
+
+.online-room-detail-stack.is-compact-live {
+  display: none;
 }
 
 .war-pile-inline {
@@ -1847,6 +1901,14 @@ input[type="number"] {
 
   .match-status-panel {
     grid-template-columns: 1fr;
+  }
+
+  .online-active-match-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .online-active-match-expressions .match-taunt-shell {
+    position: static;
   }
 
   .status-meta,

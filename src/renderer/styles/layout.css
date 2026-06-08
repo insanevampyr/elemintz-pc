@@ -1500,15 +1500,33 @@ body {
   background: rgba(8, 18, 28, 0.72);
 }
 
+.online-connection-banner.is-compact {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+}
+
 .online-connection-banner-label {
   color: #eef7ff;
   font-size: 0.92rem;
+}
+
+.online-connection-banner.is-compact .online-connection-banner-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .online-connection-banner-detail {
   color: rgba(214, 232, 245, 0.82);
   font-size: 0.88rem;
   line-height: 1.35;
+}
+
+.online-connection-banner.is-compact .online-connection-banner-detail {
+  font-size: 0.82rem;
+  line-height: 1.2;
 }
 
 .online-connection-banner-online {
@@ -1537,6 +1555,46 @@ body {
   padding: 10px 12px;
   border-radius: 12px;
   color: #ffe5bb;
+}
+
+.online-active-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.online-active-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 172, 210, 0.24);
+  background: rgba(7, 16, 25, 0.78);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+.online-active-meta-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(190, 214, 235, 0.72);
+}
+
+.online-active-meta-value {
+  min-width: 0;
+  font-size: 0.84rem;
+  color: #eff7ff;
+  font-weight: 700;
+}
+
+.online-active-meta-value code,
+code.online-active-meta-value {
+  font: inherit;
+  letter-spacing: 0.08em;
 }
 
 .online-play-player-panel {

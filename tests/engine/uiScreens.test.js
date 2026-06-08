@@ -15037,12 +15037,19 @@ test("ui: online play screen renders move sync status and submit controls for fu
     actions: {}
   });
 
-  assert.match(html, /State:<\/strong> Active Round/);
-  assert.match(html, /Sync:<\/strong> 1\/2 submitted\./);
+  assert.match(html, /data-online-active-meta-strip="true"/);
+  assert.match(html, /data-online-active-meta-key="room-code"/);
+  assert.match(html, /data-online-active-meta-key="role"/);
+  assert.match(html, /data-online-active-meta-key="sync"/);
+  assert.match(html, /<code class="online-active-meta-value">ABC123<\/code>/);
+  assert.match(html, /<span class="online-active-meta-value">Guest<\/span>/);
+  assert.match(html, /<span class="online-active-meta-value">1\/2 submitted\.<\/span>/);
   assert.match(html, /Active Round/);
   assert.match(html, /Choose your move for the current round\./);
   assert.match(html, /Round 1 \| Host 0 - Guest 0/);
   assert.match(html, /Move Sync: 1\/2 submitted\./);
+  assert.doesNotMatch(html, /Online Now:/);
+  assert.doesNotMatch(html, /Public Rooms:/);
   assert.match(html, /class="player-header"/);
   assert.match(html, /Guest \(4\)/);
   assert.match(html, /Host \(8\)/);
@@ -15055,6 +15062,7 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /data-preview-src="[^"]*badge_element_veteran\.png"/);
   assert.match(html, /class="title-icon" src="[^"]*title_element_sovereign\.png"/);
   assert.match(html, /class="featured-badge" src="[^"]*badge_element_veteran\.png"/);
+  assert.match(html, /data-online-active-match-expressions="true"/);
 });
 
 test("ui: online play screen renders match complete and rematch readiness state", () => {
@@ -18270,6 +18278,38 @@ test("ui: online play screen keeps rendering a preserved war resolved battle log
 });
 
 test("ui: online play screen renders taunts feed for active rooms", () => {
+  const hostResolvedIdentity = {
+    slotLabel: "Host",
+    username: "Hero",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_crystal_soul"),
+    backgroundImage: getArenaBackground("bg_verdant_shrine"),
+    cardBackImage: getCardBackImage("cardback_arcane_galaxy"),
+    titleLabel: "Apprentice",
+    badgeImage: getBadgeImage("badge_element_initiate"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_crownfire",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_transparent_crystal",
+      wind: "wind_variant_vortex_spirit"
+    })
+  };
+  const guestResolvedIdentity = {
+    slotLabel: "Guest",
+    username: "Rival",
+    connected: true,
+    avatarImage: getAvatarImage("avatar_storm_oracle"),
+    backgroundImage: getArenaBackground("bg_storm_temple"),
+    cardBackImage: getCardBackImage("cardback_storm_spiral"),
+    titleLabel: "Element Sovereign",
+    badgeImage: getBadgeImage("badge_element_veteran"),
+    variantImages: getVariantCardImages({
+      fire: "fire_variant_ember",
+      water: "water_variant_tidal_spirit",
+      earth: "earth_variant_rooted_monolith",
+      wind: "wind_variant_sky_serpent"
+    })
+  };
   const html = onlinePlayScreen.render({
     username: "Hero",
     backgroundImage: "assets/backgrounds/fireBattleArena.png",
@@ -18283,11 +18323,14 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
     },
     multiplayer: {
       connectionStatus: "connected",
+      socketId: "host-1",
       statusMessage: "Room ABC123 is full.",
       room: {
         roomCode: "ABC123",
         status: "full",
         matchComplete: false,
+        hostResolvedIdentity,
+        guestResolvedIdentity,
         host: { socketId: "host-1", username: "Hero" },
         guest: { socketId: "guest-2", username: "Rival" },
         hostHand: { fire: 2, earth: 2, wind: 2, water: 2 },
@@ -18306,6 +18349,7 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /Hero<\/strong>\s*<span>.*WAR!<\/span>/);
   assert.match(html, /Rival<\/strong>\s*<span>.*Lucky clash\.<\/span>/);
   assert.match(html, /data-match-taunt-panel="online"/);
+  assert.match(html, /data-online-active-match-expressions="true"/);
   assert.match(html, /Recent expressions/);
   assert.match(html, /Expressions\s*<\/button>/);
 });
@@ -18382,7 +18426,7 @@ test("ui: online play screen still shows move controls for full rooms when moveS
   assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Changed:<\/strong>/);
   assert.match(html, /1 Fire · 2 Earth · 3 Wind · 4 Water/);
-  assert.match(html, /Sync:<\/strong> 0\/2 submitted\./);
+  assert.match(html, /data-online-active-meta-strip="true"/);
   assert.match(html, /Choose your move for the current round\./);
   assert.match(html, /Round 1 \| Host 0 - Guest 0/);
   assert.match(html, /Move Sync: 0\/2 submitted\./);
@@ -18688,6 +18732,7 @@ test("ui: online play screen renders a server-authoritative match timer above th
   assert.match(html, /online-status-header-row/);
   assert.match(html, /data-online-turn-timer-label="true"/);
   assert.match(html, /data-online-turn-timer-shell="true"/);
+  assert.match(html, /data-online-active-meta-strip="true"/);
 });
 
 test("ui: online play screen bind delegates move button clicks to submitMove", async () => {
