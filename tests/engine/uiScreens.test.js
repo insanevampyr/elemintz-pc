@@ -12969,17 +12969,17 @@ test("ui: appController taunt messages expire individually after the visible lif
   app.getTauntNow = () => now;
 
   app.appendMatchTaunt({ speaker: "Hero", text: "⚔️ WAR!", kind: "player" });
-  now = 21100;
+  now = 31100;
   assert.equal(app.getRenderableMatchTaunts()[0].isFading, true);
 
   app.appendMatchTaunt({ speaker: "Hero", text: "Interesting.", kind: "player" });
-  now = 21350;
+  now = 31350;
   const stillVisible = app.getRenderableMatchTaunts();
   assert.equal(stillVisible.length, 2);
   assert.equal(stillVisible[0].text, "⚔️ WAR!");
   assert.equal(stillVisible[1].text, "Interesting.");
 
-  now = 21700;
+  now = 31700;
   app.pruneExpiredLocalMatchTaunts();
   const remaining = app.getRenderableMatchTaunts();
   assert.equal(remaining.length, 1);
@@ -15048,6 +15048,7 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /Choose your move for the current round\./);
   assert.match(html, /Round 1 \| Host 0 - Guest 0/);
   assert.match(html, /Move Sync: 1\/2 submitted\./);
+  assert.match(html, /data-online-active-match-status="true"/);
   assert.doesNotMatch(html, /Online Now:/);
   assert.doesNotMatch(html, /Public Rooms:/);
   assert.match(html, /class="player-header"/);
@@ -18350,6 +18351,8 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /Rival<\/strong>\s*<span>.*Lucky clash\.<\/span>/);
   assert.match(html, /data-match-taunt-panel="online"/);
   assert.match(html, /data-online-active-match-expressions="true"/);
+  assert.match(html, /data-online-active-match-status="true"/);
+  assert.match(html, /data-online-active-match-status-shell="true"/);
   assert.match(html, /Recent expressions/);
   assert.match(html, /Expressions\s*<\/button>/);
 });

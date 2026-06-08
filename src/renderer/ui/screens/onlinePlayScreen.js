@@ -689,25 +689,11 @@ function renderPublicRoomBrowser(context = {}) {
 
 function renderOnlineLiveBoard(
   boardView,
-  roomStateView,
-  matchStatus,
-  moveSyncLabel,
-  roomLifecycle,
-  onlineTurnTimer,
   onlineMatchTimer
 ) {
-  const battleResultView = boardView.battleResultView ?? null;
   const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
   const localCardBackRarity = getCardBackRarity(boardView.localIdentity.cardBackId);
   const remoteCardBackRarity = getCardBackRarity(boardView.remoteIdentity.cardBackId);
-  const centerResultView = battleResultView?.centerResult
-    ? {
-        ...battleResultView.centerResult,
-        leftVariantMap: boardView.localVariantMap,
-        rightVariantMap: getVariantCardImages(boardView.opponentCardVariants ?? null)
-      }
-    : null;
-  const warTriggered = Boolean(boardView.warActive);
 
   return `
     <section class="online-play-live-board-stack">
@@ -758,36 +744,57 @@ function renderOnlineLiveBoard(
           </div>
         </div>
       </article>
-
-      <article class="panel match-status-panel online-play-status-panel has-center-result">
-        <div class="war-pile-inline online-war-pile-inline ${warTriggered ? "war-highlight" : ""}">
-          ${renderOnlineWarPileSummary(boardView.warPileCards, boardView.opponentCardVariants, warTriggered)}
-        </div>
-        ${renderCenterRoundResult(centerResultView)}
-        <div class="status-meta">
-          <div class="online-status-header-row">
-            <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
-              <strong>${escapeHtml(roomStateView.label)}</strong>
-            </div>
-            <div
-              class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
-              data-online-turn-timer-shell="true"
-              aria-live="polite"
-            >
-              <span class="online-turn-timer-label" data-online-turn-timer-label="true">
-                ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
-              </span>
-            </div>
-          </div>
-          <p class="round-result-text">${escapeHtml(roomStateView.detail)}</p>
-          ${matchStatus ? `<p class="round-status-line">Round ${escapeHtml(String(matchStatus.roundNumber))} | Host ${escapeHtml(String(matchStatus.hostScore))} - Guest ${escapeHtml(String(matchStatus.guestScore))}</p>` : ""}
-          ${moveSyncLabel ? `<p class="round-status-line">Move Sync: ${escapeHtml(moveSyncLabel)}</p>` : ""}
-          ${boardView.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${boardView.warPileSizes.join(" -> ")}</p>` : ""}
-          ${roomLifecycle?.primaryLabel ? `<p class="round-status-line">${escapeHtml(roomLifecycle.primaryLabel)}</p>` : ""}
-        </div>
-      </article>
       </section>
     </section>
+  `;
+}
+
+function renderOnlineLiveStatusPanel(
+  boardView,
+  roomStateView,
+  matchStatus,
+  moveSyncLabel,
+  roomLifecycle,
+  onlineTurnTimer
+) {
+  const battleResultView = boardView.battleResultView ?? null;
+  const centerResultView = battleResultView?.centerResult
+    ? {
+        ...battleResultView.centerResult,
+        leftVariantMap: boardView.localVariantMap,
+        rightVariantMap: getVariantCardImages(boardView.opponentCardVariants ?? null)
+      }
+    : null;
+  const warTriggered = Boolean(boardView.warActive);
+
+  return `
+    <article class="panel match-status-panel online-play-status-panel has-center-result" data-online-active-match-status="true">
+      <div class="war-pile-inline online-war-pile-inline ${warTriggered ? "war-highlight" : ""}">
+        ${renderOnlineWarPileSummary(boardView.warPileCards, boardView.opponentCardVariants, warTriggered)}
+      </div>
+      ${renderCenterRoundResult(centerResultView)}
+      <div class="status-meta">
+        <div class="online-status-header-row">
+          <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
+            <strong>${escapeHtml(roomStateView.label)}</strong>
+          </div>
+          <div
+            class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
+            data-online-turn-timer-shell="true"
+            aria-live="polite"
+          >
+            <span class="online-turn-timer-label" data-online-turn-timer-label="true">
+              ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
+            </span>
+          </div>
+        </div>
+        <p class="round-result-text">${escapeHtml(roomStateView.detail)}</p>
+        ${matchStatus ? `<p class="round-status-line">Round ${escapeHtml(String(matchStatus.roundNumber))} | Host ${escapeHtml(String(matchStatus.hostScore))} - Guest ${escapeHtml(String(matchStatus.guestScore))}</p>` : ""}
+        ${moveSyncLabel ? `<p class="round-status-line">Move Sync: ${escapeHtml(moveSyncLabel)}</p>` : ""}
+        ${boardView.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${boardView.warPileSizes.join(" -> ")}</p>` : ""}
+        ${roomLifecycle?.primaryLabel ? `<p class="round-status-line">${escapeHtml(roomLifecycle.primaryLabel)}</p>` : ""}
+      </div>
+    </article>
   `;
 }
 
@@ -1406,11 +1413,6 @@ export const onlinePlayScreen = {
                           ...boardView,
                           battleResultView
                         },
-                        roomStateView,
-                        matchStatus,
-                        moveSyncLabel,
-                        roomLifecycle,
-                        onlineTurnTimer,
                         onlineMatchTimer
                       )}
                     </div>
@@ -1423,6 +1425,19 @@ export const onlinePlayScreen = {
                         cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
                         canSend: context.taunts?.canSend ?? true
                       })}
+                    </div>
+                    <div class="online-active-match-status" data-online-active-match-status-shell="true">
+                      ${renderOnlineLiveStatusPanel(
+                        {
+                          ...boardView,
+                          battleResultView
+                        },
+                        roomStateView,
+                        matchStatus,
+                        moveSyncLabel,
+                        roomLifecycle,
+                        onlineTurnTimer
+                      )}
                     </div>
                   </section>
                 `

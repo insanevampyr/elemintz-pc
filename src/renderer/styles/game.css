@@ -1069,7 +1069,7 @@ input[type="number"] {
 
 .online-active-match-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 232px);
+  grid-template-columns: minmax(0, 1fr) minmax(248px, 280px);
   gap: 12px;
   align-items: start;
 }
@@ -1083,11 +1083,16 @@ input[type="number"] {
   align-self: stretch;
 }
 
+.online-active-match-status {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .online-active-match-expressions .match-taunt-shell {
   position: sticky;
   top: 12px;
   right: auto;
-  z-index: 3;
+  z-index: 5;
   width: 100%;
   gap: 10px;
   pointer-events: auto;
@@ -1113,8 +1118,18 @@ input[type="number"] {
 }
 
 .online-active-match-expressions .match-taunt-panel {
-  grid-template-columns: minmax(0, 1fr);
-  max-height: min(340px, calc(100vh - 220px));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: none;
+  overflow: visible;
+  padding: 10px;
+  background: rgba(8, 18, 30, 0.66);
+  backdrop-filter: blur(6px);
+}
+
+.online-active-match-expressions .match-taunt-option {
+  min-height: 36px;
+  padding: 8px 9px;
+  font-size: 0.75rem;
 }
 
 .online-match-timer-shell {
@@ -1907,8 +1922,16 @@ input[type="number"] {
     grid-template-columns: 1fr;
   }
 
+  .online-active-match-status {
+    grid-column: auto;
+  }
+
   .online-active-match-expressions .match-taunt-shell {
     position: static;
+  }
+
+  .online-active-match-expressions .match-taunt-panel {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .status-meta,
