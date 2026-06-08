@@ -1079,8 +1079,15 @@ input[type="number"] {
 }
 
 .online-active-match-expressions {
+  display: grid;
   min-width: 0;
   align-self: stretch;
+  padding: 10px 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(118, 165, 203, 0.18);
+  background:
+    linear-gradient(180deg, rgba(14, 31, 47, 0.72), rgba(10, 23, 35, 0.42));
+  box-shadow: inset 0 1px 0 rgba(184, 219, 244, 0.06);
 }
 
 .online-active-match-status {
@@ -1090,31 +1097,40 @@ input[type="number"] {
 
 .online-active-match-expressions .match-taunt-shell {
   position: sticky;
-  top: 12px;
+  top: 10px;
   right: auto;
   z-index: 5;
   width: 100%;
-  gap: 10px;
+  gap: 8px;
+  align-content: start;
   pointer-events: auto;
 }
 
-.online-active-match-expressions .match-taunt-feed {
-  justify-items: stretch;
+.online-active-match-expressions .online-match-taunt-rail-header {
+  align-items: stretch;
 }
 
-.online-active-match-expressions .match-taunt-controls {
-  justify-self: stretch;
-  justify-items: stretch;
+.online-active-match-expressions .online-match-taunt-rail-body {
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
 
 .online-active-match-expressions .match-taunts-toggle-btn {
   width: 100%;
   min-width: 0;
   justify-self: stretch;
+  position: relative;
+  z-index: 1;
 }
 
 .online-active-match-expressions .match-taunt-cooldown {
   justify-self: end;
+  margin-top: 0;
+}
+
+.online-active-match-expressions .match-taunt-feed {
+  justify-items: stretch;
 }
 
 .online-active-match-expressions .match-taunt-panel {
@@ -1122,7 +1138,7 @@ input[type="number"] {
   max-height: none;
   overflow: visible;
   padding: 10px;
-  background: rgba(8, 18, 30, 0.66);
+  background: rgba(8, 18, 30, 0.52);
   backdrop-filter: blur(6px);
 }
 
@@ -1229,7 +1245,9 @@ input[type="number"] {
 }
 
 .online-play-status-panel.has-center-result {
-  grid-template-columns: minmax(160px, 220px) minmax(280px, 1fr) minmax(180px, 240px);
+  grid-template-columns: minmax(152px, 208px) max-content minmax(168px, 208px);
+  justify-content: center;
+  gap: 10px;
 }
 
 .online-play-status-panel.has-center-result .war-pile-inline {
@@ -1259,6 +1277,8 @@ input[type="number"] {
 
 .online-play-status-panel.has-center-result .status-meta {
   grid-column: 3;
+  justify-self: start;
+  width: min(100%, 208px);
 }
 
 .online-play-status-panel:not(.has-center-result) .status-meta {

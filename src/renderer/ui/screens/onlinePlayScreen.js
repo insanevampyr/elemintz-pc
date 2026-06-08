@@ -4,11 +4,11 @@ import { escapeHtml } from "../../utils/dom.js";
 import { formatElement } from "../../utils/index.js";
 import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import {
+  MATCH_TAUNT_FEED_LIMIT,
   normalizeCosmeticRarity,
   rarityClassName,
   renderElementHandSummary,
   renderHiddenHandSummary,
-  renderMatchTauntHud,
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
@@ -622,6 +622,73 @@ function renderActiveMatchMetaStrip({ roomCode = "", roleLabel = "", moveSyncLab
   `;
 }
 
+function renderOnlineMatchTauntRail(taunts = {}) {
+  const panelOpen = Boolean(taunts.panelOpen);
+  const safeMessages = Array.isArray(taunts.messages) ? taunts.messages.slice(-MATCH_TAUNT_FEED_LIMIT) : [];
+  const safePresetLines = Array.isArray(taunts.presetLines) ? taunts.presetLines : [];
+  const safeCooldownMs = Math.max(0, Number(taunts.cooldownRemainingMs) || 0);
+  const cooldownSeconds = Math.ceil(safeCooldownMs / 1000);
+  const cooldownLabel = safeCooldownMs > 0 ? `${cooldownSeconds}s` : "Ready";
+  const canSend = taunts.canSend ?? true;
+
+  return `
+    <aside
+      class="match-taunt-shell online-match-taunt-rail ${panelOpen ? "is-open" : ""}"
+      data-match-taunt-shell="online"
+      data-online-match-taunt-rail="true"
+    >
+      <div class="match-taunt-controls online-match-taunt-rail-header" data-online-match-taunt-rail-header="true">
+        <button id="online-taunts-toggle-btn" type="button" class="btn btn-secondary match-taunts-toggle-btn" aria-expanded="${panelOpen ? "true" : "false"}">
+          Expressions
+        </button>
+        <p class="match-taunt-cooldown" data-taunt-cooldown-state="${safeCooldownMs > 0 ? "cooldown" : "ready"}">
+          ${escapeHtml(cooldownLabel)}
+        </p>
+      </div>
+      <div class="online-match-taunt-rail-body" data-online-match-taunt-rail-body="true">
+        <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
+          ${safeMessages
+            .map(
+              (message) => `
+                <div
+                  class="match-taunt-entry ${message?.isAi ? "is-ai" : message?.isOpponent ? "is-opponent" : "is-player"} ${message?.isFading ? "is-fading" : ""}"
+                  data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
+                >
+                  <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
+                  <span>${escapeHtml(message?.text ?? "")}</span>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+        ${
+          panelOpen
+            ? `
+              <div id="online-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="online" aria-label="Match Expressions">
+                ${safePresetLines
+                  .map(
+                    (line, index) => `
+                      <button
+                        type="button"
+                        class="match-taunt-option"
+                        data-taunt-line="${escapeHtml(line)}"
+                        data-taunt-index="${String(index)}"
+                        ${canSend ? "" : "disabled"}
+                      >
+                        ${escapeHtml(line)}
+                      </button>
+                    `
+                  )
+                  .join("")}
+              </div>
+            `
+            : ""
+        }
+      </div>
+    </aside>
+  `;
+}
+
 function renderPublicRoomBrowser(context = {}) {
   const rooms = Array.isArray(context.onlinePublicRooms) ? context.onlinePublicRooms : [];
   const status = String(context.onlinePublicRoomsStatus ?? "idle").trim().toLowerCase();
@@ -692,7 +759,6 @@ function renderOnlineLiveBoard(
   onlineMatchTimer
 ) {
   const localVariantRarities = getVariantRarityMap(boardView.localIdentity.variantSelection);
-  const localCardBackRarity = getCardBackRarity(boardView.localIdentity.cardBackId);
   const remoteCardBackRarity = getCardBackRarity(boardView.remoteIdentity.cardBackId);
 
   return `
@@ -709,12 +775,9 @@ function renderOnlineLiveBoard(
       </div>
 
       <section class="grid game-grid online-play-live-grid">
-      <article class="panel online-play-player-panel" style="background-image: url('${boardView.localIdentity.backgroundImage}')">
+      <article class="panel online-play-player-panel online-play-player-panel-live" style="background-image: url('${boardView.localIdentity.backgroundImage}')">
         <div class="online-play-player-panel-overlay">
           ${renderPlayerHeader(toPlayerDisplay(boardView.localIdentity), "Player", `(${boardView.localCount})`)}
-          <div class="online-play-identity-strip">
-            <img class="online-player-card-back-chip ${rarityClassName(localCardBackRarity)}" src="${boardView.localIdentity.cardBackImage}" alt="${escapeHtml(boardView.localIdentity.username)} card back" />
-          </div>
           <div class="hand-zone hand-zone-player">
             <div class="hand-summary-grid" id="online-move-actions">
               ${renderElementHandSummary(boardView.localHand, "online", {
@@ -731,12 +794,9 @@ function renderOnlineLiveBoard(
         </div>
       </article>
 
-      <article class="panel online-play-player-panel" style="background-image: url('${boardView.remoteIdentity.backgroundImage}')">
+      <article class="panel online-play-player-panel online-play-player-panel-live" style="background-image: url('${boardView.remoteIdentity.backgroundImage}')">
         <div class="online-play-player-panel-overlay">
           ${renderPlayerHeader(toPlayerDisplay(boardView.remoteIdentity), "Opponent", `(${boardView.remoteCount})`)}
-          <div class="online-play-identity-strip">
-            <img class="online-player-card-back-chip ${rarityClassName(remoteCardBackRarity)}" src="${boardView.remoteIdentity.cardBackImage}" alt="${escapeHtml(boardView.remoteIdentity.username)} card back" />
-          </div>
           <div class="hand-zone hand-zone-opponent">
             <div class="hand-summary-grid hand-summary-grid-opponent" id="right-hand">
               ${renderHiddenHandSummary(boardView.remoteCount, boardView.remoteCardBack, remoteCardBackRarity)}
@@ -1417,14 +1477,7 @@ export const onlinePlayScreen = {
                       )}
                     </div>
                     <div class="online-active-match-expressions" data-online-active-match-expressions="true">
-                      ${renderMatchTauntHud({
-                        idPrefix: "online",
-                        panelOpen: Boolean(context.taunts?.panelOpen),
-                        messages: context.taunts?.messages ?? [],
-                        presetLines: context.taunts?.presetLines ?? [],
-                        cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
-                        canSend: context.taunts?.canSend ?? true
-                      })}
+                      ${renderOnlineMatchTauntRail(context.taunts ?? {})}
                     </div>
                     <div class="online-active-match-status" data-online-active-match-status-shell="true">
                       ${renderOnlineLiveStatusPanel(

@@ -15054,6 +15054,7 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /class="player-header"/);
   assert.match(html, /Guest \(4\)/);
   assert.match(html, /Host \(8\)/);
+  assert.doesNotMatch(html, /class="online-player-card-back-chip/);
   assert.match(html, /class="hand-slot hand-slot-fire [^"]*is-empty/);
   assert.match(html, /data-move="water"/);
   assert.match(html, /aria-label="Water count x1"/);
@@ -16257,12 +16258,11 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
   assert.match(html, new RegExp(getAvatarImage("avatar_storm_oracle").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(getArenaBackground("bg_elemental_throne").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(getArenaBackground("bg_storm_temple").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(html, new RegExp(getCardBackImage("cardback_elemental_nexus").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, new RegExp(getCardBackImage("cardback_storm_spiral").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, /<span>War Master<\/span>/);
   assert.match(html, /<span>Element Sovereign<\/span>/);
   assert.match(html, /class="player-avatar"/);
-  assert.match(html, /class="online-player-card-back-chip rarity-legendary"/);
+  assert.doesNotMatch(html, /class="online-player-card-back-chip/);
   assert.match(html, /class="hand-slot-count-badge"/);
   assert.match(html, /class="featured-badge"/);
   assert.match(html, /hand-slot[^"]*rarity-legendary/);
@@ -18349,12 +18349,17 @@ test("ui: online play screen renders taunts feed for active rooms", () => {
   assert.match(html, /id="online-taunts-toggle-btn"/);
   assert.match(html, /Hero<\/strong>\s*<span>.*WAR!<\/span>/);
   assert.match(html, /Rival<\/strong>\s*<span>.*Lucky clash\.<\/span>/);
+  assert.match(html, /data-online-match-taunt-rail="true"/);
+  assert.match(html, /data-online-match-taunt-rail-header="true"/);
+  assert.match(html, /data-online-match-taunt-rail-body="true"/);
   assert.match(html, /data-match-taunt-panel="online"/);
   assert.match(html, /data-online-active-match-expressions="true"/);
   assert.match(html, /data-online-active-match-status="true"/);
   assert.match(html, /data-online-active-match-status-shell="true"/);
   assert.match(html, /Recent expressions/);
   assert.match(html, /Expressions\s*<\/button>/);
+  assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf("Recent expressions"));
+  assert.ok(html.indexOf('id="online-taunts-toggle-btn"') < html.indexOf('data-match-taunt-panel="online"'));
 });
 
 test("ui: online play screen still shows move controls for full rooms when moveSync is missing", () => {
