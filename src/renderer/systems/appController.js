@@ -6010,6 +6010,7 @@ export class AppController {
     const tauntHud = this.getCurrentTauntHudState();
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
+      onlineRematchRequestInFlight: Boolean(this.onlineRematchRequestPromise),
       onlineMatchTimer: this.getOnlineMatchTimerViewState(),
       onlineTurnTimer: this.getOnlineTurnTimerViewState(),
       formattedErrorMessage: this.formatPlayerFacingMultiplayerError(this.onlinePlayState?.lastError, ""),
@@ -6093,11 +6094,40 @@ export class AppController {
             return;
           }
 
-          const previousState = this.onlinePlayState;
-          const nextState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.readyRematch());
-          this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
-          this.ensureOnlineReconnectUiTimer();
+          if (this.onlineRematchRequestPromise) {
+            return this.onlineRematchRequestPromise;
+          }
+
+          const rematchRequestPromise = (async () => {
+            try {
+              const previousState = this.onlinePlayState;
+              const nextState = this.normalizeOnlinePlayState(await window.elemintz.multiplayer.readyRematch());
+              this.onlinePlayState = this.reconcileOnlinePlayRoundState(previousState, nextState);
+              this.ensureOnlineReconnectUiTimer();
+              this.renderOnlinePlayScreen();
+              return this.onlinePlayState;
+            } catch (error) {
+              this.modalManager.show({
+                title: "Rematch Failed",
+                body: this.formatPlayerFacingMultiplayerError(
+                  error,
+                  "Unable to ready your rematch right now."
+                ),
+                actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+              });
+              this.renderOnlinePlayScreen();
+              return null;
+            } finally {
+              this.onlineRematchRequestPromise = null;
+              if (this.screenFlow === "onlinePlay") {
+                this.renderOnlinePlayScreen();
+              }
+            }
+          })();
+
+          this.onlineRematchRequestPromise = rematchRequestPromise;
           this.renderOnlinePlayScreen();
+          return rematchRequestPromise;
         },
         back: async () => {
           if (window.elemintz?.multiplayer?.disconnect) {

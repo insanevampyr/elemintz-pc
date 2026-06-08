@@ -15153,7 +15153,56 @@ test("ui: online play screen renders match complete and rematch readiness state"
   assert.match(html, /Rewards Granted/);
   assert.match(html, /You Gained:<\/strong> \+5 Tokens, \+5 XP/);
   assert.match(html, /id="online-ready-rematch-btn"/);
+  assert.match(html, />Ready for Rematch</);
   assert.doesNotMatch(html, /Submit Fire/);
+});
+
+test("ui: online play screen shows waiting for opponent after the local player readies a rematch", () => {
+  const html = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      statusMessage: "Match complete in room ABC123. Ready up for rematch.",
+      lastError: null,
+      room: {
+        roomCode: "ABC123",
+        createdAt: "2026-03-19T12:00:00.000Z",
+        status: "full",
+        host: { socketId: "host-1" },
+        guest: { socketId: "guest-1" },
+        hostScore: 5,
+        guestScore: 3,
+        roundNumber: 9,
+        lastOutcomeType: "resolved",
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rematch: { hostReady: true, guestReady: true },
+        hostHand: { fire: 3, water: 2, earth: 4, wind: 3 },
+        guestHand: { fire: 1, water: 1, earth: 0, wind: 1 },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        warRounds: [],
+        roundHistory: [],
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-03-19T12:00:05.000Z"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Rematch:<\/strong> Waiting for opponent\./);
+  assert.match(html, /Waiting for Opponent\.\.\./);
+  assert.match(html, /id="online-ready-rematch-btn" class="btn" disabled/);
 });
 
 test("ui: online play screen reward summary reflects an actual chest grant", () => {

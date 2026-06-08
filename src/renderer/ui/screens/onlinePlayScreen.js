@@ -993,6 +993,7 @@ function deriveHandStatusView(context) {
 function deriveMatchCompleteView(context) {
   const room = context.multiplayer?.room;
   const roleLabel = deriveSettledRoleLabel(context);
+  const rematchRequestInFlight = Boolean(context.onlineRematchRequestInFlight);
   if (!room?.matchComplete) {
     return null;
   }
@@ -1023,6 +1024,7 @@ function deriveMatchCompleteView(context) {
     hostReady: Boolean(room.rematch?.hostReady),
     guestReady: Boolean(room.rematch?.guestReady),
     ownReady,
+    rematchRequestInFlight,
     rewardDecision: room.rewardSettlement?.decision ?? null,
     roleLabel
   };
@@ -1401,8 +1403,13 @@ export const onlinePlayScreen = {
                         : ""
                     }
                     ${renderOnlineChallengeSummary(context)}
+                    ${
+                      matchComplete.ownReady && !roomLifecycle?.rematchUnavailable
+                        ? "<p><strong>Rematch:</strong> Waiting for opponent.</p>"
+                        : ""
+                    }
                     ${roomLifecycle?.rematchUnavailable ? "<p><strong>Rematch Unavailable</strong></p>" : ""}
-                    <button id="online-ready-rematch-btn" class="btn" ${(matchComplete.ownReady || roomLifecycle?.rematchUnavailable) ? "disabled" : ""}>Ready for Rematch</button>
+                    <button id="online-ready-rematch-btn" class="btn" ${(matchComplete.ownReady || matchComplete.rematchRequestInFlight || roomLifecycle?.rematchUnavailable) ? "disabled" : ""}>${matchComplete.rematchRequestInFlight ? "Sending..." : matchComplete.ownReady ? "Waiting for Opponent..." : "Ready for Rematch"}</button>
                   </section>
                 `
                 : ""

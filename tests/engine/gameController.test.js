@@ -4215,6 +4215,227 @@ test("appController: online play create join submit-move and ready-rematch actio
   }
 });
 
+test("appController: online rematch requests work for winner and loser across host and guest roles", async () => {
+  const originalWindow = globalThis.window;
+  const scenarios = [
+    { label: "host winner", socketId: "host-1", winner: "host", expectedLabel: "You Win" },
+    { label: "host loser", socketId: "host-1", winner: "guest", expectedLabel: "You Lose" },
+    { label: "guest winner", socketId: "guest-1", winner: "guest", expectedLabel: "You Win" },
+    { label: "guest loser", socketId: "guest-1", winner: "host", expectedLabel: "You Lose" }
+  ];
+
+  try {
+    for (const scenario of scenarios) {
+      let readyRematchCalls = 0;
+      const shownScreens = [];
+      globalThis.window = {
+        elemintz: {
+          multiplayer: {
+            readyRematch: async () => {
+              readyRematchCalls += 1;
+              return {
+                connectionStatus: "connected",
+                socketId: scenario.socketId,
+                room: {
+                  roomCode: "ABC123",
+                  status: "full",
+                  host: { socketId: "host-1", username: "HostUser" },
+                  guest: { socketId: "guest-1", username: "GuestUser" },
+                  hostHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+                  guestHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+                  moveSync: {
+                    hostSubmitted: true,
+                    guestSubmitted: true,
+                    submittedCount: 2,
+                    bothSubmitted: true,
+                    updatedAt: "2026-06-08T16:00:00.000Z"
+                  },
+                  warPot: { host: [], guest: [] },
+                  warActive: false,
+                  warDepth: 0,
+                  matchComplete: true,
+                  winner: scenario.winner,
+                  winReason: "hand_exhaustion",
+                  rematch: scenario.socketId === "host-1"
+                    ? { hostReady: true, guestReady: false }
+                    : { hostReady: false, guestReady: true }
+                }
+              };
+            }
+          }
+        }
+      };
+
+      const app = new AppController({
+        screenManager: {
+          register: () => {},
+          show: (name, context) => shownScreens.push({ name, context })
+        },
+        modalManager: { show: () => {}, hide: () => {} },
+        toastManager: { showAchievement: () => {} }
+      });
+
+      app.onlinePlayState = app.normalizeOnlinePlayState({
+        connectionStatus: "connected",
+        socketId: scenario.socketId,
+        room: {
+          roomCode: "ABC123",
+          status: "full",
+          host: { socketId: "host-1", username: "HostUser" },
+          guest: { socketId: "guest-1", username: "GuestUser" },
+          hostHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+          guestHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+          moveSync: {
+            hostSubmitted: true,
+            guestSubmitted: true,
+            submittedCount: 2,
+            bothSubmitted: true,
+            updatedAt: "2026-06-08T16:00:00.000Z"
+          },
+          warPot: { host: [], guest: [] },
+          warActive: false,
+          warDepth: 0,
+          matchComplete: true,
+          winner: scenario.winner,
+          winReason: "hand_exhaustion",
+          rematch: { hostReady: false, guestReady: false }
+        }
+      });
+
+      app.renderOnlinePlayScreen();
+      const readyAction = shownScreens.at(-1).context.actions.readyRematch;
+      await readyAction();
+
+      assert.equal(readyRematchCalls, 1, `${scenario.label}: readyRematch should be called once`);
+      const ownReady = scenario.socketId === "host-1"
+        ? app.onlinePlayState.room.rematch.hostReady
+        : app.onlinePlayState.room.rematch.guestReady;
+      assert.equal(ownReady, true, `${scenario.label}: local ready flag should be set`);
+      const winnerLabel = scenario.socketId === "host-1"
+        ? (scenario.winner === "host" ? "You Win" : "You Lose")
+        : (scenario.winner === "guest" ? "You Win" : "You Lose");
+      assert.equal(winnerLabel, scenario.expectedLabel);
+    }
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: online rematch request is single-flight and clears cleanly after failure", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const shownModals = [];
+  let resolveReadyRematch;
+  let readyRematchCalls = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: {
+      show: (payload) => shownModals.push(payload),
+      hide: () => {}
+    },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        multiplayer: {
+          readyRematch: async () => {
+            readyRematchCalls += 1;
+            return new Promise((resolve, reject) => {
+              resolveReadyRematch = { resolve, reject };
+            });
+          }
+        }
+      }
+    };
+
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        hostHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+        guestHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+        moveSync: {
+          hostSubmitted: true,
+          guestSubmitted: true,
+          submittedCount: 2,
+          bothSubmitted: true,
+          updatedAt: "2026-06-08T16:00:00.000Z"
+        },
+        warPot: { host: [], guest: [] },
+        warActive: false,
+        warDepth: 0,
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rematch: { hostReady: false, guestReady: false }
+      }
+    });
+
+    app.renderOnlinePlayScreen();
+    const firstContext = shownScreens.at(-1).context;
+    const firstPromise = firstContext.actions.readyRematch();
+    const secondPromise = firstContext.actions.readyRematch();
+
+    assert.equal(readyRematchCalls, 1);
+    assert.equal(Boolean(app.onlineRematchRequestPromise), true);
+    assert.equal(shownScreens.at(-1).context.onlineRematchRequestInFlight, true);
+
+    resolveReadyRematch.reject(new Error("Server still settling rematch."));
+    await firstPromise;
+    await secondPromise;
+
+    assert.equal(app.onlineRematchRequestPromise, null);
+    assert.equal(shownModals.at(-1).title, "Rematch Failed");
+    assert.match(shownModals.at(-1).body, /Server still settling rematch\./);
+
+    globalThis.window.elemintz.multiplayer.readyRematch = async () => {
+      readyRematchCalls += 1;
+      return {
+        connectionStatus: "connected",
+        socketId: "guest-1",
+        room: {
+          roomCode: "ABC123",
+          status: "full",
+          host: { socketId: "host-1", username: "HostUser" },
+          guest: { socketId: "guest-1", username: "GuestUser" },
+          hostHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+          guestHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+          moveSync: {
+            hostSubmitted: true,
+            guestSubmitted: true,
+            submittedCount: 2,
+            bothSubmitted: true,
+            updatedAt: "2026-06-08T16:00:00.000Z"
+          },
+          warPot: { host: [], guest: [] },
+          warActive: false,
+          warDepth: 0,
+          matchComplete: true,
+          winner: "host",
+          winReason: "hand_exhaustion",
+          rematch: { hostReady: false, guestReady: true }
+        }
+      };
+    };
+
+    await shownScreens.at(-1).context.actions.readyRematch();
+    assert.equal(readyRematchCalls, 2);
+    assert.equal(app.onlinePlayState.room.rematch.guestReady, true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: entering online play auto-refreshes public rooms and online count", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
