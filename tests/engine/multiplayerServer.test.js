@@ -24,7 +24,10 @@ import { ShopRotationStore } from "../../src/multiplayer/shopRotationStore.js";
 import { createRoomStore, getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
+import { getDailyResetWindow } from "../../src/state/dailyChallengesSystem.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
+
+const FIXED_DAY7_LOGIN_NOW_MS = Date.parse("2026-06-08T19:05:00-05:00");
 
 function connectClient(port) {
   return new Promise((resolve, reject) => {
@@ -4650,6 +4653,172 @@ test("multiplayer foundation: server-authoritative daily login claim grants once
     assert.equal(secondClaim?.result?.granted, false);
     assert.equal(profileAfterSecond?.tokens, profileAfterFirst?.tokens);
     assert.equal(profileAfterSecond?.playerXP, profileAfterFirst?.playerXP);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+async function createDailyLoginDay7AuthorityHarness({ randomValues }) {
+  const dataDir = await createTempDataDir();
+  const randomQueue = [...randomValues];
+  const coordinator = new StateCoordinator({
+    dataDir
+  });
+  const authority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  authority.claimDailyLoginReward = async (username) => {
+    const result = await coordinator.claimDailyLoginReward(username, FIXED_DAY7_LOGIN_NOW_MS, {
+      random: () => randomQueue.shift() ?? 1
+    });
+    return {
+      ...result,
+      snapshot: await authority.getProfile(username)
+    };
+  };
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: authority
+  });
+
+  return { dataDir, coordinator, foundation };
+}
+
+async function seedDay7ReadyProfile(coordinator, username) {
+  const { lastResetMs } = getDailyResetWindow(FIXED_DAY7_LOGIN_NOW_MS);
+  const { lastResetMs: previousResetMs } = getDailyResetWindow(lastResetMs - 1);
+  await coordinator.profiles.updateProfile(username, (current) => ({
+    ...current,
+    tokens: 100,
+    playerXP: 0,
+    dailyLoginStreakDay: 6,
+    lastDailyLoginClaimDate: new Date(previousResetMs).toISOString()
+  }));
+}
+
+test("multiplayer foundation: Day 7 daily login miss still grants 50 tokens and preserved XP without a chest", async () => {
+  const { dataDir, coordinator, foundation } = await createDailyLoginDay7AuthorityHarness({
+    randomValues: [0.5, 0.5]
+  });
+  let client = null;
+
+  try {
+    await seedDay7ReadyProfile(coordinator, "Day7MissUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "Day7MissUser");
+    assert.equal(session?.ok, true);
+
+    const claim = await new Promise((resolve) => {
+      client.emit("profile:claimDailyLoginReward", {}, resolve);
+    });
+    const profileAfter = await coordinator.profiles.getProfile("Day7MissUser");
+
+    assert.equal(claim?.ok, true);
+    assert.equal(claim?.result?.granted, true);
+    assert.equal(claim?.result?.streakDay, 7);
+    assert.equal(claim?.result?.rewardSummary?.tokens, 50);
+    assert.equal(claim?.result?.rewardSummary?.xp, 20);
+    assert.equal(claim?.result?.rewardSummary?.chestAwarded, null);
+    assert.equal(claim?.result?.rewardTokens, 50);
+    assert.equal(claim?.result?.rewardXp, 20);
+    assert.deepEqual(claim?.result?.chestGrants ?? [], []);
+    assert.equal(profileAfter?.tokens, 150);
+    assert.equal(profileAfter?.playerXP, 20);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: Day 7 daily login epic hit grants 50 tokens plus one Epic Chest", async () => {
+  const { dataDir, coordinator, foundation } = await createDailyLoginDay7AuthorityHarness({
+    randomValues: [0.5, 0.05]
+  });
+  let client = null;
+
+  try {
+    await seedDay7ReadyProfile(coordinator, "Day7EpicUser");
+    const beforeProfile = await coordinator.profiles.getProfile("Day7EpicUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "Day7EpicUser");
+    assert.equal(session?.ok, true);
+
+    const claim = await new Promise((resolve) => {
+      client.emit("profile:claimDailyLoginReward", {}, resolve);
+    });
+    const profileAfter = await coordinator.profiles.getProfile("Day7EpicUser");
+
+    assert.equal(claim?.ok, true);
+    assert.equal(claim?.result?.granted, true);
+    assert.equal(claim?.result?.streakDay, 7);
+    assert.equal(claim?.result?.rewardSummary?.tokens, 50);
+    assert.equal(claim?.result?.rewardSummary?.xp, 20);
+    assert.deepEqual(claim?.result?.rewardSummary?.chestAwarded, {
+      chestType: "epic",
+      chestLabel: "Epic Chest",
+      amount: 1
+    });
+    assert.equal(claim?.result?.rewardTokens, 50);
+    assert.equal(claim?.result?.rewardXp, 20);
+    assert.deepEqual(claim?.result?.chestGrants, [{ chestType: "epic", amount: 1 }]);
+    assert.equal(profileAfter?.tokens, (beforeProfile?.tokens ?? 0) + 50);
+    assert.equal(profileAfter?.playerXP, (beforeProfile?.playerXP ?? 0) + 20);
+    assert.equal(profileAfter?.chests?.epic, (beforeProfile?.chests?.epic ?? 0) + 1);
+    assert.equal(claim?.result?.chestGrants?.length, 1);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: Day 7 daily login legendary hit grants 50 tokens plus one Legendary Chest only", async () => {
+  const { dataDir, coordinator, foundation } = await createDailyLoginDay7AuthorityHarness({
+    randomValues: [0.02]
+  });
+  let client = null;
+
+  try {
+    await seedDay7ReadyProfile(coordinator, "Day7LegendaryUser");
+    const beforeProfile = await coordinator.profiles.getProfile("Day7LegendaryUser");
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const session = await bootstrapSession(client, "Day7LegendaryUser");
+    assert.equal(session?.ok, true);
+
+    const claim = await new Promise((resolve) => {
+      client.emit("profile:claimDailyLoginReward", {}, resolve);
+    });
+    const profileAfter = await coordinator.profiles.getProfile("Day7LegendaryUser");
+
+    assert.equal(claim?.ok, true);
+    assert.equal(claim?.result?.granted, true);
+    assert.equal(claim?.result?.streakDay, 7);
+    assert.equal(claim?.result?.rewardSummary?.tokens, 50);
+    assert.equal(claim?.result?.rewardSummary?.xp, 20);
+    assert.deepEqual(claim?.result?.rewardSummary?.chestAwarded, {
+      chestType: "legendary",
+      chestLabel: "Legendary Chest",
+      amount: 1
+    });
+    assert.equal(claim?.result?.rewardTokens, 50);
+    assert.equal(claim?.result?.rewardXp, 20);
+    assert.deepEqual(claim?.result?.chestGrants, [{ chestType: "legendary", amount: 1 }]);
+    assert.equal(profileAfter?.tokens, (beforeProfile?.tokens ?? 0) + 50);
+    assert.equal(profileAfter?.playerXP, (beforeProfile?.playerXP ?? 0) + 20);
+    assert.equal(profileAfter?.chests?.legendary, (beforeProfile?.chests?.legendary ?? 0) + 1);
+    assert.equal(profileAfter?.chests?.epic ?? 0, beforeProfile?.chests?.epic ?? 0);
+    assert.equal(claim?.result?.chestGrants?.length, 1);
   } finally {
     client?.disconnect();
     await foundation.stop();

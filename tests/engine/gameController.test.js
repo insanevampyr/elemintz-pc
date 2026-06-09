@@ -9180,7 +9180,9 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
     refreshMenuAnnouncement: 0,
     refreshMenuBoostEvent: 0,
     showDailyLoginReward: 0,
-    dailyLoginRewardPayloads: []
+    dailyLoginRewardPayloads: [],
+    showChestGrant: 0,
+    chestGrantPayloads: []
   };
 
   const app = new AppController({
@@ -9191,6 +9193,10 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
       showDailyLoginReward: (payload) => {
         calls.showDailyLoginReward += 1;
         calls.dailyLoginRewardPayloads.push(payload);
+      },
+      showChestGrant: (payload) => {
+        calls.showChestGrant += 1;
+        calls.chestGrantPayloads.push(payload);
       },
       showTokenReward: () => {},
       showXpBreakdown: () => {},
@@ -9208,13 +9214,14 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
             streakDay: 7,
             rewardSummary: {
               day: 7,
-              tokens: 0,
-              xp: 0,
+              tokens: 50,
+              xp: 20,
               chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 }
             },
-            rewardTokens: 0,
-            rewardXp: 0,
+            rewardTokens: 50,
+            rewardXp: 20,
             chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 },
+            chestGrants: [{ chestType: "epic", amount: 1 }],
             dailyLoginStatus: {
               eligible: false,
               streakDay: 7,
@@ -9258,18 +9265,24 @@ test("appController: eligible menu daily login auto-claim refreshes menu state o
     assert.equal(calls.refreshMenuAnnouncement, 1);
     assert.equal(calls.refreshMenuBoostEvent, 1);
     assert.equal(calls.showDailyLoginReward, 1);
+    assert.equal(calls.showChestGrant, 1);
     assert.deepEqual(calls.dailyLoginRewardPayloads, [{
-      tokens: 0,
-      xp: 0,
+      tokens: 50,
+      xp: 20,
       xpConversionTokenBonus: 0,
       streakDay: 7,
       rewardSummary: {
         day: 7,
-        tokens: 0,
-        xp: 0,
+        tokens: 50,
+        xp: 20,
         chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 }
       },
       chestAwarded: { chestType: "epic", chestLabel: "Epic Chest", amount: 1 }
+    }]);
+    assert.deepEqual(calls.chestGrantPayloads, [{
+      amount: 1,
+      chestLabel: "Epic Chest",
+      chestType: "epic"
     }]);
     assert.equal(app.profile.tokens, 140);
   } finally {

@@ -99,6 +99,51 @@ function formatDailyLoginRewardLabel({ rewardSummary = null, chestAwarded = null
   return rewardParts.join(" + ") || "No reward";
 }
 
+function buildDailyLoginRewardCopy({
+  rewardSummary = null,
+  chestAwarded = null,
+  tokens = 0,
+  xp = 0
+} = {}) {
+  const resolvedDay = getSafeDailyLoginToastDay({ streakDay: rewardSummary?.day ?? 0, rewardSummary });
+  const resolvedChestAward = chestAwarded ?? rewardSummary?.chestAwarded ?? null;
+  const resolvedTokens = Math.max(0, Number(rewardSummary?.tokens ?? tokens) || 0);
+
+  if (resolvedDay === DAILY_LOGIN_STREAK_MAX_DAY) {
+    if (String(resolvedChestAward?.chestType ?? "").trim().toLowerCase() === "legendary") {
+      return {
+        heading: "Day 7 Streak Reward!",
+        body: "You earned 50 tokens and found a Legendary Chest!"
+      };
+    }
+
+    if (String(resolvedChestAward?.chestType ?? "").trim().toLowerCase() === "epic") {
+      return {
+        heading: "Day 7 Streak Reward!",
+        body: "You earned 50 tokens and found an Epic Chest!"
+      };
+    }
+
+    return {
+      heading: "Day 7 Streak Reward!",
+      body:
+        "No chest this time, but you earned 50 tokens. Keep coming back to rebuild your streak."
+    };
+  }
+
+  const rewardLabel = formatDailyLoginRewardLabel({
+    rewardSummary,
+    chestAwarded: resolvedChestAward,
+    tokens: resolvedTokens,
+    xp
+  });
+
+  return {
+    heading: "Daily Login Streak",
+    body: `Reward: ${rewardLabel}`
+  };
+}
+
 export class ToastManager {
   constructor(rootNode) {
     this.rootNode = rootNode;
@@ -193,13 +238,13 @@ export class ToastManager {
       chestAwarded
     });
 
-    const rewardLabel = formatDailyLoginRewardLabel({
+    const resolvedStreakDay = getSafeDailyLoginToastDay({ streakDay, rewardSummary });
+    const rewardCopy = buildDailyLoginRewardCopy({
       rewardSummary,
       chestAwarded,
       tokens,
       xp
     });
-    const resolvedStreakDay = getSafeDailyLoginToastDay({ streakDay, rewardSummary });
 
     this.enqueueToast({
       className: "reward-toast daily-login-toast",
@@ -207,9 +252,9 @@ export class ToastManager {
       html: `
         <div class="reward-toast-icon">\u2B50</div>
         <div>
-          <h4>Daily Login Streak</h4>
+          <h4>${rewardCopy.heading}</h4>
           <p>Day ${resolvedStreakDay} of ${DAILY_LOGIN_STREAK_MAX_DAY}</p>
-          <p>Reward: ${rewardLabel}</p>
+          <p>${rewardCopy.body}</p>
           ${Math.max(0, Number(xpConversionTokenBonus) || 0) > 0 ? `<p>Max Level Bonus: +${Math.max(0, Number(xpConversionTokenBonus) || 0)} Tokens</p>` : ""}
         </div>
       `

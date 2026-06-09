@@ -168,6 +168,8 @@ export function renderMenuDailyLoginStatus(status) {
     return '<p class="muted">Daily Login Streak status unavailable.</p>';
   }
 
+  const previewLines = Array.isArray(status.previewLines) ? status.previewLines : [];
+
   return `
     <div class="menu-daily-login">
       <p><strong id="menu-daily-login-status">${escapeHtml(status.stateLabel ?? "")}</strong></p>
@@ -176,6 +178,7 @@ export function renderMenuDailyLoginStatus(status) {
           ? `<p class="muted" id="menu-daily-login-detail">${escapeHtml(status.detailLabel)}</p>`
           : ""
       }
+      ${previewLines.map((line) => `<p class="muted">${escapeHtml(line)}</p>`).join("")}
     </div>
   `;
 }

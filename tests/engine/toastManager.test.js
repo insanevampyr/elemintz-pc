@@ -325,10 +325,10 @@ test("toast: daily login streak reward shows day and mixed XP-token reward detai
     xpConversionTokenBonus: 1
   });
   manager.showDailyLoginReward({
-    tokens: 0,
-    xp: 10,
+    tokens: 50,
+    xp: 20,
     streakDay: 7,
-    rewardSummary: { day: 7, tokens: 0, xp: 10, chestAwarded: null },
+    rewardSummary: { day: 7, tokens: 50, xp: 20, chestAwarded: null },
     xpConversionTokenBonus: 0
   });
 
@@ -338,7 +338,8 @@ test("toast: daily login streak reward shows day and mixed XP-token reward detai
   assert.match(appended[0].innerHTML, /Reward: 2 XP \+ 4 Tokens/);
   assert.match(appended[0].innerHTML, /Max Level Bonus: \+1 Tokens/);
   assert.match(appended[1].innerHTML, /Day 7 of 7/);
-  assert.match(appended[1].innerHTML, /Reward: 10 XP/);
+  assert.match(appended[1].innerHTML, /Day 7 Streak Reward!/);
+  assert.match(appended[1].innerHTML, /No chest this time, but you earned 50 tokens\. Keep coming back to rebuild your streak\./);
   assert.doesNotMatch(appended[1].innerHTML, /Max Level Bonus:/);
 
   globalThis.document = originalDocument;
@@ -369,31 +370,32 @@ test("toast: daily login streak reward shows Day 7 chest outcomes and XP fallbac
 
   const manager = new ToastManager(root);
   manager.showDailyLoginReward({
-    tokens: 0,
-    xp: 0,
+    tokens: 50,
+    xp: 20,
     streakDay: 7,
-    rewardSummary: { day: 7, tokens: 0, xp: 0, chestAwarded: { chestType: "legendary", chestLabel: "Legendary Chest" } },
+    rewardSummary: { day: 7, tokens: 50, xp: 20, chestAwarded: { chestType: "legendary", chestLabel: "Legendary Chest" } },
     chestAwarded: { chestType: "legendary", chestLabel: "Legendary Chest" }
   });
   manager.showDailyLoginReward({
-    tokens: 0,
-    xp: 0,
+    tokens: 50,
+    xp: 20,
     streakDay: 7,
-    rewardSummary: { day: 7, tokens: 0, xp: 0, chestAwarded: { chestType: "epic", chestLabel: "Epic Chest" } },
+    rewardSummary: { day: 7, tokens: 50, xp: 20, chestAwarded: { chestType: "epic", chestLabel: "Epic Chest" } },
     chestAwarded: { chestType: "epic", chestLabel: "Epic Chest" }
   });
   manager.showDailyLoginReward({
-    tokens: 0,
+    tokens: 50,
     xp: 20,
     streakDay: 7,
-    rewardSummary: { day: 7, tokens: 0, xp: 20, chestAwarded: null }
+    rewardSummary: { day: 7, tokens: 50, xp: 20, chestAwarded: null }
   });
 
   assert.equal(appended.length, 3);
+  assert.match(appended[0].innerHTML, /Day 7 Streak Reward!/);
   assert.match(appended[0].innerHTML, /Day 7 of 7/);
-  assert.match(appended[0].innerHTML, /Reward: Legendary Chest/);
-  assert.match(appended[1].innerHTML, /Reward: Epic Chest/);
-  assert.match(appended[2].innerHTML, /Reward: 20 XP/);
+  assert.match(appended[0].innerHTML, /You earned 50 tokens and found a Legendary Chest!/);
+  assert.match(appended[1].innerHTML, /You earned 50 tokens and found an Epic Chest!/);
+  assert.match(appended[2].innerHTML, /No chest this time, but you earned 50 tokens\. Keep coming back to rebuild your streak\./);
 
   globalThis.document = originalDocument;
   globalThis.requestAnimationFrame = originalRaf;

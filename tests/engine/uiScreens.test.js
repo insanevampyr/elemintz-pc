@@ -11184,6 +11184,40 @@ test("ui: menu shows Daily Login section above the Challenges heading", () => {
   assert.ok(html.indexOf("Daily Login Streak") < html.indexOf("<h3 class=\"section-title\">Challenges</h3>"));
 });
 
+test("ui: menu shows Day 7 daily login preview copy when the streak milestone is ready", () => {
+  const html = menuScreen.render({
+    username: "Day7PreviewUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: "Day 7 of 7",
+        resetLabel: "01:00",
+        previewLines: [
+          "Day 7 Streak Reward",
+          "Guaranteed 50 tokens",
+          "10% chance for an Epic Chest",
+          "3% chance for a Legendary Chest"
+        ]
+      },
+      daily: {
+        resetLabel: "01:00",
+        challenges: []
+      },
+      weekly: {
+        resetLabel: "2d 03:00",
+        challenges: []
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /Day 7 Streak Reward/);
+  assert.match(html, /Guaranteed 50 tokens/);
+  assert.match(html, /10% chance for an Epic Chest/);
+  assert.match(html, /3% chance for a Legendary Chest/);
+});
+
 test("ui: menu shows the Daily EleMintz Chest card between Daily Login and Challenges", () => {
   const html = menuScreen.render({
     username: "ChestUser",

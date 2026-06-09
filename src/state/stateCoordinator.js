@@ -68,10 +68,10 @@ const DAILY_LOGIN_STREAK_REWARDS = Object.freeze([
   Object.freeze({
     day: 7,
     xp: 20,
-    tokens: 0,
+    tokens: 50,
     chestRolls: Object.freeze([
-      Object.freeze({ chestType: LEGENDARY_CHEST_TYPE, chance: 0.01 }),
-      Object.freeze({ chestType: EPIC_CHEST_TYPE, chance: 0.08 })
+      Object.freeze({ chestType: LEGENDARY_CHEST_TYPE, chance: 0.03 }),
+      Object.freeze({ chestType: EPIC_CHEST_TYPE, chance: 0.1 })
     ])
   })
 ]);
@@ -849,11 +849,12 @@ export class StateCoordinator {
           : Math.max(1, priorStreakDay + 1)
         : 1;
     const rewardPlan = getDailyLoginRewardForDay(streakDay);
-    const hasChestBranch = Array.isArray(rewardPlan?.chestRolls) && rewardPlan.chestRolls.length > 0;
+    const rewardTokens = Number(rewardPlan?.tokens ?? 0) || 0;
+    const rewardXp = Number(rewardPlan?.xp ?? 0) || 0;
     let xpAwardSummary = applyXpAwardToProfile(
       profileBefore,
-      hasChestBranch ? 0 : Number(rewardPlan?.xp ?? 0) || 0,
-      Number(rewardPlan?.tokens ?? 0) || 0
+      rewardXp,
+      rewardTokens
     );
     let workingProfile = xpAwardSummary.profile;
     let chestAwarded = null;
@@ -869,18 +870,8 @@ export class StateCoordinator {
           amount: 1
         };
         chestGrants.push({ chestType, amount: 1 });
-        xpAwardSummary = applyXpAwardToProfile(profileBefore, 0, Number(rewardPlan?.tokens ?? 0) || 0);
         break;
       }
-    }
-
-    if (!chestAwarded && hasChestBranch && Number(rewardPlan?.xp ?? 0) > 0) {
-      xpAwardSummary = applyXpAwardToProfile(
-        profileBefore,
-        Number(rewardPlan?.xp ?? 0) || 0,
-        Number(rewardPlan?.tokens ?? 0) || 0
-      );
-      workingProfile = xpAwardSummary.profile;
     }
 
     const committedCandidateProfile = {
@@ -897,7 +888,7 @@ export class StateCoordinator {
       resetWindowKey: statusAfter.loginDayKey,
       granted: true,
       streakDay,
-      rewardTokens: Number(rewardPlan?.tokens ?? 0) || 0,
+      rewardTokens,
       rewardXp: xpAwardSummary.xpDelta,
       chestAwarded: chestAwarded?.chestType ?? null,
       nextResetAt: statusAfter.nextResetAt
@@ -911,11 +902,11 @@ export class StateCoordinator {
       streakDay,
       rewardSummary: {
         day: streakDay,
-        tokens: Number(rewardPlan?.tokens ?? 0) || 0,
-        xp: chestAwarded ? 0 : Number(rewardPlan?.xp ?? 0) || 0,
+        tokens: rewardTokens,
+        xp: rewardXp,
         chestAwarded
       },
-      rewardTokens: Number(rewardPlan?.tokens ?? 0) || 0,
+      rewardTokens,
       rewardXp: xpAwardSummary.xpDelta,
       chestAwarded,
       chestGrants,

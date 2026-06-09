@@ -141,6 +141,12 @@ const FEATURED_RIVAL_CONFIGS = Object.freeze({
   })
 });
 const DAILY_LOGIN_STREAK_MAX_DAY = 7;
+const DAY_7_DAILY_LOGIN_PREVIEW_LINES = Object.freeze([
+  "Day 7 Streak Reward",
+  "Guaranteed 50 tokens",
+  "10% chance for an Epic Chest",
+  "3% chance for a Legendary Chest"
+]);
 
 function getSafeDailyLoginStreakDay(value) {
   const safeDay = Math.floor(Number(value ?? 0) || 0);
@@ -2035,6 +2041,10 @@ export class AppController {
       return {
         stateLabel: "Daily Login Streak: Ready",
         detailLabel: `Day ${upcomingStreakDay} of ${DAILY_LOGIN_STREAK_MAX_DAY}`,
+        previewLines:
+          upcomingStreakDay === DAILY_LOGIN_STREAK_MAX_DAY
+            ? [...DAY_7_DAILY_LOGIN_PREVIEW_LINES]
+            : [],
         resetLabel: safeResetLabel
       };
     }
@@ -6227,6 +6237,15 @@ export class AppController {
         rewardSummary: reward.rewardSummary ?? null,
         chestAwarded: reward.chestAwarded ?? null
       });
+
+      for (const grant of reward.chestGrants ?? []) {
+        const chestType = String(grant?.chestType ?? "basic").trim() || "basic";
+        this.toastManager.showChestGrant?.({
+          amount: grant?.amount ?? 0,
+          chestLabel: this.getChestLabel(chestType),
+          chestType
+        });
+      }
 
       const totalTokens =
         Math.max(0, Number(reward.rewardTokens ?? 0)) +
