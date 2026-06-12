@@ -5756,6 +5756,17 @@ test("ui: game taunt feed caps visible messages at four most recent entries", ()
   assert.match(html, /Five<\/strong>\s*<span>5<\/span>/);
 });
 
+test("ui: non-online reserved expressions rail constrains picker height to internal scroll", () => {
+  const css = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\game.css",
+    "utf8"
+  );
+
+  assert.match(css, /\.game-active-match-expressions\s*\{[^}]*height:\s*clamp\(240px,\s*34vh,\s*320px\);[^}]*max-height:\s*320px;/s);
+  assert.match(css, /\.game-active-match-expressions\s+\.match-taunt-shell\s*\{[^}]*height:\s*100%;[^}]*max-height:\s*100%;/s);
+  assert.match(css, /\.game-active-match-expressions\s+\.match-taunt-panel\s*\{[^}]*max-height:\s*220px;[^}]*overflow:\s*auto;/s);
+});
+
 test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides cleanly", () => {
   function createPreviewNode(tagName) {
     const children = [];
