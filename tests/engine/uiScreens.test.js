@@ -5683,6 +5683,10 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
 
   assert.match(html, /id="game-taunts-toggle-btn"/);
   assert.match(html, /data-match-taunt-shell="game"/);
+  assert.match(html, /data-game-active-match-shell="true"/);
+  assert.match(html, /data-game-active-match-main="true"/);
+  assert.match(html, /data-game-active-match-expressions="true"/);
+  assert.match(html, /data-game-active-match-status-shell="true"/);
   assert.match(html, /data-game-match-taunt-rail="true"/);
   assert.match(html, /data-game-match-taunt-rail-header="true"/);
   assert.match(html, /data-game-match-taunt-box="true"/);
@@ -5697,6 +5701,9 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
   assert.match(html, /Recent expressions/);
   assert.match(html, /Expressions\s*<\/button>/);
   assert.match(html, /aria-label="Match Expressions"/);
+  assert.ok(html.indexOf('data-game-active-match-main="true"') < html.indexOf('data-game-active-match-expressions="true"'));
+  assert.ok(html.indexOf('data-game-active-match-expressions="true"') < html.indexOf('data-game-active-match-status-shell="true"'));
+  assert.ok(html.indexOf('data-game-active-match-expressions="true"') < html.indexOf('data-game-match-taunt-rail="true"'));
   assert.match(html, /data-taunt-line="⚔️ WAR!"/);
   assert.match(html, /data-taunt-line="⚔️ WAR!"[^>]*disabled/);
   assert.match(html, /data-taunt-line="✨ Nice play\."/);

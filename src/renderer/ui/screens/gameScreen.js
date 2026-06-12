@@ -499,47 +499,54 @@ export const gameScreen = {
             <button id="back-menu-btn" class="btn">Back to Menu</button>
           </div>
         </header>
-        ${renderBattleExpressionsRail({
-          idPrefix: "game",
-          panelOpen: Boolean(context.taunts?.panelOpen),
-          messages: context.taunts?.messages ?? [],
-          presetLines: context.taunts?.presetLines ?? [],
-          cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
-          canSend: context.taunts?.canSend ?? true
-        }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS)}
         ${renderGauntletStatus(context)}
 
         <section class="arena-board" style="background-image: url('${context.arenaBackground}')">
-          <section class="grid game-grid">
-            <article class="panel">
-              ${hands.leftTitle}
-              <div class="hand-zone hand-zone-player">
-                <div class="hand-summary-grid" id="left-hand">${hands.leftCards}</div>
-                ${hands.leftHint ? '<p class="keyboard-hint">Keyboard: [1] Fire   [2] Earth   [3] Wind   [4] Water</p>' : ""}
-              </div>
-            </article>
+          <section class="game-active-match-shell" data-game-active-match-shell="true">
+            <div class="game-active-match-main" data-game-active-match-main="true">
+              <section class="grid game-grid game-active-match-grid">
+                <article class="panel">
+                  ${hands.leftTitle}
+                  <div class="hand-zone hand-zone-player">
+                    <div class="hand-summary-grid" id="left-hand">${hands.leftCards}</div>
+                    ${hands.leftHint ? '<p class="keyboard-hint">Keyboard: [1] Fire   [2] Earth   [3] Wind   [4] Water</p>' : ""}
+                  </div>
+                </article>
 
-            <article class="panel">
-              ${hands.rightTitle}
-              <div class="hand-zone hand-zone-opponent">
-                <div class="hand-summary-grid hand-summary-grid-opponent" id="right-hand">${hands.rightCards}</div>
-                ${hands.rightHint ? '<p class="keyboard-hint">Keyboard: [1] Fire   [2] Earth   [3] Wind   [4] Water</p>' : ""}
-              </div>
-            </article>
-
-            <article class="panel match-status-panel ${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}">
-              ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
-              ${renderCenterRoundResult(centerResultView)}
-              <div class="status-meta">
-                <p class="round-status-line">Round update: ${escapeHtml(roundChangeMessage)}</p>
-                <p class="round-status-line">${warStatus}</p>
-                <p class="round-status-line">${capturedStatus}</p>
-                ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
-              </div>
-                <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
-                 ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
+                <article class="panel">
+                  ${hands.rightTitle}
+                  <div class="hand-zone hand-zone-opponent">
+                    <div class="hand-summary-grid hand-summary-grid-opponent" id="right-hand">${hands.rightCards}</div>
+                    ${hands.rightHint ? '<p class="keyboard-hint">Keyboard: [1] Fire   [2] Earth   [3] Wind   [4] Water</p>' : ""}
+                  </div>
+                </article>
+              </section>
+            </div>
+            <div class="game-active-match-expressions" data-game-active-match-expressions="true">
+              ${renderBattleExpressionsRail({
+                idPrefix: "game",
+                panelOpen: Boolean(context.taunts?.panelOpen),
+                messages: context.taunts?.messages ?? [],
+                presetLines: context.taunts?.presetLines ?? [],
+                cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
+                canSend: context.taunts?.canSend ?? true
+              }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS)}
+            </div>
+            <div class="game-active-match-status" data-game-active-match-status-shell="true">
+              <article class="panel match-status-panel ${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}">
+                ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
+                ${renderCenterRoundResult(centerResultView)}
+                <div class="status-meta">
+                  <p class="round-status-line">Round update: ${escapeHtml(roundChangeMessage)}</p>
+                  <p class="round-status-line">${warStatus}</p>
+                  <p class="round-status-line">${capturedStatus}</p>
+                  ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
                 </div>
-              </article>
+                  <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
+                   ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
+                  </div>
+                </article>
+              </div>
           </section>
         </section>
         ${
