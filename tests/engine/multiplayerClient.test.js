@@ -1538,6 +1538,92 @@ class LateAuthoritativeRoundSocket extends FakeSocket {
   }
 }
 
+class TimeoutTerminalRoomUpdateSocket extends FakeSocket {
+  emit(eventName, payload, ack) {
+    if (eventName === "room:submitMove") {
+      this.sentEvents.push({ eventName, payload });
+      queueMicrotask(() => {
+        this.serverEmit("room:moveSync", {
+          ...createMockRoom({
+            roomCode: "ABC123",
+            status: "full",
+            host: { socketId: this.id, username: "HostPlayer" },
+            guest: { socketId: "guest-1", username: "GuestPlayer" }
+          }),
+          moveSync: {
+            hostSubmitted: true,
+            guestSubmitted: true,
+            submittedCount: 2,
+            bothSubmitted: true,
+            updatedAt: "2026-03-29T12:00:00.000Z"
+          }
+        });
+        this.serverEmit("room:roundResult", {
+          roomCode: "ABC123",
+          round: 1,
+          hostMove: payload?.move ?? "fire",
+          guestMove: "fire",
+          outcomeType: "war",
+          hostResult: "no_effect",
+          guestResult: "no_effect"
+        });
+        this.serverEmit("room:update", {
+          ...createMockRoom({
+            roomCode: "ABC123",
+            status: "full",
+            host: { socketId: this.id, username: "HostPlayer" },
+            guest: { socketId: "guest-1", username: "GuestPlayer" }
+          }),
+          matchComplete: true,
+          winner: "host",
+          winReason: "time_limit",
+          warActive: false,
+          warDepth: 0,
+          warPot: { host: [], guest: [] },
+          moveSync: {
+            hostSubmitted: false,
+            guestSubmitted: false,
+            submittedCount: 0,
+            bothSubmitted: false,
+            updatedAt: null
+          },
+          serverMatchState: createAuthoritativeMatchState({
+            roomCode: "ABC123",
+            currentRound: 2,
+            activeStepId: "ABC123:match:1:round:2:step:war:warDepth:1",
+            lastResolvedOutcome: {
+              stepId: "ABC123:match:1:round:1:step:round:warDepth:0",
+              resolvedAt: "2026-03-29T12:00:00.000Z",
+              round: 1,
+              type: "war_start",
+              winner: null,
+              hostMove: payload?.move ?? "fire",
+              guestMove: "fire"
+            },
+            matchTimer: {
+              active: false,
+              durationMs: 300000,
+              startedAt: "2026-05-07T12:00:00.000Z",
+              expiresAt: "2026-05-07T12:05:00.000Z",
+              remainingMs: 0
+            },
+            turnTimer: {
+              active: false,
+              stepId: "ABC123:match:1:round:2:step:war:warDepth:1",
+              durationMs: 20000,
+              startedAt: null,
+              expiresAt: null
+            }
+          })
+        });
+      });
+      return true;
+    }
+
+    return super.emit(eventName, payload, ack);
+  }
+}
+
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-mp-client-"));
 }
@@ -3458,6 +3544,33 @@ test("multiplayer client: late authoritative round result still resolves submit 
   assert.equal(client.getState().latestAuthoritativeRoundResult?.stepId, "ABC123:match:1:round:1:step:round:warDepth:0");
   assert.equal(client.getState().latestRoundResult?.hostMove, "fire");
   assert.equal(client.getState().lastError, null);
+});
+
+test("multiplayer client: terminal room:update without room:serverRoundResult resolves pending submit cleanly", async () => {
+  const client = new MultiplayerClient({
+    socketFactory: () => new TimeoutTerminalRoomUpdateSocket(),
+    logger: { info: () => {}, error: () => {} },
+    persistSession: false
+  });
+
+  await client.connect();
+  client.updateState({
+    room: createMockRoom({
+      roomCode: "ABC123",
+      status: "full",
+      host: { socketId: "socket-1", username: "HostPlayer" },
+      guest: { socketId: "guest-1", username: "GuestPlayer" }
+    })
+  });
+
+  await client.submitMove({ move: "fire" });
+
+  assert.equal(client.getState().room?.matchComplete, true);
+  assert.equal(client.getState().room?.winReason, "time_limit");
+  assert.equal(client.getState().room?.warActive, false);
+  assert.equal(client.getState().latestAuthoritativeRoundResult, null);
+  assert.equal(client.getState().lastError, null);
+  assert.equal(client.getState().statusMessage, "Match complete in room ABC123. Ready up for rematch.");
 });
 
 test("multiplayer client: room snapshots preserve the full authoritative server match state for online rendering", async () => {

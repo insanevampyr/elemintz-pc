@@ -6633,6 +6633,159 @@ test("multiplayer rooms: match timer timeout draws on tied owned-card counts and
   assert.equal(afterCompletionExpiry.room.winner, "draw");
 });
 
+test("multiplayer foundation: match timer expiry during active WAR emits terminal room:update without an extra authoritative round result", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 120,
+    onlineMatchTimerDurationMs: 90,
+    onlineTurnTimerDurationMs: 500
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const room = await createFullRoom(host, guest);
+
+    const hostFirstSync = waitForEvent(host, "room:moveSync");
+    const guestFirstSync = waitForEvent(guest, "room:moveSync");
+    host.emit("room:submitMove", { move: "fire" });
+    await hostFirstSync;
+    await guestFirstSync;
+
+    const warRoundResultPromise = waitForEvent(host, "room:roundResult");
+    const warServerRoundResultPromise = waitForEvent(host, "room:serverRoundResult");
+    guest.emit("room:submitMove", { move: "fire" });
+
+    const warRoundResult = await warRoundResultPromise;
+    const warServerRoundResult = await warServerRoundResultPromise;
+    assert.equal(warRoundResult.outcomeType, "war");
+    assert.equal(warServerRoundResult.authoritativeOutcomeType, "war_start");
+
+    const extraRoundResults = [];
+    const extraServerRoundResults = [];
+    const extraMoveSyncs = [];
+    const captureRoundResult = (payload) => extraRoundResults.push(payload);
+    const captureServerRoundResult = (payload) => extraServerRoundResults.push(payload);
+    const captureMoveSync = (payload) => extraMoveSyncs.push(payload);
+    host.on("room:roundResult", captureRoundResult);
+    host.on("room:serverRoundResult", captureServerRoundResult);
+    host.on("room:moveSync", captureMoveSync);
+
+    const terminalUpdate = await Promise.race([
+      waitForEvent(host, "room:update"),
+      wait(400).then(() => {
+        throw new Error("Timed out waiting for terminal room:update after match timer expiry.");
+      })
+    ]);
+
+    await wait(160);
+
+    assert.equal(terminalUpdate.roomCode, room.roomCode);
+    assert.equal(terminalUpdate.matchComplete, true);
+    assert.equal(terminalUpdate.winReason, "time_limit");
+    assert.equal(terminalUpdate.warActive, false);
+    assert.deepEqual(terminalUpdate.warPot, { host: [], guest: [] });
+    assert.equal(terminalUpdate.serverMatchState?.matchTimer?.active, false);
+    assert.equal(extraRoundResults.length, 0);
+    assert.equal(extraServerRoundResults.length, 0);
+    assert.equal(extraMoveSyncs.length, 0);
+
+    const roomAfterTimeout = foundation.roomStore.getRoom(room.roomCode);
+    assert.equal(roomAfterTimeout?.matchComplete, true);
+    assert.equal(roomAfterTimeout?.winReason, "time_limit");
+    assert.equal(roomAfterTimeout?.warActive, false);
+    assert.equal(roomAfterTimeout?.serverMatchState?.turnTimer?.active, false);
+
+    host.off("room:roundResult", captureRoundResult);
+    host.off("room:serverRoundResult", captureServerRoundResult);
+    host.off("room:moveSync", captureMoveSync);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+  }
+});
+
+test("multiplayer foundation: match timer expiry during a pending WAR continuation leaves no later reset or resolution mutation", async () => {
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    roundResetDelayMs: 20,
+    onlineMatchTimerDurationMs: 95,
+    onlineTurnTimerDurationMs: 500
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const room = await createFullRoom(host, guest);
+    const openingWar = await submitRoundPair(host, guest, "fire", "fire", 2);
+    const warResetSync = openingWar.hostLaterSyncs.at(-1);
+    assert.equal(openingWar.hostRoundResult.outcomeType, "war");
+    assert.equal(warResetSync?.warActive, true);
+    assert.equal(warResetSync?.serverMatchState?.activeStep?.type, "war");
+
+    const pendingWarSyncPromise = waitForEvent(host, "room:moveSync");
+    host.emit("room:submitMove", { move: "water" });
+    const pendingWarSync = await pendingWarSyncPromise;
+    assert.equal(pendingWarSync.moveSync?.hostSubmitted, true);
+    assert.equal(pendingWarSync.moveSync?.guestSubmitted, false);
+    assert.equal(pendingWarSync.warActive, true);
+
+    const extraRoundResults = [];
+    const extraServerRoundResults = [];
+    const extraMoveSyncs = [];
+    const captureRoundResult = (payload) => extraRoundResults.push(payload);
+    const captureServerRoundResult = (payload) => extraServerRoundResults.push(payload);
+    const captureMoveSync = (payload) => extraMoveSyncs.push(payload);
+    host.on("room:roundResult", captureRoundResult);
+    host.on("room:serverRoundResult", captureServerRoundResult);
+    host.on("room:moveSync", captureMoveSync);
+
+    const terminalUpdate = await Promise.race([
+      waitForEvent(host, "room:update"),
+      wait(400).then(() => {
+        throw new Error("Timed out waiting for terminal room:update during pending WAR continuation.");
+      })
+    ]);
+
+    await wait(120);
+
+    assert.equal(terminalUpdate.roomCode, room.roomCode);
+    assert.equal(terminalUpdate.matchComplete, true);
+    assert.equal(terminalUpdate.winReason, "time_limit");
+    assert.equal(terminalUpdate.warActive, false);
+    assert.deepEqual(terminalUpdate.warPot, { host: [], guest: [] });
+    assert.equal(terminalUpdate.serverMatchState?.turnTimer?.active, false);
+    assert.equal(extraRoundResults.length, 0);
+    assert.equal(extraServerRoundResults.length, 0);
+    assert.equal(extraMoveSyncs.length, 0);
+
+    const roomAfterTimeout = foundation.roomStore.getRoom(room.roomCode);
+    assert.equal(roomAfterTimeout?.matchComplete, true);
+    assert.equal(roomAfterTimeout?.winReason, "time_limit");
+    assert.equal(roomAfterTimeout?.warActive, false);
+    assert.deepEqual(roomAfterTimeout?.moveSync, terminalUpdate.moveSync);
+
+    host.off("room:roundResult", captureRoundResult);
+    host.off("room:serverRoundResult", captureServerRoundResult);
+    host.off("room:moveSync", captureMoveSync);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+  }
+});
+
 test("multiplayer rooms: rematch resets the authoritative match timer to a fresh inactive 5-minute state", () => {
   const store = createRoomStore({ random: () => 0 });
   const host = createStoreSocket("host-match-timer-rematch");

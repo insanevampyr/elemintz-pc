@@ -2164,6 +2164,7 @@ export class MultiplayerClient {
       let resolved = false;
       let waitingForAuthoritativeResult = false;
       const expectedRoomCode = this.state.room?.roomCode ?? null;
+      const expectedMatchId = String(this.state.room?.serverMatchState?.matchId ?? "").trim() || null;
       const timeoutId = setTimeout(() => {
         this.updateState({
           lastError: {
@@ -2182,6 +2183,7 @@ export class MultiplayerClient {
 
         resolved = true;
         socket.off("room:moveSync", handleMoveSync);
+        socket.off("room:update", handleRoomUpdate);
         socket.off("room:serverRoundResult", handleServerRoundResult);
         socket.off("room:error", handleError);
         clearTimeout(timeoutId);
@@ -2201,6 +2203,29 @@ export class MultiplayerClient {
         }
 
         waitingForAuthoritativeResult = true;
+      };
+
+      const handleRoomUpdate = (room) => {
+        if (!waitingForAuthoritativeResult || !room?.matchComplete) {
+          return;
+        }
+
+        const roomCode = String(room?.roomCode ?? "").trim();
+        if (expectedRoomCode && roomCode && roomCode !== expectedRoomCode) {
+          return;
+        }
+
+        const roomMatchId = String(room?.serverMatchState?.matchId ?? "").trim() || null;
+        if (expectedMatchId && roomMatchId && roomMatchId !== expectedMatchId) {
+          return;
+        }
+
+        this.logger.info?.("[OnlinePlay][MainClient] submitMove terminal room:update received", {
+          roomCode: roomCode || null,
+          matchId: roomMatchId,
+          winReason: room?.winReason ?? null
+        });
+        finish();
       };
 
       const handleServerRoundResult = (roundResult) => {
@@ -2225,6 +2250,7 @@ export class MultiplayerClient {
       };
 
       socket.once("room:moveSync", handleMoveSync);
+      socket.on("room:update", handleRoomUpdate);
       socket.once("room:serverRoundResult", handleServerRoundResult);
       socket.once("room:error", handleError);
       this.logger.info?.("[OnlinePlay][MainClient] socket emit", {
