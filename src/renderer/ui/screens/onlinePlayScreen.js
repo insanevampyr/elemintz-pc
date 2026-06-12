@@ -3,8 +3,8 @@ import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
 import { escapeHtml } from "../../utils/dom.js";
 import { formatElement } from "../../utils/index.js";
 import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
+import { renderBattleExpressionsRail } from "../shared/battleExpressionsRail.js";
 import {
-  MATCH_TAUNT_FEED_LIMIT,
   normalizeCosmeticRarity,
   rarityClassName,
   renderElementHandSummary,
@@ -619,104 +619,6 @@ function renderActiveMatchMetaStrip({ roomCode = "", roleLabel = "", moveSyncLab
     <section class="online-active-meta-strip" data-online-active-meta-strip="true" aria-label="Live room details">
       ${chips.join("")}
     </section>
-  `;
-}
-
-export function renderOnlineMatchTauntRailContents(taunts = {}) {
-  const panelOpen = Boolean(taunts.panelOpen);
-  const safeMessages = Array.isArray(taunts.messages) ? taunts.messages.slice(-MATCH_TAUNT_FEED_LIMIT) : [];
-  const safePresetLines = Array.isArray(taunts.presetLines) ? taunts.presetLines : [];
-  const safeCooldownMs = Math.max(0, Number(taunts.cooldownRemainingMs) || 0);
-  const cooldownSeconds = Math.ceil(safeCooldownMs / 1000);
-  const cooldownLabel = safeCooldownMs > 0 ? `${cooldownSeconds}s` : "Ready";
-  const canSend = taunts.canSend ?? true;
-
-  return `
-      <div
-        class="online-match-taunt-rail-header online-match-taunt-controls-row online-match-taunt-topbar"
-        data-online-match-taunt-rail-header="true"
-        data-online-match-taunt-controls="true"
-        data-online-match-taunt-topbar="true"
-      >
-        <button
-          id="online-taunts-toggle-btn"
-          type="button"
-          class="btn btn-secondary match-taunts-toggle-btn online-match-taunt-rail-trigger"
-          data-online-match-taunt-rail-trigger="true"
-          data-online-match-taunt-trigger="true"
-          aria-expanded="${panelOpen ? "true" : "false"}"
-        >
-          Expressions
-        </button>
-        <p class="match-taunt-cooldown" data-taunt-cooldown-state="${safeCooldownMs > 0 ? "cooldown" : "ready"}">
-          ${escapeHtml(cooldownLabel)}
-        </p>
-      </div>
-      <div
-        class="online-match-taunt-box online-match-taunt-fixed-box"
-        data-online-match-taunt-box="true"
-        data-online-match-taunt-fixed-box="true"
-      >
-        <div
-          class="online-match-taunt-rail-body online-match-taunt-rail-scroll-body online-match-taunt-box-scroll"
-          data-online-match-taunt-rail-body="true"
-          data-online-match-taunt-body-scroll="true"
-          data-online-match-taunt-scroll="true"
-        >
-          <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
-            ${safeMessages
-              .map(
-                (message) => `
-                  <div
-                    class="match-taunt-entry ${message?.isAi ? "is-ai" : message?.isOpponent ? "is-opponent" : "is-player"} ${message?.isFading ? "is-fading" : ""}"
-                    data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
-                  >
-                    <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
-                    <span>${escapeHtml(message?.text ?? "")}</span>
-                  </div>
-                `
-              )
-              .join("")}
-          </div>
-          ${
-            panelOpen
-              ? `
-                <div id="online-taunts-panel" class="match-taunt-panel" data-match-taunt-panel="online" aria-label="Match Expressions">
-                  ${safePresetLines
-                    .map(
-                      (line, index) => `
-                        <button
-                          type="button"
-                          class="match-taunt-option"
-                          data-taunt-line="${escapeHtml(line)}"
-                          data-taunt-index="${String(index)}"
-                          ${canSend ? "" : "disabled"}
-                        >
-                          ${escapeHtml(line)}
-                        </button>
-                      `
-                    )
-                    .join("")}
-                </div>
-              `
-              : ""
-          }
-        </div>
-      </div>
-  `;
-}
-
-function renderOnlineMatchTauntRail(taunts = {}) {
-  const panelOpen = Boolean(taunts.panelOpen);
-
-  return `
-    <aside
-      class="match-taunt-shell online-match-taunt-rail ${panelOpen ? "is-open" : ""}"
-      data-match-taunt-shell="online"
-      data-online-match-taunt-rail="true"
-    >
-      ${renderOnlineMatchTauntRailContents(taunts)}
-    </aside>
   `;
 }
 
@@ -1518,7 +1420,7 @@ export const onlinePlayScreen = {
                       )}
                     </div>
                     <div class="online-active-match-expressions" data-online-active-match-expressions="true">
-                      ${renderOnlineMatchTauntRail(context.taunts ?? {})}
+                      ${renderBattleExpressionsRail(context.taunts ?? {})}
                     </div>
                     <div class="online-active-match-status" data-online-active-match-status-shell="true">
                       ${renderOnlineLiveStatusPanel(
