@@ -17128,6 +17128,10 @@ test("ui: taunt HUD ticks refresh the active online screen in place without call
     controller.refreshTauntHudIfNeeded();
 
     assert.equal(renderCalls, 0);
+    assert.match(shell.className, /online-match-taunt-rail/);
+    assert.match(shell.innerHTML, /data-online-match-taunt-box="true"/);
+    assert.match(shell.innerHTML, /data-online-match-taunt-rail-body="true"/);
+    assert.ok(shell.innerHTML.indexOf('data-online-match-taunt-topbar="true"') < shell.innerHTML.indexOf('data-online-match-taunt-box="true"'));
     assert.match(shell.innerHTML, /WAR!/);
     assert.match(shell.innerHTML, />\s*5s\s*</);
   } finally {

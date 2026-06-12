@@ -622,7 +622,7 @@ function renderActiveMatchMetaStrip({ roomCode = "", roleLabel = "", moveSyncLab
   `;
 }
 
-function renderOnlineMatchTauntRail(taunts = {}) {
+export function renderOnlineMatchTauntRailContents(taunts = {}) {
   const panelOpen = Boolean(taunts.panelOpen);
   const safeMessages = Array.isArray(taunts.messages) ? taunts.messages.slice(-MATCH_TAUNT_FEED_LIMIT) : [];
   const safePresetLines = Array.isArray(taunts.presetLines) ? taunts.presetLines : [];
@@ -632,11 +632,6 @@ function renderOnlineMatchTauntRail(taunts = {}) {
   const canSend = taunts.canSend ?? true;
 
   return `
-    <aside
-      class="match-taunt-shell online-match-taunt-rail ${panelOpen ? "is-open" : ""}"
-      data-match-taunt-shell="online"
-      data-online-match-taunt-rail="true"
-    >
       <div
         class="online-match-taunt-rail-header online-match-taunt-controls-row online-match-taunt-topbar"
         data-online-match-taunt-rail-header="true"
@@ -708,6 +703,19 @@ function renderOnlineMatchTauntRail(taunts = {}) {
           }
         </div>
       </div>
+  `;
+}
+
+function renderOnlineMatchTauntRail(taunts = {}) {
+  const panelOpen = Boolean(taunts.panelOpen);
+
+  return `
+    <aside
+      class="match-taunt-shell online-match-taunt-rail ${panelOpen ? "is-open" : ""}"
+      data-match-taunt-shell="online"
+      data-online-match-taunt-rail="true"
+    >
+      ${renderOnlineMatchTauntRailContents(taunts)}
     </aside>
   `;
 }

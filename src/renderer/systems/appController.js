@@ -17,6 +17,7 @@ import {
 } from "../ui/screens/index.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature } from "../ui/screens/gameScreen.js";
 import { renderMenuChallengePreview, renderMenuDailyLoginStatus } from "../ui/screens/menuScreen.js";
+import { renderOnlineMatchTauntRailContents } from "../ui/screens/onlinePlayScreen.js";
 import {
   renderDailyElementChestModalBody
 } from "../ui/screens/dailyElementChestScreen.js";
@@ -652,8 +653,13 @@ export class AppController {
       return false;
     }
 
-    shell.className = `match-taunt-shell ${renderState.panelOpen ? "is-open" : ""}`.trim();
-    shell.innerHTML = renderMatchTauntHudContents(renderState);
+    if (screenFlow === "onlinePlay") {
+      shell.className = `match-taunt-shell online-match-taunt-rail ${renderState.panelOpen ? "is-open" : ""}`.trim();
+      shell.innerHTML = renderOnlineMatchTauntRailContents(renderState);
+    } else {
+      shell.className = `match-taunt-shell ${renderState.panelOpen ? "is-open" : ""}`.trim();
+      shell.innerHTML = renderMatchTauntHudContents(renderState);
+    }
     this.bindRenderedTauntHud(shell, screenFlow);
     return true;
   }
