@@ -181,6 +181,14 @@ input[type="number"] {
   overflow: hidden;
 }
 
+.screen-themed-surface.arena-board {
+  overflow: visible;
+}
+
+.screen-game .arena-board {
+  overflow: hidden;
+}
+
 .arena-board::before {
   content: "";
   position: absolute;
@@ -1285,6 +1293,16 @@ input[type="number"] {
   align-self: stretch;
   min-width: 0;
   padding: 6px 0;
+}
+
+.match-status-panel > .status-meta {
+  grid-column: 3;
+  justify-self: end;
+  width: min(100%, 240px);
+}
+
+.match-status-panel > .war-pile-inline {
+  justify-self: start;
 }
 
 .online-play-status-panel.has-center-result {
