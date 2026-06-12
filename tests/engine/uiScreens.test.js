@@ -5683,6 +5683,10 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
 
   assert.match(html, /id="game-taunts-toggle-btn"/);
   assert.match(html, /data-match-taunt-shell="game"/);
+  assert.match(html, /data-game-match-taunt-rail="true"/);
+  assert.match(html, /data-game-match-taunt-rail-header="true"/);
+  assert.match(html, /data-game-match-taunt-box="true"/);
+  assert.match(html, /data-game-match-taunt-rail-body="true"/);
   assert.match(html, /data-taunt-message-id="taunt-1"/);
   assert.match(html, /match-taunt-entry [^"]*is-fading/);
   assert.match(html, /Hero<\/strong>\s*<span>✨ Nice play\.<\/span>/);
@@ -5696,6 +5700,9 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
   assert.match(html, /data-taunt-line="⚔️ WAR!"/);
   assert.match(html, /data-taunt-line="⚔️ WAR!"[^>]*disabled/);
   assert.match(html, /data-taunt-line="✨ Nice play\."/);
+  assert.ok(html.indexOf('data-game-match-taunt-topbar="true"') < html.indexOf('data-game-match-taunt-box="true"'));
+  assert.ok(html.indexOf('id="game-taunts-toggle-btn"') < html.indexOf('data-game-match-taunt-box="true"'));
+  assert.ok(html.indexOf('data-game-match-taunt-box="true"') < html.indexOf("Recent expressions"));
   assert.match(html, /data-card-owner="active"/);
 });
 
@@ -17058,7 +17065,11 @@ test("ui: taunt HUD ticks refresh the active game screen in place without callin
   try {
     controller.refreshTauntHudIfNeeded();
     assert.equal(shown.length, 0);
+    assert.match(shell.className, /game-match-taunt-rail/);
     assert.match(shell.className, /is-open/);
+    assert.match(shell.innerHTML, /data-game-match-taunt-box="true"/);
+    assert.match(shell.innerHTML, /data-game-match-taunt-rail-body="true"/);
+    assert.ok(shell.innerHTML.indexOf('data-game-match-taunt-topbar="true"') < shell.innerHTML.indexOf('data-game-match-taunt-box="true"'));
     assert.match(shell.innerHTML, /Nice play\./);
     assert.match(shell.innerHTML, />\s*7s\s*</);
 

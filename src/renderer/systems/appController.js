@@ -17,7 +17,7 @@ import {
 } from "../ui/screens/index.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature } from "../ui/screens/gameScreen.js";
 import { renderMenuChallengePreview, renderMenuDailyLoginStatus } from "../ui/screens/menuScreen.js";
-import { renderBattleExpressionsRailContents } from "../ui/shared/battleExpressionsRail.js";
+import { GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS, renderBattleExpressionsRailContents } from "../ui/shared/battleExpressionsRail.js";
 import {
   renderDailyElementChestModalBody
 } from "../ui/screens/dailyElementChestScreen.js";
@@ -42,7 +42,7 @@ import { deriveLevelFromXp, MAX_LEVEL } from "../../state/levelRewardsSystem.js"
 import { listGauntletRivals, resolveGauntletRivalById } from "../../engine/gauntletRivals.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { bindCosmeticHoverPreview } from "../ui/shared/cosmeticHoverPreview.js";
-import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS, renderMatchTauntHudContents } from "../ui/shared/playSurfaceShared.js";
+import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS } from "../ui/shared/playSurfaceShared.js";
 import { getUpdateSafetyState as buildUpdateSafetyState, isSafeForUpdateRestart as computeIsSafeForUpdateRestart } from "./updateSafety.js";
 import {
   buildUpdateCoordinatorState,
@@ -657,8 +657,8 @@ export class AppController {
       shell.className = `match-taunt-shell online-match-taunt-rail ${renderState.panelOpen ? "is-open" : ""}`.trim();
       shell.innerHTML = renderBattleExpressionsRailContents(renderState);
     } else {
-      shell.className = `match-taunt-shell ${renderState.panelOpen ? "is-open" : ""}`.trim();
-      shell.innerHTML = renderMatchTauntHudContents(renderState);
+      shell.className = `match-taunt-shell game-match-taunt-rail ${renderState.panelOpen ? "is-open" : ""}`.trim();
+      shell.innerHTML = renderBattleExpressionsRailContents(renderState, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS);
     }
     this.bindRenderedTauntHud(shell, screenFlow);
     return true;

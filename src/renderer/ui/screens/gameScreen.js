@@ -1,11 +1,11 @@
 import { ASSET_CATALOG, escapeHtml, getCardImage, getVariantCardImages, formatElement } from "../../utils/index.js";
 import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
+import { GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS, renderBattleExpressionsRail } from "../shared/battleExpressionsRail.js";
 import {
   ELEMENT_ORDER,
   getCardElement,
   normalizeCosmeticRarity,
   rarityClassName,
-  renderMatchTauntHud,
   renderElementHandSummary,
   renderHiddenHandSummary,
   renderPlayerHeader
@@ -499,14 +499,14 @@ export const gameScreen = {
             <button id="back-menu-btn" class="btn">Back to Menu</button>
           </div>
         </header>
-        ${renderMatchTauntHud({
+        ${renderBattleExpressionsRail({
           idPrefix: "game",
           panelOpen: Boolean(context.taunts?.panelOpen),
           messages: context.taunts?.messages ?? [],
           presetLines: context.taunts?.presetLines ?? [],
           cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
           canSend: context.taunts?.canSend ?? true
-        })}
+        }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS)}
         ${renderGauntletStatus(context)}
 
         <section class="arena-board" style="background-image: url('${context.arenaBackground}')">

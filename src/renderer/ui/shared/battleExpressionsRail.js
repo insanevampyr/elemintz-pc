@@ -1,6 +1,36 @@
 import { escapeHtml } from "../../utils/dom.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS } from "./playSurfaceShared.js";
 
+export const GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS = Object.freeze({
+  shellClassName: "match-taunt-shell game-match-taunt-rail",
+  shellDataAttributes: `
+    data-match-taunt-shell="game"
+    data-game-match-taunt-rail="true"
+  `,
+  headerClassName: "game-match-taunt-rail-header match-taunt-controls-row game-match-taunt-topbar",
+  triggerClassName: "btn btn-secondary match-taunts-toggle-btn game-match-taunt-rail-trigger",
+  boxClassName: "game-match-taunt-box game-match-taunt-fixed-box",
+  bodyClassName: "game-match-taunt-rail-body game-match-taunt-box-scroll",
+  headerDataAttributes: `
+      data-game-match-taunt-rail-header="true"
+      data-game-match-taunt-controls="true"
+      data-game-match-taunt-topbar="true"
+    `,
+  triggerDataAttributes: `
+        data-game-match-taunt-rail-trigger="true"
+      `,
+  boxDataAttributes: `
+      data-game-match-taunt-box="true"
+      data-game-match-taunt-fixed-box="true"
+    `,
+  bodyDataAttributes: `
+        data-game-match-taunt-rail-body="true"
+        data-game-match-taunt-scroll="true"
+      `,
+  panelDataScope: "game",
+  toggleButtonId: "game-taunts-toggle-btn"
+});
+
 export function renderBattleExpressionsRailContents(taunts = {}, options = {}) {
   const {
     headerClassName = "online-match-taunt-rail-header online-match-taunt-controls-row online-match-taunt-topbar",
