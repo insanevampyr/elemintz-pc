@@ -184,6 +184,19 @@ Use this checklist:
 9. Confirm that owned cosmetics are unaffected.
 10. Confirm that rotation changes Store visibility only.
 
+## Current Approved Weekly Schedule
+The current approved weekly schedule order is:
+
+- `void-week-01`
+- `flame-king-weekend-01`
+- `lucky-drop-01`
+- `celestial-feature-01`
+- `frostveil-court-01`
+- `goldbound-relics-01`
+- `neon-arcana-01`
+- `vampire-elegance-01`
+- `lycan-power-01`
+
 ## How `shop-rotation.json` Works
 Path:
 
@@ -209,10 +222,8 @@ Recommended schema:
   ],
   "allowLimitedCosmeticIds": [
     "avatar_voidbound_entity",
-    "cardback_void_tease",
     "void_card_back",
-    "void_altar_background",
-    "title_void_doll"
+    "void_altar_background"
   ]
 }
 ```
@@ -340,10 +351,8 @@ Matching `announcements.json` entry:
   "allowLimitedCosmeticIds": [
     "avatar_inferno_crown_f",
     "avatar_inferno_crown_m",
-    "cardback_flame_tyrant",
     "lava_throne_background",
-    "fire_variant_crownfire",
-    "title_crownless_king"
+    "fire_variant_crownfire"
   ]
 }
 ```
@@ -365,10 +374,7 @@ Matching `announcements.json` entry:
     "cardback_lucky_you"
   ],
   "allowLimitedCosmeticIds": [
-    "avatar_arcane_gambler",
-    "avatar_mimic_entity",
-    "elemental_chest_cardback",
-    "cardback_lucky_you"
+    "elemental_chest_cardback"
   ]
 }
 ```
@@ -428,13 +434,9 @@ Matching `announcements.json` entry:
     "title_divine_menace"
   ],
   "allowLimitedCosmeticIds": [
-    "avatar_riot_halo",
-    "avatar_golden_menace",
     "avatar_astral_archon",
-    "celestial_void_background",
-    "celestial_chamber_background",
+    "avatar_golden_menace",
     "bg_celestial_observatory",
-    "title_divine_menace"
   ]
 }
 ```

@@ -922,8 +922,159 @@ test("multiplayer foundation: announcements:list ignores malformed JSON without 
   }
 });
 
-test("multiplayer foundation: shopRotation:getActive returns no active rotation safely when shop-rotation.json is missing", async () => {
+test("multiplayer foundation: shopRotation:getActive seeds approved defaults when rotation files are missing", async () => {
   const dataDir = await createTempDataDir();
+  const anchorMs = Date.parse("2026-05-15T00:00:00.000Z");
+  const rotationLengthMs = 7 * 24 * 60 * 60 * 1000;
+  const rotationOrder = [
+    "void-week-01",
+    "flame-king-weekend-01",
+    "lucky-drop-01",
+    "celestial-feature-01",
+    "frostveil-court-01",
+    "goldbound-relics-01",
+    "neon-arcana-01",
+    "vampire-elegance-01",
+    "lycan-power-01"
+  ];
+  const expectedRotations = {
+    "void-week-01": {
+      title: "Void Week",
+      message: "Void Collection cosmetics are featured this week.",
+      featuredCosmeticIds: [
+        "avatar_voidbound_entity",
+        "cardback_void_tease",
+        "void_card_back",
+        "void_altar_background",
+        "title_void_doll"
+      ],
+      allowLimitedCosmeticIds: [
+        "avatar_voidbound_entity",
+        "void_card_back",
+        "void_altar_background"
+      ]
+    },
+    "flame-king-weekend-01": {
+      title: "Flame King Weekend",
+      message: "Rule the arena with Flame King Collection cosmetics.",
+      featuredCosmeticIds: [
+        "avatar_inferno_crown_f",
+        "avatar_inferno_crown_m",
+        "cardback_flame_tyrant",
+        "lava_throne_background",
+        "fire_variant_crownfire",
+        "title_crownless_king"
+      ],
+      allowLimitedCosmeticIds: [
+        "avatar_inferno_crown_f",
+        "avatar_inferno_crown_m",
+        "lava_throne_background",
+        "fire_variant_crownfire"
+      ]
+    },
+    "lucky-drop-01": {
+      title: "Lucky Drop",
+      message: "Lucky Collection cosmetics are featured in the Store.",
+      featuredCosmeticIds: [
+        "avatar_arcane_gambler",
+        "avatar_mimic_entity",
+        "elemental_chest_cardback",
+        "cardback_lucky_you"
+      ],
+      allowLimitedCosmeticIds: ["elemental_chest_cardback"]
+    },
+    "celestial-feature-01": {
+      title: "Celestial Feature",
+      message: null,
+      featuredCosmeticIds: [
+        "avatar_astral_archon",
+        "avatar_golden_menace",
+        "bg_celestial_observatory",
+        "celestial_void_background",
+        "title_divine_menace"
+      ],
+      allowLimitedCosmeticIds: [
+        "avatar_astral_archon",
+        "avatar_golden_menace",
+        "bg_celestial_observatory"
+      ]
+    },
+    "frostveil-court-01": {
+      title: "Frostveil Court",
+      message: null,
+      featuredCosmeticIds: [
+        "avatar_frostveil_heir",
+        "cardback_glacier_sigil",
+        "fire_variant_aurora_flare",
+        "earth_variant_icebound_crag",
+        "wind_variant_sleet_spiral",
+        "water_variant_frostbloom",
+        "title_shiverborne"
+      ],
+      allowLimitedCosmeticIds: []
+    },
+    "goldbound-relics-01": {
+      title: "Goldbound Relics",
+      message: null,
+      featuredCosmeticIds: [
+        "avatar_aurelian_archon",
+        "cardback_goldbound_relic",
+        "fire_variant_goldbound_relics",
+        "earth_variant_goldbound_relics",
+        "wind_variant_goldbound_relics",
+        "water_variant_goldbound_relics",
+        "title_goldbound"
+      ],
+      allowLimitedCosmeticIds: []
+    },
+    "neon-arcana-01": {
+      title: "Neon Arcana",
+      message: null,
+      featuredCosmeticIds: [
+        "cardback_neon_arcana",
+        "title_spellwired",
+        "avatar_neon_pyre_entity",
+        "avatar_neon_tide_entity",
+        "avatar_neon_stone_entity",
+        "avatar_neon_gale_entity",
+        "earth_variant_neon_arcana",
+        "fire_variant_neon_arcana",
+        "water_variant_neon_arcana",
+        "wind_variant_neon_arcana"
+      ],
+      allowLimitedCosmeticIds: []
+    },
+    "vampire-elegance-01": {
+      title: "Vampire Elegance",
+      message: null,
+      featuredCosmeticIds: [
+        "avatar_vampire_female",
+        "avatar_vampire_male",
+        "cardback_blood_gem",
+        "cardback_winged_coffin",
+        "fire_variant_flame_wings",
+        "earth_variant_stone_graves",
+        "wind_variant_wings_wind",
+        "water_variant_blood_wings"
+      ],
+      allowLimitedCosmeticIds: []
+    },
+    "lycan-power-01": {
+      title: "Lycan Power",
+      message: null,
+      featuredCosmeticIds: [
+        "avatar_lycan_female",
+        "avatar_lycan_male",
+        "cardback_lycan_pack",
+        "background_bg_lycan_law",
+        "fire_variant_fire_paw",
+        "earth_variant_stone_paw",
+        "wind_variant_lycan_duo",
+        "water_variant_water_wolf"
+      ],
+      allowLimitedCosmeticIds: []
+    }
+  };
   const foundation = createMultiplayerFoundation({
     port: 0,
     shopRotationStore: new ShopRotationStore({
@@ -943,11 +1094,25 @@ test("multiplayer foundation: shopRotation:getActive returns no active rotation 
       const response = await new Promise((resolve) => {
         client.emit("shopRotation:getActive", {}, resolve);
       });
+      const nowMs = Date.now();
+      const elapsedMs = Math.max(0, nowMs - anchorMs);
+      const rotationIndex = Math.floor(elapsedMs / rotationLengthMs);
+      const expectedRotationId = rotationOrder[rotationIndex % rotationOrder.length];
+      const expectedRotation = expectedRotations[expectedRotationId];
+      const expectedStartsAtMs = anchorMs + rotationIndex * rotationLengthMs;
 
       assert.deepEqual(response, {
         ok: true,
         result: {
-          rotation: null
+          rotation: {
+            activeRotationId: expectedRotationId,
+            title: expectedRotation.title,
+            message: expectedRotation.message,
+            startsAt: new Date(expectedStartsAtMs).toISOString(),
+            endsAt: new Date(expectedStartsAtMs + rotationLengthMs).toISOString(),
+            featuredCosmeticIds: expectedRotation.featuredCosmeticIds,
+            allowLimitedCosmeticIds: expectedRotation.allowLimitedCosmeticIds
+          }
         }
       });
     } finally {
@@ -962,6 +1127,7 @@ test("multiplayer foundation: shopRotation:getActive returns no active rotation 
 test("multiplayer foundation: shopRotation:getActive parses UTF-8 BOM JSON, skips duplicates and unknown ids, and returns active featured ids", async () => {
   const dataDir = await createTempDataDir();
   const rotationPath = path.join(dataDir, "server-data", "shop-rotation.json");
+  const schedulePath = path.join(dataDir, "server-data", "shop-rotation-schedule.json");
   await fs.mkdir(path.dirname(rotationPath), { recursive: true });
   await fs.writeFile(
     rotationPath,
@@ -986,6 +1152,23 @@ test("multiplayer foundation: shopRotation:getActive parses UTF-8 BOM JSON, skip
         "void_card_back"
       ]
     })}`,
+    "utf8"
+  );
+  await fs.writeFile(
+    schedulePath,
+    JSON.stringify({
+      enabled: false,
+      mode: "weekly",
+      rotationLengthDays: 7,
+      anchorDate: "2026-05-18T00:00:00.000Z",
+      rotationOrder: ["void-week-01"],
+      rotations: {
+        "void-week-01": {
+          title: "Void Week",
+          featuredCosmeticIds: ["avatar_voidbound_entity"]
+        }
+      }
+    }),
     "utf8"
   );
 
@@ -1038,8 +1221,26 @@ test("multiplayer foundation: shopRotation:getActive parses UTF-8 BOM JSON, skip
 test("multiplayer foundation: shopRotation:getActive ignores malformed, future, and expired rotations without crashing", async () => {
   const dataDir = await createTempDataDir();
   const rotationPath = path.join(dataDir, "server-data", "shop-rotation.json");
+  const schedulePath = path.join(dataDir, "server-data", "shop-rotation-schedule.json");
   await fs.mkdir(path.dirname(rotationPath), { recursive: true });
   await fs.writeFile(rotationPath, "{ nope", "utf8");
+  await fs.writeFile(
+    schedulePath,
+    JSON.stringify({
+      enabled: false,
+      mode: "weekly",
+      rotationLengthDays: 7,
+      anchorDate: "2026-05-18T00:00:00.000Z",
+      rotationOrder: ["void-week-01"],
+      rotations: {
+        "void-week-01": {
+          title: "Void Week",
+          featuredCosmeticIds: ["avatar_voidbound_entity"]
+        }
+      }
+    }),
+    "utf8"
+  );
 
   const malformedFoundation = createMultiplayerFoundation({
     port: 0,
@@ -1166,7 +1367,7 @@ test("multiplayer foundation: shopRotation:getActive ignores malformed, future, 
   }
 });
 
-test("shop rotation store: missing schedule file creates a disabled default and falls back to manual rotation", async () => {
+test("shop rotation store: missing schedule file seeds the approved weekly default and resolves the scheduled rotation", async () => {
   const dataDir = await createTempDataDir();
   const rotationPath = path.join(dataDir, "server-data", "shop-rotation.json");
   const schedulePath = path.join(dataDir, "server-data", "shop-rotation-schedule.json");
@@ -1193,21 +1394,172 @@ test("shop rotation store: missing schedule file creates a disabled default and 
     const scheduleJson = JSON.parse(await fs.readFile(schedulePath, "utf8"));
 
     assert.deepEqual(rotation, {
-      activeRotationId: "manual-void",
-      title: "Manual Void",
-      message: "Manual fallback rotation.",
-      startsAt: null,
-      endsAt: null,
-      featuredCosmeticIds: ["avatar_voidbound_entity"],
-      allowLimitedCosmeticIds: ["avatar_voidbound_entity"]
+      activeRotationId: "void-week-01",
+      title: "Void Week",
+      message: "Void Collection cosmetics are featured this week.",
+      startsAt: "2026-05-15T00:00:00.000Z",
+      endsAt: "2026-05-22T00:00:00.000Z",
+      featuredCosmeticIds: [
+        "avatar_voidbound_entity",
+        "cardback_void_tease",
+        "void_card_back",
+        "void_altar_background",
+        "title_void_doll"
+      ],
+      allowLimitedCosmeticIds: [
+        "avatar_voidbound_entity",
+        "void_card_back",
+        "void_altar_background"
+      ]
     });
     assert.deepEqual(scheduleJson, {
-      enabled: false,
+      enabled: true,
       mode: "weekly",
       rotationLengthDays: 7,
-      anchorDate: null,
-      rotationOrder: [],
-      rotations: {}
+      anchorDate: "2026-05-15T00:00:00.000Z",
+      rotationOrder: [
+        "void-week-01",
+        "flame-king-weekend-01",
+        "lucky-drop-01",
+        "celestial-feature-01",
+        "frostveil-court-01",
+        "goldbound-relics-01",
+        "neon-arcana-01",
+        "vampire-elegance-01",
+        "lycan-power-01"
+      ],
+      rotations: {
+        "void-week-01": {
+          title: "Void Week",
+          message: "Void Collection cosmetics are featured this week.",
+          featuredCosmeticIds: [
+            "avatar_voidbound_entity",
+            "cardback_void_tease",
+            "void_card_back",
+            "void_altar_background",
+            "title_void_doll"
+          ],
+          allowLimitedCosmeticIds: [
+            "avatar_voidbound_entity",
+            "void_card_back",
+            "void_altar_background"
+          ]
+        },
+        "flame-king-weekend-01": {
+          title: "Flame King Weekend",
+          message: "Rule the arena with Flame King Collection cosmetics.",
+          featuredCosmeticIds: [
+            "avatar_inferno_crown_f",
+            "avatar_inferno_crown_m",
+            "cardback_flame_tyrant",
+            "lava_throne_background",
+            "fire_variant_crownfire",
+            "title_crownless_king"
+          ],
+          allowLimitedCosmeticIds: [
+            "avatar_inferno_crown_f",
+            "avatar_inferno_crown_m",
+            "lava_throne_background",
+            "fire_variant_crownfire"
+          ]
+        },
+        "lucky-drop-01": {
+          title: "Lucky Drop",
+          message: "Lucky Collection cosmetics are featured in the Store.",
+          featuredCosmeticIds: [
+            "avatar_arcane_gambler",
+            "avatar_mimic_entity",
+            "elemental_chest_cardback",
+            "cardback_lucky_you"
+          ],
+          allowLimitedCosmeticIds: ["elemental_chest_cardback"]
+        },
+        "celestial-feature-01": {
+          title: "Celestial Feature",
+          featuredCosmeticIds: [
+            "avatar_astral_archon",
+            "avatar_golden_menace",
+            "bg_celestial_observatory",
+            "celestial_void_background",
+            "title_divine_menace"
+          ],
+          allowLimitedCosmeticIds: [
+            "avatar_astral_archon",
+            "avatar_golden_menace",
+            "bg_celestial_observatory"
+          ]
+        },
+        "frostveil-court-01": {
+          title: "Frostveil Court",
+          featuredCosmeticIds: [
+            "avatar_frostveil_heir",
+            "cardback_glacier_sigil",
+            "fire_variant_aurora_flare",
+            "earth_variant_icebound_crag",
+            "wind_variant_sleet_spiral",
+            "water_variant_frostbloom",
+            "title_shiverborne"
+          ],
+          allowLimitedCosmeticIds: []
+        },
+        "goldbound-relics-01": {
+          title: "Goldbound Relics",
+          featuredCosmeticIds: [
+            "avatar_aurelian_archon",
+            "cardback_goldbound_relic",
+            "fire_variant_goldbound_relics",
+            "earth_variant_goldbound_relics",
+            "wind_variant_goldbound_relics",
+            "water_variant_goldbound_relics",
+            "title_goldbound"
+          ],
+          allowLimitedCosmeticIds: []
+        },
+        "neon-arcana-01": {
+          title: "Neon Arcana",
+          featuredCosmeticIds: [
+            "cardback_neon_arcana",
+            "title_spellwired",
+            "avatar_neon_pyre_entity",
+            "avatar_neon_tide_entity",
+            "avatar_neon_stone_entity",
+            "avatar_neon_gale_entity",
+            "earth_variant_neon_arcana",
+            "fire_variant_neon_arcana",
+            "water_variant_neon_arcana",
+            "wind_variant_neon_arcana"
+          ],
+          allowLimitedCosmeticIds: []
+        },
+        "vampire-elegance-01": {
+          title: "Vampire Elegance",
+          featuredCosmeticIds: [
+            "avatar_vampire_female",
+            "avatar_vampire_male",
+            "cardback_blood_gem",
+            "cardback_winged_coffin",
+            "fire_variant_flame_wings",
+            "earth_variant_stone_graves",
+            "wind_variant_wings_wind",
+            "water_variant_blood_wings"
+          ],
+          allowLimitedCosmeticIds: []
+        },
+        "lycan-power-01": {
+          title: "Lycan Power",
+          featuredCosmeticIds: [
+            "avatar_lycan_female",
+            "avatar_lycan_male",
+            "cardback_lycan_pack",
+            "background_bg_lycan_law",
+            "fire_variant_fire_paw",
+            "earth_variant_stone_paw",
+            "wind_variant_lycan_duo",
+            "water_variant_water_wolf"
+          ],
+          allowLimitedCosmeticIds: []
+        }
+      }
     });
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });

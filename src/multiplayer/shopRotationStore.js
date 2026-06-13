@@ -9,13 +9,181 @@ const MAX_MESSAGE_LENGTH = 1000;
 const MAX_COSMETIC_IDS = 64;
 const SAFE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 const MS_PER_DAY = 86_400_000;
-const DEFAULT_SCHEDULE_CONFIG = Object.freeze({
+const DEFAULT_MANUAL_ROTATION_CONFIG = Object.freeze({
+  activeRotationId: "void-week-01",
+  title: "Void Week",
+  message: "Void Collection cosmetics are featured this week.",
+  startsAt: null,
+  endsAt: null,
+  featuredCosmeticIds: Object.freeze([
+    "avatar_voidbound_entity",
+    "cardback_void_tease",
+    "void_card_back",
+    "void_altar_background",
+    "title_void_doll"
+  ]),
+  allowLimitedCosmeticIds: Object.freeze([
+    "avatar_voidbound_entity",
+    "void_card_back",
+    "void_altar_background"
+  ])
+});
+const EMPTY_SCHEDULE_CONFIG = Object.freeze({
   enabled: false,
   mode: "weekly",
   rotationLengthDays: 7,
   anchorDate: null,
-  rotationOrder: [],
-  rotations: {}
+  rotationOrder: Object.freeze([]),
+  rotations: Object.freeze({})
+});
+const DEFAULT_SCHEDULE_CONFIG = Object.freeze({
+  enabled: true,
+  mode: "weekly",
+  rotationLengthDays: 7,
+  anchorDate: "2026-05-15T00:00:00.000Z",
+  rotationOrder: Object.freeze([
+    "void-week-01",
+    "flame-king-weekend-01",
+    "lucky-drop-01",
+    "celestial-feature-01",
+    "frostveil-court-01",
+    "goldbound-relics-01",
+    "neon-arcana-01",
+    "vampire-elegance-01",
+    "lycan-power-01"
+  ]),
+  rotations: Object.freeze({
+    "void-week-01": Object.freeze({
+      title: "Void Week",
+      message: "Void Collection cosmetics are featured this week.",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_voidbound_entity",
+        "cardback_void_tease",
+        "void_card_back",
+        "void_altar_background",
+        "title_void_doll"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([
+        "avatar_voidbound_entity",
+        "void_card_back",
+        "void_altar_background"
+      ])
+    }),
+    "flame-king-weekend-01": Object.freeze({
+      title: "Flame King Weekend",
+      message: "Rule the arena with Flame King Collection cosmetics.",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_inferno_crown_f",
+        "avatar_inferno_crown_m",
+        "cardback_flame_tyrant",
+        "lava_throne_background",
+        "fire_variant_crownfire",
+        "title_crownless_king"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([
+        "avatar_inferno_crown_f",
+        "avatar_inferno_crown_m",
+        "lava_throne_background",
+        "fire_variant_crownfire"
+      ])
+    }),
+    "lucky-drop-01": Object.freeze({
+      title: "Lucky Drop",
+      message: "Lucky Collection cosmetics are featured in the Store.",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_arcane_gambler",
+        "avatar_mimic_entity",
+        "elemental_chest_cardback",
+        "cardback_lucky_you"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze(["elemental_chest_cardback"])
+    }),
+    "celestial-feature-01": Object.freeze({
+      title: "Celestial Feature",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_astral_archon",
+        "avatar_golden_menace",
+        "bg_celestial_observatory",
+        "celestial_void_background",
+        "title_divine_menace"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([
+        "avatar_astral_archon",
+        "avatar_golden_menace",
+        "bg_celestial_observatory"
+      ])
+    }),
+    "frostveil-court-01": Object.freeze({
+      title: "Frostveil Court",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_frostveil_heir",
+        "cardback_glacier_sigil",
+        "fire_variant_aurora_flare",
+        "earth_variant_icebound_crag",
+        "wind_variant_sleet_spiral",
+        "water_variant_frostbloom",
+        "title_shiverborne"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([])
+    }),
+    "goldbound-relics-01": Object.freeze({
+      title: "Goldbound Relics",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_aurelian_archon",
+        "cardback_goldbound_relic",
+        "fire_variant_goldbound_relics",
+        "earth_variant_goldbound_relics",
+        "wind_variant_goldbound_relics",
+        "water_variant_goldbound_relics",
+        "title_goldbound"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([])
+    }),
+    "neon-arcana-01": Object.freeze({
+      title: "Neon Arcana",
+      featuredCosmeticIds: Object.freeze([
+        "cardback_neon_arcana",
+        "title_spellwired",
+        "avatar_neon_pyre_entity",
+        "avatar_neon_tide_entity",
+        "avatar_neon_stone_entity",
+        "avatar_neon_gale_entity",
+        "earth_variant_neon_arcana",
+        "fire_variant_neon_arcana",
+        "water_variant_neon_arcana",
+        "wind_variant_neon_arcana"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([])
+    }),
+    "vampire-elegance-01": Object.freeze({
+      title: "Vampire Elegance",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_vampire_female",
+        "avatar_vampire_male",
+        "cardback_blood_gem",
+        "cardback_winged_coffin",
+        "fire_variant_flame_wings",
+        "earth_variant_stone_graves",
+        "wind_variant_wings_wind",
+        "water_variant_blood_wings"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([])
+    }),
+    "lycan-power-01": Object.freeze({
+      title: "Lycan Power",
+      featuredCosmeticIds: Object.freeze([
+        "avatar_lycan_female",
+        "avatar_lycan_male",
+        "cardback_lycan_pack",
+        "background_bg_lycan_law",
+        "fire_variant_fire_paw",
+        "earth_variant_stone_paw",
+        "wind_variant_lycan_duo",
+        "water_variant_water_wolf"
+      ]),
+      allowLimitedCosmeticIds: Object.freeze([])
+    })
+  })
 });
 
 function sanitizeText(value, maxLength) {
@@ -187,7 +355,7 @@ function normalizeScheduleConfig(entry, logger) {
 
   if (!enabled) {
     return {
-      ...DEFAULT_SCHEDULE_CONFIG
+      ...EMPTY_SCHEDULE_CONFIG
     };
   }
 
@@ -280,7 +448,11 @@ export class ShopRotationStore {
     try {
       await fs.access(this.filePath);
     } catch {
-      await fs.writeFile(this.filePath, "{}\n", "utf8");
+      await fs.writeFile(
+        this.filePath,
+        `${JSON.stringify(DEFAULT_MANUAL_ROTATION_CONFIG, null, 2)}\n`,
+        "utf8"
+      );
     }
   }
 
