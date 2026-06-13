@@ -3289,7 +3289,7 @@ test("state: consecutive daily login claims progress through the 7-day reward ta
     { day: 4, tokens: 0, xp: 8 },
     { day: 5, tokens: 20, xp: 0 },
     { day: 6, tokens: 0, xp: 16 },
-    { day: 7, tokens: 0, xp: 20 }
+    { day: 7, tokens: 50, xp: 20 }
   ];
 
   for (const [index, entry] of expected.entries()) {
@@ -3405,7 +3405,7 @@ test("state: daily login reward loops back to Day 1 after Day 7 on the next cons
   assert.equal(result.profile.dailyLoginStreakDay, 1);
 });
 
-test("state: day 7 legendary branch grants only a legendary chest", async () => {
+test("state: day 7 legendary branch grants the base day 7 payout plus a legendary chest", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
@@ -3422,15 +3422,15 @@ test("state: day 7 legendary branch grants only a legendary chest", async () => 
   });
 
   assert.equal(result.streakDay, 7);
-  assert.equal(result.rewardTokens, 0);
-  assert.equal(result.rewardXp, 0);
+  assert.equal(result.rewardTokens, 50);
+  assert.equal(result.rewardXp, 20);
   assert.deepEqual(result.chestGrants, [{ chestType: LEGENDARY_CHEST_TYPE, amount: 1 }]);
   assert.equal(result.chestAwarded?.chestType, LEGENDARY_CHEST_TYPE);
   assert.equal(result.profile.chests[LEGENDARY_CHEST_TYPE], 1);
-  assert.equal(result.profile.playerXP, 0);
+  assert.equal(result.profile.playerXP, 20);
 });
 
-test("state: day 7 epic branch grants only an epic chest after a legendary miss", async () => {
+test("state: day 7 epic branch grants the base day 7 payout plus an epic chest after a legendary miss", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
@@ -3448,15 +3448,15 @@ test("state: day 7 epic branch grants only an epic chest after a legendary miss"
   });
 
   assert.equal(result.streakDay, 7);
-  assert.equal(result.rewardTokens, 0);
-  assert.equal(result.rewardXp, 0);
+  assert.equal(result.rewardTokens, 50);
+  assert.equal(result.rewardXp, 20);
   assert.deepEqual(result.chestGrants, [{ chestType: EPIC_CHEST_TYPE, amount: 1 }]);
   assert.equal(result.chestAwarded?.chestType, EPIC_CHEST_TYPE);
   assert.equal(result.profile.chests[EPIC_CHEST_TYPE], 1);
-  assert.equal(result.profile.playerXP, 0);
+  assert.equal(result.profile.playerXP, 20);
 });
 
-test("state: day 7 fallback grants 20 XP only when no chest drops", async () => {
+test("state: day 7 fallback grants the base 50 tokens and 20 XP when no chest drops", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
   const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
@@ -3474,7 +3474,7 @@ test("state: day 7 fallback grants 20 XP only when no chest drops", async () => 
   });
 
   assert.equal(result.streakDay, 7);
-  assert.equal(result.rewardTokens, 0);
+  assert.equal(result.rewardTokens, 50);
   assert.equal(result.rewardXp, 20);
   assert.equal(result.chestAwarded, null);
   assert.deepEqual(result.chestGrants, []);

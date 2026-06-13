@@ -40,6 +40,8 @@ const LEGACY_BACKGROUND_ALIASES = Object.freeze({
   default_background: "default_background",
   "EleMintzIcon.png": "default_background",
   "assets/EleMintzIcon.png": "default_background",
+  "backgrounds/default_background.png": "default_background",
+  "assets/backgrounds/default_background.png": "default_background",
   "backgrounds/celestialVoidBattleArena.png": "default_background",
   "assets/backgrounds/celestialVoidBattleArena.png": "default_background",
   fire_background: "fire_background",
@@ -1347,7 +1349,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
     {
       id: "default_background",
       name: "EleMintz Table",
-      image: "EleMintzIcon.png",
+      image: "backgrounds/default_background.png",
       defaultOwned: true,
       purchasable: false,
       price: 0
