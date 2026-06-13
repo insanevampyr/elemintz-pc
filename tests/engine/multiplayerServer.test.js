@@ -955,7 +955,7 @@ test("multiplayer foundation: shopRotation:getActive seeds approved defaults whe
       ]
     },
     "flame-king-weekend-01": {
-      title: "Flame King Weekend",
+      title: "Flame King Week",
       message: "Rule the arena with Flame King Collection cosmetics.",
       featuredCosmeticIds: [
         "avatar_inferno_crown_f",
@@ -1011,7 +1011,7 @@ test("multiplayer foundation: shopRotation:getActive seeds approved defaults whe
         "water_variant_frostbloom",
         "title_shiverborne"
       ],
-      allowLimitedCosmeticIds: []
+      allowLimitedCosmeticIds: ["cardback_glacier_sigil"]
     },
     "goldbound-relics-01": {
       title: "Goldbound Relics",
@@ -1025,7 +1025,7 @@ test("multiplayer foundation: shopRotation:getActive seeds approved defaults whe
         "water_variant_goldbound_relics",
         "title_goldbound"
       ],
-      allowLimitedCosmeticIds: []
+      allowLimitedCosmeticIds: ["cardback_goldbound_relic"]
     },
     "neon-arcana-01": {
       title: "Neon Arcana",
@@ -1446,7 +1446,7 @@ test("shop rotation store: missing schedule file seeds the approved weekly defau
           ]
         },
         "flame-king-weekend-01": {
-          title: "Flame King Weekend",
+          title: "Flame King Week",
           message: "Rule the arena with Flame King Collection cosmetics.",
           featuredCosmeticIds: [
             "avatar_inferno_crown_f",
@@ -1500,7 +1500,7 @@ test("shop rotation store: missing schedule file seeds the approved weekly defau
             "water_variant_frostbloom",
             "title_shiverborne"
           ],
-          allowLimitedCosmeticIds: []
+          allowLimitedCosmeticIds: ["cardback_glacier_sigil"]
         },
         "goldbound-relics-01": {
           title: "Goldbound Relics",
@@ -1513,7 +1513,7 @@ test("shop rotation store: missing schedule file seeds the approved weekly defau
             "water_variant_goldbound_relics",
             "title_goldbound"
           ],
-          allowLimitedCosmeticIds: []
+          allowLimitedCosmeticIds: ["cardback_goldbound_relic"]
         },
         "neon-arcana-01": {
           title: "Neon Arcana",
@@ -1698,7 +1698,7 @@ test("shop rotation store: valid weekly schedule resolves modulo rotation window
           ]
         },
         "flame-king-weekend-01": {
-          title: "Flame King Weekend",
+          title: "Flame King Week",
           featuredCosmeticIds: ["avatar_inferno_crown_f"],
           allowLimitedCosmeticIds: [
             "avatar_voidbound_entity",
@@ -4825,7 +4825,7 @@ test("multiplayer foundation: local match session routes reject invalid mode, di
   }
 });
 
-test("multiplayer foundation: server-authoritative store purchase succeeds for all Goldbound Relics items, including the earth variant", async () => {
+test("multiplayer foundation: server-authoritative store purchase blocks the Goldbound limited card back while allowing the remaining Goldbound Relics items", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const foundation = createMultiplayerFoundation({
@@ -4850,7 +4850,12 @@ test("multiplayer foundation: server-authoritative store purchase succeeds for a
     const purchaseTargets = [
       { type: "avatar", cosmeticId: "avatar_aurelian_archon", expectedPrice: 900 },
       { type: "title", cosmeticId: "title_goldbound", expectedPrice: 500 },
-      { type: "cardBack", cosmeticId: "cardback_goldbound_relic", expectedPrice: 800 },
+      {
+        type: "cardBack",
+        cosmeticId: "cardback_goldbound_relic",
+        expectedPrice: 800,
+        expectedError: "Store item not found for cardBack:cardback_goldbound_relic."
+      },
       { type: "elementCardVariant", cosmeticId: "fire_variant_goldbound_relics", expectedPrice: 450 },
       { type: "elementCardVariant", cosmeticId: "earth_variant_goldbound_relics", expectedPrice: 450 },
       { type: "elementCardVariant", cosmeticId: "wind_variant_goldbound_relics", expectedPrice: 450 },
@@ -4870,6 +4875,12 @@ test("multiplayer foundation: server-authoritative store purchase succeeds for a
     for (let index = 0; index < purchaseTargets.length; index += 1) {
       const target = purchaseTargets[index];
       const response = responses[index];
+      if (target.expectedError) {
+        assert.equal(response?.ok, false, `${target.type}:${target.cosmeticId} should be blocked`);
+        assert.equal(response?.error?.code, "PROFILE_STORE_WRITE_FAILED");
+        assert.equal(response?.error?.message, target.expectedError);
+        continue;
+      }
       assert.equal(response?.ok, true, `${target.type}:${target.cosmeticId} should succeed`);
       assert.equal(response?.result?.purchase?.status, "purchased");
       assert.equal(response?.result?.purchase?.price, target.expectedPrice);
@@ -4877,12 +4888,12 @@ test("multiplayer foundation: server-authoritative store purchase succeeds for a
 
     assert.ok(profileAfterPurchases?.ownedCosmetics?.avatar?.includes("avatar_aurelian_archon"));
     assert.ok(profileAfterPurchases?.ownedCosmetics?.title?.includes("title_goldbound"));
-    assert.ok(profileAfterPurchases?.ownedCosmetics?.cardBack?.includes("cardback_goldbound_relic"));
+    assert.equal(profileAfterPurchases?.ownedCosmetics?.cardBack?.includes("cardback_goldbound_relic"), false);
     assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("fire_variant_goldbound_relics"));
     assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("earth_variant_goldbound_relics"));
     assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("wind_variant_goldbound_relics"));
     assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("water_variant_goldbound_relics"));
-    assert.equal(profileAfterPurchases?.tokens, (beforeProfile?.tokens ?? 0) - 4000);
+    assert.equal(profileAfterPurchases?.tokens, (beforeProfile?.tokens ?? 0) - 3200);
   } finally {
     client?.disconnect();
     await foundation.stop();
@@ -4890,7 +4901,7 @@ test("multiplayer foundation: server-authoritative store purchase succeeds for a
   }
 });
 
-test("multiplayer foundation: server-authoritative store purchase lookup accepts Frostveil composite store keys", async () => {
+test("multiplayer foundation: server-authoritative store purchase lookup blocks the Frostveil limited card back while accepting the remaining Frostveil composite store keys", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const foundation = createMultiplayerFoundation({
@@ -4914,7 +4925,13 @@ test("multiplayer foundation: server-authoritative store purchase lookup accepts
     const purchaseTargets = [
       { type: "avatar:avatar_frostveil_heir", expectedPrice: 900, ownedType: "avatar", ownedId: "avatar_frostveil_heir" },
       { type: "title:title_shiverborne", expectedPrice: 500, ownedType: "title", ownedId: "title_shiverborne" },
-      { type: "cardBack:cardback_glacier_sigil", expectedPrice: 800, ownedType: "cardBack", ownedId: "cardback_glacier_sigil" },
+      {
+        type: "cardBack:cardback_glacier_sigil",
+        expectedPrice: 800,
+        ownedType: "cardBack",
+        ownedId: "cardback_glacier_sigil",
+        expectedError: "Store item not found for cardBack:cardback_glacier_sigil."
+      },
       {
         type: "elementCardVariant:fire_variant_aurora_flare",
         expectedPrice: 450,
@@ -4945,6 +4962,12 @@ test("multiplayer foundation: server-authoritative store purchase lookup accepts
       const response = await new Promise((resolve) => {
         client.emit("profile:buyStoreItem", { type: target.type }, resolve);
       });
+      if (target.expectedError) {
+        assert.equal(response?.ok, false, `${target.type} should be blocked`);
+        assert.equal(response?.error?.code, "PROFILE_STORE_WRITE_FAILED");
+        assert.equal(response?.error?.message, target.expectedError);
+        continue;
+      }
       assert.equal(response?.ok, true, `${target.type} should succeed`);
       assert.equal(response?.result?.purchase?.status, "purchased");
       assert.equal(response?.result?.purchase?.price, target.expectedPrice);
@@ -4952,6 +4975,14 @@ test("multiplayer foundation: server-authoritative store purchase lookup accepts
 
     const profileAfterPurchases = await coordinator.profiles.getProfile("FrostveilAuthorityUser");
     for (const target of purchaseTargets) {
+      if (target.expectedError) {
+        assert.equal(
+          profileAfterPurchases?.ownedCosmetics?.[target.ownedType]?.includes(target.ownedId),
+          false,
+          `${target.ownedType}:${target.ownedId} should stay unavailable outside featured rotation`
+        );
+        continue;
+      }
       assert.ok(
         profileAfterPurchases?.ownedCosmetics?.[target.ownedType]?.includes(target.ownedId),
         `${target.ownedType}:${target.ownedId} should be owned`

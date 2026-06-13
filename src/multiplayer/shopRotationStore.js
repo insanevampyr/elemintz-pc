@@ -70,7 +70,7 @@ const DEFAULT_SCHEDULE_CONFIG = Object.freeze({
       ])
     }),
     "flame-king-weekend-01": Object.freeze({
-      title: "Flame King Weekend",
+      title: "Flame King Week",
       message: "Rule the arena with Flame King Collection cosmetics.",
       featuredCosmeticIds: Object.freeze([
         "avatar_inferno_crown_f",
@@ -124,7 +124,7 @@ const DEFAULT_SCHEDULE_CONFIG = Object.freeze({
         "water_variant_frostbloom",
         "title_shiverborne"
       ]),
-      allowLimitedCosmeticIds: Object.freeze([])
+      allowLimitedCosmeticIds: Object.freeze(["cardback_glacier_sigil"])
     }),
     "goldbound-relics-01": Object.freeze({
       title: "Goldbound Relics",
@@ -137,7 +137,7 @@ const DEFAULT_SCHEDULE_CONFIG = Object.freeze({
         "water_variant_goldbound_relics",
         "title_goldbound"
       ]),
-      allowLimitedCosmeticIds: Object.freeze([])
+      allowLimitedCosmeticIds: Object.freeze(["cardback_goldbound_relic"])
     }),
     "neon-arcana-01": Object.freeze({
       title: "Neon Arcana",

@@ -330,13 +330,13 @@ Matching `announcements.json` entry:
 }
 ```
 
-### Example 2: Flame King Weekend
+### Example 2: Flame King Week
 `shop-rotation.json`
 
 ```json
 {
   "activeRotationId": "flame-king-weekend-01",
-  "title": "Flame King Weekend",
+  "title": "Flame King Week",
   "message": "Rule the arena with Flame King Collection cosmetics.",
   "startsAt": null,
   "endsAt": null,

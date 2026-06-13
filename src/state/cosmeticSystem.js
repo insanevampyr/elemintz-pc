@@ -993,6 +993,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       releaseTag: "goldbound_relics_01",
       isNew: false,
+      rotationOnly: true,
       defaultOwned: false,
       purchasable: true,
       price: CARD_BACK_RARITY_PRICING.Legendary
@@ -1004,6 +1005,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       releaseTag: "frostveil_court_2026_05",
       isNew: false,
+      rotationOnly: true,
       defaultOwned: false,
       purchasable: true,
       price: CARD_BACK_RARITY_PRICING.Legendary

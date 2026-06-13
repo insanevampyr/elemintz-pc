@@ -760,7 +760,12 @@ test("state: rotationOnly cosmetics stay out of the normal store catalog by defa
       "avatar_golden_menace",
       "avatar_astral_archon"
     ],
-    cardBack: ["void_card_back", "elemental_chest_cardback"],
+    cardBack: [
+      "void_card_back",
+      "elemental_chest_cardback",
+      "cardback_glacier_sigil",
+      "cardback_goldbound_relic"
+    ],
     background: ["void_altar_background", "lava_throne_background", "bg_celestial_observatory"],
     elementCardVariant: ["fire_variant_crownfire"]
   };
@@ -802,6 +807,8 @@ test("state: featured rotation catalog can expose approved rotationOnly items wh
         "avatar_astral_archon",
         "bg_celestial_observatory",
         "elemental_chest_cardback",
+        "cardback_glacier_sigil",
+        "cardback_goldbound_relic",
         "supporter_card_back"
       ]
     }
@@ -814,6 +821,8 @@ test("state: featured rotation catalog can expose approved rotationOnly items wh
   assert.equal(featuredCatalog.avatar.some((item) => item.id === "avatar_astral_archon"), true);
   assert.equal(featuredCatalog.cardBack.some((item) => item.id === "void_card_back"), true);
   assert.equal(featuredCatalog.cardBack.some((item) => item.id === "elemental_chest_cardback"), true);
+  assert.equal(featuredCatalog.cardBack.some((item) => item.id === "cardback_glacier_sigil"), true);
+  assert.equal(featuredCatalog.cardBack.some((item) => item.id === "cardback_goldbound_relic"), true);
   assert.equal(featuredCatalog.background.some((item) => item.id === "void_altar_background"), true);
   assert.equal(featuredCatalog.background.some((item) => item.id === "lava_throne_background"), true);
   assert.equal(featuredCatalog.background.some((item) => item.id === "bg_celestial_observatory"), true);
