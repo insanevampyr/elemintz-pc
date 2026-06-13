@@ -134,7 +134,7 @@ export const localSetupScreen = {
       });
     };
 
-    const syncModeField = (prefix) => {
+    const syncModeField = (prefix, { focusPlayerTwoField = false } = {}) => {
       const modeInput = document.querySelector(`input[name="${prefix}Mode"]:checked`);
       const usernameField = document.querySelector(`[data-auth-username-field="${prefix}"]`);
       const usernameInput = document.getElementById(`${prefix}-username`);
@@ -146,13 +146,13 @@ export const localSetupScreen = {
       if (usernameInput) {
         usernameInput.required = registerMode;
       }
-      if (prefix === "p2") {
+      if (prefix === "p2" && focusPlayerTwoField) {
         focusPlayerTwoPrimaryField();
       }
     };
 
     document.querySelectorAll('input[name="p2Mode"]').forEach((input) => {
-      input.addEventListener("change", () => syncModeField("p2"));
+      input.addEventListener("change", () => syncModeField("p2", { focusPlayerTwoField: true }));
     });
     if (!player1Authenticated) {
       document.querySelectorAll('input[name="p1Mode"]').forEach((input) => {
@@ -161,9 +161,6 @@ export const localSetupScreen = {
       syncModeField("p1");
     }
     syncModeField("p2");
-    if (!document.querySelector('input[name="p2Mode"]:checked')) {
-      focusPlayerTwoPrimaryField();
-    }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();

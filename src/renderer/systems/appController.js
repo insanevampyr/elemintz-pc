@@ -1124,12 +1124,12 @@ export class AppController {
       }
 
       const documentRef = globalThis.document;
-      const targets = [event.target, documentRef?.activeElement];
-      if (targets.some((target) => this.isFeedbackShortcutTarget(target))) {
+      const escapeTarget = event.target ?? documentRef?.activeElement ?? null;
+      if (this.isFeedbackShortcutTarget(escapeTarget)) {
         return;
       }
 
-      if (targets.some((target) => this.isEditableTarget(target))) {
+      if (this.isEditableTarget(escapeTarget)) {
         return;
       }
 

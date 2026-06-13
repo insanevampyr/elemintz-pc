@@ -24,6 +24,7 @@ import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticH
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
+import { ScreenManager } from "../../src/renderer/systems/screenManager.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
 import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
@@ -131,6 +132,107 @@ function createShortcutDocument({ activeElement = null, modalTitle = "", modalVi
     },
     getElementById: () => null
   };
+}
+
+function createRenderedScreenHarness() {
+  const elements = new Map();
+  const root = {};
+  let html = "";
+  let activeElement = { tagName: "BODY", isContentEditable: false };
+
+  const buildElement = (id, tagName = "DIV") => ({
+    id,
+    tagName,
+    isContentEditable: false,
+    listeners: new Map(),
+    hidden: false,
+    dataset: {},
+    classList: { add() {}, remove() {}, contains() { return false; } },
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    },
+    focus() {
+      activeElement = this;
+    },
+    select() {},
+    closest(selector) {
+      if (selector === "[hidden]") {
+        return this.hidden ? this : null;
+      }
+      return null;
+    }
+  });
+
+  Object.defineProperty(root, "innerHTML", {
+    get() {
+      return html;
+    },
+    set(value) {
+      html = String(value ?? "");
+      elements.clear();
+      const idRegex = /<([a-zA-Z0-9-]+)[^>]*id="([^"]+)"/g;
+      for (const match of html.matchAll(idRegex)) {
+        elements.set(match[2], buildElement(match[2], String(match[1] ?? "DIV").toUpperCase()));
+      }
+    }
+  });
+
+  const documentRef = {
+    body: {
+      classList: {
+        toggle: () => {}
+      }
+    },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    get activeElement() {
+      return activeElement;
+    },
+    setActiveElement(value) {
+      activeElement = value;
+    },
+    getElementById(id) {
+      return elements.get(id) ?? null;
+    },
+    querySelector(selector) {
+      if (selector === ".modal-overlay" || selector === ".modal-overlay .modal h3") {
+        return null;
+      }
+      if (selector === 'input[name="p2Mode"]:checked') {
+        return null;
+      }
+      if (selector === 'input[name="p1Mode"]:checked') {
+        return null;
+      }
+      if (selector === '[data-auth-username-field="p1"]' || selector === '[data-auth-username-field="p2"]') {
+        return null;
+      }
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    }
+  };
+
+  return {
+    root,
+    documentRef,
+    get html() {
+      return html;
+    },
+    getElement(id) {
+      return elements.get(id) ?? null;
+    }
+  };
+}
+
+function assertMainMenuRendered(html) {
+  assert.match(html, /<h2 class="view-title">Main Menu<\/h2>/);
+  assert.match(html, /How to Play \[H\]/);
+}
+
+function assertLocalSetupRendered(html) {
+  assert.match(html, /<h2 class="view-title">Local 2-Player Setup<\/h2>/);
 }
 
 function createProfileScreenContext(overrides = {}) {
@@ -12446,6 +12548,166 @@ test("ui: appController Escape stays suppressed for Local Setup and Online lobby
   } finally {
     global.document = previousDocument;
     global.window = previousWindow;
+  }
+});
+
+test("ui: Local Setup does not auto-focus credentials on entry and Escape works immediately", async () => {
+  const previousDocument = global.document;
+  const previousWindow = global.window;
+  const previousRequestAnimationFrame = global.requestAnimationFrame;
+
+  const harness = createRenderedScreenHarness();
+  const screenManager = new ScreenManager(harness.root);
+
+  global.document = harness.documentRef;
+  global.requestAnimationFrame = (callback) => {
+    callback();
+    return 1;
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getDailyChallenges: async () => ({
+          daily: { msUntilReset: 60000, challenges: [] },
+          weekly: { msUntilReset: 60000, challenges: [] },
+          dailyLogin: null
+        })
+      }
+    }
+  };
+
+  try {
+    const controller = new AppController({
+      screenManager,
+      modalManager: {
+        show: () => {},
+        hide: () => {},
+        clearStaleOverlay: () => false
+      },
+      toastManager: {
+        show: () => {}
+      }
+    });
+
+    controller.username = "test";
+    controller.profile = {
+      username: "test",
+      equippedCosmetics: {
+        background: "default_background",
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        badge: "none",
+        title: "Initiate",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        }
+      }
+    };
+
+    controller.showLocalSetup();
+    assertLocalSetupRendered(harness.html);
+    assert.equal(harness.documentRef.activeElement?.tagName, "BODY");
+
+    await controller.handleNavigationShortcut({
+      key: "Escape",
+      target: { tagName: "BODY", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    assert.doesNotMatch(harness.html, /Local 2-Player Setup/);
+    assertMainMenuRendered(harness.html);
+  } finally {
+    global.document = previousDocument;
+    global.window = previousWindow;
+    global.requestAnimationFrame = previousRequestAnimationFrame;
+  }
+});
+
+test("ui: Local Setup Escape stays suppressed for manually focused credentials and Back still returns to Main Menu", async () => {
+  const previousDocument = global.document;
+  const previousWindow = global.window;
+  const previousRequestAnimationFrame = global.requestAnimationFrame;
+
+  const harness = createRenderedScreenHarness();
+  const screenManager = new ScreenManager(harness.root);
+
+  global.document = harness.documentRef;
+  global.requestAnimationFrame = (callback) => {
+    callback();
+    return 1;
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getDailyChallenges: async () => ({
+          daily: { msUntilReset: 60000, challenges: [] },
+          weekly: { msUntilReset: 60000, challenges: [] },
+          dailyLogin: null
+        })
+      }
+    }
+  };
+
+  try {
+    const controller = new AppController({
+      screenManager,
+      modalManager: {
+        show: () => {},
+        hide: () => {},
+        clearStaleOverlay: () => false
+      },
+      toastManager: {
+        show: () => {}
+      }
+    });
+
+    controller.username = "test";
+    controller.profile = {
+      username: "test",
+      equippedCosmetics: {
+        background: "default_background",
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        badge: "none",
+        title: "Initiate",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        }
+      }
+    };
+
+    controller.showLocalSetup();
+    assertLocalSetupRendered(harness.html);
+
+    harness.getElement("p2-email")?.focus();
+    assert.equal(harness.documentRef.activeElement?.id, "p2-email");
+
+    await controller.handleNavigationShortcut({
+      key: "Escape",
+      target: harness.getElement("p2-email"),
+      preventDefault: () => {}
+    });
+
+    assertLocalSetupRendered(harness.html);
+
+    const backButton = harness.getElement("local-setup-back-btn");
+    assert.ok(backButton);
+    await backButton.listeners.get("click")();
+    assert.doesNotMatch(harness.html, /Local 2-Player Setup/);
+    assertMainMenuRendered(harness.html);
+
+    controller.showLocalSetup();
+    assertLocalSetupRendered(harness.html);
+  } finally {
+    global.document = previousDocument;
+    global.window = previousWindow;
+    global.requestAnimationFrame = previousRequestAnimationFrame;
   }
 });
 
