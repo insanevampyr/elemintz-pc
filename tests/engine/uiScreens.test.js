@@ -89,6 +89,50 @@ function createRendererController() {
   });
 }
 
+function createShortcutDocument({ activeElement = null, modalTitle = "", modalVisible = false } = {}) {
+  const listeners = new Map();
+  let active = activeElement ?? { tagName: "BODY", isContentEditable: false };
+  let visible = modalVisible;
+  let title = modalTitle;
+
+  return {
+    listeners,
+    body: {
+      classList: {
+        toggle: () => {}
+      }
+    },
+    get activeElement() {
+      return active;
+    },
+    setActiveElement(value) {
+      active = value;
+    },
+    setModalState({ nextVisible = visible, nextTitle = title } = {}) {
+      visible = nextVisible;
+      title = nextTitle;
+    },
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) {
+        listeners.delete(type);
+      }
+    },
+    querySelector(selector) {
+      if (selector === ".modal-overlay") {
+        return visible ? {} : null;
+      }
+      if (selector === ".modal-overlay .modal h3") {
+        return visible && title ? { textContent: title } : null;
+      }
+      return null;
+    },
+    getElementById: () => null
+  };
+}
+
 function createProfileScreenContext(overrides = {}) {
   return {
     profile: {
@@ -11184,6 +11228,37 @@ test("ui: menu action buttons use menu tile artwork backgrounds", () => {
   assert.doesNotMatch(html, /title="Play vs AI"/);
 });
 
+test("ui: menu labels include visible hotkey hints", () => {
+  const html = menuScreen.render({
+    username: "HotkeyHints",
+    backgroundImage: "assets/EleMintzIcon.png",
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Streak: Ready",
+        detailLabel: "Day 2 of 7",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.match(html, />How to Play \[H\]</);
+  assert.match(html, />Play vs AI \[P\]</);
+  assert.match(html, />Local 2-Player \[L\]</);
+  assert.match(html, />Online Play \[O\]</);
+  assert.match(html, />Profile \[V\]</);
+  assert.match(html, />Cosmetics \[I\]</);
+  assert.match(html, />Store \[S\]</);
+  assert.match(html, />Achievements \[A\]</);
+  assert.match(html, />Roadmap \[R\]</);
+  assert.match(html, />Settings \[T\]</);
+  assert.match(html, />Feedback \[F\]</);
+  assert.match(html, />Logout \[Q\]</);
+  assert.match(html, />Challenges \[D\]</);
+});
+
 test("ui: menu shows Daily Login section above the Challenges heading", () => {
   const html = menuScreen.render({
     username: "OrderUser",
@@ -11870,10 +11945,10 @@ test("ui: menu renders a How to Play button and keeps existing buttons", () => {
   });
 
   assert.match(html, /id="how-to-play-btn"/);
-  assert.match(html, />How to Play</);
+  assert.match(html, />How to Play \[H\]</);
   assert.match(html, /id="store-btn"/);
   assert.match(html, /id="roadmap-btn"/);
-  assert.match(html, />Roadmap</);
+  assert.match(html, />Roadmap \[R\]</);
   assert.match(html, /id="settings-btn"/);
   assert.match(html, /id="feedback-btn"/);
 });
@@ -12104,6 +12179,271 @@ test("ui: menu roadmap button binds to the provided action", () => {
     elements["roadmap-btn"].listeners.get("click")();
 
     assert.equal(roadmapCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController main menu hotkeys route to the existing menu actions", async () => {
+  const previousDocument = global.document;
+  const documentRef = createShortcutDocument();
+  const calls = [];
+
+  global.document = documentRef;
+
+  try {
+    const controller = createRendererController();
+    controller.screenFlow = "menu";
+    controller.showHowToPlay = () => calls.push("howToPlay");
+    controller.showAiDifficultySelect = () => calls.push("aiDifficulty");
+    controller.showLocalSetup = () => calls.push("localSetup");
+    controller.showOnlinePlay = () => calls.push("onlinePlay");
+    controller.showProfile = () => calls.push("profile");
+    controller.showCosmetics = () => calls.push("cosmetics");
+    controller.showStore = () => calls.push("store");
+    controller.showAchievements = () => calls.push("achievements");
+    controller.showRoadmap = () => calls.push("roadmap");
+    controller.showSettings = () => calls.push("settings");
+    controller.showFeedbackModal = () => calls.push("feedback");
+    controller.showDailyChallenges = () => calls.push("dailyChallenges");
+    controller.logoutToLogin = ({ noticeMessage } = {}) => calls.push(`logout:${noticeMessage}`);
+
+    const keydown = documentRef.listeners.get("keydown");
+    assert.equal(typeof keydown, "function");
+
+    const cases = [
+      ["h", "howToPlay"],
+      ["p", "aiDifficulty"],
+      ["l", "localSetup"],
+      ["o", "onlinePlay"],
+      ["v", "profile"],
+      ["i", "cosmetics"],
+      ["s", "store"],
+      ["a", "achievements"],
+      ["r", "roadmap"],
+      ["t", "settings"],
+      ["f", "feedback"],
+      ["d", "dailyChallenges"],
+      ["q", "logout:Signed out."]
+    ];
+
+    for (const [key, expected] of cases) {
+      let prevented = false;
+      await keydown({
+        key,
+        target: { tagName: "DIV", isContentEditable: false },
+        preventDefault: () => {
+          prevented = true;
+        }
+      });
+      assert.equal(calls.at(-1), expected);
+      assert.equal(prevented, true);
+    }
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController navigation hotkeys do nothing outside the main menu", async () => {
+  const previousDocument = global.document;
+  const documentRef = createShortcutDocument();
+  let storeCalls = 0;
+
+  global.document = documentRef;
+
+  try {
+    const controller = createRendererController();
+    controller.screenFlow = "store";
+    controller.showStore = () => {
+      storeCalls += 1;
+    };
+
+    const keydown = documentRef.listeners.get("keydown");
+    await keydown({
+      key: "s",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    assert.equal(storeCalls, 0);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController navigation hotkeys are suppressed for editable, feedback, and expressions targets", async () => {
+  const previousDocument = global.document;
+  const documentRef = createShortcutDocument();
+  let actionCalls = 0;
+
+  global.document = documentRef;
+
+  try {
+    const controller = createRendererController();
+    controller.screenFlow = "menu";
+    controller.showStore = () => {
+      actionCalls += 1;
+    };
+    controller.showFeedbackModal = () => {
+      actionCalls += 1;
+    };
+
+    const keydown = documentRef.listeners.get("keydown");
+    const suppressedTargets = [
+      { tagName: "INPUT", isContentEditable: false },
+      { tagName: "TEXTAREA", isContentEditable: false },
+      { tagName: "SELECT", isContentEditable: false },
+      {
+        tagName: "DIV",
+        isContentEditable: false,
+        closest: (selector) =>
+          selector.includes("[data-match-taunt-shell]") ? {} : null
+      },
+      {
+        tagName: "DIV",
+        isContentEditable: false,
+        closest: (selector) =>
+          selector.includes("#feedback-message-textarea") ? {} : null
+      }
+    ];
+
+    for (const target of suppressedTargets) {
+      await keydown({
+        key: "s",
+        target,
+        preventDefault: () => {}
+      });
+    }
+
+    assert.equal(actionCalls, 0);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController Escape uses safe back paths and ignores active match screens", async () => {
+  const previousDocument = global.document;
+  const documentRef = createShortcutDocument();
+  const transitions = [];
+
+  global.document = documentRef;
+
+  try {
+    const controller = createRendererController();
+    controller.showMenu = () => transitions.push("menu");
+
+    const keydown = documentRef.listeners.get("keydown");
+    controller.screenFlow = "settings";
+    let prevented = false;
+    await keydown({
+      key: "Escape",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(transitions, ["menu"]);
+    assert.equal(prevented, true);
+
+    controller.screenFlow = "game";
+    await keydown({
+      key: "Escape",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {
+        throw new Error("Escape should not fire during active match screens.");
+      }
+    });
+
+    assert.deepEqual(transitions, ["menu"]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController Escape closes safe modals but does not close feedback field focus or critical overlays", async () => {
+  const previousDocument = global.document;
+  const documentRef = createShortcutDocument({ modalVisible: true, modalTitle: "Daily EleMintz Chest" });
+  let hideCalls = 0;
+
+  global.document = documentRef;
+
+  try {
+    const controller = new AppController({
+      screenManager: {
+        register: () => {},
+        show: () => {}
+      },
+      modalManager: {
+        show: () => {},
+        hide: () => {
+          hideCalls += 1;
+        }
+      },
+      toastManager: {
+        show: () => {}
+      }
+    });
+
+    const keydown = documentRef.listeners.get("keydown");
+
+    await keydown({
+      key: "Escape",
+      target: { tagName: "BUTTON", isContentEditable: false },
+      preventDefault: () => {}
+    });
+    assert.equal(hideCalls, 1);
+
+    documentRef.setModalState({ nextVisible: true, nextTitle: "Send Feedback" });
+    await keydown({
+      key: "Escape",
+      target: {
+        tagName: "TEXTAREA",
+        isContentEditable: false,
+        closest: (selector) =>
+          selector.includes("#feedback-message-textarea") ? {} : null
+      },
+      preventDefault: () => {}
+    });
+    assert.equal(hideCalls, 1);
+
+    documentRef.setModalState({ nextVisible: true, nextTitle: "Match Complete" });
+    await keydown({
+      key: "Escape",
+      target: { tagName: "BUTTON", isContentEditable: false },
+      preventDefault: () => {}
+    });
+    assert.equal(hideCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController registers one keydown shortcut listener and no mouse-back listener", () => {
+  const previousDocument = global.document;
+  const adds = [];
+  const documentRef = {
+    body: {
+      classList: {
+        toggle: () => {}
+      }
+    },
+    activeElement: { tagName: "BODY", isContentEditable: false },
+    addEventListener(type) {
+      adds.push(type);
+    },
+    removeEventListener: () => {},
+    querySelector: () => null,
+    getElementById: () => null
+  };
+
+  global.document = documentRef;
+
+  try {
+    const controller = createRendererController();
+    controller.ensureNavigationShortcutHandler();
+
+    assert.deepEqual(adds, ["keydown"]);
   } finally {
     global.document = previousDocument;
   }

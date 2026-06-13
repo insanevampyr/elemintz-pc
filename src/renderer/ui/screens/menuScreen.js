@@ -355,18 +355,18 @@ export const menuScreen = {
             <p>Signed in as <strong>${context.username}</strong></p>
             <div class="grid two-col">
               <div class="grid two-col menu-action-grid">
-                ${renderMenuTile("how-to-play-btn", "How to Play")}
-                ${renderMenuTile("start-pve-btn", "Play vs AI")}
-                ${renderMenuTile("start-local-btn", "Local 2-Player")}
-                ${renderMenuTile("online-play-btn", "Online Play")}
-                ${renderMenuTile("profile-btn", "Profile")}
-                ${renderMenuTile("cosmetics-btn", "Cosmetics")}
-                ${renderMenuTile("store-btn", "Store")}
-                ${renderMenuTile("achievements-btn", "Achievements")}
-                ${renderMenuTile("roadmap-btn", "Roadmap")}
-                ${renderMenuTile("settings-btn", "Settings")}
-                ${renderMenuTile("feedback-btn", "Feedback")}
-                ${renderMenuTile("logout-btn", "Logout")}
+                ${renderMenuTile("how-to-play-btn", "How to Play [H]")}
+                ${renderMenuTile("start-pve-btn", "Play vs AI [P]")}
+                ${renderMenuTile("start-local-btn", "Local 2-Player [L]")}
+                ${renderMenuTile("online-play-btn", "Online Play [O]")}
+                ${renderMenuTile("profile-btn", "Profile [V]")}
+                ${renderMenuTile("cosmetics-btn", "Cosmetics [I]")}
+                ${renderMenuTile("store-btn", "Store [S]")}
+                ${renderMenuTile("achievements-btn", "Achievements [A]")}
+                ${renderMenuTile("roadmap-btn", "Roadmap [R]")}
+                ${renderMenuTile("settings-btn", "Settings [T]")}
+                ${renderMenuTile("feedback-btn", "Feedback [F]")}
+                ${renderMenuTile("logout-btn", "Logout [Q]")}
               </div>
               <aside class="panel stack-sm daily-panel">
                 ${renderMenuAnnouncementCard(context.announcement)}
@@ -389,7 +389,7 @@ export const menuScreen = {
                   </div>
                 </div>
                 <div class="menu-challenge-actions">
-                  <button id="open-daily-challenges-btn" class="btn">View All</button>
+                  <button id="open-daily-challenges-btn" class="btn">Challenges [D]</button>
                 </div>
               </aside>
             </div>

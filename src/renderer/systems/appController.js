@@ -218,6 +218,7 @@ export class AppController {
     this.viewedProfileAchievementsExpanded = false;
     this.passTimerId = null;
     this.passKeyHandler = null;
+    this.navigationShortcutHandler = null;
     this.dailyChallenges = null;
     this.dailyResetCountdownId = null;
     this.dailyChallengesRefreshPromise = null;
@@ -330,6 +331,7 @@ export class AppController {
       this.updateReadyPromptVisible = false;
 
     this.registerScreens();
+    this.ensureNavigationShortcutHandler();
   }
 
   cloneOnlineBattleLogResult(result) {
@@ -918,6 +920,224 @@ export class AppController {
     this.screenManager.register("onlinePlay", onlinePlayScreen);
     this.screenManager.register("howToPlay", howToPlayScreen);
     this.screenManager.register("roadmap", roadmapScreen);
+  }
+
+  ensureNavigationShortcutHandler() {
+    const documentRef = globalThis.document;
+    if (this.navigationShortcutHandler || !documentRef?.addEventListener) {
+      return false;
+    }
+
+    this.navigationShortcutHandler = (event) => {
+      void this.handleNavigationShortcut(event);
+    };
+    documentRef.addEventListener("keydown", this.navigationShortcutHandler);
+    return true;
+  }
+
+  isEditableTarget(target) {
+    if (!target) {
+      return false;
+    }
+
+    const tagName = String(target.tagName ?? "").toUpperCase();
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(tagName)) {
+      return true;
+    }
+
+    if (target.isContentEditable) {
+      return true;
+    }
+
+    if (typeof target.closest === "function") {
+      return Boolean(
+        target.closest(
+          'input, textarea, select, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]'
+        )
+      );
+    }
+
+    return false;
+  }
+
+  isShortcutSuppressedTarget(target) {
+    if (!target) {
+      return false;
+    }
+
+    if (this.isEditableTarget(target)) {
+      return true;
+    }
+
+    if (typeof target.closest !== "function") {
+      return false;
+    }
+
+    return Boolean(
+      target.closest(
+        ".modal-overlay, [data-match-taunt-shell], [data-match-taunt-panel], [data-online-active-match-expressions], #feedback-category-select, #feedback-message-textarea, #feedback-include-debug-checkbox, .feedback-modal__field, .feedback-modal__checkbox-row"
+      )
+    );
+  }
+
+  shouldIgnoreNavigationShortcut(event) {
+    if (!event || event.ctrlKey || event.metaKey || event.altKey) {
+      return true;
+    }
+
+    const documentRef = globalThis.document;
+    if (documentRef?.querySelector?.(".modal-overlay")) {
+      return true;
+    }
+    const targets = [event.target, documentRef?.activeElement];
+    return targets.some((target) => this.isShortcutSuppressedTarget(target));
+  }
+
+  isFeedbackShortcutTarget(target) {
+    if (!target || typeof target.closest !== "function") {
+      return false;
+    }
+
+    return Boolean(
+      target.closest(
+        "#feedback-category-select, #feedback-message-textarea, #feedback-include-debug-checkbox, .feedback-modal__field, .feedback-modal__checkbox-row"
+      )
+    );
+  }
+
+  getActiveModalTitle() {
+    return String(globalThis.document?.querySelector?.(".modal-overlay .modal h3")?.textContent ?? "").trim();
+  }
+
+  hasUnsafeEscapeModalOpen() {
+    const title = this.getActiveModalTitle();
+    return [
+      "Match Complete",
+      "Gauntlet Victory!",
+      "Reward Confirmation",
+      "Confirmation Failed",
+      "Reconnect to Online Match",
+      "Request Quit",
+      "Leave Match"
+    ].includes(title);
+  }
+
+  getSafeBackAction() {
+    switch (this.screenFlow) {
+      case "store":
+      case "cosmetics":
+      case "achievements":
+      case "dailyChallenges":
+      case "roadmap":
+      case "howToPlay":
+      case "settings":
+      case "aiDifficulty":
+      case "localSetup":
+      case "profile":
+        return () => this.showMenu();
+      case "login":
+        if (globalThis.document?.getElementById?.("login-back-btn")) {
+          return () => this.showLogin({ mode: "choice" });
+        }
+        if (globalThis.document?.getElementById?.("register-back-btn")) {
+          return () => this.showLogin({ mode: "choice" });
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  getMenuHotkeyAction(key) {
+    switch (key) {
+      case "h":
+        return () => this.showHowToPlay();
+      case "p":
+        return () => this.showAiDifficultySelect();
+      case "l":
+        return () => this.showLocalSetup();
+      case "o":
+        return () => this.showOnlinePlay();
+      case "v":
+        return () => this.showProfile();
+      case "i":
+        return () => this.showCosmetics();
+      case "s":
+        return () => this.showStore();
+      case "a":
+        return () => this.showAchievements();
+      case "r":
+        return () => this.showRoadmap();
+      case "t":
+        return () => this.showSettings();
+      case "f":
+        return () => this.showFeedbackModal();
+      case "q":
+        return () => this.logoutToLogin({ noticeMessage: "Signed out." });
+      case "d":
+        return () => this.showDailyChallenges();
+      default:
+        return null;
+    }
+  }
+
+  async handleNavigationShortcut(event) {
+    const key = String(event?.key ?? "").trim().toLowerCase();
+    if (!key) {
+      return;
+    }
+
+    if (key === "escape") {
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+
+      if (["game", "onlinePlay", "pass"].includes(this.screenFlow)) {
+        return;
+      }
+
+      const documentRef = globalThis.document;
+      const targets = [event.target, documentRef?.activeElement];
+      if (targets.some((target) => this.isFeedbackShortcutTarget(target))) {
+        return;
+      }
+
+      if (targets.some((target) => this.isEditableTarget(target))) {
+        return;
+      }
+
+      const modalOpen = Boolean(documentRef?.querySelector?.(".modal-overlay"));
+      if (modalOpen) {
+        if (this.hasUnsafeEscapeModalOpen()) {
+          return;
+        }
+
+        event.preventDefault?.();
+        this.modalManager?.hide?.();
+        return;
+      }
+
+      const backAction = this.getSafeBackAction();
+      if (!backAction) {
+        return;
+      }
+
+      event.preventDefault?.();
+      await backAction();
+      return;
+    }
+
+    if (this.screenFlow !== "menu" || this.shouldIgnoreNavigationShortcut(event)) {
+      return;
+    }
+
+    const action = this.getMenuHotkeyAction(key);
+    if (!action) {
+      return;
+    }
+
+    event.preventDefault?.();
+    await action();
   }
 
   clearPassTimer({ settle = true, result = { reason: "cancelled" } } = {}) {
