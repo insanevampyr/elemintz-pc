@@ -1022,6 +1022,23 @@ export class AppController {
     ].includes(title);
   }
 
+  isOnlinePlayLobbyState() {
+    if (this.screenFlow !== "onlinePlay") {
+      return false;
+    }
+
+    const room = this.onlinePlayState?.room ?? null;
+    if (!room) {
+      return true;
+    }
+
+    return String(room.status ?? "").trim().toLowerCase() === "waiting";
+  }
+
+  isOnlinePlayEscapeBlockedState() {
+    return this.screenFlow === "onlinePlay" && !this.isOnlinePlayLobbyState();
+  }
+
   getSafeBackAction() {
     switch (this.screenFlow) {
       case "store":
@@ -1035,6 +1052,16 @@ export class AppController {
       case "localSetup":
       case "profile":
         return () => this.showMenu();
+      case "onlinePlay":
+        if (!this.isOnlinePlayLobbyState()) {
+          return null;
+        }
+        return async () => {
+          if (window.elemintz?.multiplayer?.disconnect) {
+            await window.elemintz.multiplayer.disconnect();
+          }
+          this.showMenu({ autoClaimDailyLogin: false, showDailyLoginToasts: false });
+        };
       case "login":
         if (globalThis.document?.getElementById?.("login-back-btn")) {
           return () => this.showLogin({ mode: "choice" });
@@ -1092,7 +1119,7 @@ export class AppController {
         return;
       }
 
-      if (["game", "onlinePlay", "pass"].includes(this.screenFlow)) {
+      if (["game", "pass"].includes(this.screenFlow) || this.isOnlinePlayEscapeBlockedState()) {
         return;
       }
 

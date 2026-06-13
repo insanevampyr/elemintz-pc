@@ -12323,10 +12323,21 @@ test("ui: appController navigation hotkeys are suppressed for editable, feedback
 
 test("ui: appController Escape uses safe back paths and ignores active match screens", async () => {
   const previousDocument = global.document;
+  const previousWindow = global.window;
   const documentRef = createShortcutDocument();
   const transitions = [];
+  let disconnectCalls = 0;
 
   global.document = documentRef;
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        disconnect: async () => {
+          disconnectCalls += 1;
+        }
+      }
+    }
+  };
 
   try {
     const controller = createRendererController();
@@ -12346,6 +12357,38 @@ test("ui: appController Escape uses safe back paths and ignores active match scr
     assert.deepEqual(transitions, ["menu"]);
     assert.equal(prevented, true);
 
+    controller.screenFlow = "localSetup";
+    await keydown({
+      key: "Escape",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    controller.screenFlow = "onlinePlay";
+    controller.onlinePlayState = { room: null };
+    await keydown({
+      key: "Escape",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    assert.deepEqual(transitions, ["menu", "menu", "menu"]);
+    assert.equal(disconnectCalls, 1);
+
+    controller.onlinePlayState = {
+      room: {
+        status: "full",
+        matchComplete: false
+      }
+    };
+    await keydown({
+      key: "Escape",
+      target: { tagName: "DIV", isContentEditable: false },
+      preventDefault: () => {
+        throw new Error("Escape should not fire during active online matches.");
+      }
+    });
+
     controller.screenFlow = "game";
     await keydown({
       key: "Escape",
@@ -12355,9 +12398,54 @@ test("ui: appController Escape uses safe back paths and ignores active match scr
       }
     });
 
-    assert.deepEqual(transitions, ["menu"]);
+    assert.deepEqual(transitions, ["menu", "menu", "menu"]);
   } finally {
     global.document = previousDocument;
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController Escape stays suppressed for Local Setup and Online lobby inputs", async () => {
+  const previousDocument = global.document;
+  const previousWindow = global.window;
+  const documentRef = createShortcutDocument();
+  const transitions = [];
+
+  global.document = documentRef;
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        disconnect: async () => {
+          throw new Error("Lobby disconnect should not run while focus is inside an input.");
+        }
+      }
+    }
+  };
+
+  try {
+    const controller = createRendererController();
+    controller.showMenu = () => transitions.push("menu");
+    const keydown = documentRef.listeners.get("keydown");
+
+    controller.screenFlow = "localSetup";
+    await keydown({
+      key: "Escape",
+      target: { tagName: "INPUT", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    controller.screenFlow = "onlinePlay";
+    controller.onlinePlayState = { room: null };
+    await keydown({
+      key: "Escape",
+      target: { tagName: "INPUT", isContentEditable: false },
+      preventDefault: () => {}
+    });
+
+    assert.deepEqual(transitions, []);
+  } finally {
+    global.document = previousDocument;
+    global.window = previousWindow;
   }
 });
 
