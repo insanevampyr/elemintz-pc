@@ -1531,14 +1531,6 @@ export const onlinePlayScreen = {
     document.getElementById("online-room-visibility-public-btn")?.addEventListener("click", () =>
       context.actions.setCreateRoomVisibility?.("public")
     );
-    document.getElementById("online-taunts-toggle-btn")?.addEventListener("click", context.actions.toggleTauntsPanel);
-    document.querySelectorAll("[data-taunt-line]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const line = button.getAttribute("data-taunt-line") ?? "";
-        await context.actions.sendTaunt(line);
-      });
-    });
-
     const moveActions = document.getElementById("online-move-actions");
     const resolveOnlineMoveButton = (element) => {
       if (!element) {

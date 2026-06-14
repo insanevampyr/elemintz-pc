@@ -13689,7 +13689,6 @@ test("ui: appController randomizes enabled cosmetic categories after a completed
 
 test("ui: game screen taunt controls use stable button targets and send immediately", async () => {
   const previousDocument = global.document;
-  const backButton = createFakeElement();
   const tauntToggleButton = createFakeElement();
   const tauntOptionButton = {
     listeners: new Map(),
@@ -13702,42 +13701,34 @@ test("ui: game screen taunt controls use stable button targets and send immediat
     toggle: 0,
     send: []
   };
-
-  global.document = {
-    getElementById(id) {
-      return {
-        "back-menu-btn": backButton,
-        "game-taunts-toggle-btn": tauntToggleButton
-      }[id] ?? null;
-    },
-    querySelector() {
+  const controller = createRendererController();
+  const shell = {
+    querySelector(selector) {
+      if (selector === "#game-taunts-toggle-btn") {
+        return tauntToggleButton;
+      }
       return null;
     },
     querySelectorAll(selector) {
       if (selector === "[data-taunt-line]") {
         return [tauntOptionButton];
       }
-
       return [];
     }
   };
 
+  controller.toggleMatchTauntPanel = () => {
+    calls.toggle += 1;
+  };
+  controller.sendCurrentMatchTaunt = async (line) => {
+    calls.send.push(line);
+  };
+
   try {
-    gameScreen.bind({
-      game: { roundOutcome: { key: "no_effect" }, warActive: false },
-      hotseat: { enabled: false },
-      presentation: { busy: false },
-      actions: {
-        backToMenu: async () => {},
-        playCard: async () => {},
-        toggleTauntsPanel: async () => {
-          calls.toggle += 1;
-        },
-        sendTaunt: async (line) => {
-          calls.send.push(line);
-        }
-      }
-    });
+    global.document = {
+      activeElement: { tagName: "BODY", isContentEditable: false }
+    };
+    controller.bindRenderedTauntHud(shell, "game");
 
     await tauntToggleButton.listeners.get("click")();
     await tauntOptionButton.listeners.get("click")();
@@ -18276,6 +18267,244 @@ test("ui: taunt HUD in-place refresh preserves the open online picker scroll pos
   }
 });
 
+test("ui: showGame preserves the game Expressions picker across a full post-round rerender", async () => {
+  const previousDocument = global.document;
+  const fixedNow = 1_700_000_000_000;
+  const createShell = (railBodyScrollTop = 0, panelScrollTop = 0) => {
+    const toggleButton = createFakeElement();
+    const tauntOption = {
+      listeners: new Map(),
+      getAttribute: (name) => (name === "data-taunt-line" ? "⚔️ WAR!" : null),
+      addEventListener(type, handler) {
+        this.listeners.set(type, handler);
+      }
+    };
+    const railBody = { scrollTop: railBodyScrollTop };
+    const panel = { scrollTop: panelScrollTop };
+    const shell = {
+      querySelector(selector) {
+        if (selector === "#game-taunts-toggle-btn") return toggleButton;
+        if (selector === '[data-game-match-taunt-rail-body="true"]') return railBody;
+        if (selector === '[data-match-taunt-panel="game"]') return panel;
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === "[data-taunt-line]") {
+          return [tauntOption];
+        }
+        return [];
+      }
+    };
+    return { shell, toggleButton, tauntOption, railBody, panel };
+  };
+
+  const oldShellState = createShell(96, 144);
+  const newShellState = createShell(0, 0);
+  let currentShell = oldShellState.shell;
+
+  global.document = {
+    activeElement: { tagName: "BODY", isContentEditable: false },
+    querySelector: (selector) => (selector === '[data-match-taunt-shell="game"]' ? currentShell : null)
+  };
+
+  const controller = createRendererController();
+  controller.clearTransientUiBeforeScreenTransition = () => {};
+  controller.ensureMatchTauntUiTimer = () => {};
+  controller.resolvePveOpponentStyle = () => ({
+    name: "Hard AI",
+    titleName: "Arena Rival",
+    avatarId: "default_avatar",
+    cardBackId: "default_card_back",
+    elementCardVariant: null,
+    backgroundPath: null
+  });
+  controller.getCurrentPveOpponentName = () => "Hard AI";
+  controller.getBackgroundFromProfile = () => "assets/backgrounds/default_background.png";
+  controller.profile = {
+    username: "Hero",
+    equippedCosmetics: {
+      cardBack: "default_card_back",
+      elementCardVariant: null,
+      background: "default_background"
+    }
+  };
+  controller.settings = {
+    gameplay: { timerSeconds: 20 },
+    aiDifficulty: "hard",
+    ui: { reducedMotion: true },
+    audio: { enabled: true }
+  };
+  controller.screenManager.show = () => {
+    currentShell = newShellState.shell;
+  };
+  controller.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: "pve",
+      roundOutcome: { key: "player_win", label: "Player wins" },
+      roundResult: "Player wins.",
+      round: 2,
+      timerSeconds: 18,
+      totalMatchSeconds: 296,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 1, p2: 0 },
+      lastRound: { result: "p1", p1Card: "fire", p2Card: "earth" }
+    })
+  };
+  controller.screenFlow = "game";
+  controller.matchTauntPanelOpen = true;
+  controller.getTauntNow = () => fixedNow;
+  controller.matchTaunts = [
+    {
+      id: "taunt-1",
+      speaker: "Hero",
+      text: "⚔️ WAR!",
+      kind: "player",
+      createdAt: fixedNow,
+      fadeAt: fixedNow + 1000,
+      expiresAt: fixedNow + 2000
+    }
+  ];
+  controller.playerTauntCooldowns = { "user:Hero": fixedNow + 4000 };
+
+  let toggleCalls = 0;
+  let sendCalls = 0;
+  controller.toggleMatchTauntPanel = () => {
+    toggleCalls += 1;
+  };
+  controller.sendCurrentMatchTaunt = async () => {
+    sendCalls += 1;
+  };
+
+  try {
+    controller.showGame();
+
+    assert.equal(newShellState.railBody.scrollTop, 96);
+    assert.equal(newShellState.panel.scrollTop, 144);
+    assert.equal(newShellState.toggleButton.listeners.size, 1);
+    assert.equal(newShellState.tauntOption.listeners.size, 1);
+
+    await newShellState.toggleButton.listeners.get("click")();
+    await newShellState.tauntOption.listeners.get("click")();
+
+    assert.equal(toggleCalls, 1);
+    assert.equal(sendCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: renderOnlinePlayScreen preserves the online Expressions picker across a full post-round rerender", async () => {
+  const previousDocument = global.document;
+  const fixedNow = 1_700_000_000_000;
+  const createShell = (railBodyScrollTop = 0, panelScrollTop = 0) => {
+    const toggleButton = createFakeElement();
+    const tauntOption = {
+      listeners: new Map(),
+      getAttribute: (name) => (name === "data-taunt-line" ? "⚔️ WAR!" : null),
+      addEventListener(type, handler) {
+        this.listeners.set(type, handler);
+      }
+    };
+    const railBody = { scrollTop: railBodyScrollTop };
+    const panel = { scrollTop: panelScrollTop };
+    const shell = {
+      querySelector(selector) {
+        if (selector === "#online-taunts-toggle-btn") return toggleButton;
+        if (selector === '[data-online-match-taunt-rail-body="true"]') return railBody;
+        if (selector === '[data-match-taunt-panel="online"]') return panel;
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === "[data-taunt-line]") {
+          return [tauntOption];
+        }
+        return [];
+      }
+    };
+    return { shell, toggleButton, tauntOption, railBody, panel };
+  };
+
+  const oldShellState = createShell(88, 176);
+  const newShellState = createShell(0, 0);
+  let currentShell = oldShellState.shell;
+
+  global.document = {
+    activeElement: { tagName: "BODY", isContentEditable: false },
+    querySelector: (selector) => (selector === '[data-match-taunt-shell="online"]' ? currentShell : null)
+  };
+
+  const controller = createRendererController();
+  controller.ensureOnlineTurnTimerUi = () => {};
+  controller.ensureMatchTauntUiTimer = () => {};
+  controller.profile = {
+    username: "HostUser",
+    equippedCosmetics: {
+      background: "default_background"
+    }
+  };
+  controller.username = "HostUser";
+  controller.getBackgroundFromProfile = () => "assets/backgrounds/default_background.png";
+  controller.screenManager.show = () => {
+    currentShell = newShellState.shell;
+  };
+  controller.screenFlow = "onlinePlay";
+  controller.matchTauntPanelOpen = true;
+  controller.getTauntNow = () => fixedNow;
+  controller.playerTauntCooldowns = { "online:host": fixedNow + 5000 };
+  controller.onlinePlayState = {
+    socketId: "socket-host",
+    room: {
+      status: "full",
+      roomCode: "TEST",
+      host: { socketId: "socket-host", username: "HostUser" },
+      guest: { socketId: "socket-guest", username: "GuestUser" },
+      taunts: [
+        {
+          id: "taunt-online-1",
+          speaker: "HostUser",
+          text: "⚔️ WAR!",
+          kind: "player",
+          sentAt: new Date(fixedNow).toISOString()
+        }
+      ]
+    }
+  };
+
+  let toggleCalls = 0;
+  let sendCalls = 0;
+  controller.toggleMatchTauntPanel = () => {
+    toggleCalls += 1;
+  };
+  controller.sendCurrentOnlineTaunt = async () => {
+    sendCalls += 1;
+  };
+
+  try {
+    controller.renderOnlinePlayScreen();
+
+    assert.equal(newShellState.railBody.scrollTop, 88);
+    assert.equal(newShellState.panel.scrollTop, 176);
+    assert.equal(newShellState.toggleButton.listeners.size, 1);
+    assert.equal(newShellState.tauntOption.listeners.size, 1);
+
+    await newShellState.toggleButton.listeners.get("click")();
+    await newShellState.tauntOption.listeners.get("click")();
+
+    assert.equal(toggleCalls, 1);
+    assert.equal(sendCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: appController preserves an intentional settings modal when the settings screen rerenders", async () => {
   const previousWindow = global.window;
   const previousDocument = global.document;
@@ -19976,6 +20205,28 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
     }
   };
 
+  const tauntShell = {
+    querySelector(selector) {
+      if (selector === "#online-taunts-toggle-btn") {
+        return tauntToggleButton;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-taunt-line]") {
+        return [tauntOptionButton];
+      }
+      return [];
+    }
+  };
+  const tauntController = createRendererController();
+  tauntController.toggleMatchTauntPanel = () => {
+    tauntCalls.push("toggle");
+  };
+  tauntController.sendCurrentOnlineTaunt = async (line) => {
+    tauntCalls.push(line);
+  };
+
   const moveActions = {
     addEventListener: (_type, handler) => {
       moveClickHandler = handler;
@@ -20012,10 +20263,6 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
         };
       }
 
-      if (id === "online-taunts-toggle-btn") {
-        return tauntToggleButton;
-      }
-
       if (id === "online-move-actions") {
         return moveActions;
       }
@@ -20031,9 +20278,6 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
       return null;
     },
     querySelectorAll: (selector) => {
-      if (selector === "[data-taunt-line]") {
-        return [tauntOptionButton];
-      }
       if (selector === "[data-online-public-room-join]") {
         return [publicJoinButton];
       }
@@ -20064,17 +20308,12 @@ test("ui: online play screen bind delegates move button clicks to submitMove", a
         setCreateRoomVisibility: async (visibility) => {
           visibilityCalls.push(visibility);
         },
-        toggleTauntsPanel: async () => {
-          tauntCalls.push("toggle");
-        },
-        sendTaunt: async (line) => {
-          tauntCalls.push(line);
-        },
         submitMove: async (move) => {
           calls.push(move);
         }
       }
     });
+    tauntController.bindRenderedTauntHud(tauntShell, "onlinePlay");
 
     await moveClickHandler({
       target: {

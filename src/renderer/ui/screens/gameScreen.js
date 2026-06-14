@@ -574,14 +574,6 @@ export const gameScreen = {
     detachGameKeyboardHandler = null;
 
     document.getElementById("back-menu-btn").addEventListener("click", context.actions.backToMenu);
-    document.getElementById("game-taunts-toggle-btn")?.addEventListener("click", context.actions.toggleTauntsPanel);
-    document.querySelectorAll("[data-taunt-line]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const line = button.getAttribute("data-taunt-line") ?? "";
-        await context.actions.sendTaunt(line);
-      });
-    });
-
     let locked = false;
 
     const warImpactRing = document.getElementById("war-impact-ring");

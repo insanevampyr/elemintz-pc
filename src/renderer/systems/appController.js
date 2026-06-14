@@ -669,6 +669,77 @@ export class AppController {
     };
   }
 
+  captureCurrentTauntHudDomState(screenFlow = this.screenFlow) {
+    if (typeof document?.querySelector !== "function") {
+      return null;
+    }
+
+    const config = this.getTauntHudScopeConfig(screenFlow);
+    const shell = document.querySelector?.(`[data-match-taunt-shell="${config.idPrefix}"]`);
+    if (!shell) {
+      return null;
+    }
+
+    const railBody = shell.querySelector?.(config.railBodySelector) ?? null;
+    const panel = shell.querySelector?.(`[data-match-taunt-panel="${config.idPrefix}"]`) ?? null;
+    const activeElement = document?.activeElement ?? null;
+    const focusedTauntLine =
+      activeElement?.getAttribute?.("data-taunt-line") &&
+      activeElement?.closest?.(`[data-match-taunt-panel="${config.idPrefix}"]`)
+        ? activeElement.getAttribute("data-taunt-line")
+        : null;
+
+    return {
+      railBodyScrollTop: Number(railBody?.scrollTop ?? 0),
+      panelScrollTop: Number(panel?.scrollTop ?? 0),
+      focusedTauntLine
+    };
+  }
+
+  restoreCurrentTauntHudDomState(screenFlow = this.screenFlow, preservedState = null) {
+    if (!preservedState || typeof document?.querySelector !== "function") {
+      return;
+    }
+
+    const config = this.getTauntHudScopeConfig(screenFlow);
+    const shell = document.querySelector?.(`[data-match-taunt-shell="${config.idPrefix}"]`);
+    if (!shell) {
+      return;
+    }
+
+    const railBody = shell.querySelector?.(config.railBodySelector) ?? null;
+    if (railBody && Number.isFinite(preservedState.railBodyScrollTop)) {
+      railBody.scrollTop = preservedState.railBodyScrollTop;
+    }
+
+    const panel = shell.querySelector?.(`[data-match-taunt-panel="${config.idPrefix}"]`) ?? null;
+    if (panel && Number.isFinite(preservedState.panelScrollTop)) {
+      panel.scrollTop = preservedState.panelScrollTop;
+    }
+
+    if (preservedState.focusedTauntLine && typeof shell.querySelector === "function") {
+      shell.querySelector(`[data-taunt-line="${preservedState.focusedTauntLine.replaceAll("\"", "&quot;")}"]`)?.focus?.();
+    }
+  }
+
+  finalizeRenderedTauntHud(screenFlow = this.screenFlow, preservedState = null) {
+    if (typeof document?.querySelector !== "function") {
+      return;
+    }
+
+    const config = this.getTauntHudScopeConfig(screenFlow);
+    const shell = document.querySelector?.(`[data-match-taunt-shell="${config.idPrefix}"]`);
+    if (!shell) {
+      return;
+    }
+
+    shell.__elemintzTauntRenderSignature = this.buildTauntHudRenderSignature(
+      this.buildCurrentTauntHudRenderState(screenFlow)
+    );
+    this.bindRenderedTauntHud(shell, screenFlow);
+    this.restoreCurrentTauntHudDomState(screenFlow, preservedState);
+  }
+
   bindRenderedTauntHud(shell, screenFlow = this.screenFlow) {
     if (!shell || typeof shell.querySelectorAll !== "function") {
       return;
@@ -6429,6 +6500,7 @@ export class AppController {
 
   renderOnlinePlayScreen() {
     this.screenFlow = "onlinePlay";
+    const preservedTauntHudState = this.captureCurrentTauntHudDomState("onlinePlay");
     const tauntHud = this.getCurrentTauntHudState();
     this.screenManager.show("onlinePlay", {
       multiplayer: this.normalizeOnlinePlayState(this.onlinePlayState),
@@ -6574,6 +6646,7 @@ export class AppController {
         }
       }
     });
+    this.finalizeRenderedTauntHud("onlinePlay", preservedTauntHudState);
     this.ensureOnlineTurnTimerUi();
     this.ensureMatchTauntUiTimer();
   }
@@ -9075,6 +9148,7 @@ export class AppController {
       preserveModal: this.hasActiveQuitConfirmationModal() || this.hasActiveMatchCompleteModal()
     });
     this.screenFlow = "game";
+    const preservedTauntHudState = this.captureCurrentTauntHudDomState("game");
     const tauntHud = this.getCurrentTauntHudState();
 
     const localPvp = vm.mode === MATCH_MODE.LOCAL_PVP;
@@ -9189,6 +9263,7 @@ export class AppController {
         }
       }
     });
+    this.finalizeRenderedTauntHud("game", preservedTauntHudState);
     this.ensureMatchTauntUiTimer();
   }
 
