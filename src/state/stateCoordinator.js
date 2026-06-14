@@ -564,6 +564,148 @@ function buildLongestMatchCandidate({
   };
 }
 
+function classifyLatestBattleMode(matchState = {}) {
+  const mode = String(matchState?.mode ?? "").trim().toLowerCase();
+  if (mode === "online_pvp") {
+    return "online";
+  }
+  if (mode === "local_pvp") {
+    return "localHotseat";
+  }
+  if (String(matchState?.gauntletRivalId ?? "").trim() || Boolean(matchState?.gauntletMode)) {
+    return "gauntlet";
+  }
+  if (String(matchState?.featuredRivalId ?? "").trim()) {
+    return "featuredRival";
+  }
+  return "pve";
+}
+
+function classifyLatestBattleResult(matchState = {}, perspective = "p1") {
+  const winner = String(matchState?.winner ?? "").trim().toLowerCase();
+  if (!winner) {
+    return null;
+  }
+  if (winner === "draw") {
+    return "draw";
+  }
+  return winner === perspective ? "win" : "loss";
+}
+
+function resolveLatestBattleIdentity(matchState = {}, perspective = "p1", context = {}) {
+  const mode = classifyLatestBattleMode(matchState);
+  const normalizeText = (value) => {
+    const normalized = String(value ?? "").trim();
+    return normalized.length > 0 ? normalized : null;
+  };
+
+  if (mode === "online") {
+    const opponentUsername =
+      normalizeText(context.opponentUsername) ??
+      normalizeText(
+        perspective === "p2"
+          ? matchState?.hostUsername ?? matchState?.players?.p1?.username
+          : matchState?.guestUsername ?? matchState?.players?.p2?.username
+      );
+    return {
+      opponentName: normalizeText(context.opponentName) ?? opponentUsername,
+      opponentUsername,
+      opponentUserId: normalizeText(context.opponentUserId)
+    };
+  }
+
+  if (mode === "featuredRival") {
+    return {
+      rivalName:
+        normalizeText(context.rivalName) ??
+        FEATURED_RIVAL_PUBLIC_NAMES[String(matchState?.featuredRivalId ?? "").trim().toLowerCase()] ??
+        null
+    };
+  }
+
+  if (mode === "gauntlet") {
+    return {
+      rivalName:
+        normalizeText(context.rivalName) ??
+        getGauntletRivalById(String(matchState?.gauntletRivalId ?? "").trim().toLowerCase())?.displayName ??
+        null
+    };
+  }
+
+  if (mode === "localHotseat") {
+    return {
+      opponentName:
+        normalizeText(context.opponentName) ??
+        (perspective === "p2" ? "Player 1" : "Player 2")
+    };
+  }
+
+  return {
+    opponentName: normalizeText(context.opponentName) ?? "Elemental AI"
+  };
+}
+
+function buildLatestBattleSummary({
+  matchState,
+  perspective = "p1",
+  matchStats = null,
+  context = null,
+  nowMs = Date.now()
+} = {}) {
+  if (!matchState || matchState.status !== "completed") {
+    return null;
+  }
+
+  const result = classifyLatestBattleResult(matchState, perspective);
+  if (!result) {
+    return null;
+  }
+
+  const rounds = safeRuntimeCount(matchState.round, 0);
+  const warsEntered = Number(matchStats?.warsEntered);
+  const mode = classifyLatestBattleMode(matchState);
+  const identity = resolveLatestBattleIdentity(matchState, perspective, context ?? {});
+  const summary = {
+    mode,
+    result,
+    completedAt: new Date(nowMs).toISOString(),
+    rounds: rounds > 0 ? rounds : null,
+    warsEntered: Number.isFinite(warsEntered) && warsEntered >= 0 ? Math.floor(warsEntered) : null
+  };
+
+  if (mode === "online") {
+    return {
+      ...summary,
+      opponentName: identity.opponentName,
+      opponentUsername: identity.opponentUsername,
+      opponentUserId: identity.opponentUserId
+    };
+  }
+
+  if (mode === "featuredRival" || mode === "gauntlet") {
+    return {
+      ...summary,
+      rivalName: identity.rivalName
+    };
+  }
+
+  return {
+    ...summary,
+    opponentName: identity.opponentName
+  };
+}
+
+function applyLatestBattleSummary(profile, latestBattle) {
+  if (!profile || !latestBattle) {
+    return profile;
+  }
+
+  return {
+    ...profile,
+    latestBattle
+  };
+}
+
 function applyLongestMatchCandidate(profile, candidate) {
   if (!candidate || !profile) {
     return profile;
@@ -931,6 +1073,7 @@ export class StateCoordinator {
     matchState,
     perspective = "p1",
     settlementKey = null,
+    latestBattleContext = null,
     rewardPolicy = null,
     nowMs = Date.now()
   }) {
@@ -1182,6 +1325,16 @@ export class StateCoordinator {
           nowMs
         })
       );
+      workingProfile = applyLatestBattleSummary(
+        workingProfile,
+        buildLatestBattleSummary({
+          matchState: safeMatchState,
+          perspective,
+          matchStats,
+          context: latestBattleContext,
+          nowMs
+        })
+      );
 
       const shouldPersistProfile = !profilesEqual(workingProfile, profileWithStats);
       if (shouldPersistProfile) {
@@ -1281,12 +1434,20 @@ export class StateCoordinator {
     });
   }
 
-  async recordLocalHotseatResult({ username, matchState, perspective = "p1", settlementKey = null, nowMs = Date.now() }) {
+  async recordLocalHotseatResult({
+    username,
+    matchState,
+    perspective = "p1",
+    settlementKey = null,
+    latestBattleContext = null,
+    nowMs = Date.now()
+  }) {
     return this.recordMatchResult({
       username,
       matchState,
       perspective,
       settlementKey,
+      latestBattleContext,
       rewardPolicy: {
         type: "local_hotseat_casual"
       },
@@ -1298,7 +1459,9 @@ export class StateCoordinator {
     username,
     matchState,
     perspective = "p1",
-    settlementKey
+    settlementKey,
+    latestBattleContext = null,
+    nowMs = Date.now()
   }) {
     return this.runMatchPersistence(async () => {
       if (!username) {
@@ -1383,6 +1546,16 @@ export class StateCoordinator {
         buildLongestMatchCandidate({
           matchState: safeMatchState,
           perspective
+        })
+      );
+      workingProfile = applyLatestBattleSummary(
+        workingProfile,
+        buildLatestBattleSummary({
+          matchState: safeMatchState,
+          perspective,
+          matchStats,
+          context: latestBattleContext,
+          nowMs
         })
       );
 

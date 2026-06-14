@@ -16,6 +16,35 @@ function normalizeAuthorityAccountId(accountId) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function buildOnlineLatestBattleContext(rewardDecision, participantRole = "host") {
+  const normalizedRole = participantRole === "guest" ? "guest" : "host";
+  const participants = rewardDecision?.participants ?? null;
+  if (!participants || typeof participants !== "object") {
+    return null;
+  }
+
+  const opponentUsername = String(
+    normalizedRole === "guest"
+      ? participants.hostUsername ?? ""
+      : participants.guestUsername ?? ""
+  ).trim();
+  const opponentUserId = String(
+    normalizedRole === "guest"
+      ? participants.hostUserId ?? participants.hostAccountId ?? ""
+      : participants.guestUserId ?? participants.guestAccountId ?? ""
+  ).trim();
+
+  if (!opponentUsername && !opponentUserId) {
+    return null;
+  }
+
+  return {
+    opponentName: opponentUsername || null,
+    opponentUsername: opponentUsername || null,
+    opponentUserId: opponentUserId || null
+  };
+}
+
 function summarizeMatchOutcome(result, perspective) {
   const winner = String(result?.winner ?? "").trim();
   if (!winner || winner === "draw") {
@@ -584,6 +613,7 @@ export class MultiplayerProfileAuthority {
     settlementKey = null,
     rewards = null,
     rewardDecision = null,
+    latestBattleContext = null,
     participantRole = perspective === "p2" ? "guest" : "host"
   }) {
     const safeUsername = normalizeAuthorityUsername(username);
@@ -598,7 +628,9 @@ export class MultiplayerProfileAuthority {
       username: safeUsername,
       perspective,
       matchState: result,
-      settlementKey
+      settlementKey,
+      latestBattleContext:
+        latestBattleContext ?? buildOnlineLatestBattleContext(rewardDecision, participantRole)
     });
 
     let rewardGrant = null;
@@ -632,7 +664,8 @@ export class MultiplayerProfileAuthority {
     username,
     result,
     perspective = "p1",
-    settlementKey = null
+    settlementKey = null,
+    latestBattleContext = null
   }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -646,7 +679,8 @@ export class MultiplayerProfileAuthority {
       username: safeUsername,
       perspective,
       matchState: result,
-      settlementKey
+      settlementKey,
+      latestBattleContext
     });
 
     return {
@@ -660,7 +694,8 @@ export class MultiplayerProfileAuthority {
     username,
     result,
     perspective = "p1",
-    settlementKey = null
+    settlementKey = null,
+    latestBattleContext = null
   }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -674,7 +709,8 @@ export class MultiplayerProfileAuthority {
       username: safeUsername,
       perspective,
       matchState: result,
-      settlementKey
+      settlementKey,
+      latestBattleContext
     });
 
     return {

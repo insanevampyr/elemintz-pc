@@ -327,6 +327,13 @@ function validateAndRepairProfile(profile) {
     logFieldRepair("longestMatch", previousValue, normalizedLongestMatch);
   }
 
+  const normalizedLatestBattle = normalizeLatestBattleSummary(repairedProfile.latestBattle);
+  if (JSON.stringify(normalizedLatestBattle) !== JSON.stringify(repairedProfile.latestBattle ?? null)) {
+    const previousValue = repairedProfile.latestBattle;
+    repairedProfile.latestBattle = normalizedLatestBattle;
+    logFieldRepair("latestBattle", previousValue, normalizedLatestBattle);
+  }
+
   const pendingMilestoneChestRewardLevel = Number(repairedProfile.pendingMilestoneChestRewardLevel);
   if (
     repairedProfile.pendingMilestoneChestRewardLevel != null &&
@@ -504,6 +511,72 @@ function validateAndRepairProfile(profile) {
   return {
     profile: repairedProfile,
     mutated
+  };
+}
+
+const VALID_LATEST_BATTLE_MODES = new Set([
+  "online",
+  "pve",
+  "localHotseat",
+  "gauntlet",
+  "featuredRival"
+]);
+const VALID_LATEST_BATTLE_RESULTS = new Set(["win", "loss", "draw"]);
+
+function normalizeLatestBattleSummary(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+
+  const mode = String(entry.mode ?? "").trim();
+  const result = String(entry.result ?? "").trim();
+  const completedAt = String(entry.completedAt ?? "").trim();
+
+  if (
+    !VALID_LATEST_BATTLE_MODES.has(mode) ||
+    !VALID_LATEST_BATTLE_RESULTS.has(result) ||
+    !completedAt
+  ) {
+    return null;
+  }
+
+  const sanitizeOptionalString = (value) => {
+    const normalized = String(value ?? "").trim();
+    return normalized.length > 0 ? normalized : null;
+  };
+  const sanitizeOptionalCount = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : null;
+  };
+
+  const normalizedEntry = {
+    mode,
+    result,
+    completedAt,
+    rounds: sanitizeOptionalCount(entry.rounds),
+    warsEntered: sanitizeOptionalCount(entry.warsEntered)
+  };
+
+  if (mode === "online") {
+    const opponentUsername = sanitizeOptionalString(entry.opponentUsername);
+    return {
+      ...normalizedEntry,
+      opponentName: sanitizeOptionalString(entry.opponentName) ?? opponentUsername,
+      opponentUsername,
+      opponentUserId: sanitizeOptionalString(entry.opponentUserId)
+    };
+  }
+
+  if (mode === "featuredRival" || mode === "gauntlet") {
+    return {
+      ...normalizedEntry,
+      rivalName: sanitizeOptionalString(entry.rivalName)
+    };
+  }
+
+  return {
+    ...normalizedEntry,
+    opponentName: sanitizeOptionalString(entry.opponentName)
   };
 }
 

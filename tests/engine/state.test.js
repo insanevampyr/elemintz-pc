@@ -2780,6 +2780,202 @@ test("state: featured rival gauntlet local pvp and online use the expected longe
   assert.equal(online.profile.longestMatch.opponentName, null);
 });
 
+test("state: completed online match stores latest battle with opponent lookup info", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({ dataDir });
+  const authority = new MultiplayerProfileAuthority({ dataDir, accountStore });
+
+  const result = await authority.applyMatchResult({
+    username: "OnlineLatestGuest",
+    perspective: "p2",
+    settlementKey: "ROOM-LATEST-1",
+    result: {
+      status: "completed",
+      winner: "p2",
+      endReason: null,
+      mode: "online_pvp",
+      round: 18,
+      history: [{ result: "p2", warClashes: 2, capturedOpponentCards: 4 }],
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    rewardDecision: {
+      participants: {
+        hostUsername: "OnlineLatestHost",
+        guestUsername: "OnlineLatestGuest"
+      },
+      rewards: {
+        host: { tokens: 10, xp: 10, basicChests: 0 },
+        guest: { tokens: 25, xp: 20, basicChests: 1 }
+      }
+    },
+    participantRole: "guest"
+  });
+
+  assert.deepEqual(result.snapshot.profile.latestBattle, {
+    mode: "online",
+    result: "win",
+    opponentName: "OnlineLatestHost",
+    opponentUsername: "OnlineLatestHost",
+    opponentUserId: null,
+    completedAt: result.snapshot.profile.latestBattle.completedAt,
+    rounds: 18,
+    warsEntered: 1
+  });
+  assert.match(result.snapshot.profile.latestBattle.completedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("state: completed PvE, local hotseat, gauntlet, and featured rival matches store latest battle names without online lookup fields", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  const pve = await state.recordMatchResult({
+    username: "PveLatestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", mode: "pve" }),
+    nowMs: Date.UTC(2026, 5, 14, 12, 0, 0)
+  });
+  assert.deepEqual(pve.profile.latestBattle, {
+    mode: "pve",
+    result: "win",
+    opponentName: "Elemental AI",
+    completedAt: "2026-06-14T12:00:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+  assert.equal("opponentUsername" in pve.profile.latestBattle, false);
+
+  const local = await state.recordLocalHotseatResult({
+    username: "LocalLatestUser",
+    perspective: "p1",
+    latestBattleContext: { opponentName: "Player Two" },
+    matchState: createRewardHookMatch({ winner: "p1", mode: "local_pvp" }),
+    settlementKey: "LOCAL-LATEST-1",
+    nowMs: Date.UTC(2026, 5, 14, 12, 5, 0)
+  });
+  assert.deepEqual(local.profile.latestBattle, {
+    mode: "localHotseat",
+    result: "win",
+    opponentName: "Player Two",
+    completedAt: "2026-06-14T12:05:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+
+  const gauntlet = await state.recordMatchResult({
+    username: "GauntletLatestUser",
+    perspective: "p1",
+    matchState: {
+      ...createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "hard" }),
+      gauntletRivalId: "vampire_rival",
+      gauntletMode: true
+    },
+    nowMs: Date.UTC(2026, 5, 14, 12, 10, 0)
+  });
+  assert.deepEqual(gauntlet.profile.latestBattle, {
+    mode: "gauntlet",
+    result: "win",
+    rivalName: "Countess Veyra",
+    completedAt: "2026-06-14T12:10:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+
+  const featured = await state.recordMatchResult({
+    username: "FeaturedLatestUser",
+    perspective: "p1",
+    matchState: {
+      ...createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "hard" }),
+      featuredRivalId: "crownfire_duelist"
+    },
+    nowMs: Date.UTC(2026, 5, 14, 12, 15, 0)
+  });
+  assert.deepEqual(featured.profile.latestBattle, {
+    mode: "featuredRival",
+    result: "win",
+    rivalName: "Crownfire Duelist",
+    completedAt: "2026-06-14T12:15:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+});
+
+test("state: latest battle overwrites prior completed battle and duplicate settlement does not rewrite it", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordMatchResult({
+    username: "OverwriteLatestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", mode: "pve" }),
+    settlementKey: "LATEST-FIRST",
+    nowMs: Date.UTC(2026, 5, 14, 13, 0, 0)
+  });
+
+  const duplicate = await state.recordMatchResult({
+    username: "OverwriteLatestUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", mode: "pve" }),
+    settlementKey: "LATEST-FIRST",
+    nowMs: Date.UTC(2026, 5, 14, 13, 30, 0)
+  });
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(
+    duplicate.profile.latestBattle.completedAt,
+    "2026-06-14T13:00:00.000Z"
+  );
+
+  const overwrite = await state.recordMatchResult({
+    username: "OverwriteLatestUser",
+    perspective: "p1",
+    matchState: {
+      ...createRewardHookMatch({ winner: "p2", mode: "pve", difficulty: "hard" }),
+      featuredRivalId: "crownfire_duelist"
+    },
+    settlementKey: "LATEST-SECOND",
+    nowMs: Date.UTC(2026, 5, 14, 14, 0, 0)
+  });
+
+  assert.deepEqual(overwrite.profile.latestBattle, {
+    mode: "featuredRival",
+    result: "loss",
+    rivalName: "Crownfire Duelist",
+    completedAt: "2026-06-14T14:00:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+});
+
+test("state: incomplete matches do not record latest battle and malformed legacy latest battle data normalizes safely", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await assert.rejects(
+    state.recordMatchResult({
+      username: "IncompleteLatestUser",
+      perspective: "p1",
+      matchState: { status: "active", mode: "pve", winner: null }
+    }),
+    /completed before recording results/i
+  );
+
+  const freshProfile = await state.profiles.getProfile("IncompleteLatestUser");
+  assert.equal(freshProfile, null);
+
+  await state.profiles.store.write([
+    {
+      username: "MalformedLatestUser",
+      wins: 1,
+      losses: 0,
+      gamesPlayed: 1,
+      latestBattle: "bad-data"
+    }
+  ]);
+
+  const normalized = await state.profiles.getProfile("MalformedLatestUser");
+  assert.equal(normalized.latestBattle, null);
+});
+
 test("state: longestMatch keeps the longer record and duplicate settlement does not rewrite it", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });

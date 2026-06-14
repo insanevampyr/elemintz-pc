@@ -3877,6 +3877,15 @@ export class AppController {
           : [safeUsername],
       localMatchSessionId
     });
+    const latestBattleContext =
+      mode === MATCH_MODE.LOCAL_PVP
+        ? {
+            opponentName:
+              perspective === "p2"
+                ? this.getLocalNames().p1
+                : this.getLocalNames().p2
+          }
+        : null;
     const matchSummary = {
       winner: String(match?.winner ?? "").trim() || null,
       endReason: String(match?.endReason ?? "").trim() || null,
@@ -3910,6 +3919,7 @@ export class AppController {
           perspective,
           matchState: match,
           settlementKey,
+          latestBattleContext,
           ...(sessionToken ? { sessionToken } : {})
         });
         console.info("[MatchSettlement][Renderer] hotseat authority success", {
@@ -3940,6 +3950,7 @@ export class AppController {
           perspective,
           matchState: match,
           settlementKey,
+          latestBattleContext,
           ...(localMatchSessionId ? { localMatchSessionId } : {}),
           ...(sessionToken ? { sessionToken } : {})
         });
@@ -3979,7 +3990,8 @@ export class AppController {
       username: safeUsername,
       perspective,
       matchState: match,
-      settlementKey
+      settlementKey,
+      latestBattleContext
     });
     console.info("[MatchSettlement][Renderer] local fallback success", {
       mode,
