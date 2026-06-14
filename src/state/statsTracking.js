@@ -241,6 +241,7 @@ export function createDefaultProfile(username) {
     gauntletRivalsDefeated: 0,
     longestMatch: null,
     latestBattle: null,
+    recentBattles: [],
     vampyrLeeLongestMatchBackfillApplied: false,
     matchesUsingAllElements: 0,
     playerXP: 0,

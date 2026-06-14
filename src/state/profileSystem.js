@@ -334,6 +334,23 @@ function validateAndRepairProfile(profile) {
     logFieldRepair("latestBattle", previousValue, normalizedLatestBattle);
   }
 
+  const normalizedRecentBattles = normalizeRecentBattles(
+    repairedProfile.recentBattles,
+    repairedProfile.latestBattle
+  );
+  if (JSON.stringify(normalizedRecentBattles) !== JSON.stringify(repairedProfile.recentBattles ?? [])) {
+    const previousValue = repairedProfile.recentBattles;
+    repairedProfile.recentBattles = normalizedRecentBattles;
+    logFieldRepair("recentBattles", previousValue, normalizedRecentBattles);
+  }
+
+  const synchronizedLatestBattle = normalizedRecentBattles[0] ?? normalizedLatestBattle;
+  if (JSON.stringify(synchronizedLatestBattle) !== JSON.stringify(repairedProfile.latestBattle ?? null)) {
+    const previousValue = repairedProfile.latestBattle;
+    repairedProfile.latestBattle = synchronizedLatestBattle;
+    logFieldRepair("latestBattle", previousValue, synchronizedLatestBattle);
+  }
+
   const pendingMilestoneChestRewardLevel = Number(repairedProfile.pendingMilestoneChestRewardLevel);
   if (
     repairedProfile.pendingMilestoneChestRewardLevel != null &&
@@ -522,6 +539,7 @@ const VALID_LATEST_BATTLE_MODES = new Set([
   "featuredRival"
 ]);
 const VALID_LATEST_BATTLE_RESULTS = new Set(["win", "loss", "draw"]);
+const RECENT_BATTLES_LIMIT = 5;
 
 function normalizeLatestBattleSummary(entry) {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -578,6 +596,22 @@ function normalizeLatestBattleSummary(entry) {
     ...normalizedEntry,
     opponentName: sanitizeOptionalString(entry.opponentName)
   };
+}
+
+function normalizeRecentBattles(entries, fallbackLatestBattle = null) {
+  const normalizedEntries = Array.isArray(entries)
+    ? entries
+        .map((entry) => normalizeLatestBattleSummary(entry))
+        .filter(Boolean)
+        .slice(0, RECENT_BATTLES_LIMIT)
+    : [];
+
+  if (normalizedEntries.length > 0) {
+    return normalizedEntries;
+  }
+
+  const normalizedFallback = normalizeLatestBattleSummary(fallbackLatestBattle);
+  return normalizedFallback ? [normalizedFallback] : [];
 }
 
 export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
@@ -657,6 +691,8 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
 
   const finalNormalizedProfile = {
     ...normalized,
+    latestBattle: validatedProfile.latestBattle ?? null,
+    recentBattles: Array.isArray(validatedProfile.recentBattles) ? validatedProfile.recentBattles : [],
     // Persist the current schema marker after migration/default filling so
     // upgraded records are written back in their latest supported shape.
     schemaVersion: CURRENT_PROFILE_SCHEMA_VERSION,

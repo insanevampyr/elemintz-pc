@@ -2823,6 +2823,7 @@ test("state: completed online match stores latest battle with opponent lookup in
     warsEntered: 1
   });
   assert.match(result.snapshot.profile.latestBattle.completedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(result.snapshot.profile.recentBattles, [result.snapshot.profile.latestBattle]);
 });
 
 test("state: completed PvE, local hotseat, gauntlet, and featured rival matches store latest battle names without online lookup fields", async () => {
@@ -2843,7 +2844,9 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     rounds: 3,
     warsEntered: 3
   });
+  assert.deepEqual(pve.profile.recentBattles, [pve.profile.latestBattle]);
   assert.equal("opponentUsername" in pve.profile.latestBattle, false);
+  assert.equal("opponentUsername" in pve.profile.recentBattles[0], false);
 
   const local = await state.recordLocalHotseatResult({
     username: "LocalLatestUser",
@@ -2861,6 +2864,7 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     rounds: 3,
     warsEntered: 3
   });
+  assert.deepEqual(local.profile.recentBattles, [local.profile.latestBattle]);
 
   const gauntlet = await state.recordMatchResult({
     username: "GauntletLatestUser",
@@ -2880,6 +2884,7 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     rounds: 3,
     warsEntered: 3
   });
+  assert.deepEqual(gauntlet.profile.recentBattles, [gauntlet.profile.latestBattle]);
 
   const featured = await state.recordMatchResult({
     username: "FeaturedLatestUser",
@@ -2898,9 +2903,10 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     rounds: 3,
     warsEntered: 3
   });
+  assert.deepEqual(featured.profile.recentBattles, [featured.profile.latestBattle]);
 });
 
-test("state: latest battle overwrites prior completed battle and duplicate settlement does not rewrite it", async () => {
+test("state: recent battles insert newest first and duplicate settlement does not rewrite them", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
 
@@ -2924,6 +2930,8 @@ test("state: latest battle overwrites prior completed battle and duplicate settl
     duplicate.profile.latestBattle.completedAt,
     "2026-06-14T13:00:00.000Z"
   );
+  assert.equal(duplicate.profile.recentBattles.length, 1);
+  assert.deepEqual(duplicate.profile.recentBattles[0], duplicate.profile.latestBattle);
 
   const overwrite = await state.recordMatchResult({
     username: "OverwriteLatestUser",
@@ -2944,9 +2952,45 @@ test("state: latest battle overwrites prior completed battle and duplicate settl
     rounds: 3,
     warsEntered: 3
   });
+  assert.equal(overwrite.profile.recentBattles.length, 2);
+  assert.deepEqual(overwrite.profile.recentBattles[0], overwrite.profile.latestBattle);
+  assert.equal(overwrite.profile.recentBattles[0].completedAt, "2026-06-14T14:00:00.000Z");
+  assert.equal(overwrite.profile.recentBattles[1].completedAt, "2026-06-14T13:00:00.000Z");
 });
 
-test("state: incomplete matches do not record latest battle and malformed legacy latest battle data normalizes safely", async () => {
+test("state: recent battles trim to max five and preserve newest-first ordering", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  for (let index = 0; index < 6; index += 1) {
+    await state.recordMatchResult({
+      username: "RecentBattleCapUser",
+      perspective: "p1",
+      matchState: createRewardHookMatch({
+        winner: index % 2 === 0 ? "p1" : "p2",
+        mode: "pve"
+      }),
+      settlementKey: `RECENT-CAP-${index}`,
+      nowMs: Date.UTC(2026, 5, 14, 15, index, 0)
+    });
+  }
+
+  const profile = await state.profiles.getProfile("RecentBattleCapUser");
+  assert.equal(profile.recentBattles.length, 5);
+  assert.deepEqual(
+    profile.recentBattles.map((entry) => entry.completedAt),
+    [
+      "2026-06-14T15:05:00.000Z",
+      "2026-06-14T15:04:00.000Z",
+      "2026-06-14T15:03:00.000Z",
+      "2026-06-14T15:02:00.000Z",
+      "2026-06-14T15:01:00.000Z"
+    ]
+  );
+  assert.deepEqual(profile.latestBattle, profile.recentBattles[0]);
+});
+
+test("state: incomplete matches do not record recent battles and malformed legacy battle data normalizes safely", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
 
@@ -2974,6 +3018,76 @@ test("state: incomplete matches do not record latest battle and malformed legacy
 
   const normalized = await state.profiles.getProfile("MalformedLatestUser");
   assert.equal(normalized.latestBattle, null);
+  assert.deepEqual(normalized.recentBattles, []);
+});
+
+test("state: older profiles with only latestBattle or no battle fields load recentBattles safely", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.profiles.store.write([
+    {
+      username: "LegacyLatestBattleUser",
+      wins: 1,
+      losses: 0,
+      gamesPlayed: 1,
+      latestBattle: {
+        mode: "online",
+        result: "win",
+        opponentName: "HostUser",
+        opponentUsername: "HostUser",
+        opponentUserId: null,
+        completedAt: "2026-06-14T16:00:00.000Z",
+        rounds: 9,
+        warsEntered: 1
+      }
+    },
+    {
+      username: "NoBattleFieldsUser",
+      wins: 0,
+      losses: 0,
+      gamesPlayed: 0
+    },
+    {
+      username: "MalformedRecentBattlesUser",
+      wins: 1,
+      losses: 0,
+      gamesPlayed: 1,
+      latestBattle: {
+        mode: "pve",
+        result: "win",
+        opponentName: "Elemental AI",
+        completedAt: "2026-06-14T17:00:00.000Z",
+        rounds: 3,
+        warsEntered: 3
+      },
+      recentBattles: [
+        "bad-entry",
+        {
+          mode: "featuredRival",
+          result: "loss",
+          rivalName: "Crownfire Duelist",
+          completedAt: "2026-06-14T17:30:00.000Z",
+          rounds: 4,
+          warsEntered: 2
+        },
+        { mode: "pve", result: "win" }
+      ]
+    }
+  ]);
+
+  const latestOnly = await state.profiles.getProfile("LegacyLatestBattleUser");
+  assert.deepEqual(latestOnly.recentBattles, [latestOnly.latestBattle]);
+  assert.equal(latestOnly.recentBattles[0].opponentUsername, "HostUser");
+
+  const noBattleFields = await state.profiles.getProfile("NoBattleFieldsUser");
+  assert.equal(noBattleFields.latestBattle, null);
+  assert.deepEqual(noBattleFields.recentBattles, []);
+
+  const malformedRecentBattles = await state.profiles.getProfile("MalformedRecentBattlesUser");
+  assert.equal(malformedRecentBattles.recentBattles.length, 1);
+  assert.deepEqual(malformedRecentBattles.latestBattle, malformedRecentBattles.recentBattles[0]);
+  assert.equal(malformedRecentBattles.recentBattles[0].rivalName, "Crownfire Duelist");
 });
 
 test("state: longestMatch keeps the longer record and duplicate settlement does not rewrite it", async () => {

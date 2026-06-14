@@ -706,6 +706,21 @@ function applyLatestBattleSummary(profile, latestBattle) {
   };
 }
 
+function applyRecentBattleSummary(profile, latestBattle, limit = 5) {
+  if (!profile || !latestBattle) {
+    return profile;
+  }
+
+  const existingRecentBattles = Array.isArray(profile.recentBattles) ? profile.recentBattles : [];
+  const nextRecentBattles = [latestBattle, ...existingRecentBattles].slice(0, limit);
+
+  return {
+    ...profile,
+    latestBattle: nextRecentBattles[0] ?? latestBattle,
+    recentBattles: nextRecentBattles
+  };
+}
+
 function applyLongestMatchCandidate(profile, candidate) {
   if (!candidate || !profile) {
     return profile;
@@ -1325,7 +1340,7 @@ export class StateCoordinator {
           nowMs
         })
       );
-      workingProfile = applyLatestBattleSummary(
+      workingProfile = applyRecentBattleSummary(
         workingProfile,
         buildLatestBattleSummary({
           matchState: safeMatchState,
@@ -1548,7 +1563,7 @@ export class StateCoordinator {
           perspective
         })
       );
-      workingProfile = applyLatestBattleSummary(
+      workingProfile = applyRecentBattleSummary(
         workingProfile,
         buildLatestBattleSummary({
           matchState: safeMatchState,
