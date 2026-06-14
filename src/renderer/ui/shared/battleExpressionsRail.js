@@ -31,6 +31,56 @@ export const GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS = Object.freeze({
   toggleButtonId: "game-taunts-toggle-btn"
 });
 
+export function renderBattleExpressionsFeed(messages = []) {
+  const safeMessages = Array.isArray(messages) ? messages.slice(-MATCH_TAUNT_FEED_LIMIT) : [];
+  return `
+          <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
+            ${safeMessages
+              .map(
+                (message) => `
+                  <div
+                    class="match-taunt-entry ${message?.isAi ? "is-ai" : message?.isOpponent ? "is-opponent" : "is-player"} ${message?.isFading ? "is-fading" : ""}"
+                    data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
+                  >
+                    <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
+                    <span>${escapeHtml(message?.text ?? "")}</span>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+  `;
+}
+
+export function renderBattleExpressionsPanel(presetLines = MATCH_TAUNT_PRESETS, options = {}) {
+  const {
+    canSend = true,
+    panelDataScope = "online",
+    toggleButtonId = "online-taunts-toggle-btn"
+  } = options;
+  const safePresetLines = Array.isArray(presetLines) ? presetLines : MATCH_TAUNT_PRESETS;
+
+  return `
+                <div id="${escapeHtml(toggleButtonId.replace("-toggle-btn", "-panel"))}" class="match-taunt-panel" data-match-taunt-panel="${escapeHtml(panelDataScope)}" aria-label="Match Expressions">
+                  ${safePresetLines
+                    .map(
+                      (line, index) => `
+                        <button
+                          type="button"
+                          class="match-taunt-option"
+                          data-taunt-line="${escapeHtml(line)}"
+                          data-taunt-index="${String(index)}"
+                          ${canSend ? "" : "disabled"}
+                        >
+                          ${escapeHtml(line)}
+                        </button>
+                      `
+                    )
+                    .join("")}
+                </div>
+  `;
+}
+
 export function renderBattleExpressionsRailContents(taunts = {}, options = {}) {
   const {
     headerClassName = "online-match-taunt-rail-header online-match-taunt-controls-row online-match-taunt-topbar",
@@ -59,7 +109,6 @@ export function renderBattleExpressionsRailContents(taunts = {}, options = {}) {
     toggleButtonId = "online-taunts-toggle-btn"
   } = options;
   const panelOpen = Boolean(taunts.panelOpen);
-  const safeMessages = Array.isArray(taunts.messages) ? taunts.messages.slice(-MATCH_TAUNT_FEED_LIMIT) : [];
   const safePresetLines = Array.isArray(taunts.presetLines) ? taunts.presetLines : MATCH_TAUNT_PRESETS;
   const safeCooldownMs = Math.max(0, Number(taunts.cooldownRemainingMs) || 0);
   const cooldownSeconds = Math.ceil(safeCooldownMs / 1000);
@@ -92,42 +141,14 @@ export function renderBattleExpressionsRailContents(taunts = {}, options = {}) {
           class="${escapeHtml(bodyClassName)}"
           ${bodyDataAttributes}
         >
-          <div class="match-taunt-feed" aria-live="polite" aria-label="Recent expressions">
-            ${safeMessages
-              .map(
-                (message) => `
-                  <div
-                    class="match-taunt-entry ${message?.isAi ? "is-ai" : message?.isOpponent ? "is-opponent" : "is-player"} ${message?.isFading ? "is-fading" : ""}"
-                    data-taunt-message-id="${escapeHtml(message?.id ?? "")}"
-                  >
-                    <strong>${escapeHtml(message?.speaker ?? "Player")}</strong>
-                    <span>${escapeHtml(message?.text ?? "")}</span>
-                  </div>
-                `
-              )
-              .join("")}
-          </div>
+          ${renderBattleExpressionsFeed(taunts.messages)}
           ${
             panelOpen
-              ? `
-                <div id="${escapeHtml(toggleButtonId.replace("-toggle-btn", "-panel"))}" class="match-taunt-panel" data-match-taunt-panel="${escapeHtml(panelDataScope)}" aria-label="Match Expressions">
-                  ${safePresetLines
-                    .map(
-                      (line, index) => `
-                        <button
-                          type="button"
-                          class="match-taunt-option"
-                          data-taunt-line="${escapeHtml(line)}"
-                          data-taunt-index="${String(index)}"
-                          ${canSend ? "" : "disabled"}
-                        >
-                          ${escapeHtml(line)}
-                        </button>
-                      `
-                    )
-                    .join("")}
-                </div>
-              `
+              ? renderBattleExpressionsPanel(safePresetLines, {
+                  canSend,
+                  panelDataScope,
+                  toggleButtonId
+                })
               : ""
           }
         </div>

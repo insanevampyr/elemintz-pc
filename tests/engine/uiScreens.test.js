@@ -21,6 +21,7 @@ import { roadmapScreen } from "../../src/renderer/ui/screens/roadmapScreen.js";
 import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js";
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
+import { renderBattleExpressionsFeed, renderBattleExpressionsPanel } from "../../src/renderer/ui/shared/battleExpressionsRail.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
@@ -18028,6 +18029,248 @@ test("ui: taunt HUD ticks refresh the active online screen in place without call
     assert.ok(shell.innerHTML.indexOf('data-online-match-taunt-topbar="true"') < shell.innerHTML.indexOf('data-online-match-taunt-box="true"'));
     assert.match(shell.innerHTML, /WAR!/);
     assert.match(shell.innerHTML, />\s*5s\s*</);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: taunt HUD in-place refresh preserves the open game picker scroll position without replacing the whole shell", async () => {
+  const previousDocument = global.document;
+  const fixedNow = 1_700_000_000_000;
+  const toggleButton = createFakeElement();
+  const tauntOption = {
+    listeners: new Map(),
+    getAttribute: (name) => (name === "data-taunt-line" ? "⚔️ WAR!" : null),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
+  const cooldown = createFakeElement();
+  cooldown.textContent = "7s";
+  cooldown.setAttribute("data-taunt-cooldown-state", "cooldown");
+  const renderPanelMarkup = () =>
+    renderBattleExpressionsPanel(["⚔️ WAR!"], {
+      canSend: false,
+      panelDataScope: "game",
+      toggleButtonId: "game-taunts-toggle-btn"
+    }).trim();
+  const panel = {
+    scrollTop: 148,
+    outerHTML: renderPanelMarkup(),
+    querySelector(selector) {
+      if (selector === '[data-taunt-line="⚔️ WAR!"]') {
+        return tauntOption;
+      }
+      return null;
+    }
+  };
+  const feed = {
+    outerHTML: renderBattleExpressionsFeed([
+      {
+        id: "taunt-1",
+        speaker: "Hero",
+        text: "✨ Nice play.",
+        kind: "player",
+        isFading: false
+      }
+    ]).trim()
+  };
+  let insertCalls = 0;
+  const railBody = {
+    insertAdjacentHTML: () => {
+      insertCalls += 1;
+    }
+  };
+  let shellInnerHtmlAssignments = 0;
+  const shell = {
+    _innerHTML: "",
+    className: "match-taunt-shell game-match-taunt-rail is-open",
+    get innerHTML() {
+      return this._innerHTML;
+    },
+    set innerHTML(value) {
+      this._innerHTML = value;
+      shellInnerHtmlAssignments += 1;
+    },
+    querySelector(selector) {
+      if (selector === "#game-taunts-toggle-btn") return toggleButton;
+      if (selector === ".match-taunt-cooldown") return cooldown;
+      if (selector === ".match-taunt-feed") return feed;
+      if (selector === '[data-game-match-taunt-rail-body="true"]') return railBody;
+      if (selector === '[data-match-taunt-panel="game"]') return panel;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-taunt-line]") {
+        return [tauntOption];
+      }
+      return [];
+    }
+  };
+
+  global.document = {
+    activeElement: { tagName: "BODY", isContentEditable: false },
+    querySelector: (selector) => (selector === '[data-match-taunt-shell="game"]' ? shell : null)
+  };
+
+  const controller = createRendererController();
+  controller.screenFlow = "game";
+  controller.matchTauntPanelOpen = true;
+  controller.getTauntNow = () => fixedNow;
+  controller.matchTaunts = [
+    {
+      id: "taunt-1",
+      speaker: "Hero",
+      text: "✨ Nice play.",
+      kind: "player",
+      createdAt: fixedNow,
+      fadeAt: fixedNow + 1000,
+      expiresAt: fixedNow + 2000
+    }
+  ];
+  controller.playerTauntCooldowns = { "user:Hero": fixedNow + 7000 };
+  controller.username = "Hero";
+
+  try {
+    assert.equal(controller.refreshCurrentTauntHudInPlace("game"), true);
+    assert.equal(shellInnerHtmlAssignments, 0);
+    assert.equal(insertCalls, 0);
+    assert.equal(panel.scrollTop, 148);
+    assert.equal(tauntOption.listeners.size, 1);
+
+    assert.equal(controller.refreshCurrentTauntHudInPlace("game"), true);
+    assert.equal(shellInnerHtmlAssignments, 0);
+    assert.equal(insertCalls, 0);
+    assert.equal(panel.scrollTop, 148);
+    assert.equal(tauntOption.listeners.size, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: taunt HUD in-place refresh preserves the open online picker scroll position while keeping send handlers active", async () => {
+  const previousDocument = global.document;
+  const fixedNow = 1_700_000_000_000;
+  const toggleButton = createFakeElement();
+  const tauntOption = {
+    listeners: new Map(),
+    getAttribute: (name) => (name === "data-taunt-line" ? "⚔️ WAR!" : null),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
+  const cooldown = createFakeElement();
+  cooldown.textContent = "5s";
+  cooldown.setAttribute("data-taunt-cooldown-state", "cooldown");
+  const renderPanelMarkup = () =>
+    renderBattleExpressionsPanel(["⚔️ WAR!"], {
+      canSend: false,
+      panelDataScope: "online",
+      toggleButtonId: "online-taunts-toggle-btn"
+    }).trim();
+  const panel = {
+    scrollTop: 204,
+    outerHTML: renderPanelMarkup(),
+    querySelector(selector) {
+      if (selector === '[data-taunt-line="⚔️ WAR!"]') {
+        return tauntOption;
+      }
+      return null;
+    }
+  };
+  const feed = {
+    outerHTML: renderBattleExpressionsFeed([
+      {
+        id: "taunt-online-1",
+        speaker: "HostUser",
+        text: "⚔️ WAR!",
+        kind: "player",
+        isFading: false
+      }
+    ]).trim()
+  };
+  let insertCalls = 0;
+  const railBody = {
+    insertAdjacentHTML: () => {
+      insertCalls += 1;
+    }
+  };
+  let shellInnerHtmlAssignments = 0;
+  const shell = {
+    _innerHTML: "",
+    className: "match-taunt-shell online-match-taunt-rail is-open",
+    get innerHTML() {
+      return this._innerHTML;
+    },
+    set innerHTML(value) {
+      this._innerHTML = value;
+      shellInnerHtmlAssignments += 1;
+    },
+    querySelector(selector) {
+      if (selector === "#online-taunts-toggle-btn") return toggleButton;
+      if (selector === ".match-taunt-cooldown") return cooldown;
+      if (selector === ".match-taunt-feed") return feed;
+      if (selector === '[data-online-match-taunt-rail-body="true"]') return railBody;
+      if (selector === '[data-match-taunt-panel="online"]') return panel;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-taunt-line]") {
+        return [tauntOption];
+      }
+      return [];
+    }
+  };
+
+  global.document = {
+    activeElement: { tagName: "BODY", isContentEditable: false },
+    querySelector: (selector) => (selector === '[data-match-taunt-shell="online"]' ? shell : null)
+  };
+
+  const controller = createRendererController();
+  controller.screenFlow = "onlinePlay";
+  controller.matchTauntPanelOpen = true;
+  controller.getTauntNow = () => fixedNow;
+  controller.username = "HostUser";
+  controller.playerTauntCooldowns = { "online:host": fixedNow + 5000 };
+  controller.onlinePlayState = {
+    socketId: "socket-host",
+    room: {
+      status: "full",
+      host: { socketId: "socket-host" },
+      guest: { socketId: "socket-guest" },
+      taunts: [
+        {
+          id: "taunt-online-1",
+          speaker: "HostUser",
+          text: "⚔️ WAR!",
+          kind: "player",
+          sentAt: new Date(fixedNow).toISOString()
+        }
+      ]
+    }
+  };
+
+  let sendCalls = 0;
+  controller.sendCurrentOnlineTaunt = async () => {
+    sendCalls += 1;
+  };
+
+  try {
+    assert.equal(controller.refreshCurrentTauntHudInPlace("onlinePlay"), true);
+    assert.equal(shellInnerHtmlAssignments, 0);
+    assert.equal(insertCalls, 0);
+    assert.equal(panel.scrollTop, 204);
+    assert.equal(tauntOption.listeners.size, 1);
+
+    await tauntOption.listeners.get("click")();
+    assert.equal(sendCalls, 1);
+
+    assert.equal(controller.refreshCurrentTauntHudInPlace("onlinePlay"), true);
+    assert.equal(shellInnerHtmlAssignments, 0);
+    assert.equal(insertCalls, 0);
+    assert.equal(panel.scrollTop, 204);
+    assert.equal(tauntOption.listeners.size, 1);
   } finally {
     global.document = previousDocument;
   }

@@ -17,7 +17,12 @@ import {
 } from "../ui/screens/index.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature } from "../ui/screens/gameScreen.js";
 import { renderMenuChallengePreview, renderMenuDailyLoginStatus } from "../ui/screens/menuScreen.js";
-import { GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS, renderBattleExpressionsRailContents } from "../ui/shared/battleExpressionsRail.js";
+import {
+  GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS,
+  renderBattleExpressionsFeed,
+  renderBattleExpressionsPanel,
+  renderBattleExpressionsRailContents
+} from "../ui/shared/battleExpressionsRail.js";
 import {
   renderDailyElementChestModalBody
 } from "../ui/screens/dailyElementChestScreen.js";
@@ -623,17 +628,67 @@ export class AppController {
     };
   }
 
+  buildTauntHudRenderSignature(renderState = {}) {
+    const messages = Array.isArray(renderState.messages)
+      ? renderState.messages.map((message) => ({
+          id: message?.id ?? null,
+          speaker: message?.speaker ?? "",
+          text: message?.text ?? "",
+          isFading: Boolean(message?.isFading),
+          isAi: Boolean(message?.isAi),
+          isOpponent: Boolean(message?.isOpponent)
+        }))
+      : [];
+    const cooldownRemainingMs = Math.max(0, Number(renderState.cooldownRemainingMs) || 0);
+    const cooldownLabel = cooldownRemainingMs > 0 ? `${Math.ceil(cooldownRemainingMs / 1000)}s` : "Ready";
+    return JSON.stringify({
+      idPrefix: renderState.idPrefix ?? "",
+      panelOpen: Boolean(renderState.panelOpen),
+      messages,
+      presetLines: Array.isArray(renderState.presetLines) ? renderState.presetLines : [],
+      cooldownLabel,
+      canSend: renderState.canSend ?? true
+    });
+  }
+
+  getTauntHudScopeConfig(screenFlow = this.screenFlow) {
+    if (screenFlow === "onlinePlay") {
+      return {
+        idPrefix: "online",
+        shellClassName: "match-taunt-shell online-match-taunt-rail",
+        toggleButtonId: "online-taunts-toggle-btn",
+        railBodySelector: '[data-online-match-taunt-rail-body="true"]'
+      };
+    }
+
+    return {
+      idPrefix: "game",
+      shellClassName: "match-taunt-shell game-match-taunt-rail",
+      toggleButtonId: "game-taunts-toggle-btn",
+      railBodySelector: '[data-game-match-taunt-rail-body="true"]'
+    };
+  }
+
   bindRenderedTauntHud(shell, screenFlow = this.screenFlow) {
     if (!shell || typeof shell.querySelectorAll !== "function") {
       return;
     }
 
-    const toggleButton = shell.querySelector?.(`#${screenFlow === "onlinePlay" ? "online" : "game"}-taunts-toggle-btn`);
-    toggleButton?.addEventListener("click", async () => {
-      this.toggleMatchTauntPanel();
-    });
+    const config = this.getTauntHudScopeConfig(screenFlow);
+    const toggleButton = shell.querySelector?.(`#${config.toggleButtonId}`);
+    if (toggleButton && !toggleButton.__elemintzTauntToggleBound) {
+      toggleButton.__elemintzTauntToggleBound = true;
+      toggleButton.addEventListener("click", async () => {
+        this.toggleMatchTauntPanel();
+      });
+    }
 
     shell.querySelectorAll("[data-taunt-line]").forEach((button) => {
+      if (button.__elemintzTauntLineBound) {
+        return;
+      }
+
+      button.__elemintzTauntLineBound = true;
       button.addEventListener("click", async () => {
         const line = button.getAttribute("data-taunt-line") ?? "";
         if (screenFlow === "onlinePlay") {
@@ -656,14 +711,89 @@ export class AppController {
     if (!shell) {
       return false;
     }
+    const config = this.getTauntHudScopeConfig(screenFlow);
+    const renderOptions = screenFlow === "onlinePlay" ? undefined : GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS;
+    const renderSignature = this.buildTauntHudRenderSignature(renderState);
 
-    if (screenFlow === "onlinePlay") {
-      shell.className = `match-taunt-shell online-match-taunt-rail ${renderState.panelOpen ? "is-open" : ""}`.trim();
-      shell.innerHTML = renderBattleExpressionsRailContents(renderState);
-    } else {
-      shell.className = `match-taunt-shell game-match-taunt-rail ${renderState.panelOpen ? "is-open" : ""}`.trim();
-      shell.innerHTML = renderBattleExpressionsRailContents(renderState, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS);
+    shell.className = `${config.shellClassName} ${renderState.panelOpen ? "is-open" : ""}`.trim();
+
+    if (shell.__elemintzTauntRenderSignature === renderSignature) {
+      this.bindRenderedTauntHud(shell, screenFlow);
+      return true;
     }
+
+    const trigger = shell.querySelector?.(`#${config.toggleButtonId}`);
+    const cooldown = shell.querySelector?.(".match-taunt-cooldown");
+    const feed = shell.querySelector?.(".match-taunt-feed");
+    const railBody = shell.querySelector?.(config.railBodySelector);
+    const panel = shell.querySelector?.(`[data-match-taunt-panel="${config.idPrefix}"]`);
+    const activeElement = document?.activeElement ?? null;
+    const focusedTauntLine =
+      activeElement?.getAttribute?.("data-taunt-line") &&
+      activeElement?.closest?.(`[data-match-taunt-panel="${config.idPrefix}"]`)
+        ? activeElement.getAttribute("data-taunt-line")
+        : null;
+
+    const canPatchExistingShell = Boolean(trigger && cooldown && feed && railBody);
+    if (!canPatchExistingShell) {
+      shell.innerHTML = renderBattleExpressionsRailContents(renderState, renderOptions);
+      shell.__elemintzTauntRenderSignature = renderSignature;
+      this.bindRenderedTauntHud(shell, screenFlow);
+      return true;
+    }
+
+    trigger.setAttribute?.("aria-expanded", renderState.panelOpen ? "true" : "false");
+    const cooldownRemainingMs = Math.max(0, Number(renderState.cooldownRemainingMs) || 0);
+    const cooldownLabel = cooldownRemainingMs > 0 ? `${Math.ceil(cooldownRemainingMs / 1000)}s` : "Ready";
+    const desiredCooldownState = cooldownRemainingMs > 0 ? "cooldown" : "ready";
+    if (cooldown.textContent !== cooldownLabel) {
+      cooldown.textContent = cooldownLabel;
+    }
+    if (cooldown.getAttribute?.("data-taunt-cooldown-state") !== desiredCooldownState) {
+      cooldown.setAttribute?.("data-taunt-cooldown-state", desiredCooldownState);
+    }
+
+    const feedMarkup = renderBattleExpressionsFeed(renderState.messages);
+    if (feed.outerHTML !== feedMarkup.trim()) {
+      feed.outerHTML = feedMarkup.trim();
+    }
+
+    const refreshedFeed = shell.querySelector?.(".match-taunt-feed");
+    const refreshedRailBody = shell.querySelector?.(config.railBodySelector) ?? railBody;
+    const existingPanel = shell.querySelector?.(`[data-match-taunt-panel="${config.idPrefix}"]`);
+
+    if (!renderState.panelOpen) {
+      existingPanel?.remove?.();
+    } else {
+      const panelMarkup = renderBattleExpressionsPanel(renderState.presetLines, {
+        canSend: renderState.canSend,
+        panelDataScope: config.idPrefix,
+        toggleButtonId: config.toggleButtonId
+      }).trim();
+
+      if (existingPanel) {
+        const previousScrollTop = Number(existingPanel.scrollTop ?? 0);
+        if (existingPanel.outerHTML !== panelMarkup) {
+          existingPanel.outerHTML = panelMarkup;
+        }
+        const nextPanel = shell.querySelector?.(`[data-match-taunt-panel="${config.idPrefix}"]`);
+        if (nextPanel) {
+          nextPanel.scrollTop = previousScrollTop;
+          if (focusedTauntLine && typeof nextPanel.querySelector === "function") {
+            nextPanel.querySelector(`[data-taunt-line="${focusedTauntLine.replaceAll("\"", "&quot;")}"]`)?.focus?.();
+          }
+        }
+      } else if (typeof refreshedRailBody?.insertAdjacentHTML === "function") {
+        refreshedRailBody.insertAdjacentHTML("beforeend", panelMarkup);
+      } else {
+        shell.innerHTML = renderBattleExpressionsRailContents(renderState, renderOptions);
+        shell.__elemintzTauntRenderSignature = renderSignature;
+        this.bindRenderedTauntHud(shell, screenFlow);
+        return true;
+      }
+    }
+
+    shell.__elemintzTauntRenderSignature = renderSignature;
     this.bindRenderedTauntHud(shell, screenFlow);
     return true;
   }
