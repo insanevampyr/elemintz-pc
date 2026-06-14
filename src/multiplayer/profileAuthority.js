@@ -726,7 +726,12 @@ export class MultiplayerProfileAuthority {
     matchWon = false,
     runEndedWithLoss = false,
     currentStreak = 0,
-    claimedMilestoneStreaks = []
+    claimedMilestoneStreaks = [],
+    matchState = null,
+    latestBattleContext = null,
+    battleReportAlreadyRecorded = false,
+    perspective = "p1",
+    nowMs = Date.now()
   } = {}) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -740,7 +745,12 @@ export class MultiplayerProfileAuthority {
       matchWon,
       runEndedWithLoss,
       currentStreak,
-      claimedMilestoneStreaks
+      claimedMilestoneStreaks,
+      matchState,
+      latestBattleContext,
+      battleReportAlreadyRecorded,
+      perspective,
+      nowMs
     });
 
     return {

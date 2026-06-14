@@ -2715,7 +2715,12 @@ export function createMultiplayerFoundation({
           matchWon: payload?.matchWon === true,
           runEndedWithLoss: payload?.runEndedWithLoss === true,
           currentStreak: authoritativeCurrentStreak,
-          claimedMilestoneStreaks: gauntletSessionState.claimedMilestoneStreaks
+          claimedMilestoneStreaks: gauntletSessionState.claimedMilestoneStreaks,
+          matchState: payload?.matchState ?? null,
+          latestBattleContext: payload?.latestBattleContext ?? null,
+          battleReportAlreadyRecorded: payload?.battleReportAlreadyRecorded === true,
+          perspective: payload?.perspective ?? "p1",
+          nowMs: payload?.nowMs ?? Date.now()
         });
 
         const updatedClaimedMilestoneStreaks = normalizeClaimedGauntletMilestoneStreaks(

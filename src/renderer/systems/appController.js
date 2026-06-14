@@ -1903,7 +1903,12 @@ export class AppController {
     matchWon = false,
     runEndedWithLoss = false,
     currentStreak = 0,
-    claimedMilestoneStreaks = []
+    claimedMilestoneStreaks = [],
+    matchState = null,
+    latestBattleContext = null,
+    battleReportAlreadyRecorded = false,
+    perspective = "p1",
+    nowMs = Date.now()
   } = {}) {
     if (!this.username) {
       return null;
@@ -1924,6 +1929,11 @@ export class AppController {
         runEndedWithLoss,
         currentStreak,
         claimedMilestoneStreaks,
+        matchState,
+        latestBattleContext,
+        battleReportAlreadyRecorded,
+        perspective,
+        nowMs,
         localMatchSessionId: gauntletSession?.sessionId ?? this.gauntletRunState?.sessionId ?? null
       });
 
@@ -1964,7 +1974,12 @@ export class AppController {
       matchWon,
       runEndedWithLoss,
       currentStreak,
-      claimedMilestoneStreaks
+      claimedMilestoneStreaks,
+      matchState,
+      latestBattleContext,
+      battleReportAlreadyRecorded,
+      perspective,
+      nowMs
     });
 
     if (result?.profile) {
@@ -8271,7 +8286,15 @@ export class AppController {
             const gauntletStatsResult = await this.recordGauntletProfileStats({
               matchWon: true,
               currentStreak: nextStreak,
-              claimedMilestoneStreaks: gauntletCompletionContext?.runState?.claimedMilestoneStreaks ?? []
+              claimedMilestoneStreaks: gauntletCompletionContext?.runState?.claimedMilestoneStreaks ?? [],
+              matchState: match,
+              battleReportAlreadyRecorded: true,
+              latestBattleContext: {
+                rivalName:
+                  gauntletCompletionContext?.rivalName ??
+                  this.getCurrentGauntletRival()?.displayName ??
+                  null
+              }
             });
             if (gauntletStatsResult?.profile) {
               finalPersisted = {
@@ -8317,7 +8340,15 @@ export class AppController {
             }
           } else if (!isQuitForfeit) {
             const gauntletStatsResult = await this.recordGauntletProfileStats({
-              runEndedWithLoss: true
+              runEndedWithLoss: true,
+              matchState: match,
+              battleReportAlreadyRecorded: true,
+              latestBattleContext: {
+                rivalName:
+                  gauntletCompletionContext?.rivalName ??
+                  this.getCurrentGauntletRival()?.displayName ??
+                  null
+              }
             });
             if (gauntletStatsResult?.profile) {
               finalPersisted = {

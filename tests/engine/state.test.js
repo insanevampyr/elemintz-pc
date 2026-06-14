@@ -2958,6 +2958,211 @@ test("state: recent battles insert newest first and duplicate settlement does no
   assert.equal(overwrite.profile.recentBattles[1].completedAt, "2026-06-14T13:00:00.000Z");
 });
 
+test("state: local hotseat inserts at recentBattles[0] even when an older online entry already exists", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordOnlineMatchResult({
+    username: "MixedBattleUser",
+    perspective: "p1",
+    settlementKey: "ROOM-MIXED-ONLINE-1",
+    matchState: {
+      status: "completed",
+      winner: "p1",
+      endReason: null,
+      mode: "online_pvp",
+      round: 10,
+      history: [{ result: "p1", warClashes: 1, capturedOpponentCards: 2 }],
+      hostUsername: "RemoteUser",
+      guestUsername: "MixedBattleUser",
+      players: { p1: { hand: [] }, p2: { hand: [] } },
+      meta: { totalCards: 16 }
+    },
+    latestBattleContext: {
+      opponentName: "RemoteUser",
+      opponentUsername: "RemoteUser",
+      opponentUserId: null
+    },
+    nowMs: Date.UTC(2026, 5, 14, 12, 0, 0)
+  });
+
+  const local = await state.recordLocalHotseatResult({
+    username: "MixedBattleUser",
+    perspective: "p1",
+    latestBattleContext: { opponentName: "Player Two" },
+    matchState: createRewardHookMatch({ winner: "p1", mode: "local_pvp" }),
+    settlementKey: "ROOM-MIXED-LOCAL-1",
+    nowMs: Date.UTC(2026, 5, 14, 12, 5, 0)
+  });
+
+  assert.equal(local.profile.recentBattles.length, 2);
+  assert.deepEqual(local.profile.latestBattle, local.profile.recentBattles[0]);
+  assert.deepEqual(local.profile.recentBattles[0], {
+    mode: "localHotseat",
+    result: "win",
+    opponentName: "Player Two",
+    completedAt: "2026-06-14T12:05:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+  assert.equal(local.profile.recentBattles[1].mode, "online");
+});
+
+test("state: gauntlet stats path can record recent battles and avoids duplicate inserts when the match result already persisted", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const gauntletMatchState = {
+    ...createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "hard" }),
+    gauntletRivalId: "vampire_rival",
+    gauntletMode: true
+  };
+
+  const gauntletOnly = await state.recordGauntletStats({
+    username: "GauntletOnlyBattleUser",
+    matchWon: true,
+    currentStreak: 1,
+    matchState: gauntletMatchState,
+    latestBattleContext: { rivalName: "Countess Veyra" },
+    nowMs: Date.UTC(2026, 5, 14, 12, 10, 0)
+  });
+
+  assert.deepEqual(gauntletOnly.profile.latestBattle, {
+    mode: "gauntlet",
+    result: "win",
+    rivalName: "Countess Veyra",
+    completedAt: "2026-06-14T12:10:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+  assert.deepEqual(gauntletOnly.profile.recentBattles, [gauntletOnly.profile.latestBattle]);
+  assert.equal("opponentUsername" in gauntletOnly.profile.latestBattle, false);
+  assert.equal("opponentUserId" in gauntletOnly.profile.latestBattle, false);
+
+  await state.recordMatchResult({
+    username: "GauntletMixedBattleUser",
+    perspective: "p1",
+    matchState: gauntletMatchState,
+    settlementKey: "GAUNTLET-MIXED-MATCH",
+    nowMs: Date.UTC(2026, 5, 14, 12, 15, 0)
+  });
+  const gauntletAfterStats = await state.recordGauntletStats({
+    username: "GauntletMixedBattleUser",
+    matchWon: true,
+    currentStreak: 1,
+    matchState: gauntletMatchState,
+    battleReportAlreadyRecorded: true,
+    latestBattleContext: { rivalName: "Countess Veyra" },
+    nowMs: Date.UTC(2026, 5, 14, 12, 15, 2)
+  });
+
+  assert.equal(gauntletAfterStats.profile.recentBattles.length, 1);
+  assert.deepEqual(gauntletAfterStats.profile.latestBattle, gauntletAfterStats.profile.recentBattles[0]);
+  assert.deepEqual(gauntletAfterStats.profile.latestBattle, {
+    mode: "gauntlet",
+    result: "win",
+    rivalName: "Countess Veyra",
+    completedAt: "2026-06-14T12:15:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+});
+
+test("state: gauntlet mixed match-result and stats persistence records one row per battle across a full streak", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const battles = [
+    { rivalId: "stonewall", rivalName: "Stonewall", result: "win", round: 3, warsEntered: 2 },
+    { rivalId: "mimic_rival", rivalName: "Mimic Rival", result: "win", round: 4, warsEntered: 1 },
+    { rivalId: "vampire_rival", rivalName: "Countess Veyra", result: "win", round: 5, warsEntered: 3 },
+    { rivalId: "lycan_rival", rivalName: "Fenra", result: "win", round: 6, warsEntered: 2 },
+    { rivalId: "cyclebound", rivalName: "Cyclebound", result: "win", round: 7, warsEntered: 4 }
+  ];
+
+  for (const [index, battle] of battles.entries()) {
+    const nowMs = Date.UTC(2026, 5, 14, 13, index, 0);
+    const matchState = {
+      ...createRewardHookMatch({
+        winner: "p1",
+        mode: "pve",
+        difficulty: "hard",
+        round: battle.round,
+        history: [
+          { round: 1, outcome: battle.result, war: false },
+          ...(battle.warsEntered > 0 ? [{ round: 2, outcome: battle.result, war: true }] : [])
+        ]
+      }),
+      round: battle.round,
+      gauntletRivalId: battle.rivalId,
+      gauntletMode: true
+    };
+
+    await state.recordMatchResult({
+      username: "GauntletStreakBattleUser",
+      perspective: "p1",
+      matchState,
+      settlementKey: `GAUNTLET-STREAK-${index}`,
+      nowMs
+    });
+    await state.recordGauntletStats({
+      username: "GauntletStreakBattleUser",
+      matchWon: true,
+      currentStreak: index + 1,
+      matchState,
+      battleReportAlreadyRecorded: true,
+      latestBattleContext: { rivalName: battle.rivalName },
+      nowMs: nowMs + 1500
+    });
+  }
+
+  const profile = await state.profiles.getProfile("GauntletStreakBattleUser");
+  assert.equal(profile.recentBattles.length, 5);
+  assert.deepEqual(profile.latestBattle, profile.recentBattles[0]);
+  assert.deepEqual(
+    profile.recentBattles.map((entry) => entry.rivalName),
+    ["Cyclebound", "Ravena Moonfang", "Countess Veyra", "Mimic Rival", "Stonewall"]
+  );
+  assert.deepEqual(
+    profile.recentBattles.map((entry) => entry.completedAt),
+    [
+      "2026-06-14T13:04:00.000Z",
+      "2026-06-14T13:03:00.000Z",
+      "2026-06-14T13:02:00.000Z",
+      "2026-06-14T13:01:00.000Z",
+      "2026-06-14T13:00:00.000Z"
+    ]
+  );
+});
+
+test("state: gauntlet stats-only fallback can still record one recent battle row when battle report was not already recorded", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const matchState = {
+    ...createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "hard" }),
+    gauntletRivalId: "street_duelist",
+    gauntletMode: true
+  };
+
+  const result = await state.recordGauntletStats({
+    username: "GauntletStatsFallbackUser",
+    matchWon: true,
+    currentStreak: 1,
+    matchState,
+    latestBattleContext: { rivalName: "Rook" },
+    nowMs: Date.UTC(2026, 5, 14, 12, 20, 0)
+  });
+
+  assert.equal(result.profile.recentBattles.length, 1);
+  assert.deepEqual(result.profile.latestBattle, result.profile.recentBattles[0]);
+  assert.deepEqual(result.profile.latestBattle, {
+    mode: "gauntlet",
+    result: "win",
+    rivalName: "Rook",
+    completedAt: "2026-06-14T12:20:00.000Z",
+    rounds: 3,
+    warsEntered: 3
+  });
+});
+
 test("state: recent battles trim to max five and preserve newest-first ordering", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });

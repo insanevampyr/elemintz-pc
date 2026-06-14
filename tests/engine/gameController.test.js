@@ -189,6 +189,35 @@ function createFakeDomElement(overrides = {}) {
   };
 }
 
+function assertGauntletStatCallPayload(
+  actual,
+  expected,
+  {
+    matchState = undefined,
+    latestBattleContext = undefined,
+    battleReportAlreadyRecorded = undefined,
+    perspective = "p1"
+  } = {}
+) {
+  assert.equal(actual?.username, expected.username);
+  assert.equal(actual?.runStarted, expected.runStarted);
+  assert.equal(actual?.matchWon, expected.matchWon);
+  assert.equal(actual?.runEndedWithLoss, expected.runEndedWithLoss);
+  assert.equal(actual?.currentStreak, expected.currentStreak);
+  assert.deepEqual(actual?.claimedMilestoneStreaks, expected.claimedMilestoneStreaks);
+  assert.equal(actual?.perspective, perspective);
+  assert.equal(typeof actual?.nowMs, "number");
+  if (matchState !== undefined) {
+    assert.deepEqual(actual?.matchState, matchState);
+  }
+  if (latestBattleContext !== undefined) {
+    assert.deepEqual(actual?.latestBattleContext, latestBattleContext);
+  }
+  if (battleReportAlreadyRecorded !== undefined) {
+    assert.equal(actual?.battleReportAlreadyRecorded, battleReportAlreadyRecorded);
+  }
+}
+
 function createMockUpdateBridge(initialState = {}) {
   let listener = null;
   const requestCheckResponses = Array.isArray(initialState.requestCheckResponses)
@@ -10692,7 +10721,9 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
         earth: "earth_variant_titan",
         wind: "wind_variant_sky_serpent"
       });
-      assert.deepEqual(gauntletStatCalls, [
+      assert.equal(gauntletStatCalls.length, 1);
+      assertGauntletStatCallPayload(
+        gauntletStatCalls[0],
         {
           username: "GauntletPicker",
           runStarted: true,
@@ -10700,8 +10731,12 @@ test("appController: selecting Gauntlet starts PvE with dedicated gauntlet routi
           runEndedWithLoss: false,
           currentStreak: 0,
           claimedMilestoneStreaks: []
+        },
+        {
+          matchState: null,
+          latestBattleContext: null
         }
-      ]);
+      );
   } finally {
     app.clearPassTimer();
     app.gameController?.stopTimer();
@@ -11143,7 +11178,9 @@ test("appController: gauntlet match win records persistent win stats without inc
 
       await continueButton.listeners.get("click")?.();
 
-      assert.deepEqual(gauntletStatCalls, [
+      assert.equal(gauntletStatCalls.length, 2);
+      assertGauntletStatCallPayload(
+        gauntletStatCalls[0],
         {
           username: "GauntletWinner",
           runStarted: true,
@@ -11153,14 +11190,26 @@ test("appController: gauntlet match win records persistent win stats without inc
           claimedMilestoneStreaks: []
         },
         {
+          matchState: null,
+          latestBattleContext: null
+        }
+      );
+      assertGauntletStatCallPayload(
+        gauntletStatCalls[1],
+        {
           username: "GauntletWinner",
           runStarted: false,
           matchWon: true,
           runEndedWithLoss: false,
           currentStreak: 1,
           claimedMilestoneStreaks: []
-        }
-      ]);
+        },
+      {
+        matchState: { winner: "p1", endReason: "normal" },
+        latestBattleContext: { rivalName: "Tide Witch" },
+        battleReportAlreadyRecorded: true
+      }
+    );
       assert.equal(app.profile.gauntletRuns, 1);
       assert.equal(app.profile.gauntletWins, 1);
       assert.equal(app.profile.gauntletRivalsDefeated, 1);
@@ -11278,7 +11327,9 @@ test("appController: gauntlet time-limit win records persistent win stats and co
 
       await continueButton.listeners.get("click")?.();
 
-      assert.deepEqual(gauntletStatCalls, [
+      assert.equal(gauntletStatCalls.length, 2);
+      assertGauntletStatCallPayload(
+        gauntletStatCalls[0],
         {
           username: "GauntletTimerWinner",
           runStarted: true,
@@ -11288,14 +11339,26 @@ test("appController: gauntlet time-limit win records persistent win stats and co
           claimedMilestoneStreaks: []
         },
         {
+          matchState: null,
+          latestBattleContext: null
+        }
+      );
+      assertGauntletStatCallPayload(
+        gauntletStatCalls[1],
+        {
           username: "GauntletTimerWinner",
           runStarted: false,
           matchWon: true,
           runEndedWithLoss: false,
           currentStreak: 1,
           claimedMilestoneStreaks: []
-        }
-      ]);
+        },
+      {
+        matchState: { winner: "p1", endReason: "time_limit" },
+        latestBattleContext: { rivalName: "Tide Witch" },
+        battleReportAlreadyRecorded: true
+      }
+    );
       assert.equal(app.profile.gauntletRuns, 1);
       assert.equal(app.profile.gauntletWins, 1);
       assert.equal(app.profile.gauntletRivalsDefeated, 1);
@@ -11582,18 +11645,23 @@ test("appController: authenticated Gauntlet stat persistence uses multiplayer au
     });
 
     assert.equal(calls.length, 1);
-    assert.deepEqual(calls[0], {
-      source: "multiplayer",
-      payload: {
+    assert.equal(calls[0]?.source, "multiplayer");
+    assert.equal(calls[0]?.payload?.localMatchSessionId, "gauntlet-session-1");
+    assertGauntletStatCallPayload(
+      calls[0]?.payload,
+      {
         username: "GauntletAuthorityUser",
         runStarted: false,
         matchWon: true,
         runEndedWithLoss: false,
         currentStreak: 3,
-        claimedMilestoneStreaks: [],
-        localMatchSessionId: "gauntlet-session-1"
+        claimedMilestoneStreaks: []
+      },
+      {
+        matchState: null,
+        latestBattleContext: null
       }
-    });
+    );
     assert.equal(result.profile.gauntletBestStreak, 3);
     assert.equal(result.profile.gauntletWins, 2);
     assert.equal(result.profile.gauntletRivalsDefeated, 2);
@@ -11660,7 +11728,9 @@ test("appController: local Gauntlet stat persistence still uses the local state 
       currentStreak: 2
     });
 
-    assert.deepEqual(calls, [
+    assert.equal(calls.length, 1);
+    assertGauntletStatCallPayload(
+      calls[0],
       {
         username: "LocalGauntletPersist",
         runStarted: false,
@@ -11668,8 +11738,12 @@ test("appController: local Gauntlet stat persistence still uses the local state 
         runEndedWithLoss: false,
         currentStreak: 2,
         claimedMilestoneStreaks: []
+      },
+      {
+        matchState: null,
+        latestBattleContext: null
       }
-    ]);
+    );
     assert.equal(result.profile.gauntletBestStreak, 2);
     assert.equal(app.profile.gauntletWins, 1);
   } finally {
@@ -11746,14 +11820,21 @@ test("appController: gauntlet streaks above 20 continue the run without granting
       assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Milestone Reward!/);
       assert.equal(app.gauntletRunState.currentStreak, 21);
       assert.ok(app.pendingGauntletContinuation);
-      assert.deepEqual(gauntletStatCalls.at(-1), {
-        username: "GauntletTwentyOne",
-        runStarted: false,
-        matchWon: true,
-        runEndedWithLoss: false,
-        currentStreak: 21,
-        claimedMilestoneStreaks: [3, 5, 10, 15, 20]
-      });
+      assertGauntletStatCallPayload(
+        gauntletStatCalls.at(-1),
+        {
+          username: "GauntletTwentyOne",
+          runStarted: false,
+          matchWon: true,
+          runEndedWithLoss: false,
+          currentStreak: 21,
+          claimedMilestoneStreaks: [3, 5, 10, 15, 20]
+        },
+        {
+          matchState: { winner: "p1", endReason: "hand_exhaustion" },
+          latestBattleContext: { rivalName: "Tide Witch" }
+        }
+      );
     } finally {
       globalThis.document = originalDocument;
     }
@@ -11819,16 +11900,23 @@ test("appController: gauntlet terminal draw records one persistent loss and quit
       persisted: { profile: { username: "GauntletTerminal" } }
     });
 
-    assert.deepEqual(gauntletStatCalls, [
-        {
-          username: "GauntletTerminal",
-          runStarted: false,
-          matchWon: false,
-          runEndedWithLoss: true,
-          currentStreak: 0,
-          claimedMilestoneStreaks: []
-        }
-      ]);
+    assert.equal(gauntletStatCalls.length, 1);
+    assertGauntletStatCallPayload(
+      gauntletStatCalls[0],
+      {
+        username: "GauntletTerminal",
+        runStarted: false,
+        matchWon: false,
+        runEndedWithLoss: true,
+        currentStreak: 0,
+        claimedMilestoneStreaks: []
+      },
+      {
+        matchState: { winner: "draw", endReason: "hand_exhaustion" },
+        latestBattleContext: { rivalName: gauntletLossRivalName },
+        battleReportAlreadyRecorded: true
+      }
+    );
     assert.equal(matchCompletePayloads.length, 1);
     assert.equal(matchCompletePayloads[0].title, "Gauntlet Run Ended");
     assert.match(matchCompletePayloads[0].bodyHtml, /Lost To|Final Rival/);
@@ -11945,7 +12033,9 @@ test("appController: gauntlet loss wrap-up survives async completion context res
         persisted: { profile: { username: "GauntletContext" } }
       });
 
-      assert.deepEqual(gauntletStatCalls, [
+      assert.equal(gauntletStatCalls.length, 1);
+      assertGauntletStatCallPayload(
+        gauntletStatCalls[0],
         {
           username: "GauntletContext",
           runStarted: false,
@@ -11953,8 +12043,13 @@ test("appController: gauntlet loss wrap-up survives async completion context res
           runEndedWithLoss: true,
           currentStreak: 0,
           claimedMilestoneStreaks: []
+        },
+        {
+          matchState: scenario.match,
+          latestBattleContext: { rivalName },
+          battleReportAlreadyRecorded: true
         }
-      ]);
+      );
       assert.equal(matchCompletePayloads.length, 1);
       assert.equal(matchCompletePayloads[0].title, scenario.expectedTitle);
       assert.match(matchCompletePayloads[0].bodyHtml, scenario.expectedLabel);

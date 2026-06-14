@@ -624,10 +624,11 @@ function resolveLatestBattleIdentity(matchState = {}, perspective = "p1", contex
   }
 
   if (mode === "gauntlet") {
+    const gauntletRivalId = String(matchState?.gauntletRivalId ?? "").trim().toLowerCase();
     return {
       rivalName:
+        getGauntletRivalById(gauntletRivalId)?.displayName ??
         normalizeText(context.rivalName) ??
-        getGauntletRivalById(String(matchState?.gauntletRivalId ?? "").trim().toLowerCase())?.displayName ??
         null
     };
   }
@@ -706,13 +707,69 @@ function applyLatestBattleSummary(profile, latestBattle) {
   };
 }
 
+const RECENT_BATTLE_DEDUPE_WINDOW_MS = 10000;
+
+function getRecentBattleSignature(entry) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  return JSON.stringify({
+    mode: entry.mode ?? null,
+    result: entry.result ?? null,
+    opponentName: entry.opponentName ?? null,
+    opponentUsername: entry.opponentUsername ?? null,
+    opponentUserId: entry.opponentUserId ?? null,
+    rivalName: entry.rivalName ?? null,
+    rounds: entry.rounds ?? null,
+    warsEntered: entry.warsEntered ?? null
+  });
+}
+
+function getRecentBattleCompletedAtMs(entry) {
+  const completedAt = String(entry?.completedAt ?? "").trim();
+  if (!completedAt) {
+    return null;
+  }
+
+  const parsed = Date.parse(completedAt);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function areRecentBattleEntriesEquivalent(a, b) {
+  if (!a || !b) {
+    return false;
+  }
+
+  if (JSON.stringify(a) === JSON.stringify(b)) {
+    return true;
+  }
+
+  const signatureA = getRecentBattleSignature(a);
+  const signatureB = getRecentBattleSignature(b);
+  if (!signatureA || signatureA !== signatureB) {
+    return false;
+  }
+
+  const completedAtA = getRecentBattleCompletedAtMs(a);
+  const completedAtB = getRecentBattleCompletedAtMs(b);
+  if (!Number.isFinite(completedAtA) || !Number.isFinite(completedAtB)) {
+    return false;
+  }
+
+  return Math.abs(completedAtA - completedAtB) <= RECENT_BATTLE_DEDUPE_WINDOW_MS;
+}
+
 function applyRecentBattleSummary(profile, latestBattle, limit = 5) {
   if (!profile || !latestBattle) {
     return profile;
   }
 
   const existingRecentBattles = Array.isArray(profile.recentBattles) ? profile.recentBattles : [];
-  const nextRecentBattles = [latestBattle, ...existingRecentBattles].slice(0, limit);
+  const dedupedRecentBattles = existingRecentBattles.filter(
+    (entry) => !areRecentBattleEntriesEquivalent(entry, latestBattle)
+  );
+  const nextRecentBattles = [latestBattle, ...dedupedRecentBattles].slice(0, limit);
 
   return {
     ...profile,
@@ -1675,7 +1732,12 @@ export class StateCoordinator {
     matchWon = false,
     runEndedWithLoss = false,
     currentStreak = 0,
-    claimedMilestoneStreaks = []
+    claimedMilestoneStreaks = [],
+    matchState = null,
+    latestBattleContext = null,
+    battleReportAlreadyRecorded = false,
+    perspective = "p1",
+    nowMs = Date.now()
   } = {}) {
     return this.runMatchPersistence(async () => {
       if (!username) {
@@ -1738,6 +1800,17 @@ export class StateCoordinator {
             levelRewards: [],
             levelRewardTokenDelta: 0
           };
+        }
+
+        const latestBattle = buildLatestBattleSummary({
+          matchState,
+          perspective,
+          matchStats: matchState ? deriveMatchStats(matchState, perspective) : null,
+          context: latestBattleContext,
+          nowMs
+        });
+        if (latestBattle && !battleReportAlreadyRecorded) {
+          nextProfile = applyRecentBattleSummary(nextProfile, latestBattle);
         }
 
         return nextProfile;

@@ -2584,6 +2584,11 @@ export class MultiplayerClient {
     runEndedWithLoss = false,
     currentStreak = 0,
     claimedMilestoneStreaks = [],
+    matchState = null,
+    latestBattleContext = null,
+    battleReportAlreadyRecorded = false,
+    perspective = "p1",
+    nowMs = Date.now(),
     localMatchSessionId = null,
     serverUrl
   } = {}) {
@@ -2596,6 +2601,11 @@ export class MultiplayerClient {
         runEndedWithLoss,
         currentStreak,
         claimedMilestoneStreaks,
+        ...(matchState ? { matchState } : {}),
+        ...(latestBattleContext ? { latestBattleContext } : {}),
+        ...(battleReportAlreadyRecorded ? { battleReportAlreadyRecorded: true } : {}),
+        ...(perspective ? { perspective } : {}),
+        ...(Number.isFinite(Number(nowMs)) ? { nowMs: Number(nowMs) } : {}),
         ...(String(localMatchSessionId ?? "").trim()
           ? { localMatchSessionId: String(localMatchSessionId).trim() }
           : {})
