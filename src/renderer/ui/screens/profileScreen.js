@@ -723,51 +723,120 @@ function renderBattleReportIdentityRow(latestBattle = {}) {
   `;
 }
 
-function renderBattleReportModalBody(profile = {}) {
-  const latestBattle = profile?.latestBattle;
-  if (!latestBattle || typeof latestBattle !== "object") {
-    return `
-      <div class="battle-report-modal-content stack-sm">
-        <p class="text-muted" data-battle-report-empty="true">No battles recorded yet.</p>
-      </div>
-    `;
-  }
+function getBattleReportEntries(profile = {}) {
+  const recentBattles = Array.isArray(profile?.recentBattles) ? profile.recentBattles : [];
+  const recentSource =
+    recentBattles.length > 0
+      ? recentBattles
+      : profile?.latestBattle && typeof profile.latestBattle === "object"
+        ? [profile.latestBattle]
+        : [];
 
+  return recentSource
+    .filter((battle) => battle && typeof battle === "object")
+    .map((battle, index) => {
+      const completedAt = String(battle?.completedAt ?? "").trim();
+      const parsedTime = Date.parse(completedAt);
+      return {
+        ...battle,
+        __battleReportOrder: index,
+        __battleReportTime: Number.isNaN(parsedTime) ? Number.NEGATIVE_INFINITY : parsedTime
+      };
+    })
+    .sort((left, right) => {
+      if (right.__battleReportTime !== left.__battleReportTime) {
+        return right.__battleReportTime - left.__battleReportTime;
+      }
+      return left.__battleReportOrder - right.__battleReportOrder;
+    })
+    .slice(0, 5);
+}
+
+function buildBattleReportRows(battle = {}) {
   const rows = [
     {
       label: "Mode",
-      value: formatBattleReportMode(latestBattle.mode)
+      value: formatBattleReportMode(battle.mode)
     },
     {
       label: "Result",
-      value: formatBattleReportResult(latestBattle.result)
+      value: formatBattleReportResult(battle.result)
     },
     {
       label: "Completed",
-      value: formatBattleReportCompletedAt(latestBattle.completedAt)
+      value: formatBattleReportCompletedAt(battle.completedAt)
     }
   ];
 
-  if (latestBattle.rounds != null) {
+  if (battle.rounds != null) {
     rows.push({
       label: "Rounds",
-      value: Math.max(0, Number(latestBattle.rounds ?? 0) || 0)
+      value: Math.max(0, Number(battle.rounds ?? 0) || 0)
     });
   }
-  if (latestBattle.warsEntered != null) {
+  if (battle.warsEntered != null) {
     rows.push({
       label: "WARs Entered",
-      value: Math.max(0, Number(latestBattle.warsEntered ?? 0) || 0)
+      value: Math.max(0, Number(battle.warsEntered ?? 0) || 0)
     });
   }
 
+  return rows;
+}
+
+function renderBattleReportListEntries(entries = []) {
+  return entries
+    .map((battle, index) => {
+      const opponentLabel =
+        battle?.mode === "gauntlet" || battle?.mode === "featuredRival"
+          ? String(battle?.rivalName ?? "").trim() || "Unknown"
+          : String(battle?.opponentName ?? "").trim() || String(battle?.opponentUsername ?? "").trim() || "Unknown";
+      const roundsLine =
+        battle?.rounds != null
+          ? `<span class="battle-report-row-meta">Rounds: ${Math.max(0, Number(battle.rounds ?? 0) || 0)}</span>`
+          : "";
+      const warsLine =
+        battle?.warsEntered != null
+          ? `<span class="battle-report-row-meta">WARs: ${Math.max(0, Number(battle.warsEntered ?? 0) || 0)}</span>`
+          : "";
+
+      return `
+        <button
+          type="button"
+          class="battle-report-row-btn"
+          data-battle-report-entry-index="${index}"
+        >
+          <span class="battle-report-row-topline">
+            <strong>${formatBattleReportResult(battle.result)}</strong>
+            <span>${formatBattleReportMode(battle.mode)}</span>
+          </span>
+          <span class="battle-report-row-name">${opponentLabel}</span>
+          <span class="battle-report-row-bottomline">
+            <span>${formatBattleReportCompletedAt(battle.completedAt)}</span>
+            ${roundsLine}
+            ${warsLine}
+          </span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderBattleReportDetailView(battle = {}) {
   return `
-    <div class="battle-report-modal-content stack-sm" data-battle-report-modal="true">
-      <p class="text-muted battle-report-modal-intro">Latest completed battle</p>
+    <div class="battle-report-modal-content stack-sm" data-battle-report-modal="true" data-battle-report-detail="true">
+      <p class="text-muted battle-report-modal-intro">Recent Battles</p>
       <section class="profile-summary-card stack-sm">
-        <h3 class="section-title">Battle Report</h3>
+        <div class="battle-report-detail-header">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-battle-report-back="true"
+          >Back</button>
+          <h3 class="section-title">Battle Details</h3>
+        </div>
         <div class="profile-stat-list">
-          ${rows
+          ${buildBattleReportRows(battle)
             .map(
               (item) => `
                 <div class="profile-stat-row">
@@ -777,7 +846,40 @@ function renderBattleReportModalBody(profile = {}) {
               `
             )
             .join("")}
-          ${renderBattleReportIdentityRow(latestBattle)}
+          ${renderBattleReportIdentityRow(battle)}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderBattleReportModalBody(profile = {}, options = {}) {
+  const entries = getBattleReportEntries(profile);
+  if (entries.length === 0) {
+    return `
+      <div class="battle-report-modal-content stack-sm">
+        <p class="text-muted" data-battle-report-empty="true">No battles recorded yet.</p>
+      </div>
+    `;
+  }
+
+  const selectedBattleIndex = Number.isInteger(options?.selectedBattleIndex)
+    ? options.selectedBattleIndex
+    : -1;
+  const selectedBattle =
+    selectedBattleIndex >= 0 && selectedBattleIndex < entries.length ? entries[selectedBattleIndex] : null;
+
+  if (selectedBattle) {
+    return renderBattleReportDetailView(selectedBattle);
+  }
+
+  return `
+    <div class="battle-report-modal-content stack-sm" data-battle-report-modal="true">
+      <p class="text-muted battle-report-modal-intro">Your 5 most recent completed battles</p>
+      <section class="profile-summary-card stack-sm">
+        <h3 class="section-title">Recent Battles</h3>
+        <div class="battle-report-list" data-battle-report-list="true">
+          ${renderBattleReportListEntries(entries)}
         </div>
       </section>
     </div>

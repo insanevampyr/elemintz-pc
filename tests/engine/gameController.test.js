@@ -4511,11 +4511,24 @@ test("appController: profile Battle Report opens an online opponent through the 
 
   try {
     globalThis.document = {
-      querySelector: (selector) =>
-        selector === "[data-battle-report-view-profile]" ? battleReportButton : null
+      querySelector: () => null,
+      querySelectorAll: (selector) =>
+        selector === "[data-battle-report-view-profile]" ? [battleReportButton] : []
     };
     app.profile = {
       username: "GuestUser",
+      recentBattles: [
+        {
+          mode: "online",
+          result: "win",
+          opponentName: "HostUser",
+          opponentUsername: "HostUser",
+          opponentUserId: null,
+          completedAt: "2026-06-14T12:00:00.000Z",
+          rounds: 18,
+          warsEntered: 1
+        }
+      ],
       latestBattle: {
         mode: "online",
         result: "win",
@@ -4536,10 +4549,12 @@ test("appController: profile Battle Report opens an online opponent through the 
     };
 
     app.showBattleReportModal();
+    app.battleReportSelectedIndex = 0;
+    app.showBattleReportModal();
 
-    assert.equal(modalCalls.length, 1);
-    assert.equal(modalCalls[0].title, "Battle Report");
-    assert.match(modalCalls[0].bodyHtml, /data-battle-report-view-profile="HostUser"/);
+    assert.equal(modalCalls.length, 2);
+    assert.equal(modalCalls[1].title, "Battle Report");
+    assert.match(modalCalls[1].bodyHtml, /data-battle-report-view-profile="HostUser"/);
 
     await battleReportButton.clickHandler();
 
@@ -4588,12 +4603,25 @@ test("appController: closing an opponent profile opened from Profile Battle Repo
 
   try {
     globalThis.document = {
-      querySelector: (selector) =>
-        selector === "[data-battle-report-view-profile]" ? battleReportButton : null,
+      querySelector: () => null,
+      querySelectorAll: (selector) =>
+        selector === "[data-battle-report-view-profile]" ? [battleReportButton] : [],
       getElementById: () => null
     };
     app.profile = {
       username: "GuestUser",
+      recentBattles: [
+        {
+          mode: "online",
+          result: "win",
+          opponentName: "HostUser",
+          opponentUsername: "HostUser",
+          opponentUserId: null,
+          completedAt: "2026-06-14T12:00:00.000Z",
+          rounds: 18,
+          warsEntered: 1
+        }
+      ],
       latestBattle: {
         mode: "online",
         result: "win",
@@ -4619,6 +4647,7 @@ test("appController: closing an opponent profile opened from Profile Battle Repo
     };
 
     app.showBattleReportModal = AppController.prototype.showBattleReportModal.bind(app);
+    app.battleReportSelectedIndex = 0;
     app.showBattleReportModal();
     await battleReportButton.clickHandler();
 
@@ -4644,6 +4673,90 @@ test("appController: closing an opponent profile opened from Profile Battle Repo
     assert.equal(app.viewedProfileCloseAction, null);
     assert.equal(showProfileCalls, 1);
     assert.equal(reopenBattleReportCalls, 1);
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test("appController: Battle Report row click opens detail view and detail back returns to recent list", async () => {
+  const originalDocument = globalThis.document;
+  const modalCalls = [];
+  const rowButton = {
+    addEventListener(type, handler) {
+      if (type === "click") {
+        this.clickHandler = handler;
+      }
+    },
+    getAttribute(name) {
+      if (name === "data-battle-report-entry-index") {
+        return "0";
+      }
+      return null;
+    }
+  };
+  const backButton = {
+    addEventListener(type, handler) {
+      if (type === "click") {
+        this.clickHandler = handler;
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    let detailState = false;
+    globalThis.document = {
+      querySelector: (selector) =>
+        selector === "[data-battle-report-back]" && detailState ? backButton : null,
+      querySelectorAll: (selector) => {
+        if (selector === "[data-battle-report-entry-index]" && !detailState) {
+          return [rowButton];
+        }
+        return [];
+      }
+    };
+    app.profile = {
+      username: "GuestUser",
+      recentBattles: [
+        {
+          mode: "online",
+          result: "win",
+          opponentName: "HostUser",
+          opponentUsername: "HostUser",
+          completedAt: "2026-06-14T12:00:00.000Z",
+          rounds: 18,
+          warsEntered: 1
+        }
+      ]
+    };
+
+    app.showBattleReportModal = () => {
+      detailState = Number.isInteger(app.battleReportSelectedIndex) && app.battleReportSelectedIndex >= 0;
+      return AppController.prototype.showBattleReportModal.call(app);
+    };
+    app.showBattleReportModal();
+
+    assert.match(modalCalls.at(-1).bodyHtml, /data-battle-report-list="true"/);
+    await rowButton.clickHandler();
+
+    assert.equal(app.battleReportSelectedIndex, 0);
+    assert.match(modalCalls.at(-1).bodyHtml, /data-battle-report-detail="true"/);
+
+    await backButton.clickHandler();
+
+    assert.equal(app.battleReportSelectedIndex, null);
+    assert.match(modalCalls.at(-1).bodyHtml, /data-battle-report-list="true"/);
   } finally {
     globalThis.document = originalDocument;
   }

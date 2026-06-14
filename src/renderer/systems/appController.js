@@ -217,6 +217,7 @@ export class AppController {
     this.viewedProfileCloseAction = null;
     this.profileAchievementsExpanded = false;
     this.viewedProfileAchievementsExpanded = false;
+    this.battleReportSelectedIndex = null;
     this.passTimerId = null;
     this.passKeyHandler = null;
     this.navigationShortcutHandler = null;
@@ -9243,6 +9244,7 @@ export class AppController {
           });
         },
         openBattleReport: async () => {
+          this.battleReportSelectedIndex = null;
           this.showBattleReportModal();
         },
         back: () => this.showMenu()
@@ -9351,38 +9353,64 @@ export class AppController {
   }
 
   bindBattleReportModalControls() {
-    const opponentProfileButton =
-      globalThis.document?.querySelector?.("[data-battle-report-view-profile]") ?? null;
-    if (!opponentProfileButton) {
-      return;
+    const battleReportEntryButtons = Array.from(
+      globalThis.document?.querySelectorAll?.("[data-battle-report-entry-index]") ?? []
+    );
+    for (const battleReportEntryButton of battleReportEntryButtons) {
+      battleReportEntryButton.addEventListener("click", () => {
+        const selectedIndex = Number.parseInt(
+          String(battleReportEntryButton.getAttribute("data-battle-report-entry-index") ?? ""),
+          10
+        );
+        if (!Number.isInteger(selectedIndex) || selectedIndex < 0) {
+          return;
+        }
+
+        this.battleReportSelectedIndex = selectedIndex;
+        this.showBattleReportModal();
+      });
     }
 
-    opponentProfileButton.addEventListener("click", async () => {
-      const username = String(
-        opponentProfileButton.getAttribute("data-battle-report-view-profile") ?? ""
-      ).trim();
-      if (!username) {
-        return;
-      }
-
-      const previousSearchQuery = this.profileSearchQuery;
-      const previousSearchError = this.profileSearchError;
-      this.modalManager.hide();
-      await this.openViewedProfile(username, {
-        preserveAchievementVisibility: true,
-        onClose: async () => {
-          this.profileSearchQuery = previousSearchQuery;
-          this.profileSearchError = previousSearchError;
-          await this.showProfile({
-            preserveAchievementVisibility: true,
-            preserveModal: true,
-            profileOverride: this.profile,
-            skipAuthoritativeProfileRefresh: true
-          });
-          this.showBattleReportModal();
-        }
+    const battleReportBackButton =
+      globalThis.document?.querySelector?.("[data-battle-report-back]") ?? null;
+    if (battleReportBackButton) {
+      battleReportBackButton.addEventListener("click", () => {
+        this.battleReportSelectedIndex = null;
+        this.showBattleReportModal();
       });
-    });
+    }
+
+    const opponentProfileButtons = Array.from(
+      globalThis.document?.querySelectorAll?.("[data-battle-report-view-profile]") ?? []
+    );
+    for (const opponentProfileButton of opponentProfileButtons) {
+      opponentProfileButton.addEventListener("click", async () => {
+        const username = String(
+          opponentProfileButton.getAttribute("data-battle-report-view-profile") ?? ""
+        ).trim();
+        if (!username) {
+          return;
+        }
+
+        const previousSearchQuery = this.profileSearchQuery;
+        const previousSearchError = this.profileSearchError;
+        this.modalManager.hide();
+        await this.openViewedProfile(username, {
+          preserveAchievementVisibility: true,
+          onClose: async () => {
+            this.profileSearchQuery = previousSearchQuery;
+            this.profileSearchError = previousSearchError;
+            await this.showProfile({
+              preserveAchievementVisibility: true,
+              preserveModal: true,
+              profileOverride: this.profile,
+              skipAuthoritativeProfileRefresh: true
+            });
+            this.showBattleReportModal();
+          }
+        });
+      });
+    }
   }
 
   showViewedProfileModal(viewedProfile) {
@@ -9420,7 +9448,9 @@ export class AppController {
   showBattleReportModal() {
     this.modalManager.show({
       title: "Battle Report",
-      bodyHtml: profileScreen.renderBattleReportModalBody(this.profile ?? {}),
+      bodyHtml: profileScreen.renderBattleReportModalBody(this.profile ?? {}, {
+        selectedBattleIndex: this.battleReportSelectedIndex
+      }),
       modalClassName: "battle-report-modal",
       bodyClassName: "battle-report-modal-body",
       actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
