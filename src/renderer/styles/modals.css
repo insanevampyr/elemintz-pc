@@ -53,6 +53,25 @@
   margin: 0;
 }
 
+.battle-report-modal {
+  width: min(560px, 100%);
+}
+
+.battle-report-modal-body {
+  max-height: min(calc(100vh - 180px), 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.battle-report-modal-content {
+  display: grid;
+  gap: 12px;
+}
+
+.battle-report-modal-intro {
+  margin: 0;
+}
+
 .loadout-unlock-modal {
   display: grid;
   gap: 16px;

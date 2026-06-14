@@ -249,6 +249,7 @@ function createProfileScreenContext(overrides = {}) {
       bestWinStreak: 0,
       tokens: 0,
       supporterPass: false,
+      latestBattle: null,
       chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 },
       achievements: {},
       modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
@@ -296,6 +297,7 @@ function createProfileScreenContext(overrides = {}) {
       openMilestoneChest: () => {},
       openEpicChest: () => {},
       openLegendaryChest: () => {},
+      openBattleReport: () => {},
       searchProfiles: () => {},
       viewProfile: () => {},
       clearViewed: () => {},
@@ -5464,6 +5466,65 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.match(html, /data-preview-type="title"/);
   assert.doesNotMatch(html, /data-preview-type="badge"/);
   assert.match(html, /data-preview-description="Default cosmetic\."/);
+});
+
+test("ui: own profile shows a Battle Report button", () => {
+  const html = profileScreen.render(createProfileScreenContext());
+
+  assert.match(html, /data-profile-battle-report-btn="true"/);
+  assert.match(html, />Battle Report</);
+});
+
+test("ui: Battle Report modal shows an empty state when no latest battle exists", () => {
+  const html = profileScreen.renderBattleReportModalBody({
+    username: "ChestUser",
+    latestBattle: null
+  });
+
+  assert.match(html, /data-battle-report-empty="true">No battles recorded yet\.<\/p>/);
+});
+
+test("ui: Battle Report modal renders online latestBattle with opponent profile button", () => {
+  const html = profileScreen.renderBattleReportModalBody({
+    username: "ChestUser",
+    latestBattle: {
+      mode: "online",
+      result: "win",
+      opponentName: "HostUser",
+      opponentUsername: "HostUser",
+      opponentUserId: null,
+      completedAt: "2026-06-14T12:00:00.000Z",
+      rounds: 18,
+      warsEntered: 1
+    }
+  });
+
+  assert.match(html, />Online</);
+  assert.match(html, />Victory</);
+  assert.match(html, />2026-06-14 12:00 UTC</);
+  assert.match(html, /data-battle-report-view-profile="HostUser"/);
+  assert.match(html, /data-battle-report-opponent-link="true"/);
+  assert.match(html, />HostUser<\/button>/);
+});
+
+test("ui: Battle Report modal renders non-online latestBattle opponent as plain text only", () => {
+  const html = profileScreen.renderBattleReportModalBody({
+    username: "ChestUser",
+    latestBattle: {
+      mode: "featuredRival",
+      result: "loss",
+      rivalName: "Crownfire Duelist",
+      completedAt: "2026-06-14T14:00:00.000Z",
+      rounds: 3,
+      warsEntered: 3
+    }
+  });
+
+  assert.match(html, />Featured Rival</);
+  assert.match(html, />Defeat</);
+  assert.match(html, />Crownfire Duelist</);
+  assert.doesNotMatch(html, /data-battle-report-view-profile=/);
+  assert.doesNotMatch(html, /data-battle-report-opponent-link="true"/);
 });
 
 test("ui: profile screen renders safe fallback values for missing online and featured rival stats", () => {

@@ -4476,6 +4476,179 @@ test("appController: closing an opponent profile opened from completed online ma
   }
 });
 
+test("appController: profile Battle Report opens an online opponent through the existing viewed-profile path", async () => {
+  const originalDocument = globalThis.document;
+  const modalCalls = [];
+  let hideCalls = 0;
+  let capturedProfileOpen = null;
+  const battleReportButton = {
+    addEventListener(type, handler) {
+      if (type === "click") {
+        this.clickHandler = handler;
+      }
+    },
+    getAttribute(name) {
+      if (name === "data-battle-report-view-profile") {
+        return "HostUser";
+      }
+      return null;
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {
+        hideCalls += 1;
+      }
+    },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.document = {
+      querySelector: (selector) =>
+        selector === "[data-battle-report-view-profile]" ? battleReportButton : null
+    };
+    app.profile = {
+      username: "GuestUser",
+      latestBattle: {
+        mode: "online",
+        result: "win",
+        opponentName: "HostUser",
+        opponentUsername: "HostUser",
+        opponentUserId: null,
+        completedAt: "2026-06-14T12:00:00.000Z",
+        rounds: 18,
+        warsEntered: 1
+      }
+    };
+    app.openViewedProfile = async (username, options = {}) => {
+      capturedProfileOpen = {
+        username,
+        onClose: options.onClose
+      };
+      return true;
+    };
+
+    app.showBattleReportModal();
+
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Battle Report");
+    assert.match(modalCalls[0].bodyHtml, /data-battle-report-view-profile="HostUser"/);
+
+    await battleReportButton.clickHandler();
+
+    assert.equal(hideCalls, 1);
+    assert.equal(capturedProfileOpen?.username, "HostUser");
+    assert.equal(typeof capturedProfileOpen?.onClose, "function");
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test("appController: closing an opponent profile opened from Profile Battle Report returns to the battle report modal instead of own profile", async () => {
+  const originalDocument = globalThis.document;
+  const shownModals = [];
+  let hideCalls = 0;
+  let reopenBattleReportCalls = 0;
+  let showProfileCalls = 0;
+  let battleReportReturnAction = null;
+  const battleReportButton = {
+    addEventListener(type, handler) {
+      if (type === "click") {
+        this.clickHandler = handler;
+      }
+    },
+    getAttribute(name) {
+      if (name === "data-battle-report-view-profile") {
+        return "HostUser";
+      }
+      return null;
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => shownModals.push(payload),
+      hide: () => {
+        hideCalls += 1;
+      }
+    },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.document = {
+      querySelector: (selector) =>
+        selector === "[data-battle-report-view-profile]" ? battleReportButton : null,
+      getElementById: () => null
+    };
+    app.profile = {
+      username: "GuestUser",
+      latestBattle: {
+        mode: "online",
+        result: "win",
+        opponentName: "HostUser",
+        opponentUsername: "HostUser",
+        opponentUserId: null,
+        completedAt: "2026-06-14T12:00:00.000Z",
+        rounds: 18,
+        warsEntered: 1
+      }
+    };
+    app.showProfile = async () => {
+      showProfileCalls += 1;
+    };
+    app.showBattleReportModal = () => {
+      reopenBattleReportCalls += 1;
+    };
+    app.openViewedProfile = async (username, options = {}) => {
+      battleReportReturnAction = options.onClose;
+      app.viewedProfileUsername = username;
+      app.viewedProfileCloseAction = options.onClose;
+      return true;
+    };
+
+    app.showBattleReportModal = AppController.prototype.showBattleReportModal.bind(app);
+    app.showBattleReportModal();
+    await battleReportButton.clickHandler();
+
+    app.showBattleReportModal = () => {
+      reopenBattleReportCalls += 1;
+    };
+    app.showViewedProfileModal({
+      username: "HostUser",
+      title: "Initiate",
+      achievements: {},
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate",
+        background: "default_background"
+      }
+    });
+
+    assert.equal(typeof battleReportReturnAction, "function");
+    await shownModals.at(-1).actions[0].onClick();
+
+    assert.equal(hideCalls, 2);
+    assert.equal(app.viewedProfileUsername, null);
+    assert.equal(app.viewedProfileCloseAction, null);
+    assert.equal(showProfileCalls, 1);
+    assert.equal(reopenBattleReportCalls, 1);
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
 test("appController: online rematch request is single-flight and clears cleanly after failure", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];

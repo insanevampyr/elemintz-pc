@@ -9242,6 +9242,9 @@ export class AppController {
             skipAuthoritativeProfileRefresh: true
           });
         },
+        openBattleReport: async () => {
+          this.showBattleReportModal();
+        },
         back: () => this.showMenu()
       }
     });
@@ -9347,6 +9350,41 @@ export class AppController {
     });
   }
 
+  bindBattleReportModalControls() {
+    const opponentProfileButton =
+      globalThis.document?.querySelector?.("[data-battle-report-view-profile]") ?? null;
+    if (!opponentProfileButton) {
+      return;
+    }
+
+    opponentProfileButton.addEventListener("click", async () => {
+      const username = String(
+        opponentProfileButton.getAttribute("data-battle-report-view-profile") ?? ""
+      ).trim();
+      if (!username) {
+        return;
+      }
+
+      const previousSearchQuery = this.profileSearchQuery;
+      const previousSearchError = this.profileSearchError;
+      this.modalManager.hide();
+      await this.openViewedProfile(username, {
+        preserveAchievementVisibility: true,
+        onClose: async () => {
+          this.profileSearchQuery = previousSearchQuery;
+          this.profileSearchError = previousSearchError;
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            preserveModal: true,
+            profileOverride: this.profile,
+            skipAuthoritativeProfileRefresh: true
+          });
+          this.showBattleReportModal();
+        }
+      });
+    });
+  }
+
   showViewedProfileModal(viewedProfile) {
     if (!viewedProfile) {
       return;
@@ -9377,6 +9415,17 @@ export class AppController {
       ]
     });
     this.bindViewedProfileModalControls();
+  }
+
+  showBattleReportModal() {
+    this.modalManager.show({
+      title: "Battle Report",
+      bodyHtml: profileScreen.renderBattleReportModalBody(this.profile ?? {}),
+      modalClassName: "battle-report-modal",
+      bodyClassName: "battle-report-modal-body",
+      actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
+    });
+    this.bindBattleReportModalControls();
   }
 
   async showDailyChallenges() {

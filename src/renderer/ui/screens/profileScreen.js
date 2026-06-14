@@ -648,6 +648,157 @@ function renderStatList(items) {
   `;
 }
 
+function formatBattleReportMode(mode) {
+  switch (String(mode ?? "").trim()) {
+    case "online":
+      return "Online";
+    case "pve":
+      return "PvE";
+    case "localHotseat":
+      return "Local Hotseat";
+    case "gauntlet":
+      return "Gauntlet";
+    case "featuredRival":
+      return "Featured Rival";
+    default:
+      return "Unknown";
+  }
+}
+
+function formatBattleReportResult(result) {
+  switch (String(result ?? "").trim()) {
+    case "win":
+      return "Victory";
+    case "loss":
+      return "Defeat";
+    case "draw":
+      return "Draw";
+    default:
+      return "Unknown";
+  }
+}
+
+function formatBattleReportCompletedAt(completedAt) {
+  const parsed = new Date(completedAt);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(completedAt ?? "").trim() || "Unknown";
+  }
+
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
+  const hours = String(parsed.getUTCHours()).padStart(2, "0");
+  const minutes = String(parsed.getUTCMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+}
+
+function renderBattleReportIdentityRow(latestBattle = {}) {
+  const mode = String(latestBattle?.mode ?? "").trim();
+  const canViewOpponent =
+    mode === "online" && String(latestBattle?.opponentUsername ?? "").trim().length > 0;
+  const label = mode === "gauntlet" || mode === "featuredRival" ? "Rival" : "Opponent";
+  const name =
+    mode === "gauntlet" || mode === "featuredRival"
+      ? String(latestBattle?.rivalName ?? "").trim()
+      : String(latestBattle?.opponentName ?? "").trim();
+  const username = String(latestBattle?.opponentUsername ?? "").trim();
+  const buttonLabel = name || username;
+  const secondaryLabel = canViewOpponent && name && username && name !== username ? ` @${username}` : "";
+  const valueMarkup = canViewOpponent
+    ? `
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-battle-report-view-profile="${username}"
+          data-battle-report-opponent-link="true"
+        >${buttonLabel}</button>${secondaryLabel}
+      `
+    : `<strong class="profile-stat-value">${name || "Unknown"}</strong>`;
+
+  return `
+    <div class="profile-stat-row" data-battle-report-identity-row="true">
+      <span class="profile-stat-label">${label}</span>
+      ${valueMarkup}
+    </div>
+  `;
+}
+
+function renderBattleReportModalBody(profile = {}) {
+  const latestBattle = profile?.latestBattle;
+  if (!latestBattle || typeof latestBattle !== "object") {
+    return `
+      <div class="battle-report-modal-content stack-sm">
+        <p class="text-muted" data-battle-report-empty="true">No battles recorded yet.</p>
+      </div>
+    `;
+  }
+
+  const rows = [
+    {
+      label: "Mode",
+      value: formatBattleReportMode(latestBattle.mode)
+    },
+    {
+      label: "Result",
+      value: formatBattleReportResult(latestBattle.result)
+    },
+    {
+      label: "Completed",
+      value: formatBattleReportCompletedAt(latestBattle.completedAt)
+    }
+  ];
+
+  if (latestBattle.rounds != null) {
+    rows.push({
+      label: "Rounds",
+      value: Math.max(0, Number(latestBattle.rounds ?? 0) || 0)
+    });
+  }
+  if (latestBattle.warsEntered != null) {
+    rows.push({
+      label: "WARs Entered",
+      value: Math.max(0, Number(latestBattle.warsEntered ?? 0) || 0)
+    });
+  }
+
+  return `
+    <div class="battle-report-modal-content stack-sm" data-battle-report-modal="true">
+      <p class="text-muted battle-report-modal-intro">Latest completed battle</p>
+      <section class="profile-summary-card stack-sm">
+        <h3 class="section-title">Battle Report</h3>
+        <div class="profile-stat-list">
+          ${rows
+            .map(
+              (item) => `
+                <div class="profile-stat-row">
+                  <span class="profile-stat-label">${item.label}</span>
+                  <strong class="profile-stat-value">${item.value}</strong>
+                </div>
+              `
+            )
+            .join("")}
+          ${renderBattleReportIdentityRow(latestBattle)}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderBattleReportButton() {
+  return `
+    <section class="profile-summary-card stack-sm profile-battle-report-card">
+      <h3 class="section-title">Battle Report</h3>
+      <p class="text-muted">View your latest completed battle.</p>
+      <button
+        id="profile-battle-report-btn"
+        class="btn btn-secondary"
+        type="button"
+        data-profile-battle-report-btn="true"
+      >Battle Report</button>
+    </section>
+  `;
+}
+
 function renderModeStatsCard(title, stats = {}) {
   return `
     <section class="profile-mode-card stack-sm">
@@ -1021,6 +1172,7 @@ export const profileScreen = {
             searchError: context.searchError ?? "",
             searchResults
           })}
+          ${renderBattleReportButton()}
           ${renderProfileFlexPanels(profile, {
             titleIcon: profileTitleIcon
           })}
@@ -1099,6 +1251,10 @@ export const profileScreen = {
     if (profileAchievementsToggle && context.actions.toggleProfileAchievements) {
       profileAchievementsToggle.addEventListener("click", context.actions.toggleProfileAchievements);
     }
+    const battleReportButton = document.getElementById("profile-battle-report-btn");
+    if (battleReportButton && context.actions.openBattleReport) {
+      battleReportButton.addEventListener("click", context.actions.openBattleReport);
+    }
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {
       openBasicChestButton.addEventListener("click", context.actions.openBasicChest);
@@ -1137,6 +1293,7 @@ export const profileScreen = {
 };
 
 profileScreen.renderViewedProfileModalBody = renderViewedProfileModalBody;
+profileScreen.renderBattleReportModalBody = renderBattleReportModalBody;
 
 
 
