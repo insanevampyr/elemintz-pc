@@ -5447,7 +5447,10 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.match(html, />Mode Stats</);
   assert.match(html, />Featured Rival</);
   assert.match(html, />Gauntlet</);
-  assert.match(html, /Search Player/);
+  assert.match(html, /data-profile-dashboard="true"/);
+  assert.match(html, />SEARCH PLAYER</);
+  assert.match(html, />BATTLE REPORT</);
+  assert.match(html, /View your 5 most recent completed battles\./);
   assert.match(html, /View Rival/);
   assert.match(html, /Online PvP/);
   assert.match(html, /Featured Rival Wins/);
@@ -5474,6 +5477,7 @@ test("ui: own profile shows a Battle Report button", () => {
 
   assert.match(html, /data-profile-battle-report-btn="true"/);
   assert.match(html, />Battle Report</);
+  assert.match(html, /View your 5 most recent completed battles\./);
 });
 
 test("ui: Battle Report modal shows an empty state when no battle history exists", () => {
@@ -8441,7 +8445,7 @@ test("ui: profile achievements toggle keeps search and chest controls visible", 
     backgroundImage: "assets/EleMintzIcon.png"
   });
 
-  assert.match(html, /Search Player/);
+  assert.match(html, /SEARCH PLAYER/);
   assert.match(html, /View another player's profile\./);
   assert.match(html, /placeholder="Enter username"/);
   assert.match(html, />View Profile</);
@@ -8449,8 +8453,8 @@ test("ui: profile achievements toggle keeps search and chest controls visible", 
   assert.match(html, /View Rival/);
   assert.match(html, /Show Achievements/);
   assert.doesNotMatch(html, /First Flame/);
-  assert.ok(html.indexOf("Search Player") < html.indexOf("Overall Record"));
-  assert.ok(html.indexOf("Search Player") < html.indexOf("Achievements"));
+  assert.ok(html.indexOf("SEARCH PLAYER") < html.indexOf("Overall Record"));
+  assert.ok(html.indexOf("SEARCH PLAYER") < html.indexOf("Achievements"));
 });
 
 test("ui: viewed profile achievements default collapsed while keeping count visible", () => {
@@ -8681,7 +8685,7 @@ test("ui: appController opens searched profiles in a read-only modal instead of 
 
     assert.equal(shown.at(-1)?.screenId, "profile");
     const ownProfileHtml = profileScreen.render(shown.at(-1).context);
-    assert.match(ownProfileHtml, /Search Player/);
+    assert.match(ownProfileHtml, /SEARCH PLAYER/);
     assert.match(ownProfileHtml, /Reward Chests/);
     assert.doesNotMatch(ownProfileHtml, /Currency & Chests/);
     assert.doesNotMatch(ownProfileHtml, /Viewing: Rival/);
@@ -23419,7 +23423,7 @@ test("ui: own profile renders top Profile Overview panels near the top", () => {
   assert.match(html, /data-profile-flex-cardback="true"[^>]*data-hover-preview="true"[^>]*data-preview-type="cardBack"/);
   assert.match(html, /data-profile-flex-variant="fire"[\s\S]*data-hover-preview="true"[\s\S]*data-preview-type="elementCardVariant"/);
   assert.match(html, /data-preview-name="Neon Arcana Fire"/);
-  assert.match(html, /Search Player/);
+  assert.match(html, /SEARCH PLAYER/);
   assert.match(html, /Achievements \(/);
 });
 

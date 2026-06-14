@@ -1777,6 +1777,14 @@ code.online-active-meta-value {
   margin: 12px 0;
 }
 
+.profile-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 12px;
+  align-items: stretch;
+}
+
 .profile-summary-grid-viewed {
   margin-top: 10px;
 }
@@ -1792,8 +1800,25 @@ code.online-active-meta-value {
   margin-bottom: 6px;
 }
 
+.profile-dashboard-card {
+  height: 100%;
+}
+
+.profile-identity-card {
+  display: flex;
+  align-items: center;
+}
+
+.profile-identity-card .player-header {
+  width: 100%;
+}
+
 .profile-search-card {
   margin: 12px 0;
+}
+
+.profile-dashboard-grid .profile-search-card {
+  margin: 0;
 }
 
 .profile-search-helper {
@@ -2551,6 +2576,10 @@ code.online-active-meta-value {
   .achievement-grid-profile {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .profile-dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -2567,6 +2596,7 @@ code.online-active-meta-value {
   }
 
   .profile-flex-grid,
+  .profile-dashboard-grid,
   .profile-summary-grid,
   .profile-mode-grid {
     grid-template-columns: 1fr;

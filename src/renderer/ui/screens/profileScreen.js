@@ -888,15 +888,32 @@ function renderBattleReportModalBody(profile = {}, options = {}) {
 
 function renderBattleReportButton() {
   return `
-    <section class="profile-summary-card stack-sm profile-battle-report-card">
-      <h3 class="section-title">Battle Report</h3>
-      <p class="text-muted">View your latest completed battle.</p>
+    <section class="profile-summary-card stack-sm profile-battle-report-card profile-dashboard-card">
+      <h3 class="section-title">BATTLE REPORT</h3>
+      <p class="text-muted">View your 5 most recent completed battles.</p>
       <button
         id="profile-battle-report-btn"
         class="btn btn-secondary"
         type="button"
         data-profile-battle-report-btn="true"
       >Battle Report</button>
+    </section>
+  `;
+}
+
+function renderProfileIdentityCard({ username, avatarId, avatarSrc, title, titleId, titleIcon, badgeId, badgeSrc }) {
+  return `
+    <section class="profile-summary-card profile-dashboard-card profile-identity-card">
+      ${renderProfileIdentityHeader({
+        username,
+        avatarId,
+        avatarSrc,
+        title,
+        titleId,
+        titleIcon,
+        badgeId,
+        badgeSrc
+      })}
     </section>
   `;
 }
@@ -1072,8 +1089,8 @@ function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, tit
 
 function renderProfileSearchBlock({ searchQuery = "", searchResults = [], searchError = "" } = {}) {
   return `
-    <section class="profile-summary-card stack-sm profile-search-card">
-      <h3 class="section-title">Search Player</h3>
+    <section class="profile-summary-card stack-sm profile-search-card profile-dashboard-card">
+      <h3 class="section-title">SEARCH PLAYER</h3>
       <p class="text-muted profile-search-helper">View another player's profile.</p>
       <form id="profile-search-form" class="stack-sm">
         <label for="profile-search-input">Username</label>
@@ -1259,22 +1276,24 @@ export const profileScreen = {
         </div>
         <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage}')">
           <div class="panel themed-screen-panel">
-          ${renderProfileIdentityHeader({
-            username: profile.username,
-            avatarId: profile.equippedCosmetics?.avatar,
-            avatarSrc: playerAvatar,
-            title: equippedTitle,
-            titleId: profile.equippedCosmetics?.title ?? profile.title,
-            titleIcon: profileTitleIcon,
-            badgeId: profile.equippedCosmetics?.badge ?? "none",
-            badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
-          })}
-          ${renderProfileSearchBlock({
-            searchQuery: context.searchQuery ?? "",
-            searchError: context.searchError ?? "",
-            searchResults
-          })}
-          ${renderBattleReportButton()}
+          <div class="profile-dashboard-grid" data-profile-dashboard="true">
+            ${renderProfileIdentityCard({
+              username: profile.username,
+              avatarId: profile.equippedCosmetics?.avatar,
+              avatarSrc: playerAvatar,
+              title: equippedTitle,
+              titleId: profile.equippedCosmetics?.title ?? profile.title,
+              titleIcon: profileTitleIcon,
+              badgeId: profile.equippedCosmetics?.badge ?? "none",
+              badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
+            })}
+            ${renderProfileSearchBlock({
+              searchQuery: context.searchQuery ?? "",
+              searchError: context.searchError ?? "",
+              searchResults
+            })}
+            ${renderBattleReportButton()}
+          </div>
           ${renderProfileFlexPanels(profile, {
             titleIcon: profileTitleIcon
           })}
