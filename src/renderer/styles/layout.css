@@ -1807,10 +1807,71 @@ code.online-active-meta-value {
 .profile-identity-card {
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 18px 16px;
+  text-align: center;
 }
 
 .profile-identity-card .player-header {
   width: 100%;
+  margin: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.profile-identity-card .player-avatar {
+  width: 72px;
+  height: 72px;
+}
+
+.profile-identity-card .player-header > div {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.profile-identity-card .player-header h3 {
+  margin: 0;
+  font-size: 1.18rem;
+  line-height: 1.2;
+}
+
+.profile-identity-card .player-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.profile-dashboard-grid .profile-battle-report-card,
+.profile-dashboard-grid .profile-search-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 14px 16px;
+}
+
+.profile-dashboard-grid .profile-search-card form {
+  margin: 0;
+}
+
+.profile-dashboard-grid .profile-battle-report-card > .section-title,
+.profile-dashboard-grid .profile-search-card > .section-title {
+  margin-bottom: 0;
+}
+
+.profile-dashboard-grid .profile-battle-report-card > .text-muted,
+.profile-dashboard-grid .profile-search-card > .text-muted {
+  min-height: 2.4em;
+}
+
+.profile-dashboard-grid .profile-battle-report-card .btn,
+.profile-dashboard-grid .profile-search-card .btn {
+  justify-self: start;
 }
 
 .profile-search-card {
@@ -2600,6 +2661,15 @@ code.online-active-meta-value {
   .profile-summary-grid,
   .profile-mode-grid {
     grid-template-columns: 1fr;
+  }
+
+  .profile-identity-card {
+    padding: 16px 14px;
+  }
+
+  .profile-identity-card .player-avatar {
+    width: 64px;
+    height: 64px;
   }
 }
 .xp-breakdown-toast .reward-toast-icon,
