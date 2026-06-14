@@ -424,14 +424,6 @@ input[type="number"] {
   border-color: rgba(226, 126, 150, 0.34);
 }
 
-.match-taunt-controls {
-  justify-self: end;
-  display: grid;
-  gap: 8px;
-  pointer-events: auto;
-  justify-items: end;
-}
-
 .match-taunts-toggle-btn {
   min-width: 108px;
   justify-self: end;
