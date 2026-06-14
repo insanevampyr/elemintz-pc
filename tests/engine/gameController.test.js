@@ -4321,6 +4321,71 @@ test("appController: online rematch requests work for winner and loser across ho
   }
 });
 
+test("appController: completed online match can open the opponent public profile through the existing viewed-profile path", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  let hideCalls = 0;
+  const openedProfiles = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {
+        hideCalls += 1;
+      }
+    },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = { elemintz: { multiplayer: {} } };
+    app.username = "GuestUser";
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rematch: { hostReady: false, guestReady: false },
+        rewardSettlement: {
+          decision: {
+            participants: {
+              hostUsername: "HostUser",
+              guestUsername: "GuestUser"
+            }
+          },
+          summary: {
+            settledHostUsername: "HostUser",
+            settledGuestUsername: "GuestUser"
+          }
+        }
+      }
+    });
+    app.openViewedProfile = async (username) => {
+      openedProfiles.push(username);
+      return true;
+    };
+
+    app.renderOnlinePlayScreen();
+    const result = await shownScreens.at(-1).context.actions.viewOpponentProfile();
+
+    assert.equal(result, true);
+    assert.equal(hideCalls, 1);
+    assert.deepEqual(openedProfiles, ["HostUser"]);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: online rematch request is single-flight and clears cleanly after failure", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];

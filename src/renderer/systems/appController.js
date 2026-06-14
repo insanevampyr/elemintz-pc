@@ -6392,6 +6392,16 @@ export class AppController {
           this.renderOnlinePlayScreen();
           return rematchRequestPromise;
         },
+        viewOpponentProfile: async () => {
+          const opponentUsername = this.getOnlineOpponentProfileUsername(this.onlinePlayState);
+          if (!opponentUsername) {
+            return false;
+          }
+
+          this.modalManager.hide();
+          await this.openViewedProfile(opponentUsername, { preserveAchievementVisibility: true });
+          return true;
+        },
         back: async () => {
           if (window.elemintz?.multiplayer?.disconnect) {
             await window.elemintz.multiplayer.disconnect();
@@ -6923,6 +6933,45 @@ export class AppController {
       guestScore: Math.max(0, Number(state?.room?.guestScore ?? 0) || 0),
       winReason: String(state?.room?.winReason ?? "").trim().toLowerCase()
     };
+  }
+
+  getOnlineOpponentProfileUsername(state = this.onlinePlayState) {
+    const room = state?.room ?? null;
+    if (!room?.matchComplete) {
+      return null;
+    }
+
+    const localRole = this.getOnlineLocalRole(state);
+    const ownUsername = String(state?.session?.username ?? this.username ?? "").trim();
+    const decision = room?.rewardSettlement?.decision ?? null;
+    const summary = room?.rewardSettlement?.summary ?? null;
+    const hostUsername = String(
+      decision?.participants?.hostUsername ?? summary?.settledHostUsername ?? room?.host?.username ?? ""
+    ).trim();
+    const guestUsername = String(
+      decision?.participants?.guestUsername ?? summary?.settledGuestUsername ?? room?.guest?.username ?? ""
+    ).trim();
+
+    let opponentUsername = "";
+    if (localRole === "host") {
+      opponentUsername = guestUsername;
+    } else if (localRole === "guest") {
+      opponentUsername = hostUsername;
+    }
+
+    if (!opponentUsername && ownUsername) {
+      if (hostUsername === ownUsername) {
+        opponentUsername = guestUsername;
+      } else if (guestUsername === ownUsername) {
+        opponentUsername = hostUsername;
+      }
+    }
+
+    if (!opponentUsername || (ownUsername && opponentUsername === ownUsername)) {
+      return null;
+    }
+
+    return opponentUsername;
   }
 
   buildOnlineRoundSoundKey(perspective) {
@@ -9161,11 +9210,7 @@ export class AppController {
             return;
           }
 
-          this.profileSearchQuery = safeUsername;
-          this.profileSearchError = "";
-          this.viewedProfileUsername = safeUsername;
-          this.viewedProfileAchievementsExpanded = false;
-          await this.showProfile({ preserveAchievementVisibility: true });
+          await this.openViewedProfile(safeUsername, { preserveAchievementVisibility: true });
         },
         clearViewed: async () => {
           this.profileSearchError = "";
@@ -9192,6 +9237,20 @@ export class AppController {
   clearViewedProfileSelection() {
     this.viewedProfileUsername = null;
     this.viewedProfileAchievementsExpanded = false;
+  }
+
+  async openViewedProfile(username, { preserveAchievementVisibility = true } = {}) {
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      return false;
+    }
+
+    this.profileSearchQuery = safeUsername;
+    this.profileSearchError = "";
+    this.viewedProfileUsername = safeUsername;
+    this.viewedProfileAchievementsExpanded = false;
+    await this.showProfile({ preserveAchievementVisibility });
+    return true;
   }
 
   buildViewedProfileLookupMessage(username, error) {

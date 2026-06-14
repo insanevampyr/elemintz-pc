@@ -440,7 +440,7 @@ test("cosmetics: newly added water variant equips only water and persists across
   assert.equal(profile.equippedCosmetics.elementCardVariant.water, "wave_water_card");
 });
 
-test("cosmetics: Goldbound Relics store purchases succeed for avatar, title, card back, and the failing earth variant", async () => {
+test("cosmetics: Goldbound Relics normal store purchases exclude the limited card back while keeping the other approved items purchasable", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
@@ -456,16 +456,19 @@ test("cosmetics: Goldbound Relics store purchases succeed for avatar, title, car
     type: "title",
     cosmeticId: "title_goldbound"
   });
-  const cardBackPurchase = await state.buyStoreItem({
-    username: "GoldboundStoreUser",
-    type: "cardBack",
-    cosmeticId: "cardback_goldbound_relic"
-  });
   const earthVariantPurchase = await state.buyStoreItem({
     username: "GoldboundStoreUser",
     type: "elementCardVariant",
     cosmeticId: "earth_variant_goldbound_relics"
   });
+  await assert.rejects(
+    state.buyStoreItem({
+      username: "GoldboundStoreUser",
+      type: "cardBack",
+      cosmeticId: "cardback_goldbound_relic"
+    }),
+    /Store item not found for cardBack:cardback_goldbound_relic\./
+  );
 
   const profile = await state.profiles.getProfile("GoldboundStoreUser");
 
@@ -473,18 +476,16 @@ test("cosmetics: Goldbound Relics store purchases succeed for avatar, title, car
   assert.equal(avatarPurchase.purchase?.price, 900);
   assert.equal(titlePurchase.purchase?.status, "purchased");
   assert.equal(titlePurchase.purchase?.price, 500);
-  assert.equal(cardBackPurchase.purchase?.status, "purchased");
-  assert.equal(cardBackPurchase.purchase?.price, 800);
   assert.equal(earthVariantPurchase.purchase?.status, "purchased");
   assert.equal(earthVariantPurchase.purchase?.price, 450);
   assert.ok(profile.ownedCosmetics.avatar.includes("avatar_aurelian_archon"));
   assert.ok(profile.ownedCosmetics.title.includes("title_goldbound"));
-  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_goldbound_relic"));
+  assert.ok(!profile.ownedCosmetics.cardBack.includes("cardback_goldbound_relic"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_goldbound_relics"));
-  assert.equal(profile.tokens, 350);
+  assert.equal(profile.tokens, 1150);
 });
 
-test("cosmetics: Frostveil Court store purchases succeed for all approved items", async () => {
+test("cosmetics: Frostveil Court normal store purchases exclude the limited card back while keeping the other approved items purchasable", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
@@ -493,7 +494,6 @@ test("cosmetics: Frostveil Court store purchases succeed for all approved items"
   const purchaseTargets = [
     { type: "avatar", cosmeticId: "avatar_frostveil_heir", expectedPrice: 900 },
     { type: "title", cosmeticId: "title_shiverborne", expectedPrice: 500 },
-    { type: "cardBack", cosmeticId: "cardback_glacier_sigil", expectedPrice: 800 },
     { type: "elementCardVariant", cosmeticId: "fire_variant_aurora_flare", expectedPrice: 450 },
     { type: "elementCardVariant", cosmeticId: "earth_variant_icebound_crag", expectedPrice: 450 },
     { type: "elementCardVariant", cosmeticId: "wind_variant_sleet_spiral", expectedPrice: 450 },
@@ -509,19 +509,27 @@ test("cosmetics: Frostveil Court store purchases succeed for all approved items"
     assert.equal(response.purchase?.status, "purchased");
     assert.equal(response.purchase?.price, target.expectedPrice);
   }
+  await assert.rejects(
+    state.buyStoreItem({
+      username: "FrostveilStoreUser",
+      type: "cardBack",
+      cosmeticId: "cardback_glacier_sigil"
+    }),
+    /Store item not found for cardBack:cardback_glacier_sigil\./
+  );
 
   const profile = await state.profiles.getProfile("FrostveilStoreUser");
   assert.ok(profile.ownedCosmetics.avatar.includes("avatar_frostveil_heir"));
   assert.ok(profile.ownedCosmetics.title.includes("title_shiverborne"));
-  assert.ok(profile.ownedCosmetics.cardBack.includes("cardback_glacier_sigil"));
+  assert.ok(!profile.ownedCosmetics.cardBack.includes("cardback_glacier_sigil"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("fire_variant_aurora_flare"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_icebound_crag"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_sleet_spiral"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_frostbloom"));
-  assert.equal(profile.tokens, 1000);
+  assert.equal(profile.tokens, 1800);
 });
 
-test("cosmetics: authoritative store lookup accepts composite Frostveil store keys without creating duplicate ids", async () => {
+test("cosmetics: authoritative store lookup accepts composite Frostveil store keys while the limited card back stays excluded from the normal store", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
@@ -530,7 +538,6 @@ test("cosmetics: authoritative store lookup accepts composite Frostveil store ke
   const purchaseTargets = [
     "avatar:avatar_frostveil_heir",
     "title:title_shiverborne",
-    "cardBack:cardback_glacier_sigil",
     "elementCardVariant:fire_variant_aurora_flare",
     "elementCardVariant:earth_variant_icebound_crag",
     "elementCardVariant:wind_variant_sleet_spiral",
@@ -544,11 +551,18 @@ test("cosmetics: authoritative store lookup accepts composite Frostveil store ke
     });
     assert.equal(response.purchase?.status, "purchased", `${compositeKey} should purchase cleanly`);
   }
+  await assert.rejects(
+    state.buyStoreItem({
+      username: "FrostveilCompositeLookupUser",
+      type: "cardBack:cardback_glacier_sigil"
+    }),
+    /Store item not found for cardBack:cardback_glacier_sigil\./
+  );
 
   const profile = await state.profiles.getProfile("FrostveilCompositeLookupUser");
   assert.equal(profile.ownedCosmetics.avatar.filter((item) => item === "avatar_frostveil_heir").length, 1);
   assert.equal(profile.ownedCosmetics.title.filter((item) => item === "title_shiverborne").length, 1);
-  assert.equal(profile.ownedCosmetics.cardBack.filter((item) => item === "cardback_glacier_sigil").length, 1);
+  assert.equal(profile.ownedCosmetics.cardBack.filter((item) => item === "cardback_glacier_sigil").length, 0);
   assert.equal(
     profile.ownedCosmetics.elementCardVariant.filter((item) => item === "fire_variant_aurora_flare").length,
     1
@@ -740,7 +754,7 @@ test("cosmetics: Goldbound Relics entries keep exact metadata and collection map
   assert.equal(cardBack.isNew, false);
   assert.equal(cardBack.releaseTag, "goldbound_relics_01");
   assert.equal(cardBack.collection, "Goldbound Relics");
-  assert.equal(cardBack.rotationOnly ?? false, false);
+  assert.equal(cardBack.rotationOnly ?? false, true);
   assert.equal(cardBack.storeHidden ?? false, false);
 
   for (const [id, name, element, image] of GOLDBOUND_RELICS_VARIANT_DEFINITIONS) {
@@ -806,7 +820,7 @@ test("cosmetics: Frostveil Court entries keep exact metadata and collection mapp
   assert.equal(cardBack.isNew, false);
   assert.equal(cardBack.releaseTag, "frostveil_court_2026_05");
   assert.equal(cardBack.collection, "Frostveil Court");
-  assert.equal(cardBack.rotationOnly ?? false, false);
+  assert.equal(cardBack.rotationOnly ?? false, true);
   assert.equal(cardBack.storeHidden ?? false, false);
 
   for (const [id, name, element, image] of FROSTVEIL_COURT_VARIANT_DEFINITIONS) {

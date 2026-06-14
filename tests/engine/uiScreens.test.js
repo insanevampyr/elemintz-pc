@@ -15968,6 +15968,65 @@ test("ui: online play screen shows waiting for opponent after the local player r
   assert.match(html, /id="online-ready-rematch-btn" class="btn" disabled/);
 });
 
+test("ui: online match-complete view shows View Opponent Profile only when valid opponent lookup data exists", () => {
+  const visibleHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1", username: "HostRewardUser" },
+        guest: { socketId: "guest-1", username: "GuestRewardUser" },
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rematch: { hostReady: false, guestReady: false },
+        rewardSettlement: {
+          decision: {
+            participants: {
+              hostUsername: "HostRewardUser",
+              guestUsername: "GuestRewardUser"
+            }
+          },
+          summary: {
+            settledHostUsername: "HostRewardUser",
+            settledGuestUsername: "GuestRewardUser"
+          }
+        }
+      }
+    },
+    actions: {}
+  });
+  const hiddenHtml = onlinePlayScreen.render({
+    backgroundImage: "assets/EleMintzIcon.png",
+    username: "GuestRewardUser",
+    joinCode: "ABC123",
+    multiplayer: {
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1", username: "GuestRewardUser" },
+        guest: { socketId: "guest-1", username: "GuestRewardUser" },
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rematch: { hostReady: false, guestReady: false }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(visibleHtml, /id="online-view-opponent-profile-btn"/);
+  assert.match(visibleHtml, />View Opponent Profile</);
+  assert.doesNotMatch(hiddenHtml, /id="online-view-opponent-profile-btn"/);
+});
+
 test("ui: online play screen reward summary reflects an actual chest grant", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",

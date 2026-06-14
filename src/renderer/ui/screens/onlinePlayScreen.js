@@ -1068,6 +1068,29 @@ function deriveMatchCompleteView(context) {
       : roleLabel === "Guest"
         ? Boolean(room.rematch?.guestReady)
         : false;
+  const ownUsername = String(context.username ?? "").trim();
+  const hostUsername = String(
+    room.rewardSettlement?.decision?.participants?.hostUsername ??
+    room.rewardSettlement?.summary?.settledHostUsername ??
+    room.host?.username ??
+    ""
+  ).trim();
+  const guestUsername = String(
+    room.rewardSettlement?.decision?.participants?.guestUsername ??
+    room.rewardSettlement?.summary?.settledGuestUsername ??
+    room.guest?.username ??
+    ""
+  ).trim();
+  const opponentProfileUsername =
+    roleLabel === "Host"
+      ? guestUsername
+      : roleLabel === "Guest"
+        ? hostUsername
+        : hostUsername && hostUsername !== ownUsername
+          ? hostUsername
+          : guestUsername && guestUsername !== ownUsername
+            ? guestUsername
+            : "";
 
   return {
     winnerLabel: perspectiveWinner,
@@ -1077,7 +1100,11 @@ function deriveMatchCompleteView(context) {
     ownReady,
     rematchRequestInFlight,
     rewardDecision: room.rewardSettlement?.decision ?? null,
-    roleLabel
+    roleLabel,
+    opponentProfileUsername:
+      opponentProfileUsername && opponentProfileUsername !== ownUsername
+        ? opponentProfileUsername
+        : null
   };
 }
 
@@ -1469,6 +1496,11 @@ export const onlinePlayScreen = {
                         : ""
                     }
                     ${roomLifecycle?.rematchUnavailable ? "<p><strong>Rematch Unavailable</strong></p>" : ""}
+                    ${
+                      matchComplete.opponentProfileUsername
+                        ? '<button id="online-view-opponent-profile-btn" class="btn">View Opponent Profile</button>'
+                        : ""
+                    }
                     <button id="online-ready-rematch-btn" class="btn" ${(matchComplete.ownReady || matchComplete.rematchRequestInFlight || roomLifecycle?.rematchUnavailable) ? "disabled" : ""}>${matchComplete.rematchRequestInFlight ? "Sending..." : matchComplete.ownReady ? "Waiting for Opponent..." : "Ready for Rematch"}</button>
                   </section>
                 `
@@ -1491,6 +1523,7 @@ export const onlinePlayScreen = {
     document.getElementById("online-create-room-btn")?.addEventListener("click", context.actions.createRoom);
     document.getElementById("online-play-back-btn")?.addEventListener("click", context.actions.back);
     document.getElementById("online-ready-rematch-btn")?.addEventListener("click", context.actions.readyRematch);
+    document.getElementById("online-view-opponent-profile-btn")?.addEventListener("click", context.actions.viewOpponentProfile);
     document.getElementById("online-refresh-public-rooms-btn")?.addEventListener("click", context.actions.browsePublicRooms);
     document.getElementById("online-room-visibility-private-btn")?.addEventListener("click", () =>
       context.actions.setCreateRoomVisibility?.("private")
