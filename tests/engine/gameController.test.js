@@ -4370,8 +4370,11 @@ test("appController: completed online match can open the opponent public profile
         }
       }
     });
-    app.openViewedProfile = async (username) => {
-      openedProfiles.push(username);
+    app.openViewedProfile = async (username, options = {}) => {
+      openedProfiles.push({
+        username,
+        hasOnClose: typeof options.onClose === "function"
+      });
       return true;
     };
 
@@ -4380,7 +4383,94 @@ test("appController: completed online match can open the opponent public profile
 
     assert.equal(result, true);
     assert.equal(hideCalls, 1);
-    assert.deepEqual(openedProfiles, ["HostUser"]);
+    assert.deepEqual(openedProfiles, [{ username: "HostUser", hasOnClose: true }]);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: closing an opponent profile opened from completed online match returns to online wrap-up instead of own profile", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+  const shownModals = [];
+  let hideCalls = 0;
+  let showProfileCalls = 0;
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: {
+      show: (payload) => shownModals.push(payload),
+      hide: () => {
+        hideCalls += 1;
+      }
+    },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    globalThis.window = { elemintz: { multiplayer: {} } };
+    app.username = "GuestUser";
+    app.onlinePlayState = app.normalizeOnlinePlayState({
+      connectionStatus: "connected",
+      socketId: "guest-1",
+      room: {
+        roomCode: "ABC123",
+        status: "full",
+        host: { socketId: "host-1", username: "HostUser" },
+        guest: { socketId: "guest-1", username: "GuestUser" },
+        matchComplete: true,
+        winner: "host",
+        winReason: "hand_exhaustion",
+        rematch: { hostReady: false, guestReady: false },
+        rewardSettlement: {
+          decision: {
+            participants: {
+              hostUsername: "HostUser",
+              guestUsername: "GuestUser"
+            }
+          },
+          summary: {
+            settledHostUsername: "HostUser",
+            settledGuestUsername: "GuestUser"
+          }
+        }
+      }
+    });
+
+    app.showProfile = async () => {
+      showProfileCalls += 1;
+    };
+    app.viewedProfileUsername = "HostUser";
+    app.viewedProfileCloseAction = async () => {
+      await app.renderOnlinePlayScreen();
+    };
+
+    app.showViewedProfileModal({
+      username: "HostUser",
+      title: "Initiate",
+      achievements: {},
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate",
+        background: "default_background"
+      }
+    });
+
+    assert.equal(shownModals.length, 1);
+
+    await shownModals[0].actions[0].onClick();
+
+    assert.equal(hideCalls, 1);
+    assert.equal(app.viewedProfileUsername, null);
+    assert.equal(app.viewedProfileCloseAction, null);
+    assert.equal(showProfileCalls, 0);
+    assert.equal(shownScreens.at(-1)?.name, "onlinePlay");
+    assert.equal(shownScreens.at(-1)?.context?.multiplayer?.room?.matchComplete, true);
+    assert.equal(typeof shownScreens.at(-1)?.context?.actions?.readyRematch, "function");
+    assert.equal(typeof shownScreens.at(-1)?.context?.actions?.back, "function");
   } finally {
     globalThis.window = originalWindow;
   }

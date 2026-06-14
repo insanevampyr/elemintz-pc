@@ -214,6 +214,7 @@ export class AppController {
     this.profileSearchQuery = "";
     this.profileSearchError = "";
     this.viewedProfileUsername = null;
+    this.viewedProfileCloseAction = null;
     this.profileAchievementsExpanded = false;
     this.viewedProfileAchievementsExpanded = false;
     this.passTimerId = null;
@@ -6399,7 +6400,12 @@ export class AppController {
           }
 
           this.modalManager.hide();
-          await this.openViewedProfile(opponentUsername, { preserveAchievementVisibility: true });
+          await this.openViewedProfile(opponentUsername, {
+            preserveAchievementVisibility: true,
+            onClose: async () => {
+              await this.renderOnlinePlayScreen();
+            }
+          });
           return true;
         },
         back: async () => {
@@ -9236,10 +9242,14 @@ export class AppController {
 
   clearViewedProfileSelection() {
     this.viewedProfileUsername = null;
+    this.viewedProfileCloseAction = null;
     this.viewedProfileAchievementsExpanded = false;
   }
 
-  async openViewedProfile(username, { preserveAchievementVisibility = true } = {}) {
+  async openViewedProfile(
+    username,
+    { preserveAchievementVisibility = true, onClose = null } = {}
+  ) {
     const safeUsername = String(username ?? "").trim();
     if (!safeUsername) {
       return false;
@@ -9248,6 +9258,7 @@ export class AppController {
     this.profileSearchQuery = safeUsername;
     this.profileSearchError = "";
     this.viewedProfileUsername = safeUsername;
+    this.viewedProfileCloseAction = typeof onClose === "function" ? onClose : null;
     this.viewedProfileAchievementsExpanded = false;
     await this.showProfile({ preserveAchievementVisibility });
     return true;
@@ -9329,6 +9340,8 @@ export class AppController {
       return;
     }
 
+    const closeAction = this.viewedProfileCloseAction;
+
     this.modalManager.show({
       title: `Viewing: ${viewedProfile.username}`,
       bodyHtml: profileScreen.renderViewedProfileModalBody(viewedProfile, {
@@ -9342,6 +9355,10 @@ export class AppController {
           onClick: async () => {
             this.modalManager.hide();
             this.clearViewedProfileSelection();
+            if (typeof closeAction === "function") {
+              await closeAction();
+              return;
+            }
             await this.showProfile({ preserveAchievementVisibility: true, preserveModal: true });
           }
         }
