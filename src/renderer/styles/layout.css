@@ -1822,8 +1822,8 @@ code.online-active-meta-value {
 }
 
 .profile-identity-card .player-avatar {
-  width: 72px;
-  height: 72px;
+  width: 92px;
+  height: 92px;
 }
 
 .profile-identity-card .player-header > div {
@@ -1834,7 +1834,8 @@ code.online-active-meta-value {
 
 .profile-identity-card .player-header h3 {
   margin: 0;
-  font-size: 1.18rem;
+  font-size: 1.28rem;
+  font-weight: 800;
   line-height: 1.2;
 }
 
@@ -1844,7 +1845,7 @@ code.online-active-meta-value {
   justify-content: center;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .profile-dashboard-grid .profile-battle-report-card,
@@ -2668,8 +2669,8 @@ code.online-active-meta-value {
   }
 
   .profile-identity-card .player-avatar {
-    width: 64px;
-    height: 64px;
+    width: 78px;
+    height: 78px;
   }
 }
 .xp-breakdown-toast .reward-toast-icon,
