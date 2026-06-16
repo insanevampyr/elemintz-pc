@@ -4,50 +4,50 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
+import { COSMETIC_CATALOG, getBaseCosmeticPrice } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
 const PERSONALITY_DROP_TITLE_DEFINITIONS = Object.freeze([
-  ["title_chaos_gremlin", "Chaos Gremlin", "Common", 100, "titles/title_chaos_gremlin.png"],
-  ["title_soft_doom", "Soft Doom", "Common", 100, "titles/title_soft_doom.png"],
-  ["title_pretty_problem", "Pretty Problem", "Common", 100, "titles/title_pretty_problem.png"],
-  ["title_silent_menace", "Silent Menace", "Rare", 250, "titles/title_silent_menace.png"],
-  ["title_drama_magnet", "Drama Magnet", "Rare", 250, "titles/title_drama_magnet.png"],
-  ["title_neon_rebel", "Neon Rebel", "Rare", 250, "titles/title_neon_rebel.png"],
-  ["title_velvet_villain", "Velvet Villain", "Epic", 500, "titles/title_velvet_villain.png"],
-  ["title_void_doll", "Void Doll", "Epic", 500, "titles/title_void_doll.png"],
-  ["title_glitch_royalty", "Glitch Royalty", "Epic", 500, "titles/title_glitch_royalty.png"],
-  ["title_crownless_king", "Crownless King", "Legendary", 850, "titles/title_crownless_king.png"],
-  ["title_divine_menace", "Divine Menace", "Legendary", 850, "titles/title_divine_menace.png"],
-  ["title_cataclysm_icon", "Cataclysm Icon", "Legendary", 850, "titles/title_cataclysm_icon.png"]
+  ["title_chaos_gremlin", "Chaos Gremlin", "Common", 150, "titles/title_chaos_gremlin.png"],
+  ["title_soft_doom", "Soft Doom", "Common", 150, "titles/title_soft_doom.png"],
+  ["title_pretty_problem", "Pretty Problem", "Common", 150, "titles/title_pretty_problem.png"],
+  ["title_silent_menace", "Silent Menace", "Rare", 350, "titles/title_silent_menace.png"],
+  ["title_drama_magnet", "Drama Magnet", "Rare", 350, "titles/title_drama_magnet.png"],
+  ["title_neon_rebel", "Neon Rebel", "Rare", 350, "titles/title_neon_rebel.png"],
+  ["title_velvet_villain", "Velvet Villain", "Epic", 700, "titles/title_velvet_villain.png"],
+  ["title_void_doll", "Void Doll", "Epic", 700, "titles/title_void_doll.png"],
+  ["title_glitch_royalty", "Glitch Royalty", "Epic", 700, "titles/title_glitch_royalty.png"],
+  ["title_crownless_king", "Crownless King", "Legendary", 1100, "titles/title_crownless_king.png"],
+  ["title_divine_menace", "Divine Menace", "Legendary", 1100, "titles/title_divine_menace.png"],
+  ["title_cataclysm_icon", "Cataclysm Icon", "Legendary", 1100, "titles/title_cataclysm_icon.png"]
 ]);
 
 const PERSONALITY_DROP_AVATAR_DEFINITIONS = Object.freeze([
-  ["avatar_smirk_ember", "Smirk Ember", "Common", 150, "avatars/avatar_smirk_ember.png"],
-  ["avatar_bubble_brat", "Bubble Brat", "Common", 150, "avatars/avatar_bubble_brat.png"],
-  ["avatar_moss_mood", "Moss Mood", "Common", 150, "avatars/avatar_moss_mood.png"],
-  ["avatar_neon_puff", "Neon Puff", "Common", 150, "avatars/avatar_neon_puff.png"],
-  ["avatar_stone_cold_cutie", "Stone Cold Cutie", "Rare", 300, "avatars/avatar_stone_cold_cutie.png"],
-  ["avatar_storm_brat", "Storm Brat", "Rare", 300, "avatars/avatar_storm_brat.png"],
-  ["avatar_tidal_diva", "Tidal Diva", "Rare", 300, "avatars/avatar_tidal_diva.png"],
-  ["avatar_ashen_trickster", "Ashen Trickster", "Rare", 300, "avatars/avatar_ashen_trickster.png"],
-  ["avatar_corrupt_cherub", "Corrupt Cherub", "Epic", 600, "avatars/avatar_corrupt_cherub.png"],
-  ["avatar_void_glam", "Void Glam", "Epic", 600, "avatars/avatar_void_glam.png"],
-  ["avatar_riot_halo", "Riot Halo", "Epic", 600, "avatars/avatar_riot_halo.png"],
-  ["avatar_golden_menace", "Golden Menace", "Legendary", 900, "avatars/avatar_golden_menace.png"],
-  ["avatar_chaos_monarch", "Chaos Monarch", "Legendary", 900, "avatars/avatar_chaos_monarch.png"],
-  ["avatar_rose_riot", "Rose Riot", "Legendary", 900, "avatars/avatar_rose_riot.png"]
+  ["avatar_smirk_ember", "Smirk Ember", "Common", 200, "avatars/avatar_smirk_ember.png"],
+  ["avatar_bubble_brat", "Bubble Brat", "Common", 200, "avatars/avatar_bubble_brat.png"],
+  ["avatar_moss_mood", "Moss Mood", "Common", 200, "avatars/avatar_moss_mood.png"],
+  ["avatar_neon_puff", "Neon Puff", "Common", 200, "avatars/avatar_neon_puff.png"],
+  ["avatar_stone_cold_cutie", "Stone Cold Cutie", "Rare", 400, "avatars/avatar_stone_cold_cutie.png"],
+  ["avatar_storm_brat", "Storm Brat", "Rare", 400, "avatars/avatar_storm_brat.png"],
+  ["avatar_tidal_diva", "Tidal Diva", "Rare", 400, "avatars/avatar_tidal_diva.png"],
+  ["avatar_ashen_trickster", "Ashen Trickster", "Rare", 400, "avatars/avatar_ashen_trickster.png"],
+  ["avatar_corrupt_cherub", "Corrupt Cherub", "Epic", 800, "avatars/avatar_corrupt_cherub.png"],
+  ["avatar_void_glam", "Void Glam", "Epic", 800, "avatars/avatar_void_glam.png"],
+  ["avatar_riot_halo", "Riot Halo", "Epic", 800, "avatars/avatar_riot_halo.png"],
+  ["avatar_golden_menace", "Golden Menace", "Legendary", 1200, "avatars/avatar_golden_menace.png"],
+  ["avatar_chaos_monarch", "Chaos Monarch", "Legendary", 1200, "avatars/avatar_chaos_monarch.png"],
+  ["avatar_rose_riot", "Rose Riot", "Legendary", 1200, "avatars/avatar_rose_riot.png"]
 ]);
 
 const NEON_ARCANA_TITLE_DEFINITIONS = Object.freeze([
-  ["title_spellwired", "Spellwired", "Legendary", 850, "titles/title_spellwired.png"]
+  ["title_spellwired", "Spellwired", "Legendary", 1100, "titles/title_spellwired.png"]
 ]);
 
 const NEON_ARCANA_AVATAR_DEFINITIONS = Object.freeze([
-  ["avatar_neon_pyre_entity", "Neon Pyre Entity", "Epic", 600, "avatars/avatar_neon_pyre_entity.png"],
-  ["avatar_neon_tide_entity", "Neon Tide Entity", "Epic", 600, "avatars/avatar_neon_tide_entity.png"],
-  ["avatar_neon_stone_entity", "Neon Stone Entity", "Epic", 600, "avatars/avatar_neon_stone_entity.png"],
-  ["avatar_neon_gale_entity", "Neon Gale Entity", "Epic", 600, "avatars/avatar_neon_gale_entity.png"]
+  ["avatar_neon_pyre_entity", "Neon Pyre Entity", "Epic", 800, "avatars/avatar_neon_pyre_entity.png"],
+  ["avatar_neon_tide_entity", "Neon Tide Entity", "Epic", 800, "avatars/avatar_neon_tide_entity.png"],
+  ["avatar_neon_stone_entity", "Neon Stone Entity", "Epic", 800, "avatars/avatar_neon_stone_entity.png"],
+  ["avatar_neon_gale_entity", "Neon Gale Entity", "Epic", 800, "avatars/avatar_neon_gale_entity.png"]
 ]);
 
 const NEON_ARCANA_VARIANT_DEFINITIONS = Object.freeze([
@@ -86,17 +86,17 @@ const LYCAN_POWER_VARIANT_DEFINITIONS = Object.freeze([
 ]);
 
 const ELEMENTAL_STREET_AVATAR_DEFINITIONS = Object.freeze([
-  ["avatar_fire_street_duelist", "Fire Street Duelist", "Common", 150, "avatars/avatar_fire_street_duelist.png"],
-  ["avatar_water_street_duelist", "Water Street Duelist", "Common", 150, "avatars/avatar_water_street_duelist.png"],
-  ["avatar_earth_street_duelist", "Earth Street Duelist", "Common", 150, "avatars/avatar_earth_street_duelist.png"],
-  ["avatar_wind_street_duelist", "Wind Street Duelist", "Common", 150, "avatars/avatar_wind_street_duelist.png"]
+  ["avatar_fire_street_duelist", "Fire Street Duelist", "Common", 200, "avatars/avatar_fire_street_duelist.png"],
+  ["avatar_water_street_duelist", "Water Street Duelist", "Common", 200, "avatars/avatar_water_street_duelist.png"],
+  ["avatar_earth_street_duelist", "Earth Street Duelist", "Common", 200, "avatars/avatar_earth_street_duelist.png"],
+  ["avatar_wind_street_duelist", "Wind Street Duelist", "Common", 200, "avatars/avatar_wind_street_duelist.png"]
 ]);
 
 const ELEMENTAL_STREET_TITLE_DEFINITIONS = Object.freeze([
-  ["title_spark", "Spark", "Common", 100, "titles/title_spark.png"],
-  ["title_drifter", "Drifter", "Common", 100, "titles/title_drifter.png"],
-  ["title_stonehand", "Stonehand", "Common", 100, "titles/title_stonehand.png"],
-  ["title_mistborn", "Mistborn", "Common", 100, "titles/title_mistborn.png"]
+  ["title_spark", "Spark", "Common", 150, "titles/title_spark.png"],
+  ["title_drifter", "Drifter", "Common", 150, "titles/title_drifter.png"],
+  ["title_stonehand", "Stonehand", "Common", 150, "titles/title_stonehand.png"],
+  ["title_mistborn", "Mistborn", "Common", 150, "titles/title_mistborn.png"]
 ]);
 
 const ELEMENTAL_STREET_VARIANT_DEFINITIONS = Object.freeze([
@@ -148,6 +148,22 @@ function buildCompletedMatch({
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-cosmetics-"));
 }
+
+test("cosmetics: normal purchasable store cosmetics use centralized base rarity pricing", () => {
+  for (const type of ["avatar", "title", "cardBack", "elementCardVariant", "background"]) {
+    for (const item of COSMETIC_CATALOG[type] ?? []) {
+      if (!item.purchasable) {
+        continue;
+      }
+
+      assert.equal(
+        item.price,
+        getBaseCosmeticPrice(type, item.rarity),
+        `${type}:${item.id} should match centralized ${item.rarity} pricing`
+      );
+    }
+  }
+});
 
 test("cosmetics: new profile has default owned and equipped cosmetics", async () => {
   const dataDir = await createTempDataDir();
@@ -473,16 +489,16 @@ test("cosmetics: Goldbound Relics normal store purchases exclude the limited car
   const profile = await state.profiles.getProfile("GoldboundStoreUser");
 
   assert.equal(avatarPurchase.purchase?.status, "purchased");
-  assert.equal(avatarPurchase.purchase?.price, 900);
+  assert.equal(avatarPurchase.purchase?.price, 1200);
   assert.equal(titlePurchase.purchase?.status, "purchased");
-  assert.equal(titlePurchase.purchase?.price, 500);
+  assert.equal(titlePurchase.purchase?.price, 700);
   assert.equal(earthVariantPurchase.purchase?.status, "purchased");
-  assert.equal(earthVariantPurchase.purchase?.price, 450);
+  assert.equal(earthVariantPurchase.purchase?.price, 650);
   assert.ok(profile.ownedCosmetics.avatar.includes("avatar_aurelian_archon"));
   assert.ok(profile.ownedCosmetics.title.includes("title_goldbound"));
   assert.ok(!profile.ownedCosmetics.cardBack.includes("cardback_goldbound_relic"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_goldbound_relics"));
-  assert.equal(profile.tokens, 1150);
+  assert.equal(profile.tokens, 450);
 });
 
 test("cosmetics: Frostveil Court normal store purchases exclude the limited card back while keeping the other approved items purchasable", async () => {
@@ -492,12 +508,12 @@ test("cosmetics: Frostveil Court normal store purchases exclude the limited card
   await state.profiles.updateProfile("FrostveilStoreUser", { tokens: 5000 });
 
   const purchaseTargets = [
-    { type: "avatar", cosmeticId: "avatar_frostveil_heir", expectedPrice: 900 },
-    { type: "title", cosmeticId: "title_shiverborne", expectedPrice: 500 },
-    { type: "elementCardVariant", cosmeticId: "fire_variant_aurora_flare", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "earth_variant_icebound_crag", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "wind_variant_sleet_spiral", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "water_variant_frostbloom", expectedPrice: 450 }
+    { type: "avatar", cosmeticId: "avatar_frostveil_heir", expectedPrice: 1200 },
+    { type: "title", cosmeticId: "title_shiverborne", expectedPrice: 700 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_aurora_flare", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_icebound_crag", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_sleet_spiral", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_frostbloom", expectedPrice: 650 }
   ];
 
   for (const target of purchaseTargets) {
@@ -526,7 +542,7 @@ test("cosmetics: Frostveil Court normal store purchases exclude the limited card
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_icebound_crag"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_sleet_spiral"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_frostbloom"));
-  assert.equal(profile.tokens, 1800);
+  assert.equal(profile.tokens, 500);
 });
 
 test("cosmetics: authoritative store lookup accepts composite Frostveil store keys while the limited card back stays excluded from the normal store", async () => {
@@ -641,7 +657,7 @@ test("cosmetics: Neon Arcana entries keep exact metadata and collection mappings
     const item = avatars.get(avatarId);
     assert.ok(item, `missing Neon Arcana avatar ${avatarId}`);
     assert.equal(item.rarity, "Epic");
-    assert.equal(item.price, 600);
+    assert.equal(item.price, 800);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
     assert.equal(item.isNew, false);
@@ -671,7 +687,7 @@ test("cosmetics: Neon Arcana entries keep exact metadata and collection mappings
   assert.equal(title.name, "Spellwired");
   assert.equal(title.image, "titles/title_spellwired.png");
   assert.equal(title.rarity, "Legendary");
-  assert.equal(title.price, 850);
+  assert.equal(title.price, 1100);
   assert.equal(title.purchasable, true);
   assert.equal(title.isNew, false);
   assert.equal(title.releaseTag, "neon_arcana_01");
@@ -684,7 +700,7 @@ test("cosmetics: Neon Arcana entries keep exact metadata and collection mappings
   assert.equal(cardBack.name, "Neon Arcana Card Back");
   assert.equal(cardBack.image, "card_backs/cardback_neon_arcana.png");
   assert.equal(cardBack.rarity, "Legendary");
-  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.price, 1050);
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.isNew, false);
   assert.equal(cardBack.releaseTag, "neon_arcana_01");
@@ -699,7 +715,7 @@ test("cosmetics: Neon Arcana entries keep exact metadata and collection mappings
     assert.equal(item.image, image);
     assert.equal(item.element, element);
     assert.equal(item.rarity, "Rare");
-    assert.equal(item.price, 250);
+    assert.equal(item.price, 350);
     assert.equal(item.purchasable, true);
     assert.equal(item.isNew, false);
     assert.equal(item.releaseTag, "neon_arcana_01");
@@ -720,7 +736,7 @@ test("cosmetics: Goldbound Relics entries keep exact metadata and collection map
   assert.equal(avatar.name, "Aurelian Archon");
   assert.equal(avatar.image, "avatars/avatar_aurelian_archon.png");
   assert.equal(avatar.rarity, "Legendary");
-  assert.equal(avatar.price, 900);
+  assert.equal(avatar.price, 1200);
   assert.equal(avatar.purchasable, true);
   assert.equal(avatar.defaultOwned, false);
   assert.equal(avatar.isNew, false);
@@ -734,7 +750,7 @@ test("cosmetics: Goldbound Relics entries keep exact metadata and collection map
   assert.equal(title.name, "Goldbound");
   assert.equal(title.image, "titles/title_goldbound.png");
   assert.equal(title.rarity, "Epic");
-  assert.equal(title.price, 500);
+  assert.equal(title.price, 700);
   assert.equal(title.purchasable, true);
   assert.equal(title.defaultOwned, false);
   assert.equal(title.isNew, false);
@@ -748,7 +764,7 @@ test("cosmetics: Goldbound Relics entries keep exact metadata and collection map
   assert.equal(cardBack.name, "Goldbound Relic");
   assert.equal(cardBack.image, "card_backs/cardback_goldbound_relic.png");
   assert.equal(cardBack.rarity, "Legendary");
-  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.price, 1050);
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.defaultOwned, false);
   assert.equal(cardBack.isNew, false);
@@ -764,7 +780,7 @@ test("cosmetics: Goldbound Relics entries keep exact metadata and collection map
     assert.equal(item.image, image);
     assert.equal(item.element, element);
     assert.equal(item.rarity, "Epic");
-    assert.equal(item.price, 450);
+    assert.equal(item.price, 650);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
     assert.equal(item.isNew, false);
@@ -786,7 +802,7 @@ test("cosmetics: Frostveil Court entries keep exact metadata and collection mapp
   assert.equal(avatar.name, "Frostveil Heir");
   assert.equal(avatar.image, "avatars/avatar_frostveil_heir.png");
   assert.equal(avatar.rarity, "Legendary");
-  assert.equal(avatar.price, 900);
+  assert.equal(avatar.price, 1200);
   assert.equal(avatar.purchasable, true);
   assert.equal(avatar.defaultOwned, false);
   assert.equal(avatar.isNew, false);
@@ -800,7 +816,7 @@ test("cosmetics: Frostveil Court entries keep exact metadata and collection mapp
   assert.equal(title.name, "Shiverborne");
   assert.equal(title.image, "titles/title_shiverborne.png");
   assert.equal(title.rarity, "Epic");
-  assert.equal(title.price, 500);
+  assert.equal(title.price, 700);
   assert.equal(title.purchasable, true);
   assert.equal(title.defaultOwned, false);
   assert.equal(title.isNew, false);
@@ -814,7 +830,7 @@ test("cosmetics: Frostveil Court entries keep exact metadata and collection mapp
   assert.equal(cardBack.name, "Glacier Sigil");
   assert.equal(cardBack.image, "card_backs/cardback_glacier_sigil.png");
   assert.equal(cardBack.rarity, "Legendary");
-  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.price, 1050);
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.defaultOwned, false);
   assert.equal(cardBack.isNew, false);
@@ -830,7 +846,7 @@ test("cosmetics: Frostveil Court entries keep exact metadata and collection mapp
     assert.equal(item.image, image);
     assert.equal(item.element, element);
     assert.equal(item.rarity, "Epic");
-    assert.equal(item.price, 450);
+    assert.equal(item.price, 650);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
     assert.equal(item.isNew, false);
@@ -857,7 +873,7 @@ test("cosmetics: Vampire Elegance entries use exact metadata across categories a
     assert.ok(item, `missing Vampire Elegance avatar ${id}`);
     assert.equal(item.name, name);
     assert.equal(item.rarity, "Legendary");
-    assert.equal(item.price, 900);
+    assert.equal(item.price, 1200);
     assert.equal(item.image, `avatars/${id}.png`);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
@@ -874,7 +890,7 @@ test("cosmetics: Vampire Elegance entries use exact metadata across categories a
     assert.ok(item, `missing Vampire Elegance card back ${id}`);
     assert.equal(item.name, name);
     assert.equal(item.rarity, "Legendary");
-    assert.equal(item.price, 800);
+    assert.equal(item.price, 1050);
     assert.equal(item.image, `card_backs/${id}.png`);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
@@ -890,7 +906,7 @@ test("cosmetics: Vampire Elegance entries use exact metadata across categories a
     assert.equal(item.element, element);
     assert.equal(item.image, image);
     assert.equal(item.rarity, "Epic");
-    assert.equal(item.price, 450);
+    assert.equal(item.price, 650);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
     assert.equal(item.isNew, true);
@@ -913,7 +929,7 @@ test("cosmetics: Lycan Power entries use exact metadata across categories and co
     assert.ok(item, `missing Lycan Power avatar ${id}`);
     assert.equal(item.name, name);
     assert.equal(item.rarity, "Legendary");
-    assert.equal(item.price, 900);
+    assert.equal(item.price, 1200);
     assert.equal(item.image, `avatars/${id}.png`);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
@@ -926,7 +942,7 @@ test("cosmetics: Lycan Power entries use exact metadata across categories and co
   assert.ok(background);
   assert.equal(background.name, "Lycan Law");
   assert.equal(background.rarity, "Epic");
-  assert.equal(background.price, 700);
+  assert.equal(background.price, 900);
   assert.equal(background.image, "backgrounds/background_bg_lycan_law.png");
   assert.equal(background.purchasable, true);
   assert.equal(background.defaultOwned, false);
@@ -938,7 +954,7 @@ test("cosmetics: Lycan Power entries use exact metadata across categories and co
   assert.ok(cardBack);
   assert.equal(cardBack.name, "Lycan Pack");
   assert.equal(cardBack.rarity, "Legendary");
-  assert.equal(cardBack.price, 800);
+  assert.equal(cardBack.price, 1050);
   assert.equal(cardBack.image, "card_backs/cardback_lycan_pack.png");
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.defaultOwned, false);
@@ -953,7 +969,7 @@ test("cosmetics: Lycan Power entries use exact metadata across categories and co
     assert.equal(item.element, element);
     assert.equal(item.image, image);
     assert.equal(item.rarity, "Epic");
-    assert.equal(item.price, 450);
+    assert.equal(item.price, 650);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
     assert.equal(item.isNew, true);
@@ -1000,7 +1016,7 @@ test("cosmetics: Elemental Street collectionless entries use matched Common and 
   assert.ok(cardBack);
   assert.equal(cardBack.name, "Four Element Street Emblem");
   assert.equal(cardBack.rarity, "Rare");
-  assert.equal(cardBack.price, 250);
+  assert.equal(cardBack.price, 350);
   assert.equal(cardBack.image, "card_backs/cardback_four_element_street_emblem.png");
   assert.equal(cardBack.purchasable, true);
   assert.equal(cardBack.defaultOwned, false);
@@ -1015,7 +1031,7 @@ test("cosmetics: Elemental Street collectionless entries use matched Common and 
     assert.equal(item.element, element);
     assert.equal(item.image, image);
     assert.equal(item.rarity, "Rare");
-    assert.equal(item.price, 250);
+    assert.equal(item.price, 350);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
     assert.equal(item.isNew, true);
@@ -1028,17 +1044,17 @@ test("cosmetics: Vampire Elegance store purchases succeed for all approved items
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
-  await state.profiles.updateProfile("VampireStoreUser", { tokens: 6000 });
+  await state.profiles.updateProfile("VampireStoreUser", { tokens: 8000 });
 
   const purchaseTargets = [
-    { type: "avatar", cosmeticId: "avatar_vampire_female", expectedPrice: 900 },
-    { type: "avatar", cosmeticId: "avatar_vampire_male", expectedPrice: 900 },
-    { type: "cardBack", cosmeticId: "cardback_blood_gem", expectedPrice: 800 },
-    { type: "cardBack", cosmeticId: "cardback_winged_coffin", expectedPrice: 800 },
-    { type: "elementCardVariant", cosmeticId: "earth_variant_stone_graves", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "fire_variant_flame_wings", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "water_variant_blood_wings", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "wind_variant_wings_wind", expectedPrice: 450 }
+    { type: "avatar", cosmeticId: "avatar_vampire_female", expectedPrice: 1200 },
+    { type: "avatar", cosmeticId: "avatar_vampire_male", expectedPrice: 1200 },
+    { type: "cardBack", cosmeticId: "cardback_blood_gem", expectedPrice: 1050 },
+    { type: "cardBack", cosmeticId: "cardback_winged_coffin", expectedPrice: 1050 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_stone_graves", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_flame_wings", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_blood_wings", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_wings_wind", expectedPrice: 650 }
   ];
 
   for (const target of purchaseTargets) {
@@ -1060,24 +1076,24 @@ test("cosmetics: Vampire Elegance store purchases succeed for all approved items
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("fire_variant_flame_wings"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_blood_wings"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_wings_wind"));
-  assert.equal(profile.tokens, 800);
+  assert.equal(profile.tokens, 900);
 });
 
 test("cosmetics: Lycan Power store purchases succeed for all approved items", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
 
-  await state.profiles.updateProfile("LycanStoreUser", { tokens: 6000 });
+  await state.profiles.updateProfile("LycanStoreUser", { tokens: 8000 });
 
   const purchaseTargets = [
-    { type: "avatar", cosmeticId: "avatar_lycan_female", expectedPrice: 900 },
-    { type: "avatar", cosmeticId: "avatar_lycan_male", expectedPrice: 900 },
-    { type: "background", cosmeticId: "background_bg_lycan_law", expectedPrice: 700 },
-    { type: "cardBack", cosmeticId: "cardback_lycan_pack", expectedPrice: 800 },
-    { type: "elementCardVariant", cosmeticId: "earth_variant_stone_paw", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "fire_variant_fire_paw", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "water_variant_water_wolf", expectedPrice: 450 },
-    { type: "elementCardVariant", cosmeticId: "wind_variant_lycan_duo", expectedPrice: 450 }
+    { type: "avatar", cosmeticId: "avatar_lycan_female", expectedPrice: 1200 },
+    { type: "avatar", cosmeticId: "avatar_lycan_male", expectedPrice: 1200 },
+    { type: "background", cosmeticId: "background_bg_lycan_law", expectedPrice: 900 },
+    { type: "cardBack", cosmeticId: "cardback_lycan_pack", expectedPrice: 1050 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_stone_paw", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_fire_paw", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_water_wolf", expectedPrice: 650 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_lycan_duo", expectedPrice: 650 }
   ];
 
   for (const target of purchaseTargets) {
@@ -1099,7 +1115,7 @@ test("cosmetics: Lycan Power store purchases succeed for all approved items", as
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("fire_variant_fire_paw"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_water_wolf"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_lycan_duo"));
-  assert.equal(profile.tokens, 900);
+  assert.equal(profile.tokens, 1050);
 });
 
 test("cosmetics: Simple Backgrounds collectionless entries use exact Common metadata without a visible collection", async () => {
@@ -1111,7 +1127,7 @@ test("cosmetics: Simple Backgrounds collectionless entries use exact Common meta
     assert.equal(item.name, name);
     assert.equal(item.image, image);
     assert.equal(item.rarity, "Common");
-    assert.equal(item.price, 90);
+    assert.equal(item.price, 150);
     assert.equal(item.purchasable, true);
     assert.equal(item.defaultOwned, false);
     assert.equal(item.isNew, true);
@@ -1191,19 +1207,19 @@ test("cosmetics: Elemental Street store purchases succeed for all approved colle
   await state.profiles.updateProfile("ElementalStreetUser", { tokens: 4000 });
 
   const purchaseTargets = [
-    { type: "avatar", cosmeticId: "avatar_fire_street_duelist", expectedPrice: 150 },
-    { type: "avatar", cosmeticId: "avatar_water_street_duelist", expectedPrice: 150 },
-    { type: "avatar", cosmeticId: "avatar_earth_street_duelist", expectedPrice: 150 },
-    { type: "avatar", cosmeticId: "avatar_wind_street_duelist", expectedPrice: 150 },
-    { type: "title", cosmeticId: "title_spark", expectedPrice: 100 },
-    { type: "title", cosmeticId: "title_drifter", expectedPrice: 100 },
-    { type: "title", cosmeticId: "title_stonehand", expectedPrice: 100 },
-    { type: "title", cosmeticId: "title_mistborn", expectedPrice: 100 },
-    { type: "cardBack", cosmeticId: "cardback_four_element_street_emblem", expectedPrice: 250 },
-    { type: "elementCardVariant", cosmeticId: "fire_variant_street", expectedPrice: 250 },
-    { type: "elementCardVariant", cosmeticId: "water_variant_street", expectedPrice: 250 },
-    { type: "elementCardVariant", cosmeticId: "earth_variant_street", expectedPrice: 250 },
-    { type: "elementCardVariant", cosmeticId: "wind_variant_street", expectedPrice: 250 }
+    { type: "avatar", cosmeticId: "avatar_fire_street_duelist", expectedPrice: 200 },
+    { type: "avatar", cosmeticId: "avatar_water_street_duelist", expectedPrice: 200 },
+    { type: "avatar", cosmeticId: "avatar_earth_street_duelist", expectedPrice: 200 },
+    { type: "avatar", cosmeticId: "avatar_wind_street_duelist", expectedPrice: 200 },
+    { type: "title", cosmeticId: "title_spark", expectedPrice: 150 },
+    { type: "title", cosmeticId: "title_drifter", expectedPrice: 150 },
+    { type: "title", cosmeticId: "title_stonehand", expectedPrice: 150 },
+    { type: "title", cosmeticId: "title_mistborn", expectedPrice: 150 },
+    { type: "cardBack", cosmeticId: "cardback_four_element_street_emblem", expectedPrice: 350 },
+    { type: "elementCardVariant", cosmeticId: "fire_variant_street", expectedPrice: 350 },
+    { type: "elementCardVariant", cosmeticId: "water_variant_street", expectedPrice: 350 },
+    { type: "elementCardVariant", cosmeticId: "earth_variant_street", expectedPrice: 350 },
+    { type: "elementCardVariant", cosmeticId: "wind_variant_street", expectedPrice: 350 }
   ];
 
   for (const target of purchaseTargets) {
@@ -1230,7 +1246,7 @@ test("cosmetics: Elemental Street store purchases succeed for all approved colle
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("water_variant_street"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("earth_variant_street"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("wind_variant_street"));
-  assert.equal(profile.tokens, 1750);
+  assert.equal(profile.tokens, 850);
 });
 
 test("cosmetics: Simple Backgrounds store purchases and background equip succeed for all approved items", async () => {
@@ -1246,7 +1262,7 @@ test("cosmetics: Simple Backgrounds store purchases and background equip succeed
       cosmeticId: id
     });
     assert.equal(response.purchase?.status, "purchased");
-    assert.equal(response.purchase?.price, 90);
+    assert.equal(response.purchase?.price, 150);
   }
 
   const equipped = await state.equipCosmetic({
@@ -1262,5 +1278,5 @@ test("cosmetics: Simple Backgrounds store purchases and background equip succeed
   assert.equal(equipped.profile.equippedCosmetics.background, "background_glowtide_flats");
   assert.equal(profile.equippedCosmetics.background, "background_glowtide_flats");
   assert.equal(profile.cosmetics.background, "background_glowtide_flats");
-  assert.equal(profile.tokens, 660);
+  assert.equal(profile.tokens, 300);
 });

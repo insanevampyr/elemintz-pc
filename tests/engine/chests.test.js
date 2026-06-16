@@ -7,6 +7,7 @@ import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { applyDailyChallengesForMatch, WEEKLY_CHALLENGE_DEFINITIONS } from "../../src/state/dailyChallengesSystem.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
+import { DEFAULT_STARTING_TOKENS } from "../../src/state/storeSystem.js";
 
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-chests-"));
@@ -136,7 +137,7 @@ test("chests: basic chest XP branch grants 5 XP", async () => {
   assert.equal(opened.rewards.xp, 5);
   assert.equal(opened.rewards.tokens, 0);
   assert.equal(opened.profile.playerXP, 5);
-  assert.equal(opened.profile.tokens, 200);
+  assert.equal(opened.profile.tokens, DEFAULT_STARTING_TOKENS);
   assert.equal(opened.rewards.cosmetic, null);
   assert.equal(opened.levelBefore, 1);
   assert.equal(opened.levelAfter, 1);
@@ -198,7 +199,7 @@ test("chests: basic chest token branch grants 10 tokens", async () => {
   assert.equal(opened.remaining, 0);
   assert.equal(opened.rewards.xp, 0);
   assert.equal(opened.rewards.tokens, 10);
-  assert.equal(opened.profile.tokens, 210);
+  assert.equal(opened.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
   assert.equal(opened.rewards.cosmetic, null);
 });
 
@@ -271,7 +272,7 @@ test("chests: cosmetic branch falls back to 10 tokens when no eligible common co
   assert.equal(opened.rewards.xp, 0);
   assert.equal(opened.rewards.tokens, 10);
   assert.equal(opened.rewards.cosmetic, null);
-  assert.equal(opened.profile.tokens, 210);
+  assert.equal(opened.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
 });
 
 test("chests: epic chest always grants guaranteed tokens and XP plus a common cosmetic on the cosmetic roll", async () => {
@@ -295,7 +296,7 @@ test("chests: epic chest always grants guaranteed tokens and XP plus a common co
   assert.equal(opened.rewards.tokens, 40);
   assert.equal(opened.rewards.xp, 20);
   assert.equal(opened.rewards.cosmetic?.rarity, "Common");
-  assert.equal(opened.profile.tokens, 240);
+  assert.equal(opened.profile.tokens, DEFAULT_STARTING_TOKENS + 40);
   assert.equal(opened.profile.playerXP, 20);
 });
 
@@ -339,7 +340,7 @@ test("chests: epic chest falls back to bonus tokens when the rolled cosmetic rar
   assert.equal(opened.rewards.xp, 20);
   assert.equal(opened.rewards.tokens, 60);
   assert.equal(opened.rewards.cosmetic, null);
-  assert.equal(opened.profile.tokens, 260);
+  assert.equal(opened.profile.tokens, DEFAULT_STARTING_TOKENS + 60);
 });
 
 test("chests: legendary chest always grants guaranteed tokens and XP plus the rolled bonus-token branch when no cosmetic is rolled", async () => {
@@ -363,7 +364,7 @@ test("chests: legendary chest always grants guaranteed tokens and XP plus the ro
   assert.equal(opened.rewards.xp, 50);
   assert.equal(opened.rewards.tokens, 175);
   assert.equal(opened.rewards.cosmetic, null);
-  assert.equal(opened.profile.tokens, 375);
+  assert.equal(opened.profile.tokens, DEFAULT_STARTING_TOKENS + 175);
   assert.equal(opened.profile.playerXP, 50);
 });
 

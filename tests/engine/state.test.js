@@ -31,7 +31,11 @@ import {
 } from "../../src/state/levelRewardsSystem.js";
 import { EPIC_CHEST_TYPE, LEGENDARY_CHEST_TYPE, MILESTONE_CHEST_TYPE } from "../../src/state/chestSystem.js";
 import { deriveMatchStats } from "../../src/state/statsTracking.js";
-import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../src/state/storeSystem.js";
+import {
+  DEFAULT_STARTING_TOKENS,
+  buildFeaturedRotationCatalog,
+  getStoreViewForProfile
+} from "../../src/state/storeSystem.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
@@ -252,11 +256,11 @@ test("state: gauntlet 3-streak grants +25 tokens once", async () => {
   });
 
   assert.equal(awarded.tokenDelta, 25);
-  assert.equal(awarded.profile.tokens, 225);
+  assert.equal(awarded.profile.tokens, DEFAULT_STARTING_TOKENS + 25);
   assert.deepEqual(awarded.chestGrants, []);
   assert.deepEqual(awarded.claimedMilestoneStreaks, [3]);
   assert.equal(noDuplicate.tokenDelta, 0);
-  assert.equal(noDuplicate.profile.tokens, 225);
+  assert.equal(noDuplicate.profile.tokens, DEFAULT_STARTING_TOKENS + 25);
 });
 
 test("state: gauntlet 5-streak grants 1 basic chest once", async () => {
@@ -318,7 +322,7 @@ test("state: gauntlet 15-streak grants +100 XP and +75 tokens once", async () =>
   assert.equal(awarded.tokenDelta, 75);
   assert.equal(awarded.profile.playerXP, 100);
   assert.equal(awarded.levelRewardTokenDelta, 50);
-  assert.equal(awarded.profile.tokens, 325);
+  assert.equal(awarded.profile.tokens, DEFAULT_STARTING_TOKENS + 125);
   assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10, 15]);
 });
 
@@ -345,7 +349,7 @@ test("state: gauntlet milestone xp converts to max level bonus tokens at the cap
   assert.equal(awarded.xpConversionTokenBonus, 10);
   assert.equal(awarded.overflowXp, 100);
   assert.equal(awarded.tokenDelta, 85);
-  assert.equal(awarded.profile.tokens, 285);
+  assert.equal(awarded.profile.tokens, DEFAULT_STARTING_TOKENS + 85);
   assert.equal(awarded.profile.playerXP, maxThreshold);
 });
 
@@ -737,17 +741,17 @@ test("state: store background catalog includes all registered background assets 
   }
 
   assert.equal(backgroundById.get("fire_background").rarity, "Common");
-  assert.equal(backgroundById.get("fire_background").price, 90);
+  assert.equal(backgroundById.get("fire_background").price, 150);
   assert.equal(backgroundById.get("water_background").rarity, "Common");
-  assert.equal(backgroundById.get("water_background").price, 90);
+  assert.equal(backgroundById.get("water_background").price, 150);
   assert.equal(backgroundById.get("earth_background").rarity, "Common");
-  assert.equal(backgroundById.get("earth_background").price, 90);
+  assert.equal(backgroundById.get("earth_background").price, 150);
   assert.equal(backgroundById.get("celestial_void_background").rarity, "Legendary");
-  assert.equal(backgroundById.get("celestial_void_background").price, 1000);
+  assert.equal(backgroundById.get("celestial_void_background").price, 1300);
   assert.equal(backgroundById.get("lava_throne_background").rarity, "Epic");
-  assert.equal(backgroundById.get("lava_throne_background").price, 700);
+  assert.equal(backgroundById.get("lava_throne_background").price, 900);
   assert.equal(backgroundById.get("void_altar_background").rarity, "Legendary");
-  assert.equal(backgroundById.get("void_altar_background").price, 1000);
+  assert.equal(backgroundById.get("void_altar_background").price, 1300);
 });
 
 test("state: rotationOnly cosmetics stay out of the normal store catalog by default", () => {
@@ -3735,13 +3739,13 @@ test("state: username-specific test token grants are not applied at runtime", as
     }
   }));
   const profile = await state.profiles.ensureProfile("VampyrLee");
-  assert.equal(profile.tokens, 200);
+  assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS);
   assert.equal(profile.testTokenGrantApplied, false);
   assert.equal(profile.chests?.milestone ?? 0, 3);
 
   const reloaded = new StateCoordinator({ dataDir });
   const profileAfterRestart = await reloaded.profiles.getProfile("VampyrLee");
-  assert.equal(profileAfterRestart.tokens, 200);
+  assert.equal(profileAfterRestart.tokens, DEFAULT_STARTING_TOKENS);
   assert.equal(profileAfterRestart.testTokenGrantApplied, false);
   assert.equal(profileAfterRestart.chests?.milestone ?? 0, 3);
 });
@@ -3785,11 +3789,11 @@ test("state: first login of day grants daily login reward once", async () => {
   assert.equal(first.streakDay, 1);
   assert.equal(first.rewardTokens, 4);
   assert.equal(first.rewardXp, 2);
-  assert.equal(first.profile.tokens, 204);
+  assert.equal(first.profile.tokens, DEFAULT_STARTING_TOKENS + 4);
   assert.equal(first.profile.playerXP, 2);
   assert.equal(first.profile.dailyLoginStreakDay, 1);
   assert.equal(second.granted, false);
-  assert.equal(second.profile.tokens, 204);
+  assert.equal(second.profile.tokens, DEFAULT_STARTING_TOKENS + 4);
   assert.equal(second.profile.playerXP, 2);
 });
 
@@ -3836,11 +3840,11 @@ test("state: daily login reward persists across reload", async () => {
   const profile = await second.profiles.getProfile("ReloadLoginUser");
   const sameDay = await second.claimDailyLoginReward("ReloadLoginUser", nowMs + 60000);
 
-  assert.equal(profile.tokens, 204);
+  assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 4);
   assert.equal(profile.playerXP, 2);
   assert.equal(profile.dailyLoginStreakDay, 1);
   assert.equal(sameDay.granted, false);
-  assert.equal(sameDay.profile.tokens, 204);
+  assert.equal(sameDay.profile.tokens, DEFAULT_STARTING_TOKENS + 4);
   assert.equal(sameDay.profile.playerXP, 2);
 });
 
@@ -3856,7 +3860,7 @@ test("state: daily login reward does not reset before 6 PM Central", async () =>
 
   assert.equal(first.granted, true);
   assert.equal(second.granted, false);
-  assert.equal(second.profile.tokens, 204);
+  assert.equal(second.profile.tokens, DEFAULT_STARTING_TOKENS + 4);
   assert.equal(second.profile.playerXP, 2);
 });
 
@@ -3879,7 +3883,7 @@ test("state: daily login reward converts xp into max level bonus tokens at the c
   assert.equal(reward.xpConversionTokenBonus, 1);
   assert.equal(reward.overflowXp, 2);
   assert.equal(reward.profile.playerXP, maxThreshold);
-  assert.equal(reward.profile.tokens, 205);
+  assert.equal(reward.profile.tokens, DEFAULT_STARTING_TOKENS + 5);
 });
 
 test("state: missed daily login reset window resets the streak to Day 1", async () => {
@@ -4807,7 +4811,7 @@ test("boost events: Featured Rival quest rewards remain fixed under active PvE b
   assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
   assert.ok(
     boosted.rewards.daily.some(
-      (item) => item.id === "daily_defeat_featured_rival_1" && item.rewardXp === 15 && item.rewardTokens === 8
+      (item) => item.id === "daily_defeat_featured_rival_1" && item.rewardXp === 8 && item.rewardTokens === 4
     )
   );
 });
@@ -5426,7 +5430,7 @@ test("xp: completed matches grant XP and quit forfeits do not", async () => {
   };
 
   const done = await state.recordMatchResult({ username: "XpUser", perspective: "p1", matchState: completedMatch });
-  assert.equal(done.xpDelta, 14); // +4 base +10 daily challenge XP (win match + win WAR)
+  assert.equal(done.xpDelta, 12); // +4 base +8 daily challenge XP (win match + win WAR)
 
   const quitMatch = {
     ...createMatch({ mode: "pve" }),
@@ -5813,7 +5817,7 @@ test("state: admin grant converts overflow xp into persisted max level bonus tok
   assert.equal(grant.xpConversionTokenBonus, 8);
   assert.equal(grant.overflowXp, 88);
   assert.equal(grant.tokenDelta, 23);
-  assert.equal(grant.profile.tokens, 223);
+  assert.equal(grant.profile.tokens, DEFAULT_STARTING_TOKENS + 23);
   assert.equal(grant.profile.playerXP, maxThreshold);
 });
 
@@ -5863,7 +5867,7 @@ test("state: online reward settlement converts overflow xp once and preserves du
   assert.equal(first.rewards.xp, 0);
   assert.equal(first.rewards.xpConversionTokenBonus, 2);
   assert.equal(first.rewards.tokens, 7);
-  assert.equal(first.profile.tokens, 207);
+  assert.equal(first.profile.tokens, DEFAULT_STARTING_TOKENS + 7);
   assert.equal(first.profile.playerXP, maxThreshold);
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.rewards.tokens, 0);
@@ -5893,10 +5897,10 @@ test("state: direct online reward grants convert overflow xp into token bonus", 
   assert.equal(result.rewards.overflowXp, 24);
   assert.equal(result.rewards.tokens, 5);
   assert.equal(result.profile.playerXP, maxThreshold);
-  assert.equal(result.profile.tokens, 205);
+  assert.equal(result.profile.tokens, DEFAULT_STARTING_TOKENS + 5);
 });
 
-test("economy: daily and weekly challenge rewards include stage1 token+xp values", () => {
+test("economy: daily and weekly challenge rewards include tuned token+xp values", () => {
   const byDailyId = Object.fromEntries(DAILY_CHALLENGE_DEFINITIONS.map((item) => [item.id, item]));
   const byWeeklyId = Object.fromEntries(WEEKLY_CHALLENGE_DEFINITIONS.map((item) => [item.id, item]));
 
@@ -5905,23 +5909,23 @@ test("economy: daily and weekly challenge rewards include stage1 token+xp values
       Object.entries(byDailyId).map(([id, item]) => [id, [item.rewardTokens, item.rewardXp]])
     ),
     {
-      daily_play_5_matches: [3, 6],
-      daily_win_1_match: [2, 5],
-      daily_win_2_matches: [3, 7],
-      daily_win_1_war: [2, 5],
-      daily_capture_16_cards: [3, 6],
-      daily_use_all_4_elements: [3, 6],
-      daily_online_match_1: [4, 8],
-      daily_online_win_1: [5, 10],
-      daily_hard_ai_win_1: [4, 9],
-      daily_local_pvp_match_1: [3, 7],
-      daily_comeback_win: [4, 8],
-      daily_no_quit_3: [3, 6],
-      daily_defeat_featured_rival_1: [8, 15],
-      daily_win_with_fire: [3, 6],
-      daily_win_with_water: [3, 6],
-      daily_win_with_earth: [3, 6],
-      daily_win_with_wind: [3, 6]
+      daily_play_5_matches: [2, 4],
+      daily_win_1_match: [2, 4],
+      daily_win_2_matches: [2, 5],
+      daily_win_1_war: [2, 4],
+      daily_capture_16_cards: [2, 5],
+      daily_use_all_4_elements: [2, 5],
+      daily_online_match_1: [2, 5],
+      daily_online_win_1: [3, 6],
+      daily_hard_ai_win_1: [3, 6],
+      daily_local_pvp_match_1: [2, 5],
+      daily_comeback_win: [3, 6],
+      daily_no_quit_3: [2, 4],
+      daily_defeat_featured_rival_1: [4, 8],
+      daily_win_with_fire: [2, 5],
+      daily_win_with_water: [2, 5],
+      daily_win_with_earth: [2, 5],
+      daily_win_with_wind: [2, 5]
     }
   );
 
@@ -5930,25 +5934,25 @@ test("economy: daily and weekly challenge rewards include stage1 token+xp values
       Object.entries(byWeeklyId).map(([id, item]) => [id, [item.rewardTokens, item.rewardXp]])
     ),
     {
-      weekly_play_15_matches: [5, 15],
-      weekly_win_10_matches: [5, 15],
-      weekly_win_9_wars: [8, 18],
-      weekly_capture_64_cards: [8, 18],
-      weekly_win_streak_3: [10, 25],
-      weekly_use_all_4_elements_5x: [8, 18],
-      weekly_longest_war_5: [12, 30],
-      weekly_online_matches_5: [12, 28],
-      weekly_online_wins_3: [15, 35],
-      weekly_hard_ai_wins_5: [12, 30],
-      weekly_local_pvp_matches_5: [10, 25],
-      weekly_comeback_wins_5: [12, 30],
-      weekly_no_quit_10: [10, 25],
-      weekly_defeat_featured_rival_3: [18, 35],
-      weekly_defeat_featured_rival_5: [28, 55],
-      weekly_element_master_fire: [10, 25],
-      weekly_element_master_water: [10, 25],
-      weekly_element_master_earth: [10, 25],
-      weekly_element_master_wind: [10, 25]
+      weekly_play_15_matches: [5, 10],
+      weekly_win_10_matches: [5, 10],
+      weekly_win_9_wars: [6, 12],
+      weekly_capture_64_cards: [6, 12],
+      weekly_win_streak_3: [7, 15],
+      weekly_use_all_4_elements_5x: [6, 12],
+      weekly_longest_war_5: [7, 15],
+      weekly_online_matches_5: [7, 15],
+      weekly_online_wins_3: [7, 15],
+      weekly_hard_ai_wins_5: [7, 15],
+      weekly_local_pvp_matches_5: [5, 10],
+      weekly_comeback_wins_5: [7, 15],
+      weekly_no_quit_10: [5, 10],
+      weekly_defeat_featured_rival_3: [7, 15],
+      weekly_defeat_featured_rival_5: [8, 18],
+      weekly_element_master_fire: [6, 12],
+      weekly_element_master_water: [6, 12],
+      weekly_element_master_earth: [6, 12],
+      weekly_element_master_wind: [6, 12]
     }
   );
 });
@@ -7106,7 +7110,7 @@ test("state: chest xp converts to max level bonus tokens and does not grow store
   assert.equal(opened.rewards.xp, 0);
   assert.equal(opened.rewards.xpConversionTokenBonus, 1);
   assert.equal(opened.rewards.overflowXp, 5);
-  assert.equal(opened.profile.tokens, 201);
+  assert.equal(opened.profile.tokens, DEFAULT_STARTING_TOKENS + 1);
   assert.equal(opened.profile.playerXP, maxThreshold);
 });
 

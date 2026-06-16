@@ -26,6 +26,7 @@ import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
 import { getDailyResetWindow } from "../../src/state/dailyChallengesSystem.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
+import { DEFAULT_STARTING_TOKENS } from "../../src/state/storeSystem.js";
 
 const FIXED_DAY7_LOGIN_NOW_MS = Date.parse("2026-06-08T19:05:00-05:00");
 
@@ -4848,18 +4849,18 @@ test("multiplayer foundation: server-authoritative store purchase blocks the Gol
     assert.equal(session?.ok, true);
 
     const purchaseTargets = [
-      { type: "avatar", cosmeticId: "avatar_aurelian_archon", expectedPrice: 900 },
-      { type: "title", cosmeticId: "title_goldbound", expectedPrice: 500 },
+      { type: "avatar", cosmeticId: "avatar_aurelian_archon", expectedPrice: 1200 },
+      { type: "title", cosmeticId: "title_goldbound", expectedPrice: 700 },
       {
         type: "cardBack",
         cosmeticId: "cardback_goldbound_relic",
-        expectedPrice: 800,
+        expectedPrice: 1050,
         expectedError: "Store item not found for cardBack:cardback_goldbound_relic."
       },
-      { type: "elementCardVariant", cosmeticId: "fire_variant_goldbound_relics", expectedPrice: 450 },
-      { type: "elementCardVariant", cosmeticId: "earth_variant_goldbound_relics", expectedPrice: 450 },
-      { type: "elementCardVariant", cosmeticId: "wind_variant_goldbound_relics", expectedPrice: 450 },
-      { type: "elementCardVariant", cosmeticId: "water_variant_goldbound_relics", expectedPrice: 450 }
+      { type: "elementCardVariant", cosmeticId: "fire_variant_goldbound_relics", expectedPrice: 650 },
+      { type: "elementCardVariant", cosmeticId: "earth_variant_goldbound_relics", expectedPrice: 650 },
+      { type: "elementCardVariant", cosmeticId: "wind_variant_goldbound_relics", expectedPrice: 650 },
+      { type: "elementCardVariant", cosmeticId: "water_variant_goldbound_relics", expectedPrice: 650 }
     ];
 
     const responses = [];
@@ -4893,7 +4894,7 @@ test("multiplayer foundation: server-authoritative store purchase blocks the Gol
     assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("earth_variant_goldbound_relics"));
     assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("wind_variant_goldbound_relics"));
     assert.ok(profileAfterPurchases?.ownedCosmetics?.elementCardVariant?.includes("water_variant_goldbound_relics"));
-    assert.equal(profileAfterPurchases?.tokens, (beforeProfile?.tokens ?? 0) - 3200);
+    assert.equal(profileAfterPurchases?.tokens, (beforeProfile?.tokens ?? 0) - 4500);
   } finally {
     client?.disconnect();
     await foundation.stop();
@@ -4923,36 +4924,36 @@ test("multiplayer foundation: server-authoritative store purchase lookup blocks 
     assert.equal(session?.ok, true);
 
     const purchaseTargets = [
-      { type: "avatar:avatar_frostveil_heir", expectedPrice: 900, ownedType: "avatar", ownedId: "avatar_frostveil_heir" },
-      { type: "title:title_shiverborne", expectedPrice: 500, ownedType: "title", ownedId: "title_shiverborne" },
+      { type: "avatar:avatar_frostveil_heir", expectedPrice: 1200, ownedType: "avatar", ownedId: "avatar_frostveil_heir" },
+      { type: "title:title_shiverborne", expectedPrice: 700, ownedType: "title", ownedId: "title_shiverborne" },
       {
         type: "cardBack:cardback_glacier_sigil",
-        expectedPrice: 800,
+        expectedPrice: 1050,
         ownedType: "cardBack",
         ownedId: "cardback_glacier_sigil",
         expectedError: "Store item not found for cardBack:cardback_glacier_sigil."
       },
       {
         type: "elementCardVariant:fire_variant_aurora_flare",
-        expectedPrice: 450,
+        expectedPrice: 650,
         ownedType: "elementCardVariant",
         ownedId: "fire_variant_aurora_flare"
       },
       {
         type: "elementCardVariant:earth_variant_icebound_crag",
-        expectedPrice: 450,
+        expectedPrice: 650,
         ownedType: "elementCardVariant",
         ownedId: "earth_variant_icebound_crag"
       },
       {
         type: "elementCardVariant:wind_variant_sleet_spiral",
-        expectedPrice: 450,
+        expectedPrice: 650,
         ownedType: "elementCardVariant",
         ownedId: "wind_variant_sleet_spiral"
       },
       {
         type: "elementCardVariant:water_variant_frostbloom",
-        expectedPrice: 450,
+        expectedPrice: 650,
         ownedType: "elementCardVariant",
         ownedId: "water_variant_frostbloom"
       }
@@ -5415,7 +5416,7 @@ test("multiplayer foundation: server-authoritative chest opening decrements inve
     assert.equal(opened?.result?.rewards?.xp, 20);
     assert.ok(opened?.result?.rewards?.cosmetic);
     assert.equal(profileAfterOpen?.chests?.epic, 0);
-    assert.equal(profileAfterOpen?.tokens, 240);
+    assert.equal(profileAfterOpen?.tokens, DEFAULT_STARTING_TOKENS + 40);
     assert.equal(profileAfterOpen?.playerXP, 20);
   } finally {
     client?.disconnect();
@@ -5466,7 +5467,7 @@ test("multiplayer foundation: server-authoritative legendary chest opening decre
     assert.equal(opened?.result?.rewards?.xp, 50);
     assert.ok(opened?.result?.rewards?.cosmetic);
     assert.equal(profileAfterOpen?.chests?.legendary, 0);
-    assert.equal(profileAfterOpen?.tokens, 300);
+    assert.equal(profileAfterOpen?.tokens, DEFAULT_STARTING_TOKENS + 100);
     assert.equal(profileAfterOpen?.playerXP, 50);
   } finally {
     client?.disconnect();
@@ -8661,13 +8662,13 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
 
     const hostProfile = await coordinator.profiles.getProfile("HostRewardUser");
     const guestProfile = await coordinator.profiles.getProfile("GuestRewardUser");
-    assert.equal(hostProfile.tokens, 225);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 25);
     assert.equal(hostProfile.playerXP, 20);
     assert.equal(hostProfile.chests.basic, 1);
     assert.deepEqual(hostProfile.onlineRewardSettlements?.appliedSettlementKeys, [
       `${room.roomCode}:match:1`
     ]);
-    assert.equal(guestProfile.tokens, 205);
+    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 5);
     assert.equal(guestProfile.playerXP, 5);
     assert.equal(guestProfile.chests.basic, 0);
     assert.deepEqual(guestProfile.onlineRewardSettlements?.appliedSettlementKeys, [
@@ -8792,9 +8793,9 @@ test("multiplayer rewards: draw completion emits a server reward decision payloa
 
     const hostProfile = await coordinator.profiles.getProfile("DrawRewardHost");
     const guestProfile = await coordinator.profiles.getProfile("DrawRewardGuest");
-    assert.equal(hostProfile.tokens, 210);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 10);
     assert.equal(hostProfile.playerXP, 10);
-    assert.equal(guestProfile.tokens, 210);
+    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 10);
     assert.equal(guestProfile.playerXP, 10);
     assert.deepEqual(hostProfile.onlineRewardSettlements?.appliedSettlementKeys, [
       `${room.roomCode}:match:1`
@@ -9107,12 +9108,12 @@ test("multiplayer rewards: boosted online settlement is not boosted again during
     assert.equal(first.duplicate, false);
     assert.equal(first.rewards.tokens, 50);
     assert.equal(first.rewards.xp, 40);
-    assert.equal(first.profile.tokens, 250);
+    assert.equal(first.profile.tokens, DEFAULT_STARTING_TOKENS + 50);
     assert.equal(first.profile.playerXP, 40);
     assert.equal(duplicate.duplicate, true);
 
     const profile = await coordinator.profiles.getProfile("BoostPersistHost");
-    assert.equal(profile.tokens, 250);
+    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 50);
     assert.equal(profile.playerXP, 40);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
@@ -9204,7 +9205,7 @@ test("multiplayer rewards: settlementKey prevents duplicate persisted reward gra
     const profile = await coordinator.profiles.getProfile("DuplicateRewardUser");
     assert.equal(firstGrant.duplicate, false);
     assert.equal(secondGrant.duplicate, true);
-    assert.equal(profile.tokens, 225);
+    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 25);
     assert.equal(profile.playerXP, 20);
     assert.equal(profile.chests.basic, 1);
     assert.deepEqual(profile.onlineRewardSettlements?.appliedSettlementKeys, ["ROOM99:match:1"]);
@@ -9717,7 +9718,7 @@ test("multiplayer rewards: reward application retry after a persistence failure 
 
     const profile = await coordinator.profiles.getProfile("RetryRewardUser");
     assert.equal(retryGrant.duplicate, false);
-    assert.equal(profile.tokens, 225);
+    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 25);
     assert.equal(profile.playerXP, 20);
     assert.equal(profile.chests.basic, 1);
     assert.deepEqual(profile.onlineRewardSettlements?.appliedSettlementKeys, ["ROOM100:match:1"]);
@@ -9809,10 +9810,10 @@ test("multiplayer rewards: rematch reset clears prior reward settlement and allo
 
     const hostProfile = await coordinator.profiles.getProfile("HostRematchRewardUser");
     const guestProfile = await coordinator.profiles.getProfile("GuestRematchRewardUser");
-    assert.equal(hostProfile.tokens, 250);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 50);
     assert.equal(hostProfile.playerXP, 40);
     assert.equal(hostProfile.chests.basic, 2);
-    assert.equal(guestProfile.tokens, 210);
+    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 10);
     assert.equal(guestProfile.playerXP, 10);
     assert.equal(guestProfile.chests.basic, 0);
   } finally {
@@ -10672,8 +10673,8 @@ test("multiplayer online challenges: completed match updates progress exactly on
 
     assert.equal(hostProfile.dailyChallenges.daily.progress.matchesWon, 2);
     assert.equal(hostProfile.dailyChallenges.daily.progress.matchesPlayed, 1);
-    assert.equal(hostProfile.tokens, 233);
-    assert.equal(hostProfile.playerXP, 38);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 31);
+    assert.equal(hostProfile.playerXP, 34);
     assert.equal(guestProfile.dailyChallenges.daily.progress.matchesWon, 0);
     assert.equal(guestProfile.dailyChallenges.daily.progress.matchesPlayed, 1);
     assert.ok(hostSave.dailyRewards.some((item) => item.id === "daily_win_1_match"));

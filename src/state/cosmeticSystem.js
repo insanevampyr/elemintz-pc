@@ -12,30 +12,42 @@ export const RANDOMIZABLE_COSMETIC_TYPES = Object.freeze([
   "background"
 ]);
 const RARITY_TIERS = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
-const AVATAR_RARITY_PRICING = Object.freeze({
-  Common: 150,
-  Rare: 300,
-  Epic: 600,
-  Legendary: 900
+export const SHOP_PRICE_BY_CATEGORY_AND_RARITY = Object.freeze({
+  avatar: Object.freeze({
+    Common: 200,
+    Rare: 400,
+    Epic: 800,
+    Legendary: 1200
+  }),
+  title: Object.freeze({
+    Common: 150,
+    Rare: 350,
+    Epic: 700,
+    Legendary: 1100
+  }),
+  cardBack: Object.freeze({
+    Common: 175,
+    Rare: 350,
+    Epic: 700,
+    Legendary: 1050
+  }),
+  elementCardVariant: Object.freeze({
+    Common: 175,
+    Rare: 350,
+    Epic: 650,
+    Legendary: 950
+  }),
+  background: Object.freeze({
+    Common: 150,
+    Rare: 500,
+    Epic: 900,
+    Legendary: 1300
+  })
 });
-const CARD_BACK_RARITY_PRICING = Object.freeze({
-  Common: 120,
-  Rare: 250,
-  Epic: 500,
-  Legendary: 800
-});
-const BACKGROUND_RARITY_PRICING = Object.freeze({
-  Common: 90,
-  Rare: 350,
-  Epic: 700,
-  Legendary: 1000
-});
-const ELEMENT_VARIANT_RARITY_PRICING = Object.freeze({
-  Common: 120,
-  Rare: 250,
-  Epic: 450,
-  Legendary: 700
-});
+
+export function getBaseCosmeticPrice(type, rarity) {
+  return SHOP_PRICE_BY_CATEGORY_AND_RARITY[type]?.[rarity] ?? 0;
+}
 const LEGACY_BACKGROUND_ALIASES = Object.freeze({
   default_background: "default_background",
   "EleMintzIcon.png": "default_background",
@@ -115,7 +127,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "fireavatarM",
@@ -124,7 +136,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "wateravatarF",
@@ -133,7 +145,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "wateravatarM",
@@ -142,7 +154,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "earthavatarF",
@@ -151,7 +163,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "earthavatarM",
@@ -160,7 +172,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "windavatarF",
@@ -169,7 +181,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "windavatarM",
@@ -178,7 +190,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 150
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "fire_avatar_f",
@@ -187,7 +199,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "fire_avatar_m",
@@ -196,7 +208,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "water_avatar_f",
@@ -205,7 +217,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "water_avatar_m",
@@ -214,7 +226,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "earth_avatar_f",
@@ -223,7 +235,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "earth_avatar_m",
@@ -232,7 +244,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 300
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "wind_avatar_f",
@@ -241,7 +253,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "wind_avatar_m",
@@ -250,7 +262,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_flame_spirit_f",
@@ -259,7 +271,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_flame_spirit_m",
@@ -268,7 +280,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_tidal_warden_f",
@@ -277,7 +289,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_tidal_warden_m",
@@ -286,7 +298,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_wind_whisperer_f",
@@ -295,7 +307,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_wind_whisperer_m",
@@ -304,7 +316,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_earth_titan_f",
@@ -313,7 +325,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_earth_titan_m",
@@ -322,7 +334,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_inferno_crown_f",
@@ -332,7 +344,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_inferno_crown_m",
@@ -342,7 +354,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_crystal_soul",
@@ -351,7 +363,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_stone_guardian",
@@ -360,7 +372,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_storm_oracle",
@@ -369,7 +381,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_abyss_watcher",
@@ -378,7 +390,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_fourfold_lord",
@@ -387,7 +399,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_magma_warlord",
@@ -396,7 +408,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_tempest_sage",
@@ -405,7 +417,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_voidbound_entity",
@@ -415,7 +427,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_astral_archon",
@@ -425,7 +437,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_elemental_puppeteer",
@@ -434,7 +446,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_mimic_entity",
@@ -443,7 +455,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_stone_colossus",
@@ -452,7 +464,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_wind_wraith",
@@ -461,7 +473,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_arcane_gambler",
@@ -470,7 +482,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_dragonkin_champion",
@@ -479,7 +491,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_fairy_m",
@@ -488,7 +500,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_fairy_f",
@@ -497,7 +509,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_novice_mage",
@@ -543,7 +555,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_bubble_brat",
@@ -554,7 +566,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_moss_mood",
@@ -565,7 +577,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_neon_puff",
@@ -576,7 +588,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_stone_cold_cutie",
@@ -587,7 +599,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_storm_brat",
@@ -598,7 +610,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_tidal_diva",
@@ -609,7 +621,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_ashen_trickster",
@@ -620,7 +632,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("avatar", "Rare")
     },
     {
       id: "avatar_corrupt_cherub",
@@ -631,7 +643,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_void_glam",
@@ -642,7 +654,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_riot_halo",
@@ -653,7 +665,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_neon_pyre_entity",
@@ -664,7 +676,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_neon_tide_entity",
@@ -675,7 +687,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_neon_stone_entity",
@@ -686,7 +698,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_neon_gale_entity",
@@ -697,7 +709,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("avatar", "Epic")
     },
     {
       id: "avatar_aurelian_archon",
@@ -708,7 +720,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_frostveil_heir",
@@ -719,7 +731,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_vampire_female",
@@ -730,7 +742,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_vampire_male",
@@ -741,7 +753,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_lycan_female",
@@ -752,7 +764,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_lycan_male",
@@ -763,7 +775,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_fire_street_duelist",
@@ -774,7 +786,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_water_street_duelist",
@@ -785,7 +797,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_earth_street_duelist",
@@ -796,7 +808,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_wind_street_duelist",
@@ -807,7 +819,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("avatar", "Common")
     },
     {
       id: "avatar_golden_menace",
@@ -819,7 +831,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_chaos_monarch",
@@ -830,7 +842,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_rose_riot",
@@ -841,7 +853,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: AVATAR_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
       id: "avatar_chestbound_adept",
@@ -902,7 +914,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "crystal_card_back",
@@ -911,7 +923,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "stone_rune_card_back",
@@ -920,7 +932,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: getBaseCosmeticPrice("cardBack", "Common")
     },
     {
       id: "storm_sigil_card_back",
@@ -929,7 +941,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("cardBack", "Common")
     },
     {
       id: "void_card_back",
@@ -939,7 +951,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: 500
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "royal_gold_card_back",
@@ -948,7 +960,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: 500
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "arcane_library_card_back",
@@ -957,7 +969,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_arcane_galaxy",
@@ -966,7 +978,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "cardback_elemental_nexus",
@@ -975,7 +987,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_neon_arcana",
@@ -986,7 +998,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_goldbound_relic",
@@ -998,7 +1010,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rotationOnly: true,
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_glacier_sigil",
@@ -1010,7 +1022,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rotationOnly: true,
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_blood_gem",
@@ -1021,7 +1033,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_winged_coffin",
@@ -1032,7 +1044,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_lycan_pack",
@@ -1043,7 +1055,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_four_element_street_emblem",
@@ -1054,7 +1066,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_founder_ember",
@@ -1063,7 +1075,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_frozen_sigil",
@@ -1072,7 +1084,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_lava_core",
@@ -1081,7 +1093,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "cardback_obsidian_halo",
@@ -1090,7 +1102,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_storm_spiral",
@@ -1099,7 +1111,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_verdant_relic",
@@ -1108,7 +1120,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "i_dont_lose_transparent_cardback",
@@ -1117,7 +1129,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "i_dont_lose_cardback",
@@ -1126,7 +1138,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "elemental_chest_cardback",
@@ -1136,7 +1148,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "wont_take_long_cardback",
@@ -1145,7 +1157,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "outplayed_too_easy_cardback",
@@ -1154,7 +1166,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "cry_about_it_cardback",
@@ -1163,7 +1175,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "dreamscape_cardback",
@@ -1172,7 +1184,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "charmed_heart_cardback",
@@ -1181,7 +1193,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "gothic_heart_cardback",
@@ -1190,7 +1202,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "mystic_bloom_cardback",
@@ -1199,7 +1211,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "your_gonna_lose_2",
@@ -1208,7 +1220,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "your_gonna_lose",
@@ -1217,7 +1229,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "cardback_tiny_but_mighty",
@@ -1226,7 +1238,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_nature_bites_back",
@@ -1235,7 +1247,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_cry_about_it_v2",
@@ -1244,7 +1256,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "cardback_flame_tyrant",
@@ -1253,7 +1265,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_elemental_overlord",
@@ -1262,7 +1274,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_sweet_but_deadly",
@@ -1271,7 +1283,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "cardback_too_easy",
@@ -1280,7 +1292,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("cardBack", "Common")
     },
     {
       id: "cardback_stay_mad",
@@ -1289,7 +1301,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("cardBack", "Rare")
     },
     {
       id: "cardback_void_tease",
@@ -1298,7 +1310,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("cardBack", "Epic")
     },
     {
       id: "cardback_lucky_you",
@@ -1307,7 +1319,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("cardBack", "Common")
     },
     {
       id: "cardback_king_energy",
@@ -1316,7 +1328,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: CARD_BACK_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("cardBack", "Legendary")
     },
     {
       id: "cardback_daily_element_chest",
@@ -1361,7 +1373,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "water_background",
@@ -1370,7 +1382,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "earth_background",
@@ -1379,7 +1391,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "wind_background",
@@ -1388,7 +1400,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "celestial_void_background",
@@ -1397,7 +1409,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("background", "Legendary")
     },
     {
       id: "lava_throne_background",
@@ -1407,7 +1419,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: 700
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "frozen_temple_background",
@@ -1416,7 +1428,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 350
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "ruin_arena_background",
@@ -1425,7 +1437,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 90
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "celestial_chamber_background",
@@ -1434,7 +1446,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: 700
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "storm_peak_background",
@@ -1443,7 +1455,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 350
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "void_altar_background",
@@ -1453,7 +1465,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: 1000
+      price: getBaseCosmeticPrice("background", "Legendary")
     },
     {
       id: "bg_ember_arena",
@@ -1462,7 +1474,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "bg_sunken_court",
@@ -1471,7 +1483,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "bg_verdant_shrine",
@@ -1480,7 +1492,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "bg_storm_temple",
@@ -1489,7 +1501,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "bg_crystal_cavern",
@@ -1498,7 +1510,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "bg_moonlit_basin",
@@ -1507,7 +1519,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "bg_elemental_throne",
@@ -1516,7 +1528,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("background", "Legendary")
     },
     {
       id: "bg_eclipse_hall",
@@ -1525,7 +1537,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("background", "Legendary")
     },
     {
       id: "bg_infernal_rift",
@@ -1534,7 +1546,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "bg_aurora_sanctuary",
@@ -1543,7 +1555,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "bg_abyssal_gate",
@@ -1552,7 +1564,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "bg_sunken_ruins",
@@ -1561,7 +1573,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "bg_crystal_nexus",
@@ -1570,7 +1582,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "bg_stormbreaker_summit",
@@ -1579,7 +1591,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("background", "Rare")
     },
     {
       id: "bg_celestial_observatory",
@@ -1589,7 +1601,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: BACKGROUND_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("background", "Legendary")
     },
     {
       id: "bg_verdant_overgrowth",
@@ -1598,7 +1610,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "background_ancient_arena",
@@ -1635,7 +1647,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("background", "Epic")
     },
     {
       id: "background_breezewild_meadow",
@@ -1646,7 +1658,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "background_broken_yard",
@@ -1657,7 +1669,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "background_crystal_ruins",
@@ -1668,7 +1680,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "background_ember_pit",
@@ -1679,7 +1691,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "background_glowtide_flats",
@@ -1690,7 +1702,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "background_moonshade_grove",
@@ -1701,7 +1713,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: BACKGROUND_RARITY_PRICING.Common
+      price: getBaseCosmeticPrice("background", "Common")
     },
     {
       id: "background_morning_sanctum",
@@ -1781,7 +1793,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "arcane_blue_flame_card",
@@ -1791,7 +1803,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "blue_fire_card",
@@ -1801,7 +1813,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: getBaseCosmeticPrice("elementCardVariant", "Common")
     },
     {
       id: "classic_flame_card",
@@ -1811,7 +1823,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: getBaseCosmeticPrice("elementCardVariant", "Common")
     },
     {
       id: "arcane_water_card",
@@ -1821,7 +1833,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "water_pool_card",
@@ -1831,7 +1843,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: getBaseCosmeticPrice("elementCardVariant", "Common")
     },
     {
       id: "wave_water_card",
@@ -1841,7 +1853,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "arcane_earth_card",
@@ -1851,7 +1863,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: getBaseCosmeticPrice("elementCardVariant", "Common")
     },
     {
       id: "bold_earth_card",
@@ -1861,7 +1873,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "rock_storm_card",
@@ -1871,7 +1883,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "arcane_wind_card",
@@ -1881,7 +1893,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: getBaseCosmeticPrice("elementCardVariant", "Common")
     },
     {
       id: "smoke_wind_card",
@@ -1891,7 +1903,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 120
+      price: getBaseCosmeticPrice("elementCardVariant", "Common")
     },
     {
       id: "smokey_wind_card",
@@ -1901,7 +1913,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     }
   ,
     {
@@ -1943,7 +1955,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "fire_variant_blue_inferno",
@@ -1953,7 +1965,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "fire_variant_crownfire",
@@ -1964,7 +1976,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       defaultOwned: false,
       purchasable: true,
       rotationOnly: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("elementCardVariant", "Legendary")
     },
     {
       id: "fire_variant_neon_arcana",
@@ -1976,7 +1988,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "fire_variant_ember_core",
@@ -1986,7 +1998,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "fire_variant_phoenix",
@@ -1996,7 +2008,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("elementCardVariant", "Legendary")
     },
     {
       id: "fire_variant_transparent_flame",
@@ -2006,7 +2018,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("elementCardVariant", "Legendary")
     },
     {
       id: "water_variant_abyss_wave",
@@ -2016,7 +2028,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "water_variant_crystal_iceburst",
@@ -2026,7 +2038,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "water_variant_tidal_spirit",
@@ -2036,7 +2048,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "water_variant_transparent_wave",
@@ -2046,7 +2058,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("elementCardVariant", "Legendary")
     },
     {
       id: "water_variant_water_pillar",
@@ -2056,7 +2068,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "water_variant_neon_arcana",
@@ -2068,7 +2080,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "earth_variant_crystal_titan",
@@ -2078,7 +2090,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "earth_variant_mountain_heart",
@@ -2088,7 +2100,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "earth_variant_rooted_monolith",
@@ -2098,7 +2110,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "earth_variant_stone_colossus",
@@ -2108,7 +2120,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "earth_variant_transparent_crystal",
@@ -2118,7 +2130,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("elementCardVariant", "Legendary")
     },
     {
       id: "wind_variant_sky_serpent",
@@ -2128,7 +2140,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "wind_variant_storm_eye",
@@ -2138,7 +2150,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Epic",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "wind_variant_neon_arcana",
@@ -2150,7 +2162,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "fire_variant_goldbound_relics",
@@ -2162,7 +2174,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "fire_variant_aurora_flare",
@@ -2174,7 +2186,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "fire_variant_flame_wings",
@@ -2186,7 +2198,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "fire_variant_fire_paw",
@@ -2198,7 +2210,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "earth_variant_goldbound_relics",
@@ -2210,7 +2222,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "earth_variant_icebound_crag",
@@ -2222,7 +2234,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "earth_variant_stone_graves",
@@ -2234,7 +2246,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "earth_variant_stone_paw",
@@ -2246,7 +2258,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "wind_variant_goldbound_relics",
@@ -2258,7 +2270,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "wind_variant_sleet_spiral",
@@ -2270,7 +2282,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "wind_variant_wings_wind",
@@ -2282,7 +2294,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "wind_variant_lycan_duo",
@@ -2294,7 +2306,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "fire_variant_street",
@@ -2306,7 +2318,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "water_variant_street",
@@ -2318,7 +2330,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "earth_variant_street",
@@ -2330,7 +2342,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "wind_variant_street",
@@ -2342,7 +2354,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "water_variant_goldbound_relics",
@@ -2354,7 +2366,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "water_variant_frostbloom",
@@ -2366,7 +2378,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "water_variant_blood_wings",
@@ -2378,7 +2390,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "water_variant_water_wolf",
@@ -2390,7 +2402,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Epic
+      price: getBaseCosmeticPrice("elementCardVariant", "Epic")
     },
     {
       id: "wind_variant_transparent_vortex",
@@ -2400,7 +2412,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Legendary",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Legendary
+      price: getBaseCosmeticPrice("elementCardVariant", "Legendary")
     },
     {
       id: "wind_variant_vortex_spirit",
@@ -2410,7 +2422,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "wind_variant_whisper_spiral",
@@ -2420,7 +2432,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Rare",
       defaultOwned: false,
       purchasable: true,
-      price: ELEMENT_VARIANT_RARITY_PRICING.Rare
+      price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
       id: "fire_variant_sunflare",
@@ -2607,7 +2619,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       rarity: "Common",
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_chaos_gremlin",
@@ -2618,7 +2630,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_soft_doom",
@@ -2629,7 +2641,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_pretty_problem",
@@ -2640,7 +2652,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_silent_menace",
@@ -2651,7 +2663,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("title", "Rare")
     },
     {
       id: "title_drama_magnet",
@@ -2662,7 +2674,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("title", "Rare")
     },
     {
       id: "title_neon_rebel",
@@ -2673,7 +2685,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 250
+      price: getBaseCosmeticPrice("title", "Rare")
     },
     {
       id: "title_velvet_villain",
@@ -2684,7 +2696,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 500
+      price: getBaseCosmeticPrice("title", "Epic")
     },
     {
       id: "title_void_doll",
@@ -2695,7 +2707,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 500
+      price: getBaseCosmeticPrice("title", "Epic")
     },
     {
       id: "title_glitch_royalty",
@@ -2706,7 +2718,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 500
+      price: getBaseCosmeticPrice("title", "Epic")
     },
     {
       id: "title_crownless_king",
@@ -2717,7 +2729,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 850
+      price: getBaseCosmeticPrice("title", "Legendary")
     },
     {
       id: "title_divine_menace",
@@ -2728,7 +2740,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 850
+      price: getBaseCosmeticPrice("title", "Legendary")
     },
     {
       id: "title_cataclysm_icon",
@@ -2739,7 +2751,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 850
+      price: getBaseCosmeticPrice("title", "Legendary")
     },
     {
       id: "title_spellwired",
@@ -2750,7 +2762,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 850
+      price: getBaseCosmeticPrice("title", "Legendary")
     },
     {
       id: "title_goldbound",
@@ -2761,7 +2773,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 500
+      price: getBaseCosmeticPrice("title", "Epic")
     },
     {
       id: "title_shiverborne",
@@ -2772,7 +2784,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: false,
       defaultOwned: false,
       purchasable: true,
-      price: 500
+      price: getBaseCosmeticPrice("title", "Epic")
     },
     {
       id: "title_spark",
@@ -2783,7 +2795,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_drifter",
@@ -2794,7 +2806,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_stonehand",
@@ -2805,7 +2817,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_mistborn",
@@ -2816,7 +2828,7 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       isNew: true,
       defaultOwned: false,
       purchasable: true,
-      price: 100
+      price: getBaseCosmeticPrice("title", "Common")
     },
     {
       id: "title_first_light",

@@ -1672,21 +1672,21 @@ test("ui: store screen uses cardback catalog names and rarities for wired shop e
   assert.ok(luckyYou);
   assert.ok(kingEnergy);
   assert.equal(swiftExecution.rarity, "Epic");
-  assert.equal(swiftExecution.price, 500);
+  assert.equal(swiftExecution.price, 700);
   assert.equal(tinyButMighty.rarity, "Rare");
-  assert.equal(tinyButMighty.price, 250);
+  assert.equal(tinyButMighty.price, 350);
   assert.equal(elementalOverlord.rarity, "Legendary");
-  assert.equal(elementalOverlord.price, 800);
+  assert.equal(elementalOverlord.price, 1050);
   assert.equal(tooEasyV2.rarity, "Common");
-  assert.equal(tooEasyV2.price, 120);
+  assert.equal(tooEasyV2.price, 175);
   assert.equal(cryAboutItV2.rarity, "Epic");
-  assert.equal(cryAboutItV2.price, 500);
+  assert.equal(cryAboutItV2.price, 700);
   assert.equal(voidTease.rarity, "Epic");
-  assert.equal(voidTease.price, 500);
+  assert.equal(voidTease.price, 700);
   assert.equal(luckyYou.rarity, "Common");
-  assert.equal(luckyYou.price, 120);
+  assert.equal(luckyYou.price, 175);
   assert.equal(kingEnergy.rarity, "Legendary");
-  assert.equal(kingEnergy.price, 800);
+  assert.equal(kingEnergy.price, 1050);
   assert.match(html, /cosmetic-rarity-label[^>]*>Epic<\/span>/);
   assert.ok(
     getCardBackImage("i_dont_lose_transparent_cardback").includes(
@@ -1874,7 +1874,7 @@ test("ui: Simple Backgrounds render as collectionless purchasable NEW background
 
   assert.equal((storeHtml.match(/store-item-badge-new">NEW<\/span>/g) ?? []).length, 6);
   assert.equal((storeHtml.match(/Type: Background/g) ?? []).length, 6);
-  assert.equal((storeHtml.match(/Price: 90 Tokens/g) ?? []).length, 6);
+  assert.equal((storeHtml.match(/Price: 150 Tokens/g) ?? []).length, 6);
   assert.equal((storeHtml.match(/Rarity: <span class="cosmetic-rarity-label[^"]*">Common<\/span>/g) ?? []).length, 6);
   assert.doesNotMatch(storeHtml, /Simple Backgrounds Collection|n\/a Collection|None Collection/);
   assert.doesNotMatch(storeHtml, /data-store-collection-filter=/);
@@ -4236,7 +4236,7 @@ test("ui: appController keeps local-only store purchase actions blocked behind t
   };
   const storeStates = [
     {
-      tokens: 200,
+      tokens: 400,
       supporterPass: false,
       catalog: {
         avatar: [
@@ -4259,7 +4259,7 @@ test("ui: appController keeps local-only store purchase actions blocked behind t
       }
     },
     {
-      tokens: 200,
+      tokens: 400,
       supporterPass: false,
       catalog: {
         avatar: [],
@@ -4271,7 +4271,7 @@ test("ui: appController keeps local-only store purchase actions blocked behind t
       }
     },
     {
-      tokens: 200,
+      tokens: 400,
       supporterPass: false,
       catalog: {
         avatar: [],
@@ -4318,7 +4318,7 @@ test("ui: appController keeps local-only store purchase actions blocked behind t
     app.storeViewState.rarities = new Set(["Common", "Rare"]);
 
     await app.showStore();
-    assert.equal(shown[0].store.tokens, 200);
+    assert.equal(shown[0].store.tokens, 400);
 
     await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
     await shown.at(-1).actions.buy("avatar", "fire_avatar_f");
@@ -4335,7 +4335,7 @@ test("ui: appController keeps local-only store purchase actions blocked behind t
 
     const afterBlockedBuy = shown.at(-1).viewState;
 
-    assert.equal(shown.at(-1).store.tokens, 200);
+    assert.equal(shown.at(-1).store.tokens, 400);
     assert.equal(afterBlockedBuy.searchText, "fire");
     assert.deepEqual([...afterBlockedBuy.categories], ["avatar", "background"]);
     assert.deepEqual([...afterBlockedBuy.rarities], ["Common", "Rare"]);
@@ -4343,7 +4343,7 @@ test("ui: appController keeps local-only store purchase actions blocked behind t
     await shown.at(-1).actions.equip("background", "default_background");
     const afterEquip = shown.at(-1).viewState;
 
-    assert.equal(shown.at(-1).store.tokens, 200);
+    assert.equal(shown.at(-1).store.tokens, 400);
     assert.equal(afterEquip.searchText, "fire");
     assert.deepEqual([...afterEquip.categories], ["avatar", "background"]);
     assert.deepEqual([...afterEquip.rarities], ["Common", "Rare"]);

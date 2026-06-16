@@ -6,7 +6,7 @@ import {
   normalizeProfileCosmetics
 } from "./cosmeticSystem.js";
 
-export const DEFAULT_STARTING_TOKENS = 200;
+export const DEFAULT_STARTING_TOKENS = 400;
 const PURCHASE_FLAG_BY_TYPE = Object.freeze({
   avatar: "FIRST_AVATAR_PURCHASED",
   cardBack: "FIRST_CARD_BACK_PURCHASED",
