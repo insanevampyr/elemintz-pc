@@ -6,6 +6,7 @@ export const DAILY_ELEMENT_CHEST_SOURCE = "daily_element_chest";
 export const DAILY_ELEMENT_CHEST_COLLECTION = "Daily EleMintz Chest";
 export const DAILY_ELEMENT_CHEST_DROP_KEY = "daily_elemintz_chest";
 export const DAILY_ELEMENT_CHEST_RELEASE_TAG = "daily_elemintz_chest_2026_06";
+export const DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID = "daily_elemintz_chest_current";
 export const DAILY_ELEMENT_CHEST_PAID_OPEN_COST = 100;
 export const DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD = 10;
 export const DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD = 30;
@@ -163,9 +164,13 @@ function addTokens(profile, amount) {
   });
 }
 
-function buildPoolSummary() {
+export function getDailyChestRewardPool(poolId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID) {
+  return DAILY_ELEMENT_CHEST_POOL;
+}
+
+function buildPoolSummary(pool = DAILY_ELEMENT_CHEST_POOL) {
   return Object.fromEntries(
-    Object.entries(DAILY_ELEMENT_CHEST_POOL).map(([rarity, entries]) => [
+    Object.entries(pool).map(([rarity, entries]) => [
       rarity,
       entries.map((entry) => {
         const definition = getCosmeticDefinition(entry.type, entry.cosmeticId);
@@ -179,13 +184,13 @@ function buildPoolSummary() {
   );
 }
 
-function buildCollectionProgress(profile) {
+function buildCollectionProgress(profile, pool = DAILY_ELEMENT_CHEST_POOL) {
   const byRarity = {};
   const items = {};
   let totalOwned = 0;
   let totalAvailable = 0;
 
-  for (const [rarity, entries] of Object.entries(DAILY_ELEMENT_CHEST_POOL)) {
+  for (const [rarity, entries] of Object.entries(pool)) {
     const detailedEntries = entries.map((entry) => {
       const definition = getCosmeticDefinition(entry.type, entry.cosmeticId);
       const owned = getOwnedSet(profile, entry.type).has(entry.cosmeticId);
@@ -216,6 +221,20 @@ function buildCollectionProgress(profile) {
     byRarity,
     items
   };
+}
+
+export function getDailyChestPoolStatus(profile, poolId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID) {
+  const pool = getDailyChestRewardPool(poolId);
+  const normalized = normalizeProfileDailyElementChest(normalizeProfileStore(profile));
+  const progress = buildCollectionProgress(normalized, pool);
+  return {
+    poolId,
+    ...progress
+  };
+}
+
+export function isDailyChestPoolComplete(profile, poolId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID) {
+  return getDailyChestPoolStatus(profile, poolId).isComplete === true;
 }
 
 function pickPoolEntryForProfile(rarity, profile, random) {

@@ -11572,6 +11572,60 @@ test("ui: menu shows the Daily EleMintz Chest card between Daily Login and Chall
   assert.ok(html.indexOf('data-menu-daily-element-chest-panel="true"') < html.indexOf('<h3 class="section-title">Challenges</h3>'));
 });
 
+test("ui: menu hides the Daily EleMintz Chest card only when the current pool is complete", () => {
+  const renderMenu = (dailyElementChest) =>
+    menuScreen.render({
+      username: "ChestUser",
+      backgroundImage: "assets/EleMintzIcon.png",
+      dailyElementChest,
+      dailyChallenges: {
+        dailyLogin: {
+          stateLabel: "Daily Login Streak: Ready",
+          detailLabel: "Day 2 of 7",
+          resetLabel: "01:00"
+        },
+        daily: {
+          resetLabel: "01:00",
+          challenges: []
+        },
+        weekly: {
+          resetLabel: "2d 03:00",
+          challenges: []
+        }
+      },
+      actions: {}
+    });
+
+  const hiddenHtml = renderMenu({
+    loading: false,
+    canOpenFree: true,
+    nextFreeLabel: "04h 59m",
+    paidOpenCost: 100,
+    isPoolComplete: true
+  });
+  const incompleteCooldownHtml = renderMenu({
+    loading: false,
+    canOpenFree: false,
+    nextFreeLabel: "03h 12m",
+    paidOpenCost: 100,
+    isPoolComplete: false
+  });
+  const duplicateLikeHtml = renderMenu({
+    loading: false,
+    canOpenFree: false,
+    nextFreeLabel: "02h 00m",
+    paidOpenCost: 100,
+    isPoolComplete: false,
+    duplicateConversion: { tokensGranted: 25 }
+  });
+
+  assert.doesNotMatch(hiddenHtml, /data-menu-daily-element-chest-panel="true"/);
+  assert.doesNotMatch(hiddenHtml, /Daily EleMintz Chest/);
+  assert.match(incompleteCooldownHtml, /data-menu-daily-element-chest-panel="true"/);
+  assert.match(incompleteCooldownHtml, /data-daily-chest-next-free="true"/);
+  assert.match(duplicateLikeHtml, /data-menu-daily-element-chest-panel="true"/);
+});
+
 test("ui: Daily EleMintz Chest renders cooldown mini-card and result modal states", () => {
   const cardHtml = renderDailyElementChestMiniCard({
     loading: false,

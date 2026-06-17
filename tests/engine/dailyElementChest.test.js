@@ -9,11 +9,15 @@ import {
   getCosmeticCatalogForProfile
 } from "../../src/state/cosmeticSystem.js";
 import {
+  DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
   DAILY_ELEMENT_CHEST_DUPLICATE_TOKEN_REWARDS,
   DAILY_ELEMENT_CHEST_ODDS,
   DAILY_ELEMENT_CHEST_PAID_OPEN_COST,
   DAILY_ELEMENT_CHEST_POOL,
+  getDailyChestPoolStatus,
+  getDailyChestRewardPool,
   getDailyElementChestStatus,
+  isDailyChestPoolComplete,
   normalizeProfileDailyElementChest,
   openDailyElementChest
 } from "../../src/state/dailyElementChestSystem.js";
@@ -53,6 +57,59 @@ const DAILY_CHEST_EXPECTATIONS = Object.freeze([
   ["avatar", "avatar_element_chosen", "Legendary"],
   ["background", "background_chamber_of_the_four", "Legendary"]
 ]);
+
+function buildDailyChestCompletionProfile(overrides = {}) {
+  return {
+    username: "DailyChestCompletionUser",
+    tokens: 400,
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      background: ["default_background"],
+      cardBack: ["default_card_back"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"],
+      ...(overrides.ownedCosmetics ?? {})
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      },
+      badge: "none",
+      title: "Initiate",
+      ...(overrides.equippedCosmetics ?? {})
+    },
+    ...overrides
+  };
+}
+
+function addDailyChestPoolOwnership(profile, entries = DAILY_CHEST_EXPECTATIONS) {
+  const next = {
+    ...profile,
+    ownedCosmetics: {
+      avatar: [...(profile.ownedCosmetics?.avatar ?? [])],
+      background: [...(profile.ownedCosmetics?.background ?? [])],
+      cardBack: [...(profile.ownedCosmetics?.cardBack ?? [])],
+      elementCardVariant: [...(profile.ownedCosmetics?.elementCardVariant ?? [])],
+      badge: [...(profile.ownedCosmetics?.badge ?? [])],
+      title: [...(profile.ownedCosmetics?.title ?? [])]
+    }
+  };
+
+  for (const [type, cosmeticId] of entries) {
+    if (!next.ownedCosmetics[type].includes(cosmeticId)) {
+      next.ownedCosmetics[type].push(cosmeticId);
+    }
+  }
+
+  return next;
+}
 
 test("daily chest: approved cosmetics exist in catalog with final rarity and chest-only flags", () => {
   for (const [type, id, rarity] of DAILY_CHEST_EXPECTATIONS) {
@@ -592,4 +649,107 @@ test("daily chest: status returns free eligibility, paid cost, pity counters, po
       ]
     }
   });
+});
+
+test("daily chest: pool completion helpers report incomplete when any current pool cosmetic is missing", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile(), DAILY_CHEST_EXPECTATIONS.slice(1));
+  const status = getDailyChestPoolStatus(profile);
+  const expectedTotal = Object.values(DAILY_ELEMENT_CHEST_POOL).reduce((total, entries) => total + entries.length, 0);
+
+  assert.equal(getDailyChestRewardPool(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID), DAILY_ELEMENT_CHEST_POOL);
+  assert.equal(status.poolId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.equal(status.totalAvailable, expectedTotal);
+  assert.equal(status.totalOwned, expectedTotal - 1);
+  assert.equal(status.isComplete, false);
+  assert.equal(isDailyChestPoolComplete(profile), false);
+  assert.equal(status.byRarity.common.owned, 2);
+  assert.equal(status.byRarity.common.total, DAILY_ELEMENT_CHEST_POOL.common.length);
+  assert.equal(status.items.common.some((entry) => entry.cosmeticId === "title_first_light" && entry.owned === false), true);
+});
+
+test("daily chest: pool completion helpers report complete only when every current pool cosmetic is owned", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile());
+  const status = getDailyChestPoolStatus(profile);
+  const expectedTotal = Object.values(DAILY_ELEMENT_CHEST_POOL).reduce((total, entries) => total + entries.length, 0);
+
+  assert.equal(status.totalAvailable, expectedTotal);
+  assert.equal(status.totalOwned, expectedTotal);
+  assert.equal(status.isComplete, true);
+  assert.equal(isDailyChestPoolComplete(profile), true);
+  assert.equal(Object.values(status.byRarity).every((entry) => entry.isComplete === true), true);
+  assert.equal(Object.values(status.items).flat().every((entry) => entry.owned === true), true);
+});
+
+test("daily chest: claimed or cooldown state does not affect pool completion helpers", () => {
+  const incompleteProfile = addDailyChestPoolOwnership(
+    buildDailyChestCompletionProfile({
+      dailyElementChest: {
+        lastFreeOpenDateKey: new Date(Date.parse("2026-06-06T23:00:00.000Z")).toISOString(),
+        totalOpens: 99,
+        paidOpens: 40,
+        freeOpens: 59,
+        pity: {
+          opensSinceEpicPlus: 9,
+          opensSinceLegendary: 29
+        }
+      }
+    }),
+    DAILY_CHEST_EXPECTATIONS.slice(0, -1)
+  );
+
+  assert.equal(isDailyChestPoolComplete(incompleteProfile), false);
+  assert.equal(getDailyChestPoolStatus(incompleteProfile).isComplete, false);
+});
+
+test("daily chest: duplicate fallback-like state does not affect pool completion helpers", () => {
+  const incompleteProfile = addDailyChestPoolOwnership(
+    buildDailyChestCompletionProfile({
+      tokens: 9999,
+      dailyElementChest: {
+        lastFreeOpenDateKey: null,
+        totalOpens: 30,
+        paidOpens: 30,
+        freeOpens: 0,
+        pity: {
+          opensSinceEpicPlus: 0,
+          opensSinceLegendary: 0
+        }
+      }
+    }),
+    DAILY_CHEST_EXPECTATIONS.filter(([, cosmeticId]) => cosmeticId !== "background_morning_sanctum")
+  );
+
+  assert.equal(isDailyChestPoolComplete(incompleteProfile), false);
+  assert.equal(getDailyChestPoolStatus(incompleteProfile).byRarity.rare.isComplete, false);
+});
+
+test("daily chest: unrelated owned and equipped cosmetics do not affect pool completion helpers", () => {
+  const unrelatedProfile = buildDailyChestCompletionProfile({
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_fire_mage"],
+      background: ["default_background", "forest_glade_background"],
+      cardBack: ["default_card_back", "fire_card_back"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card",
+        "fire_variant_ember"
+      ],
+      badge: ["none", "war_machine"],
+      title: ["Initiate", "Flame Vanguard"]
+    },
+    equippedCosmetics: {
+      avatar: "avatar_fire_mage",
+      background: "forest_glade_background",
+      cardBack: "fire_card_back",
+      badge: "war_machine",
+      title: "Flame Vanguard"
+    }
+  });
+  const status = getDailyChestPoolStatus(unrelatedProfile);
+
+  assert.equal(status.totalOwned, 0);
+  assert.equal(status.isComplete, false);
+  assert.equal(isDailyChestPoolComplete(unrelatedProfile), false);
 });

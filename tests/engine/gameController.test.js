@@ -5373,6 +5373,76 @@ test("appController: Daily EleMintz Chest modal wires free and paid opens throug
   }
 });
 
+test("appController: Daily EleMintz Chest menu visibility uses pool completion only", () => {
+  const originalWindow = globalThis.window;
+  const showCalls = [];
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: (...args) => showCalls.push(args) },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        getDailyElementChestStatus: async () => ({}),
+        openDailyElementChest: async () => ({})
+      }
+    }
+  };
+
+  try {
+    app.username = "ChestMenuUser";
+    app.profile = {
+      username: "ChestMenuUser",
+      equippedCosmetics: {},
+      ownedCosmetics: {}
+    };
+    app.dailyChallenges = null;
+
+    app.dailyElementChestStatus = {
+      canOpenFree: false,
+      nextFreeResetAt: "2026-06-06T23:00:00.000Z",
+      paidOpenCost: 100,
+      tokens: 450,
+      dailyElementChest: {
+        lastFreeOpenDateKey: "2026-06-06T23:00:00.000Z",
+        totalOpens: 12,
+        paidOpens: 5,
+        freeOpens: 7,
+        pity: { opensSinceEpicPlus: 4, opensSinceLegendary: 12 }
+      },
+      collectionProgress: {
+        totalOwned: 11,
+        totalAvailable: 12,
+        isComplete: false
+      }
+    };
+
+    app.renderMenuScreen();
+    assert.equal(showCalls.at(-1)?.[0], "menu");
+    assert.equal(showCalls.at(-1)?.[1]?.dailyElementChest?.isPoolComplete, false);
+    assert.equal(showCalls.at(-1)?.[1]?.dailyElementChest?.canOpenFree, false);
+
+    app.dailyElementChestStatus = {
+      ...app.dailyElementChestStatus,
+      canOpenFree: true,
+      collectionProgress: {
+        totalOwned: 12,
+        totalAvailable: 12,
+        isComplete: true
+      }
+    };
+
+    app.renderMenuScreen();
+    assert.equal(showCalls.at(-1)?.[1]?.dailyElementChest?.isPoolComplete, true);
+    assert.equal(showCalls.at(-1)?.[1]?.dailyElementChest?.canOpenFree, true);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: Daily EleMintz Chest suppresses duplicate opens while one request is in flight", async () => {
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;

@@ -374,9 +374,15 @@ export const menuScreen = {
                 <div data-menu-daily-login-panel="true">
                   ${renderMenuDailyLoginStatus(context.dailyChallenges?.dailyLogin)}
                 </div>
-                <div data-menu-daily-element-chest-panel="true">
-                  ${renderDailyElementChestMiniCard(context.dailyElementChest)}
-                </div>
+                ${
+                  context.dailyElementChest?.isPoolComplete === true
+                    ? ""
+                    : `
+                      <div data-menu-daily-element-chest-panel="true">
+                        ${renderDailyElementChestMiniCard(context.dailyElementChest)}
+                      </div>
+                    `
+                }
                 <div class="menu-challenges-heading">
                   <h3 class="section-title">Challenges</h3>
                 </div>

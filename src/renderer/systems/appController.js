@@ -2693,7 +2693,8 @@ export class AppController {
       loading: false,
       canOpenFree: this.dailyElementChestStatus.canOpenFree === true,
       nextFreeLabel: this.formatDailyElementChestCountdown(this.dailyElementChestStatus.nextFreeResetAt),
-      paidOpenCost: this.dailyElementChestStatus.paidOpenCost ?? 100
+      paidOpenCost: this.dailyElementChestStatus.paidOpenCost ?? 100,
+      isPoolComplete: this.dailyElementChestStatus.collectionProgress?.isComplete === true
     };
   }
 
