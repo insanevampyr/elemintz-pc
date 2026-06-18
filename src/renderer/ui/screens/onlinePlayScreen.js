@@ -20,6 +20,7 @@ import {
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../shared/battleStatusSummary.js";
 import { renderLowerHudLayout } from "../shared/lowerHudLayout.js";
+import { renderWarPileSummaryPresentation } from "../shared/warPileSummaryPresentation.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const DEFAULT_ONLINE_EQUIPPED_COSMETICS = Object.freeze({
@@ -490,31 +491,23 @@ function renderOnlineWarPileSummary(pileCards, opponentCardVariants, emphasize) 
     ? pileCards.map((card) => String(card ?? "").trim().toLowerCase()).filter(Boolean)
     : [];
   const opponentVariantImages = getVariantCardImages(opponentCardVariants ?? null);
+  const elementCounts = Object.fromEntries(
+    ELEMENT_ORDER.map((element) => [
+      element,
+      normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0)
+    ])
+  );
+  const cardImages = Object.fromEntries(
+    ELEMENT_ORDER.map((element) => [element, getCardImage(element, opponentVariantImages)])
+  );
 
-  return `
-    <div class="war-summary-shell">
-      <p class="war-summary-label">WAR Pile</p>
-      <div class="war-summary-grid ${emphasize ? "is-emphasized" : ""}">
-        ${ELEMENT_ORDER.map((element) => {
-          const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
-          const classes = ["war-slot", `war-slot-${element}`];
-
-          if (count === 0) {
-            classes.push("is-empty");
-          }
-
-          return `
-            <div class="${classes.join(" ")}" aria-label="WAR ${formatElement(element)} x${count}">
-              <span class="card-art war-slot-art" style="background-image: url('${getCardImage(element, opponentVariantImages)}')"></span>
-              <span class="war-slot-count-badge">x${count}</span>
-              <span class="war-slot-name">${formatElement(element)}</span>
-            </div>
-          `;
-        }).join("")}
-      </div>
-      <p class="war-summary-helper">Tracks committed WAR cards.</p>
-    </div>
-  `;
+  return renderWarPileSummaryPresentation({
+    label: "WAR Pile",
+    helperText: "Tracks committed WAR cards.",
+    elementCounts,
+    cardImages,
+    emphasized: emphasize
+  });
 }
 
 function renderSharedBattleResultPanel(battleResultView) {

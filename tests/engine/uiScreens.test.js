@@ -31,6 +31,7 @@ import {
   renderCenterRoundPlaceholder,
   renderCenterRoundResult
 } from "../../src/renderer/ui/shared/roundResultPresentation.js";
+import { renderWarPileSummaryPresentation } from "../../src/renderer/ui/shared/warPileSummaryPresentation.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
@@ -322,6 +323,55 @@ test("ui: shared round result presentation preserves placeholder, headline, and 
   assert.match(warResolvedHtml, /data-round-center-stack-sweep="left"/);
   assert.match(warResolvedHtml, /round-center-result-stack-token-left/);
   assert.match(warResolvedHtml, /class="round-center-result-clash-badge">WAR</);
+});
+
+test("ui: shared WAR pile summary preserves ordered slots, counts, images, and input objects", () => {
+  const elementCounts = Object.freeze({
+    fire: 2,
+    earth: 0,
+    wind: 1,
+    water: 0
+  });
+  const cardImages = Object.freeze({
+    fire: "assets/cards/custom-fire.png",
+    earth: "assets/cards/custom-earth.png",
+    wind: "assets/cards/custom-wind.png",
+    water: "assets/cards/custom-water.png"
+  });
+  const countsBefore = { ...elementCounts };
+  const imagesBefore = { ...cardImages };
+  const html = renderWarPileSummaryPresentation({
+    label: "Custom WAR Label",
+    helperText: "Custom WAR helper.",
+    elementCounts,
+    cardImages,
+    emphasized: true
+  });
+
+  const fireIndex = html.indexOf("war-slot-fire");
+  const earthIndex = html.indexOf("war-slot-earth");
+  const windIndex = html.indexOf("war-slot-wind");
+  const waterIndex = html.indexOf("war-slot-water");
+
+  assert.match(html, /class="war-summary-shell"/);
+  assert.match(html, /class="war-summary-label">Custom WAR Label/);
+  assert.match(html, /class="war-summary-grid is-emphasized"/);
+  assert.ok(fireIndex < earthIndex);
+  assert.ok(earthIndex < windIndex);
+  assert.ok(windIndex < waterIndex);
+  assert.match(html, /class="war-slot war-slot-fire" aria-label="WAR Fire x2"/);
+  assert.match(html, /class="war-slot war-slot-earth is-empty" aria-label="WAR Earth x0"/);
+  assert.match(html, /class="war-slot war-slot-wind" aria-label="WAR Wind x1"/);
+  assert.match(html, /class="war-slot war-slot-water is-empty" aria-label="WAR Water x0"/);
+  assert.match(html, /class="war-slot-count-badge">x2<\/span>/);
+  assert.equal((html.match(/class="war-slot-count-badge">x0<\/span>/g) ?? []).length, 2);
+  assert.match(html, /assets\/cards\/custom-fire\.png/);
+  assert.match(html, /assets\/cards\/custom-earth\.png/);
+  assert.match(html, /assets\/cards\/custom-wind\.png/);
+  assert.match(html, /assets\/cards\/custom-water\.png/);
+  assert.match(html, /class="war-summary-helper">Custom WAR helper\./);
+  assert.deepEqual(elementCounts, countsBefore);
+  assert.deepEqual(cardImages, imagesBefore);
 });
 
 function createShortcutDocument({ activeElement = null, modalTitle = "", modalVisible = false } = {}) {

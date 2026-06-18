@@ -19,6 +19,7 @@ import {
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../shared/battleStatusSummary.js";
 import { renderLowerHudLayout } from "../shared/lowerHudLayout.js";
+import { renderWarPileSummaryPresentation } from "../shared/warPileSummaryPresentation.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
@@ -118,32 +119,23 @@ function getWarPresentationSignature(context) {
 
 function renderWarPileSummary(pileCards, opponentCardVariantImages, emphasize) {
   const normalizedCards = Array.isArray(pileCards) ? pileCards.map((card) => getCardElement(card)) : [];
+  const elementCounts = Object.fromEntries(
+    ELEMENT_ORDER.map((element) => [
+      element,
+      normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0)
+    ])
+  );
+  const cardImages = Object.fromEntries(
+    ELEMENT_ORDER.map((element) => [element, getCardImage(element, opponentCardVariantImages ?? null)])
+  );
 
-  return `
-    <div class="war-summary-shell">
-      <p class="war-summary-label">Opponent Cards</p>
-      <div class="war-summary-grid ${emphasize ? "is-emphasized" : ""}">
-        ${ELEMENT_ORDER.map((element) => {
-          const count = normalizedCards.reduce((sum, card) => sum + (card === element ? 1 : 0), 0);
-          const variantMap = opponentCardVariantImages ?? null;
-          const classes = ["war-slot", `war-slot-${element}`];
-
-          if (count === 0) {
-            classes.push("is-empty");
-          }
-
-          return `
-            <div class="${classes.join(" ")}" aria-label="WAR ${formatElement(element)} x${count}">
-              <span class="card-art war-slot-art" style="background-image: url('${getCardImage(element, variantMap)}')"></span>
-              <span class="war-slot-count-badge">x${count}</span>
-              <span class="war-slot-name">${formatElement(element)}</span>
-            </div>
-          `;
-        }).join("")}
-      </div>
-      <p class="war-summary-helper">WAR pile tracks committed cards.</p>
-    </div>
-  `;
+  return renderWarPileSummaryPresentation({
+    label: "Opponent Cards",
+    helperText: "WAR pile tracks committed cards.",
+    elementCounts,
+    cardImages,
+    emphasized: emphasize
+  });
 }
 
 function renderPlayedCard(label, card, options) {
