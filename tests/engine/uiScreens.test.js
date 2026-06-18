@@ -6166,6 +6166,17 @@ test("ui: non-online reserved expressions rail constrains picker height to inter
   assert.match(css, /\.game-active-match-expressions\s+\.match-taunt-panel\s*\{[^}]*max-height:\s*220px;[^}]*overflow:\s*auto;/s);
 });
 
+test("ui: non-online battle header stays sticky without a clipping screen ancestor", () => {
+  const css = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\game.css",
+    "utf8"
+  );
+
+  assert.match(css, /\.screen-game\s*>\s*\.hud\s*\{[^}]*position:\s*sticky;[^}]*top:\s*12px;[^}]*z-index:\s*20;/s);
+  assert.match(css, /\.screen-game\s*\{[^}]*overflow:\s*visible;[^}]*position:\s*relative;/s);
+  assert.doesNotMatch(css, /\.screen-online-play\s*\{[^}]*position:\s*sticky;/s);
+});
+
 test("ui: cosmetic hover preview follows cursor, clamps to viewport, and hides cleanly", () => {
   function createPreviewNode(tagName) {
     const children = [];

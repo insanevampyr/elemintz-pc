@@ -172,6 +172,12 @@ input[type="number"] {
   padding: 12px 14px;
 }
 
+.screen-game > .hud {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+}
+
 .arena-board {
   border-radius: 16px;
   padding: 12px;
@@ -362,7 +368,7 @@ input[type="number"] {
 }
 
 .screen-game {
-  overflow: hidden;
+  overflow: visible;
   position: relative;
 }
 
