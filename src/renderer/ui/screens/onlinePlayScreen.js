@@ -753,8 +753,7 @@ function renderOnlineLiveStatusPanel(
   roomStateView,
   matchStatus,
   moveSyncLabel,
-  roomLifecycle,
-  onlineTurnTimer
+  roomLifecycle
 ) {
   const battleResultView = boardView.battleResultView ?? null;
   const centerResultView = battleResultView?.centerResult
@@ -765,13 +764,7 @@ function renderOnlineLiveStatusPanel(
       }
     : null;
   const warTriggered = Boolean(boardView.warActive);
-  const timerValue = onlineTurnTimer?.visible
-    ? String(onlineTurnTimer.statusLabel ?? onlineTurnTimer.label ?? "").replace(/^Time to choose:\s*/i, "").trim()
-    : "";
   const detailLines = [
-    ...(timerValue
-      ? [{ key: "online-turn-timer", label: "Timer", value: timerValue, lowTime: Boolean(onlineTurnTimer.lowTime) }]
-      : []),
     ...(roomStateView?.label
       ? [{ key: "state", label: "State", value: roomStateView.label }]
       : []),
@@ -787,8 +780,8 @@ function renderOnlineLiveStatusPanel(
   ];
   const statusSummaryHtml = renderBattleStatusSummary({
     round: matchStatus?.roundNumber,
-    primaryCards: { label: "You", count: boardView.localCount },
-    secondaryCards: { label: "Opponent", count: boardView.remoteCount },
+    primaryCardsTaken: { label: "You", count: null },
+    secondaryCardsTaken: { label: "Opponent", count: null },
     warCount: null,
     detailLines
   });
@@ -1362,8 +1355,23 @@ export const onlinePlayScreen = {
 
       return `
         <section class="screen screen-online-play">
-          <div class="screen-topbar">
+          <div class="screen-topbar online-play-topbar">
             <h2 class="view-title">Online Play</h2>
+            ${
+              activeBoardVisible
+                ? `
+                  <div
+                    class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
+                    data-online-turn-timer-shell="true"
+                    aria-live="polite"
+                  >
+                    <span class="online-turn-timer-label" data-online-turn-timer-label="true">
+                      ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.statusLabel ?? onlineTurnTimer.label : "")}
+                    </span>
+                  </div>
+                `
+                : ""
+            }
             <button id="online-play-back-btn" class="btn screen-back-btn">Back</button>
           </div>
           <section class="${buildThemedSurfaceClassName({ backgroundImage: context.backgroundImage ?? "" })}" style="background-image: url('${context.backgroundImage}')">
@@ -1468,8 +1476,7 @@ export const onlinePlayScreen = {
                         roomStateView,
                         matchStatus,
                         moveSyncLabel,
-                        roomLifecycle,
-                        onlineTurnTimer
+                        roomLifecycle
                       )
                   })
                 : ""

@@ -341,11 +341,11 @@ function buildGameStatusSummary(context, vm, names) {
 
   return renderBattleStatusSummary({
     round: vm.round,
-    primaryCards: { label: primaryLabel, count: vm.playerHand?.length },
-    secondaryCards: {
+    primaryCardsTaken: { label: primaryLabel, count: vm.captured?.p1 },
+    secondaryCardsTaken: {
       label: secondaryLabel,
       role: isGauntlet || featuredRivalName ? "rival" : "opponent",
-      count: vm.opponentHand?.length
+      count: vm.captured?.p2
     },
     warCount: vm.totalWarClashes,
     detailLines

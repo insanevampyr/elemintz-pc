@@ -131,8 +131,8 @@ test("ui: shared active match layout preserves variant wrappers, slot order, and
 test("ui: shared battle status summary preserves standard order, fallbacks, and optional details", () => {
   const html = renderBattleStatusSummary({
     round: null,
-    primaryCards: { count: 3 },
-    secondaryCards: { role: "rival", count: undefined },
+    primaryCardsTaken: { count: 3 },
+    secondaryCardsTaken: { role: "rival", count: undefined },
     warCount: null,
     detailLines: [
       { key: "mode", label: "Mode", value: "Gauntlet" },
@@ -147,7 +147,7 @@ test("ui: shared battle status summary preserves standard order, fallbacks, and 
 
   assert.match(html, /<strong>Status<\/strong>/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">—/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 3 · Rival —/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 3 · Rival —/);
   assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">—/);
   assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">Gauntlet/);
   assert.doesNotMatch(html, /Missing:/);
@@ -2952,7 +2952,7 @@ test("ui: game screen renders active Gauntlet streak and rival details when pres
   assert.match(html, /Stone March/);
   assert.match(html, /Mountain Step/);
   assert.match(html, /Repeats a heavy Earth pattern with occasional elemental shifts\./);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Rival 2/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Rival 0/);
   assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">Gauntlet/);
   assert.match(html, /Streak:<\/span>\s*<span class="battle-status-value">4/);
 });
@@ -3032,7 +3032,7 @@ test("ui: game screen does not render Gauntlet labels for normal PvE or Featured
   assert.doesNotMatch(featuredHtml, /Current Streak:/);
   assert.doesNotMatch(featuredHtml, /Gauntlet Mode/);
   assert.match(normalHtml, /Mode:<\/span>\s*<span class="battle-status-value">AI/);
-  assert.match(featuredHtml, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Rival 2/);
+  assert.match(featuredHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Rival 0/);
   assert.match(featuredHtml, /Rival:<\/span>\s*<span class="battle-status-value">Crownfire Duelist/);
 
   const hardHtml = gameScreen.render({
@@ -6024,7 +6024,7 @@ test("ui: game screen uses provided variant card images", () => {
   assert.doesNotMatch(html, /Player: -/);
   assert.doesNotMatch(html, /Opponent: -/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 1 · Opponent 1/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Opponent 0/);
   assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">0/);
   assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">AI/);
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
@@ -14735,7 +14735,7 @@ test("ui: hidden hand remains hidden while WAR pile is face-up", () => {
   assert.match(html, /assets\/customFire\.jpg/);
   assert.match(html, /Hidden opponent hand: 2 cards/);
   assert.doesNotMatch(html, /class="card-rail"/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">P1 1 · P2 2/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">P1 0 · P2 0/);
   assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">Local Hotseat/);
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
 });
@@ -14795,7 +14795,7 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
   assert.doesNotMatch(html, /played-row-pve-reveal/);
   assert.match(html, /match-status-panel player-win clash-winner-fire/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">3/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Opponent 2/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 1 · Opponent 0/);
 });
 
 test("ui: local PvE center result persists the last completed round during the next card selection state", () => {
@@ -14848,7 +14848,7 @@ test("ui: local PvE center result persists the last completed round during the n
   assert.doesNotMatch(html, /Player: -/);
   assert.doesNotMatch(html, /Opponent: -/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">4/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Opponent 2/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 1 · Opponent 0/);
 });
 
 test("ui: local PvE center result opponent art matches the same opponent variant source used by the WAR tracker", () => {
@@ -14928,7 +14928,7 @@ test("ui: local PvE active WAR center result prefers the latest clash cards over
       activeWarClashCards: { p1Card: "earth", p2Card: "water" },
       playerHand: ["fire", "wind"],
       opponentHand: ["earth", "water"],
-      captured: { p1: 0, p2: 0 },
+      captured: { p1: 3, p2: 0 },
       lastRound: { result: "none", p1Card: "wind", p2Card: "wind" }
     },
     actions: { playCard: async () => {}, backToMenu: () => {} }
@@ -14943,6 +14943,7 @@ test("ui: local PvE active WAR center result prefers the latest clash cards over
   assert.match(html, /assets\/cards\/water_variant_tidal_spirit\.png/);
   assert.doesNotMatch(html, /Player: Wind/);
   assert.doesNotMatch(html, /Opponent: Wind/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 3 · Opponent 0/);
   assert.match(html, /WAR progression:<\/span>\s*<span class="battle-status-value">2 (?:-&gt;|->) 4/);
 });
 
@@ -14999,7 +15000,7 @@ test("ui: local PvE does not render a fake center result before the first real r
   assert.ok(html.indexOf('class="status-meta"', rightZoneIndex) > rightZoneIndex);
   assert.doesNotMatch(html, /card-art-facedown/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 1 · Opponent 1/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Opponent 0/);
   assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">0/);
 });
 
@@ -15194,10 +15195,12 @@ test("ui: Gauntlet and Featured Rival matches render the shared center result bl
   assert.match(gauntletHtml, /data-round-center-motion="resolved"/);
   assert.match(gauntletHtml, /data-round-center-card-row="true"/);
   assert.match(gauntletHtml, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(gauntletHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 1 · Rival 0/);
   assert.match(featuredHtml, /data-round-center-result="true"/);
   assert.match(featuredHtml, /data-round-center-motion="resolved"/);
   assert.match(featuredHtml, /data-round-center-card-row="true"/);
   assert.match(featuredHtml, /data-round-center-headline="true">WIND BEATS WATER</);
+  assert.match(featuredHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Opponent 1/);
 });
 
 test("ui: local PvP opposing side remains a compact hidden-hand summary during Player 2 turns", () => {
@@ -16370,7 +16373,7 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /<span class="online-active-meta-value">1\/2 submitted\.<\/span>/);
   assert.match(html, /Active Round/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 4 · Opponent 8/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You — · Opponent —/);
   assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">—/);
   assert.match(html, /State:<\/span>\s*<span class="battle-status-value">Active Round/);
   assert.match(html, /Sync:<\/span>\s*<span class="battle-status-value">1\/2 submitted\./);
@@ -20352,7 +20355,7 @@ test("ui: online play screen still shows move controls for full rooms when moveS
   assert.match(html, /1 Fire · 2 Earth · 3 Wind · 4 Water/);
   assert.match(html, /data-online-active-meta-strip="true"/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
-  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 8 · Opponent 8/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You — · Opponent —/);
   assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">—/);
   assert.match(html, /State:<\/span>\s*<span class="battle-status-value">Active Round/);
   assert.match(html, /Sync:<\/span>\s*<span class="battle-status-value">0\/2 submitted\./);
@@ -20570,7 +20573,7 @@ test("ui: online play center result opponent art matches the same authoritative 
   assert.doesNotMatch(html, /assets\/cards\/earth_variant_rooted_monolith\.png/);
 });
 
-test("ui: online play screen renders a server-authoritative match timer above the board while keeping the turn timer in the status panel", () => {
+test("ui: online play screen renders server-authoritative timers above the board and in the topbar", () => {
   const html = onlinePlayScreen.render({
     backgroundImage: "assets/EleMintzIcon.png",
     joinCode: "ABC123",
@@ -20663,9 +20666,15 @@ test("ui: online play screen renders a server-authoritative match timer above th
   assert.match(html, /04:59/);
   assert.match(html, /data-online-match-timer-label="true"/);
   assert.match(html, /data-online-match-timer-shell="true"/);
-  assert.match(html, /Timer:<\/span>\s*<span class="battle-status-value online-turn-timer-label" data-online-turn-timer-label="true">\s*20s/);
   assert.match(html, /data-online-turn-timer-label="true"/);
   assert.match(html, /data-online-turn-timer-shell="true"/);
+  const onlineTopbarStart = html.indexOf('class="screen-topbar online-play-topbar"');
+  const themedSurfaceStart = html.indexOf('class="arena-board screen-themed-surface"');
+  const onlineRightStatusStart = html.indexOf('data-online-status-zone="right"');
+  assert.ok(onlineTopbarStart >= 0);
+  assert.ok(html.indexOf('data-online-turn-timer-shell="true"', onlineTopbarStart) < themedSurfaceStart);
+  assert.doesNotMatch(html.slice(onlineRightStatusStart), /data-battle-status-detail="online-turn-timer"/);
+  assert.doesNotMatch(html.slice(onlineRightStatusStart), /Timer:<\/span>/);
   assert.match(html, /data-online-active-meta-strip="true"/);
 });
 

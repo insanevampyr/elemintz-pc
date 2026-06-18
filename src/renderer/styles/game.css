@@ -1274,6 +1274,12 @@ input[type="number"] {
   color: rgba(255, 214, 143, 0.94);
 }
 
+.screen-online-play .online-play-topbar .online-turn-timer-shell {
+  width: auto;
+  justify-content: center;
+  margin: 0 0 0 auto;
+}
+
 .online-play-live-board-stack {
   display: grid;
   gap: 12px;
