@@ -6432,6 +6432,9 @@ test("multiplayer rooms: room creation returns a short waiting room", async () =
     assert.equal(room.guest, null);
     assert.equal(room.hostScore, 0);
     assert.equal(room.guestScore, 0);
+    assert.equal(room.hostCardsTaken, 0);
+    assert.equal(room.guestCardsTaken, 0);
+    assert.equal(room.totalWarClashes, 0);
     assert.equal(room.roundNumber, 1);
     assert.equal(room.lastOutcomeType, null);
     assert.equal(room.matchComplete, false);
@@ -6475,6 +6478,9 @@ test("multiplayer rooms: room creation returns a short waiting room", async () =
         host: { fire: 2, water: 2, earth: 2, wind: 2 },
         guest: { fire: 2, water: 2, earth: 2, wind: 2 }
       },
+      hostCardsTaken: 0,
+      guestCardsTaken: 0,
+      totalWarClashes: 0,
       warState: {
         active: false,
         depth: 0
@@ -6687,6 +6693,9 @@ test("multiplayer rooms: move submissions sync, resolve one round, and reset for
         host: { fire: 1, water: 2, earth: 2, wind: 2 },
         guest: { fire: 2, water: 2, earth: 2, wind: 2 }
       },
+      hostCardsTaken: 0,
+      guestCardsTaken: 0,
+      totalWarClashes: 0,
       warState: {
         active: false,
         depth: 0
@@ -7256,6 +7265,9 @@ test("multiplayer rooms: near-simultaneous and same-tick submits resolve one rou
 
     const roomAfterFirstRound = foundation.roomStore.getRoom(createdRoom.roomCode);
     assert.equal(roomAfterFirstRound.roundNumber, 2);
+    assert.equal(roomAfterFirstRound.hostCardsTaken, 1);
+    assert.equal(roomAfterFirstRound.guestCardsTaken, 0);
+    assert.equal(roomAfterFirstRound.totalWarClashes, 0);
     assert.equal(roomAfterFirstRound.moveSync.submittedCount, 2);
     assert.equal(roomAfterFirstRound.moveSync.bothSubmitted, true);
     assert.deepEqual(roomAfterFirstRound.hostHand, {
@@ -7305,6 +7317,9 @@ test("multiplayer rooms: near-simultaneous and same-tick submits resolve one rou
 
     const roomAfterSecondRound = foundation.roomStore.getRoom(createdRoom.roomCode);
     assert.equal(roomAfterSecondRound.roundNumber, 3);
+    assert.equal(roomAfterSecondRound.hostCardsTaken, 2);
+    assert.equal(roomAfterSecondRound.guestCardsTaken, 0);
+    assert.equal(roomAfterSecondRound.totalWarClashes, 0);
     assert.equal(roomAfterSecondRound.moveSync.submittedCount, 2);
     assert.equal(roomAfterSecondRound.moveSync.bothSubmitted, true);
     assert.deepEqual(roomAfterSecondRound.hostHand, {
@@ -8037,6 +8052,12 @@ test("multiplayer rooms: decisive win during war resolves war and awards one sco
     assert.equal(serverRoundResult.matchSnapshot.warState.active, false);
     assert.equal(resetSync.hostScore, 1);
     assert.equal(resetSync.guestScore, 0);
+    assert.equal(resetSync.hostCardsTaken, 2);
+    assert.equal(resetSync.guestCardsTaken, 0);
+    assert.equal(resetSync.totalWarClashes, 1);
+    assert.equal(serverRoundResult.matchSnapshot.hostCardsTaken, 2);
+    assert.equal(serverRoundResult.matchSnapshot.guestCardsTaken, 0);
+    assert.equal(serverRoundResult.matchSnapshot.totalWarClashes, 1);
     assert.equal(resetSync.warActive, false);
     assert.equal(resetSync.warDepth, 0);
     assert.deepEqual(resetSync.warRounds, []);
@@ -8441,6 +8462,9 @@ test("multiplayer rooms: rematch ready resets the room after hand exhaustion mat
     });
     assert.equal(resetRoom.hostScore, 0);
     assert.equal(resetRoom.guestScore, 0);
+    assert.equal(resetRoom.hostCardsTaken, 0);
+    assert.equal(resetRoom.guestCardsTaken, 0);
+    assert.equal(resetRoom.totalWarClashes, 0);
     assert.equal(resetRoom.roundNumber, 1);
     assert.equal(resetRoom.lastOutcomeType, null);
     assert.deepEqual(resetRoom.roundHistory, []);

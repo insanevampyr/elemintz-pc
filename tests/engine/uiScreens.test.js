@@ -6247,6 +6247,10 @@ test("ui: lower battle HUD preserves three-zone placement and pointer-safe respo
   assert.match(css, /\.match-status-panel\s*>\s*\.status-meta\s*\{[^}]*grid-column:\s*3;/s);
   assert.match(css, /\.war-pile-inline\s*\{[^}]*grid-column:\s*1;/s);
   assert.match(css, /\.online-play-status-panel\.has-center-result\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+max-content\s+minmax\(0,\s*1fr\);/s);
+  assert.match(
+    css,
+    /\.battle-status-line\[data-battle-status-line="cards"\]\s+\.battle-status-value\s*\{[^}]*white-space:\s*nowrap;/s
+  );
 
   assert.match(responsiveCss, /\.match-status-panel\s*\{[^}]*grid-template-columns:\s*1fr;/s);
   assert.match(responsiveCss, /\.game-status-zone\s*\{[^}]*grid-column:\s*auto;/s);
