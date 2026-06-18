@@ -4,7 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { COSMETIC_CATALOG, getBaseCosmeticPrice } from "../../src/state/cosmeticSystem.js";
+import {
+  COSMETIC_CATALOG,
+  getBaseCosmeticPrice,
+  getCosmeticHoverMetadata
+} from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
 const PERSONALITY_DROP_TITLE_DEFINITIONS = Object.freeze([
@@ -163,6 +167,37 @@ test("cosmetics: normal purchasable store cosmetics use centralized base rarity 
       );
     }
   }
+});
+
+test("cosmetics: Daily EleMintz Chest hover metadata uses the approved source label", () => {
+  const dailyChestCosmetics = [
+    ["title", "title_first_light"],
+    ["badge", "badge_daily_emblem"],
+    ["avatar", "avatar_chestbound_adept"],
+    ["cardBack", "cardback_daily_element_chest"],
+    ["elementCardVariant", "fire_variant_sunflare"]
+  ];
+
+  for (const [type, id] of dailyChestCosmetics) {
+    assert.equal(
+      getCosmeticHoverMetadata(type, id).description,
+      "Daily EleMintz Chest #1",
+      `${type}:${id} should expose the approved Daily Chest source label`
+    );
+  }
+
+  assert.equal(
+    getCosmeticHoverMetadata("background", "background_morning_sanctum").description,
+    "Daily EleMintz Chest #1"
+  );
+});
+
+test("cosmetics: existing hover source descriptions remain unchanged", () => {
+  assert.equal(getCosmeticHoverMetadata("title", "title_apprentice").description, "Level Reward: Reach Level 3.");
+  assert.equal(getCosmeticHoverMetadata("title", "Flame Vanguard").description, "Achievement Reward: Win your first match.");
+  assert.equal(getCosmeticHoverMetadata("title", "title_spellwired").description, "Store purchase.");
+  assert.equal(getCosmeticHoverMetadata("title", "Initiate").description, "Default cosmetic.");
+  assert.equal(getCosmeticHoverMetadata("title", "Arena Founder").description, "Founder / Supporter reward.");
 });
 
 test("cosmetics: new profile has default owned and equipped cosmetics", async () => {

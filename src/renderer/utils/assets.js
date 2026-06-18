@@ -233,7 +233,8 @@ const BADGE_IMAGES = Object.freeze({
   badge_element_initiate: getAssetPath("badges/badge_element_initiate.png"),
   badge_arena_challenger: getAssetPath("badges/badge_arena_challenger.png"),
   badge_element_veteran: getAssetPath("badges/badge_element_veteran.png"),
-  badge_arena_legend: getAssetPath("badges/badge_arena_legend.png")
+  badge_arena_legend: getAssetPath("badges/badge_arena_legend.png"),
+  badge_daily_emblem: getAssetPath("badges/badge_daily_emblem.png")
 });
 
 function buildVariantMap(selection = null) {

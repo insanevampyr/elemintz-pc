@@ -6352,6 +6352,52 @@ test("ui: cosmetic hover preview renders title and badge metadata while keeping 
   assert.match(previewFrame.className, /rarity-epic/);
 });
 
+test("ui: Daily Chest source metadata renders below selected cosmetic art but not backgrounds", () => {
+  const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
+    createHoverPreviewHarness();
+  const sourceDescription = "Daily EleMintz Chest #1";
+  const targets = [
+    ["avatar", "file:///avatar.png", "Chestbound Adept"],
+    ["title", "file:///title.png", "First Light"],
+    ["badge", "file:///badge.png", "Daily Emblem"],
+    ["cardBack", "file:///cardback.png", "Daily Element Chest"],
+    ["elementCardVariant", "file:///variant.png", "Sunflare Fire"]
+  ].map(([type, src, name]) =>
+    createHoverTarget({
+      "data-preview-type": type,
+      "data-preview-rarity": "Epic",
+      "data-preview-src": src,
+      "data-preview-name": name,
+      "data-preview-description": sourceDescription
+    })
+  );
+
+  targets.forEach((target, index) => {
+    const eventName = index === 0 ? "mouseover" : "mousemove";
+    listeners.get(eventName)({ target, clientX: 80 + index, clientY: 80 + index });
+    assert.equal(previewLayer.children.includes(previewFrame), true);
+    assert.equal(previewImage.hidden, false);
+    assert.equal(previewMeta.hidden, false);
+    assert.equal(previewLayer.children.includes(previewMeta), true);
+    assert.equal(previewName.textContent, target.getAttribute("data-preview-name"));
+    assert.equal(previewDescription.textContent, sourceDescription);
+  });
+
+  const backgroundTarget = createHoverTarget({
+    "data-preview-type": "background",
+    "data-preview-rarity": "Rare",
+    "data-preview-src": "file:///background.png",
+    "data-preview-name": "Morning Sanctum",
+    "data-preview-description": sourceDescription
+  });
+  listeners.get("mousemove")({ target: backgroundTarget, clientX: 100, clientY: 100 });
+
+  assert.equal(previewImage.hidden, false);
+  assert.equal(previewMeta.hidden, true);
+  assert.equal(previewLayer.children.includes(previewMeta), false);
+  assert.equal(previewLayer.style.height, "240px");
+});
+
 test("ui: title and badge hover previews fall back to text-only meta when image src is unusable", () => {
   const { listeners, previewLayer, previewFrame, previewImage, previewMeta, previewName, previewDescription } =
     createHoverPreviewHarness();
@@ -6917,6 +6963,113 @@ test("ui: image-backed title, badge, avatar, and cardback hovers still render me
   assert.equal(previewImage.src, "file:///cardback.png");
   assert.equal(previewMeta.hidden, true);
   assert.equal(previewLayer.children.includes(previewMeta), false);
+});
+
+test("ui: Daily Emblem resolves and renders in own and viewed profile headers", () => {
+  const badgeImage = getBadgeImage("badge_daily_emblem");
+  assert.match(badgeImage, /assets\/badges\/badge_daily_emblem\.png$/);
+
+  const ownProfileHtml = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        equippedCosmetics: {
+          avatar: "default_avatar",
+          title: "title_first_light",
+          badge: "badge_daily_emblem",
+          cardBack: "default_card_back",
+          background: "default_background",
+          elementCardVariant: {
+            fire: "default_fire_card",
+            water: "default_water_card",
+            earth: "default_earth_card",
+            wind: "default_wind_card"
+          }
+        }
+      }
+    })
+  );
+  const viewedProfileHtml = profileScreen.renderViewedProfileModalBody({
+    username: "DailyBadgeRival",
+    title: "First Light",
+    wins: 0,
+    losses: 0,
+    gamesPlayed: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    cardsCaptured: 0,
+    achievements: {},
+    modeStats: {},
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "title_first_light",
+      badge: "badge_daily_emblem",
+      cardBack: "default_card_back",
+      background: "default_background",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  });
+
+  assert.match(ownProfileHtml, /class="featured-badge" src="[^"]*badge_daily_emblem\.png"/);
+  assert.match(ownProfileHtml, /data-preview-description="Daily EleMintz Chest #1"/);
+  assert.match(viewedProfileHtml, /class="featured-badge" src="[^"]*badge_daily_emblem\.png"/);
+  assert.match(viewedProfileHtml, /data-preview-description="Daily EleMintz Chest #1"/);
+});
+
+test("ui: Daily Chest avatar source metadata reaches own and viewed profile hover attributes", () => {
+  const ownProfileHtml = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        equippedCosmetics: {
+          avatar: "avatar_chestbound_adept",
+          title: "Initiate",
+          badge: "none",
+          cardBack: "default_card_back",
+          background: "default_background",
+          elementCardVariant: {
+            fire: "default_fire_card",
+            water: "default_water_card",
+            earth: "default_earth_card",
+            wind: "default_wind_card"
+          }
+        }
+      }
+    })
+  );
+  const viewedProfileHtml = profileScreen.renderViewedProfileModalBody({
+    username: "DailyAvatarRival",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    gamesPlayed: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    cardsCaptured: 0,
+    achievements: {},
+    modeStats: {},
+    equippedCosmetics: {
+      avatar: "avatar_chestbound_adept",
+      title: "Initiate",
+      badge: "none",
+      cardBack: "default_card_back",
+      background: "default_background",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    }
+  });
+
+  assert.match(ownProfileHtml, /data-preview-type="avatar"[^>]*data-preview-description="Daily EleMintz Chest #1"/);
+  assert.match(viewedProfileHtml, /data-preview-type="avatar"[^>]*data-preview-description="Daily EleMintz Chest #1"/);
 });
 
 test("ui: cosmetics screen category filters hide unselected owned sections", () => {

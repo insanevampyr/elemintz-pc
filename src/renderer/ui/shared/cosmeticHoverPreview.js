@@ -2,9 +2,9 @@ const PREVIEW_SELECTOR = "[data-hover-preview=\"true\"]";
 const PREVIEW_OFFSET = 18;
 const PREVIEW_MARGIN = 12;
 const PREVIEW_DIMENSIONS = Object.freeze({
-  avatar: { width: 220, height: 220, mediaWidth: 220, mediaHeight: 220 },
-  cardBack: { width: 220, height: 330, mediaWidth: 220, mediaHeight: 330 },
-  elementCardVariant: { width: 220, height: 330, mediaWidth: 220, mediaHeight: 330 },
+  avatar: { width: 220, height: 306, mediaWidth: 220, mediaHeight: 220 },
+  cardBack: { width: 220, height: 416, mediaWidth: 220, mediaHeight: 330 },
+  elementCardVariant: { width: 220, height: 416, mediaWidth: 220, mediaHeight: 330 },
   background: { width: 340, height: 240, mediaWidth: 340, mediaHeight: 240 },
   badge: { width: 260, height: 328, mediaWidth: 168, mediaHeight: 168, metaOnlyHeight: 90 },
   title: { width: 228, height: 286, mediaWidth: 188, mediaHeight: 188, metaOnlyHeight: 86 }
@@ -297,7 +297,10 @@ function updatePreviewAppearance(preview, target) {
   const previewVisualText = target.getAttribute("data-preview-visual-text") ?? previewName;
   const dimensions = getPreviewDimensions(previewType);
   const mediaDimensions = resolveMediaDimensions(previewType, dimensions, readPreviewSourceDimensions(target));
-  const showMeta = previewType === "badge" || previewType === "title";
+  const alwaysShowMeta = previewType === "badge" || previewType === "title";
+  const supportsSourceMeta =
+    previewType === "avatar" || previewType === "cardBack" || previewType === "elementCardVariant";
+  const showMeta = alwaysShowMeta || (supportsSourceMeta && Boolean(previewDescription.trim()));
   const hasPreviewImage = hasRenderablePreviewSource(previewSrc, {
     previewName,
     previewVisualText

@@ -3270,6 +3270,10 @@ function getUnlockSource(type, item) {
     return { type: "default", achievementId: null };
   }
 
+  if (item.source === "daily_chest") {
+    return { type: "daily chest", achievementId: null };
+  }
+
   if (item.supporterOnly) {
     return { type: "supporter", achievementId: null };
   }
@@ -3633,6 +3637,8 @@ export function getCosmeticHoverMetadata(type, id, fallbackName = null) {
     description = `Level Reward: Reach Level ${Number(unlockSource.level)}.`;
   } else if (unlockSource?.type === "store") {
     description = "Store purchase.";
+  } else if (unlockSource?.type === "daily chest") {
+    description = "Daily EleMintz Chest #1";
   } else if (unlockSource?.type === "supporter") {
     description = "Founder / Supporter reward.";
   } else if (unlockSource?.type === "default") {

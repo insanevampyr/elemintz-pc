@@ -1073,6 +1073,7 @@ function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, tit
     previewType: "avatar",
     previewSrc: avatarImageSrc,
     previewName: avatarHoverMetadata.name ?? username,
+    previewDescription: avatarHoverMetadata.description,
     previewRarity: avatarHoverMetadata.rarity
   });
 

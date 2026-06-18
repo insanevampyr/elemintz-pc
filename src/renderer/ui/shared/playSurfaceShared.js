@@ -153,6 +153,7 @@ export function renderPlayerHeader(playerDisplay, fallbackName, countLabel) {
     previewType: "avatar",
     previewSrc: avatarImageSrc,
     previewName: avatarHoverMetadata.name ?? playerDisplay?.name ?? fallbackName,
+    previewDescription: avatarHoverMetadata.description,
     previewRarity: avatarHoverMetadata.rarity
   });
   const titleHoverAttributes = buildHoverPreviewAttributes({
