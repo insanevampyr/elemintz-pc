@@ -6179,6 +6179,25 @@ test("ui: online Expressions rail keeps header separate and picker inside stable
   assert.match(css, /\.online-active-match-expressions\s+\.match-taunt-panel\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
 });
 
+test("ui: lower battle HUD preserves three-zone placement and pointer-safe responsive collapse", () => {
+  const css = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\game.css",
+    "utf8"
+  );
+  const responsiveCss = css.slice(css.indexOf("@media (max-width: 900px)"));
+
+  assert.match(css, /\.match-status-panel\s*\{[^}]*overflow:\s*visible;[^}]*grid-template-columns:\s*minmax\(160px,\s*220px\)\s+minmax\(280px,\s*1fr\)\s+minmax\(180px,\s*240px\);[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /\.round-center-result\s*\{[^}]*grid-column:\s*2;[^}]*overflow:\s*visible;/s);
+  assert.match(css, /\.match-status-panel\s*>\s*\.round-center-placeholder\s*\{[^}]*grid-column:\s*2;/s);
+  assert.match(css, /\.match-status-panel\s*>\s*\.status-meta\s*\{[^}]*grid-column:\s*3;/s);
+  assert.match(css, /\.war-pile-inline\s*\{[^}]*grid-column:\s*1;/s);
+  assert.match(css, /\.online-play-status-panel\.has-center-result\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+max-content\s+minmax\(0,\s*1fr\);/s);
+
+  assert.match(responsiveCss, /\.match-status-panel\s*\{[^}]*grid-template-columns:\s*1fr;/s);
+  assert.match(responsiveCss, /\.match-status-panel\s*>\s*\.round-center-placeholder\s*\{[^}]*grid-column:\s*auto;/s);
+  assert.match(responsiveCss, /\.status-meta,\s*\.war-pile-inline\s*\{[^}]*grid-column:\s*auto;[^}]*grid-row:\s*auto;/s);
+});
+
 test("ui: non-online battle header stays sticky without a clipping screen ancestor", () => {
   const css = fs.readFileSync(
     "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\game.css",
@@ -14899,8 +14918,15 @@ test("ui: local PvE does not render a fake center result before the first real r
   assert.doesNotMatch(html, /data-round-center-headline="true"/);
   assert.doesNotMatch(html, /Player: -/);
   assert.doesNotMatch(html, /Opponent: -/);
+  assert.match(html, /class="game-active-match-status"/);
+  assert.match(html, /class="panel match-status-panel [^"]*"/);
   assert.match(html, /data-round-center-placeholder="true"/);
   assert.match(html, /Awaiting Clash/);
+  assert.match(html, /class="status-meta"/);
+  assert.match(html, /class="war-pile-inline /);
+  assert.ok(html.indexOf('class="game-active-match-status"') < html.indexOf('class="panel match-status-panel'));
+  assert.ok(html.indexOf('data-round-center-placeholder="true"') < html.indexOf('class="status-meta"'));
+  assert.ok(html.indexOf('class="status-meta"') < html.indexOf('class="war-pile-inline '));
   assert.doesNotMatch(html, /card-art-facedown/);
   assert.match(html, /Round update: Captured totals are now Hero 0 and Elemental AI 0\./);
   assert.match(html, /WAR status: No active WAR pile\./);
@@ -20230,8 +20256,22 @@ test("ui: online play screen still shows move controls for full rooms when moveS
   });
 
   assert.doesNotMatch(html, /data-round-center-result="true"/);
+  assert.match(html, /class="online-active-match-status"/);
+  assert.match(html, /class="panel match-status-panel online-play-status-panel has-center-result"/);
   assert.match(html, /data-round-center-placeholder="true"/);
   assert.match(html, /Awaiting Clash/);
+  assert.match(html, /data-online-status-zone="left"/);
+  assert.match(html, /data-online-status-zone="center"/);
+  assert.match(html, /data-online-status-zone="right"/);
+  assert.ok(html.indexOf('data-online-status-zone="left"') < html.indexOf('data-online-status-zone="center"'));
+  assert.ok(html.indexOf('data-online-status-zone="center"') < html.indexOf('data-online-status-zone="right"'));
+  const initialOnlineCenterStart = html.indexOf('data-online-status-zone="center"');
+  const initialOnlineRightStart = html.indexOf('data-online-status-zone="right"');
+  const initialOnlineCenterHtml = html.slice(initialOnlineCenterStart, initialOnlineRightStart);
+  const initialOnlineRightHtml = html.slice(initialOnlineRightStart);
+  assert.match(initialOnlineCenterHtml, /data-round-center-placeholder="true"/);
+  assert.match(initialOnlineCenterHtml, /Awaiting Clash/);
+  assert.match(initialOnlineRightHtml, /class="status-meta"/);
   assert.doesNotMatch(html, /Battle log will appear here\./);
   assert.doesNotMatch(html, /Battle Result/);
   assert.doesNotMatch(html, /Why:<\/strong>/);
@@ -20438,6 +20478,13 @@ test("ui: online play center result opponent art matches the same authoritative 
   });
 
   assert.match(html, /data-round-center-result="true"/);
+  assert.ok(html.indexOf('data-online-status-zone="left"') < html.indexOf('data-online-status-zone="center"'));
+  assert.ok(html.indexOf('data-online-status-zone="center"') < html.indexOf('data-online-status-zone="right"'));
+  const resolvedOnlineCenterStart = html.indexOf('data-online-status-zone="center"');
+  const resolvedOnlineRightStart = html.indexOf('data-online-status-zone="right"');
+  const resolvedOnlineCenterHtml = html.slice(resolvedOnlineCenterStart, resolvedOnlineRightStart);
+  assert.match(resolvedOnlineCenterHtml, /data-round-center-result="true"/);
+  assert.doesNotMatch(resolvedOnlineCenterHtml, /data-round-center-placeholder="true"/);
   assert.match(html, /data-round-center-motion="resolved"/);
   assert.match(html, /data-round-center-card-row="true"/);
   assert.match(html, /data-round-center-card-art="left"/);
