@@ -753,7 +753,9 @@ function renderOnlineLiveStatusPanel(
   roomStateView,
   matchStatus,
   moveSyncLabel,
-  roomLifecycle
+  roomLifecycle,
+  room,
+  roleLabel
 ) {
   const battleResultView = boardView.battleResultView ?? null;
   const centerResultView = battleResultView?.centerResult
@@ -778,11 +780,23 @@ function renderOnlineLiveStatusPanel(
       ? [{ key: "reconnect", label: "Reconnect", value: roomLifecycle.primaryLabel }]
       : [])
   ];
+  const primaryCardsTaken =
+    roleLabel === "Host"
+      ? room?.hostCardsTaken
+      : roleLabel === "Guest"
+        ? room?.guestCardsTaken
+        : null;
+  const secondaryCardsTaken =
+    roleLabel === "Host"
+      ? room?.guestCardsTaken
+      : roleLabel === "Guest"
+        ? room?.hostCardsTaken
+        : null;
   const statusSummaryHtml = renderBattleStatusSummary({
     round: matchStatus?.roundNumber,
-    primaryCardsTaken: { label: "You", count: null },
-    secondaryCardsTaken: { label: "Opponent", count: null },
-    warCount: null,
+    primaryCardsTaken: { label: "You", count: primaryCardsTaken },
+    secondaryCardsTaken: { label: "Opponent", count: secondaryCardsTaken },
+    warCount: room?.totalWarClashes,
     detailLines
   });
 
@@ -1476,7 +1490,9 @@ export const onlinePlayScreen = {
                         roomStateView,
                         matchStatus,
                         moveSyncLabel,
-                        roomLifecycle
+                        roomLifecycle,
+                        room,
+                        roleLabel
                       )
                   })
                 : ""

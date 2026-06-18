@@ -655,6 +655,9 @@ function createInitialMatchState() {
   return {
     hostScore: 0,
     guestScore: 0,
+    hostCardsTaken: 0,
+    guestCardsTaken: 0,
+    totalWarClashes: 0,
     roundNumber: 1,
     lastOutcomeType: null,
     roundHistory: [],
@@ -942,6 +945,9 @@ function buildServerMatchState(room) {
       host: { ...(room?.hostHand ?? {}) },
       guest: { ...(room?.guestHand ?? {}) }
     },
+    hostCardsTaken: safeRuntimeCount(room?.hostCardsTaken, 0),
+    guestCardsTaken: safeRuntimeCount(room?.guestCardsTaken, 0),
+    totalWarClashes: safeRuntimeCount(room?.totalWarClashes, 0),
     warState: {
       active: Boolean(room?.warActive),
       depth: safeRuntimeCount(room?.warDepth, 0)
@@ -1103,6 +1109,9 @@ function resetMatchState(room) {
   const guards = getRuntimeEdgeGuards(room);
   room.hostScore = 0;
   room.guestScore = 0;
+  room.hostCardsTaken = 0;
+  room.guestCardsTaken = 0;
+  room.totalWarClashes = 0;
   room.roundNumber = 1;
   room.lastOutcomeType = null;
   room.roundHistory = [];
@@ -1777,10 +1786,22 @@ export function applyRoundToMatchState(room, roundResult) {
   if (outcomeType === "resolved" || outcomeType === "war_resolved") {
     if (guardedRound.hostResult === "win") {
       room.hostScore += 1;
+      room.hostCardsTaken =
+        safeRuntimeCount(room.hostCardsTaken, 0) +
+        safeRuntimeCount(captureStats.capturedOpponentCards, 0);
     }
 
     if (guardedRound.guestResult === "win") {
       room.guestScore += 1;
+      room.guestCardsTaken =
+        safeRuntimeCount(room.guestCardsTaken, 0) +
+        safeRuntimeCount(captureStats.capturedOpponentCards, 0);
+    }
+
+    if (outcomeType === "war_resolved") {
+      room.totalWarClashes =
+        safeRuntimeCount(room.totalWarClashes, 0) +
+        Math.max(0, safeRuntimeCount(warDepthSnapshot, 0));
     }
   }
 
@@ -1985,6 +2006,9 @@ function cloneRoom(room) {
     },
     hostScore: room.hostScore,
     guestScore: room.guestScore,
+    hostCardsTaken: safeRuntimeCount(room.hostCardsTaken, 0),
+    guestCardsTaken: safeRuntimeCount(room.guestCardsTaken, 0),
+    totalWarClashes: safeRuntimeCount(room.totalWarClashes, 0),
     roundNumber: room.roundNumber,
     lastOutcomeType: room.lastOutcomeType,
     matchComplete: Boolean(room.matchComplete),

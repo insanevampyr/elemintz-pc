@@ -16339,6 +16339,9 @@ test("ui: online play screen renders move sync status and submit controls for fu
         guest: { socketId: "guest-1" },
         hostScore: 0,
         guestScore: 0,
+        hostCardsTaken: 7,
+        guestCardsTaken: 4,
+        totalWarClashes: 3,
         roundNumber: 1,
         lastOutcomeType: null,
         matchComplete: false,
@@ -16373,8 +16376,8 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /<span class="online-active-meta-value">1\/2 submitted\.<\/span>/);
   assert.match(html, /Active Round/);
   assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
-  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You — · Opponent —/);
-  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">—/);
+  assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 4 · Opponent 7/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">3/);
   assert.match(html, /State:<\/span>\s*<span class="battle-status-value">Active Round/);
   assert.match(html, /Sync:<\/span>\s*<span class="battle-status-value">1\/2 submitted\./);
   assert.match(html, /data-online-active-match-status="true"/);

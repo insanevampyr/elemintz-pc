@@ -61,6 +61,15 @@ function cloneServerMatchState(matchState) {
           host: { ...(matchState.playerHands?.host ?? {}) },
           guest: { ...(matchState.playerHands?.guest ?? {}) }
         },
+        ...(matchState.hostCardsTaken !== undefined
+          ? { hostCardsTaken: Number(matchState.hostCardsTaken) }
+          : {}),
+        ...(matchState.guestCardsTaken !== undefined
+          ? { guestCardsTaken: Number(matchState.guestCardsTaken) }
+          : {}),
+        ...(matchState.totalWarClashes !== undefined
+          ? { totalWarClashes: Number(matchState.totalWarClashes) }
+          : {}),
         warState: {
           active: Boolean(matchState.warState?.active),
           depth: Number(matchState.warState?.depth ?? 0)
@@ -402,6 +411,15 @@ function cloneRoom(room) {
           : null,
         hostScore: Number(room.hostScore ?? 0),
         guestScore: Number(room.guestScore ?? 0),
+        ...(room.hostCardsTaken !== undefined
+          ? { hostCardsTaken: Number(room.hostCardsTaken) }
+          : {}),
+        ...(room.guestCardsTaken !== undefined
+          ? { guestCardsTaken: Number(room.guestCardsTaken) }
+          : {}),
+        ...(room.totalWarClashes !== undefined
+          ? { totalWarClashes: Number(room.totalWarClashes) }
+          : {}),
         roundNumber: Number(room.roundNumber ?? 1),
         lastOutcomeType: room.lastOutcomeType ?? null,
         matchComplete: Boolean(room.matchComplete),
