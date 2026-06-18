@@ -1,6 +1,6 @@
 {
   "name": "elemintz-pc",
-  "version": "2.1.78",
+  "version": "2.1.79",
   "description": "EleMintz desktop elemental card battle game",
   "private": true,
   "type": "module",
