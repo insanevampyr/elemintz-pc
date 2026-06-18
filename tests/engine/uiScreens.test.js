@@ -28,7 +28,11 @@ import { ModalManager } from "../../src/renderer/systems/modalManager.js";
 import { ScreenManager } from "../../src/renderer/systems/screenManager.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../../src/renderer/utils/assets.js";
 import { ACHIEVEMENT_DEFINITIONS } from "../../src/state/achievementSystem.js";
-import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
+import {
+  COSMETIC_CATALOG,
+  getCosmeticCatalogForProfile,
+  getCosmeticLoadoutsForProfile
+} from "../../src/state/cosmeticSystem.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 
 function createClassList() {
@@ -4805,6 +4809,106 @@ test("ui: appController cosmetics actions route loadout save apply and rename th
     assert.deepEqual(calls.save, [{ username: "CosmeticCaptain", slotIndex: 0 }]);
     assert.deepEqual(calls.apply, [{ username: "CosmeticCaptain", slotIndex: 0 }]);
     assert.deepEqual(calls.rename, [{ username: "CosmeticCaptain", slotIndex: 0, name: "Storm Fit" }]);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: badge equip rerender preserves configured cosmetic loadout state and unlock levels", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const equippedCosmetics = {
+    avatar: "default_avatar",
+    cardBack: "default_card_back",
+    background: "default_background",
+    badge: "none",
+    title: "Initiate",
+    elementCardVariant: {
+      fire: "default_fire_card",
+      water: "default_water_card",
+      earth: "default_earth_card",
+      wind: "default_wind_card"
+    }
+  };
+  const savedCosmetics = {
+    ...equippedCosmetics,
+    elementCardVariant: { ...equippedCosmetics.elementCardVariant }
+  };
+  const baseProfile = {
+    username: "BadgeLoadoutCaptain",
+    playerLevel: 20,
+    ownedCosmetics: {
+      badge: ["none", "badge_daily_emblem"]
+    },
+    equippedCosmetics,
+    cosmeticLoadouts: [
+      { name: "Daily Fit", cosmetics: savedCosmetics },
+      { name: "Loadout 2", cosmetics: null },
+      { name: "Loadout 3", cosmetics: null },
+      { name: "Loadout 4", cosmetics: null }
+    ]
+  };
+  const initialCosmetics = {
+    catalog: getCosmeticCatalogForProfile(baseProfile),
+    loadouts: getCosmeticLoadoutsForProfile(baseProfile)
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getCosmetics: async () => initialCosmetics,
+        equipCosmetic: async ({ type, cosmeticId }) => {
+          assert.equal(type, "badge");
+          assert.equal(cosmeticId, "badge_daily_emblem");
+          return {
+            profile: {
+              ...baseProfile,
+              equippedCosmetics: {
+                ...baseProfile.equippedCosmetics,
+                badge: "badge_daily_emblem"
+              }
+            }
+          };
+        }
+      }
+    }
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_name, context) => shown.push(context)
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    app.username = "BadgeLoadoutCaptain";
+    app.profile = baseProfile;
+    await app.showCosmetics();
+
+    const initialHtml = cosmeticsScreen.render(shown.at(-1));
+    assert.match(initialHtml, /Unlocks at Level 40\./);
+    assert.match(initialHtml, /Unlocks at Level 60\./);
+
+    await shown.at(-1).actions.equip("badge", "badge_daily_emblem");
+
+    const rerenderedContext = shown.at(-1);
+    const rerenderedHtml = cosmeticsScreen.render(rerenderedContext);
+    assert.equal(rerenderedContext.cosmetics.loadouts[0].hasSavedLoadout, true);
+    assert.equal(rerenderedContext.cosmetics.loadouts[0].unlocked, true);
+    assert.equal(rerenderedContext.cosmetics.loadouts[1].unlocked, true);
+    assert.equal(rerenderedContext.cosmetics.loadouts[2].unlockLevel, 40);
+    assert.equal(rerenderedContext.cosmetics.loadouts[2].unlocked, false);
+    assert.equal(rerenderedContext.cosmetics.loadouts[3].unlockLevel, 60);
+    assert.equal(rerenderedContext.cosmetics.loadouts[3].unlocked, false);
+    assert.match(rerenderedHtml, /Daily Fit/);
+    assert.match(rerenderedHtml, />Saved</);
+    assert.match(rerenderedHtml, /Unlocks at Level 40\./);
+    assert.match(rerenderedHtml, /Unlocks at Level 60\./);
+    assert.doesNotMatch(rerenderedHtml, /Level undefined/);
+    assert.doesNotMatch(rerenderedHtml, /Unlocks at Level undefined\./);
   } finally {
     global.window = previousWindow;
   }

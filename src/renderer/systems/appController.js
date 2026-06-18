@@ -39,7 +39,8 @@ import {
   COSMETIC_CATALOG,
   getCosmeticCatalogForProfile,
   getCosmeticDefinition,
-  getCosmeticDisplayName
+  getCosmeticDisplayName,
+  getCosmeticLoadoutsForProfile
 } from "../../state/cosmeticSystem.js";
 import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../state/storeSystem.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
@@ -1775,7 +1776,7 @@ export class AppController {
       badge: profile?.equippedCosmetics?.badge ?? "none",
       title: profile?.equippedCosmetics?.title ?? "Initiate"
     };
-    const fallbackLoadouts = Array.isArray(profile?.cosmeticLoadouts) ? profile.cosmeticLoadouts : [];
+    const fallbackLoadouts = getCosmeticLoadoutsForProfile(profile ?? {});
     const fallbackPreferences =
       profile?.cosmeticRandomizeAfterMatch && typeof profile.cosmeticRandomizeAfterMatch === "object"
         ? profile.cosmeticRandomizeAfterMatch
