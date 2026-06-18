@@ -399,6 +399,14 @@ function buildLocalMatchFromAuthoritativeRoom(
     room?.warActive && Array.isArray(room?.warRounds)
       ? room.warRounds.map((_, index) => (index + 1) * 2)
       : [];
+  const authoritativeTotalWarClashes = Number(room?.totalWarClashes);
+  const totalWarClashes =
+    Number.isFinite(authoritativeTotalWarClashes) && authoritativeTotalWarClashes >= 0
+      ? Math.floor(authoritativeTotalWarClashes)
+      : history.reduce(
+          (total, entry) => total + Math.max(0, Number(entry?.warClashes ?? 0) || 0),
+          0
+        );
 
   return {
     id: matchId,
@@ -419,7 +427,7 @@ function buildLocalMatchFromAuthoritativeRoom(
     },
     war: {
       active: Boolean(room?.warActive),
-      clashes: pendingWarSizes.length,
+      clashes: totalWarClashes,
       pendingClashes: pendingWarSizes.length,
       pendingPileSizes: pendingWarSizes
     },

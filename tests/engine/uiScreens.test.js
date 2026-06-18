@@ -3073,6 +3073,7 @@ test("ui: game screen does not render Gauntlet labels for normal PvE or Featured
   assert.doesNotMatch(featuredHtml, /Current Streak:/);
   assert.doesNotMatch(featuredHtml, /Gauntlet Mode/);
   assert.match(normalHtml, /Mode:<\/span>\s*<span class="battle-status-value">AI/);
+  assert.match(normalHtml, /WARs:<\/span>\s*<span class="battle-status-value">0/);
   assert.match(featuredHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Rival 0/);
   assert.match(featuredHtml, /Rival:<\/span>\s*<span class="battle-status-value">Crownfire Duelist/);
 
@@ -3087,6 +3088,8 @@ test("ui: game screen does not render Gauntlet labels for normal PvE or Featured
     battleStatus: { difficulty: "hard", featuredRivalName: null }
   });
   assert.match(hardHtml, /Mode:<\/span>\s*<span class="battle-status-value">Hard AI/);
+  assert.match(hardHtml, /WARs:<\/span>\s*<span class="battle-status-value">0/);
+  assert.doesNotMatch(`${normalHtml}${hardHtml}${featuredHtml}`, /WARs:<\/span>\s*<span class="battle-status-value">Active/);
 });
 
 test("ui: ai difficulty screen renders the Crownfire featured rival card details", () => {
@@ -14004,6 +14007,8 @@ test("ui: later PvE WAR states render the shared WAR impact marker", () => {
   assert.match(html, /class="war-slot-count-badge">x1<\/span>/);
   assert.match(html, /match-status-panel war-triggered[\s\S]*war-impact/);
   assert.match(html, /class="war-impact-ring"/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">2/);
+  assert.doesNotMatch(html, /WARs:<\/span>\s*<span class="battle-status-value">Active/);
 });
 
 test("ui: later local PvP WAR states also render shared WAR impact without breaking anti-peek behavior", () => {
@@ -14040,6 +14045,8 @@ test("ui: later local PvP WAR states also render shared WAR impact without break
   assert.match(html, /played-row compact-played-row[\s\S]*played-row-hotseat-hidden/);
   assert.match(html, /played-slot [^"]*is-facedown/);
   assert.doesNotMatch(html, /clash-winner-fire/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">2/);
+  assert.doesNotMatch(html, /WARs:<\/span>\s*<span class="battle-status-value">Active/);
 });
 
 test("ui: first visible local PvP WAR uses warActive to render the shared WAR impact marker", () => {
@@ -15198,7 +15205,7 @@ test("ui: Gauntlet and Featured Rival matches render the shared center result bl
       playerHand: ["fire"],
       opponentHand: ["earth"],
       pileCount: 0,
-      totalWarClashes: 0,
+      totalWarClashes: 3,
       warPileCards: [],
       captured: { p1: 1, p2: 0 },
       lastRound: { result: "p1", p1Card: "fire", p2Card: "earth" }
@@ -15228,7 +15235,7 @@ test("ui: Gauntlet and Featured Rival matches render the shared center result bl
       playerHand: ["water"],
       opponentHand: ["wind"],
       pileCount: 0,
-      totalWarClashes: 0,
+      totalWarClashes: 4,
       warPileCards: [],
       captured: { p1: 0, p2: 1 },
       lastRound: { result: "p2", p1Card: "water", p2Card: "wind" }
@@ -15240,11 +15247,14 @@ test("ui: Gauntlet and Featured Rival matches render the shared center result bl
   assert.match(gauntletHtml, /data-round-center-motion="resolved"/);
   assert.match(gauntletHtml, /data-round-center-card-row="true"/);
   assert.match(gauntletHtml, /data-round-center-headline="true">FIRE BEATS EARTH</);
+  assert.match(gauntletHtml, /WARs:<\/span>\s*<span class="battle-status-value">3/);
   assert.match(gauntletHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 1 · Rival 0/);
   assert.match(featuredHtml, /data-round-center-result="true"/);
   assert.match(featuredHtml, /data-round-center-motion="resolved"/);
   assert.match(featuredHtml, /data-round-center-card-row="true"/);
   assert.match(featuredHtml, /data-round-center-headline="true">WIND BEATS WATER</);
+  assert.match(featuredHtml, /WARs:<\/span>\s*<span class="battle-status-value">4/);
+  assert.doesNotMatch(`${gauntletHtml}${featuredHtml}`, /WARs:<\/span>\s*<span class="battle-status-value">Active/);
   assert.match(featuredHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Opponent 1/);
 });
 

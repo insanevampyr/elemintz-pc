@@ -52,6 +52,7 @@ function createAuthoritativeLocalRoom({
   hostHand = { fire: 2, water: 2, earth: 2, wind: 2 },
   guestHand = { fire: 2, water: 2, earth: 2, wind: 2 },
   warActive = false,
+  totalWarClashes = 0,
   warRounds = [],
   warPot = { host: [], guest: [] },
   roundHistory = []
@@ -66,6 +67,7 @@ function createAuthoritativeLocalRoom({
     hostHand,
     guestHand,
     warActive,
+    totalWarClashes,
     warRounds,
     warPot,
     roundHistory,
@@ -1385,6 +1387,38 @@ test("gameController: local hotseat WAR continuation comes from authoritative ro
     controller.stopTimer();
     controller.stopMatchClock();
     globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: authoritative local view model keeps cumulative WAR clashes separate from active WAR depth", () => {
+  const controller = new GameController({
+    username: "LocalWarCountUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  const room = createAuthoritativeLocalRoom({
+    roundNumber: 4,
+    warActive: true,
+    totalWarClashes: 5,
+    warRounds: [
+      { round: 3, hostMove: "fire", guestMove: "fire", outcomeType: "war" },
+      { round: 3, hostMove: "earth", guestMove: "water", outcomeType: "no_effect" }
+    ],
+    warPot: { host: ["fire", "earth"], guest: ["fire", "water"] }
+  });
+
+  try {
+    controller.syncLocalAuthorityState(room, null);
+    const vm = controller.getViewModel();
+
+    assert.equal(vm.totalWarClashes, 5);
+    assert.deepEqual(vm.warPileSizes, [2, 4]);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
   }
 });
 
