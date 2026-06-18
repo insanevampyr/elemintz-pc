@@ -920,6 +920,43 @@ input[type="number"] {
   pointer-events: none;
 }
 
+.game-status-zone {
+  min-width: 0;
+  display: grid;
+  align-items: center;
+}
+
+.game-status-zone-left {
+  grid-column: 1;
+  justify-items: start;
+}
+
+.game-status-zone-center {
+  grid-column: 2;
+  justify-items: center;
+  position: relative;
+}
+
+.game-status-zone-right {
+  grid-column: 3;
+  justify-items: end;
+}
+
+.game-status-zone-center .round-center-result {
+  grid-column: auto;
+}
+
+.game-status-zone-left .war-pile-inline {
+  grid-column: auto;
+  grid-row: auto;
+  justify-self: start;
+}
+
+.game-status-zone-right .status-meta {
+  justify-self: end;
+  width: min(100%, 240px);
+}
+
 .round-center-result {
   grid-column: 2;
   position: relative;
@@ -2213,6 +2250,10 @@ input[type="number"] {
 
   .match-status-panel {
     grid-template-columns: 1fr;
+  }
+
+  .game-status-zone {
+    grid-column: auto;
   }
 
   .match-status-panel > .round-center-placeholder {

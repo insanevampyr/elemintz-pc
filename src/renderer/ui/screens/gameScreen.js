@@ -539,16 +539,22 @@ export const gameScreen = {
             statusSlotHtml: `
               <article class="panel match-status-panel ${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}">
                 ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
-                ${centerResultView ? renderCenterRoundResult(centerResultView) : renderCenterRoundPlaceholder()}
-                <div class="status-meta">
-                  <p class="round-status-line">Round update: ${escapeHtml(roundChangeMessage)}</p>
-                  <p class="round-status-line">${warStatus}</p>
-                  <p class="round-status-line">${capturedStatus}</p>
-                  ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
-                </div>
+                <div class="game-status-zone game-status-zone-left" data-game-status-zone="left">
                   <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
-                   ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
+                    ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
                   </div>
+                </div>
+                <div class="game-status-zone game-status-zone-center" data-game-status-zone="center">
+                  ${centerResultView ? renderCenterRoundResult(centerResultView) : renderCenterRoundPlaceholder()}
+                </div>
+                <div class="game-status-zone game-status-zone-right" data-game-status-zone="right">
+                  <div class="status-meta">
+                    <p class="round-status-line">Round update: ${escapeHtml(roundChangeMessage)}</p>
+                    <p class="round-status-line">${warStatus}</p>
+                    <p class="round-status-line">${capturedStatus}</p>
+                    ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
+                  </div>
+                </div>
                 </article>
             `
           })}

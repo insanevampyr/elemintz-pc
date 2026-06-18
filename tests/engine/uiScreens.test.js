@@ -6187,6 +6187,11 @@ test("ui: lower battle HUD preserves three-zone placement and pointer-safe respo
   const responsiveCss = css.slice(css.indexOf("@media (max-width: 900px)"));
 
   assert.match(css, /\.match-status-panel\s*\{[^}]*overflow:\s*visible;[^}]*grid-template-columns:\s*minmax\(160px,\s*220px\)\s+minmax\(280px,\s*1fr\)\s+minmax\(180px,\s*240px\);[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /\.game-status-zone-left\s*\{[^}]*grid-column:\s*1;[^}]*justify-items:\s*start;/s);
+  assert.match(css, /\.game-status-zone-center\s*\{[^}]*grid-column:\s*2;[^}]*justify-items:\s*center;/s);
+  assert.match(css, /\.game-status-zone-right\s*\{[^}]*grid-column:\s*3;[^}]*justify-items:\s*end;/s);
+  assert.match(css, /\.game-status-zone-center\s+\.round-center-result\s*\{[^}]*grid-column:\s*auto;/s);
+  assert.match(css, /\.game-status-zone-left\s+\.war-pile-inline\s*\{[^}]*grid-column:\s*auto;[^}]*grid-row:\s*auto;/s);
   assert.match(css, /\.round-center-result\s*\{[^}]*grid-column:\s*2;[^}]*overflow:\s*visible;/s);
   assert.match(css, /\.match-status-panel\s*>\s*\.round-center-placeholder\s*\{[^}]*grid-column:\s*2;/s);
   assert.match(css, /\.match-status-panel\s*>\s*\.status-meta\s*\{[^}]*grid-column:\s*3;/s);
@@ -6194,6 +6199,7 @@ test("ui: lower battle HUD preserves three-zone placement and pointer-safe respo
   assert.match(css, /\.online-play-status-panel\.has-center-result\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+max-content\s+minmax\(0,\s*1fr\);/s);
 
   assert.match(responsiveCss, /\.match-status-panel\s*\{[^}]*grid-template-columns:\s*1fr;/s);
+  assert.match(responsiveCss, /\.game-status-zone\s*\{[^}]*grid-column:\s*auto;/s);
   assert.match(responsiveCss, /\.match-status-panel\s*>\s*\.round-center-placeholder\s*\{[^}]*grid-column:\s*auto;/s);
   assert.match(responsiveCss, /\.status-meta,\s*\.war-pile-inline\s*\{[^}]*grid-column:\s*auto;[^}]*grid-row:\s*auto;/s);
 });
@@ -14924,9 +14930,18 @@ test("ui: local PvE does not render a fake center result before the first real r
   assert.match(html, /Awaiting Clash/);
   assert.match(html, /class="status-meta"/);
   assert.match(html, /class="war-pile-inline /);
+  assert.match(html, /data-game-status-zone="left"/);
+  assert.match(html, /data-game-status-zone="center"/);
+  assert.match(html, /data-game-status-zone="right"/);
   assert.ok(html.indexOf('class="game-active-match-status"') < html.indexOf('class="panel match-status-panel'));
-  assert.ok(html.indexOf('data-round-center-placeholder="true"') < html.indexOf('class="status-meta"'));
-  assert.ok(html.indexOf('class="status-meta"') < html.indexOf('class="war-pile-inline '));
+  const leftZoneIndex = html.indexOf('data-game-status-zone="left"');
+  const centerZoneIndex = html.indexOf('data-game-status-zone="center"');
+  const rightZoneIndex = html.indexOf('data-game-status-zone="right"');
+  assert.ok(leftZoneIndex < centerZoneIndex);
+  assert.ok(centerZoneIndex < rightZoneIndex);
+  assert.ok(html.indexOf('class="war-pile-inline ', leftZoneIndex) < centerZoneIndex);
+  assert.ok(html.indexOf('data-round-center-placeholder="true"', centerZoneIndex) < rightZoneIndex);
+  assert.ok(html.indexOf('class="status-meta"', rightZoneIndex) > rightZoneIndex);
   assert.doesNotMatch(html, /card-art-facedown/);
   assert.match(html, /Round update: Captured totals are now Hero 0 and Elemental AI 0\./);
   assert.match(html, /WAR status: No active WAR pile\./);
