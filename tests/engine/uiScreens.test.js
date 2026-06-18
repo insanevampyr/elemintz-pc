@@ -6166,6 +6166,19 @@ test("ui: non-online reserved expressions rail constrains picker height to inter
   assert.match(css, /\.game-active-match-expressions\s+\.match-taunt-panel\s*\{[^}]*max-height:\s*220px;[^}]*overflow:\s*auto;/s);
 });
 
+test("ui: online Expressions rail keeps header separate and picker inside stable internal scroll", () => {
+  const css = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\game.css",
+    "utf8"
+  );
+
+  assert.match(css, /\.online-active-match-expressions\s*\{[^}]*height:\s*clamp\(240px,\s*34vh,\s*320px\);[^}]*max-height:\s*320px;[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.online-active-match-expressions\s+\.match-taunt-shell\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);[^}]*gap:\s*12px;[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.online-active-match-expressions\s+\.online-match-taunt-box\s*\{[^}]*height:\s*100%;[^}]*max-height:\s*100%;[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.online-active-match-expressions\s+\.online-match-taunt-rail-body\s*\{[^}]*overflow-y:\s*auto;[^}]*overflow-x:\s*hidden;[^}]*scrollbar-gutter:\s*stable;/s);
+  assert.match(css, /\.online-active-match-expressions\s+\.match-taunt-panel\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
+});
+
 test("ui: non-online battle header stays sticky without a clipping screen ancestor", () => {
   const css = fs.readFileSync(
     "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\styles\\game.css",
