@@ -25,6 +25,7 @@ import { renderBattleExpressionsFeed, renderBattleExpressionsPanel } from "../..
 import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../../src/renderer/ui/shared/battleStatusSummary.js";
 import { renderLowerHudLayout } from "../../src/renderer/ui/shared/lowerHudLayout.js";
+import { renderPlayerHeader } from "../../src/renderer/ui/shared/playSurfaceShared.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
@@ -195,6 +196,39 @@ test("ui: shared lower HUD layout preserves variant wrappers, zone order, and ch
     /class="online-play-status-zone online-play-status-zone-center" data-online-status-zone="center" data-online-status-center-result="true"/
   );
   assert.match(onlineHtml, /class="online-play-status-zone online-play-status-zone-right" data-online-status-zone="right"/);
+});
+
+test("ui: shared player header preserves identity structure, fallbacks, and cosmetic metadata", () => {
+  const identityHtml = renderPlayerHeader(
+    {
+      name: "Identity Hero",
+      avatarId: "avatar_fourfold_lord",
+      avatar: getAvatarImage("avatar_fourfold_lord"),
+      titleId: "title_war_master",
+      title: "War Master",
+      featuredBadge: getBadgeImage("badge_arena_legend"),
+      badgeId: "badge_arena_legend"
+    },
+    "Fallback Hero",
+    "(7)"
+  );
+  const fallbackHtml = renderPlayerHeader(null, "Fallback Hero", "(0)");
+
+  assert.match(identityHtml, /class="player-header"/);
+  assert.match(identityHtml, /class="player-avatar"/);
+  assert.match(identityHtml, /<h3>Identity Hero \(7\)<\/h3>/);
+  assert.match(identityHtml, /class="player-title"/);
+  assert.match(identityHtml, /class="player-title-preview"/);
+  assert.match(identityHtml, /<span>War Master<\/span>/);
+  assert.match(identityHtml, /class="featured-badge"/);
+  assert.match(identityHtml, /data-preview-type="avatar"/);
+  assert.match(identityHtml, /data-preview-type="title"/);
+  assert.match(identityHtml, /data-preview-type="badge"/);
+  assert.doesNotMatch(identityHtml, /online-|hotseat|data-move|timer|sync/i);
+
+  assert.match(fallbackHtml, /class="player-header"/);
+  assert.match(fallbackHtml, /<h3>Fallback Hero \(0\)<\/h3>/);
+  assert.match(fallbackHtml, /<span>Initiate<\/span>/);
 });
 
 function createShortcutDocument({ activeElement = null, modalTitle = "", modalVisible = false } = {}) {
@@ -3073,6 +3107,9 @@ test("ui: game screen does not render Gauntlet labels for normal PvE or Featured
   assert.doesNotMatch(featuredHtml, /Current Streak:/);
   assert.doesNotMatch(featuredHtml, /Gauntlet Mode/);
   assert.match(normalHtml, /Mode:<\/span>\s*<span class="battle-status-value">AI/);
+  assert.equal((normalHtml.match(/class="player-header"/g) ?? []).length, 2);
+  assert.match(normalHtml, /<h3>Hero \(2\)<\/h3>/);
+  assert.match(normalHtml, /<h3>Elemental AI \(2\)<\/h3>/);
   assert.match(normalHtml, /WARs:<\/span>\s*<span class="battle-status-value">0/);
   assert.match(featuredHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 0 · Rival 0/);
   assert.match(featuredHtml, /Rival:<\/span>\s*<span class="battle-status-value">Crownfire Duelist/);
@@ -3088,6 +3125,8 @@ test("ui: game screen does not render Gauntlet labels for normal PvE or Featured
     battleStatus: { difficulty: "hard", featuredRivalName: null }
   });
   assert.match(hardHtml, /Mode:<\/span>\s*<span class="battle-status-value">Hard AI/);
+  assert.equal((hardHtml.match(/class="player-header"/g) ?? []).length, 2);
+  assert.match(hardHtml, /<h3>Hard AI \(2\)<\/h3>/);
   assert.match(hardHtml, /WARs:<\/span>\s*<span class="battle-status-value">0/);
   assert.doesNotMatch(`${normalHtml}${hardHtml}${featuredHtml}`, /WARs:<\/span>\s*<span class="battle-status-value">Active/);
 });
@@ -15242,12 +15281,20 @@ test("ui: Gauntlet and Featured Rival matches render the shared center result bl
   });
 
   assert.match(gauntletHtml, /data-round-center-result="true"/);
+  assert.equal((gauntletHtml.match(/class="player-header"/g) ?? []).length, 2);
+  assert.match(gauntletHtml, /<h3>Hero \(1\)<\/h3>/);
+  assert.match(gauntletHtml, /<h3>Stone March \(1\)<\/h3>/);
+  assert.match(gauntletHtml, /class="panel gauntlet-status-panel"/);
+  assert.match(gauntletHtml, /class="gauntlet-status-panel__identity"/);
   assert.match(gauntletHtml, /data-round-center-motion="resolved"/);
   assert.match(gauntletHtml, /data-round-center-card-row="true"/);
   assert.match(gauntletHtml, /data-round-center-headline="true">FIRE BEATS EARTH</);
   assert.match(gauntletHtml, /WARs:<\/span>\s*<span class="battle-status-value">3/);
   assert.match(gauntletHtml, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 1 · Rival 0/);
   assert.match(featuredHtml, /data-round-center-result="true"/);
+  assert.equal((featuredHtml.match(/class="player-header"/g) ?? []).length, 2);
+  assert.match(featuredHtml, /<h3>Crownfire Duelist \(1\)<\/h3>/);
+  assert.doesNotMatch(featuredHtml, /class="gauntlet-status-panel/);
   assert.match(featuredHtml, /data-round-center-motion="resolved"/);
   assert.match(featuredHtml, /data-round-center-card-row="true"/);
   assert.match(featuredHtml, /data-round-center-headline="true">WIND BEATS WATER</);
@@ -15290,6 +15337,10 @@ test("ui: local PvP opposing side remains a compact hidden-hand summary during P
 
   assert.match(html, /P2 \(4\)/);
   assert.match(html, /P1 \(4\)/);
+  assert.equal((html.match(/class="player-header"/g) ?? []).length, 2);
+  assert.ok(html.indexOf("<h3>P2 (4)</h3>") < html.indexOf("<h3>P1 (4)</h3>"));
+  assert.ok(html.indexOf("<h3>P2 (4)</h3>") < html.indexOf('id="left-hand"'));
+  assert.ok(html.indexOf("<h3>P1 (4)</h3>") < html.indexOf('id="right-hand"'));
   assert.match(html, /Fire count x2/);
   assert.match(html, /Earth count x1/);
   assert.match(html, /Wind count x0/);
@@ -17714,6 +17765,15 @@ test("ui: online play screen renders local and opponent cosmetics from synced ro
   assert.match(html, /<span>War Master<\/span>/);
   assert.match(html, /<span>Element Sovereign<\/span>/);
   assert.match(html, /class="player-avatar"/);
+  assert.equal((html.match(/class="player-header"/g) ?? []).length, 2);
+  assert.equal((html.match(/class="online-play-player-panel-overlay"/g) ?? []).length, 2);
+  assert.match(html, /<h3>LocalUser \(8\)<\/h3>/);
+  assert.match(html, /<h3>RemoteUser \(8\)<\/h3>/);
+  assert.ok(html.indexOf('data-online-turn-timer-shell="true"') < html.indexOf('class="player-header"'));
+  const firstOnlineIdentityStart = html.indexOf('class="player-header"');
+  const firstOnlineIdentityEnd = html.indexOf("</article>", firstOnlineIdentityStart);
+  const firstOnlineIdentityHtml = html.slice(firstOnlineIdentityStart, firstOnlineIdentityEnd);
+  assert.doesNotMatch(firstOnlineIdentityHtml, /data-online-active-meta-key|data-online-turn-timer|data-online-match-timer/);
   assert.doesNotMatch(html, /class="online-player-card-back-chip/);
   assert.match(html, /class="hand-slot-count-badge"/);
   assert.match(html, /class="featured-badge"/);
