@@ -24,6 +24,7 @@ import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticH
 import { renderBattleExpressionsFeed, renderBattleExpressionsPanel } from "../../src/renderer/ui/shared/battleExpressionsRail.js";
 import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../../src/renderer/ui/shared/battleStatusSummary.js";
+import { renderLowerHudLayout } from "../../src/renderer/ui/shared/lowerHudLayout.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
@@ -154,6 +155,46 @@ test("ui: shared battle status summary preserves standard order, fallbacks, and 
   assert.ok(roundIndex < cardsIndex);
   assert.ok(cardsIndex < warsIndex);
   assert.ok(warsIndex < modeIndex);
+});
+
+test("ui: shared lower HUD layout preserves variant wrappers, zone order, and child markup", () => {
+  const beforeZonesHtml = '<span id="before-zones">Before</span>';
+  const leftSlotHtml = '<div id="left-child">Left & trusted</div>';
+  const centerSlotHtml = '<div id="center-child">Center</div>';
+  const rightSlotHtml = '<div id="right-child">Right</div>';
+  const gameHtml = renderLowerHudLayout({
+    variant: "game",
+    beforeZonesHtml,
+    leftSlotHtml,
+    centerSlotHtml,
+    rightSlotHtml,
+    rootClassName: "extra-root",
+    rootDataAttributes: 'data-extra-root="true"',
+    zoneClassNames: { center: "extra-center" },
+    zoneDataAttributes: { right: 'data-extra-right="true"' }
+  });
+  const onlineHtml = renderLowerHudLayout({ variant: "online" });
+
+  assert.match(gameHtml, /class="panel match-status-panel extra-root"/);
+  assert.match(gameHtml, /data-extra-root="true"/);
+  assert.match(gameHtml, /class="game-status-zone game-status-zone-left" data-game-status-zone="left"/);
+  assert.match(gameHtml, /class="game-status-zone game-status-zone-center extra-center" data-game-status-zone="center"/);
+  assert.match(gameHtml, /class="game-status-zone game-status-zone-right" data-game-status-zone="right" data-extra-right="true"/);
+  assert.ok(gameHtml.indexOf(beforeZonesHtml) < gameHtml.indexOf(leftSlotHtml));
+  assert.ok(gameHtml.indexOf(leftSlotHtml) < gameHtml.indexOf(centerSlotHtml));
+  assert.ok(gameHtml.indexOf(centerSlotHtml) < gameHtml.indexOf(rightSlotHtml));
+  assert.match(gameHtml, /Left & trusted/);
+
+  assert.match(
+    onlineHtml,
+    /class="panel match-status-panel online-play-status-panel has-center-result" data-online-active-match-status="true"/
+  );
+  assert.match(onlineHtml, /class="online-play-status-zone online-play-status-zone-left" data-online-status-zone="left"/);
+  assert.match(
+    onlineHtml,
+    /class="online-play-status-zone online-play-status-zone-center" data-online-status-zone="center" data-online-status-center-result="true"/
+  );
+  assert.match(onlineHtml, /class="online-play-status-zone online-play-status-zone-right" data-online-status-zone="right"/);
 });
 
 function createShortcutDocument({ activeElement = null, modalTitle = "", modalVisible = false } = {}) {

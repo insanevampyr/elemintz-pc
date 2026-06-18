@@ -19,6 +19,7 @@ import {
 } from "../shared/roundResultPresentation.js";
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../shared/battleStatusSummary.js";
+import { renderLowerHudLayout } from "../shared/lowerHudLayout.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const DEFAULT_ONLINE_EQUIPPED_COSMETICS = Object.freeze({
@@ -800,27 +801,22 @@ function renderOnlineLiveStatusPanel(
     detailLines
   });
 
-  return `
-    <article class="panel match-status-panel online-play-status-panel has-center-result" data-online-active-match-status="true">
-      <div class="online-play-status-zone online-play-status-zone-left" data-online-status-zone="left">
+  return renderLowerHudLayout({
+    variant: "online",
+    leftSlotHtml: `
         <div class="war-pile-inline online-war-pile-inline ${warTriggered ? "war-highlight" : ""}">
           ${renderOnlineWarPileSummary(boardView.warPileCards, boardView.opponentCardVariants, warTriggered)}
         </div>
-      </div>
-      <div
-        class="online-play-status-zone online-play-status-zone-center"
-        data-online-status-zone="center"
-        data-online-status-center-result="true"
-      >
-        ${centerResultView ? renderCenterRoundResult(centerResultView) : renderCenterRoundPlaceholder()}
-      </div>
-      <div class="online-play-status-zone online-play-status-zone-right" data-online-status-zone="right">
+    `,
+    centerSlotHtml: centerResultView
+      ? renderCenterRoundResult(centerResultView)
+      : renderCenterRoundPlaceholder(),
+    rightSlotHtml: `
         <div class="status-meta">
           ${statusSummaryHtml}
         </div>
-      </div>
-    </article>
-  `;
+    `
+  });
 }
 
 function renderWaitingBoardPreview(hostIdentity, roomCode, backgroundImage) {

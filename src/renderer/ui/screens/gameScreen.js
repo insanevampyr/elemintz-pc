@@ -18,6 +18,7 @@ import {
 } from "../shared/roundResultPresentation.js";
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../shared/battleStatusSummary.js";
+import { renderLowerHudLayout } from "../shared/lowerHudLayout.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
@@ -594,24 +595,26 @@ export const gameScreen = {
                 cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
                 canSend: context.taunts?.canSend ?? true
               }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS),
-            statusSlotHtml: `
-              <article class="panel match-status-panel ${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}">
-                ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
-                <div class="game-status-zone game-status-zone-left" data-game-status-zone="left">
-                  <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
-                    ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
-                  </div>
+            statusSlotHtml: renderLowerHudLayout({
+              variant: "game",
+              rootClassName: `${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}`,
+              beforeZonesHtml: warTriggered
+                ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>`
+                : "",
+              leftSlotHtml: `
+                <div class="war-pile-inline ${warTriggered ? "war-highlight" : ""}">
+                  ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
                 </div>
-                <div class="game-status-zone game-status-zone-center" data-game-status-zone="center">
-                  ${centerResultView ? renderCenterRoundResult(centerResultView) : renderCenterRoundPlaceholder()}
+              `,
+              centerSlotHtml: centerResultView
+                ? renderCenterRoundResult(centerResultView)
+                : renderCenterRoundPlaceholder(),
+              rightSlotHtml: `
+                <div class="status-meta">
+                  ${statusSummaryHtml}
                 </div>
-                <div class="game-status-zone game-status-zone-right" data-game-status-zone="right">
-                  <div class="status-meta">
-                    ${statusSummaryHtml}
-                  </div>
-                </div>
-                </article>
-            `
+              `
+            })
           })}
         </section>
         ${
