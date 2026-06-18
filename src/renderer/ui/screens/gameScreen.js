@@ -1,11 +1,10 @@
-import { ASSET_CATALOG, escapeHtml, getCardImage, getVariantCardImages, formatElement } from "../../utils/index.js";
+import { escapeHtml, getCardImage, getVariantCardImages, formatElement } from "../../utils/index.js";
 import { getCosmeticDefinition } from "../../../state/cosmeticSystem.js";
 import { GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS, renderBattleExpressionsRail } from "../shared/battleExpressionsRail.js";
 import {
   ELEMENT_ORDER,
   getCardElement,
   normalizeCosmeticRarity,
-  rarityClassName,
   renderElementHandSummary,
   renderHiddenHandSummary,
   renderPlayerHeader
@@ -136,35 +135,6 @@ function renderWarPileSummary(pileCards, opponentCardVariantImages, emphasize) {
     cardImages,
     emphasized: emphasize
   });
-}
-
-function renderPlayedCard(label, card, options) {
-  const safeLabel = escapeHtml(label);
-
-  if (options.faceDown) {
-    return `
-      <div class="played-slot is-facedown">
-        <p class="played-slot-label">${safeLabel}</p>
-        <span class="card-art played-art card-art-facedown" style="background-image: url('${options.backImage ?? ASSET_CATALOG.cards.back}')"></span>
-      </div>
-    `;
-  }
-
-  if (!card) {
-    return `<div class="played-slot"><p class="played-slot-label">${safeLabel}: -</p></div>`;
-  }
-
-  const classes = ["played-slot", rarityClassName(options.rarity ?? "Common")];
-  if (options.emphasize) {
-    classes.push("is-emphasized");
-  }
-
-  return `
-    <div class="${classes.join(" ")}">
-      <p class="played-slot-label">${safeLabel}: ${formatElement(card)}</p>
-      <span class="card-art played-art" style="background-image: url('${getCardImage(card, options.variantMap)}')"></span>
-    </div>
-  `;
 }
 
 function getVariantRarityMap(selection = null) {

@@ -297,10 +297,6 @@ input[type="number"] {
   filter: saturate(0.85) brightness(0.92);
 }
 
-.round-panel {
-  border: 1px solid #4f7593;
-}
-
 .round-result-banner {
   margin: 8px 0;
   padding: 10px;
@@ -311,46 +307,19 @@ input[type="number"] {
   letter-spacing: 0.02em;
 }
 
-.round-result-banner.player-win {
-  border-color: #67c89f;
-  background: rgba(21, 66, 51, 0.78);
-}
-
-.round-result-banner.opponent-win {
-  border-color: #ca7b8d;
-  background: rgba(70, 30, 41, 0.78);
-}
-
 .round-result-banner.no-effect {
   border-color: #7096b5;
   background: rgba(27, 50, 71, 0.78);
-}
-
-.round-result-banner.war-triggered {
-  border-color: #ffbf6b;
-  background: rgba(84, 49, 16, 0.82);
 }
 
 .round-result-banner.is-active {
   animation: result-pop 340ms ease;
 }
 
-.round-result-banner.is-emphasized {
-  box-shadow: 0 0 0 1px rgba(175, 214, 245, 0.2), 0 0 18px rgba(104, 171, 224, 0.16);
-  animation: result-pop 340ms ease, result-emphasis 520ms ease-out;
-}
-
 .round-result-text {
   margin: 0;
   font-size: 0.96rem;
   color: #d4e7f5;
-}
-
-.round-result-detail {
-  margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.45;
-  color: #bdd8ea;
 }
 
 .hud-summary {
@@ -1592,18 +1561,6 @@ input[type="number"] {
   grid-column: 1 / -1;
 }
 
-.online-status-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.online-status-header-row .round-result-banner {
-  margin: 0;
-  flex: 1 1 auto;
-}
-
 .online-room-visibility-panel,
 .online-public-room-browser {
   border: 1px solid rgba(150, 188, 214, 0.2);
@@ -1784,32 +1741,11 @@ input[type="number"] {
   white-space: nowrap;
 }
 
-.war-panel h3 {
-  letter-spacing: 0.04em;
-}
-
-.war-panel.war-highlight {
-  border: 1px solid #ffb74f;
-  box-shadow: 0 0 0 1px rgba(255, 183, 79, 0.35), 0 0 20px rgba(255, 162, 63, 0.22);
-  animation: war-pulse 1100ms ease-in-out infinite;
-}
-
-.war-pile-grid.is-emphasized {
-  border: 1px solid #ffbf6a;
-  border-radius: 10px;
-  padding: 8px;
-  background: rgba(67, 38, 10, 0.4);
-}
-
 .war-summary-grid.is-emphasized {
   border: 1px solid #ffbf6a;
   border-radius: 10px;
   padding: 8px;
   background: rgba(67, 38, 10, 0.4);
-}
-
-.war-pile-card {
-  border-color: #dca55f;
 }
 
 .asset-placeholder {
@@ -1832,20 +1768,6 @@ input[type="number"] {
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes result-emphasis {
-  0% {
-    box-shadow: 0 0 0 1px rgba(175, 214, 245, 0.1), 0 0 0 rgba(104, 171, 224, 0);
-  }
-
-  55% {
-    box-shadow: 0 0 0 1px rgba(175, 214, 245, 0.36), 0 0 22px rgba(104, 171, 224, 0.28);
-  }
-
-  100% {
-    box-shadow: 0 0 0 1px rgba(175, 214, 245, 0.2), 0 0 18px rgba(104, 171, 224, 0.16);
   }
 }
 
@@ -2169,25 +2091,9 @@ input[type="number"] {
   }
 }
 
-@keyframes war-pulse {
-  0% {
-    box-shadow: 0 0 0 1px rgba(255, 183, 79, 0.2), 0 0 8px rgba(255, 162, 63, 0.16);
-  }
-
-  50% {
-    box-shadow: 0 0 0 1px rgba(255, 183, 79, 0.5), 0 0 28px rgba(255, 162, 63, 0.34);
-  }
-
-  100% {
-    box-shadow: 0 0 0 1px rgba(255, 183, 79, 0.2), 0 0 8px rgba(255, 162, 63, 0.16);
-  }
-}
-
 .reduced-motion .card-chip,
 .reduced-motion .played-slot,
 .reduced-motion .round-result-banner,
-.reduced-motion .war-panel,
-.reduced-motion .war-pile-grid,
 .reduced-motion .match-status-panel,
 .reduced-motion .round-center-result-headline,
 .reduced-motion .round-center-result-stack-token {
@@ -2287,11 +2193,6 @@ input[type="number"] {
   .war-pile-inline {
     grid-column: auto;
     grid-row: auto;
-  }
-
-  .online-status-header-row {
-    flex-direction: column;
-    align-items: flex-start;
   }
 
   .online-public-room-header,
