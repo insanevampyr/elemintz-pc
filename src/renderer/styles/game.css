@@ -992,10 +992,6 @@ input[type="number"] {
   pointer-events: none;
 }
 
-.match-status-panel > .round-center-placeholder {
-  grid-column: 2;
-}
-
 .round-center-result.player-win {
   border-color: rgba(103, 200, 159, 0.36);
 }
@@ -1536,10 +1532,6 @@ input[type="number"] {
   grid-column: 3;
   justify-self: end;
   width: min(100%, 240px);
-}
-
-.match-status-panel > .war-pile-inline {
-  justify-self: start;
 }
 
 .online-play-status-panel.has-center-result {
@@ -2269,10 +2261,6 @@ input[type="number"] {
   }
 
   .game-status-zone {
-    grid-column: auto;
-  }
-
-  .match-status-panel > .round-center-placeholder {
     grid-column: auto;
   }
 

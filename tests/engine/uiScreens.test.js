@@ -6287,7 +6287,6 @@ test("ui: lower battle HUD preserves three-zone placement and pointer-safe respo
   assert.match(css, /\.game-status-zone-center\s+\.round-center-result\s*\{[^}]*grid-column:\s*auto;/s);
   assert.match(css, /\.game-status-zone-left\s+\.war-pile-inline\s*\{[^}]*grid-column:\s*auto;[^}]*grid-row:\s*auto;/s);
   assert.match(css, /\.round-center-result\s*\{[^}]*grid-column:\s*2;[^}]*overflow:\s*visible;/s);
-  assert.match(css, /\.match-status-panel\s*>\s*\.round-center-placeholder\s*\{[^}]*grid-column:\s*2;/s);
   assert.match(css, /\.match-status-panel\s*>\s*\.status-meta\s*\{[^}]*grid-column:\s*3;/s);
   assert.match(css, /\.war-pile-inline\s*\{[^}]*grid-column:\s*1;/s);
   assert.match(css, /\.online-play-status-panel\.has-center-result\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+max-content\s+minmax\(0,\s*1fr\);/s);
@@ -6298,7 +6297,6 @@ test("ui: lower battle HUD preserves three-zone placement and pointer-safe respo
 
   assert.match(responsiveCss, /\.match-status-panel\s*\{[^}]*grid-template-columns:\s*1fr;/s);
   assert.match(responsiveCss, /\.game-status-zone\s*\{[^}]*grid-column:\s*auto;/s);
-  assert.match(responsiveCss, /\.match-status-panel\s*>\s*\.round-center-placeholder\s*\{[^}]*grid-column:\s*auto;/s);
   assert.match(responsiveCss, /\.status-meta,\s*\.war-pile-inline\s*\{[^}]*grid-column:\s*auto;[^}]*grid-row:\s*auto;/s);
 });
 
