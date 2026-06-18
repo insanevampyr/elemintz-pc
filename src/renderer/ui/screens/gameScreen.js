@@ -11,7 +11,11 @@ import {
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
-import { buildCenterRoundHeadline, renderCenterRoundResult } from "../shared/roundResultPresentation.js";
+import {
+  buildCenterRoundHeadline,
+  renderCenterRoundPlaceholder,
+  renderCenterRoundResult
+} from "../shared/roundResultPresentation.js";
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
@@ -535,7 +539,7 @@ export const gameScreen = {
             statusSlotHtml: `
               <article class="panel match-status-panel ${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}">
                 ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
-                ${renderCenterRoundResult(centerResultView)}
+                ${centerResultView ? renderCenterRoundResult(centerResultView) : renderCenterRoundPlaceholder()}
                 <div class="status-meta">
                   <p class="round-status-line">Round update: ${escapeHtml(roundChangeMessage)}</p>
                   <p class="round-status-line">${warStatus}</p>

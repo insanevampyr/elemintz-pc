@@ -942,6 +942,23 @@ input[type="number"] {
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
 }
 
+.round-center-placeholder {
+  justify-self: center;
+  align-self: center;
+  padding: 12px 18px;
+  border: 1px solid rgba(123, 171, 212, 0.22);
+  border-radius: 12px;
+  background: rgba(11, 27, 43, 0.64);
+  color: rgba(215, 236, 255, 0.78);
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+}
+
+.match-status-panel > .round-center-placeholder {
+  grid-column: 2;
+}
+
 .round-center-result.player-win {
   border-color: rgba(103, 200, 159, 0.36);
 }
@@ -2191,6 +2208,10 @@ input[type="number"] {
 
   .match-status-panel {
     grid-template-columns: 1fr;
+  }
+
+  .match-status-panel > .round-center-placeholder {
+    grid-column: auto;
   }
 
   .online-active-match-shell {

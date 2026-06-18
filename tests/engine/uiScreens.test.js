@@ -14886,6 +14886,9 @@ test("ui: local PvE does not render a fake center result before the first real r
   assert.doesNotMatch(html, /data-round-center-headline="true"/);
   assert.doesNotMatch(html, /Player: -/);
   assert.doesNotMatch(html, /Opponent: -/);
+  assert.match(html, /data-round-center-placeholder="true"/);
+  assert.match(html, /Awaiting Clash/);
+  assert.doesNotMatch(html, /card-art-facedown/);
   assert.match(html, /Round update: Captured totals are now Hero 0 and Elemental AI 0\./);
   assert.match(html, /WAR status: No active WAR pile\./);
 });
@@ -20214,6 +20217,8 @@ test("ui: online play screen still shows move controls for full rooms when moveS
   });
 
   assert.doesNotMatch(html, /data-round-center-result="true"/);
+  assert.match(html, /data-round-center-placeholder="true"/);
+  assert.match(html, /Awaiting Clash/);
   assert.doesNotMatch(html, /Battle log will appear here\./);
   assert.doesNotMatch(html, /Battle Result/);
   assert.doesNotMatch(html, /Why:<\/strong>/);
@@ -20304,6 +20309,8 @@ test("ui: online play screen renders war resolved result from player perspective
   });
 
   assert.match(html, /data-round-center-result="true"/);
+  assert.doesNotMatch(html, /data-round-center-placeholder="true"/);
+  assert.doesNotMatch(html, /Awaiting Clash/);
   assert.match(html, /data-round-center-motion="war-resolved"/);
   assert.match(html, /data-round-center-card-row="true"/);
   assert.match(html, /data-round-center-clash="true"/);

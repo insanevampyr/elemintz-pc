@@ -12,7 +12,11 @@ import {
   renderPlayerHeader
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
-import { buildCenterRoundHeadline, renderCenterRoundResult } from "../shared/roundResultPresentation.js";
+import {
+  buildCenterRoundHeadline,
+  renderCenterRoundPlaceholder,
+  renderCenterRoundResult
+} from "../shared/roundResultPresentation.js";
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
@@ -773,7 +777,7 @@ function renderOnlineLiveStatusPanel(
         data-online-status-zone="center"
         data-online-status-center-result="true"
       >
-        ${renderCenterRoundResult(centerResultView)}
+        ${centerResultView ? renderCenterRoundResult(centerResultView) : renderCenterRoundPlaceholder()}
       </div>
       <div class="online-play-status-zone online-play-status-zone-right" data-online-status-zone="right">
         <div class="status-meta">

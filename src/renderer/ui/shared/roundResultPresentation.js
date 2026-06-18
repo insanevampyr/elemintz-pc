@@ -120,6 +120,14 @@ export function buildCenterRoundHeadline({ leftCard = null, rightCard = null, wi
   return "NO EFFECT";
 }
 
+export function renderCenterRoundPlaceholder() {
+  return `
+    <div class="round-center-placeholder" data-round-center-placeholder="true">
+      Awaiting Clash
+    </div>
+  `;
+}
+
 export function renderCenterRoundResult(view = null) {
   if (!view) {
     return "";
