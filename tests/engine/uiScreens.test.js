@@ -26,6 +26,11 @@ import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatc
 import { renderBattleStatusSummary } from "../../src/renderer/ui/shared/battleStatusSummary.js";
 import { renderLowerHudLayout } from "../../src/renderer/ui/shared/lowerHudLayout.js";
 import { renderPlayerHeader } from "../../src/renderer/ui/shared/playSurfaceShared.js";
+import {
+  buildCenterRoundHeadline,
+  renderCenterRoundPlaceholder,
+  renderCenterRoundResult
+} from "../../src/renderer/ui/shared/roundResultPresentation.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
@@ -229,6 +234,94 @@ test("ui: shared player header preserves identity structure, fallbacks, and cosm
   assert.match(fallbackHtml, /class="player-header"/);
   assert.match(fallbackHtml, /<h3>Fallback Hero \(0\)<\/h3>/);
   assert.match(fallbackHtml, /<span>Initiate<\/span>/);
+});
+
+test("ui: shared round result presentation preserves placeholder, headline, and result-state contracts", () => {
+  const placeholderHtml = renderCenterRoundPlaceholder();
+  const resolvedHeadline = buildCenterRoundHeadline({
+    leftCard: "fire",
+    rightCard: "earth",
+    winner: "left"
+  });
+  const noEffectHeadline = buildCenterRoundHeadline({
+    leftCard: "fire",
+    rightCard: "wind",
+    noEffect: true
+  });
+  const warHeadline = buildCenterRoundHeadline({
+    leftCard: "fire",
+    rightCard: "fire",
+    war: true
+  });
+  const resolvedHtml = renderCenterRoundResult({
+    tone: "player-win",
+    motionState: "resolved",
+    leftLabel: "You",
+    rightLabel: "Opponent",
+    leftCard: "fire",
+    rightCard: "earth",
+    leftCardState: "winner",
+    rightCardState: "loser",
+    headline: resolvedHeadline,
+    subtext: "You won the clash."
+  });
+  const noEffectHtml = renderCenterRoundResult({
+    tone: "no-effect",
+    motionState: "no-effect",
+    leftCard: "fire",
+    rightCard: "wind",
+    leftCardState: "neutral",
+    rightCardState: "neutral",
+    headline: noEffectHeadline
+  });
+  const warHtml = renderCenterRoundResult({
+    tone: "war",
+    motionState: "war",
+    leftCard: "fire",
+    rightCard: "fire",
+    leftCardState: "neutral",
+    rightCardState: "neutral",
+    headline: warHeadline
+  });
+  const warResolvedHtml = renderCenterRoundResult({
+    tone: "war",
+    motionState: "war-resolved",
+    leftCard: "water",
+    rightCard: "fire",
+    leftCardState: "winner",
+    rightCardState: "loser",
+    stackSweepSide: "left",
+    headline: "WATER BEATS FIRE"
+  });
+
+  assert.match(placeholderHtml, /class="round-center-placeholder"/);
+  assert.match(placeholderHtml, /data-round-center-placeholder="true"/);
+  assert.match(placeholderHtml, /Awaiting Clash/);
+  assert.equal(resolvedHeadline, "FIRE BEATS EARTH");
+  assert.equal(noEffectHeadline, "NO EFFECT");
+  assert.equal(warHeadline, "WAR");
+
+  assert.match(resolvedHtml, /class="round-center-result player-win motion-resolved"/);
+  assert.match(resolvedHtml, /data-round-center-result="true"/);
+  assert.match(resolvedHtml, /data-round-center-motion="resolved"/);
+  assert.match(resolvedHtml, /data-round-center-card="left"[^>]*data-round-center-card-state="winner"/);
+  assert.match(resolvedHtml, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
+  assert.match(resolvedHtml, /class="round-center-result-clash-badge">VS</);
+  assert.match(resolvedHtml, /You won the clash\./);
+
+  assert.match(noEffectHtml, /class="round-center-result no-effect motion-no-effect"/);
+  assert.match(noEffectHtml, /class="round-center-result-clash-badge">TIE</);
+  assert.equal((noEffectHtml.match(/data-round-center-card-state="neutral"/g) ?? []).length, 2);
+
+  assert.match(warHtml, /class="round-center-result war-triggered motion-war"/);
+  assert.match(warHtml, /data-round-center-headline="true">WAR</);
+  assert.match(warHtml, /class="round-center-result-clash-badge">WAR</);
+
+  assert.match(warResolvedHtml, /class="round-center-result war-triggered motion-war-resolved"/);
+  assert.match(warResolvedHtml, /data-round-center-motion="war-resolved"/);
+  assert.match(warResolvedHtml, /data-round-center-stack-sweep="left"/);
+  assert.match(warResolvedHtml, /round-center-result-stack-token-left/);
+  assert.match(warResolvedHtml, /class="round-center-result-clash-badge">WAR</);
 });
 
 function createShortcutDocument({ activeElement = null, modalTitle = "", modalVisible = false } = {}) {
@@ -6328,6 +6421,8 @@ test("ui: lower battle HUD preserves three-zone placement and pointer-safe respo
   assert.match(css, /\.round-center-result\s*\{[^}]*grid-column:\s*2;[^}]*overflow:\s*visible;/s);
   assert.match(css, /\.match-status-panel\s*>\s*\.status-meta\s*\{[^}]*grid-column:\s*3;/s);
   assert.match(css, /\.war-pile-inline\s*\{[^}]*grid-column:\s*1;/s);
+  assert.match(css, /\.reduced-motion\s+\.round-center-result-headline,[\s\S]*\.round-center-result-stack-token\s*\{[^}]*animation:\s*none;/s);
+  assert.match(css, /\.reduced-motion\s+\.round-center-result-slot,[\s\S]*\.round-center-result-slot::after\s*\{[^}]*animation:\s*none;/s);
   assert.match(css, /\.online-play-status-panel\.has-center-result\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+max-content\s+minmax\(0,\s*1fr\);/s);
   assert.match(
     css,
@@ -14044,6 +14139,11 @@ test("ui: later PvE WAR states render the shared WAR impact marker", () => {
   assert.match(html, /class="war-slot-count-badge">x1<\/span>/);
   assert.match(html, /match-status-panel war-triggered[\s\S]*war-impact/);
   assert.match(html, /class="war-impact-ring"/);
+  assert.match(html, /class="war-summary-shell"/);
+  assert.match(html, /class="war-summary-label">Opponent Cards/);
+  assert.match(html, /WAR pile tracks committed cards\./);
+  assert.ok(html.indexOf('data-game-status-zone="left"') < html.indexOf('data-game-status-zone="center"'));
+  assert.ok(html.indexOf("war-summary-shell") < html.indexOf('data-round-center-result="true"'));
   assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">2/);
   assert.doesNotMatch(html, /WARs:<\/span>\s*<span class="battle-status-value">Active/);
 });
@@ -17112,6 +17212,8 @@ test("ui: online play live board renders WAR visuals on the left using the autho
   assert.match(html, /data-online-status-center-result="true"/);
   assert.match(html, /data-online-status-zone="right"/);
   assert.match(html, /Tracks committed WAR cards\./);
+  assert.match(html, /class="war-summary-shell"/);
+  assert.match(html, /class="war-summary-label">WAR Pile/);
   assert.match(html, /WAR progression:<\/span>\s*<span class="battle-status-value">2 (?:-&gt;|->) 4/);
   assert.match(html, /WAR Fire x2/);
   assert.match(html, /WAR Earth x1/);
@@ -17120,6 +17222,7 @@ test("ui: online play live board renders WAR visuals on the left using the autho
   assert.match(html, /assets\/cards\/earth_variant_titan\.png/);
   assert.match(html, /assets\/cards\/water_variant_tidal_spirit\.png/);
   assert.match(html, /data-round-center-motion="war"/);
+  assert.ok(html.indexOf('data-online-status-zone="left"') < html.indexOf('data-online-status-zone="center"'));
   assert.ok(html.indexOf("war-pile-inline online-war-pile-inline") < html.indexOf('data-round-center-result="true"'));
 });
 
@@ -20568,6 +20671,9 @@ test("ui: online play screen renders war resolved result from player perspective
   assert.match(html, /data-round-center-card="right"[^>]*data-round-center-card-state="loser"/);
   assert.match(html, /data-round-center-stack-sweep="left"/);
   assert.match(html, /WAR Won/);
+  assert.match(html, /<strong>Role:<\/strong> Host/);
+  assert.match(html, /You: Water/);
+  assert.match(html, /Opponent: Fire/);
   assert.doesNotMatch(html, /Why:<\/strong>/);
   assert.doesNotMatch(html, /Changed:<\/strong>/);
 });
