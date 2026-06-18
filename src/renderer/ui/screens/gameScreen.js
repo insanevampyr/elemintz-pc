@@ -12,6 +12,7 @@ import {
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
 import { buildCenterRoundHeadline, renderCenterRoundResult } from "../shared/roundResultPresentation.js";
+import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
@@ -502,8 +503,9 @@ export const gameScreen = {
         ${renderGauntletStatus(context)}
 
         <section class="arena-board" style="background-image: url('${context.arenaBackground}')">
-          <section class="game-active-match-shell" data-game-active-match-shell="true">
-            <div class="game-active-match-main" data-game-active-match-main="true">
+          ${renderActiveMatchLayout({
+            variant: "game",
+            mainSlotHtml: `
               <section class="grid game-grid game-active-match-grid">
                 <article class="panel">
                   ${hands.leftTitle}
@@ -521,18 +523,16 @@ export const gameScreen = {
                   </div>
                 </article>
               </section>
-            </div>
-            <div class="game-active-match-expressions" data-game-active-match-expressions="true">
-              ${renderBattleExpressionsRail({
+            `,
+            expressionsSlotHtml: renderBattleExpressionsRail({
                 idPrefix: "game",
                 panelOpen: Boolean(context.taunts?.panelOpen),
                 messages: context.taunts?.messages ?? [],
                 presetLines: context.taunts?.presetLines ?? [],
                 cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
                 canSend: context.taunts?.canSend ?? true
-              }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS)}
-            </div>
-            <div class="game-active-match-status" data-game-active-match-status-shell="true">
+              }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS),
+            statusSlotHtml: `
               <article class="panel match-status-panel ${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}">
                 ${warTriggered ? `<span id="war-impact-ring" class="war-impact-ring" aria-hidden="true"></span>` : ""}
                 ${renderCenterRoundResult(centerResultView)}
@@ -546,8 +546,8 @@ export const gameScreen = {
                    ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
                   </div>
                 </article>
-              </div>
-          </section>
+            `
+          })}
         </section>
         ${
           context.hotseat?.enabled

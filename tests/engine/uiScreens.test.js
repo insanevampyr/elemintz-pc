@@ -22,6 +22,7 @@ import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js"
 import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
 import { renderBattleExpressionsFeed, renderBattleExpressionsPanel } from "../../src/renderer/ui/shared/battleExpressionsRail.js";
+import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatchLayout.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
@@ -94,6 +95,37 @@ function createRendererController() {
     }
   });
 }
+
+test("ui: shared active match layout preserves variant wrappers, slot order, and child markup", () => {
+  const mainSlotHtml = '<article id="main-child">Main & trusted</article>';
+  const expressionsSlotHtml = '<aside id="expressions-child">Expressions</aside>';
+  const statusSlotHtml = '<section id="status-child">Status</section>';
+  const gameHtml = renderActiveMatchLayout({
+    variant: "game",
+    mainSlotHtml,
+    expressionsSlotHtml,
+    statusSlotHtml,
+    rootClassName: "extra-root",
+    rootDataAttributes: 'data-extra-root="true"',
+    slotClassNames: { main: "extra-main" },
+    slotDataAttributes: { status: 'data-extra-status="true"' }
+  });
+  const onlineHtml = renderActiveMatchLayout({ variant: "online" });
+
+  assert.match(gameHtml, /class="game-active-match-shell extra-root"/);
+  assert.match(gameHtml, /data-game-active-match-shell="true" data-extra-root="true"/);
+  assert.match(gameHtml, /class="game-active-match-main extra-main" data-game-active-match-main="true"/);
+  assert.match(gameHtml, /data-game-active-match-expressions="true"/);
+  assert.match(gameHtml, /data-game-active-match-status-shell="true" data-extra-status="true"/);
+  assert.ok(gameHtml.indexOf(mainSlotHtml) < gameHtml.indexOf(expressionsSlotHtml));
+  assert.ok(gameHtml.indexOf(expressionsSlotHtml) < gameHtml.indexOf(statusSlotHtml));
+  assert.match(gameHtml, /Main & trusted/);
+
+  assert.match(onlineHtml, /class="online-active-match-shell"/);
+  assert.match(onlineHtml, /class="online-active-match-main"/);
+  assert.match(onlineHtml, /data-online-active-match-expressions="true"/);
+  assert.match(onlineHtml, /data-online-active-match-status-shell="true"/);
+});
 
 function createShortcutDocument({ activeElement = null, modalTitle = "", modalVisible = false } = {}) {
   const listeners = new Map();

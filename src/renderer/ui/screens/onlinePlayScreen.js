@@ -13,6 +13,7 @@ import {
 } from "../shared/playSurfaceShared.js";
 import { bindCosmeticHoverPreview } from "../shared/cosmeticHoverPreview.js";
 import { buildCenterRoundHeadline, renderCenterRoundResult } from "../shared/roundResultPresentation.js";
+import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const DEFAULT_ONLINE_EQUIPPED_COSMETICS = Object.freeze({
@@ -1435,22 +1436,17 @@ export const onlinePlayScreen = {
             }
             ${
               activeBoardVisible
-                ? `
-                  <section class="online-active-match-shell" data-online-active-match-shell="true">
-                    <div class="online-active-match-main">
-                      ${renderOnlineLiveBoard(
+                ? renderActiveMatchLayout({
+                    variant: "online",
+                    mainSlotHtml: renderOnlineLiveBoard(
                         {
                           ...boardView,
                           battleResultView
                         },
                         onlineMatchTimer
-                      )}
-                    </div>
-                    <div class="online-active-match-expressions" data-online-active-match-expressions="true">
-                      ${renderBattleExpressionsRail(context.taunts ?? {})}
-                    </div>
-                    <div class="online-active-match-status" data-online-active-match-status-shell="true">
-                      ${renderOnlineLiveStatusPanel(
+                      ),
+                    expressionsSlotHtml: renderBattleExpressionsRail(context.taunts ?? {}),
+                    statusSlotHtml: renderOnlineLiveStatusPanel(
                         {
                           ...boardView,
                           battleResultView
@@ -1460,10 +1456,8 @@ export const onlinePlayScreen = {
                         moveSyncLabel,
                         roomLifecycle,
                         onlineTurnTimer
-                      )}
-                    </div>
-                  </section>
-                `
+                      )
+                  })
                 : ""
             }
             ${battleResultView && !activeBoardVisible && room?.status === "full" && !matchComplete ? renderSharedBattleResultPanel(battleResultView) : ""}
