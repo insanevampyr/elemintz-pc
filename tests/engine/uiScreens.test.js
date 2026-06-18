@@ -23,6 +23,7 @@ import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
 import { renderBattleExpressionsFeed, renderBattleExpressionsPanel } from "../../src/renderer/ui/shared/battleExpressionsRail.js";
 import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatchLayout.js";
+import { renderBattleStatusSummary } from "../../src/renderer/ui/shared/battleStatusSummary.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
@@ -125,6 +126,34 @@ test("ui: shared active match layout preserves variant wrappers, slot order, and
   assert.match(onlineHtml, /class="online-active-match-main"/);
   assert.match(onlineHtml, /data-online-active-match-expressions="true"/);
   assert.match(onlineHtml, /data-online-active-match-status-shell="true"/);
+});
+
+test("ui: shared battle status summary preserves standard order, fallbacks, and optional details", () => {
+  const html = renderBattleStatusSummary({
+    round: null,
+    primaryCards: { count: 3 },
+    secondaryCards: { role: "rival", count: undefined },
+    warCount: null,
+    detailLines: [
+      { key: "mode", label: "Mode", value: "Gauntlet" },
+      { key: "missing", label: "Missing", value: "" }
+    ]
+  });
+
+  const roundIndex = html.indexOf('data-battle-status-line="round"');
+  const cardsIndex = html.indexOf('data-battle-status-line="cards"');
+  const warsIndex = html.indexOf('data-battle-status-line="wars"');
+  const modeIndex = html.indexOf('data-battle-status-detail="mode"');
+
+  assert.match(html, /<strong>Status<\/strong>/);
+  assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">—/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 3 · Rival —/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">—/);
+  assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">Gauntlet/);
+  assert.doesNotMatch(html, /Missing:/);
+  assert.ok(roundIndex < cardsIndex);
+  assert.ok(cardsIndex < warsIndex);
+  assert.ok(warsIndex < modeIndex);
 });
 
 function createShortcutDocument({ activeElement = null, modalTitle = "", modalVisible = false } = {}) {
@@ -2923,6 +2952,9 @@ test("ui: game screen renders active Gauntlet streak and rival details when pres
   assert.match(html, /Stone March/);
   assert.match(html, /Mountain Step/);
   assert.match(html, /Repeats a heavy Earth pattern with occasional elemental shifts\./);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Rival 2/);
+  assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">Gauntlet/);
+  assert.match(html, /Streak:<\/span>\s*<span class="battle-status-value">4/);
 });
 
 test("ui: game screen does not render Gauntlet labels for normal PvE or Featured Rival matches", () => {
@@ -2991,13 +3023,29 @@ test("ui: game screen does not render Gauntlet labels for normal PvE or Featured
       title: "Inferno Regent",
       avatar: "assets/rivals/Crownfire/rival_crownfire_duelist_avatar.png"
     },
-    gauntlet: null
+    gauntlet: null,
+    battleStatus: { difficulty: "hard", featuredRivalName: "Crownfire Duelist" }
   });
 
   assert.doesNotMatch(normalHtml, /Current Streak:/);
   assert.doesNotMatch(normalHtml, /Gauntlet Mode/);
   assert.doesNotMatch(featuredHtml, /Current Streak:/);
   assert.doesNotMatch(featuredHtml, /Gauntlet Mode/);
+  assert.match(normalHtml, /Mode:<\/span>\s*<span class="battle-status-value">AI/);
+  assert.match(featuredHtml, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Rival 2/);
+  assert.match(featuredHtml, /Rival:<\/span>\s*<span class="battle-status-value">Crownfire Duelist/);
+
+  const hardHtml = gameScreen.render({
+    ...baseContext,
+    opponentDisplay: {
+      name: "Hard AI",
+      title: "Arena Rival",
+      avatar: "assets/avatars/default.png"
+    },
+    gauntlet: null,
+    battleStatus: { difficulty: "hard", featuredRivalName: null }
+  });
+  assert.match(hardHtml, /Mode:<\/span>\s*<span class="battle-status-value">Hard AI/);
 });
 
 test("ui: ai difficulty screen renders the Crownfire featured rival card details", () => {
@@ -5975,8 +6023,10 @@ test("ui: game screen uses provided variant card images", () => {
   assert.doesNotMatch(html, /data-round-center-headline="true"/);
   assert.doesNotMatch(html, /Player: -/);
   assert.doesNotMatch(html, /Opponent: -/);
-  assert.match(html, /WAR status: No active WAR pile\./);
-  assert.match(html, /Captured totals: Hero 0 \| Elemental AI 0/);
+  assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 1 · Opponent 1/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">0/);
+  assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">AI/);
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
   assert.match(html, /class="hand-zone hand-zone-player"/);
   assert.match(html, /class="hand-summary-grid" id="left-hand"/);
@@ -13979,7 +14029,9 @@ test("ui: first visible local PvP WAR uses warActive to render the shared WAR im
   assert.match(html, /match-status-panel war-triggered[\s\S]*war-impact/);
   assert.match(html, /class="war-impact-ring"/);
   assert.match(html, /data-round-center-headline="true">WAR</);
-  assert.match(html, /WAR status: 2 cards in the pile across 1 clash\./);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">1/);
+  assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">Local Hotseat/);
+  assert.match(html, /Turn:<\/span>\s*<span class="battle-status-value">P1/);
 });
 
 test("ui: bind arms WAR impact on the first PvE WAR render", () => {
@@ -14683,7 +14735,8 @@ test("ui: hidden hand remains hidden while WAR pile is face-up", () => {
   assert.match(html, /assets\/customFire\.jpg/);
   assert.match(html, /Hidden opponent hand: 2 cards/);
   assert.doesNotMatch(html, /class="card-rail"/);
-  assert.match(html, /Captured totals: P1 0 \| P2 0/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">P1 1 · P2 2/);
+  assert.match(html, /Mode:<\/span>\s*<span class="battle-status-value">Local Hotseat/);
   assert.doesNotMatch(html, /Captured: Player 1 • 0 \| Player 2 • 0/);
 });
 
@@ -14741,7 +14794,8 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
   assert.doesNotMatch(html, /assets\/oppEarth\.jpg/);
   assert.doesNotMatch(html, /played-row-pve-reveal/);
   assert.match(html, /match-status-panel player-win clash-winner-fire/);
-  assert.match(html, /Round update: Captured totals are now Hero 1 and Elemental AI 0\./);
+  assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">3/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Opponent 2/);
 });
 
 test("ui: local PvE center result persists the last completed round during the next card selection state", () => {
@@ -14793,7 +14847,8 @@ test("ui: local PvE center result persists the last completed round during the n
   assert.doesNotMatch(html, /assets\/oppEarth\.jpg/);
   assert.doesNotMatch(html, /Player: -/);
   assert.doesNotMatch(html, /Opponent: -/);
-  assert.match(html, /Round update: Captured totals are now Hero 1 and Elemental AI 0\./);
+  assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">4/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 2 · Opponent 2/);
 });
 
 test("ui: local PvE center result opponent art matches the same opponent variant source used by the WAR tracker", () => {
@@ -14888,7 +14943,7 @@ test("ui: local PvE active WAR center result prefers the latest clash cards over
   assert.match(html, /assets\/cards\/water_variant_tidal_spirit\.png/);
   assert.doesNotMatch(html, /Player: Wind/);
   assert.doesNotMatch(html, /Opponent: Wind/);
-  assert.match(html, /WAR progression: 2 (?:-&gt;|->) 4/);
+  assert.match(html, /WAR progression:<\/span>\s*<span class="battle-status-value">2 (?:-&gt;|->) 4/);
 });
 
 test("ui: local PvE does not render a fake center result before the first real round", () => {
@@ -14943,8 +14998,9 @@ test("ui: local PvE does not render a fake center result before the first real r
   assert.ok(html.indexOf('data-round-center-placeholder="true"', centerZoneIndex) < rightZoneIndex);
   assert.ok(html.indexOf('class="status-meta"', rightZoneIndex) > rightZoneIndex);
   assert.doesNotMatch(html, /card-art-facedown/);
-  assert.match(html, /Round update: Captured totals are now Hero 0 and Elemental AI 0\./);
-  assert.match(html, /WAR status: No active WAR pile\./);
+  assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 1 · Opponent 1/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">0/);
 });
 
 test("ui: first completed local PvE WAR round renders both center cards from the WAR pile with default art fallback", () => {
@@ -16313,9 +16369,11 @@ test("ui: online play screen renders move sync status and submit controls for fu
   assert.match(html, /<span class="online-active-meta-value">Guest<\/span>/);
   assert.match(html, /<span class="online-active-meta-value">1\/2 submitted\.<\/span>/);
   assert.match(html, /Active Round/);
-  assert.match(html, /Choose your move for the current round\./);
-  assert.match(html, /Round 1 \| Host 0 - Guest 0/);
-  assert.match(html, /Move Sync: 1\/2 submitted\./);
+  assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 4 · Opponent 8/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">—/);
+  assert.match(html, /State:<\/span>\s*<span class="battle-status-value">Active Round/);
+  assert.match(html, /Sync:<\/span>\s*<span class="battle-status-value">1\/2 submitted\./);
   assert.match(html, /data-online-active-match-status="true"/);
   assert.match(html, /data-online-status-zone="left"/);
   assert.match(html, /data-online-status-zone="center"/);
@@ -16944,7 +17002,7 @@ test("ui: online play live board renders WAR visuals on the left using the autho
   assert.match(html, /data-online-status-center-result="true"/);
   assert.match(html, /data-online-status-zone="right"/);
   assert.match(html, /Tracks committed WAR cards\./);
-  assert.match(html, /WAR progression: 2 (?:-&gt;|->) 4/);
+  assert.match(html, /WAR progression:<\/span>\s*<span class="battle-status-value">2 (?:-&gt;|->) 4/);
   assert.match(html, /WAR Fire x2/);
   assert.match(html, /WAR Earth x1/);
   assert.match(html, /WAR Water x1/);
@@ -20293,9 +20351,11 @@ test("ui: online play screen still shows move controls for full rooms when moveS
   assert.doesNotMatch(html, /Changed:<\/strong>/);
   assert.match(html, /1 Fire · 2 Earth · 3 Wind · 4 Water/);
   assert.match(html, /data-online-active-meta-strip="true"/);
-  assert.match(html, /Choose your move for the current round\./);
-  assert.match(html, /Round 1 \| Host 0 - Guest 0/);
-  assert.match(html, /Move Sync: 0\/2 submitted\./);
+  assert.match(html, /Round:<\/span>\s*<span class="battle-status-value">1/);
+  assert.match(html, /Cards:<\/span>\s*<span class="battle-status-value">You 8 · Opponent 8/);
+  assert.match(html, /WARs:<\/span>\s*<span class="battle-status-value">—/);
+  assert.match(html, /State:<\/span>\s*<span class="battle-status-value">Active Round/);
+  assert.match(html, /Sync:<\/span>\s*<span class="battle-status-value">0\/2 submitted\./);
   assert.match(html, /data-move="fire"/);
   assert.match(html, /title-icon/);
 });
@@ -20603,8 +20663,7 @@ test("ui: online play screen renders a server-authoritative match timer above th
   assert.match(html, /04:59/);
   assert.match(html, /data-online-match-timer-label="true"/);
   assert.match(html, /data-online-match-timer-shell="true"/);
-  assert.match(html, /Time to choose: 20s/);
-  assert.match(html, /online-status-header-row/);
+  assert.match(html, /Timer:<\/span>\s*<span class="battle-status-value online-turn-timer-label" data-online-turn-timer-label="true">\s*20s/);
   assert.match(html, /data-online-turn-timer-label="true"/);
   assert.match(html, /data-online-turn-timer-shell="true"/);
   assert.match(html, /data-online-active-meta-strip="true"/);

@@ -1526,6 +1526,7 @@ export class AppController {
       return {
         visible: false,
         label: "",
+        statusLabel: "",
         lowTime: false
       };
     }
@@ -1535,6 +1536,7 @@ export class AppController {
       return {
         visible: false,
         label: "",
+        statusLabel: "",
         lowTime: false
       };
     }
@@ -1543,6 +1545,7 @@ export class AppController {
     return {
       visible: true,
       label: `Time to choose: ${String(secondsRemaining).padStart(2, "0")}s`,
+      statusLabel: `${String(secondsRemaining).padStart(2, "0")}s`,
       lowTime: secondsRemaining <= 5
     };
   }
@@ -1599,7 +1602,7 @@ export class AppController {
     if (turnShell && turnLabel) {
       turnShell.classList.toggle("is-hidden", !turnTimerView.visible);
       turnShell.classList.toggle("is-low-time", Boolean(turnTimerView.lowTime && turnTimerView.visible));
-      turnLabel.textContent = turnTimerView.visible ? turnTimerView.label : "";
+      turnLabel.textContent = turnTimerView.visible ? turnTimerView.statusLabel ?? turnTimerView.label : "";
     }
 
     const matchTimerView = this.getOnlineMatchTimerViewState();
@@ -8688,8 +8691,16 @@ export class AppController {
     const names = this.getLocalNames();
     const p2Name = vm.mode === MATCH_MODE.LOCAL_PVP ? names.p2 : this.getCurrentPveOpponentName();
     const gauntletRival = vm.mode === MATCH_MODE.PVE && this.pveGauntletMode ? this.getCurrentGauntletRival() : null;
+    const featuredRivalName =
+      vm.mode === MATCH_MODE.PVE && !gauntletRival && this.pveFeaturedRivalId
+        ? p2Name
+        : null;
     return {
       game: vm,
+      battleStatus: {
+        difficulty: this.gameController?.aiDifficulty ?? null,
+        featuredRivalName
+      },
       hotseat: {
         enabled: vm.mode === MATCH_MODE.LOCAL_PVP,
         activePlayer: vm.mode === MATCH_MODE.LOCAL_PVP ? vm.hotseatTurn : "p1",
@@ -9167,6 +9178,7 @@ export class AppController {
     const p2Profile = localPvp ? this.buildMatchCosmeticProfileView(this.localProfiles?.p2) : null;
     const pveOpponentStyle = localPvp ? null : this.resolvePveOpponentStyle();
     const nonLocalOpponentName = pveOpponentStyle?.name ?? this.getCurrentPveOpponentName();
+    const gauntletRival = !localPvp && this.pveGauntletMode ? this.getCurrentGauntletRival() : null;
     const localViewerKey = localPvp && vm.hotseatTurn === "p2" ? "p2" : "p1";
     const localOpponentProfile =
       !localPvp
@@ -9238,6 +9250,13 @@ export class AppController {
       },
       playerDisplay,
       opponentDisplay,
+      battleStatus: {
+        difficulty: this.gameController?.aiDifficulty ?? null,
+        featuredRivalName:
+          !localPvp && !gauntletRival && this.pveFeaturedRivalId
+            ? opponentDisplay?.name ?? nonLocalOpponentName
+            : null
+      },
       reducedMotion: this.isReducedMotion(),
       presentation: this.roundPresentation,
       hotseat: {
@@ -9247,6 +9266,16 @@ export class AppController {
         p2Name: localPvp ? names.p2 : opponentDisplay?.name ?? nonLocalOpponentName,
         turnLabel: localPvp ? `${vm.hotseatTurn === "p1" ? names.p1 : names.p2} Turn` : "Player Turn"
       },
+      gauntlet:
+        gauntletRival
+          ? {
+              active: true,
+              currentStreak: Math.max(0, Number(this.gauntletRunState?.currentStreak ?? 0)),
+              rivalName: gauntletRival.displayName,
+              rivalTitle: gauntletRival.title,
+              rivalHint: gauntletRival.hint
+            }
+          : null,
       taunts: {
         panelOpen: this.matchTauntPanelOpen,
         messages: this.getRenderableMatchTaunts(),

@@ -17,6 +17,7 @@ import {
   renderCenterRoundResult
 } from "../shared/roundResultPresentation.js";
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
+import { renderBattleStatusSummary } from "../shared/battleStatusSummary.js";
 let lastFlashedWarSignature = null;
 let pendingHotseatVisibleWarSignature = null;
 let detachGameKeyboardHandler = null;
@@ -85,7 +86,11 @@ export function buildGameLiveUpdateSignature(context) {
           rivalTitle: context.gauntlet.rivalTitle ?? null,
           rivalHint: context.gauntlet.rivalHint ?? null
         }
-      : null
+      : null,
+    battleStatus: {
+      difficulty: context.battleStatus?.difficulty ?? null,
+      featuredRivalName: context.battleStatus?.featuredRivalName ?? null
+    }
   });
 }
 
@@ -285,6 +290,68 @@ function renderGauntletStatus(context) {
   `;
 }
 
+function buildGameStatusSummary(context, vm, names) {
+  const isHotseat = Boolean(context.hotseat?.enabled);
+  const isGauntlet = Boolean(context.gauntlet?.active);
+  const featuredRivalName = String(context.battleStatus?.featuredRivalName ?? "").trim();
+  const difficulty = String(context.battleStatus?.difficulty ?? "").trim().toLowerCase();
+  const primaryLabel = isHotseat ? names.p1 : "You";
+  const secondaryLabel = isHotseat
+    ? names.p2
+    : isGauntlet || featuredRivalName
+      ? "Rival"
+      : "Opponent";
+  const detailLines = [];
+
+  if (isHotseat) {
+    detailLines.push(
+      { key: "mode", label: "Mode", value: "Local Hotseat" },
+      {
+        key: "turn",
+        label: "Turn",
+        value: context.hotseat?.activePlayer === "p2" ? names.p2 : names.p1
+      }
+    );
+  } else if (isGauntlet) {
+    detailLines.push({ key: "mode", label: "Mode", value: "Gauntlet" });
+    if (context.gauntlet?.currentStreak !== null && context.gauntlet?.currentStreak !== undefined) {
+      detailLines.push({
+        key: "streak",
+        label: "Streak",
+        value: Math.max(0, Number(context.gauntlet.currentStreak) || 0)
+      });
+    }
+  } else if (featuredRivalName) {
+    detailLines.push({ key: "rival", label: "Rival", value: featuredRivalName });
+  } else {
+    detailLines.push({
+      key: "mode",
+      label: "Mode",
+      value: difficulty === "hard" ? "Hard AI" : "AI"
+    });
+  }
+
+  if (vm.warPileSizes?.length) {
+    detailLines.push({
+      key: "war-progression",
+      label: "WAR progression",
+      value: vm.warPileSizes.join(" -> ")
+    });
+  }
+
+  return renderBattleStatusSummary({
+    round: vm.round,
+    primaryCards: { label: primaryLabel, count: vm.playerHand?.length },
+    secondaryCards: {
+      label: secondaryLabel,
+      role: isGauntlet || featuredRivalName ? "rival" : "opponent",
+      count: vm.opponentHand?.length
+    },
+    warCount: vm.totalWarClashes,
+    detailLines
+  });
+}
+
 function deriveCenterCardsFromWarPile(warPileCards = []) {
   const normalizedCards = Array.isArray(warPileCards)
     ? warPileCards.map((card) => getCardElement(card)).filter(Boolean)
@@ -466,7 +533,6 @@ export const gameScreen = {
       p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
       p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
     };
-    const labels = getPerspectiveNames(vm, context, names);
     const hotseatBusyReveal = vm.mode === "local_pvp" && phase === "reveal" && (context.presentation?.busy ?? false);
     const clashWinnerClass =
       vm.mode === "pve" && (phase === "reveal" || phase === "result")
@@ -481,17 +547,9 @@ export const gameScreen = {
     if (!context.reducedMotion && phase === "reveal") {
       roundMessage = "Resolving clash...";
     }
-    const roundChangeMessage = buildRoundChangeLine(vm, labels);
     const centerResultView = buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBusyReveal);
 
-    const compactTurnLabel = escapeHtml(context.hotseat?.turnLabel ?? "Player Turn");
-    const capturedLeftName = escapeHtml(labels.left);
-    const capturedRightName = escapeHtml(labels.right);
-    const warStatus =
-      vm.warActive || vm.pileCount > 0 || vm.totalWarClashes > 0
-        ? `WAR status: ${vm.pileCount} card${vm.pileCount === 1 ? "" : "s"} in the pile across ${vm.totalWarClashes} clash${vm.totalWarClashes === 1 ? "" : "es"}.`
-        : "WAR status: No active WAR pile.";
-    const capturedStatus = `Captured totals: ${capturedLeftName} ${vm.captured.p1} | ${capturedRightName} ${vm.captured.p2}`;
+    const statusSummaryHtml = buildGameStatusSummary(context, vm, names);
 
     return `
       <section class="screen screen-game phase-${phase}" data-game-live-update-signature="${escapeHtml(buildGameLiveUpdateSignature(context))}">
@@ -549,10 +607,7 @@ export const gameScreen = {
                 </div>
                 <div class="game-status-zone game-status-zone-right" data-game-status-zone="right">
                   <div class="status-meta">
-                    <p class="round-status-line">Round update: ${escapeHtml(roundChangeMessage)}</p>
-                    <p class="round-status-line">${warStatus}</p>
-                    <p class="round-status-line">${capturedStatus}</p>
-                    ${vm.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${vm.warPileSizes.join(" -> ")}</p>` : ""}
+                    ${statusSummaryHtml}
                   </div>
                 </div>
                 </article>

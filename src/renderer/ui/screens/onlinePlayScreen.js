@@ -18,6 +18,7 @@ import {
   renderCenterRoundResult
 } from "../shared/roundResultPresentation.js";
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
+import { renderBattleStatusSummary } from "../shared/battleStatusSummary.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
 const DEFAULT_ONLINE_EQUIPPED_COSMETICS = Object.freeze({
@@ -764,6 +765,33 @@ function renderOnlineLiveStatusPanel(
       }
     : null;
   const warTriggered = Boolean(boardView.warActive);
+  const timerValue = onlineTurnTimer?.visible
+    ? String(onlineTurnTimer.statusLabel ?? onlineTurnTimer.label ?? "").replace(/^Time to choose:\s*/i, "").trim()
+    : "";
+  const detailLines = [
+    ...(timerValue
+      ? [{ key: "online-turn-timer", label: "Timer", value: timerValue, lowTime: Boolean(onlineTurnTimer.lowTime) }]
+      : []),
+    ...(roomStateView?.label
+      ? [{ key: "state", label: "State", value: roomStateView.label }]
+      : []),
+    ...(moveSyncLabel
+      ? [{ key: "sync", label: "Sync", value: moveSyncLabel }]
+      : []),
+    ...(boardView.warPileSizes?.length
+      ? [{ key: "war-progression", label: "WAR progression", value: boardView.warPileSizes.join(" -> ") }]
+      : []),
+    ...(roomLifecycle?.primaryLabel
+      ? [{ key: "reconnect", label: "Reconnect", value: roomLifecycle.primaryLabel }]
+      : [])
+  ];
+  const statusSummaryHtml = renderBattleStatusSummary({
+    round: matchStatus?.roundNumber,
+    primaryCards: { label: "You", count: boardView.localCount },
+    secondaryCards: { label: "Opponent", count: boardView.remoteCount },
+    warCount: null,
+    detailLines
+  });
 
   return `
     <article class="panel match-status-panel online-play-status-panel has-center-result" data-online-active-match-status="true">
@@ -781,25 +809,7 @@ function renderOnlineLiveStatusPanel(
       </div>
       <div class="online-play-status-zone online-play-status-zone-right" data-online-status-zone="right">
         <div class="status-meta">
-          <div class="online-status-header-row">
-            <div class="round-result-banner ${roomStateView.label === "Waiting for Opponent Move" ? "player-win is-active" : roomStateView.label === "Resolving Round" || roomStateView.label === "Resolving WAR" ? "war-triggered is-active" : "no-effect"}">
-              <strong>${escapeHtml(roomStateView.label)}</strong>
-            </div>
-            <div
-              class="${`online-turn-timer-shell ${onlineTurnTimer?.visible ? "" : "is-hidden"} ${onlineTurnTimer?.lowTime ? "is-low-time" : ""}`.trim()}"
-              data-online-turn-timer-shell="true"
-              aria-live="polite"
-            >
-              <span class="online-turn-timer-label" data-online-turn-timer-label="true">
-                ${escapeHtml(onlineTurnTimer?.visible ? onlineTurnTimer.label : "")}
-              </span>
-            </div>
-          </div>
-          <p class="round-result-text">${escapeHtml(roomStateView.detail)}</p>
-          ${matchStatus ? `<p class="round-status-line">Round ${escapeHtml(String(matchStatus.roundNumber))} | Host ${escapeHtml(String(matchStatus.hostScore))} - Guest ${escapeHtml(String(matchStatus.guestScore))}</p>` : ""}
-          ${moveSyncLabel ? `<p class="round-status-line">Move Sync: ${escapeHtml(moveSyncLabel)}</p>` : ""}
-          ${boardView.warPileSizes?.length ? `<p class="round-status-line">WAR progression: ${escapeHtml(boardView.warPileSizes.join(" -> "))}</p>` : ""}
-          ${roomLifecycle?.primaryLabel ? `<p class="round-status-line">${escapeHtml(roomLifecycle.primaryLabel)}</p>` : ""}
+          ${statusSummaryHtml}
         </div>
       </div>
     </article>
