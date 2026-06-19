@@ -186,8 +186,8 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   assert.match(storeHtml, /Price: 750 Tokens/);
   assert.match(storeHtml, /Created For: CopyCell/);
   assert.match(storeHtml, /Limited: 3 of 10 available/);
-  assert.match(storeHtml, /data-unique-purchase-blocked="true">Purchase support pending<\/button>/);
-  assert.doesNotMatch(storeHtml, /data-buy-id="fixture_unique_avatar"/);
+  assert.match(storeHtml, /data-buy-id="fixture_unique_avatar"/);
+  assert.doesNotMatch(storeHtml, /data-unique-purchase-blocked="true"/);
   assert.doesNotMatch(storeHtml, /private admin note/);
   assert.match(cosmeticsHtml, /data-cosmetic-rarity-filter="Unique"/);
   assert.match(cosmeticsHtml, /data-cosmetic-rarity="Unique"/);
@@ -232,7 +232,7 @@ test("ui: sold-out Unique Store item remains visible and blocked", () => {
   });
 
   assert.match(html, /data-unique-availability="sold-out">Sold Out<\/p>/);
-  assert.match(html, /data-unique-purchase-blocked="true">Purchase support pending<\/button>/);
+  assert.match(html, /data-unique-purchase-blocked="true">Sold Out<\/button>/);
   assert.doesNotMatch(html, /data-buy-id="fixture_sold_out_unique"/);
 });
 
@@ -22211,6 +22211,163 @@ test("ui: appController fetches authenticated featured shop rotation and passes 
       shown[0].featuredRotation?.featuredItems?.map((entry) => entry.id),
       ["avatar_voidbound_entity", "cardback_void_tease"]
     );
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: authenticated Unique Store purchase sends transactionId and uses authoritative result", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const purchasePayloads = [];
+  const profileSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      username: "UniqueUiBuyer",
+      tokens: 500,
+      playerXP: 0,
+      playerLevel: 1,
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        background: "default_background",
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        background: ["default_background"],
+        cardBack: ["default_card_back"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none"],
+        title: ["Initiate"]
+      }
+    },
+    progression: {
+      xp: { playerXP: 0, playerLevel: 1 },
+      dailyChallenges: { challenges: [] },
+      weeklyChallenges: { challenges: [] },
+      dailyLogin: { eligible: false }
+    }
+  };
+  const uniqueStore = {
+    tokens: 500,
+    supporterPass: false,
+    catalog: {
+      avatar: [{
+        id: "fixture_unique_avatar",
+        name: "Unique Fixture",
+        rarity: "Unique",
+        price: 200,
+        owned: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: false,
+        grantOnly: false,
+        saleLimitMode: "limited",
+        saleLimitTotal: 2,
+        saleLimitSold: 0
+      }],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      title: [],
+      badge: []
+    }
+  };
+  const purchasedStore = {
+    ...uniqueStore,
+    tokens: 300,
+    catalog: {
+      ...uniqueStore.catalog,
+      avatar: []
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => {
+          throw new Error("local Store should not be used");
+        }
+      },
+      multiplayer: {
+        getProfile: async () => profileSnapshot,
+        getStore: async () => uniqueStore,
+        buyStoreItem: async (payload) => {
+          purchasePayloads.push(payload);
+          return {
+            purchase: {
+              status: "purchased",
+              type: payload.type,
+              cosmeticId: payload.cosmeticId,
+              price: 200,
+              tokensLeft: 300
+            },
+            snapshot: {
+              ...profileSnapshot,
+              profile: {
+                ...profileSnapshot.profile,
+                tokens: 300,
+                ownedCosmetics: {
+                  ...profileSnapshot.profile.ownedCosmetics,
+                  avatar: ["default_avatar", "fixture_unique_avatar"]
+                }
+              }
+            },
+            store: purchasedStore
+          };
+        },
+        equipCosmetic: async () => {
+          throw new Error("Unexpected equip.");
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "UniqueUiBuyer";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        authenticated: true,
+        username: "UniqueUiBuyer",
+        profileKey: "UniqueUiBuyer",
+        accountId: "unique-ui-account"
+      }
+    };
+
+    await controller.showStore();
+    assert.equal(shown.at(-1).store.catalog.avatar[0].rarity, "Unique");
+    await shown.at(-1).actions.buy("avatar", "fixture_unique_avatar");
+
+    assert.equal(purchasePayloads.length, 1);
+    assert.equal(purchasePayloads[0].username, "UniqueUiBuyer");
+    assert.equal(purchasePayloads[0].type, "avatar");
+    assert.equal(purchasePayloads[0].cosmeticId, "fixture_unique_avatar");
+    assert.match(purchasePayloads[0].transactionId, /^store-[A-Za-z0-9._:-]{8,}$/);
+    assert.equal(shown.at(-1).store.tokens, 300);
+    assert.equal(shown.at(-1).store.catalog.avatar.length, 0);
   } finally {
     global.window = previousWindow;
   }

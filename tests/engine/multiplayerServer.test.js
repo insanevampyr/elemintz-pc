@@ -4587,6 +4587,103 @@ test("multiplayer foundation: server-authoritative store purchase deducts tokens
   }
 });
 
+test("multiplayer foundation: Unique Store purchase uses transaction ledger and authoritative inventory", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const definition = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalRarity = definition.rarity;
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    definition.rarity = "Unique";
+    await coordinator.specialCosmeticRegistry.upsertConfig({
+      cosmeticId: definition.id,
+      status: "assigned",
+      assignmentStatus: "assigned",
+      createdForUsername: "CopyCell",
+      adminNotes: "private server note"
+    });
+    await coordinator.specialCosmeticRegistry.updateShopConfig({
+      cosmeticId: definition.id,
+      config: {
+        grantOnly: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: false,
+        rotationOnly: false,
+        price: 200,
+        saleLimitMode: "limited",
+        saleLimitTotal: 1
+      }
+    });
+    await coordinator.profiles.updateProfile("UniqueSocketBuyer", { tokens: 500 });
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+    const session = await bootstrapSession(client, "UniqueSocketBuyer");
+    assert.equal(session?.ok, true);
+
+    const storeBefore = await new Promise((resolve) => {
+      client.emit("profile:getStore", {}, resolve);
+    });
+    const visibleItem = storeBefore?.store?.catalog?.avatar?.find(
+      (item) => item.id === definition.id
+    );
+    assert.equal(storeBefore?.ok, true);
+    assert.equal(visibleItem?.createdForUsername, "CopyCell");
+    assert.equal("adminNotes" in visibleItem, false);
+
+    const missingTransaction = await new Promise((resolve) => {
+      client.emit(
+        "profile:buyStoreItem",
+        { type: "avatar", cosmeticId: definition.id },
+        resolve
+      );
+    });
+    assert.equal(missingTransaction?.ok, false);
+    assert.match(missingTransaction?.error?.message ?? "", /valid transactionId/);
+
+    const payload = {
+      type: "avatar",
+      cosmeticId: definition.id,
+      transactionId: "unique-socket-purchase-transaction"
+    };
+    const first = await new Promise((resolve) => {
+      client.emit("profile:buyStoreItem", payload, resolve);
+    });
+    const duplicate = await new Promise((resolve) => {
+      client.emit("profile:buyStoreItem", payload, resolve);
+    });
+    const profile = await coordinator.profiles.getProfile("UniqueSocketBuyer");
+    const registry = await coordinator.specialCosmeticRegistry.getRecord(definition.id);
+    const ledger = await coordinator.storePurchaseLedger.getByTransactionId(
+      payload.transactionId
+    );
+
+    assert.equal(first?.ok, true);
+    assert.equal(first?.result?.purchase?.status, "purchased");
+    assert.equal(duplicate?.ok, true);
+    assert.equal(duplicate?.result?.purchase?.duplicate, true);
+    assert.equal(profile.tokens, 300);
+    assert.equal(profile.ownedCosmetics.avatar.includes(definition.id), true);
+    assert.equal(registry.saleLimitSold, 1);
+    assert.equal(ledger.status, "completed");
+  } finally {
+    definition.rarity = originalRarity;
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: bootstrap sessions cannot access or mutate claimed profiles", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({

@@ -322,3 +322,41 @@ test("special cosmetic registry: persistence does not enforce shop listing or tr
   assert.equal((await registry.getRecord("fireavatarF")).saleLimitSold, 0);
   assert.equal((await state.profiles.ensureProfile("RoyaltyOwner")).tokens, 400);
 });
+
+test("special cosmetic registry: token purchase reservation is serialized and rollback-safe", async () => {
+  const dataDir = await createTempDataDir();
+  const registry = new SpecialCosmeticRegistryStore({ dataDir });
+  await registry.upsertConfig({
+    cosmeticId: "unique_inventory_fixture",
+    status: "approved"
+  });
+  await registry.updateShopConfig({
+    cosmeticId: "unique_inventory_fixture",
+    config: {
+      grantOnly: false,
+      shopEligible: true,
+      shopListed: true,
+      storeHidden: false,
+      rotationOnly: false,
+      price: 300,
+      saleLimitMode: "limited",
+      saleLimitTotal: 1
+    }
+  });
+
+  const reservation = await registry.reserveTokenPurchase("unique_inventory_fixture");
+  assert.equal(reservation.saleLimitSoldBefore, 0);
+  assert.equal(reservation.saleLimitSoldAfter, 1);
+  assert.equal((await registry.getRecord("unique_inventory_fixture")).saleLimitSold, 1);
+  await assert.rejects(
+    registry.reserveTokenPurchase("unique_inventory_fixture"),
+    /Sold Out/
+  );
+
+  await registry.rollbackTokenPurchaseReservation({
+    cosmeticId: "unique_inventory_fixture",
+    saleLimitSoldBefore: 0,
+    saleLimitSoldAfter: 1
+  });
+  assert.equal((await registry.getRecord("unique_inventory_fixture")).saleLimitSold, 0);
+});

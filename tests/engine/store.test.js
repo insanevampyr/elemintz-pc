@@ -44,6 +44,55 @@ async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-"));
 }
 
+async function createConfiguredUniqueState({
+  username = "UniqueBuyer",
+  tokens = 1000,
+  config = {}
+} = {}) {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalRarity = fixture.rarity;
+  fixture.rarity = "Unique";
+  await state.specialCosmeticRegistry.upsertConfig({
+    cosmeticId: fixture.id,
+    status: "assigned",
+    assignmentStatus: "assigned",
+    createdForUsername: "CopyCell",
+    royalty: {
+      enabled: true,
+      recipientUsername: "RoyaltyRecipient",
+      tokenPercent: 10
+    },
+    adminNotes: "private admin note"
+  });
+  await state.specialCosmeticRegistry.updateShopConfig({
+    cosmeticId: fixture.id,
+    config: {
+      grantOnly: false,
+      shopEligible: true,
+      shopListed: true,
+      storeHidden: false,
+      rotationOnly: false,
+      price: 250,
+      saleLimitMode: "unlimited",
+      saleLimitTotal: null,
+      ...config
+    }
+  });
+  await state.profiles.updateProfile(username, { tokens });
+
+  return {
+    dataDir,
+    state,
+    fixture,
+    username,
+    restore: () => {
+      fixture.rarity = originalRarity;
+    }
+  };
+}
+
 test("store: inventory includes required categories", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -75,7 +124,7 @@ test("store: token purchase flow deducts currency and grants ownership", async (
   assert.ok(bought.profile.ownedCosmetics.avatar.includes("fireavatarF"));
 });
 
-test("store: Unique registry config controls display and purchase remains blocked", async () => {
+test("store: Unique registry config controls display and authoritative purchase", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-unique-display-"));
   const state = new StateCoordinator({ dataDir: dir });
   const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
@@ -186,26 +235,25 @@ test("store: Unique registry config controls display and purchase remains blocke
     assert.equal(visibleItem?.royalty?.enabled, false);
     assert.equal(visibleItem?.royalty?.recipientUsername, null);
 
-    const buyerBefore = await state.profiles.ensureProfile("UniqueBuyer");
+    const buyerBefore = await state.profiles.updateProfile("UniqueBuyer", { tokens: 1000 });
     const royaltyBefore = await state.profiles.updateProfile("RoyaltyRecipient", {
       tokens: 123
     });
-    await assert.rejects(
-      state.buyStoreItem({
-        username: "UniqueBuyer",
-        type: "avatar",
-        cosmeticId: fixture.id
-      }),
-      /purchase ledger is active/
-    );
+    const result = await state.buyStoreItem({
+      username: "UniqueBuyer",
+      type: "avatar",
+      cosmeticId: fixture.id,
+      transactionId: "unique-store-purchase-1"
+    });
     const buyerAfter = await state.profiles.ensureProfile("UniqueBuyer");
     const royaltyAfter = await state.profiles.ensureProfile("RoyaltyRecipient");
     const registryAfter = await state.specialCosmeticRegistry.getRecord(fixture.id);
 
-    assert.equal(buyerAfter.tokens, buyerBefore.tokens);
-    assert.equal(buyerAfter.ownedCosmetics.avatar.includes(fixture.id), false);
+    assert.equal(result.purchase.status, "purchased");
+    assert.equal(buyerAfter.tokens, buyerBefore.tokens - 750);
+    assert.equal(buyerAfter.ownedCosmetics.avatar.includes(fixture.id), true);
     assert.equal(royaltyAfter.tokens, royaltyBefore.tokens);
-    assert.equal(registryAfter.saleLimitSold, 7);
+    assert.equal(registryAfter.saleLimitSold, 8);
 
     await state.specialCosmeticRegistry.store.write({
       version: 1,
@@ -219,7 +267,7 @@ test("store: Unique registry config controls display and purchase remains blocke
         }
       }]
     });
-    const soldOutItem = (await state.getStore("UniqueBuyer")).catalog.avatar.find(
+    const soldOutItem = (await state.getStore("AnotherUniqueBuyer")).catalog.avatar.find(
       (item) => item.id === fixture.id
     );
     assert.equal(soldOutItem?.saleLimitSold, 10);
@@ -264,6 +312,272 @@ test("store: createdForUsername does not grant Unique ownership", async () => {
     assert.equal(item?.owned, false);
   } finally {
     fixture.rarity = originalRarity;
+  }
+});
+
+test("store: Unique purchase ledger is durable and duplicate transactionId is idempotent", async () => {
+  const setup = await createConfiguredUniqueState();
+  try {
+    await setup.state.profiles.updateProfile("RoyaltyRecipient", { tokens: 77 });
+    const before = await setup.state.profiles.getProfile(setup.username);
+    const first = await setup.state.buyStoreItem({
+      username: setup.username,
+      type: "avatar",
+      cosmeticId: setup.fixture.id,
+      transactionId: "unique-idempotent-transaction-1"
+    });
+    const duplicate = await setup.state.buyStoreItem({
+      username: setup.username,
+      type: "avatar",
+      cosmeticId: setup.fixture.id,
+      transactionId: "unique-idempotent-transaction-1"
+    });
+    const restartedState = new StateCoordinator({ dataDir: setup.dataDir });
+    const restartedDuplicate = await restartedState.buyStoreItem({
+      username: setup.username,
+      type: "avatar",
+      cosmeticId: setup.fixture.id,
+      transactionId: "unique-idempotent-transaction-1"
+    });
+    const after = await setup.state.profiles.getProfile(setup.username);
+    const royaltyAfter = await setup.state.profiles.getProfile("RoyaltyRecipient");
+    const record = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    const ledger = await setup.state.storePurchaseLedger.getByTransactionId(
+      "unique-idempotent-transaction-1"
+    );
+
+    assert.equal(first.purchase.status, "purchased");
+    assert.equal(duplicate.purchase.duplicate, true);
+    assert.equal(restartedDuplicate.purchase.duplicate, true);
+    assert.equal(after.tokens, before.tokens - 250);
+    assert.equal(
+      after.ownedCosmetics.avatar.filter((id) => id === setup.fixture.id).length,
+      1
+    );
+    assert.equal(record.saleLimitSold, 0);
+    assert.equal(royaltyAfter.tokens, 77);
+    assert.equal(ledger.status, "completed");
+    assert.equal(ledger.buyerUsername, setup.username);
+    assert.equal(ledger.cosmeticId, setup.fixture.id);
+    assert.equal(ledger.price, 250);
+    assert.equal(ledger.duplicateCount, 2);
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: concurrent limited Unique purchases cannot oversell the final item", async () => {
+  const setup = await createConfiguredUniqueState({
+    username: "RaceBuyerOne",
+    config: {
+      saleLimitMode: "limited",
+      saleLimitTotal: 1
+    }
+  });
+  try {
+    await setup.state.profiles.updateProfile("RaceBuyerTwo", { tokens: 1000 });
+    const results = await Promise.allSettled([
+      setup.state.buyStoreItem({
+        username: "RaceBuyerOne",
+        type: "avatar",
+        cosmeticId: setup.fixture.id,
+        transactionId: "unique-race-transaction-one"
+      }),
+      setup.state.buyStoreItem({
+        username: "RaceBuyerTwo",
+        type: "avatar",
+        cosmeticId: setup.fixture.id,
+        transactionId: "unique-race-transaction-two"
+      })
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+    const record = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    const buyerOne = await setup.state.profiles.getProfile("RaceBuyerOne");
+    const buyerTwo = await setup.state.profiles.getProfile("RaceBuyerTwo");
+
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.match(rejected[0].reason.message, /Sold Out/);
+    assert.equal(record.saleLimitSold, 1);
+    assert.equal(
+      Number(buyerOne.ownedCosmetics.avatar.includes(setup.fixture.id)) +
+        Number(buyerTwo.ownedCosmetics.avatar.includes(setup.fixture.id)),
+      1
+    );
+    assert.equal(
+      Number(buyerOne.tokens === 750) + Number(buyerTwo.tokens === 750),
+      1
+    );
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: failed Unique purchases do not mutate tokens, ownership, or inventory", async () => {
+  const cases = [
+    {
+      name: "shopEligible false",
+      config: { shopEligible: false },
+      message: /not available/
+    },
+    {
+      name: "shopListed false",
+      config: { shopListed: false },
+      message: /not available/
+    },
+    {
+      name: "storeHidden true",
+      config: { storeHidden: true },
+      message: /not available/
+    },
+    {
+      name: "grantOnly true",
+      config: { grantOnly: true },
+      message: /grant-only/
+    },
+    {
+      name: "missing price",
+      config: { price: null },
+      message: /price is missing or invalid/
+    },
+    {
+      name: "not enough tokens",
+      tokens: 100,
+      message: /Not enough tokens/
+    }
+  ];
+
+  for (const [index, testCase] of cases.entries()) {
+    const setup = await createConfiguredUniqueState({
+      username: `RejectedUniqueBuyer${index}`,
+      tokens: testCase.tokens ?? 1000,
+      config: testCase.config ?? {}
+    });
+    try {
+      const before = await setup.state.profiles.getProfile(setup.username);
+      const recordBefore = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+      await assert.rejects(
+        setup.state.buyStoreItem({
+          username: setup.username,
+          type: "avatar",
+          cosmeticId: setup.fixture.id,
+          transactionId: `unique-rejected-transaction-${index}`
+        }),
+        testCase.message,
+        testCase.name
+      );
+      const after = await setup.state.profiles.getProfile(setup.username);
+      const recordAfter = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+      const ledger = await setup.state.storePurchaseLedger.getByTransactionId(
+        `unique-rejected-transaction-${index}`
+      );
+      assert.equal(after.tokens, before.tokens, testCase.name);
+      assert.equal(after.ownedCosmetics.avatar.includes(setup.fixture.id), false, testCase.name);
+      assert.equal(recordAfter.saleLimitSold, recordBefore.saleLimitSold, testCase.name);
+      assert.equal(ledger.status, "rejected", testCase.name);
+    } finally {
+      setup.restore();
+    }
+  }
+});
+
+test("store: Unique purchase requires transactionId and existing buyer profile", async () => {
+  const setup = await createConfiguredUniqueState();
+  try {
+    await assert.rejects(
+      setup.state.buyStoreItem({
+        username: setup.username,
+        type: "avatar",
+        cosmeticId: setup.fixture.id
+      }),
+      /valid transactionId/
+    );
+    await assert.rejects(
+      setup.state.buyStoreItem({
+        username: setup.username,
+        type: "avatar",
+        cosmeticId: setup.fixture.id,
+        transactionId: "bad"
+      }),
+      /valid transactionId/
+    );
+    await assert.rejects(
+      setup.state.buyStoreItem({
+        username: "MissingUniqueBuyer",
+        type: "avatar",
+        cosmeticId: setup.fixture.id,
+        transactionId: "unique-missing-buyer-transaction"
+      }),
+      /Buyer profile is missing/
+    );
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: malformed Unique inventory mode is rejected without mutation", async () => {
+  const setup = await createConfiguredUniqueState({
+    config: {
+      saleLimitMode: "limited",
+      saleLimitTotal: 2
+    }
+  });
+  try {
+    const profileBefore = await setup.state.profiles.getProfile(setup.username);
+    const record = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    await setup.state.specialCosmeticRegistry.store.write({
+      version: 1,
+      records: [{ ...record, saleLimitMode: "daily" }]
+    });
+
+    await assert.rejects(
+      setup.state.buyStoreItem({
+        username: setup.username,
+        type: "avatar",
+        cosmeticId: setup.fixture.id,
+        transactionId: "unique-invalid-mode-transaction"
+      }),
+      /sale limit mode is invalid/
+    );
+    const profileAfter = await setup.state.profiles.getProfile(setup.username);
+    assert.equal(profileAfter.tokens, profileBefore.tokens);
+    assert.equal(profileAfter.ownedCosmetics.avatar.includes(setup.fixture.id), false);
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: direct Unique grants do not increment limited sale inventory", async () => {
+  const setup = await createConfiguredUniqueState({
+    username: "UniqueGrantRecipient",
+    config: {
+      saleLimitMode: "limited",
+      saleLimitTotal: 3
+    }
+  });
+  try {
+    const before = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    const grant = await setup.state.grantSpecialCosmetic({
+      username: "UniqueGrantRecipient",
+      type: "avatar",
+      cosmeticId: setup.fixture.id
+    });
+    await assert.rejects(
+      setup.state.buyStoreItem({
+        username: "UniqueGrantRecipient",
+        type: "avatar",
+        cosmeticId: setup.fixture.id,
+        transactionId: "unique-already-owned-transaction"
+      }),
+      /Already Owned/
+    );
+    const after = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+
+    assert.equal(grant.cosmeticGrant.status, "granted");
+    assert.equal(after.saleLimitSold, before.saleLimitSold);
+  } finally {
+    setup.restore();
   }
 });
 
