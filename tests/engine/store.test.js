@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { DEFAULT_STARTING_TOKENS } from "../../src/state/storeSystem.js";
 
@@ -72,6 +73,48 @@ test("store: token purchase flow deducts currency and grants ownership", async (
   assert.equal(bought.purchase.status, "purchased");
   assert.ok(bought.store.tokens < before.tokens);
   assert.ok(bought.profile.ownedCosmetics.avatar.includes("fireavatarF"));
+});
+
+test("store: future special metadata remains inert until later enforcement passes", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-inert-metadata-"));
+  const state = new StateCoordinator({ dataDir: dir });
+  const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const original = {
+    grantOnly: fixture.grantOnly,
+    shopListed: fixture.shopListed,
+    assignmentStatus: fixture.assignmentStatus,
+    uniqueOwnerUsername: fixture.uniqueOwnerUsername,
+    royalty: fixture.royalty,
+    saleLimitMode: fixture.saleLimitMode,
+    saleLimitTotal: fixture.saleLimitTotal,
+    saleLimitSold: fixture.saleLimitSold
+  };
+
+  try {
+    fixture.grantOnly = true;
+    fixture.shopListed = false;
+    fixture.assignmentStatus = "assigned";
+    fixture.uniqueOwnerUsername = "MetadataOwner";
+    fixture.royalty = {
+      enabled: true,
+      recipientUsername: "MetadataOwner",
+      tokenPercent: 10
+    };
+    fixture.saleLimitMode = "limited";
+    fixture.saleLimitTotal = 0;
+    fixture.saleLimitSold = 0;
+
+    const result = await state.buyStoreItem({
+      username: "InertMetadataBuyer",
+      type: "avatar",
+      cosmeticId: "fireavatarF"
+    });
+
+    assert.equal(result.purchase.status, "purchased");
+    assert.ok(result.profile.ownedCosmetics.avatar.includes("fireavatarF"));
+  } finally {
+    Object.assign(fixture, original);
+  }
 });
 
 test("store: cosmetic unlock tracking updates first-purchase flags and total owned from successful purchases", async () => {

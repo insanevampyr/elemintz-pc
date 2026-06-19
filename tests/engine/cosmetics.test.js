@@ -5,11 +5,14 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  COSMETIC_ASSIGNMENT_STATUSES,
   COSMETIC_RARITIES,
+  COSMETIC_SALE_LIMIT_MODES,
   COSMETIC_CATALOG,
   getBaseCosmeticPrice,
   getCosmeticCatalogForProfile,
   getCosmeticHoverMetadata,
+  normalizeCosmeticMetadata,
   normalizeCosmeticRarity
 } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
@@ -140,6 +143,92 @@ test("cosmetics: Unique is supported without changing invalid rarity fallback be
   } finally {
     fixture.rarity = originalRarity;
   }
+});
+
+test("cosmetics: special metadata defaults are inert, normalized, and keep admin notes private", () => {
+  assert.deepEqual(COSMETIC_ASSIGNMENT_STATUSES, ["unassigned", "assigned", "revoked"]);
+  assert.deepEqual(COSMETIC_SALE_LIMIT_MODES, ["unlimited", "limited"]);
+
+  const defaults = normalizeCosmeticMetadata({
+    id: "fixture_default_metadata",
+    rarity: "Legendary"
+  });
+  assert.equal(defaults.grantOnly, false);
+  assert.equal(defaults.shopEligible, true);
+  assert.equal(defaults.shopListed, true);
+  assert.equal(defaults.assignmentStatus, "unassigned");
+  assert.equal(defaults.uniqueOwnerUsername, null);
+  assert.deepEqual(defaults.royalty, {
+    enabled: false,
+    recipientUsername: null,
+    tokenPercent: 0
+  });
+  assert.equal(defaults.adminNotes, "");
+  assert.equal(defaults.saleLimitMode, "unlimited");
+  assert.equal(defaults.saleLimitTotal, null);
+  assert.equal(defaults.saleLimitSold, 0);
+
+  const normalized = normalizeCosmeticMetadata({
+    id: "fixture_special_metadata",
+    rarity: "Unique",
+    grantOnly: true,
+    shopEligible: false,
+    shopListed: false,
+    assignmentStatus: "invalid",
+    uniqueOwnerUsername: "  UniqueOwner  ",
+    royalty: {
+      enabled: true,
+      recipientUsername: "  RoyaltyOwner  ",
+      tokenPercent: 150
+    },
+    adminNotes: "  private review note  ",
+    saleLimitMode: "limited",
+    saleLimitTotal: 25.9,
+    saleLimitSold: -4
+  });
+  assert.equal(normalized.rarity, "Unique");
+  assert.equal(normalized.grantOnly, true);
+  assert.equal(normalized.shopEligible, false);
+  assert.equal(normalized.shopListed, false);
+  assert.equal(normalized.assignmentStatus, "unassigned");
+  assert.equal(normalized.uniqueOwnerUsername, "UniqueOwner");
+  assert.deepEqual(normalized.royalty, {
+    enabled: true,
+    recipientUsername: "RoyaltyOwner",
+    tokenPercent: 100
+  });
+  assert.equal(normalized.adminNotes, "private review note");
+  assert.equal(normalized.saleLimitMode, "limited");
+  assert.equal(normalized.saleLimitTotal, 25);
+  assert.equal(normalized.saleLimitSold, 0);
+
+  const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalAdminNotes = fixture.adminNotes;
+  try {
+    fixture.adminNotes = "server-only note";
+    const clientEntry = getCosmeticCatalogForProfile({}).avatar.find(
+      (item) => item.id === "fireavatarF"
+    );
+    assert.equal("adminNotes" in clientEntry, false);
+  } finally {
+    fixture.adminNotes = originalAdminNotes;
+  }
+});
+
+test("cosmetics: Unique rarity does not imply special metadata behavior", () => {
+  const normalized = normalizeCosmeticMetadata({
+    id: "fixture_unique_independence",
+    rarity: "Unique"
+  });
+
+  assert.equal(normalized.rarity, "Unique");
+  assert.equal(normalized.grantOnly, false);
+  assert.equal(normalized.shopEligible, true);
+  assert.equal(normalized.shopListed, true);
+  assert.equal(normalized.assignmentStatus, "unassigned");
+  assert.equal(normalized.uniqueOwnerUsername, null);
+  assert.equal(normalized.royalty.enabled, false);
+  assert.equal(normalized.saleLimitMode, "unlimited");
 });
 
 function buildCompletedMatch({

@@ -12,6 +12,8 @@ export const RANDOMIZABLE_COSMETIC_TYPES = Object.freeze([
   "background"
 ]);
 export const COSMETIC_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary", "Unique"]);
+export const COSMETIC_ASSIGNMENT_STATUSES = Object.freeze(["unassigned", "assigned", "revoked"]);
+export const COSMETIC_SALE_LIMIT_MODES = Object.freeze(["unlimited", "limited"]);
 export const SHOP_PRICE_BY_CATEGORY_AND_RARITY = Object.freeze({
   avatar: Object.freeze({
     Common: 200,
@@ -3054,12 +3056,14 @@ function applyCosmeticCollections(catalog) {
       Object.entries(catalog).map(([type, items]) => [
         type,
         Object.freeze(
-          items.map((item) => ({
-            ...item,
-            ...(COSMETIC_COLLECTION_BY_KEY[`${type}:${item.id}`]
-              ? { collection: COSMETIC_COLLECTION_BY_KEY[`${type}:${item.id}`] }
-              : {})
-          }))
+          items.map((item) =>
+            normalizeCosmeticMetadata({
+              ...item,
+              ...(COSMETIC_COLLECTION_BY_KEY[`${type}:${item.id}`]
+                ? { collection: COSMETIC_COLLECTION_BY_KEY[`${type}:${item.id}`] }
+                : {})
+            })
+          )
         )
       ])
     )
@@ -3101,6 +3105,62 @@ const UNLOCK_MAP = buildUnlockMap();
 
 export function normalizeCosmeticRarity(value) {
   return COSMETIC_RARITIES.includes(value) ? value : "Common";
+}
+
+function normalizeOptionalUsername(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized || null;
+}
+
+function normalizeNonNegativeInteger(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : fallback;
+}
+
+export function normalizeCosmeticMetadata(item = {}) {
+  const source = item && typeof item === "object" && !Array.isArray(item) ? item : {};
+  const assignmentStatus = COSMETIC_ASSIGNMENT_STATUSES.includes(source.assignmentStatus)
+    ? source.assignmentStatus
+    : "unassigned";
+  const saleLimitMode = COSMETIC_SALE_LIMIT_MODES.includes(source.saleLimitMode)
+    ? source.saleLimitMode
+    : "unlimited";
+  const royaltySource =
+    source.royalty && typeof source.royalty === "object" && !Array.isArray(source.royalty)
+      ? source.royalty
+      : {};
+  const royaltyPercent = Number(royaltySource.tokenPercent);
+  const saleLimitTotal =
+    saleLimitMode === "limited" && Number.isFinite(Number(source.saleLimitTotal))
+      ? normalizeNonNegativeInteger(source.saleLimitTotal)
+      : null;
+
+  return {
+    ...source,
+    rarity: normalizeCosmeticRarity(source.rarity),
+    grantOnly: typeof source.grantOnly === "boolean" ? source.grantOnly : false,
+    shopEligible: typeof source.shopEligible === "boolean" ? source.shopEligible : true,
+    shopListed: typeof source.shopListed === "boolean" ? source.shopListed : true,
+    assignmentStatus,
+    uniqueOwnerUsername: normalizeOptionalUsername(source.uniqueOwnerUsername),
+    royalty: {
+      enabled: typeof royaltySource.enabled === "boolean" ? royaltySource.enabled : false,
+      recipientUsername: normalizeOptionalUsername(royaltySource.recipientUsername),
+      tokenPercent: Number.isFinite(royaltyPercent)
+        ? Math.min(100, Math.max(0, royaltyPercent))
+        : 0
+    },
+    adminNotes: typeof source.adminNotes === "string" ? source.adminNotes.trim() : "",
+    saleLimitMode,
+    saleLimitTotal,
+    saleLimitSold: normalizeNonNegativeInteger(source.saleLimitSold)
+  };
+}
+
+function buildClientCosmeticDefinition(item) {
+  const normalized = normalizeCosmeticMetadata(item);
+  const { adminNotes: _adminNotes, ...clientDefinition } = normalized;
+  return clientDefinition;
 }
 
 function defaultOwnedMap() {
@@ -3565,8 +3625,7 @@ export function getCosmeticCatalogForProfile(profile) {
         const unlockSource = getUnlockSource(type, item);
 
         return {
-          ...item,
-          rarity: normalizeCosmeticRarity(item.rarity),
+          ...buildClientCosmeticDefinition(item),
           owned: normalized.ownedCosmetics[type].includes(item.id),
           equipped:
             type === "elementCardVariant"
