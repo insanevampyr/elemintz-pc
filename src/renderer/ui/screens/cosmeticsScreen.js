@@ -248,7 +248,7 @@ function renderItem(type, item) {
         ${renderCollectionChip(item.collection)}
         <p>Type: ${getCosmeticTypeLabel(type, item)}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
-        ${item.rarity === "Unique" ? `<p>Owned by You</p>${item.createdForUsername ? `<p>Created For: ${escapeAttribute(item.createdForUsername)}</p>` : ""}` : ""}
+        ${item.rarity === "Unique" ? `<p class="unique-cosmetic-label">Unique Cosmetic</p><p>Owned by You</p>${item.createdForUsername ? `<p>Created For: ${escapeAttribute(item.createdForUsername)}</p>` : ""}` : ""}
         <p>Equipped: ${item.equipped ? "Yes" : "No"}</p>
         ${variantHint}
       </div>
@@ -508,6 +508,9 @@ export const cosmeticsScreen = {
                   </label>
                 </div>
               </fieldset>
+              <div class="store-filter-actions">
+                <button id="cosmetics-reset-filters-btn" class="btn" type="button">Reset Filters</button>
+              </div>
             </div>
           </section>
 
@@ -698,6 +701,38 @@ export const cosmeticsScreen = {
 
     document.getElementById("cosmetics-show-new-first")?.addEventListener("change", (event) => {
       viewState.showNewFirst = Boolean(event?.target?.checked);
+      applyFilters();
+    });
+
+    document.getElementById("cosmetics-reset-filters-btn")?.addEventListener("click", () => {
+      viewState.categories.clear();
+      FILTERABLE_CATEGORIES.forEach(([type]) => viewState.categories.add(type));
+      viewState.rarities.clear();
+      FILTERABLE_RARITIES.forEach((rarity) => viewState.rarities.add(rarity));
+      viewState.elements.clear();
+      FILTERABLE_ELEMENTS.forEach(([element]) => viewState.elements.add(element));
+      viewState.collections.clear();
+      viewState.showNewFirst = true;
+      if (context.viewState) {
+        context.viewState.showNewFirst = viewState.showNewFirst;
+      }
+
+      scope.querySelectorAll("[data-cosmetic-category-filter]").forEach((input) => {
+        input.checked = true;
+      });
+      scope.querySelectorAll("[data-cosmetic-rarity-filter]").forEach((input) => {
+        input.checked = true;
+      });
+      scope.querySelectorAll("[data-cosmetic-element-filter]").forEach((input) => {
+        input.checked = true;
+      });
+      scope.querySelectorAll("[data-cosmetic-collection-filter]").forEach((input) => {
+        input.checked = false;
+      });
+      const showNewFirstInput = document.getElementById("cosmetics-show-new-first");
+      if (showNewFirstInput) {
+        showNewFirstInput.checked = true;
+      }
       applyFilters();
     });
 

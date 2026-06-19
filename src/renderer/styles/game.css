@@ -2435,6 +2435,17 @@ select {
   font-size: 0.95rem;
 }
 
+.store-filter-actions {
+  display: flex;
+  align-items: end;
+}
+
+.unique-cosmetic-label {
+  color: #f3c7ff;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
 .store-empty-state {
   margin: 8px 0 18px;
   color: rgba(214, 232, 245, 0.82);

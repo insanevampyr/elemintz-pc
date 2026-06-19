@@ -124,6 +124,7 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
     saleLimitMode: "limited",
     saleLimitTotal: 10,
     saleLimitSold: 7,
+    royaltyRecipientUsername: "RoyaltyOnlyUser",
     adminNotes: "private admin note"
   };
   const storeCatalog = {
@@ -181,19 +182,27 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   );
 
   assert.match(storeHtml, /data-store-rarity-filter="Unique"/);
+  assert.match(storeHtml, /id="store-reset-filters-btn"[^>]*>Reset Filters<\/button>/);
   assert.match(storeHtml, /data-store-rarity="Unique"/);
   assert.match(storeHtml, /cosmetic-rarity-label rarity-unique">Unique<\/span>/);
+  assert.match(storeHtml, /class="unique-cosmetic-label">Unique Cosmetic<\/p>/);
   assert.match(storeHtml, /Price: 750 Tokens/);
   assert.match(storeHtml, /Created For: CopyCell/);
+  assert.doesNotMatch(storeHtml, /Owner: CopyCell/);
+  assert.doesNotMatch(storeHtml, /RoyaltyOnlyUser/);
   assert.match(storeHtml, /Limited: 3 of 10 available/);
   assert.match(storeHtml, /data-buy-id="fixture_unique_avatar"/);
   assert.doesNotMatch(storeHtml, /data-unique-purchase-blocked="true"/);
   assert.doesNotMatch(storeHtml, /private admin note/);
   assert.match(cosmeticsHtml, /data-cosmetic-rarity-filter="Unique"/);
+  assert.match(cosmeticsHtml, /id="cosmetics-reset-filters-btn"[^>]*>Reset Filters<\/button>/);
   assert.match(cosmeticsHtml, /data-cosmetic-rarity="Unique"/);
   assert.match(cosmeticsHtml, /cosmetic-rarity-label rarity-unique">Unique<\/span>/);
+  assert.match(cosmeticsHtml, /class="unique-cosmetic-label">Unique Cosmetic<\/p>/);
   assert.match(cosmeticsHtml, /Owned by You/);
   assert.match(cosmeticsHtml, /Created For: CopyCell/);
+  assert.doesNotMatch(cosmeticsHtml, /Owner: CopyCell/);
+  assert.doesNotMatch(cosmeticsHtml, /RoyaltyOnlyUser/);
   assert.doesNotMatch(cosmeticsHtml, /private admin note/);
   assert.match(profileHtml, /cosmetic-rarity-label rarity-unique" data-profile-trophy-rarity="true">Unique<\/span>/);
   assert.deepEqual(sortedTrophies.map((item) => item.rarity), ["Unique", "Legendary"]);
@@ -8090,6 +8099,160 @@ test("ui: Store banner controls still bind while the token balance lives in the 
   } finally {
     global.document = previousDocument;
   }
+});
+
+test("ui: Store Unique and category filters combine, and reset restores the normal catalog", () => {
+  const previousDocument = global.document;
+  const uniqueAvatar = createSortableItem({
+    "data-store-name": "unique avatar",
+    "data-store-type": "avatar",
+    "data-store-rarity": "Unique",
+    "data-store-is-new": "false",
+    "data-store-original-index": "0"
+  });
+  const legendaryTitle = createSortableItem({
+    "data-store-name": "legendary title",
+    "data-store-type": "title",
+    "data-store-rarity": "Legendary",
+    "data-store-is-new": "false",
+    "data-store-original-index": "0"
+  });
+  const avatarGrid = createFakeGrid([uniqueAvatar]);
+  const titleGrid = createFakeGrid([legendaryTitle]);
+  const avatarSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? avatarGrid : null),
+    querySelectorAll: (selector) => (selector === "[data-store-item]" ? avatarGrid.items : [])
+  };
+  const titleSection = {
+    hidden: false,
+    style: {},
+    classList: { toggle() {} },
+    querySelector: (selector) => (selector === ".cosmetic-grid" ? titleGrid : null),
+    querySelectorAll: (selector) => (selector === "[data-store-item]" ? titleGrid.items : [])
+  };
+  const categories = [
+    "avatar",
+    "background",
+    "cardBack",
+    "elementCardVariant",
+    "title",
+    "badge"
+  ].map((type) =>
+    createFakeCheckbox({
+      checked: type === "avatar",
+      attributeMap: { "data-store-category-filter": type }
+    })
+  );
+  const rarities = ["Common", "Rare", "Epic", "Legendary", "Unique"].map((rarity) =>
+    createFakeCheckbox({
+      checked: rarity === "Unique",
+      attributeMap: { "data-store-rarity-filter": rarity }
+    })
+  );
+  const resetButton = createFakeCheckbox();
+  const showNewFirstInput = createFakeCheckbox({ checked: false });
+  const searchInput = createFakeCheckbox();
+  searchInput.value = "";
+  const backButton = createFakeCheckbox();
+  const emptyState = { hidden: true, style: {}, classList: { toggle() {} } };
+  const root = {
+    querySelectorAll(selector) {
+      if (selector === "[data-store-item]") return [uniqueAvatar, legendaryTitle];
+      if (selector === "[data-store-section]") return [avatarSection, titleSection];
+      if (selector === "[data-store-category-filter]") return categories;
+      if (selector === "[data-store-rarity-filter]") return rarities;
+      if (
+        selector === "[data-store-element-filter]" ||
+        selector === "[data-store-collection-filter]" ||
+        selector === "[data-buy-type]" ||
+        selector === "[data-equip-type]"
+      ) {
+        return [];
+      }
+      return [];
+    }
+  };
+  global.document = {
+    querySelector: (selector) => (selector === ".screen-store" ? root : null),
+    getElementById: (id) =>
+      ({
+        "store-back-btn": backButton,
+        "store-search-input": searchInput,
+        "store-show-new-first": showNewFirstInput,
+        "store-reset-filters-btn": resetButton,
+        "store-empty-state": emptyState
+      })[id] ?? null
+  };
+
+  try {
+    const viewState = {
+      searchText: "",
+      categories: new Set(["avatar"]),
+      rarities: new Set(["Unique"]),
+      showNewFirst: false
+    };
+    storeScreen.bind({
+      viewState,
+      actions: {
+        back: () => {},
+        buy: async () => {},
+        equip: async () => {}
+      }
+    });
+
+    assert.equal(uniqueAvatar.hidden, false);
+    assert.equal(legendaryTitle.hidden, true);
+
+    resetButton.trigger("click");
+
+    assert.equal(uniqueAvatar.hidden, false);
+    assert.equal(legendaryTitle.hidden, false);
+    assert.equal(viewState.categories.has("title"), true);
+    assert.equal(viewState.rarities.has("Legendary"), true);
+    assert.equal(viewState.rarities.has("Unique"), true);
+    assert.equal(viewState.showNewFirst, true);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: Unique ordering respects NEW priority, normal rarity order, and Store catalog order", () => {
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 0,
+      supporterPass: false,
+      catalog: {
+        avatar: [
+          { id: "legendary_first", name: "Legendary First", rarity: "Legendary", owned: false },
+          { id: "unique_middle", name: "Unique Middle", rarity: "Unique", owned: false },
+          { id: "epic_last", name: "Epic Last", rarity: "Epic", owned: false }
+        ]
+      }
+    },
+    viewState: { showNewFirst: false }
+  });
+  const ownedHtml = cosmeticsScreen.render({
+    cosmetics: {
+      loadouts: [],
+      preferences: {},
+      catalog: {
+        avatar: [
+          { id: "legendary_new", name: "Legendary New", rarity: "Legendary", owned: true, isNew: true },
+          { id: "unique_owned", name: "Unique Owned", rarity: "Unique", owned: true },
+          { id: "legendary_owned", name: "Legendary Owned", rarity: "Legendary", owned: true }
+        ]
+      }
+    },
+    viewState: { showNewFirst: true }
+  });
+
+  assert.ok(storeHtml.indexOf("Legendary First") < storeHtml.indexOf("Unique Middle"));
+  assert.ok(storeHtml.indexOf("Unique Middle") < storeHtml.indexOf("Epic Last"));
+  assert.ok(ownedHtml.indexOf("Legendary New") < ownedHtml.indexOf("Unique Owned"));
+  assert.ok(ownedHtml.indexOf("Unique Owned") < ownedHtml.indexOf("Legendary Owned"));
 });
 
 test("ui: store buy buttons disable with a pending state and ignore rapid repeat clicks while a purchase is in flight", async () => {

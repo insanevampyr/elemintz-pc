@@ -407,6 +407,7 @@ function renderStoreItem(type, item, originalIndex) {
         <p>Type: ${getCosmeticTypeLabel(type, item)}</p>
         <p>Status: ${item.owned ? "Owned" : "Not Owned"}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
+        ${item.rarity === "Unique" ? '<p class="unique-cosmetic-label">Unique Cosmetic</p>' : ""}
         <p>Price: ${item.rarity === "Unique" && item.price != null && Number.isInteger(Number(item.price)) ? `${item.price} Tokens` : item.purchasable ? `${item.price} Tokens` : "Not Purchasable"}</p>
         ${renderUniqueStoreMetadata(item)}
         <p>Unlock: ${unlockText(item)}</p>
@@ -568,6 +569,9 @@ export const storeScreen = {
                   </label>
                 </div>
               </fieldset>
+              <div class="store-filter-actions">
+                <button id="store-reset-filters-btn" class="btn" type="button">Reset Filters</button>
+              </div>
             </div>
           </section>
           <div class="grid cosmetics-sections">
@@ -823,6 +827,42 @@ export const storeScreen = {
         applyFilters();
       });
     }
+
+    document.getElementById("store-reset-filters-btn")?.addEventListener("click", () => {
+      viewState.searchText = "";
+      viewState.categories.clear();
+      FILTERABLE_CATEGORIES.forEach(([type]) => viewState.categories.add(type));
+      viewState.rarities.clear();
+      FILTERABLE_RARITIES.forEach((rarity) => viewState.rarities.add(rarity));
+      viewState.elements.clear();
+      FILTERABLE_ELEMENTS.forEach(([element]) => viewState.elements.add(element));
+      viewState.collections.clear();
+      viewState.showNewFirst = true;
+      if (context.viewState) {
+        context.viewState.searchText = viewState.searchText;
+        context.viewState.showNewFirst = viewState.showNewFirst;
+      }
+
+      if (searchInput) {
+        searchInput.value = "";
+      }
+      root.querySelectorAll("[data-store-category-filter]").forEach((input) => {
+        input.checked = true;
+      });
+      root.querySelectorAll("[data-store-rarity-filter]").forEach((input) => {
+        input.checked = true;
+      });
+      root.querySelectorAll("[data-store-element-filter]").forEach((input) => {
+        input.checked = true;
+      });
+      root.querySelectorAll("[data-store-collection-filter]").forEach((input) => {
+        input.checked = false;
+      });
+      if (showNewFirstInput) {
+        showNewFirstInput.checked = true;
+      }
+      applyFilters();
+    });
 
     applyFilters();
   }
