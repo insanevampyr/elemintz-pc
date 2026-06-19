@@ -24646,6 +24646,85 @@ test("ui: match complete payload renders polished local PvP naming and draw stat
   assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
 });
 
+test("ui: local Hotseat completion cap copy distinguishes both, mixed, and uncapped rewards", () => {
+  const buildPayload = ({ p1Capped, p2Capped, p1Xp, p1Tokens, p2Xp, p2Tokens }) => {
+    const controller = createRendererController();
+    controller.localPlayers = { p1: "Asha", p2: "Bram" };
+
+    return controller.buildMatchCompleteModalPayload(
+      "local_pvp",
+      {
+        winner: "p1",
+        endReason: "normal",
+        history: [{ result: "p1" }]
+      },
+      {
+        p1: {
+          stats: { cardsCaptured: 2, warsEntered: 0, longestWar: 0 },
+          xpDelta: p1Xp,
+          tokenDelta: p1Tokens,
+          localPvpRewardStatus: { capped: p1Capped }
+        },
+        p2: {
+          stats: { cardsCaptured: 1, warsEntered: 0, longestWar: 0 },
+          xpDelta: p2Xp,
+          tokenDelta: p2Tokens,
+          localPvpRewardStatus: { capped: p2Capped }
+        }
+      }
+    ).bodyHtml;
+  };
+
+  const bothCappedHtml = buildPayload({
+    p1Capped: true,
+    p2Capped: true,
+    p1Xp: 0,
+    p1Tokens: 0,
+    p2Xp: 0,
+    p2Tokens: 0
+  });
+  const p1CappedHtml = buildPayload({
+    p1Capped: true,
+    p2Capped: false,
+    p1Xp: 0,
+    p1Tokens: 0,
+    p2Xp: 3,
+    p2Tokens: 2
+  });
+  const p2CappedHtml = buildPayload({
+    p1Capped: false,
+    p2Capped: true,
+    p1Xp: 3,
+    p1Tokens: 2,
+    p2Xp: 0,
+    p2Tokens: 0
+  });
+  const neitherCappedHtml = buildPayload({
+    p1Capped: false,
+    p2Capped: false,
+    p1Xp: 3,
+    p1Tokens: 2,
+    p2Xp: 1,
+    p2Tokens: 1
+  });
+
+  assert.match(bothCappedHtml, /Daily local reward cap reached/);
+  assert.match(bothCappedHtml, /no XP\/tokens awarded/);
+
+  assert.match(p1CappedHtml, /<strong>Asha:<\/strong> \+0 XP \/ \+0 Tokens/);
+  assert.match(p1CappedHtml, /<strong>Bram:<\/strong> \+3 XP \/ \+2 Tokens/);
+  assert.match(p1CappedHtml, /One or more players reached today’s Local Hotseat reward cap/);
+  assert.doesNotMatch(p1CappedHtml, /no XP\/tokens awarded/);
+
+  assert.match(p2CappedHtml, /<strong>Asha:<\/strong> \+3 XP \/ \+2 Tokens/);
+  assert.match(p2CappedHtml, /<strong>Bram:<\/strong> \+0 XP \/ \+0 Tokens/);
+  assert.match(p2CappedHtml, /One or more players reached today’s Local Hotseat reward cap/);
+  assert.doesNotMatch(p2CappedHtml, /no XP\/tokens awarded/);
+
+  assert.doesNotMatch(neitherCappedHtml, /reward cap reached/i);
+  assert.doesNotMatch(neitherCappedHtml, /no XP\/tokens awarded/);
+});
+
 test("ui: local Hotseat match completion stays pending until the privacy pass flow clears", async () => {
   const controller = createRendererController();
   const shownPayloads = [];

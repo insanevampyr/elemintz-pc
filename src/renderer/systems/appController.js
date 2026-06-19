@@ -6988,8 +6988,14 @@ export class AppController {
       const p1Tokens = Math.max(0, Number(p1Result?.tokenDelta ?? 0));
       const p2Xp = Math.max(0, Number(p2Result?.xpDelta ?? 0));
       const p2Tokens = Math.max(0, Number(p2Result?.tokenDelta ?? 0));
-      const capped =
-        Boolean(p1Result?.localPvpRewardStatus?.capped) || Boolean(p2Result?.localPvpRewardStatus?.capped);
+      const p1Capped = Boolean(p1Result?.localPvpRewardStatus?.capped);
+      const p2Capped = Boolean(p2Result?.localPvpRewardStatus?.capped);
+      const capSummary =
+        p1Capped && p2Capped
+          ? `<p><strong>Daily local reward cap reached.</strong> Match stats saved, but no XP/tokens awarded.</p>`
+          : p1Capped || p2Capped
+            ? `<p><strong>One or more players reached today’s Local Hotseat reward cap.</strong> Per-player rewards are shown above.</p>`
+            : "";
 
       return `
         <section class="match-complete-meta match-complete-rewards">
@@ -6997,11 +7003,7 @@ export class AppController {
           <p><strong>${escapeHtml(names.p2)}:</strong> +${p2Xp} XP / +${p2Tokens} Tokens</p>
           <p><strong>Mode Policy:</strong> Local 2-Player rewards are casual and capped daily.</p>
           <p><strong>Chest Policy:</strong> No chests are awarded in this mode.</p>
-          ${
-            capped
-              ? `<p><strong>Daily local reward cap reached.</strong> Match stats saved, but no XP/tokens awarded.</p>`
-              : ""
-          }
+          ${capSummary}
         </section>
       `;
     }
