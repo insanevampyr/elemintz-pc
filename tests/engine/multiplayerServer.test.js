@@ -21,7 +21,12 @@ import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { createSessionStore } from "../../src/multiplayer/sessionStore.js";
 import { ShopRotationStore } from "../../src/multiplayer/shopRotationStore.js";
-import { createRoomStore, getTotalOwnedCards, updateMatchCompletion } from "../../src/multiplayer/rooms.js";
+import {
+  buildAuthoritativeBotPublicState,
+  createRoomStore,
+  getTotalOwnedCards,
+  updateMatchCompletion
+} from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
 import { getDailyResetWindow } from "../../src/state/dailyChallengesSystem.js";
@@ -29,6 +34,75 @@ import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
 import { DEFAULT_STARTING_TOKENS } from "../../src/state/storeSystem.js";
 
 const FIXED_DAY7_LOGIN_NOW_MS = Date.parse("2026-06-08T19:05:00-05:00");
+
+test("multiplayer rooms: server bot AI context keeps cumulative WAR clashes separate from active depth", () => {
+  const baseRoom = {
+    hostHand: { fire: 2, water: 1, earth: 0, wind: 1 },
+    guestHand: { fire: 1, water: 2, earth: 1, wind: 0 },
+    hostScore: 1,
+    guestScore: 2,
+    warPot: { host: [], guest: [] },
+    roundHistory: []
+  };
+
+  const beforeWar = buildAuthoritativeBotPublicState({
+    ...baseRoom,
+    warActive: false,
+    warDepth: 0,
+    totalWarClashes: 0
+  });
+  const duringWar = buildAuthoritativeBotPublicState({
+    ...baseRoom,
+    warActive: true,
+    warDepth: 2,
+    totalWarClashes: 0,
+    warPot: { host: ["fire", "earth"], guest: ["fire", "earth"] }
+  });
+  const afterResolvedWar = buildAuthoritativeBotPublicState({
+    ...baseRoom,
+    warActive: false,
+    warDepth: 0,
+    totalWarClashes: 2
+  });
+
+  assert.equal(beforeWar.totalWarClashes, 0);
+  assert.equal(beforeWar.warActive, false);
+  assert.equal(duringWar.totalWarClashes, 0);
+  assert.equal(duringWar.warActive, true);
+  assert.equal(duringWar.pileCount, 4);
+  assert.equal(afterResolvedWar.totalWarClashes, 2);
+  assert.equal(afterResolvedWar.warActive, false);
+  assert.equal("warDepth" in afterResolvedWar, false);
+});
+
+test("multiplayer rooms: standard and Gauntlet server bot contexts use the cumulative WAR counter", () => {
+  const room = {
+    hostHand: { fire: 2, water: 1, earth: 0, wind: 1 },
+    guestHand: { fire: 1, water: 2, earth: 1, wind: 0 },
+    hostScore: 1,
+    guestScore: 2,
+    warActive: false,
+    warDepth: 0,
+    totalWarClashes: 3,
+    warPot: { host: [], guest: [] },
+    roundHistory: [{ hostMove: "fire" }]
+  };
+  const standardContext = buildAuthoritativeBotPublicState(room, {
+    playerElementCounts: room.hostHand
+  });
+  const gauntletContext = buildAuthoritativeBotPublicState(
+    { ...room, gauntletRivalId: "pyro_maniac" },
+    {
+      playerElementCounts: room.hostHand,
+      recentPlayerMoves: ["fire"]
+    }
+  );
+
+  assert.equal(standardContext.totalWarClashes, 3);
+  assert.equal(gauntletContext.totalWarClashes, 3);
+  assert.deepEqual(standardContext.playerElementCounts, room.hostHand);
+  assert.deepEqual(gauntletContext.recentPlayerMoves, ["fire"]);
+});
 
 function connectClient(port) {
   return new Promise((resolve, reject) => {

@@ -580,6 +580,31 @@ function getBlockedFatiguedElementForRole(room, role) {
   return hasAlternative ? fatiguedElement : null;
 }
 
+export function buildAuthoritativeBotPublicState(
+  room,
+  { aiCardsRemaining = null, playerElementCounts = null, recentPlayerMoves = null } = {}
+) {
+  return {
+    aiCardsRemaining:
+      aiCardsRemaining === null
+        ? getTotalCardsInHand(room?.guestHand)
+        : safeRuntimeCount(aiCardsRemaining, 0),
+    playerCardsRemaining: getTotalCardsInHand(room?.hostHand),
+    ...(playerElementCounts
+      ? { playerElementCounts: cloneHandCountsForPublicState(playerElementCounts) }
+      : {}),
+    recentPlayerMoves:
+      recentPlayerMoves ?? getRecentRoundMoves(room?.roundHistory, "hostMove"),
+    aiCaptured: safeRuntimeCount(room?.guestScore, 0),
+    playerCaptured: safeRuntimeCount(room?.hostScore, 0),
+    warActive: Boolean(room?.warActive),
+    pileCount:
+      (Array.isArray(room?.warPot?.host) ? room.warPot.host.length : 0) +
+      (Array.isArray(room?.warPot?.guest) ? room.warPot.guest.length : 0),
+    totalWarClashes: safeRuntimeCount(room?.totalWarClashes, 0)
+  };
+}
+
 function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
   const blockedFatiguedElement = getBlockedFatiguedElementForRole(room, "guest");
   const aiHand = expandHandCounts(room?.guestHand).filter((card) => card !== blockedFatiguedElement);
@@ -596,19 +621,11 @@ function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
       rival: gauntletRival,
       turnIndex: Math.max(0, safeRuntimeCount(room?.roundNumber, 1) - 1),
       playerPreviousElement: recentPlayerMoves.at(-1) ?? null,
-      publicState: {
+      publicState: buildAuthoritativeBotPublicState(room, {
         aiCardsRemaining: aiHand.length,
-        playerCardsRemaining: getTotalCardsInHand(room?.hostHand),
-        ...(playerElementCounts ? { playerElementCounts: cloneHandCountsForPublicState(playerElementCounts) } : {}),
-        recentPlayerMoves,
-        aiCaptured: safeRuntimeCount(room?.guestScore, 0),
-        playerCaptured: safeRuntimeCount(room?.hostScore, 0),
-        warActive: Boolean(room?.warActive),
-        pileCount:
-          (Array.isArray(room?.warPot?.host) ? room.warPot.host.length : 0) +
-          (Array.isArray(room?.warPot?.guest) ? room.warPot.guest.length : 0),
-        totalWarClashes: safeRuntimeCount(room?.warDepth, 0)
-      }
+        playerElementCounts,
+        recentPlayerMoves
+      })
     });
     if (Number.isInteger(gauntletIndex) && gauntletIndex >= 0 && gauntletIndex < aiHand.length) {
       return aiHand[gauntletIndex] ?? null;
@@ -617,19 +634,10 @@ function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
 
   const aiIndex = chooseAiCardIndex(aiHand, {
     difficulty: normalizeAiDifficulty(room?.guest?.aiDifficulty),
-    publicState: {
+    publicState: buildAuthoritativeBotPublicState(room, {
       aiCardsRemaining: aiHand.length,
-      playerCardsRemaining: getTotalCardsInHand(room?.hostHand),
-      ...(playerElementCounts ? { playerElementCounts: cloneHandCountsForPublicState(playerElementCounts) } : {}),
-      recentPlayerMoves: getRecentRoundMoves(room?.roundHistory, "hostMove"),
-      aiCaptured: safeRuntimeCount(room?.guestScore, 0),
-      playerCaptured: safeRuntimeCount(room?.hostScore, 0),
-      warActive: Boolean(room?.warActive),
-      pileCount:
-        (Array.isArray(room?.warPot?.host) ? room.warPot.host.length : 0) +
-        (Array.isArray(room?.warPot?.guest) ? room.warPot.guest.length : 0),
-      totalWarClashes: safeRuntimeCount(room?.warDepth, 0)
-    }
+      playerElementCounts
+    })
   });
 
   if (!Number.isInteger(aiIndex) || aiIndex < 0 || aiIndex >= aiHand.length) {
