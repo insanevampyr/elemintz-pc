@@ -78,8 +78,8 @@ const DAILY_LOGIN_STREAK_REWARDS = Object.freeze([
 const DAILY_LOGIN_STREAK_MAX_DAY = DAILY_LOGIN_STREAK_REWARDS.length;
 const FEATURED_RIVAL_DAILY_WIN_REWARD_CONFIGS = {
   crownfire_duelist: {
-    xpDelta: 30,
-    tokenDelta: 15,
+    xpDelta: 10,
+    tokenDelta: 10,
     label: "Crownfire First Win Bonus"
   }
 };

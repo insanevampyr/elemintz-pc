@@ -3332,7 +3332,7 @@ test("ui: ai difficulty screen renders the Crownfire featured rival card details
   assert.match(html, /Your Deck: 8 cards/);
   assert.match(html, /Rival Deck: 12 cards/);
   assert.match(html, /Normal EleMintz rules apply/);
-  assert.match(html, /Daily First Win Bonus: \+30 XP \/ \+15 Tokens/);
+  assert.match(html, /Daily First Win Bonus: \+10 XP \/ \+10 Tokens/);
   assert.match(html, /Warning: Crownfire is intentionally difficult\./);
 });
 
@@ -24177,19 +24177,19 @@ test("ui: featured rival match complete payload shows the Crownfire first-win bo
         warsEntered: 2,
         longestWar: 4
       },
-      xpDelta: 47,
-      tokenDelta: 27,
+      xpDelta: 27,
+      tokenDelta: 22,
       featuredRivalReward: {
         rivalId: "crownfire_duelist",
         granted: true,
-        xpDelta: 30,
-        tokenDelta: 15,
+        xpDelta: 10,
+        tokenDelta: 10,
         label: "Crownfire First Win Bonus"
       }
     }
   );
 
-  assert.match(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong> \+30 XP \/ \+15 tokens/);
+  assert.match(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong> \+10 XP \/ \+10 tokens/);
 });
 
 test("ui: featured rival match complete payload uses boss-specific loss wording", () => {
@@ -24260,13 +24260,13 @@ test("ui: featured rival match complete payload keeps boost messaging separate f
         warsEntered: 2,
         longestWar: 4
       },
-      xpDelta: 62,
-      tokenDelta: 39,
+      xpDelta: 42,
+      tokenDelta: 34,
       featuredRivalReward: {
         rivalId: "crownfire_duelist",
         granted: true,
-        xpDelta: 30,
-        tokenDelta: 15,
+        xpDelta: 10,
+        tokenDelta: 10,
         label: "Crownfire First Win Bonus"
       },
       boostDisplay: {
@@ -24278,7 +24278,7 @@ test("ui: featured rival match complete payload keeps boost messaging separate f
     }
   );
 
-  assert.match(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong> \+30 XP \/ \+15 tokens/);
+  assert.match(payload.bodyHtml, /<strong>Crownfire First Win Bonus:<\/strong> \+10 XP \/ \+10 tokens/);
   assert.match(payload.bodyHtml, /<strong>Boost Event:<\/strong> 2x XP \/ 2x Tokens applied/);
 });
 

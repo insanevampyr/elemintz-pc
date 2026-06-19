@@ -34,7 +34,7 @@ function renderFeaturedRivalOption({ name, id, checked }) {
           <span class="featured-rival-card__detail">Your Deck: 8 cards</span>
           <span class="featured-rival-card__detail">Rival Deck: 12 cards</span>
           <span class="featured-rival-card__detail">Normal EleMintz rules apply</span>
-          <span class="featured-rival-card__detail">Daily First Win Bonus: +30 XP / +15 Tokens</span>
+          <span class="featured-rival-card__detail">Daily First Win Bonus: +10 XP / +10 Tokens</span>
           <span class="featured-rival-card__detail">Warning: Crownfire is intentionally difficult.</span>
         </span>
       </span>

@@ -4407,14 +4407,14 @@ test("state: Crownfire first win of the day grants the featured rival daily bonu
   });
 
   assert.equal(first.featuredRivalReward.granted, true);
-  assert.equal(first.featuredRivalReward.xpDelta, 30);
-  assert.equal(first.featuredRivalReward.tokenDelta, 15);
+  assert.equal(first.featuredRivalReward.xpDelta, 10);
+  assert.equal(first.featuredRivalReward.tokenDelta, 10);
   assert.equal(first.profile.featuredRivalWins, 1);
   assert.equal(
     first.profile.featuredRivalRewards.crownfire_duelist.lastDailyWinRewardDate,
     first.featuredRivalReward.rewardDateKey
   );
-  assert.ok(first.xpBreakdown.lines.some((line) => line.label === "Crownfire First Win Bonus" && line.amount === 30));
+  assert.ok(first.xpBreakdown.lines.some((line) => line.label === "Crownfire First Win Bonus" && line.amount === 10));
   assert.equal(second.featuredRivalReward.granted, false);
   assert.equal(second.featuredRivalReward.xpDelta, 0);
   assert.equal(second.featuredRivalReward.tokenDelta, 0);
@@ -4422,16 +4422,23 @@ test("state: Crownfire first win of the day grants the featured rival daily bonu
   assert.ok(second.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
 });
 
-test("state: Crownfire loss and quit do not grant the featured rival daily bonus", async () => {
+test("state: Crownfire loss, draw, and quit do not grant the featured rival daily bonus", async () => {
   const lossDataDir = await createTempDataDir();
+  const drawDataDir = await createTempDataDir();
   const quitDataDir = await createTempDataDir();
   const lossState = new StateCoordinator({ dataDir: lossDataDir, random: constantRandom(0.99) });
+  const drawState = new StateCoordinator({ dataDir: drawDataDir, random: constantRandom(0.99) });
   const quitState = new StateCoordinator({ dataDir: quitDataDir, random: constantRandom(0.99) });
 
   const lossResult = await lossState.recordMatchResult({
     username: "CrownfireLossUser",
     perspective: "p1",
     matchState: createCrownfireRewardMatch({ winner: "p2" })
+  });
+  const drawResult = await drawState.recordMatchResult({
+    username: "CrownfireDrawUser",
+    perspective: "p1",
+    matchState: createCrownfireRewardMatch({ winner: "draw" })
   });
   const quitResult = await quitState.recordMatchResult({
     username: "CrownfireQuitUser",
@@ -4440,10 +4447,13 @@ test("state: Crownfire loss and quit do not grant the featured rival daily bonus
   });
 
   assert.equal(lossResult.featuredRivalReward.granted, false);
+  assert.equal(drawResult.featuredRivalReward.granted, false);
   assert.equal(quitResult.featuredRivalReward.granted, false);
   assert.equal(lossResult.profile.featuredRivalWins, 0);
+  assert.equal(drawResult.profile.featuredRivalWins, 0);
   assert.equal(quitResult.profile.featuredRivalWins, 0);
   assert.ok(lossResult.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
+  assert.ok(drawResult.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
   assert.ok(quitResult.xpBreakdown.lines.every((line) => line.label !== "Crownfire First Win Bonus"));
 });
 
@@ -4631,17 +4641,17 @@ test("boost events: Crownfire XP bonus stays fixed under an active PvE XP boost"
 
   assert.equal(baseline.featuredRivalReward.granted, true);
   assert.equal(boosted.featuredRivalReward.granted, true);
-  assert.equal(baseline.featuredRivalReward.xpDelta, 30);
-  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
-  assert.equal(baseline.featuredRivalReward.tokenDelta, 15);
-  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+  assert.equal(baseline.featuredRivalReward.xpDelta, 10);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 10);
+  assert.equal(baseline.featuredRivalReward.tokenDelta, 10);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 10);
   assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
   assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta);
   assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
   assert.equal(boosted.challengeTokenDelta, baseline.challengeTokenDelta);
-  assert.equal(boosted.xpDelta, boosted.matchXpDelta + boosted.challengeXpDelta + 30);
+  assert.equal(boosted.xpDelta, boosted.matchXpDelta + boosted.challengeXpDelta + 10);
   assert.ok(
-    boosted.xpBreakdown.lines.some((line) => line.label === "Crownfire First Win Bonus" && line.amount === 30)
+    boosted.xpBreakdown.lines.some((line) => line.label === "Crownfire First Win Bonus" && line.amount === 10)
   );
 });
 
@@ -4676,8 +4686,8 @@ test("boost events: Crownfire token bonus stays fixed under an active PvE token 
   });
 
   assert.equal(boosted.featuredRivalReward.granted, true);
-  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
-  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 10);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 10);
   assert.equal(boosted.matchXpDelta, baseline.matchXpDelta);
   assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
   assert.equal(boosted.challengeXpDelta, baseline.challengeXpDelta);
@@ -4719,12 +4729,12 @@ test("boost events: all-scope boosts do not multiply the Crownfire first-win bon
   });
 
   assert.equal(boosted.featuredRivalReward.granted, true);
-  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
-  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 10);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 10);
   assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
   assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
-  assert.equal(boosted.xpDelta, boosted.matchXpDelta + boosted.challengeXpDelta + 30);
-  assert.equal(boosted.tokenDelta, boosted.matchTokenDelta + boosted.challengeTokenDelta + 15);
+  assert.equal(boosted.xpDelta, boosted.matchXpDelta + boosted.challengeXpDelta + 10);
+  assert.equal(boosted.tokenDelta, boosted.matchTokenDelta + boosted.challengeTokenDelta + 10);
 });
 
 test("boost events: repeat Crownfire win does not regrant the daily bonus during an active boost", async () => {
@@ -4756,8 +4766,8 @@ test("boost events: repeat Crownfire win does not regrant the daily bonus during
   });
 
   assert.equal(first.featuredRivalReward.granted, true);
-  assert.equal(first.featuredRivalReward.xpDelta, 30);
-  assert.equal(first.featuredRivalReward.tokenDelta, 15);
+  assert.equal(first.featuredRivalReward.xpDelta, 10);
+  assert.equal(first.featuredRivalReward.tokenDelta, 10);
   assert.equal(second.featuredRivalReward.granted, false);
   assert.equal(second.featuredRivalReward.xpDelta, 0);
   assert.equal(second.featuredRivalReward.tokenDelta, 0);
@@ -4951,8 +4961,8 @@ test("boost events: explicit featured rival target boosts Featured Rival base re
 
   assert.equal(boosted.matchXpDelta, baseline.matchXpDelta * 2);
   assert.equal(boosted.matchTokenDelta, baseline.matchTokenDelta * 2);
-  assert.equal(boosted.featuredRivalReward.xpDelta, 30);
-  assert.equal(boosted.featuredRivalReward.tokenDelta, 15);
+  assert.equal(boosted.featuredRivalReward.xpDelta, 10);
+  assert.equal(boosted.featuredRivalReward.tokenDelta, 10);
 });
 
 test("boost events: explicit gauntlet target boosts gauntlet base rewards", async () => {
