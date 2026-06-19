@@ -29,6 +29,7 @@ import {
 } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
+import { StorePurchaseLedgerStore } from "../../src/state/storePurchaseLedgerStore.js";
 import { SpecialCosmeticRegistryStore } from "../../src/state/specialCosmeticRegistryStore.js";
 import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { getDailyResetWindow } from "../../src/state/dailyChallengesSystem.js";
@@ -3792,6 +3793,198 @@ test("multiplayer foundation: approved Unique grants are authoritative, idempote
   } finally {
     definition.rarity = originalRarity;
     adminClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: Unique history is admin-only, sanitized, bounded, newest-first, and read-only", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const storePurchaseLedgerStore = new StorePurchaseLedgerStore({
+    dataDir,
+    now: () => "2026-06-19T18:00:01.000Z"
+  });
+  const definition = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalRarity = definition.rarity;
+  definition.rarity = "Unique";
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    storePurchaseLedgerStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+
+  try {
+    await storePurchaseLedgerStore.beginTransaction({
+      transactionId: "unique-history-sale-1",
+      buyerUsername: "Enab",
+      cosmeticType: "avatar",
+      cosmeticId: "fireavatarF",
+      price: 500,
+      saleLimitMode: "limited",
+      saleLimitSoldBefore: 2,
+      saleLimitSoldAfter: 2,
+      royaltyEnabled: true,
+      royaltyRecipientUsername: "CopyCell",
+      royaltyTokenPercent: 10,
+      royaltyAmount: 50,
+      royaltyStatus: "pending",
+      royaltyNotificationStatus: "pending",
+      timestamp: "2026-06-19T18:00:00.000Z"
+    });
+    await storePurchaseLedgerStore.finalizeTransaction({
+      transactionId: "unique-history-sale-1",
+      status: "completed",
+      updates: {
+        saleLimitSoldAfter: 3,
+        royaltyStatus: "paid",
+        royaltyPaidAt: "2026-06-19T18:00:01.000Z",
+        royaltyNotificationStatus: "queued"
+      }
+    });
+    await adminGrantStore.beginTransaction({
+      transactionId: "unique-history-grant-1",
+      timestamp: "2026-06-19T19:00:00.000Z",
+      adminId: "VampyrLee",
+      targetUsername: "GrantTarget",
+      grantType: "special_cosmetic_grant",
+      payload: {
+        cosmetic: {
+          type: "avatar",
+          cosmeticId: "fireavatarF"
+        },
+        adminNotes: "must never leave the server"
+      }
+    });
+    await adminGrantStore.finalizeTransaction({
+      transactionId: "unique-history-grant-1",
+      status: "success",
+      confirmationStatus: "player_offline"
+    });
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "player@example.com",
+      password: "PlayerPass123",
+      username: "RegularPlayer"
+    });
+
+    const purchasesBefore = await storePurchaseLedgerStore.listEntries();
+    const grantsBefore = await adminGrantStore.listEntries();
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "player@example.com",
+      password: "PlayerPass123"
+    });
+
+    const denied = await new Promise((resolve) => {
+      playerClient.emit(
+        "admin:getUniqueHistory",
+        { sessionToken: playerLogin?.session?.token },
+        resolve
+      );
+    });
+    assert.equal(denied?.ok, false);
+
+    const history = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:getUniqueHistory",
+        {
+          sessionToken: adminLogin?.session?.token,
+          limit: 2,
+          offset: 0,
+          recordType: "all",
+          actionType: "all",
+          query: ""
+        },
+        resolve
+      );
+    });
+    assert.equal(history?.ok, true);
+    assert.equal(history?.result?.items?.length, 2);
+    assert.equal(history?.result?.items?.[0]?.actionType, "grant");
+    assert.equal(history?.result?.items?.[1]?.actionType, "sale");
+    assert.deepEqual(
+      {
+        buyer: history.result.items[1].buyerUsername,
+        price: history.result.items[1].price,
+        soldBefore: history.result.items[1].saleLimitSoldBefore,
+        soldAfter: history.result.items[1].saleLimitSoldAfter,
+        recipient: history.result.items[1].royaltyRecipientUsername,
+        percent: history.result.items[1].royaltyTokenPercent,
+        amount: history.result.items[1].royaltyAmount,
+        royaltyStatus: history.result.items[1].royaltyStatus,
+        notificationStatus: history.result.items[1].notificationStatus
+      },
+      {
+        buyer: "Enab",
+        price: 500,
+        soldBefore: 2,
+        soldAfter: 3,
+        recipient: "CopyCell",
+        percent: 10,
+        amount: 50,
+        royaltyStatus: "paid",
+        notificationStatus: "queued"
+      }
+    );
+    assert.equal(JSON.stringify(history).includes("adminNotes"), false);
+    assert.equal(JSON.stringify(history).includes("must never leave the server"), false);
+
+    const filtered = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:getUniqueHistory",
+        {
+          sessionToken: adminLogin?.session?.token,
+          recordType: "sale",
+          actionType: "sale",
+          query: "copycell",
+          limit: 1
+        },
+        resolve
+      );
+    });
+    assert.equal(filtered?.ok, true);
+    assert.equal(filtered?.result?.total, 1);
+    assert.equal(filtered?.result?.items?.[0]?.transactionId, "unique-history-sale-1");
+
+    const invalid = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:getUniqueHistory",
+        { sessionToken: adminLogin?.session?.token, limit: 101 },
+        resolve
+      );
+    });
+    assert.equal(invalid?.ok, false);
+    assert.deepEqual(await storePurchaseLedgerStore.listEntries(), purchasesBefore);
+    assert.deepEqual(await adminGrantStore.listEntries(), grantsBefore);
+  } finally {
+    definition.rarity = originalRarity;
+    adminClient?.disconnect();
+    playerClient?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }

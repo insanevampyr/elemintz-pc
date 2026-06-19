@@ -145,6 +145,7 @@ const server = createMultiplayerFoundation({
   profileAuthority,
   accountStore,
   adminGrantStore,
+  storePurchaseLedgerStore,
   specialCosmeticRegistryStore,
   feedbackStore,
   boostEventStore,

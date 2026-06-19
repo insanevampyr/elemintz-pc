@@ -14,6 +14,7 @@ import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
 import { getCosmeticDefinition } from "../state/cosmeticSystem.js";
 import { buildPublicSpecialCosmeticRecord } from "../state/specialCosmeticRegistryStore.js";
+import { queryUniqueCosmeticHistory } from "../state/uniqueCosmeticHistory.js";
 import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
 import { AI_DIFFICULTY } from "../engine/ai.js";
 import { getGauntletRivalById } from "../engine/index.js";
@@ -704,6 +705,7 @@ export function createMultiplayerFoundation({
   profileAuthority = null,
   accountStore = null,
   adminGrantStore = null,
+  storePurchaseLedgerStore = null,
   specialCosmeticRegistryStore = null,
   feedbackStore = null,
   boostEventStore = null,
@@ -3020,6 +3022,32 @@ export function createMultiplayerFoundation({
         });
       } catch (error) {
         respond(buildAdminError(error, "SPECIAL_COSMETIC_ASSIGNMENT_FAILED"));
+      }
+    });
+
+    socket.on("admin:getUniqueHistory", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        const result = await queryUniqueCosmeticHistory({
+          storePurchaseLedgerStore,
+          adminGrantStore,
+          filters: {
+            limit: payload?.limit,
+            offset: payload?.offset,
+            recordType: payload?.recordType,
+            actionType: payload?.actionType,
+            query: payload?.query
+          }
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "UNIQUE_HISTORY_QUERY_FAILED"));
       }
     });
 
