@@ -248,6 +248,7 @@ function renderItem(type, item) {
         ${renderCollectionChip(item.collection)}
         <p>Type: ${getCosmeticTypeLabel(type, item)}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
+        ${item.rarity === "Unique" ? `<p>Owned by You</p>${item.createdForUsername ? `<p>Created For: ${escapeAttribute(item.createdForUsername)}</p>` : ""}` : ""}
         <p>Equipped: ${item.equipped ? "Yes" : "No"}</p>
         ${variantHint}
       </div>

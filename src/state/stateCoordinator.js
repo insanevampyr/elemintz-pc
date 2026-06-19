@@ -1,4 +1,5 @@
 import { ProfileSystem } from "./profileSystem.js";
+import { SpecialCosmeticRegistryStore } from "./specialCosmeticRegistryStore.js";
 import { SaveSystem } from "./saveSystem.js";
 import { SettingsService } from "./settingsService.js";
 import {
@@ -27,7 +28,8 @@ import {
   getStoreViewForProfile,
   grantCosmeticItem,
   grantFounderStatus,
-  grantSupporterPass
+  grantSupporterPass,
+  mergePublicSpecialCosmeticMetadata
 } from "./storeSystem.js";
 import {
   acknowledgeMilestoneChestReward,
@@ -979,6 +981,8 @@ export class StateCoordinator {
     this.profiles = new ProfileSystem(options);
     this.saves = new SaveSystem(options);
     this.settings = new SettingsService(options);
+    this.specialCosmeticRegistry =
+      options.specialCosmeticRegistryStore ?? new SpecialCosmeticRegistryStore(options);
     this.random = typeof options.random === "function" ? options.random : Math.random;
     this.getActiveBoostEvent =
       typeof options.getActiveBoostEvent === "function"
@@ -996,7 +1000,7 @@ export class StateCoordinator {
     return run;
   }
 
-  buildCosmeticsView(profile) {
+  buildCosmeticsView(profile, specialRecords = []) {
     const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
     const randomizeAfterEachMatch = normalizeCosmeticRandomizationPreferences(snapshot.preferences);
     return {
@@ -1005,13 +1009,21 @@ export class StateCoordinator {
       snapshot,
       equipped: snapshot.equipped,
       owned: snapshot.owned,
-      catalog: getCosmeticCatalogForProfile(profile),
+      catalog: mergePublicSpecialCosmeticMetadata(
+        getCosmeticCatalogForProfile(profile),
+        specialRecords
+      ),
       preferences: {
         randomizeBackgroundEachMatch: Boolean(randomizeAfterEachMatch.background),
         randomizeAfterEachMatch
       },
       loadouts: getCosmeticLoadoutsForProfile(profile)
     };
+  }
+
+  async buildCosmeticsViewWithSpecialMetadata(profile) {
+    const records = await this.specialCosmeticRegistry.listRecords();
+    return this.buildCosmeticsView(profile, records);
   }
 
   async claimDailyLoginReward(username, nowMs = Date.now(), { random = Math.random } = {}) {
@@ -1862,7 +1874,8 @@ export class StateCoordinator {
 
   async getStore(username) {
     const profile = await this.profiles.ensureProfile(username);
-    return getStoreViewForProfile(profile);
+    const records = await this.specialCosmeticRegistry.listRecords();
+    return getStoreViewForProfile(profile, { specialRecords: records });
   }
 
   async getDailyElementChestStatus(username, nowMs = Date.now()) {
@@ -2327,14 +2340,13 @@ export class StateCoordinator {
 
     return {
       profile,
-      cosmetics: this.buildCosmeticsView(profile)
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
     };
   }
 
   async getCosmetics(username) {
     const profile = await this.profiles.ensureProfile(username);
-
-    return this.buildCosmeticsView(profile);
+    return this.buildCosmeticsViewWithSpecialMetadata(profile);
   }
 
   async updateCosmeticPreferences({ username, patch = {} }) {
@@ -2364,7 +2376,7 @@ export class StateCoordinator {
 
     return {
       profile,
-      cosmetics: this.buildCosmeticsView(profile)
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
     };
   }
 
@@ -2411,7 +2423,7 @@ export class StateCoordinator {
 
     return {
       profile,
-      cosmetics: this.buildCosmeticsView(profile)
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
     };
   }
 
@@ -2422,7 +2434,7 @@ export class StateCoordinator {
 
     return {
       profile,
-      cosmetics: this.buildCosmeticsView(profile)
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
     };
   }
 
@@ -2433,7 +2445,7 @@ export class StateCoordinator {
 
     return {
       profile,
-      cosmetics: this.buildCosmeticsView(profile)
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
     };
   }
 
@@ -2444,7 +2456,7 @@ export class StateCoordinator {
 
     return {
       profile,
-      cosmetics: this.buildCosmeticsView(profile)
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
     };
   }
 
@@ -2457,7 +2469,7 @@ export class StateCoordinator {
 
     return {
       profile,
-      cosmetics: this.buildCosmeticsView(profile),
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile),
       newlyUnlockedSlots: noticeResult?.newlyUnlockedSlots ?? [],
       nextUnlockLevel: noticeResult?.nextUnlockLevel ?? null
     };

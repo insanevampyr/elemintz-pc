@@ -231,6 +231,90 @@ test("cosmetics: Unique rarity does not imply special metadata behavior", () => 
   assert.equal(normalized.saleLimitMode, "unlimited");
 });
 
+test("cosmetics: owned Unique remains visible with Created For metadata when unavailable in Store", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-owned-unique-"));
+  const state = new StateCoordinator({ dataDir });
+  const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalRarity = fixture.rarity;
+
+  try {
+    fixture.rarity = "Unique";
+    const seeded = await state.specialCosmeticRegistry.upsertConfig({
+      cosmeticId: fixture.id,
+      status: "assigned",
+      assignmentStatus: "assigned",
+      createdForUsername: "CopyCell",
+      grantOnly: false,
+      shopEligible: true,
+      shopListed: false,
+      storeHidden: true,
+      rotationOnly: false,
+      price: 750,
+      saleLimitMode: "limited",
+      saleLimitTotal: 1,
+      saleLimitSold: 1,
+      adminNotes: "must remain private"
+    });
+    await state.specialCosmeticRegistry.store.write({
+      version: 1,
+      records: [{ ...seeded, saleLimitSold: 1 }]
+    });
+    await state.profiles.updateProfile("Enab", (profile) => ({
+      ...profile,
+      ownedCosmetics: {
+        ...profile.ownedCosmetics,
+        avatar: [...profile.ownedCosmetics.avatar, fixture.id]
+      }
+    }));
+
+    const cosmetics = await state.getCosmetics("Enab");
+    const ownedItem = cosmetics.catalog.avatar.find((item) => item.id === fixture.id);
+
+    assert.equal(ownedItem?.owned, true);
+    assert.equal(ownedItem?.rarity, "Unique");
+    assert.equal(ownedItem?.createdForUsername, "CopyCell");
+    assert.equal(ownedItem?.shopListed, false);
+    assert.equal(ownedItem?.storeHidden, true);
+    assert.equal(ownedItem?.saleLimitSold, 1);
+    assert.equal("adminNotes" in ownedItem, false);
+    assert.equal((await state.getStore("Enab")).catalog.avatar.some((item) => item.id === fixture.id), false);
+
+    const equipped = await state.equipCosmetic({
+      username: "Enab",
+      type: "avatar",
+      cosmeticId: fixture.id
+    });
+    const equippedItem = equipped.cosmetics.catalog.avatar.find((item) => item.id === fixture.id);
+    assert.equal(equippedItem?.equipped, true);
+    assert.equal(equippedItem?.createdForUsername, "CopyCell");
+
+    await state.specialCosmeticRegistry.updateShopConfig({
+      cosmeticId: fixture.id,
+      config: {
+        grantOnly: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: false,
+        rotationOnly: false,
+        price: 750,
+        saleLimitMode: "limited",
+        saleLimitTotal: 1
+      }
+    });
+    assert.equal(
+      (await state.getStore("Enab")).catalog.avatar.some((item) => item.id === fixture.id),
+      false
+    );
+
+    const creatorCosmetics = await state.getCosmetics("CopyCell");
+    const creatorItem = creatorCosmetics.catalog.avatar.find((item) => item.id === fixture.id);
+    assert.equal(creatorItem?.createdForUsername, "CopyCell");
+    assert.equal(creatorItem?.owned, false);
+  } finally {
+    fixture.rarity = originalRarity;
+  }
+});
+
 function buildCompletedMatch({
   winner = "p1",
   rounds = 3,

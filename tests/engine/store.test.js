@@ -75,45 +75,195 @@ test("store: token purchase flow deducts currency and grants ownership", async (
   assert.ok(bought.profile.ownedCosmetics.avatar.includes("fireavatarF"));
 });
 
-test("store: future special metadata remains inert until later enforcement passes", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-inert-metadata-"));
+test("store: Unique registry config controls display and purchase remains blocked", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-unique-display-"));
   const state = new StateCoordinator({ dataDir: dir });
   const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
   const original = {
-    grantOnly: fixture.grantOnly,
-    shopListed: fixture.shopListed,
-    assignmentStatus: fixture.assignmentStatus,
-    uniqueOwnerUsername: fixture.uniqueOwnerUsername,
-    royalty: fixture.royalty,
-    saleLimitMode: fixture.saleLimitMode,
-    saleLimitTotal: fixture.saleLimitTotal,
-    saleLimitSold: fixture.saleLimitSold
+    rarity: fixture.rarity
   };
 
   try {
-    fixture.grantOnly = true;
-    fixture.shopListed = false;
-    fixture.assignmentStatus = "assigned";
-    fixture.uniqueOwnerUsername = "MetadataOwner";
-    fixture.royalty = {
-      enabled: true,
-      recipientUsername: "MetadataOwner",
-      tokenPercent: 10
-    };
-    fixture.saleLimitMode = "limited";
-    fixture.saleLimitTotal = 0;
-    fixture.saleLimitSold = 0;
-
-    const result = await state.buyStoreItem({
-      username: "InertMetadataBuyer",
-      type: "avatar",
-      cosmeticId: "fireavatarF"
+    fixture.rarity = "Unique";
+    assert.equal(
+      (await state.getStore("UniqueBuyer")).catalog.avatar.some((item) => item.id === fixture.id),
+      false
+    );
+    await state.specialCosmeticRegistry.upsertConfig({
+      cosmeticId: fixture.id,
+      status: "approved",
+      assignmentStatus: "assigned",
+      createdForUsername: "CopyCell",
+      royalty: {
+        enabled: true,
+        recipientUsername: "RoyaltyRecipient",
+        tokenPercent: 10
+      },
+      adminNotes: "private admin note"
+    });
+    await state.specialCosmeticRegistry.updateShopConfig({
+      cosmeticId: fixture.id,
+      config: {
+        grantOnly: false,
+        shopEligible: false,
+        shopListed: true,
+        storeHidden: false,
+        rotationOnly: false,
+        price: 750,
+        saleLimitMode: "limited",
+        saleLimitTotal: 10
+      }
     });
 
-    assert.equal(result.purchase.status, "purchased");
-    assert.ok(result.profile.ownedCosmetics.avatar.includes("fireavatarF"));
+    assert.equal(
+      (await state.getStore("UniqueBuyer")).catalog.avatar.some((item) => item.id === fixture.id),
+      false
+    );
+
+    await state.specialCosmeticRegistry.updateShopConfig({
+      cosmeticId: fixture.id,
+      config: {
+        grantOnly: false,
+        shopEligible: true,
+        shopListed: false,
+        storeHidden: false,
+        rotationOnly: false,
+        price: 750,
+        saleLimitMode: "limited",
+        saleLimitTotal: 10
+      }
+    });
+    assert.equal(
+      (await state.getStore("UniqueBuyer")).catalog.avatar.some((item) => item.id === fixture.id),
+      false
+    );
+
+    await state.specialCosmeticRegistry.updateShopConfig({
+      cosmeticId: fixture.id,
+      config: {
+        grantOnly: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: true,
+        rotationOnly: false,
+        price: 750,
+        saleLimitMode: "limited",
+        saleLimitTotal: 10
+      }
+    });
+    assert.equal(
+      (await state.getStore("UniqueBuyer")).catalog.avatar.some((item) => item.id === fixture.id),
+      false
+    );
+
+    const configured = await state.specialCosmeticRegistry.updateShopConfig({
+      cosmeticId: fixture.id,
+      config: {
+        grantOnly: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: false,
+        rotationOnly: false,
+        price: 750,
+        saleLimitMode: "limited",
+        saleLimitTotal: 10
+      }
+    });
+    await state.specialCosmeticRegistry.store.write({
+      version: 1,
+      records: [{ ...configured, saleLimitSold: 7 }]
+    });
+
+    const visibleStore = await state.getStore("UniqueBuyer");
+    const visibleItem = visibleStore.catalog.avatar.find((item) => item.id === fixture.id);
+    assert.equal(visibleItem?.rarity, "Unique");
+    assert.equal(visibleItem?.createdForUsername, "CopyCell");
+    assert.equal(visibleItem?.price, 750);
+    assert.equal(visibleItem?.saleLimitMode, "limited");
+    assert.equal(visibleItem?.saleLimitTotal, 10);
+    assert.equal(visibleItem?.saleLimitSold, 7);
+    assert.equal("adminNotes" in visibleItem, false);
+    assert.equal(visibleItem?.royalty?.enabled, false);
+    assert.equal(visibleItem?.royalty?.recipientUsername, null);
+
+    const buyerBefore = await state.profiles.ensureProfile("UniqueBuyer");
+    const royaltyBefore = await state.profiles.updateProfile("RoyaltyRecipient", {
+      tokens: 123
+    });
+    await assert.rejects(
+      state.buyStoreItem({
+        username: "UniqueBuyer",
+        type: "avatar",
+        cosmeticId: fixture.id
+      }),
+      /purchase ledger is active/
+    );
+    const buyerAfter = await state.profiles.ensureProfile("UniqueBuyer");
+    const royaltyAfter = await state.profiles.ensureProfile("RoyaltyRecipient");
+    const registryAfter = await state.specialCosmeticRegistry.getRecord(fixture.id);
+
+    assert.equal(buyerAfter.tokens, buyerBefore.tokens);
+    assert.equal(buyerAfter.ownedCosmetics.avatar.includes(fixture.id), false);
+    assert.equal(royaltyAfter.tokens, royaltyBefore.tokens);
+    assert.equal(registryAfter.saleLimitSold, 7);
+
+    await state.specialCosmeticRegistry.store.write({
+      version: 1,
+      records: [{
+        ...registryAfter,
+        saleLimitSold: 10,
+        royalty: {
+          enabled: true,
+          recipientUsername: "RoyaltyRecipient",
+          tokenPercent: 10
+        }
+      }]
+    });
+    const soldOutItem = (await state.getStore("UniqueBuyer")).catalog.avatar.find(
+      (item) => item.id === fixture.id
+    );
+    assert.equal(soldOutItem?.saleLimitSold, 10);
+    assert.equal(soldOutItem?.saleLimitTotal, 10);
   } finally {
     Object.assign(fixture, original);
+  }
+});
+
+test("store: createdForUsername does not grant Unique ownership", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-created-for-"));
+  const state = new StateCoordinator({ dataDir: dir });
+  const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalRarity = fixture.rarity;
+
+  try {
+    fixture.rarity = "Unique";
+    await state.specialCosmeticRegistry.upsertConfig({
+      cosmeticId: fixture.id,
+      status: "assigned",
+      assignmentStatus: "assigned",
+      createdForUsername: "CopyCell",
+      grantOnly: false,
+      shopEligible: true,
+      shopListed: true,
+      storeHidden: false,
+      rotationOnly: false,
+      price: 750,
+      saleLimitMode: "unlimited",
+      saleLimitTotal: null,
+      saleLimitSold: 0,
+      royalty: {
+        enabled: true,
+        recipientUsername: "CopyCell",
+        tokenPercent: 10
+      }
+    });
+
+    const store = await state.getStore("CopyCell");
+    const item = store.catalog.avatar.find((entry) => entry.id === fixture.id);
+    assert.equal(item?.createdForUsername, "CopyCell");
+    assert.equal(item?.owned, false);
+  } finally {
+    fixture.rarity = originalRarity;
   }
 });
 

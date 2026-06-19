@@ -3642,6 +3642,56 @@ test("multiplayer foundation: approved Unique grants are authoritative, idempote
     assert.equal(assignment?.ok, true);
     assert.equal(assignment?.result?.createdForUsername, "CopyCell");
     assert.equal("adminNotes" in (assignment?.result ?? {}), false);
+    const configResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:updateSpecialCosmeticConfig",
+        {
+          sessionToken: login?.session?.token,
+          cosmeticId: "fireavatarF",
+          config: {
+            grantOnly: false,
+            shopEligible: true,
+            shopListed: true,
+            storeHidden: true,
+            rotationOnly: true,
+            price: 900,
+            saleLimitMode: "limited",
+            saleLimitTotal: 1
+          }
+        },
+        resolve
+      );
+    });
+    assert.equal(configResponse?.ok, true);
+    assert.equal(configResponse?.result?.price, 900);
+    assert.equal(configResponse?.result?.saleLimitSold, 0);
+    assert.equal(configResponse?.result?.createdForUsername, "CopyCell");
+    assert.equal("adminNotes" in (configResponse?.result ?? {}), false);
+    const rejectedSoldOverride = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:updateSpecialCosmeticConfig",
+        {
+          sessionToken: login?.session?.token,
+          cosmeticId: "fireavatarF",
+          config: {
+            grantOnly: false,
+            shopEligible: true,
+            shopListed: true,
+            storeHidden: false,
+            rotationOnly: false,
+            price: 900,
+            saleLimitMode: "limited",
+            saleLimitTotal: 1,
+            saleLimitSold: 1
+          }
+        },
+        resolve
+      );
+    });
+    assert.equal(rejectedSoldOverride?.ok, false);
+    assert.match(rejectedSoldOverride?.error?.message ?? "", /saleLimitSold is server-owned/);
+    const profileAfterConfig = await coordinator.profiles.getProfile("UniqueGrantTarget");
+    assert.equal(profileAfterConfig.ownedCosmetics.avatar.includes("fireavatarF"), false);
     const payload = {
       sessionToken: login?.session?.token,
       transactionId: "unique-grant-transaction-1",
@@ -3668,8 +3718,9 @@ test("multiplayer foundation: approved Unique grants are authoritative, idempote
     const registryRecord = await specialCosmeticRegistryStore.getRecord("fireavatarF");
     assert.equal(registryRecord.status, "granted");
     assert.equal(registryRecord.createdForUsername, "CopyCell");
-    assert.equal(registryRecord.shopListed, false);
+    assert.equal(registryRecord.shopListed, true);
     assert.equal(registryRecord.storeHidden, true);
+    assert.equal(registryRecord.price, 900);
     assert.equal(registryRecord.saleLimitSold, 0);
     assert.equal(
       (await coordinator.profiles.getProfile("RoyaltyRecipient")).tokens,

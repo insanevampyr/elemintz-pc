@@ -116,10 +116,15 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
     name: "Unique Fixture",
     image: "avatars/default.png",
     rarity: "Unique",
-    price: 0,
+    price: 750,
     purchasable: false,
     owned: true,
-    equipped: true
+    equipped: true,
+    createdForUsername: "CopyCell",
+    saleLimitMode: "limited",
+    saleLimitTotal: 10,
+    saleLimitSold: 7,
+    adminNotes: "private admin note"
   };
   const storeCatalog = {
     avatar: [{ ...uniqueItem, purchasable: true, owned: false, equipped: false }],
@@ -178,13 +183,57 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   assert.match(storeHtml, /data-store-rarity-filter="Unique"/);
   assert.match(storeHtml, /data-store-rarity="Unique"/);
   assert.match(storeHtml, /cosmetic-rarity-label rarity-unique">Unique<\/span>/);
+  assert.match(storeHtml, /Price: 750 Tokens/);
+  assert.match(storeHtml, /Created For: CopyCell/);
+  assert.match(storeHtml, /Limited: 3 of 10 available/);
+  assert.match(storeHtml, /data-unique-purchase-blocked="true">Purchase support pending<\/button>/);
+  assert.doesNotMatch(storeHtml, /data-buy-id="fixture_unique_avatar"/);
+  assert.doesNotMatch(storeHtml, /private admin note/);
   assert.match(cosmeticsHtml, /data-cosmetic-rarity-filter="Unique"/);
   assert.match(cosmeticsHtml, /data-cosmetic-rarity="Unique"/);
   assert.match(cosmeticsHtml, /cosmetic-rarity-label rarity-unique">Unique<\/span>/);
+  assert.match(cosmeticsHtml, /Owned by You/);
+  assert.match(cosmeticsHtml, /Created For: CopyCell/);
+  assert.doesNotMatch(cosmeticsHtml, /private admin note/);
   assert.match(profileHtml, /cosmetic-rarity-label rarity-unique" data-profile-trophy-rarity="true">Unique<\/span>/);
   assert.deepEqual(sortedTrophies.map((item) => item.rarity), ["Unique", "Legendary"]);
   assert.equal(normalizeCosmeticRarity("Unique"), "Unique");
   assert.match(renderHiddenHandSummary(2, "card-back.png", "Unique"), /hidden-hand-summary rarity-unique/);
+});
+
+test("ui: sold-out Unique Store item remains visible and blocked", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 5000,
+      supporterPass: false,
+      catalog: {
+        avatar: [{
+          id: "fixture_sold_out_unique",
+          name: "Sold Out Unique",
+          image: "avatars/default.png",
+          rarity: "Unique",
+          price: 900,
+          purchasable: true,
+          owned: false,
+          equipped: false,
+          createdForUsername: "CopyCell",
+          saleLimitMode: "limited",
+          saleLimitTotal: 10,
+          saleLimitSold: 10
+        }],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(html, /data-unique-availability="sold-out">Sold Out<\/p>/);
+  assert.match(html, /data-unique-purchase-blocked="true">Purchase support pending<\/button>/);
+  assert.doesNotMatch(html, /data-buy-id="fixture_sold_out_unique"/);
 });
 
 test("ui: Unique rarity style contracts are present", () => {

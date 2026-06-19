@@ -22,6 +22,7 @@ const FOUNDER_REWARD_BUNDLE = Object.freeze([
   Object.freeze({ type: "badge", cosmeticId: "supporter_badge" }),
   Object.freeze({ type: "cardBack", cosmeticId: "founder_deluxe_card_back" })
 ]);
+const UNIQUE_STORE_DISPLAY_STATUSES = new Set(["approved", "assigned", "granted"]);
 
 function safeTokens(value) {
   const numeric = Number(value);
@@ -120,13 +121,64 @@ export function normalizeProfileStore(profile) {
   };
 }
 
-export function buildStoreCatalog(profile) {
+export function mergePublicSpecialCosmeticMetadata(catalog, records = []) {
+  const recordsById = new Map(
+    (Array.isArray(records) ? records : [])
+      .filter((record) => record?.cosmeticId)
+      .map((record) => [record.cosmeticId, record])
+  );
+
+  return Object.fromEntries(
+    Object.entries(catalog ?? {}).map(([type, items]) => [
+      type,
+      (Array.isArray(items) ? items : []).map((item) => {
+        const record = recordsById.get(item.id);
+        if (!record || item.rarity !== "Unique") {
+          return item;
+        }
+        return {
+          ...item,
+          status: record.status,
+          assignmentStatus: record.assignmentStatus,
+          createdForUsername: record.createdForUsername ?? null,
+          grantOnly: record.grantOnly,
+          shopEligible: record.shopEligible,
+          shopListed: record.shopListed,
+          storeHidden: record.storeHidden,
+          rotationOnly: record.rotationOnly,
+          price: record.price,
+          saleLimitMode: record.saleLimitMode,
+          saleLimitTotal: record.saleLimitTotal,
+          saleLimitSold: record.saleLimitSold
+        };
+      })
+    ])
+  );
+}
+
+export function buildStoreCatalog(profile, { specialRecords = [] } = {}) {
   const normalized = normalizeProfileStore(profile);
-  const catalog = getCosmeticCatalogForProfile(normalized);
+  const configuredUniqueIds = new Set(
+    (Array.isArray(specialRecords) ? specialRecords : [])
+      .filter((record) => UNIQUE_STORE_DISPLAY_STATUSES.has(record?.status))
+      .map((record) => record.cosmeticId)
+  );
+  const catalog = mergePublicSpecialCosmeticMetadata(
+    getCosmeticCatalogForProfile(normalized),
+    specialRecords
+  );
   return Object.fromEntries(
     Object.entries(catalog).map(([type, items]) => [
       type,
-      items.filter((item) => !item.storeHidden && !item.rotationOnly && item.shopEligible !== false)
+      items.filter(
+        (item) =>
+          !item.storeHidden &&
+          !item.rotationOnly &&
+          item.shopEligible !== false &&
+          (item.rarity !== "Unique" || configuredUniqueIds.has(item.id)) &&
+          (item.rarity !== "Unique" || item.shopListed !== false) &&
+          (item.rarity !== "Unique" || !item.owned)
+      )
     ])
   );
 }
@@ -147,19 +199,20 @@ export function buildFeaturedRotationCatalog(profile, { allowLimitedCosmeticIds 
         (item) =>
           !item.storeHidden &&
           item.shopEligible !== false &&
+          (item.rarity !== "Unique" || item.shopListed !== false) &&
           (!item.rotationOnly || allowedLimitedIds.has(item.id))
       )
     ])
   );
 }
 
-export function getStoreViewForProfile(profile) {
+export function getStoreViewForProfile(profile, { specialRecords = [] } = {}) {
   const normalized = normalizeProfileStore(profile);
 
   return {
     tokens: normalized.tokens,
     supporterPass: normalized.supporterPass,
-    catalog: buildStoreCatalog(normalized)
+    catalog: buildStoreCatalog(normalized, { specialRecords })
   };
 }
 
@@ -212,6 +265,10 @@ export function buyStoreItem(profile, { type, cosmeticId }) {
       },
       tracking: getTrackingMilestoneDiff(previousTracking, previousTracking)
     };
+  }
+
+  if (item.rarity === "Unique") {
+    throw new Error("Unique cosmetic purchases are unavailable until the purchase ledger is active.");
   }
 
   if (!item.purchasable) {

@@ -328,12 +328,37 @@ function renderActions(type, item) {
     ? `<button class="btn" data-equip-type="${type}" data-equip-id="${item.id}" ${item.equipped ? "disabled" : ""}>${item.equipped ? "Equipped" : "Equip"}</button>`
     : "";
 
+  const uniquePurchaseButton =
+    !item.owned && item.rarity === "Unique"
+      ? `<button class="btn btn-primary" type="button" disabled data-unique-purchase-blocked="true">Purchase support pending</button>`
+      : "";
   const buyButton =
-    !item.owned && item.purchasable
+    !item.owned && item.purchasable && item.rarity !== "Unique"
       ? `<button class="btn btn-primary" data-buy-type="${type}" data-buy-id="${item.id}" data-buy-default-label="Buy">Buy</button>`
       : "";
 
-  return `${equipButton}${buyButton}`;
+  return `${equipButton}${uniquePurchaseButton}${buyButton}`;
+}
+
+function renderUniqueStoreMetadata(item) {
+  if (item.rarity !== "Unique") {
+    return "";
+  }
+  const createdFor = String(item.createdForUsername ?? "").trim();
+  const sold = Math.max(0, Math.floor(Number(item.saleLimitSold ?? 0) || 0));
+  const total = Math.max(0, Math.floor(Number(item.saleLimitTotal ?? 0) || 0));
+  const isLimited = item.saleLimitMode === "limited" && total > 0;
+  const remaining = isLimited ? Math.max(0, total - sold) : null;
+  const availability = isLimited
+    ? remaining <= 0
+      ? "Sold Out"
+      : `Limited: ${remaining} of ${total} available`
+    : "Available";
+
+  return `
+    ${createdFor ? `<p>Created For: ${escapeAttribute(createdFor)}</p>` : ""}
+    <p data-unique-availability="${remaining === 0 ? "sold-out" : "available"}">${availability}</p>
+  `;
 }
 
 function renderStoreItem(type, item, originalIndex) {
@@ -364,7 +389,8 @@ function renderStoreItem(type, item, originalIndex) {
         <p>Type: ${getCosmeticTypeLabel(type, item)}</p>
         <p>Status: ${item.owned ? "Owned" : "Not Owned"}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
-        <p>Price: ${item.purchasable ? `${item.price} Tokens` : "Not Purchasable"}</p>
+        <p>Price: ${item.rarity === "Unique" && item.price != null && Number.isInteger(Number(item.price)) ? `${item.price} Tokens` : item.purchasable ? `${item.price} Tokens` : "Not Purchasable"}</p>
+        ${renderUniqueStoreMetadata(item)}
         <p>Unlock: ${unlockText(item)}</p>
         ${variantHint}
       </div>

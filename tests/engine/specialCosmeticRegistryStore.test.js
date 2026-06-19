@@ -151,6 +151,147 @@ test("special cosmetic registry: Created For can remain unassigned, assign later
   assert.equal(cleared.createdForUsername, null);
 });
 
+test("special cosmetic registry: shop config validates and preserves server-owned sold count and private fields", async () => {
+  const dataDir = await createTempDataDir();
+  const store = new SpecialCosmeticRegistryStore({ dataDir });
+  const seeded = await store.upsertConfig({
+    cosmeticId: "avatar_shop_config_fixture",
+    status: "approved",
+    assignmentStatus: "assigned",
+    createdForUsername: "CopyCell",
+    saleLimitMode: "limited",
+    saleLimitTotal: 10,
+    saleLimitSold: 4,
+    royalty: {
+      enabled: true,
+      recipientUsername: "Creator",
+      tokenPercent: 10
+    },
+    adminNotes: "private"
+  });
+  await store.store.write({
+    version: 1,
+    records: [{ ...seeded, saleLimitSold: 4 }]
+  });
+
+  const configured = await store.updateShopConfig({
+    cosmeticId: "avatar_shop_config_fixture",
+    config: {
+      grantOnly: false,
+      shopEligible: true,
+      shopListed: true,
+      storeHidden: true,
+      rotationOnly: true,
+      price: 750,
+      saleLimitMode: "limited",
+      saleLimitTotal: 8
+    }
+  });
+
+  assert.equal(configured.price, 750);
+  assert.equal(configured.saleLimitSold, 4);
+  assert.equal(configured.saleLimitTotal, 8);
+  assert.equal(configured.createdForUsername, "CopyCell");
+  assert.equal(configured.adminNotes, "private");
+  assert.equal(configured.royalty.recipientUsername, "Creator");
+
+  await assert.rejects(
+    store.updateShopConfig({
+      cosmeticId: "avatar_shop_config_fixture",
+      config: {
+        grantOnly: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: false,
+        rotationOnly: false,
+        price: 500,
+        saleLimitMode: "limited",
+        saleLimitTotal: 3
+      }
+    }),
+    /cannot be lower than existing saleLimitSold/
+  );
+  await assert.rejects(
+    store.updateShopConfig({
+      cosmeticId: "avatar_shop_config_fixture",
+      config: {
+        grantOnly: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: false,
+        rotationOnly: false,
+        price: 500,
+        saleLimitMode: "limited",
+        saleLimitTotal: 8,
+        saleLimitSold: 0
+      }
+    }),
+    /saleLimitSold is server-owned/
+  );
+});
+
+test("special cosmetic registry: shop config rejects invalid modes, totals, booleans, and prices", async () => {
+  const dataDir = await createTempDataDir();
+  const store = new SpecialCosmeticRegistryStore({ dataDir });
+  await store.upsertConfig({
+    cosmeticId: "title_shop_config_fixture",
+    status: "approved"
+  });
+  const validBase = {
+    grantOnly: true,
+    shopEligible: false,
+    shopListed: false,
+    storeHidden: false,
+    rotationOnly: false,
+    price: null,
+    saleLimitMode: "unlimited",
+    saleLimitTotal: null
+  };
+
+  const unlimited = await store.updateShopConfig({
+    cosmeticId: "title_shop_config_fixture",
+    config: validBase
+  });
+  assert.equal(unlimited.saleLimitTotal, null);
+  assert.equal(unlimited.price, null);
+
+  await assert.rejects(
+    store.updateShopConfig({
+      cosmeticId: "title_shop_config_fixture",
+      config: { ...validBase, saleLimitMode: "daily" }
+    }),
+    /Invalid saleLimitMode/
+  );
+  await assert.rejects(
+    store.updateShopConfig({
+      cosmeticId: "title_shop_config_fixture",
+      config: { ...validBase, saleLimitMode: "limited", saleLimitTotal: 0 }
+    }),
+    /positive integer/
+  );
+  await assert.rejects(
+    store.updateShopConfig({
+      cosmeticId: "title_shop_config_fixture",
+      config: { ...validBase, saleLimitTotal: 5 }
+    }),
+    /must be null/
+  );
+  await assert.rejects(
+    store.updateShopConfig({
+      cosmeticId: "title_shop_config_fixture",
+      config: { ...validBase, shopListed: "true" }
+    }),
+    /shopListed must be a boolean/
+  );
+  await assert.rejects(
+    store.updateShopConfig({
+      cosmeticId: "title_shop_config_fixture",
+      config: { ...validBase, price: 12.5 }
+    }),
+    /non-negative integer/
+  );
+});
+
 test("special cosmetic registry: persistence does not enforce shop listing or trigger grants", async () => {
   const dataDir = await createTempDataDir();
   const registry = new SpecialCosmeticRegistryStore({ dataDir });

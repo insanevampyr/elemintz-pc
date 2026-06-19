@@ -43,6 +43,14 @@ function normalizeNonNegativeInteger(value, fallback = 0) {
   return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : fallback;
 }
 
+function normalizeOptionalTokenPrice(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : null;
+}
+
 function normalizeTimestamp(value, fallback) {
   const parsed = Date.parse(String(value ?? ""));
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : fallback;
@@ -100,6 +108,7 @@ export function normalizeSpecialCosmeticRecord(record = {}, { now = new Date().t
     shopListed: typeof source.shopListed === "boolean" ? source.shopListed : false,
     storeHidden: typeof source.storeHidden === "boolean" ? source.storeHidden : false,
     rotationOnly: typeof source.rotationOnly === "boolean" ? source.rotationOnly : false,
+    price: normalizeOptionalTokenPrice(source.price),
     saleLimitMode,
     saleLimitTotal,
     saleLimitSold,
@@ -232,6 +241,83 @@ export class SpecialCosmeticRegistryStore {
               : !normalizedUsername && current.status === "assigned"
                 ? "approved"
                 : current.status,
+          updatedAt: now
+        },
+        { now }
+      );
+      registry.records[index] = next;
+      await this.store.write(registry);
+      return clone(next);
+    });
+  }
+
+  async updateShopConfig({ cosmeticId, config } = {}) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safeCosmeticId = normalizeRequiredId(cosmeticId);
+      const index = registry.records.findIndex((entry) => entry.cosmeticId === safeCosmeticId);
+      if (index === -1) {
+        throw new Error(`Unknown special cosmetic '${safeCosmeticId}'.`);
+      }
+      const current = registry.records[index];
+      if (!["approved", "assigned", "granted"].includes(current.status)) {
+        throw new Error("Special cosmetic must be approved before shop configuration.");
+      }
+      const source = config && typeof config === "object" && !Array.isArray(config) ? config : {};
+      if (Object.prototype.hasOwnProperty.call(source, "saleLimitSold")) {
+        throw new Error("saleLimitSold is server-owned and cannot be set by Admin.");
+      }
+      for (const field of [
+        "grantOnly",
+        "shopEligible",
+        "shopListed",
+        "storeHidden",
+        "rotationOnly"
+      ]) {
+        if (typeof source[field] !== "boolean") {
+          throw new Error(`${field} must be a boolean.`);
+        }
+      }
+      if (!SPECIAL_COSMETIC_SALE_LIMIT_MODES.includes(source.saleLimitMode)) {
+        throw new Error(`Invalid saleLimitMode '${String(source.saleLimitMode ?? "")}'.`);
+      }
+
+      let price = null;
+      if (source.price != null && source.price !== "") {
+        const numericPrice = Number(source.price);
+        if (!Number.isInteger(numericPrice) || numericPrice < 0) {
+          throw new Error("price must be a non-negative integer token amount or null.");
+        }
+        price = numericPrice;
+      }
+
+      let saleLimitTotal = null;
+      if (source.saleLimitMode === "limited") {
+        const numericTotal = Number(source.saleLimitTotal);
+        if (!Number.isInteger(numericTotal) || numericTotal <= 0) {
+          throw new Error("saleLimitTotal must be a positive integer when saleLimitMode is 'limited'.");
+        }
+        if (numericTotal < current.saleLimitSold) {
+          throw new Error("saleLimitTotal cannot be lower than existing saleLimitSold.");
+        }
+        saleLimitTotal = numericTotal;
+      } else if (source.saleLimitTotal != null) {
+        throw new Error("saleLimitTotal must be null when saleLimitMode is 'unlimited'.");
+      }
+
+      const next = normalizeSpecialCosmeticRecord(
+        {
+          ...current,
+          grantOnly: source.grantOnly,
+          shopEligible: source.shopEligible,
+          shopListed: source.shopListed,
+          storeHidden: source.storeHidden,
+          rotationOnly: source.rotationOnly,
+          price,
+          saleLimitMode: source.saleLimitMode,
+          saleLimitTotal,
+          saleLimitSold: current.saleLimitSold,
           updatedAt: now
         },
         { now }

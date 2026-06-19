@@ -3023,6 +3023,33 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:updateSpecialCosmeticConfig", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof specialCosmeticRegistryStore?.updateShopConfig !== "function") {
+          throw Object.assign(new Error("Special cosmetic registry is not available."), {
+            code: "SPECIAL_COSMETIC_REGISTRY_UNAVAILABLE"
+          });
+        }
+        const record = await specialCosmeticRegistryStore.updateShopConfig({
+          cosmeticId: payload?.cosmeticId,
+          config: payload?.config
+        });
+        respond({
+          ok: true,
+          result: buildPublicSpecialCosmeticRecord(record)
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "SPECIAL_COSMETIC_CONFIG_FAILED"));
+      }
+    });
+
     socket.on("admin:grantSpecialCosmetic", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
