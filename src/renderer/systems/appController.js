@@ -48,6 +48,7 @@ import { deriveLevelFromXp, MAX_LEVEL } from "../../state/levelRewardsSystem.js"
 import { listGauntletRivals, resolveGauntletRivalById } from "../../engine/gauntletRivals.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { bindCosmeticHoverPreview } from "../ui/shared/cosmeticHoverPreview.js";
+import { renderMatchCompleteVisualShell } from "../ui/shared/matchCompleteVisualShell.js";
 import { MATCH_TAUNT_FEED_LIMIT, MATCH_TAUNT_PRESETS } from "../ui/shared/playSurfaceShared.js";
 import { getUpdateSafetyState as buildUpdateSafetyState, isSafeForUpdateRestart as computeIsSafeForUpdateRestart } from "./updateSafety.js";
 import {
@@ -7610,18 +7611,21 @@ export class AppController {
       `
       : "";
 
-    const bodyHtml = `
-      <section class="match-complete-modal ${outcomeClass}">
+    const bodyHtml = renderMatchCompleteVisualShell({
+      variant: "modal",
+      rootClassName: outcomeClass,
+      headerHtml: `
         <header class="match-complete-hero">
           <p class="match-complete-kicker">Match Complete</p>
           <h4 class="match-complete-outcome">${outcomeLabel}</h4>
           <p class="match-complete-subtitle">${outcomeSubtitle}</p>
           <p class="match-complete-captured">${escapeHtml(leftName)} • ${leftCaptured} | ${escapeHtml(rightName)} • ${rightCaptured}</p>
-        </header>
+        </header>`,
+      summaryHtml: `
         <p class="match-complete-helper">Captured totals reflect opponent cards won across the full match.</p>
         ${featuredRivalLossHelper}
-        ${gauntletSummaryHtml}
-
+        ${gauntletSummaryHtml}`,
+      statsHtml: `
         <section class="match-complete-stats">
           <div class="match-complete-stat">
             <span class="match-complete-stat-label">Captured Opponent Cards</span>
@@ -7648,16 +7652,14 @@ export class AppController {
         <section class="match-complete-meta">
           <p><strong>Mode:</strong> ${escapeHtml(mode)}</p>
           <p><strong>End Reason:</strong> ${escapeHtml(match.endReason ?? "normal")}</p>
-        </section>
-
-        ${rewardSummary}
-
+        </section>`,
+      rewardsHtml: rewardSummary,
+      actionsHtml: `
         <div class="match-complete-actions">
           <button id="match-complete-play-again" class="btn btn-primary">Play Again</button>
           <button id="match-complete-return-menu" class="btn">Return to Menu</button>
-        </div>
-      </section>
-    `;
+        </div>`
+    });
 
     return {
       title: gauntletSummary ? "Gauntlet Run Ended" : "Match Complete",
@@ -7698,39 +7700,41 @@ export class AppController {
     if (Math.max(0, Number(xpConversionTokenBonus ?? 0)) > 0) {
       milestoneLines.push(`Max Level Bonus: +${Math.max(0, Number(xpConversionTokenBonus ?? 0))} Tokens`);
     }
-    this.modalManager.show({
-      title: "Gauntlet Victory!",
-      bodyHtml: `
-        <section class="match-complete-modal is-victory">
-          <header class="match-complete-hero">
-            <p class="match-complete-kicker">Gauntlet Victory!</p>
-            <h4 class="match-complete-outcome">Streak: ${Math.max(0, Number(streak ?? 0))}</h4>
-            <p class="match-complete-subtitle">Next Rival: ${escapeHtml(nextRival?.displayName ?? "Unknown Rival")}</p>
-            <p class="match-complete-helper">${escapeHtml(nextRival?.title ?? "Arena Rival")}</p>
-            ${
-              nextRival?.hint
-                ? `<p class="match-complete-helper">${escapeHtml(nextRival.hint)}</p>`
-                : ""
-            }
-          </header>
+    const bodyHtml = renderMatchCompleteVisualShell({
+      variant: "modal",
+      rootClassName: "is-victory",
+      headerHtml: `
+        <header class="match-complete-hero">
+          <p class="match-complete-kicker">Gauntlet Victory!</p>
+          <h4 class="match-complete-outcome">Streak: ${Math.max(0, Number(streak ?? 0))}</h4>
+          <p class="match-complete-subtitle">Next Rival: ${escapeHtml(nextRival?.displayName ?? "Unknown Rival")}</p>
+          <p class="match-complete-helper">${escapeHtml(nextRival?.title ?? "Arena Rival")}</p>
           ${
-            milestoneLines.length > 0
-              ? `
-          <section class="match-complete-gauntlet-summary">
-            <p class="match-complete-helper">Milestone Reward!</p>
-            <div class="match-complete-meta">
-              ${milestoneLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
-            </div>
-          </section>
-          `
+            nextRival?.hint
+              ? `<p class="match-complete-helper">${escapeHtml(nextRival.hint)}</p>`
               : ""
           }
-          <div class="match-complete-actions">
-            <button id="gauntlet-continue-btn" class="btn btn-primary">Continue Gauntlet</button>
-            <button id="gauntlet-return-menu-btn" class="btn">Return to Menu</button>
+        </header>`,
+      summaryHtml:
+        milestoneLines.length > 0
+          ? `
+        <section class="match-complete-gauntlet-summary">
+          <p class="match-complete-helper">Milestone Reward!</p>
+          <div class="match-complete-meta">
+            ${milestoneLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
           </div>
         </section>
-      `,
+      `
+          : "",
+      actionsHtml: `
+        <div class="match-complete-actions">
+          <button id="gauntlet-continue-btn" class="btn btn-primary">Continue Gauntlet</button>
+          <button id="gauntlet-return-menu-btn" class="btn">Return to Menu</button>
+        </div>`
+    });
+    this.modalManager.show({
+      title: "Gauntlet Victory!",
+      bodyHtml,
       actions: []
     });
 

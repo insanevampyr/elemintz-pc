@@ -20,6 +20,7 @@ import {
 import { renderActiveMatchLayout } from "../shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../shared/battleStatusSummary.js";
 import { renderLowerHudLayout } from "../shared/lowerHudLayout.js";
+import { renderMatchCompleteVisualShell } from "../shared/matchCompleteVisualShell.js";
 import { renderWarPileSummaryPresentation } from "../shared/warPileSummaryPresentation.js";
 
 const ELEMENT_ORDER = ["fire", "earth", "wind", "water"];
@@ -1489,14 +1490,15 @@ export const onlinePlayScreen = {
             ${battleResultView && !activeBoardVisible && room?.status === "full" && !matchComplete ? renderSharedBattleResultPanel(battleResultView) : ""}
             ${
               matchComplete
-                ? `
-                  <section class="panel stack-sm">
-                    <h3 class="section-title">Match Complete</h3>
+                ? renderMatchCompleteVisualShell({
+                    variant: "online",
+                    headerHtml: '<h3 class="section-title">Match Complete</h3>',
+                    summaryHtml: `
                     <p><strong>Winner:</strong> ${escapeHtml(matchComplete.winnerLabel)}</p>
                     ${matchComplete.winReason ? `<p><strong>Why:</strong> ${escapeHtml(String(matchComplete.winReason).replaceAll("_", " "))}</p>` : ""}
                     <p><strong>Host Ready:</strong> ${matchComplete.hostReady ? "Yes" : "No"}</p>
-                    <p><strong>Guest Ready:</strong> ${matchComplete.guestReady ? "Yes" : "No"}</p>
-                    ${
+                    <p><strong>Guest Ready:</strong> ${matchComplete.guestReady ? "Yes" : "No"}</p>`,
+                    rewardsHtml:
                       matchComplete.rewardDecision
                         ? `
                           <section class="stack-sm">
@@ -1507,23 +1509,23 @@ export const onlinePlayScreen = {
                             <p><strong>Basic Chests Waiting:</strong> ${escapeHtml(formatBasicChestWaitingLine(context.profile))}</p>
                           </section>
                         `
-                        : ""
-                    }
+                        : "",
+                    extraHtml: `
                     ${renderOnlineChallengeSummary(context)}
                     ${
                       matchComplete.ownReady && !roomLifecycle?.rematchUnavailable
                         ? "<p><strong>Rematch:</strong> Waiting for opponent.</p>"
                         : ""
                     }
-                    ${roomLifecycle?.rematchUnavailable ? "<p><strong>Rematch Unavailable</strong></p>" : ""}
+                    ${roomLifecycle?.rematchUnavailable ? "<p><strong>Rematch Unavailable</strong></p>" : ""}`,
+                    actionsHtml: `
                     ${
                       matchComplete.opponentProfileUsername
                         ? '<button id="online-view-opponent-profile-btn" class="btn">View Opponent Profile</button>'
                         : ""
                     }
-                    <button id="online-ready-rematch-btn" class="btn" ${(matchComplete.ownReady || matchComplete.rematchRequestInFlight || roomLifecycle?.rematchUnavailable) ? "disabled" : ""}>${matchComplete.rematchRequestInFlight ? "Sending..." : matchComplete.ownReady ? "Waiting for Opponent..." : "Ready for Rematch"}</button>
-                  </section>
-                `
+                    <button id="online-ready-rematch-btn" class="btn" ${(matchComplete.ownReady || matchComplete.rematchRequestInFlight || roomLifecycle?.rematchUnavailable) ? "disabled" : ""}>${matchComplete.rematchRequestInFlight ? "Sending..." : matchComplete.ownReady ? "Waiting for Opponent..." : "Ready for Rematch"}</button>`
+                  })
                 : ""
             }
           </div>

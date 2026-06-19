@@ -25,6 +25,7 @@ import { renderBattleExpressionsFeed, renderBattleExpressionsPanel } from "../..
 import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatchLayout.js";
 import { renderBattleStatusSummary } from "../../src/renderer/ui/shared/battleStatusSummary.js";
 import { renderLowerHudLayout } from "../../src/renderer/ui/shared/lowerHudLayout.js";
+import { renderMatchCompleteVisualShell } from "../../src/renderer/ui/shared/matchCompleteVisualShell.js";
 import { renderPlayerHeader } from "../../src/renderer/ui/shared/playSurfaceShared.js";
 import {
   buildCenterRoundHeadline,
@@ -202,6 +203,50 @@ test("ui: shared lower HUD layout preserves variant wrappers, zone order, and ch
     /class="online-play-status-zone online-play-status-zone-center" data-online-status-zone="center" data-online-status-center-result="true"/
   );
   assert.match(onlineHtml, /class="online-play-status-zone online-play-status-zone-right" data-online-status-zone="right"/);
+});
+
+test("ui: shared match complete visual shell preserves variants, slot order, attributes, and child markup", () => {
+  const headerHtml = '<header id="complete-header">Header & trusted</header>';
+  const summaryHtml = '<section id="complete-summary">Summary</section>';
+  const statsHtml = '<section id="complete-stats">Stats</section>';
+  const rewardsHtml = '<section id="complete-rewards">Rewards</section>';
+  const extraHtml = '<section id="complete-extra">Extra</section>';
+  const actionsHtml = '<div id="complete-actions"><button id="trusted-action">Act</button></div>';
+  const modalHtml = renderMatchCompleteVisualShell({
+    variant: "modal",
+    headerHtml,
+    summaryHtml,
+    statsHtml,
+    rewardsHtml,
+    extraHtml,
+    actionsHtml,
+    rootClassName: "is-victory extra-root",
+    rootDataAttributes: 'data-extra-root="true"'
+  });
+  const onlineHtml = renderMatchCompleteVisualShell({
+    variant: "online",
+    headerHtml,
+    actionsHtml
+  });
+  const emptyHtml = renderMatchCompleteVisualShell({ variant: "modal" });
+
+  assert.match(modalHtml, /class="match-complete-modal is-victory extra-root"/);
+  assert.match(modalHtml, /data-extra-root="true"/);
+  assert.ok(modalHtml.indexOf(headerHtml) < modalHtml.indexOf(summaryHtml));
+  assert.ok(modalHtml.indexOf(summaryHtml) < modalHtml.indexOf(statsHtml));
+  assert.ok(modalHtml.indexOf(statsHtml) < modalHtml.indexOf(rewardsHtml));
+  assert.ok(modalHtml.indexOf(rewardsHtml) < modalHtml.indexOf(extraHtml));
+  assert.ok(modalHtml.indexOf(extraHtml) < modalHtml.indexOf(actionsHtml));
+  assert.match(modalHtml, /Header & trusted/);
+  assert.match(modalHtml, /id="trusted-action"/);
+
+  assert.match(onlineHtml, /class="panel stack-sm"/);
+  assert.doesNotMatch(onlineHtml, /match-complete-modal/);
+  assert.match(onlineHtml, /id="complete-header"/);
+  assert.match(onlineHtml, /id="complete-actions"/);
+
+  assert.match(emptyHtml, /class="match-complete-modal"/);
+  assert.doesNotMatch(emptyHtml, /undefined|null/);
 });
 
 test("ui: shared player header preserves identity structure, fallbacks, and cosmetic metadata", () => {
