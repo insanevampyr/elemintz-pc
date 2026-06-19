@@ -1,5 +1,9 @@
 import { ProfileSystem } from "./profileSystem.js";
-import { SpecialCosmeticRegistryStore } from "./specialCosmeticRegistryStore.js";
+import { AdminGrantStore } from "./adminGrantStore.js";
+import {
+  MAX_UNIQUE_ROYALTY_TOKEN_PERCENT,
+  SpecialCosmeticRegistryStore
+} from "./specialCosmeticRegistryStore.js";
 import {
   normalizeStorePurchaseTransactionId,
   StorePurchaseLedgerStore
@@ -1025,6 +1029,43 @@ function validateUniquePurchaseConfiguration({
   }
 }
 
+function buildUniqueRoyaltyPlan({ record, price, recipientProfile, transactionId }) {
+  const royalty = record?.royalty ?? {};
+  if (royalty.enabled !== true) {
+    return {
+      enabled: false,
+      recipientUsername: null,
+      tokenPercent: 0,
+      amount: 0,
+      status: "none"
+    };
+  }
+  const recipientUsername = String(royalty.recipientUsername ?? "").trim();
+  const tokenPercent = Number(royalty.tokenPercent);
+  if (!recipientUsername || !recipientProfile) {
+    throw new Error("Configured royalty recipient is invalid.");
+  }
+  if (
+    !Number.isFinite(tokenPercent) ||
+    tokenPercent <= 0 ||
+    tokenPercent > MAX_UNIQUE_ROYALTY_TOKEN_PERCENT
+  ) {
+    throw new Error("Configured royalty token percent is invalid.");
+  }
+  if (!Number.isInteger(price) || price < 0) {
+    throw new Error("Unique cosmetic price is missing or invalid.");
+  }
+  const amount = Math.min(price, Math.floor((price * tokenPercent) / 100));
+  return {
+    enabled: true,
+    recipientUsername,
+    tokenPercent,
+    amount,
+    status: amount > 0 ? "paid" : "skipped",
+    transactionId
+  };
+}
+
 export class StateCoordinator {
   constructor(options = {}) {
     this.profiles = new ProfileSystem(options);
@@ -1034,6 +1075,8 @@ export class StateCoordinator {
       options.specialCosmeticRegistryStore ?? new SpecialCosmeticRegistryStore(options);
     this.storePurchaseLedger =
       options.storePurchaseLedgerStore ?? new StorePurchaseLedgerStore(options);
+    this.adminGrantStore =
+      options.adminGrantStore ?? new AdminGrantStore(options);
     this.uniquePurchaseQueue = Promise.resolve();
     this.random = typeof options.random === "function" ? options.random : Math.random;
     this.getActiveBoostEvent =
@@ -1965,6 +2008,125 @@ export class StateCoordinator {
     };
   }
 
+  async resolveUniqueRoyaltyPlan({ record, price, transactionId }) {
+    const recipientUsername = String(record?.royalty?.recipientUsername ?? "").trim();
+    const recipientProfile =
+      record?.royalty?.enabled === true && recipientUsername
+        ? await this.profiles.getProfile(recipientUsername)
+        : null;
+    return buildUniqueRoyaltyPlan({
+      record,
+      price,
+      recipientProfile,
+      transactionId
+    });
+  }
+
+  async applyUniquePurchaseProfiles({
+    buyerUsername,
+    type,
+    cosmeticId,
+    price,
+    transactionId,
+    royaltyPlan
+  }) {
+    let purchaseResult = null;
+    const recipientUsername = royaltyPlan.amount > 0
+      ? royaltyPlan.recipientUsername
+      : buyerUsername;
+    const committed = await this.profiles.updateProfilesAtomically(
+      [buyerUsername, recipientUsername],
+      (profiles) => {
+        const buyerCurrent = profiles[buyerUsername];
+        const recipientCurrent = profiles[recipientUsername];
+        const alreadyPaid = recipientCurrent.storeRoyaltyPayouts?.appliedTransactionIds?.includes(
+          transactionId
+        );
+        purchaseResult = buyConfiguredUniqueStoreItem(buyerCurrent, {
+          type,
+          cosmeticId,
+          price
+        });
+
+        let buyerNext = purchaseResult.profile;
+        let recipientNext = recipientCurrent;
+        if (royaltyPlan.amount > 0 && !alreadyPaid) {
+          const appliedTransactionIds = [
+            ...(recipientCurrent.storeRoyaltyPayouts?.appliedTransactionIds ?? []),
+            transactionId
+          ].slice(-100);
+          recipientNext = {
+            ...recipientCurrent,
+            tokens: Math.max(0, Number(recipientCurrent.tokens ?? 0)) + royaltyPlan.amount,
+            storeRoyaltyPayouts: { appliedTransactionIds }
+          };
+          if (recipientUsername === buyerUsername) {
+            buyerNext = {
+              ...buyerNext,
+              tokens: Math.max(0, Number(buyerNext.tokens ?? 0)) + royaltyPlan.amount,
+              storeRoyaltyPayouts: { appliedTransactionIds }
+            };
+          }
+        }
+
+        return recipientUsername === buyerUsername
+          ? { [buyerUsername]: buyerNext }
+          : {
+              [buyerUsername]: buyerNext,
+              [recipientUsername]: recipientNext
+            };
+      }
+    );
+
+    return {
+      profile: committed[buyerUsername],
+      recipientProfile: royaltyPlan.amount > 0
+        ? committed[royaltyPlan.recipientUsername]
+        : null,
+      purchaseResult
+    };
+  }
+
+  async queueUniqueRoyaltyNotice({
+    transactionId,
+    recipientUsername,
+    amount,
+    cosmeticName
+  }) {
+    if (!recipientUsername || amount <= 0) {
+      return "none";
+    }
+    const noticeTransactionId = `royalty:${transactionId}`;
+    const start = await this.adminGrantStore.beginTransaction({
+      transactionId: noticeTransactionId,
+      timestamp: new Date().toISOString(),
+      adminId: "store_purchase_authority",
+      targetUsername: recipientUsername,
+      grantType: "unique_store_royalty",
+      payload: {
+        xp: 0,
+        tokens: amount,
+        chests: [],
+        cosmetic: null,
+        noticeMessage:
+          `EleMintz has sent you ${amount} Tokens from purchases of Unique cosmetic: ${cosmeticName}.`
+      }
+    });
+    if (!start.duplicate) {
+      await this.adminGrantStore.finalizeTransaction({
+        transactionId: noticeTransactionId,
+        status: "success",
+        result: {
+          noticeMessage:
+            `EleMintz has sent you ${amount} Tokens from purchases of Unique cosmetic: ${cosmeticName}.`
+        },
+        confirmationStatus: "player_offline",
+        error: null
+      });
+    }
+    return "queued";
+  }
+
   async completeUniqueStorePurchase({ username, type, cosmeticId, transactionId }) {
     const safeTransactionId = normalizeStorePurchaseTransactionId(transactionId);
     if (!safeTransactionId) {
@@ -1992,6 +2154,7 @@ export class StateCoordinator {
               duplicate: true
             },
             tracking: existing.result?.tracking ?? null,
+            royalty: existing.result?.royalty ?? null,
             transaction: {
               transactionId: safeTransactionId,
               status: "completed",
@@ -2006,11 +2169,37 @@ export class StateCoordinator {
         if (existing.status === "processing") {
           const profileBefore = await this.profiles.getProfile(username);
           const record = await this.specialCosmeticRegistry.getRecord(cosmeticId);
-          if (!profileBefore || !record) {
+          const definition = getCosmeticDefinition(type, cosmeticId);
+          if (!profileBefore || !record || !definition) {
             throw new Error("Purchase failed; try again");
           }
+          const royaltyPlan = {
+            enabled: existing.royaltyEnabled,
+            recipientUsername: existing.royaltyRecipientUsername,
+            tokenPercent: existing.royaltyTokenPercent,
+            amount: existing.royaltyAmount,
+            status: existing.royaltyAmount > 0 ? "paid" : existing.royaltyStatus === "skipped" ? "skipped" : "none"
+          };
 
           if (profileBefore.ownedCosmetics?.[type]?.includes(cosmeticId)) {
+            if (royaltyPlan.amount > 0) {
+              const recipientProfile = await this.profiles.getProfile(
+                royaltyPlan.recipientUsername
+              );
+              if (
+                !recipientProfile?.storeRoyaltyPayouts?.appliedTransactionIds?.includes(
+                  safeTransactionId
+                )
+              ) {
+                throw new Error("Purchase recovery requires royalty payout review.");
+              }
+            }
+            const royaltyNotificationStatus = await this.queueUniqueRoyaltyNotice({
+              transactionId: safeTransactionId,
+              recipientUsername: royaltyPlan.recipientUsername,
+              amount: royaltyPlan.amount,
+              cosmeticName: definition.name
+            });
             const recoveredResult = {
               purchase: {
                 status: "purchased",
@@ -2020,12 +2209,25 @@ export class StateCoordinator {
                 tokensLeft: profileBefore.tokens,
                 duplicate: true
               },
-              tracking: null
+              tracking: null,
+              royalty: {
+                enabled: royaltyPlan.enabled,
+                recipientUsername: royaltyPlan.recipientUsername,
+                tokenPercent: royaltyPlan.tokenPercent,
+                amount: royaltyPlan.amount,
+                status: royaltyPlan.status,
+                notificationStatus: royaltyNotificationStatus
+              }
             };
             await this.storePurchaseLedger.finalizeTransaction({
               transactionId: safeTransactionId,
               status: "completed",
-              result: recoveredResult
+              result: recoveredResult,
+              updates: {
+                royaltyStatus: royaltyPlan.status,
+                royaltyPaidAt: royaltyPlan.amount > 0 ? new Date().toISOString() : null,
+                royaltyNotificationStatus
+              }
             });
             return {
               profile: profileBefore,
@@ -2059,26 +2261,47 @@ export class StateCoordinator {
           let recoveredPurchase = null;
           let recoveredProfileCommitted = false;
           try {
-            const profile = await this.profiles.updateProfile(username, (current) => {
-              recoveredPurchase = buyConfiguredUniqueStoreItem(current, {
-                type,
-                cosmeticId,
-                price: existing.price
-              });
-              return recoveredPurchase.profile;
+            const appliedProfiles = await this.applyUniquePurchaseProfiles({
+              buyerUsername: username,
+              type,
+              cosmeticId,
+              price: existing.price,
+              transactionId: safeTransactionId,
+              royaltyPlan
             });
+            const profile = appliedProfiles.profile;
+            recoveredPurchase = appliedProfiles.purchaseResult;
             recoveredProfileCommitted = true;
+            const royaltyNotificationStatus = await this.queueUniqueRoyaltyNotice({
+              transactionId: safeTransactionId,
+              recipientUsername: royaltyPlan.recipientUsername,
+              amount: royaltyPlan.amount,
+              cosmeticName: definition.name
+            });
             const recoveredResult = {
               purchase: {
                 ...recoveredPurchase.purchase,
                 duplicate: true
               },
-              tracking: recoveredPurchase.tracking
+              tracking: recoveredPurchase.tracking,
+              royalty: {
+                enabled: royaltyPlan.enabled,
+                recipientUsername: royaltyPlan.recipientUsername,
+                tokenPercent: royaltyPlan.tokenPercent,
+                amount: royaltyPlan.amount,
+                status: royaltyPlan.status,
+                notificationStatus: royaltyNotificationStatus
+              }
             };
             await this.storePurchaseLedger.finalizeTransaction({
               transactionId: safeTransactionId,
               status: "completed",
-              result: recoveredResult
+              result: recoveredResult,
+              updates: {
+                royaltyStatus: royaltyPlan.status,
+                royaltyPaidAt: royaltyPlan.amount > 0 ? new Date().toISOString() : null,
+                royaltyNotificationStatus
+              }
             });
             return {
               profile,
@@ -2106,6 +2329,7 @@ export class StateCoordinator {
       const definition = getCosmeticDefinition(type, cosmeticId);
       const profileBefore = await this.profiles.getProfile(username);
       const record = await this.specialCosmeticRegistry.getRecord(cosmeticId);
+      let royaltyPlan = null;
 
       try {
         validateUniquePurchaseConfiguration({
@@ -2114,6 +2338,11 @@ export class StateCoordinator {
           record,
           type,
           cosmeticId
+        });
+        royaltyPlan = await this.resolveUniqueRoyaltyPlan({
+          record,
+          price: record.price,
+          transactionId: safeTransactionId
         });
       } catch (error) {
         const begun = await this.storePurchaseLedger.beginTransaction({
@@ -2124,7 +2353,12 @@ export class StateCoordinator {
           price: record?.price ?? null,
           saleLimitMode: record?.saleLimitMode ?? "unlimited",
           saleLimitSoldBefore: record?.saleLimitSold ?? 0,
-          saleLimitSoldAfter: record?.saleLimitSold ?? 0
+          saleLimitSoldAfter: record?.saleLimitSold ?? 0,
+          royaltyEnabled: record?.royalty?.enabled === true,
+          royaltyRecipientUsername: record?.royalty?.recipientUsername ?? null,
+          royaltyTokenPercent: record?.royalty?.tokenPercent ?? 0,
+          royaltyAmount: 0,
+          royaltyStatus: "failed"
         });
         if (!begun.duplicate) {
           await this.storePurchaseLedger.finalizeTransaction({
@@ -2149,7 +2383,13 @@ export class StateCoordinator {
         price: record.price,
         saleLimitMode: record.saleLimitMode,
         saleLimitSoldBefore: record.saleLimitSold,
-        saleLimitSoldAfter: expectedSoldAfter
+        saleLimitSoldAfter: expectedSoldAfter,
+        royaltyEnabled: royaltyPlan.enabled,
+        royaltyRecipientUsername: royaltyPlan.recipientUsername,
+        royaltyTokenPercent: royaltyPlan.tokenPercent,
+        royaltyAmount: royaltyPlan.amount,
+        royaltyStatus: royaltyPlan.amount > 0 ? "pending" : royaltyPlan.status,
+        royaltyNotificationStatus: royaltyPlan.amount > 0 ? "pending" : "none"
       });
       if (begun.duplicate) {
         throw new Error("Purchase failed; try again");
@@ -2160,24 +2400,45 @@ export class StateCoordinator {
       let profileCommitted = false;
       try {
         reservation = await this.specialCosmeticRegistry.reserveTokenPurchase(cosmeticId);
-        const profile = await this.profiles.updateProfile(username, (current) => {
-          purchaseResult = buyConfiguredUniqueStoreItem(current, {
-            type,
-            cosmeticId,
-            price: reservation.record.price
-          });
-          return purchaseResult.profile;
+        const appliedProfiles = await this.applyUniquePurchaseProfiles({
+          buyerUsername: username,
+          type,
+          cosmeticId,
+          price: reservation.record.price,
+          transactionId: safeTransactionId,
+          royaltyPlan
         });
+        const profile = appliedProfiles.profile;
+        purchaseResult = appliedProfiles.purchaseResult;
         profileCommitted = true;
+        const royaltyNotificationStatus = await this.queueUniqueRoyaltyNotice({
+          transactionId: safeTransactionId,
+          recipientUsername: royaltyPlan.recipientUsername,
+          amount: royaltyPlan.amount,
+          cosmeticName: definition.name
+        });
 
         const ledgerResult = {
           purchase: purchaseResult.purchase,
-          tracking: purchaseResult.tracking
+          tracking: purchaseResult.tracking,
+          royalty: {
+            enabled: royaltyPlan.enabled,
+            recipientUsername: royaltyPlan.recipientUsername,
+            tokenPercent: royaltyPlan.tokenPercent,
+            amount: royaltyPlan.amount,
+            status: royaltyPlan.status,
+            notificationStatus: royaltyNotificationStatus
+          }
         };
         await this.storePurchaseLedger.finalizeTransaction({
           transactionId: safeTransactionId,
           status: "completed",
-          result: ledgerResult
+          result: ledgerResult,
+          updates: {
+            royaltyStatus: royaltyPlan.status,
+            royaltyPaidAt: royaltyPlan.amount > 0 ? new Date().toISOString() : null,
+            royaltyNotificationStatus
+          }
         });
 
         return {

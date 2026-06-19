@@ -4024,6 +4024,21 @@ export function createMultiplayerFoundation({
           ...payload,
           username: sessionResult.session?.profileKey ?? sessionResult.session?.username
         });
+        if (
+          result?.transaction?.duplicate !== true &&
+          Number(result?.royalty?.amount ?? 0) > 0 &&
+          result?.royalty?.recipientUsername
+        ) {
+          const recipientSocketId = sessionStore.getSocketIdByUsername(
+            result.royalty.recipientUsername
+          );
+          if (recipientSocketId) {
+            await deliverPendingAdminNoticesForSession(
+              { profileKey: result.royalty.recipientUsername },
+              recipientSocketId
+            );
+          }
+        }
         respond({
           ok: true,
           result

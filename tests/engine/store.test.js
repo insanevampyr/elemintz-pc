@@ -47,7 +47,13 @@ async function createTempDataDir() {
 async function createConfiguredUniqueState({
   username = "UniqueBuyer",
   tokens = 1000,
-  config = {}
+  config = {},
+  royalty = {
+    enabled: true,
+    recipientUsername: "RoyaltyRecipient",
+    tokenPercent: 10
+  },
+  createRoyaltyRecipient = true
 } = {}) {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -59,11 +65,7 @@ async function createConfiguredUniqueState({
     status: "assigned",
     assignmentStatus: "assigned",
     createdForUsername: "CopyCell",
-    royalty: {
-      enabled: true,
-      recipientUsername: "RoyaltyRecipient",
-      tokenPercent: 10
-    },
+    royalty,
     adminNotes: "private admin note"
   });
   await state.specialCosmeticRegistry.updateShopConfig({
@@ -81,6 +83,9 @@ async function createConfiguredUniqueState({
     }
   });
   await state.profiles.updateProfile(username, { tokens });
+  if (createRoyaltyRecipient && royalty?.enabled && royalty?.recipientUsername) {
+    await state.profiles.ensureProfile(royalty.recipientUsername);
+  }
 
   return {
     dataDir,
@@ -239,6 +244,7 @@ test("store: Unique registry config controls display and authoritative purchase"
     const royaltyBefore = await state.profiles.updateProfile("RoyaltyRecipient", {
       tokens: 123
     });
+    const createdForBefore = await state.profiles.ensureProfile("CopyCell");
     const result = await state.buyStoreItem({
       username: "UniqueBuyer",
       type: "avatar",
@@ -247,12 +253,14 @@ test("store: Unique registry config controls display and authoritative purchase"
     });
     const buyerAfter = await state.profiles.ensureProfile("UniqueBuyer");
     const royaltyAfter = await state.profiles.ensureProfile("RoyaltyRecipient");
+    const createdForAfter = await state.profiles.ensureProfile("CopyCell");
     const registryAfter = await state.specialCosmeticRegistry.getRecord(fixture.id);
 
     assert.equal(result.purchase.status, "purchased");
     assert.equal(buyerAfter.tokens, buyerBefore.tokens - 750);
     assert.equal(buyerAfter.ownedCosmetics.avatar.includes(fixture.id), true);
-    assert.equal(royaltyAfter.tokens, royaltyBefore.tokens);
+    assert.equal(royaltyAfter.tokens, royaltyBefore.tokens + 75);
+    assert.equal(createdForAfter.tokens, createdForBefore.tokens);
     assert.equal(registryAfter.saleLimitSold, 8);
 
     await state.specialCosmeticRegistry.store.write({
@@ -355,12 +363,205 @@ test("store: Unique purchase ledger is durable and duplicate transactionId is id
       1
     );
     assert.equal(record.saleLimitSold, 0);
-    assert.equal(royaltyAfter.tokens, 77);
+    assert.equal(royaltyAfter.tokens, 102);
     assert.equal(ledger.status, "completed");
     assert.equal(ledger.buyerUsername, setup.username);
     assert.equal(ledger.cosmeticId, setup.fixture.id);
     assert.equal(ledger.price, 250);
     assert.equal(ledger.duplicateCount, 2);
+    assert.equal(ledger.royaltyEnabled, true);
+    assert.equal(ledger.royaltyRecipientUsername, "RoyaltyRecipient");
+    assert.equal(ledger.royaltyTokenPercent, 10);
+    assert.equal(ledger.royaltyAmount, 25);
+    assert.equal(ledger.royaltyStatus, "paid");
+    assert.equal(ledger.royaltyNotificationStatus, "queued");
+    assert.ok(ledger.royaltyPaidAt);
+    const royaltyNotice = await setup.state.adminGrantStore.getByTransactionId(
+      "royalty:unique-idempotent-transaction-1"
+    );
+    assert.equal(royaltyNotice.status, "success");
+    assert.equal(royaltyNotice.targetUsername, "RoyaltyRecipient");
+    assert.equal(royaltyNotice.payload.tokens, 25);
+    assert.match(royaltyNotice.result.noticeMessage, /Unique cosmetic: Fire Avatar/);
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: disabled and zero-rounded Unique royalties skip payout safely", async () => {
+  const disabled = await createConfiguredUniqueState({
+    username: "DisabledRoyaltyBuyer",
+    royalty: {
+      enabled: false,
+      recipientUsername: null,
+      tokenPercent: 0
+    }
+  });
+  try {
+    const result = await disabled.state.buyStoreItem({
+      username: disabled.username,
+      type: "avatar",
+      cosmeticId: disabled.fixture.id,
+      transactionId: "unique-disabled-royalty-transaction"
+    });
+    const ledger = await disabled.state.storePurchaseLedger.getByTransactionId(
+      "unique-disabled-royalty-transaction"
+    );
+    assert.equal(result.royalty.status, "none");
+    assert.equal(ledger.royaltyAmount, 0);
+    assert.equal(ledger.royaltyStatus, "none");
+    assert.equal(
+      await disabled.state.adminGrantStore.getByTransactionId(
+        "royalty:unique-disabled-royalty-transaction"
+      ),
+      null
+    );
+  } finally {
+    disabled.restore();
+  }
+
+  const rounded = await createConfiguredUniqueState({
+    username: "RoundedRoyaltyBuyer",
+    config: { price: 1 }
+  });
+  try {
+    const recipientBefore = await rounded.state.profiles.getProfile("RoyaltyRecipient");
+    const result = await rounded.state.buyStoreItem({
+      username: rounded.username,
+      type: "avatar",
+      cosmeticId: rounded.fixture.id,
+      transactionId: "unique-rounded-royalty-transaction"
+    });
+    const recipientAfter = await rounded.state.profiles.getProfile("RoyaltyRecipient");
+    const ledger = await rounded.state.storePurchaseLedger.getByTransactionId(
+      "unique-rounded-royalty-transaction"
+    );
+    assert.equal(result.royalty.amount, 0);
+    assert.equal(result.royalty.status, "skipped");
+    assert.equal(recipientAfter.tokens, recipientBefore.tokens);
+    assert.equal(ledger.royaltyStatus, "skipped");
+  } finally {
+    rounded.restore();
+  }
+});
+
+test("store: processing transaction recovery does not double-pay royalty or duplicate notice", async () => {
+  const setup = await createConfiguredUniqueState({
+    username: "RoyaltyRecoveryBuyer"
+  });
+  try {
+    const transactionId = "unique-royalty-recovery-transaction";
+    await setup.state.buyStoreItem({
+      username: setup.username,
+      type: "avatar",
+      cosmeticId: setup.fixture.id,
+      transactionId
+    });
+    const recipientAfterPurchase = await setup.state.profiles.getProfile("RoyaltyRecipient");
+    const entry = await setup.state.storePurchaseLedger.getByTransactionId(transactionId);
+    await setup.state.storePurchaseLedger.store.write([
+      {
+        ...entry,
+        status: "processing",
+        result: null,
+        completedAt: null,
+        royaltyStatus: "pending",
+        royaltyNotificationStatus: "pending"
+      }
+    ]);
+    await setup.state.adminGrantStore.store.write([]);
+
+    const restarted = new StateCoordinator({ dataDir: setup.dataDir });
+    const recovered = await restarted.buyStoreItem({
+      username: setup.username,
+      type: "avatar",
+      cosmeticId: setup.fixture.id,
+      transactionId
+    });
+    const recipientAfterRecovery = await restarted.profiles.getProfile("RoyaltyRecipient");
+    const recoveredLedger = await restarted.storePurchaseLedger.getByTransactionId(transactionId);
+    const notices = await restarted.adminGrantStore.listEntries();
+
+    assert.equal(recovered.purchase.duplicate, true);
+    assert.equal(recipientAfterRecovery.tokens, recipientAfterPurchase.tokens);
+    assert.equal(recoveredLedger.status, "completed");
+    assert.equal(recoveredLedger.royaltyStatus, "paid");
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].transactionId, `royalty:${transactionId}`);
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: invalid royalty recipient blocks purchase before buyer or inventory mutation", async () => {
+  const setup = await createConfiguredUniqueState({
+    username: "InvalidRoyaltyBuyer",
+    royalty: {
+      enabled: true,
+      recipientUsername: "MissingRoyaltyRecipient",
+      tokenPercent: 10
+    },
+    createRoyaltyRecipient: false,
+    config: {
+      saleLimitMode: "limited",
+      saleLimitTotal: 2
+    }
+  });
+  try {
+    const buyerBefore = await setup.state.profiles.getProfile(setup.username);
+    const inventoryBefore = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    await assert.rejects(
+      setup.state.buyStoreItem({
+        username: setup.username,
+        type: "avatar",
+        cosmeticId: setup.fixture.id,
+        transactionId: "unique-invalid-royalty-recipient"
+      }),
+      /royalty recipient is invalid/
+    );
+    const buyerAfter = await setup.state.profiles.getProfile(setup.username);
+    const inventoryAfter = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    assert.equal(buyerAfter.tokens, buyerBefore.tokens);
+    assert.equal(buyerAfter.ownedCosmetics.avatar.includes(setup.fixture.id), false);
+    assert.equal(inventoryAfter.saleLimitSold, inventoryBefore.saleLimitSold);
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: self-royalty is paid once and remains a positive net token cost", async () => {
+  const setup = await createConfiguredUniqueState({
+    username: "SelfRoyaltyBuyer",
+    royalty: {
+      enabled: true,
+      recipientUsername: "SelfRoyaltyBuyer",
+      tokenPercent: 50
+    }
+  });
+  try {
+    const before = await setup.state.profiles.getProfile(setup.username);
+    const first = await setup.state.buyStoreItem({
+      username: setup.username,
+      type: "avatar",
+      cosmeticId: setup.fixture.id,
+      transactionId: "unique-self-royalty-transaction"
+    });
+    await setup.state.buyStoreItem({
+      username: setup.username,
+      type: "avatar",
+      cosmeticId: setup.fixture.id,
+      transactionId: "unique-self-royalty-transaction"
+    });
+    const after = await setup.state.profiles.getProfile(setup.username);
+
+    assert.equal(first.royalty.amount, 125);
+    assert.equal(after.tokens, before.tokens - 125);
+    assert.equal(
+      after.storeRoyaltyPayouts.appliedTransactionIds.filter(
+        (id) => id === "unique-self-royalty-transaction"
+      ).length,
+      1
+    );
   } finally {
     setup.restore();
   }
@@ -457,6 +658,7 @@ test("store: failed Unique purchases do not mutate tokens, ownership, or invento
     try {
       const before = await setup.state.profiles.getProfile(setup.username);
       const recordBefore = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+      const recipientBefore = await setup.state.profiles.getProfile("RoyaltyRecipient");
       await assert.rejects(
         setup.state.buyStoreItem({
           username: setup.username,
@@ -469,13 +671,22 @@ test("store: failed Unique purchases do not mutate tokens, ownership, or invento
       );
       const after = await setup.state.profiles.getProfile(setup.username);
       const recordAfter = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+      const recipientAfter = await setup.state.profiles.getProfile("RoyaltyRecipient");
       const ledger = await setup.state.storePurchaseLedger.getByTransactionId(
         `unique-rejected-transaction-${index}`
       );
       assert.equal(after.tokens, before.tokens, testCase.name);
       assert.equal(after.ownedCosmetics.avatar.includes(setup.fixture.id), false, testCase.name);
       assert.equal(recordAfter.saleLimitSold, recordBefore.saleLimitSold, testCase.name);
+      assert.equal(recipientAfter.tokens, recipientBefore.tokens, testCase.name);
       assert.equal(ledger.status, "rejected", testCase.name);
+      assert.equal(
+        await setup.state.adminGrantStore.getByTransactionId(
+          `royalty:unique-rejected-transaction-${index}`
+        ),
+        null,
+        testCase.name
+      );
     } finally {
       setup.restore();
     }
@@ -558,6 +769,7 @@ test("store: direct Unique grants do not increment limited sale inventory", asyn
   });
   try {
     const before = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    const recipientBefore = await setup.state.profiles.getProfile("RoyaltyRecipient");
     const grant = await setup.state.grantSpecialCosmetic({
       username: "UniqueGrantRecipient",
       type: "avatar",
@@ -573,9 +785,44 @@ test("store: direct Unique grants do not increment limited sale inventory", asyn
       /Already Owned/
     );
     const after = await setup.state.specialCosmeticRegistry.getRecord(setup.fixture.id);
+    const recipientAfter = await setup.state.profiles.getProfile("RoyaltyRecipient");
 
     assert.equal(grant.cosmeticGrant.status, "granted");
     assert.equal(after.saleLimitSold, before.saleLimitSold);
+    assert.equal(recipientAfter.tokens, recipientBefore.tokens);
+    assert.equal(
+      await setup.state.adminGrantStore.getByTransactionId(
+        "royalty:unique-already-owned-transaction"
+      ),
+      null
+    );
+  } finally {
+    setup.restore();
+  }
+});
+
+test("store: chest and reward paths do not trigger configured Unique royalties", async () => {
+  const setup = await createConfiguredUniqueState({
+    username: "NonPurchaseRewardUser"
+  });
+  try {
+    const recipientBefore = await setup.state.profiles.getProfile("RoyaltyRecipient");
+    await setup.state.grantChest({
+      username: setup.username,
+      chestType: "basic",
+      amount: 1
+    });
+    await setup.state.grantOnlineMatchRewards({
+      username: setup.username,
+      tokens: 10,
+      xp: 5,
+      basicChests: 0
+    });
+    const recipientAfter = await setup.state.profiles.getProfile("RoyaltyRecipient");
+    const notices = await setup.state.adminGrantStore.listEntries();
+
+    assert.equal(recipientAfter.tokens, recipientBefore.tokens);
+    assert.equal(notices.length, 0);
   } finally {
     setup.restore();
   }

@@ -4651,7 +4651,8 @@ test("multiplayer foundation: server-authoritative store purchase deducts tokens
 
 test("multiplayer foundation: Unique Store purchase uses transaction ledger and authoritative inventory", async () => {
   const dataDir = await createTempDataDir();
-  const coordinator = new StateCoordinator({ dataDir });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const coordinator = new StateCoordinator({ dataDir, adminGrantStore });
   const definition = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
   const originalRarity = definition.rarity;
   const foundation = createMultiplayerFoundation({
@@ -4660,9 +4661,11 @@ test("multiplayer foundation: Unique Store purchase uses transaction ledger and 
     profileAuthority: new MultiplayerProfileAuthority({
       coordinator,
       logger: { info: () => {} }
-    })
+    }),
+    adminGrantStore
   });
   let client = null;
+  let recipientClient = null;
 
   try {
     definition.rarity = "Unique";
@@ -4671,6 +4674,11 @@ test("multiplayer foundation: Unique Store purchase uses transaction ledger and 
       status: "assigned",
       assignmentStatus: "assigned",
       createdForUsername: "CopyCell",
+      royalty: {
+        enabled: true,
+        recipientUsername: "RoyaltySocketRecipient",
+        tokenPercent: 25
+      },
       adminNotes: "private server note"
     });
     await coordinator.specialCosmeticRegistry.updateShopConfig({
@@ -4687,11 +4695,18 @@ test("multiplayer foundation: Unique Store purchase uses transaction ledger and 
       }
     });
     await coordinator.profiles.updateProfile("UniqueSocketBuyer", { tokens: 500 });
+    const recipientBefore = await coordinator.profiles.ensureProfile("RoyaltySocketRecipient");
 
     const port = await foundation.start();
     client = await connectClient(port);
+    recipientClient = await connectClient(port);
     const session = await bootstrapSession(client, "UniqueSocketBuyer");
+    const recipientSession = await bootstrapSession(
+      recipientClient,
+      "RoyaltySocketRecipient"
+    );
     assert.equal(session?.ok, true);
+    assert.equal(recipientSession?.ok, true);
 
     const storeBefore = await new Promise((resolve) => {
       client.emit("profile:getStore", {}, resolve);
@@ -4718,13 +4733,21 @@ test("multiplayer foundation: Unique Store purchase uses transaction ledger and 
       cosmeticId: definition.id,
       transactionId: "unique-socket-purchase-transaction"
     };
+    let royaltyNoticeCount = 0;
+    recipientClient.on("admin:grantNotice", () => {
+      royaltyNoticeCount += 1;
+    });
+    const royaltyNoticePromise = waitForEvent(recipientClient, "admin:grantNotice");
     const first = await new Promise((resolve) => {
       client.emit("profile:buyStoreItem", payload, resolve);
     });
+    const royaltyNotice = await royaltyNoticePromise;
     const duplicate = await new Promise((resolve) => {
       client.emit("profile:buyStoreItem", payload, resolve);
     });
+    await new Promise((resolve) => setTimeout(resolve, 25));
     const profile = await coordinator.profiles.getProfile("UniqueSocketBuyer");
+    const recipientAfter = await coordinator.profiles.getProfile("RoyaltySocketRecipient");
     const registry = await coordinator.specialCosmeticRegistry.getRecord(definition.id);
     const ledger = await coordinator.storePurchaseLedger.getByTransactionId(
       payload.transactionId
@@ -4735,12 +4758,21 @@ test("multiplayer foundation: Unique Store purchase uses transaction ledger and 
     assert.equal(duplicate?.ok, true);
     assert.equal(duplicate?.result?.purchase?.duplicate, true);
     assert.equal(profile.tokens, 300);
+    assert.equal(recipientAfter.tokens, recipientBefore.tokens + 50);
     assert.equal(profile.ownedCosmetics.avatar.includes(definition.id), true);
     assert.equal(registry.saleLimitSold, 1);
     assert.equal(ledger.status, "completed");
+    assert.equal(ledger.royaltyAmount, 50);
+    assert.equal(ledger.royaltyStatus, "paid");
+    assert.equal(royaltyNoticeCount, 1);
+    assert.match(
+      royaltyNotice?.message ?? "",
+      /EleMintz has sent you 50 Tokens from purchases of Unique cosmetic: Fire Avatar/
+    );
   } finally {
     definition.rarity = originalRarity;
     client?.disconnect();
+    recipientClient?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }

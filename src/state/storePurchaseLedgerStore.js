@@ -33,6 +33,15 @@ function normalizeEntry(entry = {}) {
     saleLimitMode: entry.saleLimitMode === "limited" ? "limited" : "unlimited",
     saleLimitSoldBefore: Math.max(0, Math.floor(Number(entry.saleLimitSoldBefore ?? 0) || 0)),
     saleLimitSoldAfter: Math.max(0, Math.floor(Number(entry.saleLimitSoldAfter ?? 0) || 0)),
+    royaltyEnabled: entry.royaltyEnabled === true,
+    royaltyRecipientUsername: normalizeUsername(entry.royaltyRecipientUsername),
+    royaltyTokenPercent: Math.max(0, Number(entry.royaltyTokenPercent ?? 0) || 0),
+    royaltyAmount: Math.max(0, Math.floor(Number(entry.royaltyAmount ?? 0) || 0)),
+    royaltyStatus: ["none", "pending", "paid", "skipped", "failed"].includes(entry.royaltyStatus)
+      ? entry.royaltyStatus
+      : "none",
+    royaltyPaidAt: entry.royaltyPaidAt ? String(entry.royaltyPaidAt) : null,
+    royaltyNotificationStatus: String(entry.royaltyNotificationStatus ?? "none"),
     status,
     timestamp: String(entry.timestamp ?? new Date().toISOString()),
     completedAt: entry.completedAt ? String(entry.completedAt) : null,
@@ -102,7 +111,13 @@ export class StorePurchaseLedgerStore {
     });
   }
 
-  async finalizeTransaction({ transactionId, status, result = null, error = null }) {
+  async finalizeTransaction({
+    transactionId,
+    status,
+    result = null,
+    error = null,
+    updates = {}
+  }) {
     return this.runMutation(async () => {
       const safeTransactionId = normalizeStorePurchaseTransactionId(transactionId);
       if (!safeTransactionId) {
@@ -120,6 +135,7 @@ export class StorePurchaseLedgerStore {
 
       entries[index] = normalizeEntry({
         ...entries[index],
+        ...(updates && typeof updates === "object" && !Array.isArray(updates) ? updates : {}),
         status,
         result,
         error,

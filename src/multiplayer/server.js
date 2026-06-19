@@ -49,10 +49,14 @@ const specialCosmeticRegistryStore = new SpecialCosmeticRegistryStore({
 const storePurchaseLedgerStore = new StorePurchaseLedgerStore({
   dataDir
 });
+const adminGrantStore = new AdminGrantStore({
+  dataDir
+});
 const stateCoordinator = new StateCoordinator({
   dataDir,
   specialCosmeticRegistryStore,
   storePurchaseLedgerStore,
+  adminGrantStore,
   getActiveBoostEvent: (options) => boostEventStore.getActiveEvent(options)
 });
 const accountStore = new MultiplayerAccountStore({
@@ -64,9 +68,6 @@ const profileAuthority = new MultiplayerProfileAuthority({
   logger,
   announcementStore,
   accountStore
-});
-const adminGrantStore = new AdminGrantStore({
-  dataDir
 });
 const feedbackStore = new FeedbackStore({
   dataDir,

@@ -650,6 +650,14 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
           .slice(-50)
       : []
   };
+  const normalizedStoreRoyaltyPayouts = {
+    appliedTransactionIds: Array.isArray(validatedProfile?.storeRoyaltyPayouts?.appliedTransactionIds)
+      ? validatedProfile.storeRoyaltyPayouts.appliedTransactionIds
+          .map((entry) => String(entry ?? "").trim())
+          .filter(Boolean)
+          .slice(-100)
+      : []
+  };
 
   let normalized = normalizeProfileDailyChallenges(
     normalizeProfileLevelRewards(
@@ -660,7 +668,8 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
             ...normalizeProfileModeStats(validatedProfile),
             achievements: normalizeAchievementProgressMap(validatedProfile?.achievements),
             onlineDisconnectTracking: normalizedDisconnectTracking,
-            onlineRewardSettlements: normalizedOnlineRewardSettlements
+            onlineRewardSettlements: normalizedOnlineRewardSettlements,
+            storeRoyaltyPayouts: normalizedStoreRoyaltyPayouts
           })
         )
       )
@@ -1001,6 +1010,56 @@ export class ProfileSystem {
       });
 
       return reloaded ?? next;
+    });
+  }
+
+  async updateProfilesAtomically(usernames, updater) {
+    return this.runMutation(async () => {
+      const normalizedUsernames = [...new Set(
+        (Array.isArray(usernames) ? usernames : [])
+          .map((username) => normalizeUsername(username))
+          .filter(Boolean)
+      )];
+      if (normalizedUsernames.length === 0) {
+        throw new Error("At least one username is required for atomic profile updates.");
+      }
+
+      const profiles = await this.readProfilesArray();
+      const currentByUsername = Object.fromEntries(
+        normalizedUsernames.map((username) => {
+          const index = this.findProfileIndex(profiles, username);
+          const current = index === -1
+            ? normalizeProfile(createDefaultProfile(username))
+            : normalizeProfile(profiles[index]);
+          return [username, current];
+        })
+      );
+      const updates = typeof updater === "function"
+        ? updater(currentByUsername)
+        : updater;
+      if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+        throw new Error("Atomic profile updater must return profiles by username.");
+      }
+
+      const nextProfiles = [...profiles];
+      const committed = {};
+      for (const username of normalizedUsernames) {
+        const current = currentByUsername[username];
+        const next = normalizeProfile(updates[username] ?? current);
+        const index = this.findProfileIndex(nextProfiles, username);
+        if (index === -1) {
+          nextProfiles.push(next);
+        } else {
+          nextProfiles[index] = next;
+        }
+        committed[username] = next;
+      }
+
+      await this.store.write(nextProfiles);
+      for (const profile of Object.values(committed)) {
+        this.cacheProfile(profile);
+      }
+      return committed;
     });
   }
 
