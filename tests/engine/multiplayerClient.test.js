@@ -3219,6 +3219,12 @@ test("multiplayer client: room snapshots preserve the server-authoritative match
     room.serverMatchState = createAuthoritativeMatchState({
       roomCode: "ABC123"
     });
+    room.hostCardsTaken = 5;
+    room.guestCardsTaken = 2;
+    room.totalWarClashes = 3;
+    room.serverMatchState.hostCardsTaken = 5;
+    room.serverMatchState.guestCardsTaken = 2;
+    room.serverMatchState.totalWarClashes = 3;
     room.serverMatchState.playerHands.host.fire = 1;
     room.serverMatchState.pendingActions.host = {
       selectedCard: "fire",
@@ -3228,6 +3234,9 @@ test("multiplayer client: room snapshots preserve the server-authoritative match
     client.socket.serverEmit("room:update", room);
 
     assert.deepEqual(client.getState().room?.serverMatchState, room.serverMatchState);
+    assert.equal(client.getState().room?.hostCardsTaken, 5);
+    assert.equal(client.getState().room?.guestCardsTaken, 2);
+    assert.equal(client.getState().room?.totalWarClashes, 3);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }

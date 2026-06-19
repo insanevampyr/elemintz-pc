@@ -48,6 +48,9 @@ function assertCleanFreshMatchState(room, label) {
   assert.equal(room.winReason, null, `${label}: winReason should be cleared`);
   assert.equal(room.hostScore, 0, `${label}: hostScore should reset`);
   assert.equal(room.guestScore, 0, `${label}: guestScore should reset`);
+  assert.equal(room.hostCardsTaken, 0, `${label}: hostCardsTaken should reset`);
+  assert.equal(room.guestCardsTaken, 0, `${label}: guestCardsTaken should reset`);
+  assert.equal(room.totalWarClashes, 0, `${label}: totalWarClashes should reset`);
   assert.equal(room.roundNumber, 1, `${label}: roundNumber should reset`);
   assert.equal(room.warActive, false, `${label}: warActive should reset`);
   assert.equal(room.warDepth, 0, `${label}: warDepth should reset`);
