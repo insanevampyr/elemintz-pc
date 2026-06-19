@@ -768,6 +768,10 @@ input[type="number"] {
   border-color: rgba(237, 196, 103, 0.5);
 }
 
+.hidden-hand-summary.rarity-unique {
+  border-color: rgba(103, 239, 255, 0.66);
+}
+
 .hidden-hand-stack {
   position: relative;
   width: 104px;
@@ -812,6 +816,13 @@ input[type="number"] {
 .online-player-card-back-chip.rarity-legendary {
   border-color: rgba(237, 196, 103, 0.62);
   box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.16);
+}
+
+.hand-slot.rarity-unique,
+.played-slot.rarity-unique,
+.online-player-card-back-chip.rarity-unique {
+  border-color: rgba(103, 239, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(103, 239, 255, 0.2), 0 0 14px rgba(180, 117, 255, 0.14);
 }
 
 .hidden-hand-card-0 {

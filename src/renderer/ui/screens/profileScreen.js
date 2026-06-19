@@ -149,10 +149,11 @@ function safeStat(value) {
 const FLEX_VARIANT_ORDER = Object.freeze(["fire", "earth", "wind", "water"]);
 const TROPHY_SHELF_LIMIT = 3;
 const TROPHY_RARITY_RANK = Object.freeze({
-  Legendary: 0,
-  Epic: 1,
-  Rare: 2,
-  Common: 3
+  Unique: 0,
+  Legendary: 1,
+  Epic: 2,
+  Rare: 3,
+  Common: 4
 });
 const TROPHY_TYPE_LABELS = Object.freeze({
   avatar: "Avatar",

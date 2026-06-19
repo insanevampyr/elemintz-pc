@@ -833,6 +833,10 @@ body {
   box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.28), 0 18px 28px rgba(4, 11, 18, 0.36);
 }
 
+.cosmetic-hover-preview-frame.rarity-unique {
+  box-shadow: inset 0 0 0 1px rgba(103, 239, 255, 0.34), 0 18px 30px rgba(78, 44, 128, 0.42);
+}
+
 .cosmetic-rarity-label {
   font-weight: 700;
 }
@@ -853,6 +857,10 @@ body {
   border-color: rgba(237, 196, 103, 0.58);
 }
 
+.rarity-unique {
+  border-color: rgba(103, 239, 255, 0.7);
+}
+
 .cosmetic-rarity-label.rarity-common {
   color: #b8c0c9;
 }
@@ -869,6 +877,11 @@ body {
   color: #f1cf79;
 }
 
+.cosmetic-rarity-label.rarity-unique {
+  color: #78f3ff;
+  text-shadow: 0 0 10px rgba(180, 117, 255, 0.72);
+}
+
 .cosmetic-item.rarity-common {
   box-shadow: inset 0 0 0 1px rgba(146, 159, 174, 0.14);
 }
@@ -883,6 +896,10 @@ body {
 
 .cosmetic-item.rarity-legendary {
   box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.18);
+}
+
+.cosmetic-item.rarity-unique {
+  box-shadow: inset 0 0 0 1px rgba(103, 239, 255, 0.24), 0 0 18px rgba(180, 117, 255, 0.12);
 }
 
 .cosmetic-item.rarity-common:hover,
@@ -903,6 +920,11 @@ body {
 .cosmetic-item.rarity-legendary:hover,
 .cosmetic-item.rarity-legendary:focus-within {
   box-shadow: inset 0 0 0 1px rgba(237, 196, 103, 0.34), 0 10px 18px rgba(4, 11, 18, 0.26);
+}
+
+.cosmetic-item.rarity-unique:hover,
+.cosmetic-item.rarity-unique:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(103, 239, 255, 0.42), 0 10px 20px rgba(78, 44, 128, 0.34);
 }
 
 .cosmetic-meta p {

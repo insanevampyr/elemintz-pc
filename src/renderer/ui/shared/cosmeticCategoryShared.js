@@ -16,7 +16,7 @@ export const FILTERABLE_CATEGORIES = Object.freeze([
   ["badge", "Badges"]
 ]);
 
-export const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
+export const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary", "Unique"]);
 export const FILTERABLE_ELEMENTS = Object.freeze([
   ["fire", "Fire"],
   ["water", "Water"],
@@ -25,10 +25,11 @@ export const FILTERABLE_ELEMENTS = Object.freeze([
 ]);
 
 export const RARITY_SORT_ORDER = Object.freeze({
-  Legendary: 0,
-  Epic: 1,
-  Rare: 2,
-  Common: 3
+  Unique: 0,
+  Legendary: 1,
+  Epic: 2,
+  Rare: 3,
+  Common: 4
 });
 
 export function createDefaultCategoryViewState() {

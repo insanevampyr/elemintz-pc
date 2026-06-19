@@ -11,7 +11,7 @@ export const RANDOMIZABLE_COSMETIC_TYPES = Object.freeze([
   "cardBack",
   "background"
 ]);
-const RARITY_TIERS = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
+export const COSMETIC_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary", "Unique"]);
 export const SHOP_PRICE_BY_CATEGORY_AND_RARITY = Object.freeze({
   avatar: Object.freeze({
     Common: 200,
@@ -3099,8 +3099,8 @@ function buildUnlockMap() {
 
 const UNLOCK_MAP = buildUnlockMap();
 
-function normalizeRarity(value) {
-  return RARITY_TIERS.includes(value) ? value : "Common";
+export function normalizeCosmeticRarity(value) {
+  return COSMETIC_RARITIES.includes(value) ? value : "Common";
 }
 
 function defaultOwnedMap() {
@@ -3566,7 +3566,7 @@ export function getCosmeticCatalogForProfile(profile) {
 
         return {
           ...item,
-          rarity: normalizeRarity(item.rarity),
+          rarity: normalizeCosmeticRarity(item.rarity),
           owned: normalized.ownedCosmetics[type].includes(item.id),
           equipped:
             type === "elementCardVariant"
@@ -3648,7 +3648,7 @@ export function getCosmeticHoverMetadata(type, id, fallbackName = null) {
   return {
     name: definition.name ?? fallbackName ?? id,
     description,
-    rarity: normalizeRarity(definition.rarity)
+    rarity: normalizeCosmeticRarity(definition.rarity)
   };
 }
 

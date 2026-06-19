@@ -1742,7 +1742,7 @@ export class AppController {
     return {
       searchText: "",
       categories: new Set(["avatar", "background", "cardBack", "elementCardVariant", "title", "badge"]),
-      rarities: new Set(["Common", "Rare", "Epic", "Legendary"]),
+      rarities: new Set(["Common", "Rare", "Epic", "Legendary", "Unique"]),
       elements: new Set(["fire", "water", "earth", "wind"]),
       collections: new Set(),
       showNewFirst: true

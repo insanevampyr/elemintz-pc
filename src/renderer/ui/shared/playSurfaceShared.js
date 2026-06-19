@@ -23,7 +23,7 @@ export const MATCH_TAUNT_PRESETS = Object.freeze([
   "🏆 Wooohooo!"
 ]);
 export const MATCH_TAUNT_FEED_LIMIT = 4;
-const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary"]);
+const SUPPORTED_RARITIES = new Set(["Common", "Rare", "Epic", "Legendary", "Unique"]);
 
 export function normalizeCosmeticRarity(rarity) {
   return SUPPORTED_RARITIES.has(rarity) ? rarity : "Common";

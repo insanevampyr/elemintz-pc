@@ -2,7 +2,8 @@ import { getAssetPath } from "../../utils/dom.js";
 import {
   CATEGORY_ORDER as BASE_CATEGORY_ORDER,
   FILTERABLE_CATEGORIES,
-  FILTERABLE_ELEMENTS
+  FILTERABLE_ELEMENTS,
+  FILTERABLE_RARITIES
 } from "../shared/cosmeticCategoryShared.js";
 import {
   bindCosmeticHoverPreview,
@@ -11,7 +12,6 @@ import {
 } from "../shared/cosmeticHoverPreview.js";
 import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import { getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
-const FILTERABLE_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary"]);
 const CATEGORY_ORDER = BASE_CATEGORY_ORDER.map(([type, label]) => [
   type,
   type === "badge" ? "Badges (Achievement Rewards)" : label

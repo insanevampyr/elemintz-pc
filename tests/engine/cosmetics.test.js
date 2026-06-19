@@ -5,9 +5,12 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  COSMETIC_RARITIES,
   COSMETIC_CATALOG,
   getBaseCosmeticPrice,
-  getCosmeticHoverMetadata
+  getCosmeticCatalogForProfile,
+  getCosmeticHoverMetadata,
+  normalizeCosmeticRarity
 } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
@@ -118,6 +121,26 @@ const SIMPLE_BACKGROUNDS_DEFINITIONS = Object.freeze([
   ["background_glowtide_flats", "Glowtide Flats", "backgrounds/background_glowtide_flats.png"],
   ["background_moonshade_grove", "Moonshade Grove", "backgrounds/background_moonshade_grove.png"]
 ]);
+
+test("cosmetics: Unique is supported without changing invalid rarity fallback behavior", () => {
+  assert.deepEqual(COSMETIC_RARITIES, ["Common", "Rare", "Epic", "Legendary", "Unique"]);
+  assert.equal(normalizeCosmeticRarity("Unique"), "Unique");
+  assert.equal(normalizeCosmeticRarity("Legendary"), "Legendary");
+  assert.equal(normalizeCosmeticRarity("invalid"), "Common");
+
+  const fixture = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalRarity = fixture.rarity;
+  try {
+    fixture.rarity = "Unique";
+    const catalog = getCosmeticCatalogForProfile({});
+    assert.equal(
+      catalog.avatar.find((item) => item.id === "fireavatarF")?.rarity,
+      "Unique"
+    );
+  } finally {
+    fixture.rarity = originalRarity;
+  }
+});
 
 function buildCompletedMatch({
   winner = "p1",

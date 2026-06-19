@@ -26,7 +26,11 @@ import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatc
 import { renderBattleStatusSummary } from "../../src/renderer/ui/shared/battleStatusSummary.js";
 import { renderLowerHudLayout } from "../../src/renderer/ui/shared/lowerHudLayout.js";
 import { renderMatchCompleteVisualShell } from "../../src/renderer/ui/shared/matchCompleteVisualShell.js";
-import { renderPlayerHeader } from "../../src/renderer/ui/shared/playSurfaceShared.js";
+import {
+  normalizeCosmeticRarity,
+  renderHiddenHandSummary,
+  renderPlayerHeader
+} from "../../src/renderer/ui/shared/playSurfaceShared.js";
 import {
   buildCenterRoundHeadline,
   renderCenterRoundPlaceholder,
@@ -105,6 +109,100 @@ function createRendererController() {
     }
   });
 }
+
+test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battle presentation classes", () => {
+  const uniqueItem = {
+    id: "fixture_unique_avatar",
+    name: "Unique Fixture",
+    image: "avatars/default.png",
+    rarity: "Unique",
+    price: 0,
+    purchasable: false,
+    owned: true,
+    equipped: true
+  };
+  const storeCatalog = {
+    avatar: [{ ...uniqueItem, purchasable: true, owned: false, equipped: false }],
+    cardBack: [],
+    background: [],
+    elementCardVariant: [],
+    badge: [],
+    title: []
+  };
+  const ownedCatalog = {
+    avatar: [uniqueItem],
+    cardBack: [],
+    background: [],
+    elementCardVariant: [],
+    badge: [],
+    title: []
+  };
+
+  const storeHtml = storeScreen.render({
+    store: { tokens: 0, supporterPass: false, catalog: storeCatalog },
+    viewState: {}
+  });
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: ownedCatalog
+    },
+    viewState: {}
+  });
+  const profileHtml = profileScreen.render({
+    profile: {
+      username: "UniqueTester",
+      trophyShelf: [{ ...uniqueItem, type: "avatar", typeLabel: "Avatar" }]
+    }
+  });
+  const sortedTrophies = selectTrophyShelfItems(
+    {},
+    {
+      limit: 2,
+      catalog: {
+        avatar: [
+          { ...uniqueItem, equipped: false },
+          {
+            id: "fixture_legendary_avatar",
+            name: "Legendary Fixture",
+            rarity: "Legendary",
+            owned: true,
+            equipped: false
+          }
+        ]
+      }
+    }
+  );
+
+  assert.match(storeHtml, /data-store-rarity-filter="Unique"/);
+  assert.match(storeHtml, /data-store-rarity="Unique"/);
+  assert.match(storeHtml, /cosmetic-rarity-label rarity-unique">Unique<\/span>/);
+  assert.match(cosmeticsHtml, /data-cosmetic-rarity-filter="Unique"/);
+  assert.match(cosmeticsHtml, /data-cosmetic-rarity="Unique"/);
+  assert.match(cosmeticsHtml, /cosmetic-rarity-label rarity-unique">Unique<\/span>/);
+  assert.match(profileHtml, /cosmetic-rarity-label rarity-unique" data-profile-trophy-rarity="true">Unique<\/span>/);
+  assert.deepEqual(sortedTrophies.map((item) => item.rarity), ["Unique", "Legendary"]);
+  assert.equal(normalizeCosmeticRarity("Unique"), "Unique");
+  assert.match(renderHiddenHandSummary(2, "card-back.png", "Unique"), /hidden-hand-summary rarity-unique/);
+});
+
+test("ui: Unique rarity style contracts are present", () => {
+  const layoutCss = fs.readFileSync(
+    new URL("../../src/renderer/styles/layout.css", import.meta.url),
+    "utf8"
+  );
+  const gameCss = fs.readFileSync(
+    new URL("../../src/renderer/styles/game.css", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(layoutCss, /\.cosmetic-hover-preview-frame\.rarity-unique/);
+  assert.match(layoutCss, /\.cosmetic-rarity-label\.rarity-unique/);
+  assert.match(layoutCss, /\.cosmetic-item\.rarity-unique/);
+  assert.match(gameCss, /\.hidden-hand-summary\.rarity-unique/);
+  assert.match(gameCss, /\.hand-slot\.rarity-unique/);
+});
 
 test("ui: shared active match layout preserves variant wrappers, slot order, and child markup", () => {
   const mainSlotHtml = '<article id="main-child">Main & trusted</article>';
