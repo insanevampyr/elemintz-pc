@@ -16754,6 +16754,10 @@ test("ui: online play screen renders match complete and rematch readiness state"
   assert.match(html, /You Gained:<\/strong> \+5 Tokens, \+5 XP/);
   assert.match(html, /id="online-ready-rematch-btn"/);
   assert.match(html, />Ready for Rematch</);
+  assert.match(html, /class="screen screen-online-play"/);
+  assert.doesNotMatch(html, /class="match-complete-modal/);
+  assert.doesNotMatch(html, /id="match-complete-play-again"/);
+  assert.doesNotMatch(html, /id="match-complete-return-menu"/);
   assert.doesNotMatch(html, /Submit Fire/);
 });
 
@@ -23991,6 +23995,9 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   assert.match(payload.bodyHtml, /<strong>Tokens Gained:<\/strong> 0/);
   assert.match(payload.bodyHtml, /id="match-complete-play-again"/);
   assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
+  assert.ok(payload.bodyHtml.indexOf("match-complete-hero") < payload.bodyHtml.indexOf("match-complete-stats"));
+  assert.ok(payload.bodyHtml.indexOf("match-complete-stats") < payload.bodyHtml.indexOf("match-complete-rewards"));
+  assert.ok(payload.bodyHtml.indexOf("match-complete-rewards") < payload.bodyHtml.indexOf("match-complete-actions"));
 });
 
 test("ui: PvE match complete payload shows max level bonus line when xp conversion occurs", () => {
@@ -24562,8 +24569,18 @@ test("ui: match complete payload renders polished local PvP naming and draw stat
       history: [{ result: "p1" }, { result: "p2" }, { result: "war" }, { result: "draw" }]
     },
     {
-      p1: { stats: { cardsCaptured: 4, warsEntered: 3, longestWar: 5 } },
-      p2: { stats: { cardsCaptured: 6, warsEntered: 2, longestWar: 5 } }
+      p1: {
+        stats: { cardsCaptured: 4, warsEntered: 3, longestWar: 5 },
+        xpDelta: 0,
+        tokenDelta: 0,
+        localPvpRewardStatus: { capped: true }
+      },
+      p2: {
+        stats: { cardsCaptured: 6, warsEntered: 2, longestWar: 5 },
+        xpDelta: 0,
+        tokenDelta: 0,
+        localPvpRewardStatus: { capped: true }
+      }
     }
   );
 
@@ -24576,7 +24593,170 @@ test("ui: match complete payload renders polished local PvP naming and draw stat
   assert.match(payload.bodyHtml, /<strong class="match-complete-stat-value">4<\/strong>/);
   assert.doesNotMatch(payload.bodyHtml, /Player 1 •/);
   assert.doesNotMatch(payload.bodyHtml, /Player 2 •/);
+  assert.match(payload.bodyHtml, /<strong>Asha:<\/strong> \+0 XP \/ \+0 Tokens/);
+  assert.match(payload.bodyHtml, /<strong>Bram:<\/strong> \+0 XP \/ \+0 Tokens/);
+  assert.match(payload.bodyHtml, /Local 2-Player rewards are casual and capped daily/);
+  assert.match(payload.bodyHtml, /Daily local reward cap reached/);
+  assert.match(payload.bodyHtml, /id="match-complete-play-again"/);
+  assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
 });
+
+test("ui: local Hotseat match completion stays pending until the privacy pass flow clears", async () => {
+  const controller = createRendererController();
+  const shownPayloads = [];
+  controller.username = "Asha";
+  controller.profile = { username: "Asha" };
+  controller.localPlayers = { p1: "Asha", p2: "Bram" };
+  controller.localProfiles = {
+    p1: { username: "Asha" },
+    p2: { username: "Bram" }
+  };
+  controller.settings = {
+    gameplay: { timerSeconds: 30 },
+    aiDifficulty: "normal",
+    aiOpponentStyle: "default",
+    ui: { reducedMotion: true },
+    audio: { enabled: false }
+  };
+  controller.requireOwnProfileHydratedForAction = () => true;
+  controller.persistLocalPvpResult = async () => ({
+    p1: {
+      stats: { cardsCaptured: 2, warsEntered: 0, longestWar: 0 },
+      xpDelta: 0,
+      tokenDelta: 0,
+      localPvpRewardStatus: { capped: true }
+    },
+    p2: {
+      stats: { cardsCaptured: 1, warsEntered: 0, longestWar: 0 },
+      xpDelta: 0,
+      tokenDelta: 0,
+      localPvpRewardStatus: { capped: true }
+    }
+  });
+  controller.applyPostMatchCosmeticRandomization = async () => {};
+  controller.emitRewardToastsForResult = () => {};
+  controller.handleGameUpdate = () => {};
+  controller.sound = {
+    playMatchComplete: () => {},
+    playRoundResolved: () => {}
+  };
+  controller.showMatchCompleteModal = (payload) => shownPayloads.push(payload);
+
+  try {
+    controller.startGame(MATCH_MODE.LOCAL_PVP);
+    controller.screenFlow = "pass";
+    controller.roundPresentation = { phase: "idle", busy: false, selectedCardIndex: null };
+
+    await controller.gameController.onMatchComplete({
+      match: {
+        winner: "p1",
+        endReason: "normal",
+        history: [{ result: "p1" }],
+        players: {
+          p1: { hand: ["fire"] },
+          p2: { hand: [] }
+        }
+      },
+      persisted: null
+    });
+
+    assert.equal(shownPayloads.length, 0);
+    assert.ok(controller.pendingMatchCompletePayload);
+    assert.match(controller.pendingMatchCompletePayload.bodyHtml, /Asha defeated Bram/);
+
+    controller.screenFlow = "game";
+    controller.flushPendingMatchCompleteModal();
+
+    assert.equal(shownPayloads.length, 1);
+    assert.equal(controller.pendingMatchCompletePayload, null);
+  } finally {
+    controller.gameController?.stopTimer?.();
+    controller.gameController?.stopMatchClock?.();
+  }
+});
+
+test("ui: Gauntlet intermediate victory and run-ended completion keep distinct action contracts", () => {
+  const previousDocument = global.document;
+  const modalShows = [];
+  const continueButton = createFakeElement();
+  const returnButton = createFakeElement();
+  global.document = {
+    getElementById: (id) =>
+      id === "gauntlet-continue-btn"
+        ? continueButton
+        : id === "gauntlet-return-menu-btn"
+          ? returnButton
+          : null
+  };
+
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalShows.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+  controller.username = "GauntletPlayer";
+  controller.profile = { username: "GauntletPlayer", gauntletBestStreak: 4 };
+  controller.gameController = { captured: { p1: 3, p2: 2 } };
+  controller.pveGauntletMode = true;
+
+  try {
+    controller.showGauntletVictoryModal({
+      streak: 2,
+      nextRival: {
+        displayName: "Stone Warden",
+        title: "Arena Rival"
+      }
+    });
+
+    assert.equal(modalShows[0].title, "Gauntlet Victory!");
+    assert.match(modalShows[0].bodyHtml, /Streak: 2/);
+    assert.match(modalShows[0].bodyHtml, /Next Rival: Stone Warden/);
+    assert.match(modalShows[0].bodyHtml, /id="gauntlet-continue-btn"/);
+    assert.match(modalShows[0].bodyHtml, /id="gauntlet-return-menu-btn"/);
+    assert.doesNotMatch(modalShows[0].bodyHtml, /id="match-complete-play-again"/);
+    assert.doesNotMatch(modalShows[0].bodyHtml, /Gauntlet Run Ended/);
+
+    const runEndedPayload = controller.buildMatchCompleteModalPayload(
+      MATCH_MODE.PVE,
+      {
+        winner: "p2",
+        endReason: "normal",
+        difficulty: "hard",
+        history: [{ result: "p2" }],
+        players: {
+          p1: { hand: [] },
+          p2: { hand: ["earth"] }
+        }
+      },
+      {
+        stats: { cardsCaptured: 3, warsEntered: 1, longestWar: 2 }
+      },
+      {
+        gauntletSummary: {
+          rivalLabel: "Lost To",
+          rivalName: "Stone Warden",
+          finalStreak: 2,
+          bestStreak: 4,
+          rivalsDefeated: 2
+        }
+      }
+    );
+
+    assert.equal(runEndedPayload.title, "Gauntlet Run Ended");
+    assert.match(runEndedPayload.bodyHtml, /Gauntlet Run Ended/);
+    assert.match(runEndedPayload.bodyHtml, /Lost To/);
+    assert.match(runEndedPayload.bodyHtml, /Stone Warden/);
+    assert.match(runEndedPayload.bodyHtml, /id="match-complete-play-again"/);
+    assert.match(runEndedPayload.bodyHtml, /id="match-complete-return-menu"/);
+    assert.doesNotMatch(runEndedPayload.bodyHtml, /id="gauntlet-continue-btn"/);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: own profile renders top Profile Overview panels near the top", () => {
   const context = createProfileScreenContext({
     profile: {
