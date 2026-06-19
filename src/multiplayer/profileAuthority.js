@@ -770,6 +770,16 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.getCosmetics(safeUsername);
   }
 
+  async getStore(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Store access.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] getStore -> ${safeUsername} (server)`);
+    return this.coordinator.getStore(safeUsername);
+  }
+
   async claimDailyLoginReward(username) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -813,7 +823,7 @@ export class MultiplayerProfileAuthority {
     };
   }
 
-  async buyStoreItem({ username, type, cosmeticId }) {
+  async buyStoreItem({ username, type, cosmeticId, transactionId = null }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
       throw new Error("username is required for server-authoritative store purchases.");
@@ -823,7 +833,8 @@ export class MultiplayerProfileAuthority {
     const result = await this.coordinator.buyStoreItem({
       username: safeUsername,
       type,
-      cosmeticId
+      cosmeticId,
+      transactionId
     });
     return {
       ...result,

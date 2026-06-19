@@ -2296,6 +2296,15 @@ export class MultiplayerClient {
     return response.profile ?? null;
   }
 
+  async getStore({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest("profile:getStore", { username }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load Store.");
+    }
+
+    return response.store ?? null;
+  }
+
   async viewProfile({ username, serverUrl } = {}) {
     const safeUsername = String(username ?? "").trim();
     if (!safeUsername) {
@@ -2638,10 +2647,15 @@ export class MultiplayerClient {
     return response.result ?? null;
   }
 
-  async buyStoreItem({ username, type, cosmeticId, serverUrl } = {}) {
+  async buyStoreItem({ username, type, cosmeticId, transactionId, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:buyStoreItem",
-      { username, type, cosmeticId },
+      {
+        username,
+        type,
+        cosmeticId,
+        ...(transactionId ? { transactionId } : {})
+      },
       { serverUrl }
     );
     if (!response?.ok) {

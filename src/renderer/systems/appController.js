@@ -79,6 +79,15 @@ const TITLE_ICON_MAP = Object.freeze({
   "Last Card Legend": "badges/badge_comeback_win_25.png"
 });
 const ONLINE_RECONNECT_TIMEOUT_MS = 60000;
+
+function createStorePurchaseTransactionId() {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  if (randomUuid) {
+    return `store-${randomUuid}`;
+  }
+  return `store-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
 const ONLINE_DEFAULT_EQUIPPED_COSMETICS = Object.freeze({
   avatar: "default_avatar",
   background: "default_background",
@@ -324,6 +333,7 @@ export class AppController {
     this.storeViewState = this.createDefaultStoreViewState();
     this.storePurchaseInFlight = false;
     this.storePurchaseInFlightKey = null;
+    this.storePurchaseTransactionIds = new Map();
     this.storeFeaturedRotationCache = null;
     this.storeFeaturedRotationCacheUsername = null;
     this.cosmeticsViewState = createDefaultCategoryViewState();
@@ -10007,8 +10017,15 @@ export class AppController {
       serverProfile?.profile ??
       this.profile ??
       {};
+    const authoritativeStore =
+      !storeOverride &&
+      this.hasMultiplayerProfileAccess() &&
+      window.elemintz?.multiplayer?.getStore
+        ? await window.elemintz.multiplayer.getStore({ username: this.username })
+        : null;
     const store =
       storeOverride ??
+      authoritativeStore ??
       (serverProfile || profileOverride || hydratedProfileForStore
         ? getStoreViewForProfile(profileForStore)
         : await window.elemintz.state.getStore(this.username));
@@ -10037,16 +10054,26 @@ export class AppController {
           this.storePurchaseInFlight = true;
           this.storePurchaseInFlightKey = purchaseKey;
           if (this.hasMultiplayerProfileAccess() && window.elemintz?.multiplayer?.buyStoreItem) {
+            const transactionId =
+              this.storePurchaseTransactionIds.get(purchaseKey) ??
+              createStorePurchaseTransactionId();
+            this.storePurchaseTransactionIds.set(purchaseKey, transactionId);
             try {
               const result = await window.elemintz.multiplayer.buyStoreItem({
                 username: this.username,
                 type,
-                cosmeticId
+                cosmeticId,
+                transactionId
               });
+              this.storePurchaseTransactionIds.delete(purchaseKey);
               this.profile = result?.snapshot
                 ? this.buildProfileFromServerSnapshot(result.snapshot)
                 : result?.profile ?? this.profile;
-              const nextStore = getStoreViewForProfile(this.profile ?? {});
+              const nextStore =
+                result?.store ??
+                (window.elemintz?.multiplayer?.getStore
+                  ? await window.elemintz.multiplayer.getStore({ username: this.username })
+                  : getStoreViewForProfile(this.profile ?? {}));
 
               if (result?.purchase?.status === "already-owned") {
                 this.modalManager.show({
@@ -10071,6 +10098,13 @@ export class AppController {
                 skipProfileRefresh: true
               });
             } catch (error) {
+              if (
+                /Sold Out|Already Owned|not available|grant-only|price is missing|Not enough tokens|transactionId/i.test(
+                  String(error?.message ?? "")
+                )
+              ) {
+                this.storePurchaseTransactionIds.delete(purchaseKey);
+              }
               this.modalManager.show({
                 title: "Purchase Failed",
                 body: String(error?.message ?? "Unable to complete this store purchase."),

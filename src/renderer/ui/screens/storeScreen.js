@@ -328,9 +328,27 @@ function renderActions(type, item) {
     ? `<button class="btn" data-equip-type="${type}" data-equip-id="${item.id}" ${item.equipped ? "disabled" : ""}>${item.equipped ? "Equipped" : "Equip"}</button>`
     : "";
 
+  const uniqueLimitedTotal = Math.max(0, Math.floor(Number(item.saleLimitTotal ?? 0) || 0));
+  const uniqueSold = Math.max(0, Math.floor(Number(item.saleLimitSold ?? 0) || 0));
+  const uniqueSoldOut =
+    item.saleLimitMode === "limited" &&
+    uniqueLimitedTotal > 0 &&
+    uniqueSold >= uniqueLimitedTotal;
+  const uniquePurchaseReady =
+    item.rarity === "Unique" &&
+    item.shopEligible !== false &&
+    item.shopListed !== false &&
+    !item.storeHidden &&
+    !item.grantOnly &&
+    item.price != null &&
+    Number.isInteger(Number(item.price)) &&
+    Number(item.price) >= 0 &&
+    !uniqueSoldOut;
   const uniquePurchaseButton =
     !item.owned && item.rarity === "Unique"
-      ? `<button class="btn btn-primary" type="button" disabled data-unique-purchase-blocked="true">Purchase support pending</button>`
+      ? uniquePurchaseReady
+        ? `<button class="btn btn-primary" data-buy-type="${type}" data-buy-id="${item.id}" data-buy-default-label="Buy">Buy</button>`
+        : `<button class="btn btn-primary" type="button" disabled data-unique-purchase-blocked="true">${uniqueSoldOut ? "Sold Out" : "Not available"}</button>`
       : "";
   const buyButton =
     !item.owned && item.purchasable && item.rarity !== "Unique"

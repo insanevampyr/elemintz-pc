@@ -1,5 +1,9 @@
 import { ProfileSystem } from "./profileSystem.js";
 import { SpecialCosmeticRegistryStore } from "./specialCosmeticRegistryStore.js";
+import {
+  normalizeStorePurchaseTransactionId,
+  StorePurchaseLedgerStore
+} from "./storePurchaseLedgerStore.js";
 import { SaveSystem } from "./saveSystem.js";
 import { SettingsService } from "./settingsService.js";
 import {
@@ -24,6 +28,7 @@ import {
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
 import {
+  buyConfiguredUniqueStoreItem,
   buyStoreItem,
   getStoreViewForProfile,
   grantCosmeticItem,
@@ -976,6 +981,50 @@ export function guardRuntimeStatWritePayload({
   };
 }
 
+function validateUniquePurchaseConfiguration({
+  profile,
+  definition,
+  record,
+  type,
+  cosmeticId
+}) {
+  if (!profile) {
+    throw new Error("Buyer profile is missing.");
+  }
+  if (!definition || definition.rarity !== "Unique") {
+    throw new Error(`Unique cosmetic '${String(cosmeticId ?? "")}' was not found.`);
+  }
+  if (!record || !["approved", "assigned", "granted"].includes(record.status)) {
+    throw new Error("Unique cosmetic is not configured or approved.");
+  }
+  if (record.shopEligible !== true || record.shopListed !== true || record.storeHidden) {
+    throw new Error("Unique cosmetic is not available.");
+  }
+  if (record.grantOnly) {
+    throw new Error("Unique cosmetic is grant-only and cannot be purchased.");
+  }
+  if (!Number.isInteger(record.price) || record.price < 0) {
+    throw new Error("Unique cosmetic price is missing or invalid.");
+  }
+  if (!["unlimited", "limited"].includes(record.saleLimitMode)) {
+    throw new Error("Unique cosmetic sale limit mode is invalid.");
+  }
+  if (record.saleLimitMode === "limited") {
+    if (!Number.isInteger(record.saleLimitTotal) || record.saleLimitTotal <= 0) {
+      throw new Error("Unique cosmetic limited inventory is invalid.");
+    }
+    if (record.saleLimitSold >= record.saleLimitTotal) {
+      throw new Error("Sold Out");
+    }
+  }
+  if (profile.ownedCosmetics?.[type]?.includes(cosmeticId)) {
+    throw new Error("Already Owned");
+  }
+  if (Number(profile.tokens ?? 0) < record.price) {
+    throw new Error("Not enough tokens");
+  }
+}
+
 export class StateCoordinator {
   constructor(options = {}) {
     this.profiles = new ProfileSystem(options);
@@ -983,6 +1032,9 @@ export class StateCoordinator {
     this.settings = new SettingsService(options);
     this.specialCosmeticRegistry =
       options.specialCosmeticRegistryStore ?? new SpecialCosmeticRegistryStore(options);
+    this.storePurchaseLedger =
+      options.storePurchaseLedgerStore ?? new StorePurchaseLedgerStore(options);
+    this.uniquePurchaseQueue = Promise.resolve();
     this.random = typeof options.random === "function" ? options.random : Math.random;
     this.getActiveBoostEvent =
       typeof options.getActiveBoostEvent === "function"
@@ -994,6 +1046,15 @@ export class StateCoordinator {
   runMatchPersistence(task) {
     const run = this.matchPersistenceQueue.then(task, task);
     this.matchPersistenceQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  runUniquePurchaseTransaction(task) {
+    const run = this.uniquePurchaseQueue.then(task, task);
+    this.uniquePurchaseQueue = run.then(
       () => undefined,
       () => undefined
     );
@@ -1904,7 +1965,266 @@ export class StateCoordinator {
     };
   }
 
-  async buyStoreItem({ username, type, cosmeticId }) {
+  async completeUniqueStorePurchase({ username, type, cosmeticId, transactionId }) {
+    const safeTransactionId = normalizeStorePurchaseTransactionId(transactionId);
+    if (!safeTransactionId) {
+      throw new Error("A valid transactionId is required for Unique purchases.");
+    }
+
+    return this.runUniquePurchaseTransaction(async () => {
+      const existing = await this.storePurchaseLedger.getByTransactionId(safeTransactionId);
+      if (existing) {
+        if (
+          existing.buyerUsername !== username ||
+          existing.cosmeticType !== type ||
+          existing.cosmeticId !== cosmeticId
+        ) {
+          throw new Error("transactionId was already used for a different Store purchase.");
+        }
+
+        await this.storePurchaseLedger.markDuplicate(safeTransactionId);
+        if (existing.status === "completed") {
+          const profile = await this.profiles.getProfile(username);
+          return {
+            profile,
+            purchase: {
+              ...(existing.result?.purchase ?? {}),
+              duplicate: true
+            },
+            tracking: existing.result?.tracking ?? null,
+            transaction: {
+              transactionId: safeTransactionId,
+              status: "completed",
+              duplicate: true
+            },
+            store: await this.getStore(username)
+          };
+        }
+        if (existing.status === "rejected" || existing.status === "failed") {
+          throw new Error(existing.error?.message ?? "Purchase failed; try again");
+        }
+        if (existing.status === "processing") {
+          const profileBefore = await this.profiles.getProfile(username);
+          const record = await this.specialCosmeticRegistry.getRecord(cosmeticId);
+          if (!profileBefore || !record) {
+            throw new Error("Purchase failed; try again");
+          }
+
+          if (profileBefore.ownedCosmetics?.[type]?.includes(cosmeticId)) {
+            const recoveredResult = {
+              purchase: {
+                status: "purchased",
+                type,
+                cosmeticId,
+                price: existing.price,
+                tokensLeft: profileBefore.tokens,
+                duplicate: true
+              },
+              tracking: null
+            };
+            await this.storePurchaseLedger.finalizeTransaction({
+              transactionId: safeTransactionId,
+              status: "completed",
+              result: recoveredResult
+            });
+            return {
+              profile: profileBefore,
+              ...recoveredResult,
+              transaction: {
+                transactionId: safeTransactionId,
+                status: "completed",
+                duplicate: true
+              },
+              store: await this.getStore(username)
+            };
+          }
+
+          let reservation = {
+            record,
+            saleLimitSoldBefore: existing.saleLimitSoldBefore,
+            saleLimitSoldAfter: existing.saleLimitSoldAfter
+          };
+          if (
+            existing.saleLimitMode === "limited" &&
+            record.saleLimitSold === existing.saleLimitSoldBefore
+          ) {
+            reservation = await this.specialCosmeticRegistry.reserveTokenPurchase(cosmeticId);
+          } else if (
+            existing.saleLimitMode === "limited" &&
+            record.saleLimitSold !== existing.saleLimitSoldAfter
+          ) {
+            throw new Error("Purchase failed; inventory state requires review.");
+          }
+
+          let recoveredPurchase = null;
+          let recoveredProfileCommitted = false;
+          try {
+            const profile = await this.profiles.updateProfile(username, (current) => {
+              recoveredPurchase = buyConfiguredUniqueStoreItem(current, {
+                type,
+                cosmeticId,
+                price: existing.price
+              });
+              return recoveredPurchase.profile;
+            });
+            recoveredProfileCommitted = true;
+            const recoveredResult = {
+              purchase: {
+                ...recoveredPurchase.purchase,
+                duplicate: true
+              },
+              tracking: recoveredPurchase.tracking
+            };
+            await this.storePurchaseLedger.finalizeTransaction({
+              transactionId: safeTransactionId,
+              status: "completed",
+              result: recoveredResult
+            });
+            return {
+              profile,
+              ...recoveredResult,
+              transaction: {
+                transactionId: safeTransactionId,
+                status: "completed",
+                duplicate: true
+              },
+              store: await this.getStore(username)
+            };
+          } catch (error) {
+            if (!recoveredProfileCommitted && reservation.record.saleLimitMode === "limited") {
+              await this.specialCosmeticRegistry.rollbackTokenPurchaseReservation({
+                cosmeticId,
+                saleLimitSoldBefore: reservation.saleLimitSoldBefore,
+                saleLimitSoldAfter: reservation.saleLimitSoldAfter
+              });
+            }
+            throw error;
+          }
+        }
+      }
+
+      const definition = getCosmeticDefinition(type, cosmeticId);
+      const profileBefore = await this.profiles.getProfile(username);
+      const record = await this.specialCosmeticRegistry.getRecord(cosmeticId);
+
+      try {
+        validateUniquePurchaseConfiguration({
+          profile: profileBefore,
+          definition,
+          record,
+          type,
+          cosmeticId
+        });
+      } catch (error) {
+        const begun = await this.storePurchaseLedger.beginTransaction({
+          transactionId: safeTransactionId,
+          buyerUsername: username,
+          cosmeticType: type,
+          cosmeticId,
+          price: record?.price ?? null,
+          saleLimitMode: record?.saleLimitMode ?? "unlimited",
+          saleLimitSoldBefore: record?.saleLimitSold ?? 0,
+          saleLimitSoldAfter: record?.saleLimitSold ?? 0
+        });
+        if (!begun.duplicate) {
+          await this.storePurchaseLedger.finalizeTransaction({
+            transactionId: safeTransactionId,
+            status: "rejected",
+            error: {
+              code: "UNIQUE_PURCHASE_REJECTED",
+              message: String(error?.message ?? "Unique purchase rejected.")
+            }
+          });
+        }
+        throw error;
+      }
+
+      const expectedSoldAfter =
+        record.saleLimitMode === "limited" ? record.saleLimitSold + 1 : record.saleLimitSold;
+      const begun = await this.storePurchaseLedger.beginTransaction({
+        transactionId: safeTransactionId,
+        buyerUsername: username,
+        cosmeticType: type,
+        cosmeticId,
+        price: record.price,
+        saleLimitMode: record.saleLimitMode,
+        saleLimitSoldBefore: record.saleLimitSold,
+        saleLimitSoldAfter: expectedSoldAfter
+      });
+      if (begun.duplicate) {
+        throw new Error("Purchase failed; try again");
+      }
+
+      let reservation = null;
+      let purchaseResult = null;
+      let profileCommitted = false;
+      try {
+        reservation = await this.specialCosmeticRegistry.reserveTokenPurchase(cosmeticId);
+        const profile = await this.profiles.updateProfile(username, (current) => {
+          purchaseResult = buyConfiguredUniqueStoreItem(current, {
+            type,
+            cosmeticId,
+            price: reservation.record.price
+          });
+          return purchaseResult.profile;
+        });
+        profileCommitted = true;
+
+        const ledgerResult = {
+          purchase: purchaseResult.purchase,
+          tracking: purchaseResult.tracking
+        };
+        await this.storePurchaseLedger.finalizeTransaction({
+          transactionId: safeTransactionId,
+          status: "completed",
+          result: ledgerResult
+        });
+
+        return {
+          profile,
+          ...ledgerResult,
+          transaction: {
+            transactionId: safeTransactionId,
+            status: "completed",
+            duplicate: false
+          },
+          store: await this.getStore(username)
+        };
+      } catch (error) {
+        if (!profileCommitted && reservation?.record?.saleLimitMode === "limited") {
+          await this.specialCosmeticRegistry.rollbackTokenPurchaseReservation({
+            cosmeticId,
+            saleLimitSoldBefore: reservation.saleLimitSoldBefore,
+            saleLimitSoldAfter: reservation.saleLimitSoldAfter
+          });
+        }
+
+        if (!profileCommitted) {
+          await this.storePurchaseLedger.finalizeTransaction({
+            transactionId: safeTransactionId,
+            status: "rejected",
+            error: {
+              code: "UNIQUE_PURCHASE_REJECTED",
+              message: String(error?.message ?? "Unique purchase rejected.")
+            }
+          });
+        }
+        throw error;
+      }
+    });
+  }
+
+  async buyStoreItem({ username, type, cosmeticId, transactionId = null }) {
+    const definition = getCosmeticDefinition(type, cosmeticId);
+    if (definition?.rarity === "Unique") {
+      return this.completeUniqueStorePurchase({
+        username,
+        type,
+        cosmeticId,
+        transactionId
+      });
+    }
+
     let purchaseResult = null;
 
     const profile = await this.profiles.updateProfile(username, (current) => {

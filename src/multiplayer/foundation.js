@@ -3504,6 +3504,46 @@ export function createMultiplayerFoundation({
         }
       });
 
+      socket.on("profile:getStore", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+          allowBootstrap: true
+        });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof profileAuthority?.getStore !== "function") {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            }
+          });
+          return;
+        }
+
+        try {
+          const store = await profileAuthority.getStore(
+            sessionResult.session?.profileKey ?? sessionResult.session?.username
+          );
+          respond({
+            ok: true,
+            store
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_STORE_READ_FAILED",
+              message: String(error?.message ?? "Unable to read authoritative Store.")
+            }
+          });
+        }
+      });
+
     socket.on("profile:acknowledgeAnnouncement", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureClaimedProfileAccess(socket, payload, {

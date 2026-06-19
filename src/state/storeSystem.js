@@ -315,6 +315,55 @@ export function buyStoreItem(profile, { type, cosmeticId }) {
   };
 }
 
+export function buyConfiguredUniqueStoreItem(profile, { type, cosmeticId, price }) {
+  const normalized = normalizeProfileStore(profile);
+  const previousTracking = normalized.cosmeticUnlockTracking;
+  const item = COSMETIC_CATALOG[type]?.find((entry) => entry.id === cosmeticId) ?? null;
+  const safePrice = Number(price);
+
+  if (!item || item.rarity !== "Unique") {
+    throw new Error(`Unique Store item not found for ${type}:${cosmeticId}.`);
+  }
+  if (!Number.isInteger(safePrice) || safePrice < 0) {
+    throw new Error("Unique cosmetic price is missing or invalid.");
+  }
+  if (normalized.ownedCosmetics[type]?.includes(cosmeticId)) {
+    throw new Error("Already Owned");
+  }
+  if (normalized.tokens < safePrice) {
+    throw new Error("Not enough tokens");
+  }
+
+  const nextTrackingSeed = {
+    ...previousTracking,
+    [PURCHASE_FLAG_BY_TYPE[type]]: PURCHASE_FLAG_BY_TYPE[type]
+      ? true
+      : previousTracking?.[PURCHASE_FLAG_BY_TYPE[type]]
+  };
+  const updated = normalizeProfileStore({
+    ...normalized,
+    tokens: normalized.tokens - safePrice,
+    cosmeticUnlockTracking: nextTrackingSeed,
+    ownedCosmetics: {
+      ...normalized.ownedCosmetics,
+      [type]: [...normalized.ownedCosmetics[type], cosmeticId]
+    }
+  });
+  const tracking = getTrackingMilestoneDiff(previousTracking, updated.cosmeticUnlockTracking);
+
+  return {
+    profile: updated,
+    purchase: {
+      status: "purchased",
+      type,
+      cosmeticId,
+      price: safePrice,
+      tokensLeft: updated.tokens
+    },
+    tracking
+  };
+}
+
 export function grantSupporterPass(profile) {
   let normalized = normalizeProfileStore(profile);
   const granted = [];

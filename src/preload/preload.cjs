@@ -91,6 +91,7 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
       getState: () => ipcRendererRef.invoke("multiplayer:getState"),
       restoreSession: (payload) => ipcRendererRef.invoke("multiplayer:restoreSession", payload),
       getProfile: (payload) => ipcRendererRef.invoke("multiplayer:getProfile", payload),
+      getStore: (payload) => ipcRendererRef.invoke("multiplayer:getStore", payload),
       viewProfile: (payload) => ipcRendererRef.invoke("multiplayer:viewProfile", payload),
       listAnnouncements: (payload) => ipcRendererRef.invoke("multiplayer:listAnnouncements", payload),
       dismissAnnouncement: (payload) => ipcRendererRef.invoke("multiplayer:dismissAnnouncement", payload),

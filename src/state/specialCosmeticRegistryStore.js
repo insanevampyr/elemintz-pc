@@ -328,6 +328,122 @@ export class SpecialCosmeticRegistryStore {
     });
   }
 
+  async reserveTokenPurchase(cosmeticId) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const rawRegistry = await this.store.read(clone(EMPTY_REGISTRY));
+      const registry = await this.readRegistry({ now });
+      const safeCosmeticId = normalizeRequiredId(cosmeticId);
+      const index = registry.records.findIndex((entry) => entry.cosmeticId === safeCosmeticId);
+      if (index === -1) {
+        throw new Error(`Unique cosmetic '${safeCosmeticId}' is not configured.`);
+      }
+
+      const current = registry.records[index];
+      const rawCurrent = Array.isArray(rawRegistry?.records)
+        ? rawRegistry.records.find(
+            (entry) => String(entry?.cosmeticId ?? entry?.id ?? "").trim() === safeCosmeticId
+          )
+        : null;
+      if (
+        rawCurrent &&
+        !SPECIAL_COSMETIC_SALE_LIMIT_MODES.includes(rawCurrent.saleLimitMode)
+      ) {
+        throw new Error("Unique cosmetic sale limit mode is invalid.");
+      }
+      if (
+        rawCurrent?.saleLimitMode === "limited" &&
+        (!Number.isInteger(Number(rawCurrent.saleLimitTotal)) ||
+          Number(rawCurrent.saleLimitTotal) <= 0)
+      ) {
+        throw new Error("Unique cosmetic limited inventory is invalid.");
+      }
+      if (!["approved", "assigned", "granted"].includes(current.status)) {
+        throw new Error("Unique cosmetic is not approved for Store purchase.");
+      }
+      if (current.shopEligible !== true || current.shopListed !== true || current.storeHidden) {
+        throw new Error("Unique cosmetic is not available.");
+      }
+      if (current.grantOnly) {
+        throw new Error("Unique cosmetic is grant-only and cannot be purchased.");
+      }
+      if (!Number.isInteger(current.price) || current.price < 0) {
+        throw new Error("Unique cosmetic price is missing or invalid.");
+      }
+      if (!SPECIAL_COSMETIC_SALE_LIMIT_MODES.includes(current.saleLimitMode)) {
+        throw new Error("Unique cosmetic sale limit mode is invalid.");
+      }
+
+      const saleLimitSoldBefore = current.saleLimitSold;
+      if (current.saleLimitMode === "limited") {
+        if (!Number.isInteger(current.saleLimitTotal) || current.saleLimitTotal <= 0) {
+          throw new Error("Unique cosmetic limited inventory is invalid.");
+        }
+        if (current.saleLimitSold >= current.saleLimitTotal) {
+          throw new Error("Sold Out");
+        }
+
+        const next = normalizeSpecialCosmeticRecord(
+          {
+            ...current,
+            saleLimitSold: current.saleLimitSold + 1,
+            updatedAt: now
+          },
+          { now }
+        );
+        registry.records[index] = next;
+        await this.store.write(registry);
+        return {
+          record: clone(next),
+          saleLimitSoldBefore,
+          saleLimitSoldAfter: next.saleLimitSold
+        };
+      }
+
+      return {
+        record: clone(current),
+        saleLimitSoldBefore,
+        saleLimitSoldAfter: saleLimitSoldBefore
+      };
+    });
+  }
+
+  async rollbackTokenPurchaseReservation({
+    cosmeticId,
+    saleLimitSoldBefore,
+    saleLimitSoldAfter
+  } = {}) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safeCosmeticId = normalizeRequiredId(cosmeticId);
+      const index = registry.records.findIndex((entry) => entry.cosmeticId === safeCosmeticId);
+      if (index === -1) {
+        throw new Error(`Unknown special cosmetic '${safeCosmeticId}'.`);
+      }
+
+      const current = registry.records[index];
+      if (current.saleLimitMode !== "limited") {
+        return clone(current);
+      }
+      if (current.saleLimitSold !== Number(saleLimitSoldAfter)) {
+        throw new Error("Unique purchase inventory changed before rollback.");
+      }
+
+      const next = normalizeSpecialCosmeticRecord(
+        {
+          ...current,
+          saleLimitSold: Math.max(0, Math.floor(Number(saleLimitSoldBefore) || 0)),
+          updatedAt: now
+        },
+        { now }
+      );
+      registry.records[index] = next;
+      await this.store.write(registry);
+      return clone(next);
+    });
+  }
+
   async markGranted(cosmeticId) {
     return this.runMutation(async () => {
       const now = this.now();

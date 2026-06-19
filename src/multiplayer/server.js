@@ -4,6 +4,7 @@ import { MultiplayerProfileAuthority } from "./profileAuthority.js";
 import { MultiplayerAccountStore } from "./accountStore.js";
 import { AdminGrantStore } from "../state/adminGrantStore.js";
 import { SpecialCosmeticRegistryStore } from "../state/specialCosmeticRegistryStore.js";
+import { StorePurchaseLedgerStore } from "../state/storePurchaseLedgerStore.js";
 import { createTimestampedLogger } from "./logger.js";
 import { FeedbackStore } from "./feedbackStore.js";
 import { AnnouncementStore } from "./announcementStore.js";
@@ -42,8 +43,16 @@ const boostEventStore = new BoostEventStore({
   dataDir,
   logger
 });
+const specialCosmeticRegistryStore = new SpecialCosmeticRegistryStore({
+  dataDir
+});
+const storePurchaseLedgerStore = new StorePurchaseLedgerStore({
+  dataDir
+});
 const stateCoordinator = new StateCoordinator({
   dataDir,
+  specialCosmeticRegistryStore,
+  storePurchaseLedgerStore,
   getActiveBoostEvent: (options) => boostEventStore.getActiveEvent(options)
 });
 const accountStore = new MultiplayerAccountStore({
@@ -57,9 +66,6 @@ const profileAuthority = new MultiplayerProfileAuthority({
   accountStore
 });
 const adminGrantStore = new AdminGrantStore({
-  dataDir
-});
-const specialCosmeticRegistryStore = new SpecialCosmeticRegistryStore({
   dataDir
 });
 const feedbackStore = new FeedbackStore({

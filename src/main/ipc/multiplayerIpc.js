@@ -74,6 +74,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getProfile(payload);
   });
 
+  ipcMain.handle("multiplayer:getStore", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getStore(payload);
+  });
+
   ipcMain.handle("multiplayer:viewProfile", async (event, payload) => {
     subscribers.add(event.sender);
     return client.viewProfile(payload);
