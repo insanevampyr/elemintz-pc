@@ -891,6 +891,30 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async grantSpecialCosmetic({ username, type, cosmeticId }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative special cosmetic grants.");
+    }
+    const existingProfile = await this.coordinator.profiles.getProfile(safeUsername);
+    if (!existingProfile) {
+      const error = new Error(`Profile '${safeUsername}' was not found.`);
+      error.code = "PROFILE_NOT_FOUND";
+      throw error;
+    }
+    this.logger.info?.(`[ProfileAuthority] grantSpecialCosmetic -> ${safeUsername}`);
+    const result = await this.coordinator.grantSpecialCosmetic({
+      username: safeUsername,
+      type,
+      cosmeticId
+    });
+    return {
+      ...result,
+      snapshot: await this.getProfile(safeUsername),
+      cosmetics: await this.getCosmetics(safeUsername)
+    };
+  }
+
   async grantFounderStatus({ username }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

@@ -157,7 +157,7 @@ test("cosmetics: special metadata defaults are inert, normalized, and keep admin
   assert.equal(defaults.shopEligible, true);
   assert.equal(defaults.shopListed, true);
   assert.equal(defaults.assignmentStatus, "unassigned");
-  assert.equal(defaults.uniqueOwnerUsername, null);
+  assert.equal(defaults.createdForUsername, null);
   assert.deepEqual(defaults.royalty, {
     enabled: false,
     recipientUsername: null,
@@ -191,7 +191,7 @@ test("cosmetics: special metadata defaults are inert, normalized, and keep admin
   assert.equal(normalized.shopEligible, false);
   assert.equal(normalized.shopListed, false);
   assert.equal(normalized.assignmentStatus, "unassigned");
-  assert.equal(normalized.uniqueOwnerUsername, "UniqueOwner");
+  assert.equal(normalized.createdForUsername, "UniqueOwner");
   assert.deepEqual(normalized.royalty, {
     enabled: true,
     recipientUsername: "RoyaltyOwner",
@@ -226,7 +226,7 @@ test("cosmetics: Unique rarity does not imply special metadata behavior", () => 
   assert.equal(normalized.shopEligible, true);
   assert.equal(normalized.shopListed, true);
   assert.equal(normalized.assignmentStatus, "unassigned");
-  assert.equal(normalized.uniqueOwnerUsername, null);
+  assert.equal(normalized.createdForUsername, null);
   assert.equal(normalized.royalty.enabled, false);
   assert.equal(normalized.saleLimitMode, "unlimited");
 });

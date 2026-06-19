@@ -29,6 +29,8 @@ import {
 } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
+import { SpecialCosmeticRegistryStore } from "../../src/state/specialCosmeticRegistryStore.js";
+import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { getDailyResetWindow } from "../../src/state/dailyChallengesSystem.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
 import { DEFAULT_STARTING_TOKENS } from "../../src/state/storeSystem.js";
@@ -3563,6 +3565,120 @@ test("multiplayer foundation: admin grants apply once, notify the player, and up
   } finally {
     adminClient?.disconnect();
     playerClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: approved Unique grants are authoritative, idempotent, and do not mutate commerce config", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const specialCosmeticRegistryStore = new SpecialCosmeticRegistryStore({ dataDir });
+  const definition = COSMETIC_CATALOG.avatar.find((item) => item.id === "fireavatarF");
+  const originalRarity = definition.rarity;
+  definition.rarity = "Unique";
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    specialCosmeticRegistryStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+
+  try {
+    await coordinator.profiles.ensureProfile("UniqueGrantTarget");
+    const royaltyProfileBefore = await coordinator.profiles.ensureProfile("RoyaltyRecipient");
+    await specialCosmeticRegistryStore.upsertConfig({
+      cosmeticId: "fireavatarF",
+      status: "approved",
+      assignmentStatus: "unassigned",
+      shopEligible: false,
+      shopListed: false,
+      storeHidden: true,
+      saleLimitMode: "limited",
+      saleLimitTotal: 1,
+      saleLimitSold: 0,
+      royalty: {
+        enabled: true,
+        recipientUsername: "RoyaltyRecipient",
+        tokenPercent: 25
+      },
+      adminNotes: "private server note"
+    });
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    const login = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const assignment = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:updateSpecialCosmeticAssignment",
+        {
+          sessionToken: login?.session?.token,
+          cosmeticId: "fireavatarF",
+          createdForUsername: "CopyCell"
+        },
+        resolve
+      );
+    });
+    assert.equal(assignment?.ok, true);
+    assert.equal(assignment?.result?.createdForUsername, "CopyCell");
+    assert.equal("adminNotes" in (assignment?.result ?? {}), false);
+    const payload = {
+      sessionToken: login?.session?.token,
+      transactionId: "unique-grant-transaction-1",
+      username: "UniqueGrantTarget",
+      cosmetic: {
+        type: "avatar",
+        cosmeticId: "fireavatarF"
+      }
+    };
+    const first = await new Promise((resolve) => {
+      adminClient.emit("admin:grantSpecialCosmetic", payload, resolve);
+    });
+    const duplicate = await new Promise((resolve) => {
+      adminClient.emit("admin:grantSpecialCosmetic", payload, resolve);
+    });
+
+    assert.equal(first?.ok, true);
+    assert.equal(first?.result?.grantType, "special_cosmetic_grant");
+    assert.equal(first?.result?.result?.applied?.cosmetic?.status, "granted");
+    assert.equal(duplicate?.ok, true);
+    assert.equal(duplicate?.duplicate, true);
+    const profile = await coordinator.profiles.getProfile("UniqueGrantTarget");
+    assert.equal(profile.ownedCosmetics.avatar.filter((id) => id === "fireavatarF").length, 1);
+    const registryRecord = await specialCosmeticRegistryStore.getRecord("fireavatarF");
+    assert.equal(registryRecord.status, "granted");
+    assert.equal(registryRecord.createdForUsername, "CopyCell");
+    assert.equal(registryRecord.shopListed, false);
+    assert.equal(registryRecord.storeHidden, true);
+    assert.equal(registryRecord.saleLimitSold, 0);
+    assert.equal(
+      (await coordinator.profiles.getProfile("RoyaltyRecipient")).tokens,
+      royaltyProfileBefore.tokens
+    );
+    assert.equal(JSON.stringify(first).includes("private server note"), false);
+  } finally {
+    definition.rarity = originalRarity;
+    adminClient?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }

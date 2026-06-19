@@ -3,6 +3,7 @@ import { StateCoordinator } from "../state/stateCoordinator.js";
 import { MultiplayerProfileAuthority } from "./profileAuthority.js";
 import { MultiplayerAccountStore } from "./accountStore.js";
 import { AdminGrantStore } from "../state/adminGrantStore.js";
+import { SpecialCosmeticRegistryStore } from "../state/specialCosmeticRegistryStore.js";
 import { createTimestampedLogger } from "./logger.js";
 import { FeedbackStore } from "./feedbackStore.js";
 import { AnnouncementStore } from "./announcementStore.js";
@@ -56,6 +57,9 @@ const profileAuthority = new MultiplayerProfileAuthority({
   accountStore
 });
 const adminGrantStore = new AdminGrantStore({
+  dataDir
+});
+const specialCosmeticRegistryStore = new SpecialCosmeticRegistryStore({
   dataDir
 });
 const feedbackStore = new FeedbackStore({
@@ -134,6 +138,7 @@ const server = createMultiplayerFoundation({
   profileAuthority,
   accountStore,
   adminGrantStore,
+  specialCosmeticRegistryStore,
   feedbackStore,
   boostEventStore,
   shopRotationStore,

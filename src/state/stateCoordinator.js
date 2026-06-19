@@ -2048,6 +2048,41 @@ export class StateCoordinator {
     };
   }
 
+  async grantSpecialCosmetic({ username, type, cosmeticId }) {
+    const safeUsername = String(username ?? "").trim();
+    const safeType = String(type ?? "").trim();
+    const safeCosmeticId = String(cosmeticId ?? "").trim();
+    if (!safeUsername) {
+      throw new Error("username is required for special cosmetic grants.");
+    }
+    if (!safeType || !safeCosmeticId) {
+      throw new Error("type and cosmeticId are required for special cosmetic grants.");
+    }
+
+    let cosmeticGrant = null;
+    const profile = await this.profiles.updateProfile(safeUsername, (current) => {
+      if (current?.ownedCosmetics?.[safeType]?.includes(safeCosmeticId)) {
+        cosmeticGrant = {
+          status: "already_owned",
+          type: safeType,
+          cosmeticId: safeCosmeticId
+        };
+        return current;
+      }
+      const result = grantCosmeticItem(current, {
+        type: safeType,
+        cosmeticId: safeCosmeticId
+      });
+      cosmeticGrant = result.grant;
+      return result.profile;
+    });
+
+    return {
+      profile,
+      cosmeticGrant
+    };
+  }
+
   async grantOnlineMatchRewards({ username, tokens = 0, xp = 0, basicChests = 0 }) {
     const safeTokens = Math.max(0, Number(tokens ?? 0));
     const safeXp = Math.max(0, Number(xp ?? 0));

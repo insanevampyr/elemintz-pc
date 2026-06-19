@@ -13,6 +13,7 @@ import { createLocalMatchSessionStore } from "./localMatchSessions.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
 import { getCosmeticDefinition } from "../state/cosmeticSystem.js";
+import { buildPublicSpecialCosmeticRecord } from "../state/specialCosmeticRegistryStore.js";
 import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
 import { AI_DIFFICULTY } from "../engine/ai.js";
 import { getGauntletRivalById } from "../engine/index.js";
@@ -703,6 +704,7 @@ export function createMultiplayerFoundation({
   profileAuthority = null,
   accountStore = null,
   adminGrantStore = null,
+  specialCosmeticRegistryStore = null,
   feedbackStore = null,
   boostEventStore = null,
   shopRotationStore = null,
@@ -2989,6 +2991,196 @@ export function createMultiplayerFoundation({
 
         respond({
           ...buildAdminError(error, "ADMIN_GRANT_FAILED"),
+          ...(finalizedEntry ? { result: buildAdminGrantStatusPayload(finalizedEntry) } : {})
+        });
+      }
+    });
+
+    socket.on("admin:updateSpecialCosmeticAssignment", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof specialCosmeticRegistryStore?.updateAssignment !== "function") {
+          throw Object.assign(new Error("Special cosmetic registry is not available."), {
+            code: "SPECIAL_COSMETIC_REGISTRY_UNAVAILABLE"
+          });
+        }
+        const record = await specialCosmeticRegistryStore.updateAssignment({
+          cosmeticId: payload?.cosmeticId,
+          createdForUsername: payload?.createdForUsername
+        });
+        respond({
+          ok: true,
+          result: buildPublicSpecialCosmeticRecord(record)
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "SPECIAL_COSMETIC_ASSIGNMENT_FAILED"));
+      }
+    });
+
+    socket.on("admin:grantSpecialCosmetic", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+
+      let adminAccess = null;
+      try {
+        adminAccess = assertAdminAccessForSession(sessionResult.session);
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_AUTH_FAILED"));
+        return;
+      }
+
+      const targetUsername = normalizeSettledUsername(payload?.username);
+      const transactionId = normalizeAdminTransactionId(payload?.transactionId);
+      const cosmetic = sanitizeAdminCosmeticEntry(payload?.cosmetic);
+      if (!targetUsername || !transactionId || !cosmetic) {
+        respond(
+          buildAdminError(
+            {
+              code: "SPECIAL_COSMETIC_GRANT_INVALID",
+              message: "username, transactionId, cosmetic type, and cosmeticId are required."
+            },
+            "SPECIAL_COSMETIC_GRANT_INVALID"
+          )
+        );
+        return;
+      }
+      if (
+        !adminGrantStore ||
+        typeof profileAuthority?.grantSpecialCosmetic !== "function" ||
+        typeof specialCosmeticRegistryStore?.getRecord !== "function"
+      ) {
+        respond(
+          buildAdminError(
+            {
+              code: "SPECIAL_COSMETIC_AUTHORITY_UNAVAILABLE",
+              message: "Special cosmetic grant authority is not available."
+            },
+            "SPECIAL_COSMETIC_AUTHORITY_UNAVAILABLE"
+          )
+        );
+        return;
+      }
+
+      try {
+        const registryRecord = await specialCosmeticRegistryStore.getRecord(cosmetic.cosmeticId);
+        if (!registryRecord || !["approved", "assigned", "granted"].includes(registryRecord.status)) {
+          throw Object.assign(
+            new Error("Special cosmetic must exist in the registry and be approved before grant."),
+            { code: "SPECIAL_COSMETIC_NOT_APPROVED" }
+          );
+        }
+        const definition = getCosmeticDefinition(cosmetic.type, cosmetic.cosmeticId);
+        if (!definition || definition.rarity !== "Unique") {
+          throw Object.assign(
+            new Error("Special cosmetic must exist in the catalog with Unique rarity."),
+            { code: "SPECIAL_COSMETIC_CATALOG_INVALID" }
+          );
+        }
+
+        const grantPayload = {
+          cosmetic,
+          createdForUsername: registryRecord.createdForUsername ?? null
+        };
+        const transactionStart = await adminGrantStore.beginTransaction({
+          transactionId,
+          timestamp: new Date().toISOString(),
+          adminId: adminAccess.adminIdentifier,
+          targetUsername,
+          grantType: "special_cosmetic_grant",
+          payload: grantPayload,
+          adminSocketId: socket.id
+        });
+        if (transactionStart.duplicate) {
+          const existing = transactionStart.entry;
+          respond(
+            existing?.status === "success"
+              ? {
+                  ok: true,
+                  duplicate: true,
+                  result: buildAdminGrantStatusPayload(existing)
+                }
+              : {
+                  ok: false,
+                  duplicate: true,
+                  error: {
+                    code:
+                      existing?.status === "failure"
+                        ? "ADMIN_GRANT_PREVIOUS_FAILURE"
+                        : "ADMIN_GRANT_IN_PROGRESS",
+                    message:
+                      existing?.error?.message ??
+                      (existing?.status === "failure"
+                        ? "This transaction previously failed."
+                        : "This transaction is already being processed.")
+                  },
+                  result: buildAdminGrantStatusPayload(existing)
+                }
+          );
+          return;
+        }
+
+        const grantResult = await profileAuthority.grantSpecialCosmetic({
+          username: targetUsername,
+          ...cosmetic
+        });
+        await specialCosmeticRegistryStore.markGranted(cosmetic.cosmeticId);
+        const targetSocketId = sessionStore.getSocketIdByUsername(targetUsername);
+        let finalizedEntry = await adminGrantStore.finalizeTransaction({
+          transactionId,
+          status: "success",
+          result: {
+            profile: grantResult?.snapshot ?? null,
+            applied: {
+              xp: 0,
+              tokens: 0,
+              chests: [],
+              cosmetic: grantResult?.cosmeticGrant ?? cosmetic
+            },
+            cosmetics: grantResult?.cosmetics ?? null
+          },
+          confirmationStatus: targetSocketId ? "awaiting_player" : "player_offline",
+          error: null
+        });
+        if (targetSocketId) {
+          finalizedEntry = await adminGrantStore.markDelivered({
+            transactionId,
+            confirmationStatus: "awaiting_player"
+          });
+          io.to(targetSocketId).emit(
+            "admin:grantNotice",
+            buildAdminGrantNoticePayload(finalizedEntry)
+          );
+        }
+        respond({ ok: true, result: buildAdminGrantStatusPayload(finalizedEntry) });
+      } catch (error) {
+        const existing = await adminGrantStore.getByTransactionId(transactionId);
+        const finalizedEntry =
+          existing && existing.status === "processing"
+            ? await adminGrantStore
+                .finalizeTransaction({
+                  transactionId,
+                  status: "failure",
+                  result: null,
+                  confirmationStatus: "failed",
+                  error: {
+                    code: error?.code ?? "SPECIAL_COSMETIC_GRANT_FAILED",
+                    message: String(error?.message ?? "Unable to grant special cosmetic.")
+                  }
+                })
+                .catch(() => null)
+            : null;
+        respond({
+          ...buildAdminError(error, "SPECIAL_COSMETIC_GRANT_FAILED"),
           ...(finalizedEntry ? { result: buildAdminGrantStatusPayload(finalizedEntry) } : {})
         });
       }

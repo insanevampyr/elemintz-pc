@@ -55,9 +55,11 @@ export function normalizeSpecialCosmeticRecord(record = {}, { now = new Date().t
   const requestedAssignmentStatus = SPECIAL_COSMETIC_ASSIGNMENT_STATUSES.includes(source.assignmentStatus)
     ? source.assignmentStatus
     : "unassigned";
-  const uniqueOwnerUsername = normalizeOptionalUsername(source.uniqueOwnerUsername);
+  const createdForUsername = normalizeOptionalUsername(
+    source.createdForUsername ?? source.uniqueOwnerUsername
+  );
   const assignmentStatus =
-    requestedAssignmentStatus === "assigned" && !uniqueOwnerUsername
+    requestedAssignmentStatus === "assigned" && !createdForUsername
       ? "unassigned"
       : requestedAssignmentStatus;
   const requestedSaleLimitMode = SPECIAL_COSMETIC_SALE_LIMIT_MODES.includes(source.saleLimitMode)
@@ -91,8 +93,8 @@ export function normalizeSpecialCosmeticRecord(record = {}, { now = new Date().t
     cosmeticId,
     status,
     assignmentStatus,
-    uniqueOwnerUsername:
-      assignmentStatus === "assigned" && uniqueOwnerUsername ? uniqueOwnerUsername : null,
+    createdForUsername:
+      assignmentStatus === "assigned" && createdForUsername ? createdForUsername : null,
     grantOnly: typeof source.grantOnly === "boolean" ? source.grantOnly : true,
     shopEligible: typeof source.shopEligible === "boolean" ? source.shopEligible : false,
     shopListed: typeof source.shopListed === "boolean" ? source.shopListed : false,
@@ -205,6 +207,61 @@ export class SpecialCosmeticRegistryStore {
       registry.records.sort((left, right) => left.cosmeticId.localeCompare(right.cosmeticId));
       await this.store.write(registry);
       return clone(normalized);
+    });
+  }
+
+  async updateAssignment({ cosmeticId, createdForUsername } = {}) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safeCosmeticId = normalizeRequiredId(cosmeticId);
+      const index = registry.records.findIndex((entry) => entry.cosmeticId === safeCosmeticId);
+      if (index === -1) {
+        throw new Error(`Unknown special cosmetic '${safeCosmeticId}'.`);
+      }
+      const normalizedUsername = normalizeOptionalUsername(createdForUsername);
+      const current = registry.records[index];
+      const next = normalizeSpecialCosmeticRecord(
+        {
+          ...current,
+          assignmentStatus: normalizedUsername ? "assigned" : "unassigned",
+          createdForUsername: normalizedUsername,
+          status:
+            normalizedUsername && current.status === "approved"
+              ? "assigned"
+              : !normalizedUsername && current.status === "assigned"
+                ? "approved"
+                : current.status,
+          updatedAt: now
+        },
+        { now }
+      );
+      registry.records[index] = next;
+      await this.store.write(registry);
+      return clone(next);
+    });
+  }
+
+  async markGranted(cosmeticId) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safeCosmeticId = normalizeRequiredId(cosmeticId);
+      const index = registry.records.findIndex((entry) => entry.cosmeticId === safeCosmeticId);
+      if (index === -1) {
+        throw new Error(`Unknown special cosmetic '${safeCosmeticId}'.`);
+      }
+      const next = normalizeSpecialCosmeticRecord(
+        {
+          ...registry.records[index],
+          status: "granted",
+          updatedAt: now
+        },
+        { now }
+      );
+      registry.records[index] = next;
+      await this.store.write(registry);
+      return clone(next);
     });
   }
 }

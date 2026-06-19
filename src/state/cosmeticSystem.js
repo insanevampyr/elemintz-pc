@@ -3142,7 +3142,9 @@ export function normalizeCosmeticMetadata(item = {}) {
     shopEligible: typeof source.shopEligible === "boolean" ? source.shopEligible : true,
     shopListed: typeof source.shopListed === "boolean" ? source.shopListed : true,
     assignmentStatus,
-    uniqueOwnerUsername: normalizeOptionalUsername(source.uniqueOwnerUsername),
+    createdForUsername: normalizeOptionalUsername(
+      source.createdForUsername ?? source.uniqueOwnerUsername
+    ),
     royalty: {
       enabled: typeof royaltySource.enabled === "boolean" ? royaltySource.enabled : false,
       recipientUsername: normalizeOptionalUsername(royaltySource.recipientUsername),

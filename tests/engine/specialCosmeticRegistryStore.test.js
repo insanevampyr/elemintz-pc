@@ -41,7 +41,7 @@ test("special cosmetic registry: valid approved config round-trips with stable t
     cosmeticId: "avatar_unique_fixture",
     status: "approved",
     assignmentStatus: "assigned",
-    uniqueOwnerUsername: " UniqueOwner ",
+    createdForUsername: " UniqueOwner ",
     grantOnly: true,
     shopEligible: true,
     shopListed: false,
@@ -93,7 +93,7 @@ test("special cosmetic registry: new records default safe and malformed fields r
 
   assert.equal(normalized.status, "draft");
   assert.equal(normalized.assignmentStatus, "unassigned");
-  assert.equal(normalized.uniqueOwnerUsername, null);
+  assert.equal(normalized.createdForUsername, null);
   assert.equal(normalized.grantOnly, true);
   assert.equal(normalized.shopEligible, false);
   assert.equal(normalized.shopListed, false);
@@ -123,6 +123,32 @@ test("special cosmetic registry: limited sold count repairs to total and public 
 
   assert.equal(normalized.saleLimitSold, 5);
   assert.equal("adminNotes" in publicRecord, false);
+});
+
+test("special cosmetic registry: Created For can remain unassigned, assign later, and accepts legacy owner alias", async () => {
+  const dataDir = await createTempDataDir();
+  const store = new SpecialCosmeticRegistryStore({ dataDir });
+  const created = await store.upsertConfig({
+    cosmeticId: "avatar_created_for_fixture",
+    status: "approved",
+    assignmentStatus: "unassigned",
+    uniqueOwnerUsername: "LegacyCreator"
+  });
+
+  assert.equal(created.createdForUsername, null);
+  const assigned = await store.updateAssignment({
+    cosmeticId: "avatar_created_for_fixture",
+    createdForUsername: "CopyCell"
+  });
+  assert.equal(assigned.assignmentStatus, "assigned");
+  assert.equal(assigned.createdForUsername, "CopyCell");
+
+  const cleared = await store.updateAssignment({
+    cosmeticId: "avatar_created_for_fixture",
+    createdForUsername: null
+  });
+  assert.equal(cleared.assignmentStatus, "unassigned");
+  assert.equal(cleared.createdForUsername, null);
 });
 
 test("special cosmetic registry: persistence does not enforce shop listing or trigger grants", async () => {
