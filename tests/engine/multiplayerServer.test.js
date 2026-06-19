@@ -3690,6 +3690,68 @@ test("multiplayer foundation: approved Unique grants are authoritative, idempote
     });
     assert.equal(rejectedSoldOverride?.ok, false);
     assert.match(rejectedSoldOverride?.error?.message ?? "", /saleLimitSold is server-owned/);
+    const royaltyResponse = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:updateSpecialCosmeticRoyalty",
+        {
+          sessionToken: login?.session?.token,
+          cosmeticId: "fireavatarF",
+          royalty: {
+            enabled: true,
+            recipientUsername: "RoyaltyRecipient",
+            tokenPercent: 25
+          }
+        },
+        resolve
+      );
+    });
+    assert.equal(royaltyResponse?.ok, true);
+    assert.deepEqual(royaltyResponse?.result?.royalty, {
+      enabled: true,
+      recipientUsername: "RoyaltyRecipient",
+      tokenPercent: 25
+    });
+    assert.equal(royaltyResponse?.result?.createdForUsername, "CopyCell");
+    assert.equal(royaltyResponse?.result?.saleLimitSold, 0);
+    assert.equal("adminNotes" in (royaltyResponse?.result ?? {}), false);
+    const invalidRoyaltyRecipient = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:updateSpecialCosmeticRoyalty",
+        {
+          sessionToken: login?.session?.token,
+          cosmeticId: "fireavatarF",
+          royalty: {
+            enabled: true,
+            recipientUsername: "MissingRoyaltyRecipient",
+            tokenPercent: 25
+          }
+        },
+        resolve
+      );
+    });
+    assert.equal(invalidRoyaltyRecipient?.ok, false);
+    assert.match(invalidRoyaltyRecipient?.error?.message ?? "", /was not found/);
+    const rejectedRoyaltyInventoryMutation = await new Promise((resolve) => {
+      adminClient.emit(
+        "admin:updateSpecialCosmeticRoyalty",
+        {
+          sessionToken: login?.session?.token,
+          cosmeticId: "fireavatarF",
+          royalty: {
+            enabled: false,
+            recipientUsername: null,
+            tokenPercent: 0
+          },
+          saleLimitSold: 1
+        },
+        resolve
+      );
+    });
+    assert.equal(rejectedRoyaltyInventoryMutation?.ok, false);
+    assert.match(
+      rejectedRoyaltyInventoryMutation?.error?.message ?? "",
+      /forbidden fields: saleLimitSold/
+    );
     const profileAfterConfig = await coordinator.profiles.getProfile("UniqueGrantTarget");
     assert.equal(profileAfterConfig.ownedCosmetics.avatar.includes("fireavatarF"), false);
     const payload = {

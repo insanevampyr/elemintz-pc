@@ -15,6 +15,8 @@ export const SPECIAL_COSMETIC_ASSIGNMENT_STATUSES = Object.freeze([
   "revoked"
 ]);
 export const SPECIAL_COSMETIC_SALE_LIMIT_MODES = Object.freeze(["unlimited", "limited"]);
+export const MAX_UNIQUE_ROYALTY_TOKEN_PERCENT = 50;
+const ALLOWED_ROYALTY_FIELDS = new Set(["enabled", "recipientUsername", "tokenPercent"]);
 
 const EMPTY_REGISTRY = Object.freeze({
   version: SPECIAL_COSMETIC_REGISTRY_VERSION,
@@ -89,7 +91,7 @@ export function normalizeSpecialCosmeticRecord(record = {}, { now = new Date().t
       : {};
   const royaltyRecipientUsername = normalizeOptionalUsername(royaltySource.recipientUsername);
   const royaltyPercent = Math.min(
-    100,
+    MAX_UNIQUE_ROYALTY_TOKEN_PERCENT,
     Math.max(0, Number.isFinite(Number(royaltySource.tokenPercent)) ? Number(royaltySource.tokenPercent) : 0)
   );
   const royaltyEnabled =
@@ -318,6 +320,95 @@ export class SpecialCosmeticRegistryStore {
           saleLimitMode: source.saleLimitMode,
           saleLimitTotal,
           saleLimitSold: current.saleLimitSold,
+          updatedAt: now
+        },
+        { now }
+      );
+      registry.records[index] = next;
+      await this.store.write(registry);
+      return clone(next);
+    });
+  }
+
+  async updateRoyaltyConfig({ cosmeticId, royalty, validateRecipient } = {}) {
+    const source = royalty && typeof royalty === "object" && !Array.isArray(royalty)
+      ? royalty
+      : null;
+    if (!source) {
+      throw new Error("royalty must be an object.");
+    }
+    const unsupportedFields = Object.keys(source).filter(
+      (field) => !ALLOWED_ROYALTY_FIELDS.has(field)
+    );
+    if (unsupportedFields.length > 0) {
+      throw new Error(`royalty contains unsupported fields: ${unsupportedFields.join(", ")}.`);
+    }
+    if (typeof source.enabled !== "boolean") {
+      throw new Error("royalty.enabled must be a boolean.");
+    }
+
+    let normalizedRoyalty = {
+      enabled: false,
+      recipientUsername: null,
+      tokenPercent: 0
+    };
+    if (source.enabled) {
+      const recipientUsername = normalizeOptionalUsername(source.recipientUsername);
+      if (!recipientUsername) {
+        throw new Error("royalty.recipientUsername is required when enabled.");
+      }
+      if (typeof source.tokenPercent !== "number" || !Number.isFinite(source.tokenPercent)) {
+        throw new Error("royalty.tokenPercent must be a number.");
+      }
+      if (source.tokenPercent <= 0) {
+        throw new Error("royalty.tokenPercent must be greater than 0 when enabled.");
+      }
+      if (source.tokenPercent > MAX_UNIQUE_ROYALTY_TOKEN_PERCENT) {
+        throw new Error(
+          `royalty.tokenPercent cannot exceed ${MAX_UNIQUE_ROYALTY_TOKEN_PERCENT}.`
+        );
+      }
+      if (typeof validateRecipient !== "function") {
+        throw new Error("Royalty recipient validation is unavailable.");
+      }
+      const validRecipient = await validateRecipient(recipientUsername);
+      if (!validRecipient) {
+        throw new Error(`Royalty recipient '${recipientUsername}' was not found.`);
+      }
+      normalizedRoyalty = {
+        enabled: true,
+        recipientUsername,
+        tokenPercent: source.tokenPercent
+      };
+    } else {
+      const suppliedRecipient = normalizeOptionalUsername(source.recipientUsername);
+      if (suppliedRecipient || Number(source.tokenPercent ?? 0) !== 0) {
+        throw new Error(
+          "Disabled royalty must use recipientUsername null and tokenPercent 0."
+        );
+      }
+    }
+
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safeCosmeticId = normalizeRequiredId(cosmeticId);
+      const index = registry.records.findIndex((entry) => entry.cosmeticId === safeCosmeticId);
+      if (index === -1) {
+        throw new Error(`Unknown special cosmetic '${safeCosmeticId}'.`);
+      }
+      const current = registry.records[index];
+      if (!["approved", "assigned", "granted"].includes(current.status)) {
+        throw new Error("Special cosmetic must be approved before royalty configuration.");
+      }
+
+      const next = normalizeSpecialCosmeticRecord(
+        {
+          ...current,
+          royalty: normalizedRoyalty,
+          saleLimitSold: current.saleLimitSold,
+          createdForUsername: current.createdForUsername,
+          adminNotes: current.adminNotes,
           updatedAt: now
         },
         { now }

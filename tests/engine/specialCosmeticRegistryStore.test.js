@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   buildPublicSpecialCosmeticRecord,
+  MAX_UNIQUE_ROYALTY_TOKEN_PERCENT,
   normalizeSpecialCosmeticRecord,
   SpecialCosmeticRegistryStore
 } from "../../src/state/specialCosmeticRegistryStore.js";
@@ -359,4 +360,169 @@ test("special cosmetic registry: token purchase reservation is serialized and ro
     saleLimitSoldAfter: 1
   });
   assert.equal((await registry.getRecord("unique_inventory_fixture")).saleLimitSold, 0);
+});
+
+test("special cosmetic registry: royalty config validates and preserves server-owned fields", async () => {
+  const dataDir = await createTempDataDir();
+  const registry = new SpecialCosmeticRegistryStore({ dataDir });
+  const seeded = await registry.upsertConfig({
+    cosmeticId: "unique_royalty_fixture",
+    status: "assigned",
+    assignmentStatus: "assigned",
+    createdForUsername: "CopyCell",
+    shopEligible: true,
+    shopListed: true,
+    price: 500,
+    saleLimitMode: "limited",
+    saleLimitTotal: 10,
+    saleLimitSold: 3,
+    adminNotes: "private note"
+  });
+  await registry.store.write({
+    version: 1,
+    records: [{ ...seeded, saleLimitSold: 3 }]
+  });
+
+  const enabled = await registry.updateRoyaltyConfig({
+    cosmeticId: "unique_royalty_fixture",
+    royalty: {
+      enabled: true,
+      recipientUsername: " RoyaltyRecipient ",
+      tokenPercent: 25
+    },
+    validateRecipient: async (username) => username === "RoyaltyRecipient"
+  });
+  assert.deepEqual(enabled.royalty, {
+    enabled: true,
+    recipientUsername: "RoyaltyRecipient",
+    tokenPercent: 25
+  });
+  assert.equal(enabled.createdForUsername, "CopyCell");
+  assert.equal(enabled.saleLimitSold, 3);
+  assert.equal(enabled.adminNotes, "private note");
+  assert.equal("adminNotes" in buildPublicSpecialCosmeticRecord(enabled), false);
+
+  const disabled = await registry.updateRoyaltyConfig({
+    cosmeticId: "unique_royalty_fixture",
+    royalty: {
+      enabled: false,
+      recipientUsername: null,
+      tokenPercent: 0
+    },
+    validateRecipient: async () => false
+  });
+  assert.deepEqual(disabled.royalty, {
+    enabled: false,
+    recipientUsername: null,
+    tokenPercent: 0
+  });
+});
+
+test("special cosmetic registry: royalty config rejects unsafe shapes and values", async () => {
+  const dataDir = await createTempDataDir();
+  const registry = new SpecialCosmeticRegistryStore({ dataDir });
+  await registry.upsertConfig({
+    cosmeticId: "unique_royalty_validation_fixture",
+    status: "approved"
+  });
+  const update = (royalty, validateRecipient = async () => true) =>
+    registry.updateRoyaltyConfig({
+      cosmeticId: "unique_royalty_validation_fixture",
+      royalty,
+      validateRecipient
+    });
+
+  await assert.rejects(update(null), /royalty must be an object/);
+  await assert.rejects(
+    update({ enabled: "true", recipientUsername: "Player", tokenPercent: 10 }),
+    /enabled must be a boolean/
+  );
+  await assert.rejects(
+    update({ enabled: true, recipientUsername: "", tokenPercent: 10 }),
+    /recipientUsername is required/
+  );
+  await assert.rejects(
+    update({ enabled: true, recipientUsername: "Missing", tokenPercent: 10 }, async () => false),
+    /was not found/
+  );
+  await assert.rejects(
+    update({ enabled: true, recipientUsername: "Player", tokenPercent: "10" }),
+    /must be a number/
+  );
+  await assert.rejects(
+    update({ enabled: true, recipientUsername: "Player", tokenPercent: -1 }),
+    /greater than 0/
+  );
+  await assert.rejects(
+    update({ enabled: true, recipientUsername: "Player", tokenPercent: 0 }),
+    /greater than 0/
+  );
+  await assert.rejects(
+    update({
+      enabled: true,
+      recipientUsername: "Player",
+      tokenPercent: MAX_UNIQUE_ROYALTY_TOKEN_PERCENT + 1
+    }),
+    /cannot exceed 50/
+  );
+  await assert.rejects(
+    update({
+      enabled: true,
+      recipientUsername: ["Player", "Other"],
+      tokenPercent: 10
+    }),
+    /recipientUsername is required/
+  );
+  await assert.rejects(
+    update({
+      enabled: true,
+      recipientUsername: "Player",
+      tokenPercent: 10,
+      recipients: ["Player", "Other"]
+    }),
+    /unsupported fields: recipients/
+  );
+  await assert.rejects(
+    update({
+      enabled: true,
+      recipientUsername: "Player",
+      tokenPercent: 10,
+      xpPercent: 5
+    }),
+    /unsupported fields: xpPercent/
+  );
+  await assert.rejects(
+    update({
+      enabled: true,
+      recipientUsername: "Player",
+      tokenPercent: 10,
+      cashPercent: 5
+    }),
+    /unsupported fields: cashPercent/
+  );
+  await assert.rejects(
+    update({
+      enabled: false,
+      recipientUsername: "Player",
+      tokenPercent: 0
+    }),
+    /Disabled royalty/
+  );
+  await assert.rejects(
+    update({
+      enabled: false,
+      recipientUsername: null,
+      tokenPercent: 10
+    }),
+    /Disabled royalty/
+  );
+  await assert.rejects(
+    update({
+      enabled: false,
+      recipientUsername: null,
+      tokenPercent: 0,
+      saleLimitSold: 9
+    }),
+    /unsupported fields: saleLimitSold/
+  );
 });

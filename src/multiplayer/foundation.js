@@ -3050,6 +3050,55 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:updateSpecialCosmeticRoyalty", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        const forbiddenMutationFields = [
+          "saleLimitSold",
+          "ownedCosmetics",
+          "ledger",
+          "tokens",
+          "adminNotes",
+          "payoutHistory"
+        ].filter((field) => Object.prototype.hasOwnProperty.call(payload, field));
+        if (forbiddenMutationFields.length > 0) {
+          throw new Error(
+            `Royalty update contains forbidden fields: ${forbiddenMutationFields.join(", ")}.`
+          );
+        }
+        if (typeof specialCosmeticRegistryStore?.updateRoyaltyConfig !== "function") {
+          throw Object.assign(new Error("Special cosmetic registry is not available."), {
+            code: "SPECIAL_COSMETIC_REGISTRY_UNAVAILABLE"
+          });
+        }
+        if (typeof profileAuthority?.resolveViewedProfileIdentity !== "function") {
+          throw Object.assign(new Error("Royalty recipient validation is unavailable."), {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const record = await specialCosmeticRegistryStore.updateRoyaltyConfig({
+          cosmeticId: payload?.cosmeticId,
+          royalty: payload?.royalty,
+          validateRecipient: async (username) => {
+            const resolved = await profileAuthority.resolveViewedProfileIdentity(username);
+            return Boolean(resolved?.profile);
+          }
+        });
+        respond({
+          ok: true,
+          result: buildPublicSpecialCosmeticRecord(record)
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "SPECIAL_COSMETIC_ROYALTY_FAILED"));
+      }
+    });
+
     socket.on("admin:grantSpecialCosmetic", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
