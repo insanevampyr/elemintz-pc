@@ -191,6 +191,56 @@ export class SpecialCosmeticRegistryStore {
     );
   }
 
+  async approvePendingCosmetic(cosmeticId) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safeCosmeticId = normalizeRequiredId(cosmeticId);
+      const index = registry.records.findIndex((entry) => entry.cosmeticId === safeCosmeticId);
+      const existing = index >= 0 ? registry.records[index] : null;
+
+      if (existing && ["approved", "assigned", "granted"].includes(existing.status)) {
+        return clone(existing);
+      }
+
+      const approved = normalizeSpecialCosmeticRecord(
+        {
+          cosmeticId: safeCosmeticId,
+          status: "approved",
+          assignmentStatus: "unassigned",
+          createdForUsername: null,
+          grantOnly: true,
+          shopEligible: false,
+          shopListed: false,
+          storeHidden: false,
+          rotationOnly: false,
+          price: null,
+          saleLimitMode: "unlimited",
+          saleLimitTotal: null,
+          saleLimitSold: existing?.saleLimitSold ?? 0,
+          royalty: {
+            enabled: false,
+            recipientUsername: null,
+            tokenPercent: 0
+          },
+          adminNotes: existing?.adminNotes ?? "",
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now
+        },
+        { now }
+      );
+
+      if (index >= 0) {
+        registry.records[index] = approved;
+      } else {
+        registry.records.push(approved);
+      }
+      registry.records.sort((left, right) => left.cosmeticId.localeCompare(right.cosmeticId));
+      await this.store.write(registry);
+      return clone(approved);
+    });
+  }
+
   async upsertConfig(record) {
     return this.runMutation(async () => {
       const now = this.now();

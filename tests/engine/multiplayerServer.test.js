@@ -3798,6 +3798,288 @@ test("multiplayer foundation: approved Unique grants are authoritative, idempote
   }
 });
 
+test("multiplayer foundation: Admin approval creates a safe catalog-backed Unique registry record", async () => {
+  const dataDir = await createTempDataDir();
+  const specialCosmeticRegistryStore = new SpecialCosmeticRegistryStore({ dataDir });
+  const coordinator = new StateCoordinator({ dataDir, specialCosmeticRegistryStore });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminGrantStore = new AdminGrantStore({ dataDir });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminGrantStore,
+    specialCosmeticRegistryStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let anonymousClient = null;
+
+  try {
+    await coordinator.profiles.ensureProfile("ApprovalGrantTarget");
+    await coordinator.profiles.ensureProfile("CopyCell");
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "regular@example.com",
+      password: "PlayerPass123",
+      username: "RegularPlayer"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    anonymousClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    const adminToken = adminLogin?.session?.token;
+    const playerToken = playerLogin?.session?.token;
+
+    for (const [eventName, payload] of [
+      [
+        "admin:updateSpecialCosmeticAssignment",
+        { cosmeticId: "avatar_lycan_anubis", createdForUsername: "CopyCell" }
+      ],
+      [
+        "admin:updateSpecialCosmeticConfig",
+        {
+          cosmeticId: "avatar_lycan_anubis",
+          config: {
+            grantOnly: false,
+            shopEligible: true,
+            shopListed: true,
+            storeHidden: false,
+            rotationOnly: false,
+            price: 1500,
+            saleLimitMode: "unlimited",
+            saleLimitTotal: null
+          }
+        }
+      ],
+      [
+        "admin:updateSpecialCosmeticRoyalty",
+        {
+          cosmeticId: "avatar_lycan_anubis",
+          royalty: {
+            enabled: true,
+            recipientUsername: "CopyCell",
+            tokenPercent: 10
+          }
+        }
+      ],
+      [
+        "admin:grantSpecialCosmetic",
+        {
+          transactionId: "approval-before-registry-grant",
+          username: "ApprovalGrantTarget",
+          cosmetic: { type: "avatar", cosmeticId: "avatar_lycan_anubis" }
+        }
+      ]
+    ]) {
+      const response = await emitWithAck(adminClient, eventName, {
+        sessionToken: adminToken,
+        ...payload
+      });
+      assert.equal(response?.ok, false);
+    }
+
+    const approvalItem = {
+      id: "avatar_lycan_anubis",
+      category: "avatar",
+      collection: null
+    };
+    const unauthenticated = await emitWithAck(
+      anonymousClient,
+      "admin:approvePendingSpecialCosmetic",
+      { item: approvalItem }
+    );
+    assert.equal(unauthenticated?.ok, false);
+
+    const nonAdmin = await emitWithAck(
+      playerClient,
+      "admin:approvePendingSpecialCosmetic",
+      { sessionToken: playerToken, item: approvalItem }
+    );
+    assert.equal(nonAdmin?.ok, false);
+    assert.match(nonAdmin?.error?.message ?? "", /does not have admin access/);
+
+    const unknown = await emitWithAck(
+      adminClient,
+      "admin:approvePendingSpecialCosmetic",
+      {
+        sessionToken: adminToken,
+        item: { id: "avatar_missing_unique", category: "avatar", collection: null }
+      }
+    );
+    assert.equal(unknown?.ok, false);
+    assert.match(unknown?.error?.message ?? "", /does not exist in the catalog/);
+
+    const nonUnique = await emitWithAck(
+      adminClient,
+      "admin:approvePendingSpecialCosmetic",
+      {
+        sessionToken: adminToken,
+        item: { id: "default_avatar", category: "avatar", collection: null }
+      }
+    );
+    assert.equal(nonUnique?.ok, false);
+    assert.match(nonUnique?.error?.message ?? "", /must have Unique rarity/);
+
+    const mismatchedCategory = await emitWithAck(
+      adminClient,
+      "admin:approvePendingSpecialCosmetic",
+      {
+        sessionToken: adminToken,
+        item: { id: "avatar_lycan_anubis", category: "background", collection: "" }
+      }
+    );
+    assert.equal(mismatchedCategory?.ok, false);
+    assert.match(mismatchedCategory?.error?.message ?? "", /does not match catalog category/);
+
+    const protectedFields = await emitWithAck(
+      adminClient,
+      "admin:approvePendingSpecialCosmetic",
+      {
+        sessionToken: adminToken,
+        item: { ...approvalItem, saleLimitSold: 9 }
+      }
+    );
+    assert.equal(protectedFields?.ok, false);
+    assert.match(protectedFields?.error?.message ?? "", /unsupported fields: saleLimitSold/);
+
+    const beforeProfile = await coordinator.profiles.getProfile("ApprovalGrantTarget");
+    const firstApproval = await emitWithAck(
+      adminClient,
+      "admin:approvePendingSpecialCosmetic",
+      { sessionToken: adminToken, item: approvalItem }
+    );
+    const duplicateApproval = await emitWithAck(
+      adminClient,
+      "admin:approvePendingSpecialCosmetic",
+      { sessionToken: adminToken, item: approvalItem }
+    );
+    const approvedRecord = await specialCosmeticRegistryStore.getRecord(
+      "avatar_lycan_anubis"
+    );
+    const afterProfile = await coordinator.profiles.getProfile("ApprovalGrantTarget");
+
+    assert.equal(firstApproval?.ok, true);
+    assert.deepEqual(duplicateApproval?.result, firstApproval?.result);
+    assert.equal((await specialCosmeticRegistryStore.listRecords()).length, 1);
+    assert.equal(approvedRecord.status, "approved");
+    assert.equal(approvedRecord.assignmentStatus, "unassigned");
+    assert.equal(approvedRecord.createdForUsername, null);
+    assert.equal(approvedRecord.grantOnly, true);
+    assert.equal(approvedRecord.shopEligible, false);
+    assert.equal(approvedRecord.shopListed, false);
+    assert.equal(approvedRecord.price, null);
+    assert.equal(approvedRecord.saleLimitSold, 0);
+    assert.deepEqual(approvedRecord.royalty, {
+      enabled: false,
+      recipientUsername: null,
+      tokenPercent: 0
+    });
+    assert.equal("adminNotes" in (firstApproval?.result ?? {}), false);
+    assert.deepEqual(afterProfile.ownedCosmetics, beforeProfile.ownedCosmetics);
+
+    const assignment = await emitWithAck(
+      adminClient,
+      "admin:updateSpecialCosmeticAssignment",
+      {
+        sessionToken: adminToken,
+        cosmeticId: approvalItem.id,
+        createdForUsername: "CopyCell"
+      }
+    );
+    const config = await emitWithAck(
+      adminClient,
+      "admin:updateSpecialCosmeticConfig",
+      {
+        sessionToken: adminToken,
+        cosmeticId: approvalItem.id,
+        config: {
+          grantOnly: false,
+          shopEligible: true,
+          shopListed: true,
+          storeHidden: false,
+          rotationOnly: false,
+          price: 1500,
+          saleLimitMode: "unlimited",
+          saleLimitTotal: null
+        }
+      }
+    );
+    const royalty = await emitWithAck(
+      adminClient,
+      "admin:updateSpecialCosmeticRoyalty",
+      {
+        sessionToken: adminToken,
+        cosmeticId: approvalItem.id,
+        royalty: {
+          enabled: true,
+          recipientUsername: "CopyCell",
+          tokenPercent: 10
+        }
+      }
+    );
+    const afterConfiguredDuplicate = await emitWithAck(
+      adminClient,
+      "admin:approvePendingSpecialCosmetic",
+      { sessionToken: adminToken, item: approvalItem }
+    );
+
+    assert.equal(assignment?.ok, true);
+    assert.equal(config?.ok, true);
+    assert.equal(royalty?.ok, true);
+    assert.equal(afterConfiguredDuplicate?.result?.status, "assigned");
+    assert.equal(afterConfiguredDuplicate?.result?.createdForUsername, "CopyCell");
+    assert.equal(afterConfiguredDuplicate?.result?.price, 1500);
+    assert.equal(afterConfiguredDuplicate?.result?.shopListed, true);
+    assert.deepEqual(afterConfiguredDuplicate?.result?.royalty, {
+      enabled: true,
+      recipientUsername: "CopyCell",
+      tokenPercent: 10
+    });
+
+    const grant = await emitWithAck(adminClient, "admin:grantSpecialCosmetic", {
+      sessionToken: adminToken,
+      transactionId: "approval-after-registry-grant",
+      username: "ApprovalGrantTarget",
+      cosmetic: { type: "avatar", cosmeticId: approvalItem.id }
+    });
+    assert.equal(grant?.ok, true);
+    assert.equal(
+      (await coordinator.profiles.getProfile("ApprovalGrantTarget")).ownedCosmetics.avatar.includes(
+        approvalItem.id
+      ),
+      true
+    );
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    anonymousClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: Unique history is admin-only, sanitized, bounded, newest-first, and read-only", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

@@ -12,7 +12,7 @@ import { createSessionStore } from "./sessionStore.js";
 import { createLocalMatchSessionStore } from "./localMatchSessions.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
 import { getBasicChestDropChance, rollBasicChest } from "../shared/basicChestDrop.js";
-import { getCosmeticDefinition } from "../state/cosmeticSystem.js";
+import { COSMETIC_CATALOG, getCosmeticDefinition } from "../state/cosmeticSystem.js";
 import { buildPublicSpecialCosmeticRecord } from "../state/specialCosmeticRegistryStore.js";
 import { queryUniqueCosmeticHistory } from "../state/uniqueCosmeticHistory.js";
 import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
@@ -149,6 +149,54 @@ function sanitizeAdminCosmeticEntry(cosmetic) {
   return {
     type,
     cosmeticId
+  };
+}
+
+function validatePendingSpecialCosmeticApprovalItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    throw new Error("A pending cosmetic item is required.");
+  }
+  const unsupportedFields = Object.keys(item).filter(
+    (field) => !["id", "category", "collection"].includes(field)
+  );
+  if (unsupportedFields.length > 0) {
+    throw new Error(
+      `Pending cosmetic approval contains unsupported fields: ${unsupportedFields.join(", ")}.`
+    );
+  }
+
+  const cosmeticId = String(item.id ?? "").trim();
+  const category = String(item.category ?? "").trim();
+  if (!cosmeticId || !category) {
+    throw new Error("Pending cosmetic approval requires cosmetic id and category.");
+  }
+  if (
+    item.collection != null &&
+    typeof item.collection !== "string"
+  ) {
+    throw new Error("Pending cosmetic collection must be a string, null, or omitted.");
+  }
+
+  const definition = getCosmeticDefinition(category, cosmeticId);
+  if (!definition) {
+    const catalogType = Object.entries(COSMETIC_CATALOG).find(([, entries]) =>
+      entries.some((entry) => entry.id === cosmeticId)
+    )?.[0] ?? null;
+    if (catalogType) {
+      throw new Error(
+        `Pending cosmetic category '${category}' does not match catalog category '${catalogType}'.`
+      );
+    }
+    throw new Error(`Pending cosmetic '${cosmeticId}' does not exist in the catalog.`);
+  }
+  if (definition.rarity !== "Unique") {
+    throw new Error("Pending special cosmetic must have Unique rarity in the catalog.");
+  }
+
+  return {
+    cosmeticId,
+    category,
+    collection: String(item.collection ?? "").trim() || null
   };
 }
 
@@ -3022,6 +3070,33 @@ export function createMultiplayerFoundation({
         });
       } catch (error) {
         respond(buildAdminError(error, "SPECIAL_COSMETIC_ASSIGNMENT_FAILED"));
+      }
+    });
+
+    socket.on("admin:approvePendingSpecialCosmetic", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof specialCosmeticRegistryStore?.approvePendingCosmetic !== "function") {
+          throw Object.assign(new Error("Special cosmetic registry is not available."), {
+            code: "SPECIAL_COSMETIC_REGISTRY_UNAVAILABLE"
+          });
+        }
+        const approvedItem = validatePendingSpecialCosmeticApprovalItem(payload?.item);
+        const record = await specialCosmeticRegistryStore.approvePendingCosmetic(
+          approvedItem.cosmeticId
+        );
+        respond({
+          ok: true,
+          result: buildPublicSpecialCosmeticRecord(record)
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "SPECIAL_COSMETIC_APPROVAL_FAILED"));
       }
     });
 

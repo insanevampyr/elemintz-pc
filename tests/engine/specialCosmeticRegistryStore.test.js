@@ -70,6 +70,51 @@ test("special cosmetic registry: valid approved config round-trips with stable t
   assert.equal((await store.getRecord("avatar_unique_fixture")).adminNotes, "private");
 });
 
+test("special cosmetic registry: pending approval is safe and idempotently preserves later authority state", async () => {
+  const dataDir = await createTempDataDir();
+  const store = new SpecialCosmeticRegistryStore({ dataDir });
+
+  const approved = await store.approvePendingCosmetic("avatar_lycan_anubis");
+  assert.equal(approved.status, "approved");
+  assert.equal(approved.assignmentStatus, "unassigned");
+  assert.equal(approved.createdForUsername, null);
+  assert.equal(approved.grantOnly, true);
+  assert.equal(approved.shopEligible, false);
+  assert.equal(approved.shopListed, false);
+  assert.equal(approved.storeHidden, false);
+  assert.equal(approved.rotationOnly, false);
+  assert.equal(approved.price, null);
+  assert.equal(approved.saleLimitMode, "unlimited");
+  assert.equal(approved.saleLimitTotal, null);
+  assert.equal(approved.saleLimitSold, 0);
+  assert.deepEqual(approved.royalty, {
+    enabled: false,
+    recipientUsername: null,
+    tokenPercent: 0
+  });
+
+  await store.updateShopConfig({
+    cosmeticId: approved.cosmeticId,
+    config: {
+      grantOnly: false,
+      shopEligible: true,
+      shopListed: true,
+      storeHidden: false,
+      rotationOnly: false,
+      price: 1500,
+      saleLimitMode: "limited",
+      saleLimitTotal: 5
+    }
+  });
+  const beforeDuplicate = await store.getRecord(approved.cosmeticId);
+  const duplicate = await store.approvePendingCosmetic(approved.cosmeticId);
+
+  assert.deepEqual(duplicate, beforeDuplicate);
+  assert.equal((await store.listRecords()).length, 1);
+  assert.equal(duplicate.price, 1500);
+  assert.equal(duplicate.saleLimitTotal, 5);
+});
+
 test("special cosmetic registry: new records default safe and malformed fields repair deterministically", () => {
   const normalized = normalizeSpecialCosmeticRecord(
     {
