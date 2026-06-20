@@ -129,6 +129,33 @@ test("store: token purchase flow deducts currency and grants ownership", async (
   assert.ok(bought.profile.ownedCosmetics.avatar.includes("fireavatarF"));
 });
 
+test("store: inactive Lycan Anubis Unique avatar is not publicly listed", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const cosmetic = COSMETIC_CATALOG.avatar.find(
+    (item) => item.id === "avatar_lycan_anubis"
+  );
+
+  assert.ok(cosmetic);
+  assert.equal(cosmetic.purchasable, false);
+  assert.equal(cosmetic.grantOnly, true);
+  assert.equal(cosmetic.shopEligible, false);
+  assert.equal(cosmetic.shopListed, false);
+  assert.equal(cosmetic.storeHidden, true);
+  assert.equal(cosmetic.price, undefined);
+
+  const store = await state.getStore("LycanCatalogViewer");
+  assert.equal(
+    store.catalog.avatar.some((item) => item.id === cosmetic.id),
+    false
+  );
+
+  const cosmetics = await state.getCosmetics("LycanCatalogViewer");
+  const catalogItem = cosmetics.catalog.avatar.find((item) => item.id === cosmetic.id);
+  assert.equal(catalogItem?.owned, false);
+  assert.equal(catalogItem?.rarity, "Unique");
+});
+
 test("store: Unique registry config controls display and authoritative purchase", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-unique-display-"));
   const state = new StateCoordinator({ dataDir: dir });

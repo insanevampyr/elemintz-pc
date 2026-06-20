@@ -231,6 +231,48 @@ test("cosmetics: Unique rarity does not imply special metadata behavior", () => 
   assert.equal(normalized.saleLimitMode, "unlimited");
 });
 
+test("cosmetics: Lycan Anubis is an inactive grant-only Unique avatar", async () => {
+  const item = COSMETIC_CATALOG.avatar.find(
+    (candidate) => candidate.id === "avatar_lycan_anubis"
+  );
+
+  assert.ok(item);
+  assert.equal(item.name, "Lycan Anubis");
+  assert.equal(item.image, "avatars/avatar_lycan_anubis.png");
+  assert.equal(item.rarity, "Unique");
+  assert.equal(item.collection, "CopyCell Uniques");
+  assert.equal(item.releaseTag, "copycell_uniques");
+  assert.equal(item.isNew, false);
+  assert.equal(item.defaultOwned, false);
+  assert.equal(item.purchasable, false);
+  assert.equal(item.grantOnly, true);
+  assert.equal(item.shopEligible, false);
+  assert.equal(item.shopListed, false);
+  assert.equal(item.storeHidden, true);
+  assert.equal(item.rotationOnly, false);
+  assert.equal(item.chestOnly, false);
+  assert.equal(item.supporterOnly, false);
+  assert.equal(item.price, undefined);
+  assert.deepEqual(item.royalty, {
+    enabled: false,
+    recipientUsername: null,
+    tokenPercent: 0
+  });
+  assert.equal(item.saleLimitMode, "unlimited");
+  assert.equal(item.saleLimitTotal, null);
+
+  const unowned = getCosmeticCatalogForProfile({}).avatar.find(
+    (candidate) => candidate.id === item.id
+  );
+  const owned = getCosmeticCatalogForProfile({
+    ownedCosmetics: { avatar: [item.id] }
+  }).avatar.find((candidate) => candidate.id === item.id);
+
+  assert.equal(unowned?.owned, false);
+  assert.equal(owned?.owned, true);
+  await fs.access(path.resolve("assets/avatars/avatar_lycan_anubis.png"));
+});
+
 test("cosmetics: owned Unique remains visible with Created For metadata when unavailable in Store", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-owned-unique-"));
   const state = new StateCoordinator({ dataDir });

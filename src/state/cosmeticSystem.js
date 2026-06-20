@@ -780,6 +780,29 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: getBaseCosmeticPrice("avatar", "Legendary")
     },
     {
+      id: "avatar_lycan_anubis",
+      name: "Lycan Anubis",
+      image: "avatars/avatar_lycan_anubis.png",
+      rarity: "Unique",
+      collection: "CopyCell Uniques",
+      releaseTag: "copycell_uniques",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: false,
+      grantOnly: true,
+      shopEligible: false,
+      shopListed: false,
+      storeHidden: true,
+      rotationOnly: false,
+      chestOnly: false,
+      supporterOnly: false,
+      royalty: {
+        enabled: false,
+        recipientUsername: null,
+        tokenPercent: 0
+      }
+    },
+    {
       id: "avatar_fire_street_duelist",
       name: "Fire Street Duelist",
       image: "avatars/avatar_fire_street_duelist.png",

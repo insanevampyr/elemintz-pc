@@ -10717,6 +10717,64 @@ test("ui: own profile header renders the equipped Neon Arcana avatar when select
   assert.match(html, /avatar_neon_pyre_entity\.png/);
 });
 
+test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles", () => {
+  const item = COSMETIC_CATALOG.avatar.find(
+    (candidate) => candidate.id === "avatar_lycan_anubis"
+  );
+  const ownedItem = { ...item, owned: true, equipped: true };
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [ownedItem],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+  const context = createProfileScreenContext();
+  context.profile.equippedCosmetics.avatar = item.id;
+  context.cosmetics.equipped.avatar = item.id;
+  context.cosmetics.catalog.avatar.push(ownedItem);
+
+  const ownHtml = profileScreen.render(context);
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "CopyCellViewer",
+    playerLevel: 1,
+    playerXP: 0,
+    wins: 0,
+    losses: 0,
+    cardsCaptured: 0,
+    achievements: {},
+    modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+    equippedCosmetics: {
+      avatar: item.id,
+      title: "Initiate",
+      background: "default_background",
+      badge: "none",
+      cardBack: "default_card_back",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card",
+        water: "default_water_card"
+      }
+    }
+  });
+
+  assert.match(getAvatarImage(item.id), /assets\/avatars\/avatar_lycan_anubis\.png/);
+  assert.match(cosmeticsHtml, /Lycan Anubis/);
+  assert.match(cosmeticsHtml, /Unique Cosmetic/);
+  assert.match(cosmeticsHtml, /Owned by You/);
+  assert.match(ownHtml, /avatar_lycan_anubis\.png/);
+  assert.match(viewedHtml, /avatar_lycan_anubis\.png/);
+});
+
 test("ui: own and viewed profile headers render equipped Goldbound avatar and title art when selected", () => {
   const context = createProfileScreenContext({
     profile: {

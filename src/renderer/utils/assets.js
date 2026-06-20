@@ -208,6 +208,7 @@ const AVATAR_MAP = Object.freeze({
   avatar_vampire_male: getAssetPath("avatars/avatar_vampire_male.png"),
   avatar_lycan_female: getAssetPath("avatars/avatar_lycan_female.png"),
   avatar_lycan_male: getAssetPath("avatars/avatar_lycan_male.png"),
+  avatar_lycan_anubis: getAssetPath("avatars/avatar_lycan_anubis.png"),
   avatar_fire_street_duelist: getAssetPath("avatars/avatar_fire_street_duelist.png"),
   avatar_water_street_duelist: getAssetPath("avatars/avatar_water_street_duelist.png"),
   avatar_earth_street_duelist: getAssetPath("avatars/avatar_earth_street_duelist.png"),
