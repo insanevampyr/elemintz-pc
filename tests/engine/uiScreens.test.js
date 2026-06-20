@@ -121,6 +121,7 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
     owned: true,
     equipped: true,
     createdForUsername: "CopyCell",
+    acquisitionLabel: "Store Purchase",
     saleLimitMode: "limited",
     saleLimitTotal: 10,
     saleLimitSold: 7,
@@ -188,7 +189,11 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   assert.match(storeHtml, /class="unique-cosmetic-label">Unique Cosmetic<\/p>/);
   assert.match(storeHtml, /Price: 750 Tokens/);
   assert.match(storeHtml, /Created For: CopyCell/);
+  assert.ok(storeHtml.indexOf("Unique Cosmetic") < storeHtml.indexOf("Created For: CopyCell"));
+  assert.ok(storeHtml.indexOf("Created For: CopyCell") < storeHtml.indexOf("Price: 750 Tokens"));
+  assert.ok(storeHtml.indexOf("Created For: CopyCell") < storeHtml.indexOf("Limited: 3 of 10 available"));
   assert.doesNotMatch(storeHtml, /Owner: CopyCell/);
+  assert.doesNotMatch(storeHtml, /Acquired:/);
   assert.doesNotMatch(storeHtml, /RoyaltyOnlyUser/);
   assert.match(storeHtml, /Limited: 3 of 10 available/);
   assert.match(storeHtml, /data-buy-id="fixture_unique_avatar"/);
@@ -201,10 +206,31 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   assert.match(cosmeticsHtml, /class="unique-cosmetic-label">Unique Cosmetic<\/p>/);
   assert.match(cosmeticsHtml, /Owned by You/);
   assert.match(cosmeticsHtml, /Created For: CopyCell/);
+  assert.match(cosmeticsHtml, /Acquired: Store Purchase/);
+  assert.match(
+    cosmeticsHtml,
+    /data-preview-description="[^"]*Created For: CopyCell[^"]*Acquired: Store Purchase/
+  );
+  assert.ok(
+    cosmeticsHtml.indexOf("Unique Cosmetic") <
+      cosmeticsHtml.lastIndexOf("Created For: CopyCell")
+  );
+  assert.ok(
+    cosmeticsHtml.lastIndexOf("Created For: CopyCell") <
+      cosmeticsHtml.indexOf("Owned by You")
+  );
   assert.doesNotMatch(cosmeticsHtml, /Owner: CopyCell/);
   assert.doesNotMatch(cosmeticsHtml, /RoyaltyOnlyUser/);
   assert.doesNotMatch(cosmeticsHtml, /private admin note/);
   assert.match(profileHtml, /cosmetic-rarity-label rarity-unique" data-profile-trophy-rarity="true">Unique<\/span>/);
+  assert.match(profileHtml, /Created For: CopyCell/);
+  assert.match(profileHtml, /Acquired: Store Purchase/);
+  assert.match(
+    profileHtml,
+    /data-preview-description="[^"]*Created For: CopyCell[^"]*Acquired: Store Purchase/
+  );
+  assert.doesNotMatch(profileHtml, /RoyaltyOnlyUser/);
+  assert.doesNotMatch(profileHtml, /private admin note/);
   assert.deepEqual(sortedTrophies.map((item) => item.rarity), ["Unique", "Legendary"]);
   assert.equal(normalizeCosmeticRarity("Unique"), "Unique");
   assert.match(renderHiddenHandSummary(2, "card-back.png", "Unique"), /hidden-hand-summary rarity-unique/);
@@ -243,6 +269,117 @@ test("ui: sold-out Unique Store item remains visible and blocked", () => {
   assert.match(html, /data-unique-availability="sold-out">Sold Out<\/p>/);
   assert.match(html, /data-unique-purchase-blocked="true">Sold Out<\/button>/);
   assert.doesNotMatch(html, /data-buy-id="fixture_sold_out_unique"/);
+});
+
+test("ui: Unique public credit rows are omitted when Created For metadata is absent", () => {
+  const uniqueWithoutCredit = {
+    id: "fixture_unique_without_credit",
+    name: "Uncredited Unique",
+    image: "avatars/default.png",
+    rarity: "Unique",
+    price: 500,
+    purchasable: true,
+    owned: false,
+    equipped: false,
+    createdForUsername: null
+  };
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 1000,
+      supporterPass: false,
+      catalog: {
+        avatar: [uniqueWithoutCredit],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [{ ...uniqueWithoutCredit, owned: true }],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+  const profileHtml = profileScreen.render({
+    profile: {
+      username: "UncreditedTester",
+      trophyShelf: [{ ...uniqueWithoutCredit, type: "avatar", typeLabel: "Avatar" }]
+    }
+  });
+
+  assert.doesNotMatch(storeHtml, /Created For:/);
+  assert.doesNotMatch(cosmeticsHtml, /Created For:/);
+  assert.doesNotMatch(profileHtml, /Created For:/);
+});
+
+test("ui: Unique acquisition labels map safely and omit invalid or non-Unique metadata", () => {
+  const renderOwnedUnique = (acquisitionLabel) =>
+    cosmeticsScreen.render({
+      cosmetics: {
+        preferences: { randomizeAfterEachMatch: {} },
+        loadouts: [],
+        catalog: {
+          avatar: [{
+            id: `fixture_${String(acquisitionLabel).replaceAll(/[^a-z]+/gi, "_")}`,
+            name: "Acquisition Fixture",
+            image: "avatars/default.png",
+            rarity: "Unique",
+            owned: true,
+            equipped: false,
+            acquisitionLabel
+          }],
+          cardBack: [],
+          background: [],
+          elementCardVariant: [],
+          badge: [],
+          title: []
+        }
+      },
+      viewState: {}
+    });
+
+  assert.match(renderOwnedUnique("Granted"), /Acquired: Granted/);
+  assert.match(renderOwnedUnique("Legacy \/ Unknown"), /Acquired: Legacy \/ Unknown/);
+  assert.doesNotMatch(renderOwnedUnique("private_raw_source"), /Acquired:/);
+  assert.doesNotMatch(renderOwnedUnique(null), /Acquired:/);
+
+  const nonUniqueHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [{
+          id: "fixture_non_unique_acquisition",
+          name: "Normal Fixture",
+          image: "avatars/default.png",
+          rarity: "Legendary",
+          owned: true,
+          equipped: false,
+          acquisitionLabel: "Granted"
+        }],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+  assert.doesNotMatch(nonUniqueHtml, /Acquired:/);
 });
 
 test("ui: Unique rarity style contracts are present", () => {
@@ -10721,7 +10858,19 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
   const item = COSMETIC_CATALOG.avatar.find(
     (candidate) => candidate.id === "avatar_lycan_anubis"
   );
-  const ownedItem = { ...item, owned: true, equipped: true };
+  const ownedItem = {
+    ...item,
+    owned: true,
+    equipped: true,
+    createdForUsername: "CopyCell",
+    acquisitionLabel: "Store Purchase",
+    royalty: {
+      enabled: true,
+      recipientUsername: "PrivateRoyaltyRecipient",
+      tokenPercent: 10
+    },
+    adminNotes: "private Lycan review"
+  };
   const storeHtml = storeScreen.render({
     store: {
       tokens: 2000,
@@ -10734,7 +10883,10 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
           shopEligible: true,
           shopListed: true,
           storeHidden: false,
-          price: 1500
+          price: 1500,
+          createdForUsername: "CopyCell",
+          royalty: ownedItem.royalty,
+          adminNotes: ownedItem.adminNotes
         }],
         cardBack: [],
         background: [],
@@ -10787,18 +10939,118 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
         wind: "default_wind_card",
         water: "default_water_card"
       }
-    }
+    },
+    trophyShelf: [{
+      id: item.id,
+      type: "avatar",
+      name: item.name,
+      rarity: "Unique",
+      typeLabel: "Avatar",
+      image: item.image,
+      createdForUsername: "CopyCell",
+      acquisitionLabel: "Granted",
+      royalty: ownedItem.royalty,
+      adminNotes: ownedItem.adminNotes,
+      equipped: true
+    }]
   });
 
   assert.match(getAvatarImage(item.id), /assets\/avatars\/avatar_lycan_anubis\.png/);
   assert.match(storeHtml, /Lycan Anubis/);
+  assert.match(storeHtml, /Unique Cosmetic[\s\S]*Created For: CopyCell[\s\S]*Price: 1500 Tokens/);
   assert.doesNotMatch(storeHtml, /CopyCell Uniques/);
   assert.doesNotMatch(storeHtml, /data-store-collection-filter=/);
+  assert.doesNotMatch(storeHtml, /PrivateRoyaltyRecipient|private Lycan review/);
   assert.match(cosmeticsHtml, /Lycan Anubis/);
   assert.match(cosmeticsHtml, /Unique Cosmetic/);
+  assert.match(cosmeticsHtml, /Created For: CopyCell/);
   assert.match(cosmeticsHtml, /Owned by You/);
+  assert.doesNotMatch(cosmeticsHtml, /PrivateRoyaltyRecipient|private Lycan review/);
   assert.match(ownHtml, /avatar_lycan_anubis\.png/);
+  assert.match(ownHtml, /Created For: CopyCell/);
+  assert.match(
+    ownHtml,
+    /class="player-avatar"[^>]*data-preview-name="Lycan Anubis"[^>]*data-preview-description="[^"]*Created For: CopyCell[^"]*Acquired: Store Purchase/
+  );
+  assert.doesNotMatch(ownHtml, /PrivateRoyaltyRecipient|private Lycan review/);
   assert.match(viewedHtml, /avatar_lycan_anubis\.png/);
+  assert.match(viewedHtml, /Created For: CopyCell/);
+  assert.match(
+    viewedHtml,
+    /class="player-avatar"[^>]*data-preview-name="Lycan Anubis"[^>]*data-preview-description="[^"]*Created For: CopyCell[^"]*Acquired: Granted/
+  );
+  assert.doesNotMatch(viewedHtml, /PrivateRoyaltyRecipient|private Lycan review/);
+});
+
+test("ui: main profile avatar hover omits empty, invalid, and non-Unique acquisition rows", () => {
+  const ownContext = createProfileScreenContext();
+  const normalAvatarId = ownContext.profile.equippedCosmetics.avatar;
+  const normalHtml = profileScreen.render(ownContext);
+  assert.match(normalHtml, /class="player-avatar"[^>]*data-preview-type="avatar"/);
+  assert.doesNotMatch(normalHtml, /class="player-avatar"[^>]*data-preview-description="[^"]*Acquired:/);
+  assert.doesNotMatch(normalHtml, /class="player-avatar"[^>]*data-preview-description="[^"]*Created For:/);
+
+  const lycan = COSMETIC_CATALOG.avatar.find(
+    (candidate) => candidate.id === "avatar_lycan_anubis"
+  );
+  ownContext.profile.equippedCosmetics.avatar = lycan.id;
+  ownContext.cosmetics.catalog.avatar.push({
+    ...lycan,
+    owned: true,
+    equipped: true,
+    createdForUsername: "",
+    acquisitionLabel: "private_raw_source"
+  });
+  const invalidHtml = profileScreen.render(ownContext);
+  assert.match(invalidHtml, /class="player-avatar"[^>]*data-preview-name="Lycan Anubis"/);
+  assert.doesNotMatch(invalidHtml, /class="player-avatar"[^>]*data-preview-description="[^"]*Acquired:/);
+  assert.doesNotMatch(invalidHtml, /class="player-avatar"[^>]*data-preview-description="[^"]*Created For:/);
+  assert.ok(normalAvatarId);
+});
+
+test("ui: searched profile main Unique avatar hover keeps viewed-owner acquisition source", () => {
+  const renderViewedLycan = (username, acquisitionLabel) =>
+    profileScreen.renderViewedProfileModalBody({
+      username,
+      playerLevel: 1,
+      playerXP: 0,
+      wins: 0,
+      losses: 0,
+      cardsCaptured: 0,
+      achievements: {},
+      modeStats: {},
+      equippedCosmetics: {
+        avatar: "avatar_lycan_anubis",
+        title: "Initiate",
+        background: "default_background",
+        badge: "none",
+        cardBack: "default_card_back",
+        elementCardVariant: {}
+      },
+      trophyShelf: [{
+        id: "avatar_lycan_anubis",
+        type: "avatar",
+        name: "Lycan Anubis",
+        rarity: "Unique",
+        typeLabel: "Avatar",
+        image: "avatars/avatar_lycan_anubis.png",
+        createdForUsername: "CopyCell",
+        acquisitionLabel,
+        equipped: true
+      }]
+    });
+
+  const vampyrLeeHtml = renderViewedLycan("VampyrLee", "Store Purchase");
+  const copyCellHtml = renderViewedLycan("CopyCell", "Granted");
+
+  assert.match(
+    vampyrLeeHtml,
+    /class="player-avatar"[^>]*data-preview-description="[^"]*Created For: CopyCell[^"]*Acquired: Store Purchase/
+  );
+  assert.match(
+    copyCellHtml,
+    /class="player-avatar"[^>]*data-preview-description="[^"]*Created For: CopyCell[^"]*Acquired: Granted/
+  );
 });
 
 test("ui: own and viewed profile headers render equipped Goldbound avatar and title art when selected", () => {

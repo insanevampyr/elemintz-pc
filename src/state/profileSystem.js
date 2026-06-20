@@ -306,6 +306,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("featuredRivalRewards", defaults.featuredRivalRewards);
   repairObjectSection("levelRewardsClaimed", defaults.levelRewardsClaimed);
   repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
+  repairObjectSection("uniqueCosmeticAcquisitions", defaults.uniqueCosmeticAcquisitions);
   repairObjectSection("onlineRewardSettlements", defaults.onlineRewardSettlements);
   repairObjectSection(
     "acknowledgedLoadoutUnlockSlots",

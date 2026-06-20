@@ -358,11 +358,19 @@ function renderActions(type, item) {
   return `${equipButton}${uniquePurchaseButton}${buyButton}`;
 }
 
-function renderUniqueStoreMetadata(item) {
+function renderUniqueCreatedFor(item) {
   if (item.rarity !== "Unique") {
     return "";
   }
   const createdFor = String(item.createdForUsername ?? "").trim();
+
+  return createdFor ? `<p>Created For: ${escapeAttribute(createdFor)}</p>` : "";
+}
+
+function renderUniqueStoreAvailability(item) {
+  if (item.rarity !== "Unique") {
+    return "";
+  }
   const sold = Math.max(0, Math.floor(Number(item.saleLimitSold ?? 0) || 0));
   const total = Math.max(0, Math.floor(Number(item.saleLimitTotal ?? 0) || 0));
   const isLimited = item.saleLimitMode === "limited" && total > 0;
@@ -374,7 +382,6 @@ function renderUniqueStoreMetadata(item) {
     : "Available";
 
   return `
-    ${createdFor ? `<p>Created For: ${escapeAttribute(createdFor)}</p>` : ""}
     <p data-unique-availability="${remaining === 0 ? "sold-out" : "available"}">${availability}</p>
   `;
 }
@@ -408,8 +415,9 @@ function renderStoreItem(type, item, originalIndex) {
         <p>Status: ${item.owned ? "Owned" : "Not Owned"}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
         ${item.rarity === "Unique" ? '<p class="unique-cosmetic-label">Unique Cosmetic</p>' : ""}
+        ${renderUniqueCreatedFor(item)}
         <p>Price: ${item.rarity === "Unique" && item.price != null && Number.isInteger(Number(item.price)) ? `${item.price} Tokens` : item.purchasable ? `${item.price} Tokens` : "Not Purchasable"}</p>
-        ${renderUniqueStoreMetadata(item)}
+        ${renderUniqueStoreAvailability(item)}
         <p>Unlock: ${unlockText(item)}</p>
         ${variantHint}
       </div>

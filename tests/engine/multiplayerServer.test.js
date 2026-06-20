@@ -3178,7 +3178,7 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
       },
       ownedCosmetics: {
         ...(current?.ownedCosmetics ?? {}),
-        avatar: ["default_avatar", "avatar_neon_tide_entity"],
+        avatar: ["default_avatar", "avatar_neon_tide_entity", "avatar_lycan_anubis"],
         title: ["Initiate", "title_spellwired"],
         badge: ["none", "war_machine_badge"],
         background: ["default_background"],
@@ -3220,6 +3220,18 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
         enabled: true
       }
     }));
+    await coordinator.specialCosmeticRegistry.upsertConfig({
+      cosmeticId: "avatar_lycan_anubis",
+      status: "assigned",
+      assignmentStatus: "assigned",
+      createdForUsername: "CopyCell",
+      royalty: {
+        enabled: true,
+        recipientUsername: "PrivateRoyaltyRecipient",
+        tokenPercent: 10
+      },
+      adminNotes: "private Lycan note"
+    });
 
     const ownProfile = await new Promise((resolve) => {
       ownerClient.emit("profile:get", {}, resolve);
@@ -3252,6 +3264,12 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
     assert.equal(viewedProfile?.profile?.profile?.equippedCosmetics?.title, "title_spellwired");
     assert.equal(Array.isArray(viewedProfile?.profile?.profile?.trophyShelf), true);
     assert.ok((viewedProfile?.profile?.profile?.trophyShelf?.length ?? 0) > 0);
+    const publicLycan = viewedProfile?.profile?.profile?.trophyShelf?.find(
+      (item) => item.id === "avatar_lycan_anubis"
+    );
+    assert.equal(publicLycan?.createdForUsername, "CopyCell");
+    assert.equal("royalty" in publicLycan, false);
+    assert.equal("adminNotes" in publicLycan, false);
 
     assert.equal("linkedAccountId" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("chests" in (viewedProfile?.profile?.profile ?? {}), false);
@@ -5192,6 +5210,7 @@ test("multiplayer foundation: Unique Store purchase uses transaction ledger and 
     assert.equal(storeBefore?.ok, true);
     assert.equal(visibleItem?.createdForUsername, "CopyCell");
     assert.equal("adminNotes" in visibleItem, false);
+    assert.equal("royalty" in visibleItem, false);
 
     const missingTransaction = await new Promise((resolve) => {
       client.emit(

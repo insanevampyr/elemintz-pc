@@ -22,10 +22,13 @@ import {
   applyAchievementCosmeticRewards,
   applyCosmeticLoadout,
   buildAuthoritativeCosmeticSnapshot,
+  buildUniqueCosmeticAcquisitionKey,
+  COSMETIC_CATALOG,
   getCosmeticCatalogForProfile,
   getCosmeticDefinition,
   getCosmeticLoadoutsForProfile,
   normalizeCosmeticRandomizationPreferences,
+  preserveUniqueCosmeticAcquisition,
   renameCosmeticLoadout,
   RANDOMIZABLE_COSMETIC_TYPES,
   saveCosmeticLoadout
@@ -1125,6 +1128,92 @@ export class StateCoordinator {
     };
   }
 
+  async ensureUniqueCosmeticAcquisitions(username) {
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      throw new Error("username is required for Unique cosmetic acquisition backfill.");
+    }
+    const profile = await this.profiles.ensureProfile(safeUsername);
+    const currentMap = profile?.uniqueCosmeticAcquisitions ?? {};
+    const missing = [];
+
+    for (const [type, definitions] of Object.entries(COSMETIC_CATALOG)) {
+      for (const definition of definitions) {
+        if (
+          definition?.rarity !== "Unique" ||
+          !profile?.ownedCosmetics?.[type]?.includes(definition.id)
+        ) {
+          continue;
+        }
+        const key = buildUniqueCosmeticAcquisitionKey(type, definition.id);
+        if (key && !currentMap[key]) {
+          missing.push({ key, type, cosmeticId: definition.id });
+        }
+      }
+    }
+    if (missing.length === 0) {
+      return profile;
+    }
+
+    const [purchases, grants] = await Promise.all([
+      this.storePurchaseLedger.listEntries(),
+      this.adminGrantStore.listEntries()
+    ]);
+    const normalizedUsername = safeUsername.toLowerCase();
+    const timestampValue = (value) => {
+      const parsed = Date.parse(String(value ?? ""));
+      return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+    };
+    const backfillEntries = {};
+
+    for (const item of missing) {
+      const evidence = [];
+      for (const entry of purchases) {
+        if (
+          entry?.status === "completed" &&
+          String(entry?.buyerUsername ?? "").trim().toLowerCase() === normalizedUsername &&
+          entry?.cosmeticType === item.type &&
+          entry?.cosmeticId === item.cosmeticId
+        ) {
+          evidence.push({
+            source: "store_purchase",
+            acquiredAt: entry.completedAt ?? entry.timestamp ?? null
+          });
+        }
+      }
+      for (const entry of grants) {
+        if (
+          String(entry?.status ?? "").trim() === "success" &&
+          String(entry?.grantType ?? "").trim() === "special_cosmetic_grant" &&
+          String(entry?.targetUsername ?? "").trim().toLowerCase() === normalizedUsername &&
+          entry?.payload?.cosmetic?.type === item.type &&
+          entry?.payload?.cosmetic?.cosmeticId === item.cosmeticId
+        ) {
+          evidence.push({
+            source: "granted",
+            acquiredAt: entry.timestamp ?? null
+          });
+        }
+      }
+      evidence.sort(
+        (left, right) => timestampValue(left.acquiredAt) - timestampValue(right.acquiredAt)
+      );
+      backfillEntries[item.key] = evidence[0] ?? { source: "legacy_unknown" };
+    }
+
+    return this.profiles.updateProfile(safeUsername, (current) => ({
+      ...current,
+      uniqueCosmeticAcquisitions: {
+        ...(current?.uniqueCosmeticAcquisitions ?? {}),
+        ...Object.fromEntries(
+          Object.entries(backfillEntries).filter(
+            ([key]) => !current?.uniqueCosmeticAcquisitions?.[key]
+          )
+        )
+      }
+    }));
+  }
+
   async buildCosmeticsViewWithSpecialMetadata(profile) {
     const records = await this.specialCosmeticRegistry.listRecords();
     return this.buildCosmeticsView(profile, records);
@@ -1977,7 +2066,7 @@ export class StateCoordinator {
   }
 
   async getStore(username) {
-    const profile = await this.profiles.ensureProfile(username);
+    const profile = await this.ensureUniqueCosmeticAcquisitions(username);
     const records = await this.specialCosmeticRegistry.listRecords();
     return getStoreViewForProfile(profile, { specialRecords: records });
   }
@@ -2653,6 +2742,7 @@ export class StateCoordinator {
       throw new Error("type and cosmeticId are required for special cosmetic grants.");
     }
 
+    await this.ensureUniqueCosmeticAcquisitions(safeUsername);
     let cosmeticGrant = null;
     const profile = await this.profiles.updateProfile(safeUsername, (current) => {
       if (current?.ownedCosmetics?.[safeType]?.includes(safeCosmeticId)) {
@@ -2668,7 +2758,11 @@ export class StateCoordinator {
         cosmeticId: safeCosmeticId
       });
       cosmeticGrant = result.grant;
-      return result.profile;
+      return preserveUniqueCosmeticAcquisition(result.profile, {
+        type: safeType,
+        cosmeticId: safeCosmeticId,
+        source: "granted"
+      });
     });
 
     return {
@@ -2926,7 +3020,7 @@ export class StateCoordinator {
   }
 
   async getCosmetics(username) {
-    const profile = await this.profiles.ensureProfile(username);
+    const profile = await this.ensureUniqueCosmeticAcquisitions(username);
     return this.buildCosmeticsViewWithSpecialMetadata(profile);
   }
 

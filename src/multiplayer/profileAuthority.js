@@ -16,6 +16,20 @@ function normalizeAuthorityAccountId(accountId) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function sanitizeProfileResult(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result) || !result.profile) {
+    return result;
+  }
+  const {
+    uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
+    ...publicProfile
+  } = result.profile;
+  return {
+    ...result,
+    profile: publicProfile
+  };
+}
+
 function buildOnlineLatestBattleContext(rewardDecision, participantRole = "host") {
   const normalizedRole = participantRole === "guest" ? "guest" : "host";
   const participants = rewardDecision?.participants ?? null;
@@ -102,7 +116,12 @@ function getPublicTrophyTypeLabel(type, definition = {}) {
   return PUBLIC_TROPHY_TYPE_LABELS[type] ?? "Cosmetic";
 }
 
-function buildPublicTrophyShelf(profile) {
+function buildPublicTrophyShelf(profile, specialRecords = []) {
+  const publicCreatedForById = new Map(
+    (Array.isArray(specialRecords) ? specialRecords : [])
+      .filter((record) => record?.cosmeticId && record?.createdForUsername)
+      .map((record) => [record.cosmeticId, record.createdForUsername])
+  );
   const sourceCatalog = getCosmeticCatalogForProfile(profile);
   const selected = [];
   const seenKeys = new Set();
@@ -133,6 +152,12 @@ function buildPublicTrophyShelf(profile) {
         typeLabel: getPublicTrophyTypeLabel(type, entry),
         image: entry.image ?? null,
         collection: entry.collection ?? null,
+        ...(rarity === "Unique" && publicCreatedForById.has(entry.id)
+          ? { createdForUsername: publicCreatedForById.get(entry.id) }
+          : {}),
+        ...(rarity === "Unique" && entry.acquisitionLabel
+          ? { acquisitionLabel: entry.acquisitionLabel }
+          : {}),
         equipped: Boolean(entry.equipped)
       });
     }
@@ -158,9 +183,9 @@ function buildPublicTrophyShelf(profile) {
     .map(({ rarityRank, ...item }) => item);
 }
 
-function buildPublicSnapshotCosmetics(profile) {
+function buildPublicSnapshotCosmetics(profile, specialRecords = []) {
   const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
-  const trophyShelf = buildPublicTrophyShelf(profile);
+  const trophyShelf = buildPublicTrophyShelf(profile, specialRecords);
 
   return {
     authority: "server",
@@ -229,13 +254,17 @@ function buildProfileSnapshot({ profile, challenges }) {
   const currency = {
     tokens: Number(profile?.tokens ?? 0)
   };
+  const {
+    uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
+    ...clientProfile
+  } = profile ?? {};
 
   return {
     authority: "server",
     source: "multiplayer",
     username: profile?.username ?? null,
     profile: {
-      ...profile,
+      ...clientProfile,
       username: profile?.username ?? null,
       tokens: currency.tokens,
       equippedCosmetics: cosmetics.equipped,
@@ -256,8 +285,8 @@ function buildProfileSnapshot({ profile, challenges }) {
   };
 }
 
-function buildPublicProfileSnapshot({ profile }) {
-  const cosmetics = buildPublicSnapshotCosmetics(profile);
+function buildPublicProfileSnapshot({ profile, specialRecords = [] }) {
+  const cosmetics = buildPublicSnapshotCosmetics(profile, specialRecords);
   const stats = buildSnapshotStats(profile);
   const currency = {
     tokens: Number(profile?.tokens ?? 0)
@@ -325,7 +354,7 @@ export class MultiplayerProfileAuthority {
 
     this.logger.info?.(`[ProfileAuthority] getProfile -> ${safeUsername} (server)`);
 
-    await this.coordinator.profiles.ensureProfile(safeUsername);
+    await this.coordinator.ensureUniqueCosmeticAcquisitions(safeUsername);
     const challenges = await this.coordinator.getDailyChallenges(safeUsername);
     const profile = await this.coordinator.profiles.getProfile(safeUsername);
 
@@ -344,7 +373,7 @@ export class MultiplayerProfileAuthority {
 
     this.logger.info?.(`[ProfileAuthority] viewProfile -> ${safeUsername} (server)`);
     const resolved = await this.resolveViewedProfileIdentity(safeUsername);
-    const profile = resolved?.profile ?? null;
+    let profile = resolved?.profile ?? null;
 
     if (!profile) {
       this.logger.info?.("[ProfileAuthority] viewProfile miss", {
@@ -358,6 +387,10 @@ export class MultiplayerProfileAuthority {
       throw error;
     }
 
+    profile = await this.coordinator.ensureUniqueCosmeticAcquisitions(
+      profile.username ?? safeUsername
+    );
+
     this.logger.info?.("[ProfileAuthority] viewProfile resolved", {
       requestedUsername: safeUsername,
       normalizedUsername: safeUsername,
@@ -366,7 +399,8 @@ export class MultiplayerProfileAuthority {
       resolvedProfileUsername: profile?.username ?? null
     });
 
-    return buildPublicProfileSnapshot({ profile });
+    const specialRecords = await this.coordinator.specialCosmeticRegistry.listRecords();
+    return buildPublicProfileSnapshot({ profile, specialRecords });
   }
 
   async resolveViewedProfileIdentity(username) {
@@ -755,7 +789,7 @@ export class MultiplayerProfileAuthority {
     });
 
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -789,7 +823,7 @@ export class MultiplayerProfileAuthority {
     this.logger.info?.(`[ProfileAuthority] claimDailyLoginReward -> ${safeUsername} (server)`);
     const result = await this.coordinator.claimDailyLoginReward(safeUsername);
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -818,7 +852,7 @@ export class MultiplayerProfileAuthority {
       level
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -837,7 +871,7 @@ export class MultiplayerProfileAuthority {
       transactionId
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -856,7 +890,7 @@ export class MultiplayerProfileAuthority {
       chestType
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -875,7 +909,7 @@ export class MultiplayerProfileAuthority {
       openType
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -896,7 +930,7 @@ export class MultiplayerProfileAuthority {
     });
 
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername),
       cosmetics: await this.getCosmetics(safeUsername)
     };
@@ -920,7 +954,7 @@ export class MultiplayerProfileAuthority {
       cosmeticId
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername),
       cosmetics: await this.getCosmetics(safeUsername)
     };
@@ -941,7 +975,7 @@ export class MultiplayerProfileAuthority {
       this.logger.info?.(`[ProfileAuthority] grantFounderStatus -> ${safeUsername}`);
       const result = await this.coordinator.grantFounderStatus(safeUsername);
       return {
-        ...result,
+        ...sanitizeProfileResult(result),
         snapshot: await this.getProfile(safeUsername),
         cosmetics: await this.getCosmetics(safeUsername)
       };
@@ -970,7 +1004,7 @@ export class MultiplayerProfileAuthority {
       cosmeticId
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -987,7 +1021,7 @@ export class MultiplayerProfileAuthority {
       patch
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -1004,7 +1038,7 @@ export class MultiplayerProfileAuthority {
       categories
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -1021,7 +1055,7 @@ export class MultiplayerProfileAuthority {
       slotIndex
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -1038,7 +1072,7 @@ export class MultiplayerProfileAuthority {
       slotIndex
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }
@@ -1056,7 +1090,7 @@ export class MultiplayerProfileAuthority {
       name
     });
     return {
-      ...result,
+      ...sanitizeProfileResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }

@@ -14,6 +14,24 @@ export const RANDOMIZABLE_COSMETIC_TYPES = Object.freeze([
 export const COSMETIC_RARITIES = Object.freeze(["Common", "Rare", "Epic", "Legendary", "Unique"]);
 export const COSMETIC_ASSIGNMENT_STATUSES = Object.freeze(["unassigned", "assigned", "revoked"]);
 export const COSMETIC_SALE_LIMIT_MODES = Object.freeze(["unlimited", "limited"]);
+export const UNIQUE_COSMETIC_ACQUISITION_SOURCES = Object.freeze([
+  "store_purchase",
+  "granted",
+  "legacy_unknown"
+]);
+const UNIQUE_COSMETIC_ACQUISITION_LABELS = Object.freeze({
+  store_purchase: "Store Purchase",
+  granted: "Granted",
+  legacy_unknown: "Legacy / Unknown"
+});
+const UNIQUE_COSMETIC_ACQUISITION_PUBLIC_LABELS = new Set(
+  Object.values(UNIQUE_COSMETIC_ACQUISITION_LABELS)
+);
+
+export function normalizeUniqueCosmeticAcquisitionLabel(value) {
+  const normalized = String(value ?? "").trim();
+  return UNIQUE_COSMETIC_ACQUISITION_PUBLIC_LABELS.has(normalized) ? normalized : null;
+}
 export const SHOP_PRICE_BY_CATEGORY_AND_RARITY = Object.freeze({
   avatar: Object.freeze({
     Common: 200,
@@ -3139,6 +3157,51 @@ function normalizeNonNegativeInteger(value, fallback = 0) {
   return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : fallback;
 }
 
+export function buildUniqueCosmeticAcquisitionKey(type, cosmeticId) {
+  const safeType = String(type ?? "").trim();
+  const safeCosmeticId = String(cosmeticId ?? "").trim();
+  return safeType && safeCosmeticId ? `${safeType}:${safeCosmeticId}` : null;
+}
+
+function normalizeUniqueCosmeticAcquisitionEntry(entry) {
+  const source = entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+  if (!UNIQUE_COSMETIC_ACQUISITION_SOURCES.includes(source.source)) {
+    return null;
+  }
+  const parsedAt = Date.parse(String(source.acquiredAt ?? ""));
+  return {
+    source: source.source,
+    ...(Number.isFinite(parsedAt) ? { acquiredAt: new Date(parsedAt).toISOString() } : {})
+  };
+}
+
+function normalizeUniqueCosmeticAcquisitions(value, ownedCosmetics) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const separatorIndex = key.indexOf(":");
+    if (separatorIndex <= 0 || separatorIndex >= key.length - 1) {
+      continue;
+    }
+    const type = key.slice(0, separatorIndex);
+    const cosmeticId = key.slice(separatorIndex + 1);
+    const definition = getCosmeticDefinition(type, cosmeticId);
+    const normalizedEntry = normalizeUniqueCosmeticAcquisitionEntry(entry);
+    if (
+      definition?.rarity !== "Unique" ||
+      !ownedCosmetics?.[type]?.includes(cosmeticId) ||
+      !normalizedEntry
+    ) {
+      continue;
+    }
+    normalized[key] = normalizedEntry;
+  }
+  return normalized;
+}
+
 export function normalizeCosmeticMetadata(item = {}) {
   const source = item && typeof item === "object" && !Array.isArray(item) ? item : {};
   const assignmentStatus = COSMETIC_ASSIGNMENT_STATUSES.includes(source.assignmentStatus)
@@ -3183,7 +3246,15 @@ export function normalizeCosmeticMetadata(item = {}) {
 
 function buildClientCosmeticDefinition(item) {
   const normalized = normalizeCosmeticMetadata(item);
-  const { adminNotes: _adminNotes, ...clientDefinition } = normalized;
+  const {
+    adminNotes: _adminNotes,
+    royalty: _royalty,
+    createdForUsername,
+    ...clientDefinition
+  } = normalized;
+  if (createdForUsername) {
+    clientDefinition.createdForUsername = createdForUsername;
+  }
   return clientDefinition;
 }
 
@@ -3382,6 +3453,7 @@ export function createDefaultCosmeticsState() {
     cosmeticRandomizeAfterMatch: createDefaultCosmeticRandomizationPreferences(),
     cosmeticLoadouts,
     acknowledgedLoadoutUnlockSlots: {},
+    uniqueCosmeticAcquisitions: {},
     ownedCosmetics: owned,
     equippedCosmetics: equipped,
     cosmetics: {
@@ -3609,6 +3681,10 @@ export function normalizeProfileCosmetics(profile) {
         profile?.loadoutUnlockNoticesSeen ??
         defaults.acknowledgedLoadoutUnlockSlots
     ),
+    uniqueCosmeticAcquisitions: normalizeUniqueCosmeticAcquisitions(
+      profile?.uniqueCosmeticAcquisitions,
+      owned
+    ),
     ownedCosmetics: {
       avatar: unique(owned.avatar),
       cardBack: unique(owned.cardBack),
@@ -3626,6 +3702,34 @@ export function normalizeProfileCosmetics(profile) {
     },
     title: equipped.title
   };
+}
+
+export function preserveUniqueCosmeticAcquisition(
+  profile,
+  { type, cosmeticId, source, acquiredAt = null } = {}
+) {
+  const normalized = normalizeProfileCosmetics(profile);
+  const key = buildUniqueCosmeticAcquisitionKey(type, cosmeticId);
+  const definition = key ? getCosmeticDefinition(type, cosmeticId) : null;
+  if (
+    !key ||
+    definition?.rarity !== "Unique" ||
+    !normalized.ownedCosmetics?.[type]?.includes(cosmeticId) ||
+    normalized.uniqueCosmeticAcquisitions?.[key]
+  ) {
+    return normalized;
+  }
+  const entry = normalizeUniqueCosmeticAcquisitionEntry({ source, acquiredAt });
+  if (!entry) {
+    return normalized;
+  }
+  return normalizeProfileCosmetics({
+    ...normalized,
+    uniqueCosmeticAcquisitions: {
+      ...normalized.uniqueCosmeticAcquisitions,
+      [key]: entry
+    }
+  });
 }
 
 export function buildAuthoritativeCosmeticSnapshot(profile) {
@@ -3647,15 +3751,25 @@ export function getCosmeticCatalogForProfile(profile) {
       type,
       COSMETIC_CATALOG[type].map((item) => {
         const unlockSource = getUnlockSource(type, item);
+        const owned = normalized.ownedCosmetics[type].includes(item.id);
+        const acquisitionSource =
+          item.rarity === "Unique" && owned
+            ? normalized.uniqueCosmeticAcquisitions?.[
+                buildUniqueCosmeticAcquisitionKey(type, item.id)
+              ]?.source
+            : null;
+        const acquisitionLabel =
+          UNIQUE_COSMETIC_ACQUISITION_LABELS[acquisitionSource] ?? null;
 
         return {
           ...buildClientCosmeticDefinition(item),
-          owned: normalized.ownedCosmetics[type].includes(item.id),
+          owned,
           equipped:
             type === "elementCardVariant"
               ? normalized.equippedCosmetics.elementCardVariant?.[item.element] === item.id
               : normalized.equippedCosmetics[type] === item.id,
-          unlockSource
+          unlockSource,
+          ...(acquisitionLabel ? { acquisitionLabel } : {})
         };
       })
     ])

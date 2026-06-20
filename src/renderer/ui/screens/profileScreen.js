@@ -5,7 +5,8 @@ import {
   getCosmeticDisplayName,
   getCosmeticDefinition,
   getCosmeticHoverMetadata,
-  getCosmeticCatalogForProfile
+  getCosmeticCatalogForProfile,
+  normalizeUniqueCosmeticAcquisitionLabel
 } from "../../../state/cosmeticSystem.js";
 import {
   bindCosmeticHoverPreview,
@@ -14,6 +15,15 @@ import {
 } from "../shared/cosmeticHoverPreview.js";
 import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import { getLevelProgress, MAX_LEVEL } from "../../../state/levelRewardsSystem.js";
+
+function escapeProfileText(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 function resolveImagePath(image) {
   if (!image) {
@@ -295,6 +305,8 @@ export function selectTrophyShelfItems(profile = {}, options = {}) {
       typeLabel: item?.typeLabel ?? getTrophyTypeLabel(item?.type, item),
       image: item?.image ?? null,
       collection: item?.collection ?? null,
+      createdForUsername: String(item?.createdForUsername ?? "").trim() || null,
+      acquisitionLabel: normalizeUniqueCosmeticAcquisitionLabel(item?.acquisitionLabel),
       equipped: Boolean(item?.equipped)
     }));
   }
@@ -336,6 +348,8 @@ export function selectTrophyShelfItems(profile = {}, options = {}) {
         typeLabel,
         image: entry.image ?? null,
         collection: entry.collection ?? null,
+        createdForUsername: String(entry.createdForUsername ?? "").trim() || null,
+        acquisitionLabel: normalizeUniqueCosmeticAcquisitionLabel(entry.acquisitionLabel),
         equipped: Boolean(entry.equipped)
       });
     }
@@ -411,12 +425,21 @@ function buildTrophyHoverAttributes(item = {}) {
     ? imageSrc
     : null;
   const hoverMetadata = getCosmeticHoverMetadata(item.type, item.id, safeName);
+  const uniqueHoverDetails =
+    item.rarity === "Unique"
+      ? [
+          item.createdForUsername ? `Created For: ${item.createdForUsername}` : null,
+          item.acquisitionLabel ? `Acquired: ${item.acquisitionLabel}` : null
+        ].filter(Boolean)
+      : [];
 
   return buildHoverPreviewAttributes({
     previewType: item.type,
     previewSrc: resolvedImage,
     previewName: hoverMetadata.name ?? safeName,
-    previewDescription: hoverMetadata.description,
+    previewDescription: [hoverMetadata.description, ...uniqueHoverDetails]
+      .filter(Boolean)
+      .join(" · "),
     previewVisualText: safeName,
     previewRarity: hoverMetadata.rarity ?? item.rarity ?? "Common"
   });
@@ -621,6 +644,8 @@ function renderTrophyShelf(profile = {}, options = {}) {
                           <span class="profile-trophy-chip" data-profile-trophy-type="true">${item.typeLabel || "Cosmetic"}</span>
                           ${item.collection ? `<span class="profile-trophy-chip" data-profile-trophy-collection="true">${item.collection}</span>` : ""}
                         </div>
+                        ${item.rarity === "Unique" && item.createdForUsername ? `<p class="profile-trophy-created-for">Created For: ${escapeProfileText(item.createdForUsername)}</p>` : ""}
+                        ${item.rarity === "Unique" && item.acquisitionLabel ? `<p class="profile-trophy-acquired">Acquired: ${escapeProfileText(item.acquisitionLabel)}</p>` : ""}
                       </div>
                     </article>
                   `;
@@ -902,13 +927,24 @@ function renderBattleReportButton() {
   `;
 }
 
-function renderProfileIdentityCard({ username, avatarId, avatarSrc, title, titleId, titleIcon, badgeId, badgeSrc }) {
+function renderProfileIdentityCard({
+  username,
+  avatarId,
+  avatarSrc,
+  avatarPublicMetadata,
+  title,
+  titleId,
+  titleIcon,
+  badgeId,
+  badgeSrc
+}) {
   return `
     <section class="profile-summary-card profile-dashboard-card profile-identity-card">
       ${renderProfileIdentityHeader({
         username,
         avatarId,
         avatarSrc,
+        avatarPublicMetadata,
         title,
         titleId,
         titleIcon,
@@ -1067,14 +1103,61 @@ function renderChestPanel(profile, visualState = {}, options = {}) {
   `;
 }
 
-function renderProfileIdentityHeader({ username, avatarId, avatarSrc, title, titleId, titleIcon, badgeId, badgeSrc }) {
+function getUniqueAvatarPublicMetadata(source = null) {
+  if (!source || source.rarity !== "Unique") {
+    return null;
+  }
+
+  const createdForUsername = String(source.createdForUsername ?? "").trim() || null;
+  const acquisitionLabel = normalizeUniqueCosmeticAcquisitionLabel(source.acquisitionLabel);
+  return createdForUsername || acquisitionLabel
+    ? { createdForUsername, acquisitionLabel }
+    : null;
+}
+
+function findOwnEquippedAvatarPublicMetadata(cosmetics, avatarId) {
+  const entries = cosmetics?.catalog?.avatar;
+  if (!Array.isArray(entries) || !avatarId) {
+    return null;
+  }
+  return getUniqueAvatarPublicMetadata(entries.find((item) => item?.id === avatarId));
+}
+
+function findViewedEquippedAvatarPublicMetadata(profile, avatarId) {
+  const items = Array.isArray(profile?.trophyShelf) ? profile.trophyShelf : [];
+  return getUniqueAvatarPublicMetadata(
+    items.find((item) => item?.type === "avatar" && item?.id === avatarId)
+  );
+}
+
+function renderProfileIdentityHeader({
+  username,
+  avatarId,
+  avatarSrc,
+  avatarPublicMetadata = null,
+  title,
+  titleId,
+  titleIcon,
+  badgeId,
+  badgeSrc
+}) {
   const avatarImageSrc = hasRenderablePreviewSource(avatarSrc, { previewName: username }) ? avatarSrc : null;
   const avatarHoverMetadata = getCosmeticHoverMetadata("avatar", avatarId, username);
+  const avatarHoverDetails = [
+    avatarPublicMetadata?.createdForUsername
+      ? `Created For: ${avatarPublicMetadata.createdForUsername}`
+      : null,
+    avatarPublicMetadata?.acquisitionLabel
+      ? `Acquired: ${avatarPublicMetadata.acquisitionLabel}`
+      : null
+  ].filter(Boolean);
   const avatarHoverAttributes = buildHoverPreviewAttributes({
     previewType: "avatar",
     previewSrc: avatarImageSrc,
     previewName: avatarHoverMetadata.name ?? username,
-    previewDescription: avatarHoverMetadata.description,
+    previewDescription: [avatarHoverMetadata.description, ...avatarHoverDetails]
+      .filter(Boolean)
+      .join(" · "),
     previewRarity: avatarHoverMetadata.rarity
   });
 
@@ -1168,6 +1251,10 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
           username: viewedProfile.username,
           avatarId: viewedProfile.equippedCosmetics?.avatar,
           avatarSrc: avatar,
+          avatarPublicMetadata: findViewedEquippedAvatarPublicMetadata(
+            viewedProfile,
+            viewedProfile.equippedCosmetics?.avatar
+          ),
           title,
           titleId: viewedProfile.equippedCosmetics?.title,
           titleIcon: viewedTitleIcon(viewedProfile),
@@ -1283,6 +1370,10 @@ export const profileScreen = {
               username: profile.username,
               avatarId: profile.equippedCosmetics?.avatar,
               avatarSrc: playerAvatar,
+              avatarPublicMetadata: findOwnEquippedAvatarPublicMetadata(
+                cosmetics,
+                profile.equippedCosmetics?.avatar
+              ),
               title: equippedTitle,
               titleId: profile.equippedCosmetics?.title ?? profile.title,
               titleIcon: profileTitleIcon,

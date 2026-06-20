@@ -210,6 +210,8 @@ test("cosmetics: special metadata defaults are inert, normalized, and keep admin
       (item) => item.id === "fireavatarF"
     );
     assert.equal("adminNotes" in clientEntry, false);
+    assert.equal("royalty" in clientEntry, false);
+    assert.equal("createdForUsername" in clientEntry, false);
   } finally {
     fixture.adminNotes = originalAdminNotes;
   }
@@ -321,6 +323,7 @@ test("cosmetics: owned Unique remains visible with Created For metadata when una
     assert.equal(ownedItem?.storeHidden, true);
     assert.equal(ownedItem?.saleLimitSold, 1);
     assert.equal("adminNotes" in ownedItem, false);
+    assert.equal("royalty" in ownedItem, false);
     assert.equal((await state.getStore("Enab")).catalog.avatar.some((item) => item.id === fixture.id), false);
 
     const equipped = await state.equipCosmetic({
@@ -354,6 +357,10 @@ test("cosmetics: owned Unique remains visible with Created For metadata when una
     const creatorItem = creatorCosmetics.catalog.avatar.find((item) => item.id === fixture.id);
     assert.equal(creatorItem?.createdForUsername, "CopyCell");
     assert.equal(creatorItem?.owned, false);
+    const normalItem = creatorCosmetics.catalog.avatar.find(
+      (item) => item.rarity !== "Unique"
+    );
+    assert.equal("createdForUsername" in normalItem, false);
   } finally {
     fixture.rarity = originalRarity;
   }

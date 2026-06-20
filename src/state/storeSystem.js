@@ -3,7 +3,8 @@ import {
   getCosmeticDefinition,
   getCosmeticCatalogForProfile,
   getSupporterRewards,
-  normalizeProfileCosmetics
+  normalizeProfileCosmetics,
+  preserveUniqueCosmeticAcquisition
 } from "./cosmeticSystem.js";
 
 export const DEFAULT_STARTING_TOKENS = 400;
@@ -140,7 +141,9 @@ export function mergePublicSpecialCosmeticMetadata(catalog, records = []) {
           ...item,
           status: record.status,
           assignmentStatus: record.assignmentStatus,
-          createdForUsername: record.createdForUsername ?? null,
+          ...(record.createdForUsername
+            ? { createdForUsername: record.createdForUsername }
+            : {}),
           grantOnly: record.grantOnly,
           shopEligible: record.shopEligible,
           shopListed: record.shopListed,
@@ -340,7 +343,7 @@ export function buyConfiguredUniqueStoreItem(profile, { type, cosmeticId, price 
       ? true
       : previousTracking?.[PURCHASE_FLAG_BY_TYPE[type]]
   };
-  const updated = normalizeProfileStore({
+  const updated = preserveUniqueCosmeticAcquisition(normalizeProfileStore({
     ...normalized,
     tokens: normalized.tokens - safePrice,
     cosmeticUnlockTracking: nextTrackingSeed,
@@ -348,6 +351,10 @@ export function buyConfiguredUniqueStoreItem(profile, { type, cosmeticId, price 
       ...normalized.ownedCosmetics,
       [type]: [...normalized.ownedCosmetics[type], cosmeticId]
     }
+  }), {
+    type,
+    cosmeticId,
+    source: "store_purchase"
   });
   const tracking = getTrackingMilestoneDiff(previousTracking, updated.cosmeticUnlockTracking);
 

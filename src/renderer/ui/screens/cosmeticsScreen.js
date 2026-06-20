@@ -13,7 +13,11 @@ import {
   hasRenderablePreviewSource
 } from "../shared/cosmeticHoverPreview.js";
 import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
-import { getCosmeticDefinition, getCosmeticHoverMetadata } from "../../../state/cosmeticSystem.js";
+import {
+  getCosmeticDefinition,
+  getCosmeticHoverMetadata,
+  normalizeUniqueCosmeticAcquisitionLabel
+} from "../../../state/cosmeticSystem.js";
 
 const RANDOMIZE_AFTER_MATCH_OPTIONS = Object.freeze([
   ["avatar", "Avatar"],
@@ -198,12 +202,24 @@ function preview(type, item) {
     }
   }
   const hoverMetadata = getCosmeticHoverMetadata(type, item.id, item.name);
+  const acquisitionLabel = normalizeUniqueCosmeticAcquisitionLabel(item.acquisitionLabel);
+  const uniqueHoverDetails =
+    item.rarity === "Unique"
+      ? [
+          item.createdForUsername
+            ? `Created For: ${String(item.createdForUsername).trim()}`
+            : null,
+          acquisitionLabel ? `Acquired: ${acquisitionLabel}` : null
+        ].filter(Boolean)
+      : [];
   const hoverAttributes = supportsHoverPreview(type, hasRenderableImage)
     ? buildHoverPreviewAttributes({
         previewType: type,
         previewSrc: hasRenderableImage ? src : null,
         previewName: item.name,
-        previewDescription: hoverMetadata.description,
+        previewDescription: [hoverMetadata.description, ...uniqueHoverDetails]
+          .filter(Boolean)
+          .join(" · "),
         previewVisualText: item.name,
         previewRarity: normalizeRarity(item.rarity)
       })
@@ -231,6 +247,7 @@ function preview(type, item) {
 }
 
 function renderItem(type, item) {
+  const acquisitionLabel = normalizeUniqueCosmeticAcquisitionLabel(item.acquisitionLabel);
   const resolvedIsNew = resolveOwnedItemNewStatus(type, item);
   const framed = usesRarityFrame(type);
   const variantHint =
@@ -248,7 +265,7 @@ function renderItem(type, item) {
         ${renderCollectionChip(item.collection)}
         <p>Type: ${getCosmeticTypeLabel(type, item)}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
-        ${item.rarity === "Unique" ? `<p class="unique-cosmetic-label">Unique Cosmetic</p><p>Owned by You</p>${item.createdForUsername ? `<p>Created For: ${escapeAttribute(item.createdForUsername)}</p>` : ""}` : ""}
+        ${item.rarity === "Unique" ? `<p class="unique-cosmetic-label">Unique Cosmetic</p>${item.createdForUsername ? `<p>Created For: ${escapeAttribute(item.createdForUsername)}</p>` : ""}${acquisitionLabel ? `<p>Acquired: ${escapeAttribute(acquisitionLabel)}</p>` : ""}<p>Owned by You</p>` : ""}
         <p>Equipped: ${item.equipped ? "Yes" : "No"}</p>
         ${variantHint}
       </div>

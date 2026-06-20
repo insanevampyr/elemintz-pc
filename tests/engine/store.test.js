@@ -265,8 +265,7 @@ test("store: Unique registry config controls display and authoritative purchase"
     assert.equal(visibleItem?.saleLimitTotal, 10);
     assert.equal(visibleItem?.saleLimitSold, 7);
     assert.equal("adminNotes" in visibleItem, false);
-    assert.equal(visibleItem?.royalty?.enabled, false);
-    assert.equal(visibleItem?.royalty?.recipientUsername, null);
+    assert.equal("royalty" in visibleItem, false);
 
     const buyerBefore = await state.profiles.updateProfile("UniqueBuyer", { tokens: 1000 });
     const royaltyBefore = await state.profiles.updateProfile("RoyaltyRecipient", {
@@ -349,6 +348,50 @@ test("store: createdForUsername does not grant Unique ownership", async () => {
   } finally {
     fixture.rarity = originalRarity;
   }
+});
+
+test("store: Lycan public Created For credit reaches Store without private registry metadata", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-lycan-credit-"));
+  const state = new StateCoordinator({ dataDir: dir });
+
+  await state.specialCosmeticRegistry.upsertConfig({
+    cosmeticId: "avatar_lycan_anubis",
+    status: "assigned",
+    assignmentStatus: "assigned",
+    createdForUsername: "CopyCell",
+    royalty: {
+      enabled: true,
+      recipientUsername: "PrivateRoyaltyRecipient",
+      tokenPercent: 10
+    },
+    adminNotes: "private Lycan note"
+  });
+  await state.specialCosmeticRegistry.updateShopConfig({
+    cosmeticId: "avatar_lycan_anubis",
+    config: {
+      grantOnly: false,
+      shopEligible: true,
+      shopListed: true,
+      storeHidden: false,
+      rotationOnly: false,
+      price: 1500,
+      saleLimitMode: "unlimited",
+      saleLimitTotal: null
+    }
+  });
+
+  const store = await state.getStore("LycanPublicViewer");
+  const item = store.catalog.avatar.find(
+    (candidate) => candidate.id === "avatar_lycan_anubis"
+  );
+  const normalItem = store.catalog.avatar.find(
+    (candidate) => candidate.rarity !== "Unique"
+  );
+
+  assert.equal(item?.createdForUsername, "CopyCell");
+  assert.equal("adminNotes" in item, false);
+  assert.equal("royalty" in item, false);
+  assert.equal("createdForUsername" in normalItem, false);
 });
 
 test("store: Unique purchase ledger is durable and duplicate transactionId is idempotent", async () => {
