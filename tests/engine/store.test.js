@@ -157,6 +157,36 @@ test("store: inactive Lycan Anubis Unique avatar is not publicly listed", async 
   assert.equal(catalogItem?.rarity, "Unique");
 });
 
+test("store: inactive Bane Flame Fire Unique variant is not publicly listed", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const cosmetic = COSMETIC_CATALOG.elementCardVariant.find(
+    (item) => item.id === "fire_variant_bane_flame"
+  );
+
+  assert.ok(cosmetic);
+  assert.equal(cosmetic.element, "fire");
+  assert.equal(cosmetic.collection, undefined);
+  assert.equal(cosmetic.purchasable, false);
+  assert.equal(cosmetic.grantOnly, true);
+  assert.equal(cosmetic.shopEligible, false);
+  assert.equal(cosmetic.shopListed, false);
+  assert.equal(cosmetic.storeHidden, true);
+  assert.equal(cosmetic.price, undefined);
+
+  const store = await state.getStore("BaneFlameCatalogViewer");
+  assert.equal(
+    store.catalog.elementCardVariant.some((item) => item.id === cosmetic.id),
+    false
+  );
+  assert.equal(
+    Object.values(store.catalog)
+      .flat()
+      .some((item) => item.collection === "enab_uniques" || item.collection === "None"),
+    false
+  );
+});
+
 test("store: Unique registry config controls display and authoritative purchase", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-store-unique-display-"));
   const state = new StateCoordinator({ dataDir: dir });

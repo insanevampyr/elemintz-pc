@@ -277,6 +277,50 @@ test("cosmetics: Lycan Anubis is an inactive grant-only Unique avatar", async ()
   await fs.access(path.resolve("assets/avatars/avatar_lycan_anubis.png"));
 });
 
+test("cosmetics: Bane Flame Fire is a collectionless inactive Unique Fire variant", async () => {
+  const matchingItems = COSMETIC_CATALOG.elementCardVariant.filter(
+    (candidate) => candidate.id === "fire_variant_bane_flame"
+  );
+  const [item] = matchingItems;
+
+  assert.equal(matchingItems.length, 1);
+  assert.ok(item);
+  assert.equal(item.name, "Bane Flame Fire");
+  assert.equal(item.image, "cards/fire_variant_bane_flame.png");
+  assert.equal(item.element, "fire");
+  assert.equal(item.rarity, "Unique");
+  assert.equal(item.collection, undefined);
+  assert.equal(item.dropKey, "enab_uniques");
+  assert.equal(item.releaseTag, "enab_uniques");
+  assert.equal(item.isNew, false);
+  assert.equal(item.defaultOwned, false);
+  assert.equal(item.purchasable, false);
+  assert.equal(item.grantOnly, true);
+  assert.equal(item.shopEligible, false);
+  assert.equal(item.shopListed, false);
+  assert.equal(item.storeHidden, true);
+  assert.equal(item.rotationOnly, false);
+  assert.equal(item.chestOnly, false);
+  assert.equal(item.supporterOnly, false);
+  assert.equal(item.price, undefined);
+  assert.deepEqual(item.royalty, {
+    enabled: false,
+    recipientUsername: null,
+    tokenPercent: 0
+  });
+
+  const unowned = getCosmeticCatalogForProfile({}).elementCardVariant.find(
+    (candidate) => candidate.id === item.id
+  );
+  const owned = getCosmeticCatalogForProfile({
+    ownedCosmetics: { elementCardVariant: [item.id] }
+  }).elementCardVariant.find((candidate) => candidate.id === item.id);
+
+  assert.equal(unowned?.owned, false);
+  assert.equal(owned?.owned, true);
+  await fs.access(path.resolve("assets/cards/fire_variant_bane_flame.png"));
+});
+
 test("cosmetics: owned Unique remains visible with Created For metadata when unavailable in Store", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-owned-unique-"));
   const state = new StateCoordinator({ dataDir });

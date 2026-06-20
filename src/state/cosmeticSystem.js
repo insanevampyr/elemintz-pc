@@ -2477,6 +2477,30 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       price: getBaseCosmeticPrice("elementCardVariant", "Rare")
     },
     {
+      id: "fire_variant_bane_flame",
+      name: "Bane Flame Fire",
+      image: "cards/fire_variant_bane_flame.png",
+      element: "fire",
+      rarity: "Unique",
+      dropKey: "enab_uniques",
+      releaseTag: "enab_uniques",
+      isNew: false,
+      defaultOwned: false,
+      purchasable: false,
+      grantOnly: true,
+      shopEligible: false,
+      shopListed: false,
+      storeHidden: true,
+      rotationOnly: false,
+      chestOnly: false,
+      supporterOnly: false,
+      royalty: {
+        enabled: false,
+        recipientUsername: null,
+        tokenPercent: 0
+      }
+    },
+    {
       id: "fire_variant_sunflare",
       name: "Sunflare Fire",
       image: "cards/fire_variant_sunflare.png",

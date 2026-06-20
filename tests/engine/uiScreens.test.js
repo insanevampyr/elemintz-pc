@@ -9208,6 +9208,80 @@ test("ui: cosmetic asset helpers resolve expansion avatars, backgrounds, card ba
   assert.match(variants.wind, /assets\/cards\/wind_variant_sky_serpent\.png/);
 });
 
+test("ui: Bane Flame Fire resolves only as a Fire variant across owned, profile, and match presentation", () => {
+  const item = COSMETIC_CATALOG.elementCardVariant.find(
+    (candidate) => candidate.id === "fire_variant_bane_flame"
+  );
+  const variants = getVariantCardImages({
+    fire: item.id,
+    water: item.id,
+    earth: "default_earth_card",
+    wind: "default_wind_card"
+  });
+  const ownedItem = { ...item, owned: true, equipped: true };
+  const cosmeticsHtml = cosmeticsScreen.render({
+    cosmetics: {
+      preferences: { randomizeAfterEachMatch: {} },
+      loadouts: [],
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [ownedItem],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+  const profileContext = createProfileScreenContext();
+  profileContext.profile.equippedCosmetics.elementCardVariant = {
+    ...(profileContext.profile.equippedCosmetics.elementCardVariant ?? {}),
+    fire: item.id
+  };
+  profileContext.cosmetics.catalog.elementCardVariant.push(ownedItem);
+  const profileHtml = profileScreen.render(profileContext);
+  const gameHtml = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "AI", title: "Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: {
+      p1: variants,
+      p2: getVariantCardImages(null)
+    },
+    game: {
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(variants.fire, /assets\/cards\/fire_variant_bane_flame\.png$/);
+  assert.doesNotMatch(variants.water, /fire_variant_bane_flame/);
+  assert.match(cosmeticsHtml, /Bane Flame Fire/);
+  assert.match(cosmeticsHtml, /data-cosmetic-element="fire"/);
+  assert.match(cosmeticsHtml, /fire_variant_bane_flame\.png/);
+  assert.doesNotMatch(cosmeticsHtml, /data-cosmetic-collection="enab_uniques"/);
+  assert.doesNotMatch(cosmeticsHtml, />NEW</);
+  assert.match(profileHtml, /fire_variant_bane_flame\.png/);
+  assert.match(gameHtml, /fire_variant_bane_flame\.png/);
+});
+
 test("ui: player hand summary counts are derived from full hand contents and sum to the real hand size", () => {
   const html = gameScreen.render({
     reducedMotion: true,

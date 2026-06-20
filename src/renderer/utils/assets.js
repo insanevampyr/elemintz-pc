@@ -86,6 +86,7 @@ const ELEMENT_VARIANT_IMAGES = Object.freeze({
   fire_variant_flame_wings: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_flame_wings.png") }),
   fire_variant_fire_paw: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_fire_paw.png") }),
   fire_variant_street: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_street.png") }),
+  fire_variant_bane_flame: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_bane_flame.png") }),
   fire_variant_ember_core: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_ember_core.png") }),
   fire_variant_phoenix: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_phoenix.png") }),
   fire_variant_transparent_flame: Object.freeze({ element: "fire", image: getAssetPath("cards/fire_variant_transparent_flame.png") }),
