@@ -10722,6 +10722,29 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
     (candidate) => candidate.id === "avatar_lycan_anubis"
   );
   const ownedItem = { ...item, owned: true, equipped: true };
+  const storeHtml = storeScreen.render({
+    store: {
+      tokens: 2000,
+      supporterPass: false,
+      catalog: {
+        avatar: [{
+          ...item,
+          owned: false,
+          grantOnly: false,
+          shopEligible: true,
+          shopListed: true,
+          storeHidden: false,
+          price: 1500
+        }],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
   const cosmeticsHtml = cosmeticsScreen.render({
     cosmetics: {
       preferences: { randomizeAfterEachMatch: {} },
@@ -10768,6 +10791,9 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
   });
 
   assert.match(getAvatarImage(item.id), /assets\/avatars\/avatar_lycan_anubis\.png/);
+  assert.match(storeHtml, /Lycan Anubis/);
+  assert.doesNotMatch(storeHtml, /CopyCell Uniques/);
+  assert.doesNotMatch(storeHtml, /data-store-collection-filter=/);
   assert.match(cosmeticsHtml, /Lycan Anubis/);
   assert.match(cosmeticsHtml, /Unique Cosmetic/);
   assert.match(cosmeticsHtml, /Owned by You/);

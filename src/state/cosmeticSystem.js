@@ -784,7 +784,6 @@ const RAW_COSMETIC_CATALOG = Object.freeze({
       name: "Lycan Anubis",
       image: "avatars/avatar_lycan_anubis.png",
       rarity: "Unique",
-      collection: "CopyCell Uniques",
       releaseTag: "copycell_uniques",
       isNew: false,
       defaultOwned: false,

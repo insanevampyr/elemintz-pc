@@ -143,6 +143,7 @@ test("store: inactive Lycan Anubis Unique avatar is not publicly listed", async 
   assert.equal(cosmetic.shopListed, false);
   assert.equal(cosmetic.storeHidden, true);
   assert.equal(cosmetic.price, undefined);
+  assert.equal(cosmetic.collection, undefined);
 
   const store = await state.getStore("LycanCatalogViewer");
   assert.equal(

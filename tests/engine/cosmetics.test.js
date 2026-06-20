@@ -232,15 +232,17 @@ test("cosmetics: Unique rarity does not imply special metadata behavior", () => 
 });
 
 test("cosmetics: Lycan Anubis is an inactive grant-only Unique avatar", async () => {
-  const item = COSMETIC_CATALOG.avatar.find(
+  const matchingItems = COSMETIC_CATALOG.avatar.filter(
     (candidate) => candidate.id === "avatar_lycan_anubis"
   );
+  const [item] = matchingItems;
 
+  assert.equal(matchingItems.length, 1);
   assert.ok(item);
   assert.equal(item.name, "Lycan Anubis");
   assert.equal(item.image, "avatars/avatar_lycan_anubis.png");
   assert.equal(item.rarity, "Unique");
-  assert.equal(item.collection, "CopyCell Uniques");
+  assert.equal(item.collection, undefined);
   assert.equal(item.releaseTag, "copycell_uniques");
   assert.equal(item.isNew, false);
   assert.equal(item.defaultOwned, false);
