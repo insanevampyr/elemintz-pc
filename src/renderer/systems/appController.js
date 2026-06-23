@@ -334,6 +334,10 @@ export class AppController {
     this.storePurchaseInFlight = false;
     this.storePurchaseInFlightKey = null;
     this.storePurchaseTransactionIds = new Map();
+    this.collectionPackDealsState = this.createDefaultCollectionPackDealsState();
+    this.collectionPackPurchaseInFlight = false;
+    this.collectionPackPurchaseInFlightKey = null;
+    this.collectionPackPurchaseTransactionIds = new Map();
     this.storeFeaturedRotationCache = null;
     this.storeFeaturedRotationCacheUsername = null;
     this.cosmeticsViewState = createDefaultCategoryViewState();
@@ -1750,12 +1754,25 @@ export class AppController {
 
   createDefaultStoreViewState() {
     return {
+      activeTab: "cosmetics",
       searchText: "",
       categories: new Set(["avatar", "background", "cardBack", "elementCardVariant", "title", "badge"]),
       rarities: new Set(["Common", "Rare", "Epic", "Legendary", "Unique"]),
       elements: new Set(["fire", "water", "earth", "wind"]),
       collections: new Set(),
       showNewFirst: true
+    };
+  }
+
+  createDefaultCollectionPackDealsState() {
+    return {
+      status: "idle",
+      deals: [],
+      error: "",
+      loaded: false,
+      loadInFlight: false,
+      purchaseInFlight: false,
+      purchaseInFlightKey: null
     };
   }
 
@@ -1857,6 +1874,7 @@ export class AppController {
     }
 
     this.storeViewState.searchText = String(this.storeViewState.searchText ?? "");
+    this.storeViewState.activeTab = this.storeViewState.activeTab === "deals" ? "deals" : "cosmetics";
     this.storeViewState.categories =
       this.storeViewState.categories instanceof Set
         ? this.storeViewState.categories
@@ -1879,6 +1897,64 @@ export class AppController {
         : this.createDefaultStoreViewState().showNewFirst;
 
     return this.storeViewState;
+  }
+
+  ensureCollectionPackDealsState() {
+    if (!this.collectionPackDealsState) {
+      this.collectionPackDealsState = this.createDefaultCollectionPackDealsState();
+    }
+
+    this.collectionPackDealsState.status = ["idle", "offline", "loading", "loaded", "empty", "error"].includes(
+      this.collectionPackDealsState.status
+    )
+      ? this.collectionPackDealsState.status
+      : "idle";
+    this.collectionPackDealsState.deals = Array.isArray(this.collectionPackDealsState.deals)
+      ? this.collectionPackDealsState.deals
+      : [];
+    this.collectionPackDealsState.error = String(this.collectionPackDealsState.error ?? "");
+    this.collectionPackDealsState.loaded = Boolean(this.collectionPackDealsState.loaded);
+    this.collectionPackDealsState.loadInFlight = Boolean(this.collectionPackDealsState.loadInFlight);
+    this.collectionPackDealsState.purchaseInFlight = Boolean(this.collectionPackPurchaseInFlight);
+    this.collectionPackDealsState.purchaseInFlightKey = this.collectionPackPurchaseInFlightKey;
+    return this.collectionPackDealsState;
+  }
+
+  async loadCollectionPackDeals({ force = false, rerender = true } = {}) {
+    const state = this.ensureCollectionPackDealsState();
+    if (!this.isAuthenticatedOnlineProfileFlow() || !window.elemintz?.multiplayer?.getCollectionPackDeals) {
+      state.status = "offline";
+      state.deals = [];
+      state.error = "";
+      state.loaded = false;
+      return state;
+    }
+
+    if (state.loadInFlight || (!force && state.loaded)) {
+      return state;
+    }
+
+    state.status = "loading";
+    state.error = "";
+    state.loadInFlight = true;
+    if (rerender && this.screenFlow === "store") {
+      await this.showStore({ skipProfileRefresh: true, preferCachedFeaturedRotation: true });
+    }
+
+    try {
+      const deals = await window.elemintz.multiplayer.getCollectionPackDeals({ username: this.username });
+      state.deals = Array.isArray(deals) ? deals : [];
+      state.status = state.deals.length > 0 ? "loaded" : "empty";
+      state.loaded = true;
+      state.error = "";
+    } catch (error) {
+      state.status = "error";
+      state.error = String(error?.message ?? "Unable to load Collection Pack Deals.");
+    } finally {
+      state.loadInFlight = false;
+    }
+
+    return state;
   }
 
   buildFeaturedStoreRotationContext(rotation, store, profileForFeaturedCatalog = null) {
@@ -10036,15 +10112,46 @@ export class AppController {
       store,
       profileForStore
     );
+    if (viewState.activeTab === "deals") {
+      const dealsState = this.ensureCollectionPackDealsState();
+      if (!dealsState.loadInFlight) {
+        await this.loadCollectionPackDeals({ force: false, rerender: false });
+      }
+    }
+    const collectionPackDeals = this.ensureCollectionPackDealsState();
 
     this.screenManager.show("store", {
       backgroundImage: this.getBackgroundFromProfile(profileForStore),
       store,
       featuredRotation,
       viewState,
+      collectionPackDeals,
       storePurchasePending: this.storePurchaseInFlight,
       storePurchasePendingKey: this.storePurchaseInFlightKey,
       actions: {
+        setStoreTab: async (tab) => {
+          viewState.activeTab = tab === "deals" ? "deals" : "cosmetics";
+          if (viewState.activeTab === "deals") {
+            const dealsState = this.ensureCollectionPackDealsState();
+            if (
+              this.isAuthenticatedOnlineProfileFlow() &&
+              window.elemintz?.multiplayer?.getCollectionPackDeals &&
+              !dealsState.loaded
+            ) {
+              dealsState.status = "loading";
+              dealsState.loadInFlight = true;
+              await this.showStore({ skipProfileRefresh: true, preferCachedFeaturedRotation: true });
+              dealsState.loadInFlight = false;
+              await this.loadCollectionPackDeals({ force: true, rerender: false });
+            } else if (!this.isAuthenticatedOnlineProfileFlow()) {
+              dealsState.status = "offline";
+              dealsState.deals = [];
+              dealsState.error = "";
+            }
+          }
+
+          await this.showStore({ skipProfileRefresh: true, preferCachedFeaturedRotation: true });
+        },
         buy: async (type, cosmeticId) => {
           const purchaseKey = this.buildStorePurchaseKey(type, cosmeticId);
           if (this.storePurchaseInFlight) {
@@ -10122,6 +10229,79 @@ export class AppController {
           );
           this.storePurchaseInFlight = false;
           this.storePurchaseInFlightKey = null;
+        },
+        buyCollectionPack: async (packId) => {
+          const safePackId = String(packId ?? "").trim();
+          if (!safePackId || this.collectionPackPurchaseInFlight) {
+            return;
+          }
+
+          if (!this.isAuthenticatedOnlineProfileFlow() || !window.elemintz?.multiplayer?.buyCollectionPack) {
+            this.showLegacyLocalAuthorityDisabledModal(
+              "Collection Pack Deals are available while signed in online."
+            );
+            return;
+          }
+
+          const purchaseKey = `collectionPack:${safePackId}`;
+          const transactionId =
+            this.collectionPackPurchaseTransactionIds.get(purchaseKey) ??
+            createStorePurchaseTransactionId();
+          this.collectionPackPurchaseTransactionIds.set(purchaseKey, transactionId);
+          this.collectionPackPurchaseInFlight = true;
+          this.collectionPackPurchaseInFlightKey = safePackId;
+          this.ensureCollectionPackDealsState();
+          await this.showStore({ skipProfileRefresh: true, preferCachedFeaturedRotation: true });
+
+          try {
+            const result = await window.elemintz.multiplayer.buyCollectionPack({
+              username: this.username,
+              packId: safePackId,
+              transactionId
+            });
+            this.collectionPackPurchaseTransactionIds.delete(purchaseKey);
+            this.profile = result?.snapshot
+              ? this.buildProfileFromServerSnapshot(result.snapshot)
+              : result?.profile ?? this.profile;
+            const dealsState = this.ensureCollectionPackDealsState();
+            dealsState.deals = Array.isArray(result?.deals) ? result.deals : dealsState.deals;
+            dealsState.status = dealsState.deals.length > 0 ? "loaded" : "empty";
+            dealsState.loaded = true;
+            dealsState.error = "";
+            this.collectionPackPurchaseInFlight = false;
+            this.collectionPackPurchaseInFlightKey = null;
+
+            const nextStore =
+              result?.store ??
+              (window.elemintz?.multiplayer?.getStore
+                ? await window.elemintz.multiplayer.getStore({ username: this.username })
+                : getStoreViewForProfile(this.profile ?? {}));
+
+            await this.showStore({
+              profileOverride: this.profile,
+              storeOverride: nextStore,
+              featuredRotationOverride: this.storeFeaturedRotationCache,
+              skipProfileRefresh: true
+            });
+          } catch (error) {
+            this.collectionPackPurchaseTransactionIds.delete(purchaseKey);
+            this.collectionPackPurchaseInFlight = false;
+            this.collectionPackPurchaseInFlightKey = null;
+            const dealsState = this.ensureCollectionPackDealsState();
+            dealsState.error = String(error?.message ?? "Unable to complete this Collection Pack purchase.");
+            this.modalManager.show({
+              title: "Purchase Failed",
+              body: dealsState.error,
+              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+            });
+            await this.showStore({
+              preserveModal: true,
+              profileOverride: this.profile,
+              storeOverride: store,
+              featuredRotationOverride: this.storeFeaturedRotationCache,
+              skipProfileRefresh: true
+            });
+          }
         },
         equip: async (type, cosmeticId) => {
           const result =

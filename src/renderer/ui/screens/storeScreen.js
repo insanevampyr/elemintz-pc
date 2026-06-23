@@ -31,6 +31,7 @@ function escapeAttribute(value) {
 
 function createDefaultViewState() {
   return {
+    activeTab: "cosmetics",
     searchText: "",
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
     rarities: new Set(FILTERABLE_RARITIES),
@@ -42,7 +43,9 @@ function createDefaultViewState() {
 
 function normalizeViewState(viewState) {
   const defaults = createDefaultViewState();
+  const activeTab = viewState?.activeTab === "deals" ? "deals" : defaults.activeTab;
   return {
+    activeTab,
     searchText: String(viewState?.searchText ?? defaults.searchText),
     categories:
       viewState?.categories instanceof Set
@@ -463,6 +466,246 @@ function getRenderableStoreItems(store, type) {
   return (store?.catalog?.[type] ?? []).filter((item) => !item?.owned);
 }
 
+function normalizePackImagePath(image) {
+  const value = String(image ?? "").trim().replaceAll("\\", "/");
+  return value.startsWith("assets/") ? value.slice("assets/".length) : value;
+}
+
+function formatTokenAmount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.floor(number)).toLocaleString() : "0";
+}
+
+function renderStoreTabs(activeTab) {
+  const normalizedActiveTab = activeTab === "deals" ? "deals" : "cosmetics";
+  return `
+    <nav class="store-tabs" aria-label="Store sections">
+      <button
+        class="store-tab ${normalizedActiveTab === "cosmetics" ? "is-active" : ""}"
+        type="button"
+        data-store-tab="cosmetics"
+        aria-pressed="${normalizedActiveTab === "cosmetics" ? "true" : "false"}"
+      >Cosmetics</button>
+      <button
+        class="store-tab ${normalizedActiveTab === "deals" ? "is-active" : ""}"
+        type="button"
+        data-store-tab="deals"
+        aria-pressed="${normalizedActiveTab === "deals" ? "true" : "false"}"
+      >Deals</button>
+    </nav>
+  `;
+}
+
+function renderDealAvailability(deal) {
+  if (deal.status === "sold_out") {
+    return "Sold Out";
+  }
+
+  if (deal.status === "complete") {
+    return "Complete";
+  }
+
+  if (deal.saleLimitMode === "limited") {
+    return `Limited: ${formatTokenAmount(deal.remainingPurchases)} purchase${Number(deal.remainingPurchases) === 1 ? "" : "s"} left`;
+  }
+
+  return "Unlimited";
+}
+
+function renderCollectionPackDealCard(deal, purchaseInFlight) {
+  const status = ["available", "complete", "sold_out"].includes(deal?.status)
+    ? deal.status
+    : "unavailable";
+  const isAvailable = status === "available";
+  const imagePath = normalizePackImagePath(deal?.image);
+  const imageHtml = imagePath
+    ? `<img class="collection-pack-deal-image" src="${getAssetPath(imagePath)}" alt="${escapeAttribute(deal.name)}" />`
+    : `<div class="collection-pack-deal-image collection-pack-deal-image--missing">No Pack Art</div>`;
+  const buttonHtml = isAvailable
+    ? `<button class="btn btn-primary" type="button" data-buy-pack-id="${escapeAttribute(deal.packId)}" data-buy-default-label="Buy Pack" ${purchaseInFlight ? "disabled" : ""}>Buy Pack</button>`
+    : `<button class="btn" type="button" disabled>${status === "complete" ? "Complete" : "Sold Out"}</button>`;
+
+  return `
+    <article class="collection-pack-deal-card" data-collection-pack-deal data-collection-pack-status="${status}">
+      ${imageHtml}
+      <div class="collection-pack-deal-body">
+        <div class="collection-pack-deal-header">
+          <h3>${escapeAttribute(deal.name)}</h3>
+          <span class="collection-pack-deal-status">${renderDealAvailability(deal)}</span>
+        </div>
+        ${deal.description ? `<p class="collection-pack-deal-description">${escapeAttribute(deal.description)}</p>` : ""}
+        <dl class="collection-pack-deal-stats">
+          <div><dt>Included</dt><dd>${formatTokenAmount(deal.includedItemCount)} cosmetics</dd></div>
+          <div><dt>Owned</dt><dd>${formatTokenAmount(deal.ownedItemCount)}</dd></div>
+          <div><dt>Remaining</dt><dd>${formatTokenAmount(deal.remainingItemCount)}</dd></div>
+          <div><dt>Normal Value</dt><dd>${formatTokenAmount(deal.remainingNormalValue)} Tokens</dd></div>
+          <div><dt>Discount</dt><dd>${formatTokenAmount(deal.discountPercent)}%</dd></div>
+          <div><dt>Savings</dt><dd>${formatTokenAmount(deal.savings)} Tokens</dd></div>
+          <div><dt>Price</dt><dd>${formatTokenAmount(deal.finalPrice)} Tokens</dd></div>
+        </dl>
+      </div>
+      <div class="collection-pack-deal-actions">${buttonHtml}</div>
+    </article>
+  `;
+}
+
+function renderCollectionPackDeals(collectionPackDeals = {}) {
+  const status = String(collectionPackDeals.status ?? "idle");
+  if (status === "offline") {
+    return `
+      <section class="collection-pack-deals-panel panel" data-collection-pack-deals-state="offline">
+        <h3>Collection Pack Deals</h3>
+        <p>Collection Pack Deals are available while signed in online.</p>
+      </section>
+    `;
+  }
+
+  if (status === "loading") {
+    return `
+      <section class="collection-pack-deals-panel panel" data-collection-pack-deals-state="loading">
+        <h3>Collection Pack Deals</h3>
+        <p>Loading Collection Pack Deals...</p>
+      </section>
+    `;
+  }
+
+  if (status === "error") {
+    return `
+      <section class="collection-pack-deals-panel panel" data-collection-pack-deals-state="error">
+        <h3>Collection Pack Deals</h3>
+        <p>Unable to load Collection Pack Deals.</p>
+        ${collectionPackDeals.error ? `<p class="collection-pack-deals-error">${escapeAttribute(collectionPackDeals.error)}</p>` : ""}
+      </section>
+    `;
+  }
+
+  const deals = Array.isArray(collectionPackDeals.deals) ? collectionPackDeals.deals : [];
+  if (deals.length === 0) {
+    return `
+      <section class="collection-pack-deals-panel panel" data-collection-pack-deals-state="empty">
+        <h3>Collection Pack Deals</h3>
+        <p>No Collection Pack Deals are available right now.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="collection-pack-deals-panel panel" data-collection-pack-deals-state="loaded">
+      <div class="collection-pack-deals-header">
+        <h3>Collection Pack Deals</h3>
+        <p>Deals use server-authoritative pricing and ownership checks.</p>
+      </div>
+      <div class="collection-pack-deals-grid">
+        ${deals.map((deal) => renderCollectionPackDealCard(deal, Boolean(collectionPackDeals.purchaseInFlight))).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCosmeticsStoreContent({ store, viewState, collectionOptions, featuredRotation }) {
+  return `
+    ${renderFeaturedRotationSection(featuredRotation)}
+    <section class="store-toolbar panel">
+      <div class="store-search-group">
+        <label class="store-search-label" for="store-search-input">Search Cosmetics</label>
+        <input
+          id="store-search-input"
+          class="store-search-input"
+          type="search"
+          placeholder="Search by cosmetic name"
+          value="${escapeAttribute(viewState.searchText)}"
+          autocomplete="off"
+        />
+      </div>
+      <div class="store-filter-groups">
+        <fieldset class="store-filter-group">
+          <legend>Categories</legend>
+          <div class="store-filter-options">
+            ${FILTERABLE_CATEGORIES.map(
+              ([type, label]) => `
+                <label class="store-filter-option">
+                  <input type="checkbox" data-store-category-filter="${type}" ${viewState.categories.has(type) ? "checked" : ""} />
+                  <span>${label}</span>
+                </label>
+              `
+            ).join("")}
+          </div>
+        </fieldset>
+        <fieldset class="store-filter-group">
+          <legend>Rarity</legend>
+          <div class="store-filter-options">
+            ${FILTERABLE_RARITIES.map(
+              (rarity) => `
+                <label class="store-filter-option">
+                  <input type="checkbox" data-store-rarity-filter="${rarity}" ${viewState.rarities.has(rarity) ? "checked" : ""} />
+                  <span>${rarity}</span>
+                </label>
+              `
+            ).join("")}
+          </div>
+        </fieldset>
+        <fieldset class="store-filter-group">
+          <legend>Element</legend>
+          <div class="store-filter-options">
+            ${FILTERABLE_ELEMENTS.map(
+              ([element, label]) => `
+                <label class="store-filter-option">
+                  <input type="checkbox" data-store-element-filter="${element}" ${viewState.elements.has(element) ? "checked" : ""} />
+                  <span>${label}</span>
+                </label>
+              `
+            ).join("")}
+          </div>
+        </fieldset>
+        ${
+          collectionOptions.length
+            ? `<fieldset class="store-filter-group">
+          <legend>Collections</legend>
+          <div class="store-filter-options store-filter-options--collections">
+            ${collectionOptions
+              .map(
+                (collection) => `
+                <label class="store-filter-option">
+                  <input type="checkbox" data-store-collection-filter="${escapeAttribute(collection)}" ${viewState.collections.has(collection) ? "checked" : ""} />
+                  <span>${collection}</span>
+                </label>
+              `
+              )
+              .join("")}
+          </div>
+        </fieldset>`
+            : ""
+        }
+        <fieldset class="store-filter-group">
+          <legend>Order</legend>
+          <div class="store-filter-options">
+            <label class="store-filter-option store-filter-option-toggle">
+              <input type="checkbox" id="store-show-new-first" ${viewState.showNewFirst ? "checked" : ""} />
+              <span>Show NEW First</span>
+            </label>
+          </div>
+        </fieldset>
+        <div class="store-filter-actions">
+          <button id="store-reset-filters-btn" class="btn" type="button">Reset Filters</button>
+        </div>
+      </div>
+    </section>
+    <div class="grid cosmetics-sections">
+      ${CATEGORY_ORDER.map(
+        ([type, label]) => `
+          <section class="cosmetic-section" data-store-section="${type}">
+            <h3 class="section-title">${label}</h3>
+            <div class="cosmetic-grid">
+              ${getRenderableStoreItems(store, type).map((item, index) => renderStoreItem(type, item, index)).join("")}
+            </div>
+          </section>
+        `
+      ).join("")}
+    </div>
+    <p id="store-empty-state" class="store-empty-state" hidden>No cosmetics match the current search and filters.</p>
+  `;
+}
+
 export const storeScreen = {
   render(context) {
     const store = context.store;
@@ -496,105 +739,17 @@ export const storeScreen = {
           </section>
           <p>Founder / Supporter: <strong>${store.supporterPass ? "Active" : "Not Active"}</strong></p>
           <p>Badges are gameplay/achievement rewards and cannot be purchased.</p>
-          ${renderFeaturedRotationSection(context.featuredRotation)}
-          <section class="store-toolbar panel">
-            <div class="store-search-group">
-              <label class="store-search-label" for="store-search-input">Search Cosmetics</label>
-              <input
-                id="store-search-input"
-                class="store-search-input"
-                type="search"
-                placeholder="Search by cosmetic name"
-                value="${escapeAttribute(viewState.searchText)}"
-                autocomplete="off"
-              />
-            </div>
-            <div class="store-filter-groups">
-              <fieldset class="store-filter-group">
-                <legend>Categories</legend>
-                <div class="store-filter-options">
-                  ${FILTERABLE_CATEGORIES.map(
-                    ([type, label]) => `
-                      <label class="store-filter-option">
-                        <input type="checkbox" data-store-category-filter="${type}" ${viewState.categories.has(type) ? "checked" : ""} />
-                        <span>${label}</span>
-                      </label>
-                    `
-                  ).join("")}
-                </div>
-              </fieldset>
-              <fieldset class="store-filter-group">
-                <legend>Rarity</legend>
-                <div class="store-filter-options">
-                  ${FILTERABLE_RARITIES.map(
-                    (rarity) => `
-                      <label class="store-filter-option">
-                        <input type="checkbox" data-store-rarity-filter="${rarity}" ${viewState.rarities.has(rarity) ? "checked" : ""} />
-                        <span>${rarity}</span>
-                      </label>
-                    `
-                  ).join("")}
-                </div>
-              </fieldset>
-              <fieldset class="store-filter-group">
-                <legend>Element</legend>
-                <div class="store-filter-options">
-                  ${FILTERABLE_ELEMENTS.map(
-                    ([element, label]) => `
-                      <label class="store-filter-option">
-                        <input type="checkbox" data-store-element-filter="${element}" ${viewState.elements.has(element) ? "checked" : ""} />
-                        <span>${label}</span>
-                      </label>
-                    `
-                  ).join("")}
-                </div>
-              </fieldset>
-              ${
-                collectionOptions.length
-                  ? `<fieldset class="store-filter-group">
-                <legend>Collections</legend>
-                <div class="store-filter-options store-filter-options--collections">
-                  ${collectionOptions
-                    .map(
-                      (collection) => `
-                      <label class="store-filter-option">
-                        <input type="checkbox" data-store-collection-filter="${escapeAttribute(collection)}" ${viewState.collections.has(collection) ? "checked" : ""} />
-                        <span>${collection}</span>
-                      </label>
-                    `
-                    )
-                    .join("")}
-                </div>
-              </fieldset>`
-                  : ""
-              }
-              <fieldset class="store-filter-group">
-                <legend>Order</legend>
-                <div class="store-filter-options">
-                  <label class="store-filter-option store-filter-option-toggle">
-                    <input type="checkbox" id="store-show-new-first" ${viewState.showNewFirst ? "checked" : ""} />
-                    <span>Show NEW First</span>
-                  </label>
-                </div>
-              </fieldset>
-              <div class="store-filter-actions">
-                <button id="store-reset-filters-btn" class="btn" type="button">Reset Filters</button>
-              </div>
-            </div>
-          </section>
-          <div class="grid cosmetics-sections">
-            ${CATEGORY_ORDER.map(
-              ([type, label]) => `
-                <section class="cosmetic-section" data-store-section="${type}">
-                  <h3 class="section-title">${label}</h3>
-                  <div class="cosmetic-grid">
-                    ${getRenderableStoreItems(store, type).map((item, index) => renderStoreItem(type, item, index)).join("")}
-                  </div>
-                </section>
-              `
-            ).join("")}
-          </div>
-          <p id="store-empty-state" class="store-empty-state" hidden>No cosmetics match the current search and filters.</p>
+          ${renderStoreTabs(viewState.activeTab)}
+          ${
+            viewState.activeTab === "deals"
+              ? renderCollectionPackDeals(context.collectionPackDeals)
+              : renderCosmeticsStoreContent({
+                  store,
+                  viewState,
+                  collectionOptions,
+                  featuredRotation: context.featuredRotation
+                })
+          }
           </div>
         </section>
       </section>
@@ -609,6 +764,7 @@ export const storeScreen = {
       .filter(Boolean);
     reconcileCollectionSelections(viewState, availableCollections);
     if (context.viewState) {
+      context.viewState.activeTab = viewState.activeTab;
       context.viewState.searchText = viewState.searchText;
       context.viewState.categories = viewState.categories;
       context.viewState.rarities = viewState.rarities;
@@ -709,6 +865,20 @@ export const storeScreen = {
 
     document.getElementById("store-back-btn").addEventListener("click", context.actions.back);
 
+    root.querySelectorAll("[data-store-tab]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const tab = button.getAttribute("data-store-tab") === "deals" ? "deals" : "cosmetics";
+        if (viewState.activeTab === tab) {
+          return;
+        }
+        viewState.activeTab = tab;
+        if (context.viewState) {
+          context.viewState.activeTab = tab;
+        }
+        await context.actions.setStoreTab?.(tab);
+      });
+    });
+
     const supporterButton = document.getElementById("activate-supporter-btn");
     if (supporterButton) {
       supporterButton.addEventListener("click", context.actions.activateSupporter);
@@ -750,6 +920,40 @@ export const storeScreen = {
           await context.actions.buy(type, cosmeticId);
         } finally {
           setPurchaseButtonsPendingState(false);
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-buy-pack-id]").forEach((button) => {
+      button.disabled = Boolean(context.collectionPackDeals?.purchaseInFlight);
+      const defaultLabel = button.getAttribute("data-buy-default-label") || button.textContent || "Buy Pack";
+      button.textContent = context.collectionPackDeals?.purchaseInFlight ? "Purchasing..." : defaultLabel;
+    });
+
+    let packPurchasePending = Boolean(context.collectionPackDeals?.purchaseInFlight);
+    const setPackPurchaseButtonsPendingState = (pending, activePackId = "") => {
+      packPurchasePending = Boolean(pending);
+      root.querySelectorAll("[data-buy-pack-id]").forEach((button) => {
+        const packId = button.getAttribute("data-buy-pack-id");
+        const defaultLabel = button.getAttribute("data-buy-default-label") || "Buy Pack";
+        button.disabled = packPurchasePending;
+        button.textContent =
+          packPurchasePending && packId === activePackId ? "Purchasing..." : defaultLabel;
+      });
+    };
+
+    root.querySelectorAll("[data-buy-pack-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (packPurchasePending || button.disabled) {
+          return;
+        }
+
+        const packId = button.getAttribute("data-buy-pack-id");
+        setPackPurchaseButtonsPendingState(true, packId);
+        try {
+          await context.actions.buyCollectionPack?.(packId);
+        } finally {
+          setPackPurchaseButtonsPendingState(false);
         }
       });
     });

@@ -236,6 +236,231 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   assert.match(renderHiddenHandSummary(2, "card-back.png", "Unique"), /hidden-hand-summary rarity-unique/);
 });
 
+test("ui: Store renders Cosmetics and Deals tabs with Cosmetics active by default", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 100,
+      supporterPass: false,
+      catalog: {
+        avatar: [{
+          id: "default_store_avatar",
+          name: "Default Store Avatar",
+          image: "avatars/default.png",
+          rarity: "Common",
+          price: 100,
+          purchasable: true,
+          owned: false
+        }],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: {}
+  });
+
+  assert.match(html, /data-store-tab="cosmetics"[^>]*aria-pressed="true"/);
+  assert.match(html, /data-store-tab="deals"[^>]*aria-pressed="false"/);
+  assert.match(html, /Search Cosmetics/);
+  assert.match(html, /data-buy-type="avatar"/);
+});
+
+test("ui: Store Deals renders online-required, loading, empty, and error states", () => {
+  const baseContext = {
+    store: {
+      tokens: 0,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: { activeTab: "deals" }
+  };
+
+  assert.match(
+    storeScreen.render({ ...baseContext, collectionPackDeals: { status: "offline" } }),
+    /Collection Pack Deals are available while signed in online\./
+  );
+  assert.match(
+    storeScreen.render({ ...baseContext, collectionPackDeals: { status: "loading" } }),
+    /Loading Collection Pack Deals/
+  );
+  assert.match(
+    storeScreen.render({ ...baseContext, collectionPackDeals: { status: "empty", deals: [] } }),
+    /No Collection Pack Deals are available right now\./
+  );
+  const errorHtml = storeScreen.render({
+    ...baseContext,
+    collectionPackDeals: { status: "error", error: "Server unavailable" }
+  });
+  assert.match(errorHtml, /Unable to load Collection Pack Deals/);
+  assert.match(errorHtml, /Server unavailable/);
+});
+
+test("ui: Store Deals card renders server fields, cover image, and state-specific actions", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 2500,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: { activeTab: "deals" },
+    collectionPackDeals: {
+      status: "loaded",
+      deals: [
+        {
+          packId: "frostveil_court",
+          name: "Frostveil Court",
+          description: "A discounted winter court bundle.",
+          image: "assets/collection_packs/collection_pack_frostveil_court.png",
+          includedItemCount: 4,
+          ownedItemCount: 1,
+          remainingItemCount: 3,
+          remainingNormalValue: 1500,
+          discountPercent: 20,
+          savings: 300,
+          finalPrice: 1200,
+          status: "available",
+          saleLimitMode: "limited",
+          remainingPurchases: 2
+        },
+        {
+          packId: "complete_pack",
+          name: "Complete Pack",
+          image: "collection_packs/collection_pack_frostveil_court.png",
+          includedItemCount: 1,
+          ownedItemCount: 1,
+          remainingItemCount: 0,
+          remainingNormalValue: 0,
+          discountPercent: 20,
+          savings: 0,
+          finalPrice: 0,
+          status: "complete",
+          saleLimitMode: "unlimited"
+        },
+        {
+          packId: "sold_out_pack",
+          name: "Sold Out Pack",
+          image: "collection_packs/collection_pack_frostveil_court.png",
+          includedItemCount: 1,
+          ownedItemCount: 0,
+          remainingItemCount: 1,
+          remainingNormalValue: 500,
+          discountPercent: 10,
+          savings: 50,
+          finalPrice: 450,
+          status: "sold_out",
+          saleLimitMode: "limited",
+          remainingPurchases: 0
+        }
+      ]
+    }
+  });
+
+  assert.match(html, /Frostveil Court/);
+  assert.match(html, /A discounted winter court bundle\./);
+  assert.match(html, /Included<\/dt><dd>4 cosmetics/);
+  assert.match(html, /Owned<\/dt><dd>1/);
+  assert.match(html, /Remaining<\/dt><dd>3/);
+  assert.match(html, /Normal Value<\/dt><dd>1,500 Tokens/);
+  assert.match(html, /Discount<\/dt><dd>20%/);
+  assert.match(html, /Savings<\/dt><dd>300 Tokens/);
+  assert.match(html, /Price<\/dt><dd>1,200 Tokens/);
+  assert.match(html, /Limited: 2 purchases left/);
+  assert.match(html, /data-buy-pack-id="frostveil_court"/);
+  assert.match(html, /data-collection-pack-status="complete"[\s\S]*Complete<\/button>/);
+  assert.match(html, /data-collection-pack-status="sold_out"[\s\S]*Sold Out<\/button>/);
+  assert.doesNotMatch(html, /assets\/assets\/collection_packs/);
+  assert.match(html, /collection_packs\/collection_pack_frostveil_court\.png/);
+});
+
+test("ui: Store Deals purchase buttons use an immediate single-flight lock", async () => {
+  const previousDocument = global.document;
+  const listeners = new Map();
+  const classList = createClassList();
+  const buyButton = {
+    disabled: false,
+    textContent: "Buy Pack",
+    classList,
+    style: {},
+    addEventListener: (type, handler) => listeners.set(type, handler),
+    getAttribute: (name) =>
+      ({
+        "data-buy-pack-id": "frostveil_court",
+        "data-buy-default-label": "Buy Pack"
+      })[name] ?? null,
+    setAttribute: () => {}
+  };
+  const backButton = {
+    addEventListener: () => {},
+    getAttribute: () => null
+  };
+  const root = {
+    querySelector: () => null,
+    querySelectorAll: (selector) => {
+      if (selector === "[data-buy-pack-id]") return [buyButton];
+      return [];
+    }
+  };
+  let buyCalls = 0;
+  let releaseBuy;
+
+  global.document = {
+    getElementById: (id) => (id === "store-back-btn" ? backButton : null),
+    querySelector: (selector) => (selector === ".screen-store" ? root : null),
+    querySelectorAll: root.querySelectorAll
+  };
+
+  try {
+    storeScreen.bind({
+      viewState: { activeTab: "deals" },
+      collectionPackDeals: { status: "loaded", purchaseInFlight: false },
+      actions: {
+        back: () => {},
+        buy: async () => {},
+        equip: async () => {},
+        buyCollectionPack: async () => {
+          buyCalls += 1;
+          await new Promise((resolve) => {
+            releaseBuy = resolve;
+          });
+        }
+      }
+    });
+
+    const handler = listeners.get("click");
+    const first = handler();
+    const second = handler();
+
+    assert.equal(buyCalls, 1);
+    assert.equal(buyButton.disabled, true);
+    assert.equal(buyButton.textContent, "Purchasing...");
+
+    releaseBuy();
+    await first;
+    await second;
+
+    assert.equal(buyButton.disabled, false);
+    assert.equal(buyButton.textContent, "Buy Pack");
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: sold-out Unique Store item remains visible and blocked", () => {
   const html = storeScreen.render({
     store: {
@@ -22941,6 +23166,232 @@ test("ui: authenticated Unique Store purchase sends transactionId and uses autho
     assert.match(purchasePayloads[0].transactionId, /^store-[A-Za-z0-9._:-]{8,}$/);
     assert.equal(shown.at(-1).store.tokens, 300);
     assert.equal(shown.at(-1).store.catalog.avatar.length, 0);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController loads Collection Pack Deals through player API and blocks duplicate buys", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const purchasePayloads = [];
+  let dealsReads = 0;
+  let releasePurchase;
+  const profileSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      username: "DealsBuyer",
+      tokens: 2500,
+      playerXP: 0,
+      playerLevel: 1,
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        background: "default_background",
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        background: ["default_background"],
+        cardBack: ["default_card_back"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none"],
+        title: ["Initiate"]
+      }
+    }
+  };
+  const store = {
+    tokens: 2500,
+    supporterPass: false,
+    catalog: {
+      avatar: [],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      title: [],
+      badge: []
+    }
+  };
+  const deals = [{
+    packId: "frostveil_court",
+    name: "Frostveil Court",
+    image: "assets/collection_packs/collection_pack_frostveil_court.png",
+    includedItemCount: 4,
+    ownedItemCount: 0,
+    remainingItemCount: 4,
+    remainingNormalValue: 2000,
+    discountPercent: 25,
+    savings: 500,
+    finalPrice: 1500,
+    status: "available",
+    saleLimitMode: "unlimited",
+    remainingPurchases: null
+  }];
+  const refreshedDeals = [{
+    ...deals[0],
+    ownedItemCount: 4,
+    remainingItemCount: 0,
+    remainingNormalValue: 0,
+    savings: 0,
+    finalPrice: 0,
+    status: "complete"
+  }];
+
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => {
+          throw new Error("local Store should not be used");
+        }
+      },
+      multiplayer: {
+        getProfile: async () => profileSnapshot,
+        getStore: async () => store,
+        getCollectionPackDeals: async (payload) => {
+          assert.equal(payload.username, "DealsBuyer");
+          dealsReads += 1;
+          return deals;
+        },
+        buyCollectionPack: async (payload) => {
+          purchasePayloads.push(payload);
+          await new Promise((resolve) => {
+            releasePurchase = resolve;
+          });
+          return {
+            purchase: {
+              status: "purchased",
+              kind: "collection_pack",
+              packId: payload.packId,
+              finalPrice: 1500
+            },
+            snapshot: {
+              ...profileSnapshot,
+              profile: {
+                ...profileSnapshot.profile,
+                tokens: 1000
+              }
+            },
+            store: {
+              ...store,
+              tokens: 1000
+            },
+            deals: refreshedDeals
+          };
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "DealsBuyer";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        authenticated: true,
+        username: "DealsBuyer",
+        profileKey: "DealsBuyer",
+        accountId: "deals-account"
+      }
+    };
+    controller.storeViewState.activeTab = "deals";
+
+    await controller.showStore();
+    assert.equal(dealsReads, 1);
+    assert.equal(shown.at(-1).collectionPackDeals.deals[0].packId, "frostveil_court");
+
+    await controller.showStore({ skipProfileRefresh: true });
+    assert.equal(dealsReads, 1);
+
+    const first = shown.at(-1).actions.buyCollectionPack("frostveil_court");
+    const second = shown.at(-1).actions.buyCollectionPack("frostveil_court");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(purchasePayloads.length, 1);
+    assert.equal(purchasePayloads[0].username, "DealsBuyer");
+    assert.equal(purchasePayloads[0].packId, "frostveil_court");
+    assert.match(purchasePayloads[0].transactionId, /^store-[A-Za-z0-9._:-]{8,}$/);
+
+    releasePurchase();
+    await first;
+    await second;
+
+    assert.equal(purchasePayloads.length, 1);
+    assert.equal(shown.at(-1).store.tokens, 1000);
+    assert.equal(shown.at(-1).collectionPackDeals.deals[0].status, "complete");
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController keeps Collection Pack Deals offline without player API calls", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => ({
+          tokens: 100,
+          supporterPass: false,
+          catalog: {
+            avatar: [],
+            cardBack: [],
+            background: [],
+            elementCardVariant: [],
+            title: [],
+            badge: []
+          }
+        })
+      },
+      multiplayer: {
+        getCollectionPackDeals: async () => {
+          throw new Error("offline Deals should not call multiplayer API");
+        },
+        buyCollectionPack: async () => {
+          throw new Error("offline Deals should not buy through multiplayer API");
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "OfflineDeals";
+    controller.storeViewState.activeTab = "deals";
+    await controller.showStore();
+
+    assert.equal(shown.at(-1).collectionPackDeals.status, "offline");
+    assert.deepEqual(shown.at(-1).collectionPackDeals.deals, []);
   } finally {
     global.window = previousWindow;
   }
