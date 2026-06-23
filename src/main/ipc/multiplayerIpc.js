@@ -79,6 +79,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getStore(payload);
   });
 
+  ipcMain.handle("multiplayer:getCollectionPackDeals", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getCollectionPackDeals(payload);
+  });
+
   ipcMain.handle("multiplayer:viewProfile", async (event, payload) => {
     subscribers.add(event.sender);
     return client.viewProfile(payload);
@@ -177,6 +182,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
   ipcMain.handle("multiplayer:buyStoreItem", async (event, payload) => {
     subscribers.add(event.sender);
     return client.buyStoreItem(payload);
+  });
+
+  ipcMain.handle("multiplayer:buyCollectionPack", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.buyCollectionPack(payload);
   });
 
   ipcMain.handle("multiplayer:submitFeedback", async (event, payload) => {

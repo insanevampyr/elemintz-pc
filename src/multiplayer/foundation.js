@@ -3803,6 +3803,47 @@ export function createMultiplayerFoundation({
         }
       });
 
+      socket.on("profile:getCollectionPackDeals", async (payload = {}, respond = () => {}) => {
+        respond = toAckCallback(respond);
+        const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+          allowBootstrap: false
+        });
+        if (!sessionResult?.ok) {
+          respond(sessionResult);
+          return;
+        }
+
+        if (typeof profileAuthority?.getCollectionPackDeals !== "function") {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_AUTHORITY_UNAVAILABLE",
+              message: "Server profile authority is not available."
+            }
+          });
+          return;
+        }
+
+        try {
+          assertSessionUsernameMatch(sessionResult.session, payload?.username);
+          const deals = await profileAuthority.getCollectionPackDeals(
+            sessionResult.session?.profileKey ?? sessionResult.session?.username
+          );
+          respond({
+            ok: true,
+            deals
+          });
+        } catch (error) {
+          respond({
+            ok: false,
+            error: {
+              code: "PROFILE_COLLECTION_PACK_DEALS_READ_FAILED",
+              message: String(error?.message ?? "Unable to read Collection Pack deals.")
+            }
+          });
+        }
+      });
+
     socket.on("profile:acknowledgeAnnouncement", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
@@ -4208,7 +4249,7 @@ export function createMultiplayerFoundation({
         }
       });
 
-      socket.on("profile:buyStoreItem", async (payload = {}, respond = () => {}) => {
+    socket.on("profile:buyStoreItem", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
         allowBootstrap: true
@@ -4259,6 +4300,48 @@ export function createMultiplayerFoundation({
           error: {
             code: "PROFILE_STORE_WRITE_FAILED",
             message: String(error?.message ?? "Unable to complete authoritative store purchase.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:buyCollectionPack", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.buyCollectionPack !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const result = await profileAuthority.buyCollectionPack({
+          ...payload,
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_COLLECTION_PACK_PURCHASE_FAILED",
+            message: String(error?.message ?? "Unable to complete Collection Pack purchase.")
           }
         });
       }

@@ -5327,6 +5327,173 @@ test("multiplayer foundation: server-authoritative store purchase deducts tokens
   }
 });
 
+test("multiplayer foundation: Collection Pack deals and purchases use claimed-profile authority", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    now: () => "2026-06-23T12:00:00.000Z"
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+  let unauthenticatedClient = null;
+  let authenticatedClient = null;
+
+  try {
+    await coordinator.collectionPackStore.upsertPack({
+      packId: "socket_pack",
+      name: "Socket Pack",
+      description: "Player-safe Collection Pack fixture.",
+      image: "assets/collection_packs/socket_pack.png",
+      cosmeticIds: ["fireavatarF", "wateravatarF"],
+      active: true,
+      visible: true,
+      saleLimitMode: "limited",
+      saleLimitTotal: 2,
+      adminNotes: "private pack note"
+    });
+    await coordinator.collectionPackStore.upsertPack({
+      packId: "socket_hidden_pack",
+      name: "Hidden Socket Pack",
+      cosmeticIds: ["fireavatarF", "wateravatarF"],
+      active: true,
+      visible: false,
+      adminNotes: "private hidden note"
+    });
+    const port = await foundation.start();
+    client = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+    authenticatedClient = await connectClient(port);
+
+    const unauthenticatedDeals = await emitWithAck(
+      unauthenticatedClient,
+      "profile:getCollectionPackDeals",
+      {}
+    );
+    const unauthenticatedBuy = await emitWithAck(
+      unauthenticatedClient,
+      "profile:buyCollectionPack",
+      {
+        packId: "socket_pack",
+        transactionId: "unauthenticated-pack-buy-transaction"
+      }
+    );
+    assert.equal(unauthenticatedDeals?.ok, false);
+    assert.equal(unauthenticatedDeals?.error?.code, "SESSION_REQUIRED");
+    assert.equal(unauthenticatedBuy?.ok, false);
+    assert.equal(unauthenticatedBuy?.error?.code, "SESSION_REQUIRED");
+
+    const authenticatedSession = await registerAccount(authenticatedClient, {
+      username: "PackAuthenticatedUser",
+      email: "pack-authenticated@example.test",
+      password: "PackPass123"
+    });
+    assert.equal(authenticatedSession?.ok, true);
+
+    const mismatchedDeals = await emitWithAck(
+      authenticatedClient,
+      "profile:getCollectionPackDeals",
+      {
+        username: "DifferentPackUser"
+      }
+    );
+    const mismatchedBuy = await emitWithAck(
+      authenticatedClient,
+      "profile:buyCollectionPack",
+      {
+        username: "DifferentPackUser",
+        packId: "socket_pack",
+        transactionId: "mismatched-pack-buy-transaction"
+      }
+    );
+    assert.equal(mismatchedDeals?.ok, false);
+    assert.equal(mismatchedDeals?.error?.code, "PROFILE_COLLECTION_PACK_DEALS_READ_FAILED");
+    assert.match(mismatchedDeals?.error?.message ?? "", /only manage their own/);
+    assert.equal(mismatchedBuy?.ok, false);
+    assert.equal(mismatchedBuy?.error?.code, "PROFILE_COLLECTION_PACK_PURCHASE_FAILED");
+    assert.match(mismatchedBuy?.error?.message ?? "", /only manage their own/);
+
+    const session = await bootstrapSession(client, "PackSocketBuyer");
+    assert.equal(session?.ok, true);
+    await coordinator.profiles.updateProfile("PackSocketBuyer", (current) => ({
+      ...current,
+      tokens: 1000,
+      ownedCosmetics: {
+        ...current.ownedCosmetics,
+        avatar: [...current.ownedCosmetics.avatar, "fireavatarF"]
+      }
+    }));
+
+    const deals = await emitWithAck(client, "profile:getCollectionPackDeals", {});
+    assert.equal(deals?.ok, true);
+    assert.equal(deals?.deals?.length, 1);
+    assert.equal(deals.deals[0].packId, "socket_pack");
+    assert.deepEqual(deals.deals[0].remainingCosmeticIds, ["wateravatarF"]);
+    assert.equal(deals.deals[0].status, "available");
+    assert.equal(deals.deals[0].saleLimitTotal, 2);
+    assert.equal(deals.deals[0].soldCount, 0);
+    assert.equal("adminNotes" in deals.deals[0], false);
+    assert.equal("createdAt" in deals.deals[0], false);
+    assert.equal("updatedAt" in deals.deals[0], false);
+
+    const missingTransaction = await emitWithAck(client, "profile:buyCollectionPack", {
+      packId: "socket_pack"
+    });
+    assert.equal(missingTransaction?.ok, false);
+    assert.match(missingTransaction?.error?.message ?? "", /valid transactionId/);
+
+    const first = await emitWithAck(client, "profile:buyCollectionPack", {
+      packId: "socket_pack",
+      transactionId: "socket-pack-buy-transaction-1"
+    });
+    const profileAfterFirst = await coordinator.profiles.getProfile("PackSocketBuyer");
+    const packAfterFirst = await coordinator.collectionPackStore.getPack("socket_pack");
+    const duplicate = await emitWithAck(client, "profile:buyCollectionPack", {
+      packId: "socket_pack",
+      transactionId: "socket-pack-buy-transaction-1"
+    });
+    const profileAfterDuplicate = await coordinator.profiles.getProfile("PackSocketBuyer");
+    const packAfterDuplicate = await coordinator.collectionPackStore.getPack("socket_pack");
+
+    assert.equal(first?.ok, true);
+    assert.equal(first?.result?.purchase?.status, "purchased");
+    assert.deepEqual(first?.result?.purchase?.grantedCosmeticIds, ["wateravatarF"]);
+    assert.equal(first?.result?.transaction?.duplicate, false);
+    assert.equal("transactionId" in first.result.transaction, false);
+    assert.equal("profile" in first.result, false);
+    assert.equal("pack" in first.result, false);
+    assert.equal("record" in first.result, false);
+    assert.equal("ledger" in first.result, false);
+    assert.equal(JSON.stringify(first.result).includes("adminNotes"), false);
+    assert.equal(JSON.stringify(first.result).includes("createdAt"), false);
+    assert.equal(JSON.stringify(first.result).includes("updatedAt"), false);
+    assert.equal(first?.result?.deals?.[0]?.status, "complete");
+    assert.equal(profileAfterFirst.ownedCosmetics.avatar.includes("wateravatarF"), true);
+    assert.equal(packAfterFirst.soldCount, 1);
+    assert.equal(duplicate?.ok, true);
+    assert.equal(duplicate?.result?.transaction?.duplicate, true);
+    assert.equal(packAfterDuplicate.soldCount, 1);
+    assert.deepEqual(profileAfterDuplicate, profileAfterFirst);
+  } finally {
+    client?.disconnect();
+    unauthenticatedClient?.disconnect();
+    authenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: Unique Store purchase uses transaction ledger and authoritative inventory", async () => {
   const dataDir = await createTempDataDir();
   const adminGrantStore = new AdminGrantStore({ dataDir });

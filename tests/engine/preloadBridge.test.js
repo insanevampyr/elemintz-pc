@@ -89,6 +89,8 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.updates.reportPromptEvent, "function");
   assert.equal(typeof bridge.multiplayer.getState, "function");
   assert.equal(typeof bridge.multiplayer.listPublicRooms, "function");
+  assert.equal(typeof bridge.multiplayer.getCollectionPackDeals, "function");
+  assert.equal(typeof bridge.multiplayer.buyCollectionPack, "function");
   assert.equal(typeof bridge.multiplayer.listAnnouncements, "function");
   assert.equal(typeof bridge.multiplayer.dismissAnnouncement, "function");
   assert.equal(typeof bridge.multiplayer.getActiveShopRotation, "function");
@@ -107,9 +109,15 @@ test("preload bridge remains available when version falls back", async () => {
   await bridge.multiplayer.getActiveBoostEvent({ username: "VampyrLee" });
   await bridge.multiplayer.getOnlineCount({ username: "VampyrLee" });
   await bridge.multiplayer.acknowledgeMilestoneChestReward({ username: "RewardHero", level: 5 });
+  await bridge.multiplayer.getCollectionPackDeals({ username: "PackBridgeUser" });
+  await bridge.multiplayer.buyCollectionPack({
+    username: "PackBridgeUser",
+    packId: "socket_pack",
+    transactionId: "bridge-pack-transaction-1"
+  });
   await bridge.multiplayer.submitFeedback({ category: "Bug / Error", message: "Hello" });
 
-  assert.deepEqual(ipcRenderer.invocations.slice(0, 11), [
+  assert.deepEqual(ipcRenderer.invocations.slice(0, 13), [
     { channel: "state:getSettings", payload: undefined },
     { channel: "updates:getState", payload: undefined },
     { channel: "updates:reportPromptEvent", payload: { type: "install_prompt_shown", version: "2.1.5" } },
@@ -120,6 +128,15 @@ test("preload bridge remains available when version falls back", async () => {
     { channel: "multiplayer:getActiveBoostEvent", payload: { username: "VampyrLee" } },
     { channel: "multiplayer:getOnlineCount", payload: { username: "VampyrLee" } },
     { channel: "multiplayer:acknowledgeMilestoneChestReward", payload: { username: "RewardHero", level: 5 } },
+    { channel: "multiplayer:getCollectionPackDeals", payload: { username: "PackBridgeUser" } },
+    {
+      channel: "multiplayer:buyCollectionPack",
+      payload: {
+        username: "PackBridgeUser",
+        packId: "socket_pack",
+        transactionId: "bridge-pack-transaction-1"
+      }
+    },
     { channel: "multiplayer:submitFeedback", payload: { category: "Bug / Error", message: "Hello" } }
   ]);
 });

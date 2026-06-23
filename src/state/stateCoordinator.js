@@ -1117,6 +1117,58 @@ function validateCollectionPackPurchaseWindow(
   }
 }
 
+function isCollectionPackInPlayerWindow(pack, { now = new Date().toISOString() } = {}) {
+  if (!pack || pack.active !== true || pack.visible !== true) {
+    return false;
+  }
+
+  const nowMs = Date.parse(now);
+  if (pack.startsAt && nowMs < Date.parse(pack.startsAt)) {
+    return false;
+  }
+  if (pack.endsAt && nowMs > Date.parse(pack.endsAt)) {
+    return false;
+  }
+  return true;
+}
+
+function isCollectionPackSoldOut(pack) {
+  return (
+    pack?.saleLimitMode === "limited" &&
+    Number.isInteger(pack.saleLimitTotal) &&
+    Number(pack.soldCount ?? 0) >= pack.saleLimitTotal
+  );
+}
+
+function sanitizeCollectionPackDeal(pack, pricePlan) {
+  const soldOut = isCollectionPackSoldOut(pack);
+  const remainingPurchases =
+    pack.saleLimitMode === "limited"
+      ? Math.max(0, Number(pack.saleLimitTotal ?? 0) - Number(pack.soldCount ?? 0))
+      : null;
+
+  return {
+    packId: pack.packId,
+    name: pack.name,
+    description: pack.description,
+    image: pack.image,
+    includedCosmeticIds: [...pack.cosmeticIds],
+    includedItemCount: pack.cosmeticIds.length,
+    ownedItemCount: Math.max(0, pack.cosmeticIds.length - pricePlan.remainingCosmeticIds.length),
+    remainingCosmeticIds: [...pricePlan.remainingCosmeticIds],
+    remainingItemCount: pricePlan.remainingCosmeticIds.length,
+    remainingNormalValue: pricePlan.remainingNormalValue,
+    discountPercent: pricePlan.discountPercent,
+    savings: pricePlan.savings,
+    finalPrice: pricePlan.finalPrice,
+    status: pricePlan.status === "complete" ? "complete" : soldOut ? "sold_out" : "available",
+    saleLimitMode: pack.saleLimitMode,
+    saleLimitTotal: pack.saleLimitMode === "limited" ? pack.saleLimitTotal : null,
+    soldCount: pack.saleLimitMode === "limited" ? pack.soldCount : null,
+    remainingPurchases
+  };
+}
+
 export class StateCoordinator {
   constructor(options = {}) {
     this.profiles = new ProfileSystem(options);
@@ -2207,6 +2259,29 @@ export class StateCoordinator {
     return getStoreViewForProfile(profile, { specialRecords: records });
   }
 
+  async getCollectionPackDeals(username) {
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      throw new Error("username is required for Collection Pack deals.");
+    }
+
+    const profile = await this.profiles.getProfile(safeUsername);
+    const ownedCosmeticIds = getOwnedCollectionPackCosmeticIds(profile);
+    const now = this.collectionPackStore.now();
+    const packs = await this.collectionPackStore.listPacks();
+
+    return packs
+      .filter((pack) => isCollectionPackInPlayerWindow(pack, { now }))
+      .map((pack) => {
+        const pricePlan = calculateCollectionPackPriceForOwnedCosmetics(
+          pack,
+          ownedCosmeticIds,
+          { now }
+        );
+        return sanitizeCollectionPackDeal(pack, pricePlan);
+      });
+  }
+
   async getDailyElementChestStatus(username, nowMs = Date.now()) {
     const profile = await this.profiles.ensureProfile(username);
     return getDailyElementChestStatus(profile, nowMs);
@@ -2723,6 +2798,14 @@ export class StateCoordinator {
       purchase: purchaseResult?.purchase,
       tracking: purchaseResult?.tracking,
       store: getStoreViewForProfile(profile)
+    };
+  }
+
+  async buyCollectionPack({ username, packId, transactionId }) {
+    const result = await this.completeCollectionPackPurchase({ username, packId, transactionId });
+    return {
+      ...result,
+      deals: await this.getCollectionPackDeals(username)
     };
   }
 

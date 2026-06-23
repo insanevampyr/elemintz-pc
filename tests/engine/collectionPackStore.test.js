@@ -265,6 +265,71 @@ test("collection packs: normalized records do not preserve unknown public fields
   assert.equal("playerFacingPayload" in normalized, false);
 });
 
+test("collection packs: player deals are sanitized and priced for the current owner", async (t) => {
+  const state = await createCoordinator(t);
+  await state.collectionPackStore.upsertPack(
+    activePack({
+      adminNotes: "admin-only note",
+      createdAt: "2026-06-20T12:00:00.000Z",
+      updatedAt: "2026-06-21T12:00:00.000Z"
+    })
+  );
+  await state.collectionPackStore.upsertPack(
+    activePack({ packId: "inactive_pack", active: false })
+  );
+  await state.collectionPackStore.upsertPack(
+    activePack({ packId: "hidden_pack", visible: false })
+  );
+  await state.collectionPackStore.upsertPack(
+    activePack({ packId: "future_pack", startsAt: "2026-06-24T12:00:00.000Z" })
+  );
+  await state.collectionPackStore.upsertPack(
+    activePack({ packId: "expired_pack", endsAt: "2026-06-22T12:00:00.000Z" })
+  );
+  await state.collectionPackStore.upsertPack(
+    activePack({
+      packId: "sold_out_pack",
+      saleLimitMode: "limited",
+      saleLimitTotal: 1,
+      soldCount: 1
+    })
+  );
+  await seedProfile(state, "DealsViewer", {
+    ownedCosmetics: {
+      avatar: ["default_avatar", "fireavatarF"]
+    }
+  });
+
+  const deals = await state.getCollectionPackDeals("DealsViewer");
+  const dealIds = deals.map((deal) => deal.packId);
+  const partial = deals.find((deal) => deal.packId === "classic_avatar_pack");
+  const soldOut = deals.find((deal) => deal.packId === "sold_out_pack");
+  const remainingValue = priceOf("wateravatarF");
+  const savings = Math.floor(remainingValue * 0.15);
+
+  assert.deepEqual(dealIds, ["classic_avatar_pack", "sold_out_pack"]);
+  assert.equal(partial.status, "available");
+  assert.deepEqual(partial.remainingCosmeticIds, ["wateravatarF"]);
+  assert.equal(partial.ownedItemCount, 1);
+  assert.equal(partial.remainingNormalValue, remainingValue);
+  assert.equal(partial.savings, savings);
+  assert.equal(partial.finalPrice, remainingValue - savings);
+  assert.equal(partial.saleLimitMode, "unlimited");
+  assert.equal(partial.saleLimitTotal, null);
+  assert.equal(partial.soldCount, null);
+  assert.equal("adminNotes" in partial, false);
+  assert.equal("createdAt" in partial, false);
+  assert.equal("updatedAt" in partial, false);
+  assert.equal("sortPriority" in partial, false);
+  assert.equal("startsAt" in partial, false);
+  assert.equal("endsAt" in partial, false);
+  assert.equal(soldOut.status, "sold_out");
+  assert.equal(soldOut.saleLimitMode, "limited");
+  assert.equal(soldOut.saleLimitTotal, 1);
+  assert.equal(soldOut.soldCount, 1);
+  assert.equal(soldOut.remainingPurchases, 0);
+});
+
 test("collection packs: coordinator purchase grants all remaining items and deducts discounted price", async (t) => {
   const state = await createCoordinator(t);
   await state.collectionPackStore.upsertPack(activePack());

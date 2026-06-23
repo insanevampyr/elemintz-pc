@@ -30,6 +30,25 @@ function sanitizeProfileResult(result) {
   };
 }
 
+function sanitizeCollectionPackPurchaseResult(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return result;
+  }
+
+  return {
+    purchase: result.purchase ?? null,
+    tracking: result.tracking ?? null,
+    transaction: result.transaction
+      ? {
+          status: result.transaction.status ?? null,
+          duplicate: Boolean(result.transaction.duplicate)
+        }
+      : null,
+    store: result.store ?? null,
+    deals: Array.isArray(result.deals) ? result.deals : []
+  };
+}
+
 function buildOnlineLatestBattleContext(rewardDecision, participantRole = "host") {
   const normalizedRole = participantRole === "guest" ? "guest" : "host";
   const participants = rewardDecision?.participants ?? null;
@@ -814,6 +833,16 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.getStore(safeUsername);
   }
 
+  async getCollectionPackDeals(username) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Collection Pack deals.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] getCollectionPackDeals -> ${safeUsername} (server)`);
+    return this.coordinator.getCollectionPackDeals(safeUsername);
+  }
+
   async claimDailyLoginReward(username) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -872,6 +901,26 @@ export class MultiplayerProfileAuthority {
     });
     return {
       ...sanitizeProfileResult(result),
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async buyCollectionPack({ username, packId, transactionId = null }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Collection Pack purchases.");
+    }
+
+    this.logger.info?.(
+      `[ProfileAuthority] buyCollectionPack -> ${safeUsername} (${String(packId ?? "unknown")})`
+    );
+    const result = await this.coordinator.buyCollectionPack({
+      username: safeUsername,
+      packId,
+      transactionId
+    });
+    return {
+      ...sanitizeCollectionPackPurchaseResult(result),
       snapshot: await this.getProfile(safeUsername)
     };
   }

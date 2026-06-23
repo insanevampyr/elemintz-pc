@@ -855,6 +855,72 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "profile:getCollectionPackDeals") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          deals: [
+            {
+              packId: "socket_pack",
+              name: "Socket Pack",
+              status: "available",
+              finalPrice: 170
+            }
+          ]
+        });
+      });
+    }
+
+    if (eventName === "profile:buyCollectionPack") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            profile: {
+              username: this.sessionUsername ?? payload?.username ?? null,
+              tokens: 830,
+              ownedCosmetics: {
+                avatar: ["default_avatar", "fireavatarF", "wateravatarF"]
+              },
+              equippedCosmetics: createEquippedCosmetics()
+            },
+            purchase: {
+              status: "purchased",
+              kind: "collection_pack",
+              packId: payload?.packId ?? "socket_pack",
+              grantedCosmeticIds: ["wateravatarF"],
+              price: 170,
+              tokensLeft: 830
+            },
+            transaction: {
+              transactionId: payload?.transactionId ?? null,
+              status: "completed",
+              duplicate: false
+            },
+            deals: [
+              {
+                packId: payload?.packId ?? "socket_pack",
+                status: "complete"
+              }
+            ],
+            snapshot: {
+              authority: "server",
+              source: "multiplayer",
+              profile: {
+                username: this.sessionUsername ?? payload?.username ?? null,
+                tokens: 830,
+                ownedCosmetics: {
+                  avatar: ["default_avatar", "fireavatarF", "wateravatarF"]
+                },
+                equippedCosmetics: createEquippedCosmetics()
+              },
+              progression: {}
+            }
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:openChest") {
       queueMicrotask(() => {
         ack?.({
@@ -2127,6 +2193,50 @@ test("multiplayer client: server-authoritative store purchases return updated pr
   assert.equal(result?.purchase?.tokensLeft, 160);
   assert.equal(result?.snapshot?.profile?.tokens, 160);
   assert.ok(result?.snapshot?.profile?.ownedCosmetics?.avatar?.includes("fireavatarF"));
+});
+
+test("multiplayer client: Collection Pack deals and purchases use player-safe server events", async () => {
+  let lastSocket = null;
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  const deals = await client.getCollectionPackDeals({
+    username: "PackClientUser"
+  });
+  const purchase = await client.buyCollectionPack({
+    username: "PackClientUser",
+    packId: "socket_pack",
+    transactionId: "client-pack-transaction-1"
+  });
+
+  assert.deepEqual(lastSocket.sentEvents.at(1), {
+    eventName: "profile:getCollectionPackDeals",
+    payload: {}
+  });
+  assert.deepEqual(lastSocket.sentEvents.at(-1), {
+    eventName: "profile:buyCollectionPack",
+    payload: {
+      packId: "socket_pack",
+      transactionId: "client-pack-transaction-1"
+    }
+  });
+  assert.deepEqual(deals, [
+    {
+      packId: "socket_pack",
+      name: "Socket Pack",
+      status: "available",
+      finalPrice: 170
+    }
+  ]);
+  assert.equal(purchase?.purchase?.status, "purchased");
+  assert.equal(purchase?.purchase?.packId, "socket_pack");
+  assert.equal(purchase?.transaction?.duplicate, false);
+  assert.equal(purchase?.deals?.[0]?.status, "complete");
 });
 
 test("multiplayer client: server-authoritative chest opening returns updated profile state", async () => {

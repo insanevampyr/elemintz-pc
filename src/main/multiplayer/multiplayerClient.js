@@ -2305,6 +2305,19 @@ export class MultiplayerClient {
     return response.store ?? null;
   }
 
+  async getCollectionPackDeals({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:getCollectionPackDeals",
+      { username },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load Collection Pack deals.");
+    }
+
+    return response.deals ?? [];
+  }
+
   async viewProfile({ username, serverUrl } = {}) {
     const safeUsername = String(username ?? "").trim();
     if (!safeUsername) {
@@ -2660,6 +2673,23 @@ export class MultiplayerClient {
     );
     if (!response?.ok) {
       throw new Error(response?.error?.message ?? "Unable to complete store purchase.");
+    }
+
+    return response.result ?? null;
+  }
+
+  async buyCollectionPack({ username, packId, transactionId, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:buyCollectionPack",
+      {
+        username,
+        packId,
+        ...(transactionId ? { transactionId } : {})
+      },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to complete Collection Pack purchase.");
     }
 
     return response.result ?? null;
