@@ -371,6 +371,80 @@ export function buyConfiguredUniqueStoreItem(profile, { type, cosmeticId, price 
   };
 }
 
+function resolveCosmeticTypeById(cosmeticId) {
+  const safeCosmeticId = String(cosmeticId ?? "").trim();
+  if (!safeCosmeticId) {
+    return null;
+  }
+  for (const [type, items] of Object.entries(COSMETIC_CATALOG)) {
+    if ((Array.isArray(items) ? items : []).some((item) => item.id === safeCosmeticId)) {
+      return type;
+    }
+  }
+  return null;
+}
+
+export function buyCollectionPackItems(profile, {
+  packId,
+  remainingCosmeticIds = [],
+  price
+} = {}) {
+  const normalized = normalizeProfileStore(profile);
+  const previousTracking = normalized.cosmeticUnlockTracking;
+  const safePackId = String(packId ?? "").trim();
+  const cosmeticIds = (Array.isArray(remainingCosmeticIds) ? remainingCosmeticIds : [])
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+  const safePrice = Number(price);
+
+  if (!safePackId) {
+    throw new Error("packId is required for Collection Pack purchases.");
+  }
+  if (cosmeticIds.length === 0) {
+    throw new Error("Collection Pack has no remaining cosmetics to purchase.");
+  }
+  if (!Number.isInteger(safePrice) || safePrice < 0) {
+    throw new Error("Collection Pack price is missing or invalid.");
+  }
+  if (normalized.tokens < safePrice) {
+    throw new Error(`Insufficient tokens. Need ${safePrice}, have ${normalized.tokens}.`);
+  }
+
+  const nextOwnedCosmetics = Object.fromEntries(
+    Object.entries(normalized.ownedCosmetics).map(([type, ids]) => [type, [...ids]])
+  );
+  for (const cosmeticId of cosmeticIds) {
+    const type = resolveCosmeticTypeById(cosmeticId);
+    if (!type) {
+      throw new Error(`Collection Pack cosmetic '${cosmeticId}' was not found.`);
+    }
+    if (nextOwnedCosmetics[type].includes(cosmeticId)) {
+      throw new Error(`Collection Pack cosmetic '${cosmeticId}' is already owned.`);
+    }
+    nextOwnedCosmetics[type].push(cosmeticId);
+  }
+
+  const updated = normalizeProfileStore({
+    ...normalized,
+    tokens: normalized.tokens - safePrice,
+    ownedCosmetics: nextOwnedCosmetics
+  });
+  const tracking = getTrackingMilestoneDiff(previousTracking, updated.cosmeticUnlockTracking);
+
+  return {
+    profile: updated,
+    purchase: {
+      status: "purchased",
+      kind: "collection_pack",
+      packId: safePackId,
+      cosmeticIds,
+      price: safePrice,
+      tokensLeft: updated.tokens
+    },
+    tracking
+  };
+}
+
 export function grantSupporterPass(profile) {
   let normalized = normalizeProfileStore(profile);
   const granted = [];

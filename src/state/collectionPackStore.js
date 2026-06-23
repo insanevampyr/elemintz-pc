@@ -361,4 +361,77 @@ export class CollectionPackStore {
       return clone(normalized);
     });
   }
+
+  async reservePackPurchase(packId) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safePackId = normalizePackId(packId);
+      const index = registry.packs.findIndex((pack) => pack.packId === safePackId);
+      if (index === -1) {
+        throw new Error(`Unknown Collection Pack '${safePackId}'.`);
+      }
+
+      const record = registry.packs[index];
+      const soldCountBefore = record.soldCount;
+      if (record.saleLimitMode !== "limited") {
+        return {
+          record: clone(record),
+          soldCountBefore,
+          soldCountAfter: soldCountBefore
+        };
+      }
+      if (record.soldCount >= record.saleLimitTotal) {
+        throw new Error("Sold Out");
+      }
+
+      const nextRecord = validateCollectionPackDraft(
+        {
+          ...record,
+          soldCount: record.soldCount + 1,
+          updatedAt: now
+        },
+        { now }
+      );
+      registry.packs[index] = nextRecord;
+      await this.store.write(registry);
+      return {
+        record: clone(nextRecord),
+        soldCountBefore,
+        soldCountAfter: nextRecord.soldCount
+      };
+    });
+  }
+
+  async rollbackPackPurchaseReservation({ packId, soldCountBefore, soldCountAfter }) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const registry = await this.readRegistry({ now });
+      const safePackId = normalizePackId(packId);
+      const index = registry.packs.findIndex((pack) => pack.packId === safePackId);
+      if (index === -1) {
+        return null;
+      }
+
+      const record = registry.packs[index];
+      if (
+        record.saleLimitMode !== "limited" ||
+        record.soldCount !== soldCountAfter
+      ) {
+        return clone(record);
+      }
+
+      const nextRecord = validateCollectionPackDraft(
+        {
+          ...record,
+          soldCount: soldCountBefore,
+          updatedAt: now
+        },
+        { now }
+      );
+      registry.packs[index] = nextRecord;
+      await this.store.write(registry);
+      return clone(nextRecord);
+    });
+  }
 }

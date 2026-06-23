@@ -8,6 +8,10 @@ import {
   normalizeStorePurchaseTransactionId,
   StorePurchaseLedgerStore
 } from "./storePurchaseLedgerStore.js";
+import {
+  calculateCollectionPackPriceForOwnedCosmetics,
+  CollectionPackStore
+} from "./collectionPackStore.js";
 import { SaveSystem } from "./saveSystem.js";
 import { SettingsService } from "./settingsService.js";
 import {
@@ -35,6 +39,7 @@ import {
 } from "./cosmeticSystem.js";
 import { deriveMatchStats } from "./statsTracking.js";
 import {
+  buyCollectionPackItems,
   buyConfiguredUniqueStoreItem,
   buyStoreItem,
   getStoreViewForProfile,
@@ -1069,6 +1074,49 @@ function buildUniqueRoyaltyPlan({ record, price, recipientProfile, transactionId
   };
 }
 
+function getOwnedCollectionPackCosmeticIds(profile) {
+  return Object.values(profile?.ownedCosmetics ?? {})
+    .flatMap((ids) => (Array.isArray(ids) ? ids : []))
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+}
+
+function profileOwnsAllCosmetics(profile, cosmeticIds = []) {
+  const owned = new Set(getOwnedCollectionPackCosmeticIds(profile));
+  return (Array.isArray(cosmeticIds) ? cosmeticIds : []).every((cosmeticId) =>
+    owned.has(String(cosmeticId ?? "").trim())
+  );
+}
+
+function validateCollectionPackPurchaseWindow(
+  pack,
+  { now = new Date().toISOString(), allowReservedLimitedSale = false } = {}
+) {
+  if (!pack) {
+    throw new Error("Collection Pack not found.");
+  }
+  if (pack.active !== true) {
+    throw new Error("Collection Pack is inactive.");
+  }
+  if (pack.visible !== true) {
+    throw new Error("Collection Pack is not visible.");
+  }
+
+  const nowMs = Date.parse(now);
+  if (pack.startsAt && nowMs < Date.parse(pack.startsAt)) {
+    throw new Error("Collection Pack is not available yet.");
+  }
+  if (pack.endsAt && nowMs > Date.parse(pack.endsAt)) {
+    throw new Error("Collection Pack has expired.");
+  }
+  if (
+    pack.saleLimitMode === "limited" &&
+    (allowReservedLimitedSale ? pack.soldCount > pack.saleLimitTotal : pack.soldCount >= pack.saleLimitTotal)
+  ) {
+    throw new Error("Sold Out");
+  }
+}
+
 export class StateCoordinator {
   constructor(options = {}) {
     this.profiles = new ProfileSystem(options);
@@ -1078,9 +1126,12 @@ export class StateCoordinator {
       options.specialCosmeticRegistryStore ?? new SpecialCosmeticRegistryStore(options);
     this.storePurchaseLedger =
       options.storePurchaseLedgerStore ?? new StorePurchaseLedgerStore(options);
+    this.collectionPackStore =
+      options.collectionPackStore ?? new CollectionPackStore(options);
     this.adminGrantStore =
       options.adminGrantStore ?? new AdminGrantStore(options);
     this.uniquePurchaseQueue = Promise.resolve();
+    this.collectionPackPurchaseQueue = Promise.resolve();
     this.random = typeof options.random === "function" ? options.random : Math.random;
     this.getActiveBoostEvent =
       typeof options.getActiveBoostEvent === "function"
@@ -1101,6 +1152,15 @@ export class StateCoordinator {
   runUniquePurchaseTransaction(task) {
     const run = this.uniquePurchaseQueue.then(task, task);
     this.uniquePurchaseQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  runCollectionPackPurchaseTransaction(task) {
+    const run = this.collectionPackPurchaseQueue.then(task, task);
+    this.collectionPackPurchaseQueue = run.then(
       () => undefined,
       () => undefined
     );
@@ -2588,6 +2648,227 @@ export class StateCoordinator {
       tracking: purchaseResult?.tracking,
       store: getStoreViewForProfile(profile)
     };
+  }
+
+  async completeCollectionPackPurchase({ username, packId, transactionId }) {
+    const safeUsername = String(username ?? "").trim();
+    const safePackId = String(packId ?? "").trim();
+    const safeTransactionId = normalizeStorePurchaseTransactionId(transactionId);
+    if (!safeUsername) {
+      throw new Error("username is required for Collection Pack purchases.");
+    }
+    if (!safePackId) {
+      throw new Error("packId is required for Collection Pack purchases.");
+    }
+    if (!safeTransactionId) {
+      throw new Error("A valid transactionId is required for Collection Pack purchases.");
+    }
+
+    return this.runCollectionPackPurchaseTransaction(async () => {
+      const existing = await this.storePurchaseLedger.getByTransactionId(safeTransactionId);
+      if (existing) {
+        if (
+          existing.purchaseKind !== "collection_pack" ||
+          existing.buyerUsername !== safeUsername ||
+          existing.packId !== safePackId
+        ) {
+          throw new Error("transactionId was already used for a different Store purchase.");
+        }
+
+        await this.storePurchaseLedger.markDuplicate(safeTransactionId);
+        if (existing.status === "completed") {
+          const profile = await this.profiles.getProfile(safeUsername);
+          return {
+            profile,
+            purchase: {
+              ...(existing.result?.purchase ?? {}),
+              duplicate: true
+            },
+            tracking: existing.result?.tracking ?? null,
+            transaction: {
+              transactionId: safeTransactionId,
+              status: "completed",
+              duplicate: true
+            },
+            store: getStoreViewForProfile(profile)
+          };
+        }
+        if (existing.status === "rejected" || existing.status === "failed") {
+          throw new Error(existing.error?.message ?? "Collection Pack purchase failed; try again");
+        }
+        if (existing.status === "processing") {
+          const profile = await this.profiles.getProfile(safeUsername);
+          if (profileOwnsAllCosmetics(profile, existing.grantedCosmeticIds)) {
+            const recoveredResult = {
+              purchase: {
+                status: "purchased",
+                kind: "collection_pack",
+                packId: safePackId,
+                cosmeticIds: existing.grantedCosmeticIds,
+                grantedCosmeticIds: existing.grantedCosmeticIds,
+                remainingNormalValue: existing.remainingNormalValue,
+                discountPercent: existing.discountPercent,
+                savings: existing.savings,
+                price: existing.price,
+                tokensLeft: profile.tokens,
+                duplicate: true
+              },
+              tracking: null
+            };
+            await this.storePurchaseLedger.finalizeTransaction({
+              transactionId: safeTransactionId,
+              status: "completed",
+              result: recoveredResult
+            });
+            return {
+              profile,
+              ...recoveredResult,
+              transaction: {
+                transactionId: safeTransactionId,
+                status: "completed",
+                duplicate: true
+              },
+              store: getStoreViewForProfile(profile)
+            };
+          }
+
+          if (existing.saleLimitMode === "limited") {
+            await this.collectionPackStore.rollbackPackPurchaseReservation({
+              packId: safePackId,
+              soldCountBefore: existing.saleLimitSoldBefore,
+              soldCountAfter: existing.saleLimitSoldAfter
+            });
+          }
+          await this.storePurchaseLedger.finalizeTransaction({
+            transactionId: safeTransactionId,
+            status: "rejected",
+            error: {
+              code: "COLLECTION_PACK_PURCHASE_REJECTED",
+              message: "Collection Pack purchase recovery rolled back before profile settlement."
+            }
+          });
+          throw new Error("Collection Pack purchase failed; try again");
+        }
+      }
+
+      const now = this.collectionPackStore.now();
+      const pack = await this.collectionPackStore.getPack(safePackId);
+      validateCollectionPackPurchaseWindow(pack, { now });
+
+      const expectedSoldAfter =
+        pack.saleLimitMode === "limited" ? pack.soldCount + 1 : pack.soldCount;
+      const begun = await this.storePurchaseLedger.beginTransaction({
+        transactionId: safeTransactionId,
+        purchaseKind: "collection_pack",
+        buyerUsername: safeUsername,
+        packId: safePackId,
+        grantedCosmeticIds: [],
+        remainingNormalValue: 0,
+        discountPercent: 0,
+        savings: 0,
+        price: 0,
+        saleLimitMode: pack.saleLimitMode,
+        saleLimitSoldBefore: pack.soldCount,
+        saleLimitSoldAfter: expectedSoldAfter,
+        royaltyStatus: "none"
+      });
+      if (begun.duplicate) {
+        throw new Error("Collection Pack purchase failed; try again");
+      }
+
+      let reservation = null;
+      let profileCommitted = false;
+      let purchaseResult = null;
+      let settledPricePlan = null;
+      try {
+        reservation = await this.collectionPackStore.reservePackPurchase(safePackId);
+        validateCollectionPackPurchaseWindow(reservation.record, {
+          now,
+          allowReservedLimitedSale: true
+        });
+        const profile = await this.profiles.updateProfile(safeUsername, (current) => {
+          settledPricePlan = calculateCollectionPackPriceForOwnedCosmetics(
+            reservation.record,
+            getOwnedCollectionPackCosmeticIds(current),
+            { now }
+          );
+          if (
+            settledPricePlan.status === "complete" ||
+            settledPricePlan.remainingCosmeticIds.length === 0
+          ) {
+            throw new Error("Collection Pack is already complete for this player.");
+          }
+          if (Number(current.tokens ?? 0) < settledPricePlan.finalPrice) {
+            throw new Error(
+              `Insufficient tokens. Need ${settledPricePlan.finalPrice}, have ${current.tokens}.`
+            );
+          }
+          purchaseResult = buyCollectionPackItems(current, {
+            packId: safePackId,
+            remainingCosmeticIds: settledPricePlan.remainingCosmeticIds,
+            price: settledPricePlan.finalPrice
+          });
+          return purchaseResult.profile;
+        });
+        profileCommitted = true;
+
+        const ledgerResult = {
+          purchase: {
+            ...purchaseResult.purchase,
+            grantedCosmeticIds: settledPricePlan.remainingCosmeticIds,
+            remainingNormalValue: settledPricePlan.remainingNormalValue,
+            discountPercent: settledPricePlan.discountPercent,
+            savings: settledPricePlan.savings
+          },
+          tracking: purchaseResult.tracking
+        };
+        await this.storePurchaseLedger.finalizeTransaction({
+          transactionId: safeTransactionId,
+          status: "completed",
+          result: ledgerResult,
+          updates: {
+            grantedCosmeticIds: settledPricePlan.remainingCosmeticIds,
+            remainingNormalValue: settledPricePlan.remainingNormalValue,
+            discountPercent: settledPricePlan.discountPercent,
+            savings: settledPricePlan.savings,
+            price: settledPricePlan.finalPrice,
+            saleLimitMode: reservation.record.saleLimitMode,
+            saleLimitSoldBefore: reservation.soldCountBefore,
+            saleLimitSoldAfter: reservation.soldCountAfter
+          }
+        });
+
+        return {
+          profile,
+          ...ledgerResult,
+          transaction: {
+            transactionId: safeTransactionId,
+            status: "completed",
+            duplicate: false
+          },
+          store: getStoreViewForProfile(profile)
+        };
+      } catch (error) {
+        if (!profileCommitted && reservation?.record?.saleLimitMode === "limited") {
+          await this.collectionPackStore.rollbackPackPurchaseReservation({
+            packId: safePackId,
+            soldCountBefore: reservation.soldCountBefore,
+            soldCountAfter: reservation.soldCountAfter
+          });
+        }
+        if (!profileCommitted) {
+          await this.storePurchaseLedger.finalizeTransaction({
+            transactionId: safeTransactionId,
+            status: "rejected",
+            error: {
+              code: "COLLECTION_PACK_PURCHASE_REJECTED",
+              message: String(error?.message ?? "Collection Pack purchase rejected.")
+            }
+          });
+        }
+        throw error;
+      }
+    });
   }
 
   async grantSupporterPass(username) {

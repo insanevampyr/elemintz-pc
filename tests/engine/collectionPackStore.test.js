@@ -11,6 +11,7 @@ import {
   resolveCollectionPackCosmetic,
   validateCollectionPackDraft
 } from "../../src/state/collectionPackStore.js";
+import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-collection-packs-"));
@@ -31,6 +32,36 @@ function basePack(overrides = {}) {
 
 function priceOf(cosmeticId) {
   return resolveCollectionPackCosmetic(cosmeticId)?.item?.price ?? 0;
+}
+
+function activePack(overrides = {}) {
+  return basePack({
+    active: true,
+    visible: true,
+    ...overrides
+  });
+}
+
+async function createCoordinator(t, { now = "2026-06-23T12:00:00.000Z" } = {}) {
+  const dataDir = await createTempDataDir();
+  t.after(async () => {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+  return new StateCoordinator({
+    dataDir,
+    now: () => now
+  });
+}
+
+async function seedProfile(state, username, patch = {}) {
+  return state.profiles.updateProfile(username, (current) => ({
+    ...current,
+    ...patch,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      ...(patch.ownedCosmetics ?? {})
+    }
+  }));
 }
 
 test("collection packs: valid normal pack definition passes with default discount", () => {
@@ -232,4 +263,247 @@ test("collection packs: normalized records do not preserve unknown public fields
   assert.equal("fixedPrice" in normalized, false);
   assert.equal("rarity" in normalized, false);
   assert.equal("playerFacingPayload" in normalized, false);
+});
+
+test("collection packs: coordinator purchase grants all remaining items and deducts discounted price", async (t) => {
+  const state = await createCoordinator(t);
+  await state.collectionPackStore.upsertPack(activePack());
+  await seedProfile(state, "PackBuyer", { tokens: 1000 });
+
+  const result = await state.completeCollectionPackPurchase({
+    username: "PackBuyer",
+    packId: "classic_avatar_pack",
+    transactionId: "pack-full-transaction-1"
+  });
+  const fullValue = priceOf("fireavatarF") + priceOf("wateravatarF");
+  const savings = Math.floor(fullValue * 0.15);
+  const finalPrice = fullValue - savings;
+
+  assert.equal(result.purchase.kind, "collection_pack");
+  assert.deepEqual(result.purchase.grantedCosmeticIds, ["fireavatarF", "wateravatarF"]);
+  assert.equal(result.purchase.remainingNormalValue, fullValue);
+  assert.equal(result.purchase.savings, savings);
+  assert.equal(result.purchase.price, finalPrice);
+  assert.equal(result.profile.tokens, 1000 - finalPrice);
+  assert.ok(result.profile.ownedCosmetics.avatar.includes("fireavatarF"));
+  assert.ok(result.profile.ownedCosmetics.avatar.includes("wateravatarF"));
+
+  const ledger = await state.storePurchaseLedger.getByTransactionId("pack-full-transaction-1");
+  assert.equal(ledger.purchaseKind, "collection_pack");
+  assert.equal(ledger.packId, "classic_avatar_pack");
+  assert.deepEqual(ledger.grantedCosmeticIds, ["fireavatarF", "wateravatarF"]);
+  assert.equal(ledger.price, finalPrice);
+});
+
+test("collection packs: coordinator purchase charges and grants only unowned remaining items", async (t) => {
+  const state = await createCoordinator(t);
+  await state.collectionPackStore.upsertPack(activePack());
+  await seedProfile(state, "PartialPackBuyer", {
+    tokens: 1000,
+    ownedCosmetics: {
+      avatar: ["default_avatar", "fireavatarF"]
+    }
+  });
+
+  const result = await state.completeCollectionPackPurchase({
+    username: "PartialPackBuyer",
+    packId: "classic_avatar_pack",
+    transactionId: "pack-partial-transaction-1"
+  });
+  const remainingValue = priceOf("wateravatarF");
+  const savings = Math.floor(remainingValue * 0.15);
+
+  assert.deepEqual(result.purchase.grantedCosmeticIds, ["wateravatarF"]);
+  assert.equal(result.purchase.price, remainingValue - savings);
+  assert.equal(
+    result.profile.ownedCosmetics.avatar.filter((id) => id === "fireavatarF").length,
+    1
+  );
+  assert.equal(
+    result.profile.ownedCosmetics.avatar.filter((id) => id === "wateravatarF").length,
+    1
+  );
+});
+
+test("collection packs: coordinator settlement recalculates ownership inside profile mutation", async (t) => {
+  const state = await createCoordinator(t);
+  await state.collectionPackStore.upsertPack(activePack());
+  await seedProfile(state, "SnapshotBuyer", { tokens: 1000 });
+
+  const originalUpdateProfile = state.profiles.updateProfile.bind(state.profiles);
+  let injectedOwnership = false;
+  state.profiles.updateProfile = async (username, updater) =>
+    originalUpdateProfile(username, (current) => {
+      if (username !== "SnapshotBuyer" || injectedOwnership) {
+        return updater(current);
+      }
+      injectedOwnership = true;
+      return updater({
+        ...current,
+        ownedCosmetics: {
+          ...current.ownedCosmetics,
+          avatar: [...current.ownedCosmetics.avatar, "fireavatarF"]
+        }
+      });
+    });
+
+  const result = await state.completeCollectionPackPurchase({
+    username: "SnapshotBuyer",
+    packId: "classic_avatar_pack",
+    transactionId: "pack-snapshot-transaction-1"
+  });
+  state.profiles.updateProfile = originalUpdateProfile;
+
+  const remainingValue = priceOf("wateravatarF");
+  const savings = Math.floor(remainingValue * 0.15);
+  const finalPrice = remainingValue - savings;
+  const ledger = await state.storePurchaseLedger.getByTransactionId("pack-snapshot-transaction-1");
+
+  assert.deepEqual(result.purchase.grantedCosmeticIds, ["wateravatarF"]);
+  assert.equal(result.purchase.remainingNormalValue, remainingValue);
+  assert.equal(result.purchase.savings, savings);
+  assert.equal(result.purchase.price, finalPrice);
+  assert.equal(result.profile.tokens, 1000 - finalPrice);
+  assert.equal(result.profile.ownedCosmetics.avatar.filter((id) => id === "fireavatarF").length, 1);
+  assert.equal(result.profile.ownedCosmetics.avatar.filter((id) => id === "wateravatarF").length, 1);
+  assert.deepEqual(ledger.grantedCosmeticIds, ["wateravatarF"]);
+  assert.equal(ledger.remainingNormalValue, remainingValue);
+  assert.equal(ledger.savings, savings);
+  assert.equal(ledger.price, finalPrice);
+});
+
+test("collection packs: complete and insufficient-token purchases reject without mutation", async (t) => {
+  const completeState = await createCoordinator(t);
+  await completeState.collectionPackStore.upsertPack(activePack());
+  const completeBefore = await seedProfile(completeState, "CompleteBuyer", {
+    tokens: 1000,
+    ownedCosmetics: {
+      avatar: ["default_avatar", "fireavatarF", "wateravatarF"]
+    }
+  });
+  await assert.rejects(
+    () =>
+      completeState.completeCollectionPackPurchase({
+        username: "CompleteBuyer",
+        packId: "classic_avatar_pack",
+        transactionId: "pack-complete-transaction-1"
+      }),
+    /already complete/
+  );
+  assert.deepEqual(await completeState.profiles.getProfile("CompleteBuyer"), completeBefore);
+
+  const poorState = await createCoordinator(t);
+  await poorState.collectionPackStore.upsertPack(activePack());
+  const poorBefore = await seedProfile(poorState, "PoorBuyer", { tokens: 1 });
+  await assert.rejects(
+    () =>
+      poorState.completeCollectionPackPurchase({
+        username: "PoorBuyer",
+        packId: "classic_avatar_pack",
+        transactionId: "pack-poor-transaction-1"
+      }),
+    /Insufficient tokens/
+  );
+  assert.deepEqual(await poorState.profiles.getProfile("PoorBuyer"), poorBefore);
+});
+
+test("collection packs: inactive invisible scheduled expired and sold-out packs reject", async (t) => {
+  const cases = [
+    ["inactive_pack", activePack({ packId: "inactive_pack", active: false }), /inactive/],
+    ["invisible_pack", activePack({ packId: "invisible_pack", visible: false }), /not visible/],
+    [
+      "future_pack",
+      activePack({ packId: "future_pack", startsAt: "2026-06-24T12:00:00.000Z" }),
+      /not available yet/
+    ],
+    [
+      "expired_pack",
+      activePack({ packId: "expired_pack", endsAt: "2026-06-22T12:00:00.000Z" }),
+      /expired/
+    ],
+    [
+      "sold_out_pack",
+      activePack({
+        packId: "sold_out_pack",
+        saleLimitMode: "limited",
+        saleLimitTotal: 1,
+        soldCount: 1
+      }),
+      /Sold Out/
+    ]
+  ];
+
+  for (const [packId, pack, expected] of cases) {
+    const state = await createCoordinator(t);
+    await state.collectionPackStore.upsertPack(pack);
+    const before = await seedProfile(state, `Buyer-${packId}`, { tokens: 1000 });
+    await assert.rejects(
+      () =>
+        state.completeCollectionPackPurchase({
+          username: `Buyer-${packId}`,
+          packId,
+          transactionId: `pack-${packId}-transaction-1`
+        }),
+      expected
+    );
+    assert.deepEqual(await state.profiles.getProfile(`Buyer-${packId}`), before);
+  }
+});
+
+test("collection packs: limited purchase increments sold count once and duplicate transaction is idempotent", async (t) => {
+  const state = await createCoordinator(t);
+  await state.collectionPackStore.upsertPack(
+    activePack({ saleLimitMode: "limited", saleLimitTotal: 2 })
+  );
+  await seedProfile(state, "LimitedBuyer", { tokens: 1000 });
+
+  const first = await state.completeCollectionPackPurchase({
+    username: "LimitedBuyer",
+    packId: "classic_avatar_pack",
+    transactionId: "pack-limited-transaction-1"
+  });
+  const afterFirst = await state.collectionPackStore.getPack("classic_avatar_pack");
+  const profileAfterFirst = await state.profiles.getProfile("LimitedBuyer");
+
+  const duplicate = await state.completeCollectionPackPurchase({
+    username: "LimitedBuyer",
+    packId: "classic_avatar_pack",
+    transactionId: "pack-limited-transaction-1"
+  });
+  const afterDuplicate = await state.collectionPackStore.getPack("classic_avatar_pack");
+  const profileAfterDuplicate = await state.profiles.getProfile("LimitedBuyer");
+
+  assert.equal(afterFirst.soldCount, 1);
+  assert.equal(afterDuplicate.soldCount, 1);
+  assert.equal(first.transaction.duplicate, false);
+  assert.equal(duplicate.transaction.duplicate, true);
+  assert.deepEqual(profileAfterDuplicate, profileAfterFirst);
+});
+
+test("collection packs: failed profile settlement rolls back limited sale reservation", async (t) => {
+  const state = await createCoordinator(t);
+  await state.collectionPackStore.upsertPack(
+    activePack({ saleLimitMode: "limited", saleLimitTotal: 1 })
+  );
+  await seedProfile(state, "RollbackBuyer", { tokens: 1000 });
+  const originalUpdateProfile = state.profiles.updateProfile.bind(state.profiles);
+  state.profiles.updateProfile = async () => {
+    throw new Error("forced profile write failure");
+  };
+
+  await assert.rejects(
+    () =>
+      state.completeCollectionPackPurchase({
+        username: "RollbackBuyer",
+        packId: "classic_avatar_pack",
+        transactionId: "pack-rollback-transaction-1"
+      }),
+    /forced profile write failure/
+  );
+  state.profiles.updateProfile = originalUpdateProfile;
+
+  const pack = await state.collectionPackStore.getPack("classic_avatar_pack");
+  const ledger = await state.storePurchaseLedger.getByTransactionId("pack-rollback-transaction-1");
+  assert.equal(pack.soldCount, 0);
+  assert.equal(ledger.status, "rejected");
 });

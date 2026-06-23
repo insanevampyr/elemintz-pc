@@ -24,11 +24,26 @@ function normalizeEntry(entry = {}) {
   }
 
   const status = FINAL_STATUSES.has(entry.status) ? entry.status : "processing";
+  const purchaseKind = ["cosmetic", "unique_cosmetic", "collection_pack"].includes(entry.purchaseKind)
+    ? entry.purchaseKind
+    : "cosmetic";
   return {
     transactionId,
+    purchaseKind,
     buyerUsername: normalizeUsername(entry.buyerUsername),
     cosmeticType: String(entry.cosmeticType ?? "").trim() || null,
     cosmeticId: String(entry.cosmeticId ?? "").trim() || null,
+    packId: String(entry.packId ?? "").trim() || null,
+    grantedCosmeticIds: Array.isArray(entry.grantedCosmeticIds)
+      ? entry.grantedCosmeticIds.map((item) => String(item ?? "").trim()).filter(Boolean)
+      : [],
+    remainingNormalValue: Number.isInteger(Number(entry.remainingNormalValue))
+      ? Math.max(0, Number(entry.remainingNormalValue))
+      : 0,
+    discountPercent: Number.isInteger(Number(entry.discountPercent))
+      ? Math.max(0, Number(entry.discountPercent))
+      : 0,
+    savings: Number.isInteger(Number(entry.savings)) ? Math.max(0, Number(entry.savings)) : 0,
     price: Number.isInteger(Number(entry.price)) ? Math.max(0, Number(entry.price)) : null,
     saleLimitMode: entry.saleLimitMode === "limited" ? "limited" : "unlimited",
     saleLimitSoldBefore: Math.max(0, Math.floor(Number(entry.saleLimitSoldBefore ?? 0) || 0)),
