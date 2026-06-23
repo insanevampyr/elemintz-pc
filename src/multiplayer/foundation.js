@@ -3126,6 +3126,113 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:listCollectionPacks", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.listCollectionPacksForAdmin !== "function") {
+          throw Object.assign(new Error("Collection Pack authority is not available."), {
+            code: "COLLECTION_PACK_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const packs = await profileAuthority.listCollectionPacksForAdmin();
+        respond({
+          ok: true,
+          result: {
+            packs
+          }
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "COLLECTION_PACK_LIST_FAILED"));
+      }
+    });
+
+    socket.on("admin:getCollectionPack", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.getCollectionPackForAdmin !== "function") {
+          throw Object.assign(new Error("Collection Pack authority is not available."), {
+            code: "COLLECTION_PACK_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const pack = await profileAuthority.getCollectionPackForAdmin(payload?.packId);
+        respond({
+          ok: true,
+          result: {
+            pack
+          }
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "COLLECTION_PACK_GET_FAILED"));
+      }
+    });
+
+    socket.on("admin:upsertCollectionPack", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.upsertCollectionPackForAdmin !== "function") {
+          throw Object.assign(new Error("Collection Pack authority is not available."), {
+            code: "COLLECTION_PACK_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const pack = await profileAuthority.upsertCollectionPackForAdmin(payload?.pack ?? payload);
+        respond({
+          ok: true,
+          result: {
+            pack
+          }
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "COLLECTION_PACK_UPSERT_FAILED"));
+      }
+    });
+
+    socket.on("admin:previewCollectionPack", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.previewCollectionPackForAdmin !== "function") {
+          throw Object.assign(new Error("Collection Pack authority is not available."), {
+            code: "COLLECTION_PACK_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const preview = await profileAuthority.previewCollectionPackForAdmin({
+          draft: payload?.pack ?? payload?.draft ?? payload,
+          username: payload?.username
+        });
+        respond({
+          ok: true,
+          result: {
+            preview
+          }
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "COLLECTION_PACK_PREVIEW_FAILED"));
+      }
+    });
+
     socket.on("admin:updateSpecialCosmeticConfig", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });

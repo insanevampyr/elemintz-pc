@@ -876,6 +876,30 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async listCollectionPacksForAdmin() {
+    this.logger.info?.("[ProfileAuthority] listCollectionPacksForAdmin");
+    return this.coordinator.listCollectionPacksForAdmin();
+  }
+
+  async getCollectionPackForAdmin(packId) {
+    this.logger.info?.(`[ProfileAuthority] getCollectionPackForAdmin -> ${String(packId ?? "")}`);
+    return this.coordinator.getCollectionPackForAdmin(packId);
+  }
+
+  async upsertCollectionPackForAdmin(draft = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] upsertCollectionPackForAdmin -> ${String(draft?.packId ?? draft?.id ?? "")}`
+    );
+    return this.coordinator.upsertCollectionPackForAdmin(draft);
+  }
+
+  async previewCollectionPackForAdmin({ draft = {}, username = null } = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] previewCollectionPackForAdmin -> ${String(draft?.packId ?? draft?.id ?? "")}`
+    );
+    return this.coordinator.previewCollectionPackForAdmin({ draft, username });
+  }
+
   async openChest({ username, chestType }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

@@ -1167,6 +1167,82 @@ export class StateCoordinator {
     return run;
   }
 
+  async listCollectionPacksForAdmin() {
+    return this.collectionPackStore.listPacks();
+  }
+
+  async getCollectionPackForAdmin(packId) {
+    const pack = await this.collectionPackStore.getPack(packId);
+    if (!pack) {
+      throw new Error(`Collection Pack '${String(packId ?? "").trim()}' was not found.`);
+    }
+    return pack;
+  }
+
+  async upsertCollectionPackForAdmin(draft = {}) {
+    const safeDraft = draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
+    const packId = String(safeDraft.packId ?? safeDraft.id ?? "").trim();
+    if (!packId) {
+      throw new Error("packId is required.");
+    }
+
+    const existing = await this.collectionPackStore.getPack(packId);
+    const allowedFields = [
+      "packId",
+      "name",
+      "description",
+      "image",
+      "cosmeticIds",
+      "discountPercent",
+      "active",
+      "visible",
+      "startsAt",
+      "endsAt",
+      "saleLimitMode",
+      "saleLimitTotal",
+      "sortPriority",
+      "adminNotes"
+    ];
+    const config = {};
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(safeDraft, field)) {
+        config[field] = safeDraft[field];
+      }
+    }
+
+    return this.collectionPackStore.upsertPack({
+      ...config,
+      packId,
+      soldCount: existing?.soldCount ?? 0
+    });
+  }
+
+  async previewCollectionPackForAdmin({ draft = {}, username = null } = {}) {
+    const normalized = this.collectionPackStore.validateDraft(draft);
+    const safeUsername = String(username ?? "").trim();
+    const profile = safeUsername ? await this.profiles.getProfile(safeUsername) : null;
+    const ownedCosmeticIds = profile ? getOwnedCollectionPackCosmeticIds(profile) : [];
+    const totalPlan = calculateCollectionPackPriceForOwnedCosmetics(normalized, [], {
+      now: this.collectionPackStore.now()
+    });
+    const playerPlan = calculateCollectionPackPriceForOwnedCosmetics(
+      normalized,
+      ownedCosmeticIds,
+      { now: this.collectionPackStore.now() }
+    );
+
+    return {
+      packId: normalized.packId,
+      includedCosmeticIds: normalized.cosmeticIds,
+      totalNormalValue: totalPlan.remainingNormalValue,
+      discountPercent: playerPlan.discountPercent,
+      savings: playerPlan.savings,
+      finalPrice: playerPlan.finalPrice,
+      remainingCosmeticIds: playerPlan.remainingCosmeticIds,
+      status: playerPlan.status
+    };
+  }
+
   buildCosmeticsView(profile, specialRecords = []) {
     const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
     const randomizeAfterEachMatch = normalizeCosmeticRandomizationPreferences(snapshot.preferences);

@@ -3477,6 +3477,191 @@ test("multiplayer foundation: admin lookup returns the authoritative profile sna
   }
 });
 
+test("multiplayer foundation: admin Collection Pack seams are admin-only and server-authoritative", async () => {
+  const dataDir = await createTempDataDir();
+  let now = "2026-06-23T12:00:00.000Z";
+  const coordinator = new StateCoordinator({
+    dataDir,
+    now: () => now
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let unauthenticatedClient = null;
+
+  const validPack = {
+    packId: "admin_classic_avatar_pack",
+    name: "Admin Classic Avatar Pack",
+    description: "Admin test pack.",
+    cosmeticIds: ["fireavatarF", "wateravatarF"],
+    discountPercent: 15,
+    active: true,
+    visible: true,
+    saleLimitMode: "limited",
+    saleLimitTotal: 5,
+    adminNotes: "Admin-only fixture note"
+  };
+
+  try {
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "regular@example.com",
+      password: "PlayerPass123",
+      username: "RegularUser"
+    });
+    await coordinator.profiles.updateProfile("PreviewTarget", (current) => ({
+      ...current,
+      tokens: 999,
+      ownedCosmetics: {
+        ...current.ownedCosmetics,
+        avatar: [...current.ownedCosmetics.avatar, "fireavatarF"]
+      }
+    }));
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(playerLogin?.ok, true);
+
+    for (const eventName of [
+      "admin:listCollectionPacks",
+      "admin:getCollectionPack",
+      "admin:upsertCollectionPack",
+      "admin:previewCollectionPack"
+    ]) {
+      const unauthenticated = await emitWithAck(unauthenticatedClient, eventName, {});
+      assert.equal(unauthenticated?.ok, false, eventName);
+      assert.ok(
+        ["SESSION_REQUIRED", "ADMIN_AUTH_REQUIRED"].includes(unauthenticated?.error?.code),
+        eventName
+      );
+
+      const nonAdmin = await emitWithAck(playerClient, eventName, {
+        sessionToken: playerLogin?.session?.token
+      });
+      assert.equal(nonAdmin?.ok, false, eventName);
+      assert.equal(nonAdmin?.error?.code, "ADMIN_ACCESS_DENIED", eventName);
+    }
+
+    const created = await emitWithAck(adminClient, "admin:upsertCollectionPack", {
+      sessionToken: adminLogin?.session?.token,
+      pack: {
+        ...validPack,
+        soldCount: 99,
+        createdAt: "2000-01-01T00:00:00.000Z",
+        updatedAt: "2000-01-01T00:00:00.000Z"
+      }
+    });
+    assert.equal(created?.ok, true);
+    assert.equal(created?.result?.pack?.soldCount, 0);
+    assert.equal(created?.result?.pack?.createdAt, now);
+    assert.equal(created?.result?.pack?.updatedAt, now);
+    assert.equal(created?.result?.pack?.adminNotes, "Admin-only fixture note");
+
+    const reserved = await coordinator.collectionPackStore.reservePackPurchase("admin_classic_avatar_pack");
+    assert.equal(reserved.soldCountAfter, 1);
+    now = "2026-06-23T12:05:00.000Z";
+    const edited = await emitWithAck(adminClient, "admin:upsertCollectionPack", {
+      sessionToken: adminLogin?.session?.token,
+      pack: {
+        ...validPack,
+        name: "Edited Admin Pack",
+        soldCount: 0,
+        createdAt: "2001-01-01T00:00:00.000Z",
+        updatedAt: "2001-01-01T00:00:00.000Z"
+      }
+    });
+    assert.equal(edited?.ok, true);
+    assert.equal(edited?.result?.pack?.name, "Edited Admin Pack");
+    assert.equal(edited?.result?.pack?.soldCount, 1);
+    assert.equal(edited?.result?.pack?.createdAt, created?.result?.pack?.createdAt);
+    assert.equal(edited?.result?.pack?.updatedAt, now);
+
+    const list = await emitWithAck(adminClient, "admin:listCollectionPacks", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(list?.ok, true);
+    assert.equal(list?.result?.packs?.length, 1);
+    assert.equal(list?.result?.packs?.[0]?.adminNotes, "Admin-only fixture note");
+
+    const fetched = await emitWithAck(adminClient, "admin:getCollectionPack", {
+      sessionToken: adminLogin?.session?.token,
+      packId: "admin_classic_avatar_pack"
+    });
+    assert.equal(fetched?.ok, true);
+    assert.equal(fetched?.result?.pack?.packId, "admin_classic_avatar_pack");
+
+    const missing = await emitWithAck(adminClient, "admin:getCollectionPack", {
+      sessionToken: adminLogin?.session?.token,
+      packId: "missing_pack"
+    });
+    assert.equal(missing?.ok, false);
+    assert.equal(missing?.error?.code, "COLLECTION_PACK_GET_FAILED");
+
+    const invalid = await emitWithAck(adminClient, "admin:upsertCollectionPack", {
+      sessionToken: adminLogin?.session?.token,
+      pack: {
+        ...validPack,
+        packId: "invalid_unique_pack",
+        cosmeticIds: ["fireavatarF", "avatar_lycan_anubis"]
+      }
+    });
+    assert.equal(invalid?.ok, false);
+    assert.equal(invalid?.error?.code, "COLLECTION_PACK_UPSERT_FAILED");
+    assert.match(invalid?.error?.message ?? "", /Unique cosmetic/);
+
+    const profileBeforePreview = await coordinator.profiles.getProfile("PreviewTarget");
+    const registryBeforePreview = await coordinator.collectionPackStore.listPacks();
+    const preview = await emitWithAck(adminClient, "admin:previewCollectionPack", {
+      sessionToken: adminLogin?.session?.token,
+      username: "PreviewTarget",
+      pack: validPack
+    });
+    const profileAfterPreview = await coordinator.profiles.getProfile("PreviewTarget");
+    const registryAfterPreview = await coordinator.collectionPackStore.listPacks();
+    assert.equal(preview?.ok, true);
+    assert.deepEqual(preview?.result?.preview?.includedCosmeticIds, ["fireavatarF", "wateravatarF"]);
+    assert.deepEqual(preview?.result?.preview?.remainingCosmeticIds, ["wateravatarF"]);
+    assert.equal(preview?.result?.preview?.status, "available");
+    assert.equal(profileAfterPreview.tokens, profileBeforePreview.tokens);
+    assert.deepEqual(profileAfterPreview.ownedCosmetics, profileBeforePreview.ownedCosmetics);
+    assert.deepEqual(registryAfterPreview, registryBeforePreview);
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: admin grants apply once, notify the player, and update confirmation status", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
