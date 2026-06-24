@@ -949,6 +949,11 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.previewCollectionPackForAdmin({ draft, username });
   }
 
+  async listEligibleCollectionPackCosmeticsForAdmin() {
+    this.logger.info?.("[ProfileAuthority] listEligibleCollectionPackCosmeticsForAdmin");
+    return this.coordinator.listEligibleCollectionPackCosmeticsForAdmin();
+  }
+
   async openChest({ username, chestType }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

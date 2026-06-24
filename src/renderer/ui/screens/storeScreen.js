@@ -466,9 +466,35 @@ function getRenderableStoreItems(store, type) {
   return (store?.catalog?.[type] ?? []).filter((item) => !item?.owned);
 }
 
+function buildCosmeticLookup(store) {
+  const lookup = new Map();
+  for (const [type, items] of Object.entries(store?.catalog ?? {})) {
+    for (const item of Array.isArray(items) ? items : []) {
+      const id = String(item?.id ?? "").trim();
+      if (id && !lookup.has(id)) {
+        lookup.set(id, { type, item });
+      }
+    }
+  }
+  return lookup;
+}
+
 function normalizePackImagePath(image) {
-  const value = String(image ?? "").trim().replaceAll("\\", "/");
-  return value.startsWith("assets/") ? value.slice("assets/".length) : value;
+  let value = String(image ?? "").trim().replaceAll("\\", "/");
+  if (!value) {
+    return "";
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) || /^[A-Za-z]:\//.test(value)) {
+    return "";
+  }
+  value = value.replace(/^\.?\//, "");
+  while (value.toLowerCase().startsWith("assets/")) {
+    value = value.slice("assets/".length);
+  }
+  if (!value || value.split("/").includes("..")) {
+    return "";
+  }
+  return value;
 }
 
 function formatTokenAmount(value) {
@@ -512,15 +538,66 @@ function renderDealAvailability(deal) {
   return "Unlimited";
 }
 
-function renderCollectionPackDealCard(deal, purchaseInFlight) {
+function renderCollectionPackCoverImage(deal, className = "collection-pack-deal-image") {
+  const imagePath = normalizePackImagePath(deal?.image);
+  const coverAlt = `${deal?.name ?? "Collection Pack"} Collection Pack cover art`;
+  return imagePath
+    ? `<img class="${className}" src="${getAssetPath(imagePath)}" alt="${escapeAttribute(coverAlt)}" />`
+    : `<div class="${className} ${className}--missing">No Pack Art</div>`;
+}
+
+function renderCollectionPackCosmeticPreview(cosmeticId, cosmeticLookup, className = "collection-pack-content-preview") {
+  const resolved = cosmeticLookup.get(String(cosmeticId ?? "").trim());
+  if (!resolved) {
+    return `
+      <div class="${className} ${className}--missing" aria-label="${escapeAttribute(cosmeticId)} preview unavailable">
+        <span>${escapeAttribute(cosmeticId)}</span>
+      </div>
+    `;
+  }
+  return `
+    <div class="${className}" aria-label="${escapeAttribute(resolved.item.name)} preview">
+      ${renderPreview(resolved.type, resolved.item)}
+    </div>
+  `;
+}
+
+function renderCollectionPackPreviewStrip(deal, store) {
+  const includedIds = Array.isArray(deal?.includedCosmeticIds) ? deal.includedCosmeticIds : [];
+  if (includedIds.length === 0) {
+    return "";
+  }
+  const cosmeticLookup = buildCosmeticLookup(store);
+  const visibleIds = includedIds.slice(0, 4);
+  const remainingCount = Math.max(0, includedIds.length - visibleIds.length);
+  return `
+    <div class="collection-pack-preview-strip" aria-label="${escapeAttribute(deal.name)} contents preview">
+      ${visibleIds.map((id) => renderCollectionPackCosmeticPreview(id, cosmeticLookup)).join("")}
+      ${remainingCount > 0 ? `<span class="collection-pack-preview-more">+${remainingCount} more</span>` : ""}
+    </div>
+  `;
+}
+
+function renderQuoteFields(deal) {
+  return `
+    <dl class="collection-pack-deal-stats">
+      <div><dt>Included</dt><dd>${formatTokenAmount(deal.includedItemCount)} cosmetics</dd></div>
+      <div><dt>Owned</dt><dd>${formatTokenAmount(deal.ownedItemCount)}</dd></div>
+      <div><dt>Remaining</dt><dd>${formatTokenAmount(deal.remainingItemCount)}</dd></div>
+      <div><dt>Normal Value</dt><dd>${formatTokenAmount(deal.remainingNormalValue)} Tokens</dd></div>
+      <div><dt>Discount</dt><dd>${formatTokenAmount(deal.discountPercent)}%</dd></div>
+      <div><dt>Savings</dt><dd>${formatTokenAmount(deal.savings)} Tokens</dd></div>
+      <div><dt>Price</dt><dd>${formatTokenAmount(deal.finalPrice)} Tokens</dd></div>
+    </dl>
+  `;
+}
+
+function renderCollectionPackDealCard(deal, purchaseInFlight, store) {
   const status = ["available", "complete", "sold_out"].includes(deal?.status)
     ? deal.status
     : "unavailable";
   const isAvailable = status === "available";
-  const imagePath = normalizePackImagePath(deal?.image);
-  const imageHtml = imagePath
-    ? `<img class="collection-pack-deal-image" src="${getAssetPath(imagePath)}" alt="${escapeAttribute(deal.name)}" />`
-    : `<div class="collection-pack-deal-image collection-pack-deal-image--missing">No Pack Art</div>`;
+  const imageHtml = renderCollectionPackCoverImage(deal);
   const buttonHtml = isAvailable
     ? `<button class="btn btn-primary" type="button" data-buy-pack-id="${escapeAttribute(deal.packId)}" data-buy-default-label="Buy Pack" ${purchaseInFlight ? "disabled" : ""}>Buy Pack</button>`
     : `<button class="btn" type="button" disabled>${status === "complete" ? "Complete" : "Sold Out"}</button>`;
@@ -534,22 +611,62 @@ function renderCollectionPackDealCard(deal, purchaseInFlight) {
           <span class="collection-pack-deal-status">${renderDealAvailability(deal)}</span>
         </div>
         ${deal.description ? `<p class="collection-pack-deal-description">${escapeAttribute(deal.description)}</p>` : ""}
-        <dl class="collection-pack-deal-stats">
-          <div><dt>Included</dt><dd>${formatTokenAmount(deal.includedItemCount)} cosmetics</dd></div>
-          <div><dt>Owned</dt><dd>${formatTokenAmount(deal.ownedItemCount)}</dd></div>
-          <div><dt>Remaining</dt><dd>${formatTokenAmount(deal.remainingItemCount)}</dd></div>
-          <div><dt>Normal Value</dt><dd>${formatTokenAmount(deal.remainingNormalValue)} Tokens</dd></div>
-          <div><dt>Discount</dt><dd>${formatTokenAmount(deal.discountPercent)}%</dd></div>
-          <div><dt>Savings</dt><dd>${formatTokenAmount(deal.savings)} Tokens</dd></div>
-          <div><dt>Price</dt><dd>${formatTokenAmount(deal.finalPrice)} Tokens</dd></div>
-        </dl>
+        ${renderCollectionPackPreviewStrip(deal, store)}
+        ${renderQuoteFields(deal)}
       </div>
-      <div class="collection-pack-deal-actions">${buttonHtml}</div>
+      <div class="collection-pack-deal-actions">
+        <button class="btn secondary" type="button" data-view-pack-contents="${escapeAttribute(deal.packId)}">View Contents</button>
+        ${buttonHtml}
+      </div>
     </article>
   `;
 }
 
-function renderCollectionPackDeals(collectionPackDeals = {}) {
+export function renderCollectionPackDetailsBody({ deal, store, purchaseInFlight = false } = {}) {
+  const includedIds = Array.isArray(deal?.includedCosmeticIds) ? deal.includedCosmeticIds : [];
+  const remainingIds = new Set(Array.isArray(deal?.remainingCosmeticIds) ? deal.remainingCosmeticIds : []);
+  const cosmeticLookup = buildCosmeticLookup(store);
+  const status = ["available", "complete", "sold_out"].includes(deal?.status)
+    ? deal.status
+    : "unavailable";
+  const canPurchase = status === "available";
+
+  return `
+    <div class="collection-pack-details" data-collection-pack-details="${escapeAttribute(deal?.packId)}">
+      <div class="collection-pack-details-hero">
+        ${renderCollectionPackCoverImage(deal, "collection-pack-details-cover")}
+        <div>
+          <h4>${escapeAttribute(deal?.name ?? "Collection Pack")}</h4>
+          ${deal?.description ? `<p>${escapeAttribute(deal.description)}</p>` : ""}
+          <p><strong>${formatTokenAmount(includedIds.length)} included cosmetics</strong></p>
+          <p>${escapeAttribute(renderDealAvailability(deal ?? {}))}</p>
+        </div>
+      </div>
+      ${renderQuoteFields(deal ?? {})}
+      <div class="collection-pack-details-grid" data-collection-pack-details-grid="true">
+        ${includedIds.map((id) => {
+          const resolved = cosmeticLookup.get(String(id ?? "").trim());
+          const owned = !remainingIds.has(id);
+          return `
+            <article class="collection-pack-details-item" data-pack-cosmetic-id="${escapeAttribute(id)}" data-pack-cosmetic-owned="${owned ? "true" : "false"}">
+              ${renderCollectionPackCosmeticPreview(id, cosmeticLookup, "collection-pack-details-preview")}
+              <div>
+                <strong>${escapeAttribute(resolved?.item?.name ?? id)}</strong>
+                <p>${escapeAttribute(resolved ? getCosmeticTypeLabel(resolved.type, resolved.item) : "Cosmetic")}</p>
+                <span class="collection-pack-content-state">${owned ? "Owned" : "Included in Purchase"}</span>
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+      <div class="collection-pack-details-actions">
+        <button class="btn btn-primary" type="button" data-collection-pack-details-buy="${escapeAttribute(deal?.packId)}" data-buy-pack-id="${escapeAttribute(deal?.packId)}" data-buy-default-label="Buy Pack" ${!canPurchase || purchaseInFlight ? "disabled" : ""}>${purchaseInFlight ? "Purchasing..." : canPurchase ? "Buy Pack" : status === "complete" ? "Complete" : "Sold Out"}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderCollectionPackDeals(collectionPackDeals = {}, store = {}) {
   const status = String(collectionPackDeals.status ?? "idle");
   if (status === "offline") {
     return `
@@ -596,7 +713,7 @@ function renderCollectionPackDeals(collectionPackDeals = {}) {
         <p>Deals use server-authoritative pricing and ownership checks.</p>
       </div>
       <div class="collection-pack-deals-grid">
-        ${deals.map((deal) => renderCollectionPackDealCard(deal, Boolean(collectionPackDeals.purchaseInFlight))).join("")}
+        ${deals.map((deal) => renderCollectionPackDealCard(deal, Boolean(collectionPackDeals.purchaseInFlight), store)).join("")}
       </div>
     </section>
   `;
@@ -742,7 +859,7 @@ export const storeScreen = {
           ${renderStoreTabs(viewState.activeTab)}
           ${
             viewState.activeTab === "deals"
-              ? renderCollectionPackDeals(context.collectionPackDeals)
+              ? renderCollectionPackDeals(context.collectionPackDeals, store)
               : renderCosmeticsStoreContent({
                   store,
                   viewState,
@@ -928,6 +1045,13 @@ export const storeScreen = {
       button.disabled = Boolean(context.collectionPackDeals?.purchaseInFlight);
       const defaultLabel = button.getAttribute("data-buy-default-label") || button.textContent || "Buy Pack";
       button.textContent = context.collectionPackDeals?.purchaseInFlight ? "Purchasing..." : defaultLabel;
+    });
+
+    root.querySelectorAll("[data-view-pack-contents]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const packId = button.getAttribute("data-view-pack-contents");
+        context.actions.viewCollectionPackContents?.(packId);
+      });
     });
 
     let packPurchasePending = Boolean(context.collectionPackDeals?.purchaseInFlight);

@@ -3554,7 +3554,8 @@ test("multiplayer foundation: admin Collection Pack seams are admin-only and ser
       "admin:listCollectionPacks",
       "admin:getCollectionPack",
       "admin:upsertCollectionPack",
-      "admin:previewCollectionPack"
+      "admin:previewCollectionPack",
+      "admin:listEligibleCollectionPackCosmetics"
     ]) {
       const unauthenticated = await emitWithAck(unauthenticatedClient, eventName, {});
       assert.equal(unauthenticated?.ok, false, eventName);
@@ -3653,6 +3654,32 @@ test("multiplayer foundation: admin Collection Pack seams are admin-only and ser
     assert.equal(profileAfterPreview.tokens, profileBeforePreview.tokens);
     assert.deepEqual(profileAfterPreview.ownedCosmetics, profileBeforePreview.ownedCosmetics);
     assert.deepEqual(registryAfterPreview, registryBeforePreview);
+
+    const profileBeforeEligibleList = await coordinator.profiles.getProfile("PreviewTarget");
+    const registryBeforeEligibleList = await coordinator.collectionPackStore.listPacks();
+    const eligible = await emitWithAck(adminClient, "admin:listEligibleCollectionPackCosmetics", {
+      sessionToken: adminLogin?.session?.token
+    });
+    const profileAfterEligibleList = await coordinator.profiles.getProfile("PreviewTarget");
+    const registryAfterEligibleList = await coordinator.collectionPackStore.listPacks();
+
+    assert.equal(eligible?.ok, true);
+    const entries = eligible?.result?.cosmetics ?? [];
+    assert.ok(entries.some((entry) => entry.id === "fireavatarF" && entry.type === "avatar"));
+    assert.ok(entries.some((entry) => entry.id === "wateravatarF" && entry.type === "avatar"));
+    assert.equal(entries.some((entry) => entry.id === "avatar_lycan_anubis"), false);
+    assert.equal(entries.some((entry) => entry.id === "avatar_inferno_crown_f"), false);
+    assert.equal(entries.some((entry) => entry.id === "avatar_chestbound_adept"), false);
+    assert.equal(entries.some((entry) => entry.id === "founder_deluxe_card_back"), false);
+    assert.equal(entries.some((entry) => entry.id === "default_avatar"), false);
+    for (const entry of entries) {
+      assert.deepEqual(Object.keys(entry).sort(), ["id", "name", "price", "purchasable", "rarity", "type"]);
+      assert.notEqual(entry.rarity, "Unique");
+      assert.equal(entry.purchasable, true);
+      assert.equal(Number.isInteger(entry.price) && entry.price > 0, true);
+    }
+    assert.deepEqual(profileAfterEligibleList, profileBeforeEligibleList);
+    assert.deepEqual(registryAfterEligibleList, registryBeforeEligibleList);
   } finally {
     adminClient?.disconnect();
     playerClient?.disconnect();

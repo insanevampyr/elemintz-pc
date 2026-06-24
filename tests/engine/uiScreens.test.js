@@ -19,7 +19,7 @@ import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen
 import { profileScreen, selectTrophyShelfItems } from "../../src/renderer/ui/screens/profileScreen.js";
 import { roadmapScreen } from "../../src/renderer/ui/screens/roadmapScreen.js";
 import { settingsScreen } from "../../src/renderer/ui/screens/settingsScreen.js";
-import { storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
+import { renderCollectionPackDetailsBody, storeScreen } from "../../src/renderer/ui/screens/storeScreen.js";
 import { bindCosmeticHoverPreview } from "../../src/renderer/ui/shared/cosmeticHoverPreview.js";
 import { renderBattleExpressionsFeed, renderBattleExpressionsPanel } from "../../src/renderer/ui/shared/battleExpressionsRail.js";
 import { renderActiveMatchLayout } from "../../src/renderer/ui/shared/activeMatchLayout.js";
@@ -310,12 +310,55 @@ test("ui: Store Deals card renders server fields, cover image, and state-specifi
       tokens: 2500,
       supporterPass: false,
       catalog: {
-        avatar: [],
+        avatar: [
+          {
+            id: "avatar_frostveil_heir",
+            name: "Frostveil Heir",
+            rarity: "Epic",
+            image: "avatars/avatar_frostveil_heir.png"
+          }
+        ],
         cardBack: [],
         background: [],
-        elementCardVariant: [],
+        elementCardVariant: [
+          {
+            id: "fire_variant_aurora_flare",
+            name: "Aurora Flare",
+            rarity: "Epic",
+            element: "fire",
+            image: "cards/fire_variant_aurora_flare.png"
+          },
+          {
+            id: "earth_variant_icebound_crag",
+            name: "Icebound Crag",
+            rarity: "Epic",
+            element: "earth",
+            image: "cards/earth_variant_icebound_crag.png"
+          },
+          {
+            id: "wind_variant_sleet_spiral",
+            name: "Sleet Spiral",
+            rarity: "Epic",
+            element: "wind",
+            image: "cards/wind_variant_sleet_spiral.png"
+          },
+          {
+            id: "water_variant_frostbloom",
+            name: "Frostbloom",
+            rarity: "Epic",
+            element: "water",
+            image: "cards/water_variant_frostbloom.png"
+          }
+        ],
         badge: [],
-        title: []
+        title: [
+          {
+            id: "title_shiverborne",
+            name: "Shiverborne",
+            rarity: "Epic",
+            image: "titles/title_shiverborne.png"
+          }
+        ]
       }
     },
     viewState: { activeTab: "deals" },
@@ -327,9 +370,24 @@ test("ui: Store Deals card renders server fields, cover image, and state-specifi
           name: "Frostveil Court",
           description: "A discounted winter court bundle.",
           image: "assets/collection_packs/collection_pack_frostveil_court.png",
-          includedItemCount: 4,
+          includedCosmeticIds: [
+            "avatar_frostveil_heir",
+            "fire_variant_aurora_flare",
+            "earth_variant_icebound_crag",
+            "wind_variant_sleet_spiral",
+            "water_variant_frostbloom",
+            "title_shiverborne"
+          ],
+          remainingCosmeticIds: [
+            "fire_variant_aurora_flare",
+            "earth_variant_icebound_crag",
+            "wind_variant_sleet_spiral",
+            "water_variant_frostbloom",
+            "title_shiverborne"
+          ],
+          includedItemCount: 6,
           ownedItemCount: 1,
-          remainingItemCount: 3,
+          remainingItemCount: 5,
           remainingNormalValue: 1500,
           discountPercent: 20,
           savings: 300,
@@ -373,19 +431,149 @@ test("ui: Store Deals card renders server fields, cover image, and state-specifi
 
   assert.match(html, /Frostveil Court/);
   assert.match(html, /A discounted winter court bundle\./);
-  assert.match(html, /Included<\/dt><dd>4 cosmetics/);
+  assert.match(html, /Included<\/dt><dd>6 cosmetics/);
   assert.match(html, /Owned<\/dt><dd>1/);
-  assert.match(html, /Remaining<\/dt><dd>3/);
+  assert.match(html, /Remaining<\/dt><dd>5/);
   assert.match(html, /Normal Value<\/dt><dd>1,500 Tokens/);
   assert.match(html, /Discount<\/dt><dd>20%/);
   assert.match(html, /Savings<\/dt><dd>300 Tokens/);
   assert.match(html, /Price<\/dt><dd>1,200 Tokens/);
   assert.match(html, /Limited: 2 purchases left/);
   assert.match(html, /data-buy-pack-id="frostveil_court"/);
+  assert.match(html, /data-view-pack-contents="frostveil_court"/);
+  assert.match(html, /View Contents/);
+  assert.match(html, /Frostveil Heir preview/);
+  assert.match(html, /Aurora Flare preview/);
+  assert.match(html, /\+2 more/);
+  assert.doesNotMatch(html, /title_shiverborne preview/);
   assert.match(html, /data-collection-pack-status="complete"[\s\S]*Complete<\/button>/);
   assert.match(html, /data-collection-pack-status="sold_out"[\s\S]*Sold Out<\/button>/);
   assert.doesNotMatch(html, /assets\/assets\/collection_packs/);
-  assert.match(html, /collection_packs\/collection_pack_frostveil_court\.png/);
+  assert.match(html, /src="file:[^"]*assets\/collection_packs\/collection_pack_frostveil_court\.png"/);
+  assert.match(html, /alt="Frostveil Court Collection Pack cover art"/);
+  assert.doesNotMatch(html, /data-collection-pack-status="available"[\s\S]*No Pack Art/);
+});
+
+test("ui: Store Deals card keeps No Pack Art fallback for missing pack images", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 2500,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: { activeTab: "deals" },
+    collectionPackDeals: {
+      status: "loaded",
+      deals: [
+        {
+          packId: "missing_art_pack",
+          name: "Missing Art Pack",
+          image: "   ",
+          includedItemCount: 2,
+          ownedItemCount: 0,
+          remainingItemCount: 2,
+          remainingNormalValue: 500,
+          discountPercent: 10,
+          savings: 50,
+          finalPrice: 450,
+          status: "available",
+          saleLimitMode: "unlimited"
+        }
+      ]
+    }
+  });
+
+  assert.match(html, /No Pack Art/);
+  assert.doesNotMatch(html, /Missing Art Pack Collection Pack cover art/);
+});
+
+test("ui: Store Deals details body renders all contents ownership states and quote fields", () => {
+  const store = {
+    catalog: {
+      avatar: [
+        {
+          id: "avatar_frostveil_heir",
+          name: "Frostveil Heir",
+          rarity: "Epic",
+          image: "avatars/avatar_frostveil_heir.png"
+        }
+      ],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [
+        {
+          id: "fire_variant_aurora_flare",
+          name: "Aurora Flare",
+          rarity: "Epic",
+          element: "fire",
+          image: "cards/fire_variant_aurora_flare.png"
+        },
+        {
+          id: "earth_variant_icebound_crag",
+          name: "Icebound Crag",
+          rarity: "Epic",
+          element: "earth",
+          image: "cards/earth_variant_icebound_crag.png"
+        }
+      ],
+      badge: [],
+      title: []
+    }
+  };
+  const deal = {
+    packId: "frostveil_court",
+    name: "Frostveil Court",
+    description: "A discounted winter court bundle.",
+    image: "assets/collection_packs/collection_pack_frostveil_court.png",
+    includedCosmeticIds: [
+      "avatar_frostveil_heir",
+      "fire_variant_aurora_flare",
+      "earth_variant_icebound_crag",
+      "missing_cosmetic"
+    ],
+    remainingCosmeticIds: [
+      "fire_variant_aurora_flare",
+      "earth_variant_icebound_crag",
+      "missing_cosmetic"
+    ],
+    includedItemCount: 4,
+    ownedItemCount: 1,
+    remainingItemCount: 3,
+    remainingNormalValue: 1500,
+    discountPercent: 20,
+    savings: 300,
+    finalPrice: 1200,
+    status: "available",
+    saleLimitMode: "limited",
+    remainingPurchases: 2
+  };
+
+  const html = renderCollectionPackDetailsBody({ deal, store, purchaseInFlight: false });
+  assert.match(html, /src="file:[^"]*assets\/collection_packs\/collection_pack_frostveil_court\.png"/);
+  assert.match(html, /alt="Frostveil Court Collection Pack cover art"/);
+  assert.match(html, /4 included cosmetics/);
+  assert.match(html, /Limited: 2 purchases left/);
+  assert.match(html, /Frostveil Heir/);
+  assert.match(html, /Avatar/);
+  assert.match(html, /data-pack-cosmetic-id="avatar_frostveil_heir" data-pack-cosmetic-owned="true"[\s\S]*Owned/);
+  assert.match(html, /data-pack-cosmetic-id="fire_variant_aurora_flare" data-pack-cosmetic-owned="false"[\s\S]*Included in Purchase/);
+  assert.match(html, /missing_cosmetic preview unavailable/);
+  assert.match(html, /Normal Value<\/dt><dd>1,500 Tokens/);
+  assert.match(html, /Discount<\/dt><dd>20%/);
+  assert.match(html, /Savings<\/dt><dd>300 Tokens/);
+  assert.match(html, /Price<\/dt><dd>1,200 Tokens/);
+  assert.match(html, /data-collection-pack-details-buy="frostveil_court"/);
+  assert.doesNotMatch(html, /disabled>Buy Pack/);
+
+  const pendingHtml = renderCollectionPackDetailsBody({ deal, store, purchaseInFlight: true });
+  assert.match(pendingHtml, /data-collection-pack-details-buy="frostveil_court"[^>]*disabled[^>]*>Purchasing\.\.\.<\/button>/);
 });
 
 test("ui: Store Deals purchase buttons use an immediate single-flight lock", async () => {
@@ -23340,6 +23528,157 @@ test("ui: appController loads Collection Pack Deals through player API and block
     assert.equal(shown.at(-1).collectionPackDeals.deals[0].status, "complete");
   } finally {
     global.window = previousWindow;
+  }
+});
+
+test("ui: appController opens Collection Pack details modal and reuses pack purchase action", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const shown = [];
+  const modalCalls = [];
+  const purchasePayloads = [];
+  let modalHideCount = 0;
+  const detailsBuyListeners = new Map();
+  const detailsBuyButton = {
+    disabled: false,
+    textContent: "Buy Pack",
+    addEventListener: (type, handler) => detailsBuyListeners.set(type, handler)
+  };
+  const profileSnapshot = {
+    authority: "server",
+    source: "multiplayer",
+    profile: {
+      username: "DealsModalBuyer",
+      tokens: 2500,
+      playerXP: 0,
+      playerLevel: 1,
+      equippedCosmetics: {
+        avatar: "default_avatar",
+        background: "default_background",
+        cardBack: "default_card_back",
+        elementCardVariant: {
+          fire: "default_fire_card",
+          water: "default_water_card",
+          earth: "default_earth_card",
+          wind: "default_wind_card"
+        },
+        badge: "none",
+        title: "Initiate"
+      },
+      ownedCosmetics: {
+        avatar: ["default_avatar"],
+        background: ["default_background"],
+        cardBack: ["default_card_back"],
+        elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+        badge: ["none"],
+        title: ["Initiate"]
+      }
+    }
+  };
+  const store = {
+    tokens: 2500,
+    supporterPass: false,
+    catalog: {
+      avatar: [{ id: "avatar_frostveil_heir", name: "Frostveil Heir", rarity: "Epic", image: "avatars/avatar_frostveil_heir.png" }],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      title: [],
+      badge: []
+    }
+  };
+  const deals = [{
+    packId: "frostveil_court",
+    name: "Frostveil Court",
+    description: "A discounted winter court bundle.",
+    image: "assets/collection_packs/collection_pack_frostveil_court.png",
+    includedCosmeticIds: ["avatar_frostveil_heir"],
+    remainingCosmeticIds: ["avatar_frostveil_heir"],
+    includedItemCount: 1,
+    ownedItemCount: 0,
+    remainingItemCount: 1,
+    remainingNormalValue: 800,
+    discountPercent: 20,
+    savings: 160,
+    finalPrice: 640,
+    status: "available",
+    saleLimitMode: "unlimited",
+    remainingPurchases: null
+  }];
+
+  global.document = {
+    querySelector: (selector) => selector === "[data-collection-pack-details-buy]" ? detailsBuyButton : null
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => {
+          throw new Error("local Store should not be used");
+        }
+      },
+      multiplayer: {
+        getProfile: async () => profileSnapshot,
+        getStore: async () => store,
+        getCollectionPackDeals: async () => deals,
+        buyCollectionPack: async (payload) => {
+          purchasePayloads.push(payload);
+          return {
+            purchase: { status: "purchased", kind: "collection_pack", packId: payload.packId, finalPrice: 640 },
+            snapshot: profileSnapshot,
+            store,
+            deals: [{ ...deals[0], status: "complete", remainingCosmeticIds: [], remainingItemCount: 0 }]
+          };
+        }
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {
+        modalHideCount += 1;
+      }
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.username = "DealsModalBuyer";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: {
+        active: true,
+        authenticated: true,
+        username: "DealsModalBuyer",
+        profileKey: "DealsModalBuyer",
+        accountId: "deals-modal-account"
+      }
+    };
+    controller.storeViewState.activeTab = "deals";
+
+    await controller.showStore();
+    shown.at(-1).actions.viewCollectionPackContents("frostveil_court");
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Frostveil Court Contents");
+    assert.match(modalCalls[0].bodyHtml, /data-collection-pack-details="frostveil_court"/);
+    assert.match(modalCalls[0].bodyHtml, /data-collection-pack-details-buy="frostveil_court"/);
+    assert.equal(typeof detailsBuyListeners.get("click"), "function");
+
+    await detailsBuyListeners.get("click")();
+    assert.equal(purchasePayloads.length, 1);
+    assert.equal(purchasePayloads[0].username, "DealsModalBuyer");
+    assert.equal(purchasePayloads[0].packId, "frostveil_court");
+    assert.match(purchasePayloads[0].transactionId, /^store-[A-Za-z0-9._:-]{8,}$/);
+    assert.equal(modalHideCount, 1);
+    assert.equal(shown.at(-1).collectionPackDeals.deals[0].status, "complete");
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
   }
 });
 

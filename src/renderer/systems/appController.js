@@ -17,6 +17,7 @@ import {
 } from "../ui/screens/index.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature } from "../ui/screens/gameScreen.js";
 import { renderMenuChallengePreview, renderMenuDailyLoginStatus } from "../ui/screens/menuScreen.js";
+import { renderCollectionPackDetailsBody } from "../ui/screens/storeScreen.js";
 import {
   GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS,
   renderBattleExpressionsFeed,
@@ -10119,6 +10120,80 @@ export class AppController {
       }
     }
     const collectionPackDeals = this.ensureCollectionPackDealsState();
+    const buyCollectionPackAction = async (packId) => {
+      const safePackId = String(packId ?? "").trim();
+      if (!safePackId || this.collectionPackPurchaseInFlight) {
+        return;
+      }
+
+      if (!this.isAuthenticatedOnlineProfileFlow() || !window.elemintz?.multiplayer?.buyCollectionPack) {
+        this.showLegacyLocalAuthorityDisabledModal(
+          "Collection Pack Deals are available while signed in online."
+        );
+        return;
+      }
+
+      const purchaseKey = `collectionPack:${safePackId}`;
+      const transactionId =
+        this.collectionPackPurchaseTransactionIds.get(purchaseKey) ??
+        createStorePurchaseTransactionId();
+      this.collectionPackPurchaseTransactionIds.set(purchaseKey, transactionId);
+      this.collectionPackPurchaseInFlight = true;
+      this.collectionPackPurchaseInFlightKey = safePackId;
+      this.ensureCollectionPackDealsState();
+      await this.showStore({ skipProfileRefresh: true, preferCachedFeaturedRotation: true });
+
+      try {
+        const result = await window.elemintz.multiplayer.buyCollectionPack({
+          username: this.username,
+          packId: safePackId,
+          transactionId
+        });
+        this.collectionPackPurchaseTransactionIds.delete(purchaseKey);
+        this.profile = result?.snapshot
+          ? this.buildProfileFromServerSnapshot(result.snapshot)
+          : result?.profile ?? this.profile;
+        const dealsState = this.ensureCollectionPackDealsState();
+        dealsState.deals = Array.isArray(result?.deals) ? result.deals : dealsState.deals;
+        dealsState.status = dealsState.deals.length > 0 ? "loaded" : "empty";
+        dealsState.loaded = true;
+        dealsState.error = "";
+        this.collectionPackPurchaseInFlight = false;
+        this.collectionPackPurchaseInFlightKey = null;
+
+        const nextStore =
+          result?.store ??
+          (window.elemintz?.multiplayer?.getStore
+            ? await window.elemintz.multiplayer.getStore({ username: this.username })
+            : getStoreViewForProfile(this.profile ?? {}));
+
+        this.modalManager.hide();
+        await this.showStore({
+          profileOverride: this.profile,
+          storeOverride: nextStore,
+          featuredRotationOverride: this.storeFeaturedRotationCache,
+          skipProfileRefresh: true
+        });
+      } catch (error) {
+        this.collectionPackPurchaseTransactionIds.delete(purchaseKey);
+        this.collectionPackPurchaseInFlight = false;
+        this.collectionPackPurchaseInFlightKey = null;
+        const dealsState = this.ensureCollectionPackDealsState();
+        dealsState.error = String(error?.message ?? "Unable to complete this Collection Pack purchase.");
+        this.modalManager.show({
+          title: "Purchase Failed",
+          body: dealsState.error,
+          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+        });
+        await this.showStore({
+          preserveModal: true,
+          profileOverride: this.profile,
+          storeOverride: store,
+          featuredRotationOverride: this.storeFeaturedRotationCache,
+          skipProfileRefresh: true
+        });
+      }
+    };
 
     this.screenManager.show("store", {
       backgroundImage: this.getBackgroundFromProfile(profileForStore),
@@ -10230,78 +10305,35 @@ export class AppController {
           this.storePurchaseInFlight = false;
           this.storePurchaseInFlightKey = null;
         },
-        buyCollectionPack: async (packId) => {
+        buyCollectionPack: buyCollectionPackAction,
+        viewCollectionPackContents: (packId) => {
           const safePackId = String(packId ?? "").trim();
-          if (!safePackId || this.collectionPackPurchaseInFlight) {
+          const deal = collectionPackDeals.deals.find((entry) => String(entry?.packId ?? "") === safePackId);
+          if (!deal) {
             return;
           }
 
-          if (!this.isAuthenticatedOnlineProfileFlow() || !window.elemintz?.multiplayer?.buyCollectionPack) {
-            this.showLegacyLocalAuthorityDisabledModal(
-              "Collection Pack Deals are available while signed in online."
-            );
-            return;
-          }
+          this.modalManager.show({
+            title: `${deal.name} Contents`,
+            bodyHtml: renderCollectionPackDetailsBody({
+              deal,
+              store,
+              purchaseInFlight: Boolean(this.collectionPackPurchaseInFlight)
+            }),
+            actions: [{ label: "Close", onClick: () => this.modalManager.hide() }],
+            modalClassName: "collection-pack-details-modal",
+            bodyClassName: "collection-pack-details-modal-body"
+          });
 
-          const purchaseKey = `collectionPack:${safePackId}`;
-          const transactionId =
-            this.collectionPackPurchaseTransactionIds.get(purchaseKey) ??
-            createStorePurchaseTransactionId();
-          this.collectionPackPurchaseTransactionIds.set(purchaseKey, transactionId);
-          this.collectionPackPurchaseInFlight = true;
-          this.collectionPackPurchaseInFlightKey = safePackId;
-          this.ensureCollectionPackDealsState();
-          await this.showStore({ skipProfileRefresh: true, preferCachedFeaturedRotation: true });
-
-          try {
-            const result = await window.elemintz.multiplayer.buyCollectionPack({
-              username: this.username,
-              packId: safePackId,
-              transactionId
-            });
-            this.collectionPackPurchaseTransactionIds.delete(purchaseKey);
-            this.profile = result?.snapshot
-              ? this.buildProfileFromServerSnapshot(result.snapshot)
-              : result?.profile ?? this.profile;
-            const dealsState = this.ensureCollectionPackDealsState();
-            dealsState.deals = Array.isArray(result?.deals) ? result.deals : dealsState.deals;
-            dealsState.status = dealsState.deals.length > 0 ? "loaded" : "empty";
-            dealsState.loaded = true;
-            dealsState.error = "";
-            this.collectionPackPurchaseInFlight = false;
-            this.collectionPackPurchaseInFlightKey = null;
-
-            const nextStore =
-              result?.store ??
-              (window.elemintz?.multiplayer?.getStore
-                ? await window.elemintz.multiplayer.getStore({ username: this.username })
-                : getStoreViewForProfile(this.profile ?? {}));
-
-            await this.showStore({
-              profileOverride: this.profile,
-              storeOverride: nextStore,
-              featuredRotationOverride: this.storeFeaturedRotationCache,
-              skipProfileRefresh: true
-            });
-          } catch (error) {
-            this.collectionPackPurchaseTransactionIds.delete(purchaseKey);
-            this.collectionPackPurchaseInFlight = false;
-            this.collectionPackPurchaseInFlightKey = null;
-            const dealsState = this.ensureCollectionPackDealsState();
-            dealsState.error = String(error?.message ?? "Unable to complete this Collection Pack purchase.");
-            this.modalManager.show({
-              title: "Purchase Failed",
-              body: dealsState.error,
-              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-            });
-            await this.showStore({
-              preserveModal: true,
-              profileOverride: this.profile,
-              storeOverride: store,
-              featuredRotationOverride: this.storeFeaturedRotationCache,
-              skipProfileRefresh: true
-            });
-          }
+          const buyButton = globalThis.document?.querySelector?.("[data-collection-pack-details-buy]");
+          buyButton?.addEventListener?.("click", async () => {
+            if (buyButton.disabled || this.collectionPackPurchaseInFlight) {
+              return;
+            }
+            buyButton.disabled = true;
+            buyButton.textContent = "Purchasing...";
+            await buyCollectionPackAction(safePackId);
+          });
         },
         equip: async (type, cosmeticId) => {
           const result =

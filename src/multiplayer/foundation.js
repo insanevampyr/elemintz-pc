@@ -3233,6 +3233,32 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:listEligibleCollectionPackCosmetics", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.listEligibleCollectionPackCosmeticsForAdmin !== "function") {
+          throw Object.assign(new Error("Collection Pack authority is not available."), {
+            code: "COLLECTION_PACK_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const cosmetics = await profileAuthority.listEligibleCollectionPackCosmeticsForAdmin();
+        respond({
+          ok: true,
+          result: {
+            cosmetics
+          }
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "COLLECTION_PACK_ELIGIBLE_COSMETICS_FAILED"));
+      }
+    });
+
     socket.on("admin:updateSpecialCosmeticConfig", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });

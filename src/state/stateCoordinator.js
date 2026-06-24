@@ -10,7 +10,8 @@ import {
 } from "./storePurchaseLedgerStore.js";
 import {
   calculateCollectionPackPriceForOwnedCosmetics,
-  CollectionPackStore
+  CollectionPackStore,
+  listEligibleCollectionPackCosmetics
 } from "./collectionPackStore.js";
 import { SaveSystem } from "./saveSystem.js";
 import { SettingsService } from "./settingsService.js";
@@ -1293,6 +1294,10 @@ export class StateCoordinator {
       remainingCosmeticIds: playerPlan.remainingCosmeticIds,
       status: playerPlan.status
     };
+  }
+
+  async listEligibleCollectionPackCosmeticsForAdmin() {
+    return listEligibleCollectionPackCosmetics({ catalog: COSMETIC_CATALOG });
   }
 
   buildCosmeticsView(profile, specialRecords = []) {

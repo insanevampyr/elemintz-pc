@@ -161,6 +161,39 @@ function assertEligibleNormalCosmetic(cosmeticId, { catalog = COSMETIC_CATALOG }
   return resolved;
 }
 
+export function listEligibleCollectionPackCosmetics({ catalog = COSMETIC_CATALOG } = {}) {
+  const entries = [];
+  for (const [type, items] of Object.entries(catalog ?? {})) {
+    for (const item of Array.isArray(items) ? items : []) {
+      if (item?.hidden === true) {
+        continue;
+      }
+      try {
+        assertEligibleNormalCosmetic(item?.id, { catalog });
+      } catch {
+        continue;
+      }
+      entries.push({
+        type,
+        id: String(item.id),
+        name: String(item.name ?? item.id),
+        rarity: String(item.rarity ?? "Common"),
+        price: item.price,
+        purchasable: item.purchasable === true
+      });
+    }
+  }
+
+  return entries.sort((left, right) => {
+    const typeDelta = left.type.localeCompare(right.type);
+    if (typeDelta !== 0) {
+      return typeDelta;
+    }
+    const nameDelta = left.name.localeCompare(right.name);
+    return nameDelta || left.id.localeCompare(right.id);
+  });
+}
+
 function normalizeCosmeticIds(value, { catalog = COSMETIC_CATALOG } = {}) {
   if (!Array.isArray(value)) {
     throw new Error("cosmeticIds must be an array.");

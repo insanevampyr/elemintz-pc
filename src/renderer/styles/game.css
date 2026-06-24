@@ -2547,7 +2547,114 @@ select {
   color: #eef7ff;
 }
 
+.collection-pack-preview-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0 0;
+}
+
+.collection-pack-content-preview,
+.collection-pack-details-preview {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  min-height: 58px;
+  border: 1px solid rgba(126, 172, 210, 0.24);
+  border-radius: 12px;
+  background: rgba(8, 18, 28, 0.68);
+  overflow: hidden;
+}
+
+.collection-pack-content-preview .cosmetic-preview-wrap,
+.collection-pack-details-preview .cosmetic-preview-wrap {
+  width: 48px;
+  min-height: 48px;
+}
+
+.collection-pack-content-preview .cosmetic-preview,
+.collection-pack-details-preview .cosmetic-preview {
+  max-width: 48px;
+  max-height: 48px;
+}
+
+.collection-pack-content-preview--missing,
+.collection-pack-details-preview--missing {
+  padding: 6px;
+  color: rgba(214, 232, 245, 0.72);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.collection-pack-preview-more {
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(247, 216, 131, 0.14);
+  color: #f7d883;
+  font-weight: 700;
+}
+
 .collection-pack-deal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.collection-pack-details {
+  display: grid;
+  gap: 16px;
+}
+
+.collection-pack-details-hero {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.collection-pack-details-cover {
+  width: 100%;
+  border-radius: 12px;
+  background: rgba(8, 18, 28, 0.78);
+}
+
+.collection-pack-details-cover--missing {
+  display: grid;
+  min-height: 140px;
+  place-items: center;
+  color: rgba(214, 232, 245, 0.72);
+}
+
+.collection-pack-details-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.collection-pack-details-item {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(126, 172, 210, 0.22);
+  border-radius: 12px;
+  background: rgba(8, 18, 28, 0.58);
+}
+
+.collection-pack-details-item p {
+  margin: 2px 0;
+  color: rgba(214, 232, 245, 0.78);
+}
+
+.collection-pack-content-state {
+  color: #f7d883;
+  font-weight: 700;
+}
+
+.collection-pack-details-actions {
   display: flex;
   justify-content: flex-start;
 }

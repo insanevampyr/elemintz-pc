@@ -8,6 +8,7 @@ import {
   calculateCollectionPackPriceForOwnedCosmetics,
   CollectionPackStore,
   DEFAULT_COLLECTION_PACK_DISCOUNT_PERCENT,
+  listEligibleCollectionPackCosmetics,
   resolveCollectionPackCosmetic,
   validateCollectionPackDraft
 } from "../../src/state/collectionPackStore.js";
@@ -73,6 +74,35 @@ test("collection packs: valid normal pack definition passes with default discoun
   assert.equal(normalized.saleLimitTotal, null);
   assert.equal(normalized.soldCount, 0);
   assert.deepEqual(normalized.cosmeticIds, ["fireavatarF", "wateravatarF"]);
+});
+
+test("collection packs: eligible cosmetic picker model includes only normal purchasable Store cosmetics", () => {
+  const cosmetics = listEligibleCollectionPackCosmetics({
+    catalog: {
+      avatar: [
+        { id: "valid_avatar", name: "Valid Avatar", rarity: "Common", purchasable: true, price: 100 },
+        { id: "unique_avatar", name: "Unique Avatar", rarity: "Unique", purchasable: true, price: 100 },
+        { id: "hidden_avatar", name: "Hidden Avatar", rarity: "Common", hidden: true, purchasable: true, price: 100 },
+        { id: "store_hidden_avatar", name: "Store Hidden Avatar", rarity: "Common", storeHidden: true, purchasable: true, price: 100 },
+        { id: "rotation_avatar", name: "Rotation Avatar", rarity: "Common", rotationOnly: true, purchasable: true, price: 100 },
+        { id: "grant_avatar", name: "Grant Avatar", rarity: "Common", grantOnly: true, purchasable: true, price: 100 },
+        { id: "chest_avatar", name: "Chest Avatar", rarity: "Common", chestOnly: true, purchasable: true, price: 100 },
+        { id: "supporter_avatar", name: "Supporter Avatar", rarity: "Common", supporterOnly: true, purchasable: true, price: 100 },
+        { id: "not_purchasable_avatar", name: "Not Purchasable Avatar", rarity: "Common", purchasable: false, price: 100 },
+        { id: "zero_price_avatar", name: "Zero Price Avatar", rarity: "Common", purchasable: true, price: 0 },
+        { id: "decimal_price_avatar", name: "Decimal Price Avatar", rarity: "Common", purchasable: true, price: 100.5 }
+      ]
+    }
+  });
+
+  assert.deepEqual(cosmetics, [{
+    type: "avatar",
+    id: "valid_avatar",
+    name: "Valid Avatar",
+    rarity: "Common",
+    price: 100,
+    purchasable: true
+  }]);
 });
 
 test("collection packs: discount boundaries are enforced", () => {
