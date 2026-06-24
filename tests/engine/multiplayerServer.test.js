@@ -14,6 +14,7 @@ import {
   createMultiplayerFoundation
 } from "../../src/multiplayer/foundation.js";
 import { createTimestampedLogger } from "../../src/multiplayer/logger.js";
+import { AdminPersistentSessionStore } from "../../src/multiplayer/adminPersistentSessionStore.js";
 import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { AnnouncementStore } from "../../src/multiplayer/announcementStore.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
@@ -3472,6 +3473,169 @@ test("multiplayer foundation: admin lookup returns the authoritative profile sna
     assert.ok(response?.cosmetics?.owned?.avatar?.includes("default_avatar"));
   } finally {
     adminClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: dedicated Admin persistent sessions are scoped revocable and concurrent with player sessions", async () => {
+  const dataDir = await createTempDataDir();
+  let nowMs = Date.parse("2026-06-24T12:00:00.000Z");
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const adminPersistentSessionStore = new AdminPersistentSessionStore({
+    dataDir,
+    now: () => nowMs
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    adminPersistentSessionStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let gameClient = null;
+  let adminClient = null;
+  let regularClient = null;
+
+  try {
+    await coordinator.profiles.ensureProfile("VampyrLee");
+    await coordinator.profiles.ensureProfile("RegularUser");
+    await coordinator.profiles.ensureProfile("LookupTarget");
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "regular@example.com",
+      password: "PlayerPass123",
+      username: "RegularUser"
+    });
+
+    const port = await foundation.start();
+    gameClient = await connectClient(port);
+    adminClient = await connectClient(port);
+    regularClient = await connectClient(port);
+
+    const activeGameLogin = await loginAccount(gameClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(activeGameLogin?.ok, true);
+
+    const adminLogin = await emitWithAck(adminClient, "admin:login", {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(adminLogin?.session?.admin, true);
+    assert.equal(adminLogin?.session?.username, "VampyrLee");
+    assert.ok(adminLogin?.session?.token);
+    assert.notEqual(adminLogin.session.token, activeGameLogin.session.token);
+    assert.equal(
+      Date.parse(adminLogin.session.expiresAt) - Date.parse(adminLogin.session.issuedAt),
+      1000 * 60 * 60 * 24 * 30
+    );
+
+    const playerStillActive = await emitWithAck(gameClient, "profile:get", {
+      sessionToken: activeGameLogin.session.token,
+      username: "VampyrLee"
+    });
+    assert.equal(playerStillActive?.ok, true);
+    assert.equal(playerStillActive?.profile?.username, "VampyrLee");
+
+    const adminLookup = await emitWithAck(adminClient, "admin:lookupUser", {
+      adminSessionToken: adminLogin.session.token,
+      username: "LookupTarget"
+    });
+    assert.equal(adminLookup?.ok, true);
+    assert.equal(adminLookup?.profile?.username, "LookupTarget");
+    assert.equal(JSON.stringify(adminLookup).includes(adminLogin.session.token), false);
+
+    const nonAdminPersistentLogin = await emitWithAck(regularClient, "admin:login", {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(nonAdminPersistentLogin?.ok, false);
+    assert.equal(nonAdminPersistentLogin?.error?.code, "ADMIN_ACCESS_DENIED");
+
+    const regularLogin = await loginAccount(regularClient, {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(regularLogin?.ok, true);
+    const regularAdminAttempt = await emitWithAck(regularClient, "admin:lookupUser", {
+      sessionToken: regularLogin.session.token,
+      username: "LookupTarget"
+    });
+    assert.equal(regularAdminAttempt?.ok, false);
+    assert.equal(regularAdminAttempt?.error?.code, "ADMIN_ACCESS_DENIED");
+
+    const persistedPath = path.join(dataDir, "server-data", "admin-persistent-sessions.json");
+    const persistedRaw = await fs.readFile(persistedPath, "utf8");
+    assert.equal(persistedRaw.includes(adminLogin.session.token), false);
+    assert.equal(persistedRaw.includes("AdminPass123"), false);
+    assert.match(persistedRaw, /"tokenHash"/);
+
+    const adminResume = await emitWithAck(adminClient, "admin:resumeSession", {
+      adminSessionToken: adminLogin.session.token
+    });
+    assert.equal(adminResume?.ok, true);
+    assert.equal(adminResume?.session?.username, "VampyrLee");
+    assert.equal(adminResume?.session?.token, adminLogin.session.token);
+
+    const expiringLogin = await emitWithAck(adminClient, "admin:login", {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    assert.equal(expiringLogin?.ok, true);
+    nowMs = Date.parse("2026-07-25T12:00:00.000Z");
+    const expiredResume = await emitWithAck(adminClient, "admin:resumeSession", {
+      adminSessionToken: expiringLogin.session.token
+    });
+    assert.equal(expiredResume?.ok, false);
+    assert.equal(expiredResume?.error?.code, "ADMIN_SESSION_EXPIRED");
+
+    nowMs = Date.parse("2026-06-24T12:05:00.000Z");
+    const firstRevoke = await emitWithAck(adminClient, "admin:revokeSession", {
+      adminSessionToken: adminLogin.session.token
+    });
+    assert.deepEqual(firstRevoke, {
+      ok: true,
+      result: { revoked: true }
+    });
+    const secondRevoke = await emitWithAck(adminClient, "admin:revokeSession", {
+      adminSessionToken: adminLogin.session.token
+    });
+    assert.deepEqual(secondRevoke, {
+      ok: true,
+      result: { revoked: false }
+    });
+    const revokedLookup = await emitWithAck(adminClient, "admin:lookupUser", {
+      adminSessionToken: adminLogin.session.token,
+      username: "LookupTarget"
+    });
+    assert.equal(revokedLookup?.ok, false);
+    assert.equal(revokedLookup?.error?.code, "ADMIN_SESSION_REVOKED");
+
+    const playerStillActiveAfterAdminRevoke = await emitWithAck(gameClient, "profile:get", {
+      sessionToken: activeGameLogin.session.token,
+      username: "VampyrLee"
+    });
+    assert.equal(playerStillActiveAfterAdminRevoke?.ok, true);
+    assert.equal(playerStillActiveAfterAdminRevoke?.profile?.username, "VampyrLee");
+  } finally {
+    gameClient?.disconnect();
+    adminClient?.disconnect();
+    regularClient?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }

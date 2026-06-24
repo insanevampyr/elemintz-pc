@@ -8,6 +8,7 @@ import {
   ONLINE_TURN_TIMER_DURATION_MS,
   createRoomStore
 } from "./rooms.js";
+import { AdminPersistentSessionStore } from "./adminPersistentSessionStore.js";
 import { createSessionStore } from "./sessionStore.js";
 import { createLocalMatchSessionStore } from "./localMatchSessions.js";
 import { DEFAULT_TIMESTAMPED_LOGGER } from "./logger.js";
@@ -755,6 +756,7 @@ export function createMultiplayerFoundation({
   adminGrantStore = null,
   storePurchaseLedgerStore = null,
   specialCosmeticRegistryStore = null,
+  adminPersistentSessionStore = null,
   feedbackStore = null,
   boostEventStore = null,
   shopRotationStore = null,
@@ -768,6 +770,8 @@ export function createMultiplayerFoundation({
     gracePeriodMs: roomReconnectTimeoutMs,
     dataDir
   });
+  const resolvedAdminPersistentSessionStore =
+    adminPersistentSessionStore ?? new AdminPersistentSessionStore({ dataDir });
   const localMatchSessions = createLocalMatchSessionStore();
   const inFlightFounderGrants = new Map();
   const io = new SocketIOServer(httpServer, {
@@ -1446,6 +1450,42 @@ export function createMultiplayerFoundation({
     };
   }
 
+  function normalizeAdminPersistentSessionToken(payload = {}) {
+    return String(payload?.adminSessionToken ?? payload?.sessionToken ?? "").trim();
+  }
+
+  async function resolveAdminPersistentSession(payload = {}) {
+    const token = normalizeAdminPersistentSessionToken(payload);
+    if (!token || typeof resolvedAdminPersistentSessionStore?.resumeSession !== "function") {
+      return null;
+    }
+
+    const session = await resolvedAdminPersistentSessionStore.resumeSession(token);
+    assertAdminAccessForSession(session);
+    return session;
+  }
+
+  async function ensureAdminSession(socket, payload = {}) {
+    const playerSessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+    if (playerSessionResult?.ok) {
+      return playerSessionResult;
+    }
+
+    try {
+      const adminSession = await resolveAdminPersistentSession(payload);
+      if (adminSession) {
+        return {
+          ok: true,
+          session: adminSession
+        };
+      }
+    } catch (error) {
+      return buildAdminError(error, "ADMIN_AUTH_FAILED");
+    }
+
+    return playerSessionResult;
+  }
+
   async function resolveBootstrapUsername(username) {
     const requestedUsername = normalizeSettledUsername(username);
     if (!requestedUsername) {
@@ -2113,6 +2153,87 @@ export function createMultiplayerFoundation({
 
       sessionStore.destroySession(existingSession.token);
       respond({ ok: true });
+    });
+
+    socket.on("admin:login", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      if (
+        typeof accountStore?.login !== "function" ||
+        typeof resolvedAdminPersistentSessionStore?.issueSession !== "function"
+      ) {
+        respond(buildAdminError({
+          code: "ADMIN_AUTH_UNAVAILABLE",
+          message: "Admin login is not available on this server."
+        }));
+        return;
+      }
+
+      try {
+        const account = await accountStore.login({
+          email: payload?.email,
+          password: payload?.password
+        });
+        assertAdminAccessForSession({
+          ...account,
+          authenticated: true
+        });
+        const session = await resolvedAdminPersistentSessionStore.issueSession({ account });
+        respond({
+          ok: true,
+          account,
+          session
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_LOGIN_FAILED"));
+      }
+    });
+
+    socket.on("admin:resumeSession", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      try {
+        const session = await resolveAdminPersistentSession(payload);
+        if (!session) {
+          respond(buildAdminError({
+            code: "ADMIN_SESSION_TOKEN_REQUIRED",
+            message: "A valid Admin session token is required."
+          }));
+          return;
+        }
+        respond({
+          ok: true,
+          session
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_SESSION_RESUME_FAILED"));
+      }
+    });
+
+    socket.on("admin:revokeSession", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const token = normalizeAdminPersistentSessionToken(payload);
+      if (!token) {
+        respond({ ok: true, result: { revoked: false } });
+        return;
+      }
+
+      try {
+        await resolveAdminPersistentSession(payload);
+      } catch (error) {
+        if (
+          !["ADMIN_SESSION_REVOKED", "ADMIN_SESSION_NOT_FOUND", "ADMIN_SESSION_EXPIRED"].includes(
+            error?.code
+          )
+        ) {
+          respond(buildAdminError(error, "ADMIN_SESSION_REVOKE_FAILED"));
+          return;
+        }
+      }
+
+      const result = await resolvedAdminPersistentSessionStore.revokeSession(token);
+      respond({
+        ok: true,
+        result
+      });
     });
 
     socket.on("room:submitMove", async (payload = {}) => {
@@ -2816,7 +2937,7 @@ export function createMultiplayerFoundation({
     socket.on("admin:lookupUser", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
 
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -2875,7 +2996,7 @@ export function createMultiplayerFoundation({
     socket.on("admin:grantRewards", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
 
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3048,7 +3169,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:updateSpecialCosmeticAssignment", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3075,7 +3196,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:approvePendingSpecialCosmetic", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3102,7 +3223,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:getUniqueHistory", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3128,7 +3249,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:listCollectionPacks", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3154,7 +3275,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:getCollectionPack", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3180,7 +3301,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:upsertCollectionPack", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3206,7 +3327,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:previewCollectionPack", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3235,7 +3356,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:listEligibleCollectionPackCosmetics", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3261,7 +3382,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:updateSpecialCosmeticConfig", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3288,7 +3409,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:updateSpecialCosmeticRoyalty", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3337,7 +3458,7 @@ export function createMultiplayerFoundation({
 
     socket.on("admin:grantSpecialCosmetic", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -3501,7 +3622,7 @@ export function createMultiplayerFoundation({
     socket.on("admin:grantFounderStatus", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
 
-      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      const sessionResult = await ensureAdminSession(socket, payload);
       if (!sessionResult?.ok) {
         respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
         return;
@@ -4065,7 +4186,7 @@ export function createMultiplayerFoundation({
       socket.on("admin:getBoostEvent", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
 
-        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+        const sessionResult = await ensureAdminSession(socket, payload);
         if (!sessionResult?.ok) {
           respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
           return;
@@ -4107,7 +4228,7 @@ export function createMultiplayerFoundation({
       socket.on("admin:upsertBoostEvent", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
 
-        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+        const sessionResult = await ensureAdminSession(socket, payload);
         if (!sessionResult?.ok) {
           respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
           return;
@@ -4151,7 +4272,7 @@ export function createMultiplayerFoundation({
       socket.on("admin:clearBoostEvent", async (payload = {}, respond = () => {}) => {
         respond = toAckCallback(respond);
 
-        const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+        const sessionResult = await ensureAdminSession(socket, payload);
         if (!sessionResult?.ok) {
           respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
           return;
