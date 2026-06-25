@@ -1758,7 +1758,7 @@ export class AppController {
       activeTab: "cosmetics",
       searchText: "",
       categories: new Set(["avatar", "background", "cardBack", "elementCardVariant", "title", "badge"]),
-      rarities: new Set(["Common", "Rare", "Epic", "Legendary", "Unique"]),
+      rarities: new Set(["Common", "Rare", "Epic", "Legendary"]),
       elements: new Set(["fire", "water", "earth", "wind"]),
       collections: new Set(),
       showNewFirst: true
@@ -1875,7 +1875,9 @@ export class AppController {
     }
 
     this.storeViewState.searchText = String(this.storeViewState.searchText ?? "");
-    this.storeViewState.activeTab = this.storeViewState.activeTab === "deals" ? "deals" : "cosmetics";
+    this.storeViewState.activeTab = ["cosmetics", "deals", "uniques"].includes(this.storeViewState.activeTab)
+      ? this.storeViewState.activeTab
+      : "cosmetics";
     this.storeViewState.categories =
       this.storeViewState.categories instanceof Set
         ? this.storeViewState.categories
@@ -10205,7 +10207,7 @@ export class AppController {
       storePurchasePendingKey: this.storePurchaseInFlightKey,
       actions: {
         setStoreTab: async (tab) => {
-          viewState.activeTab = tab === "deals" ? "deals" : "cosmetics";
+          viewState.activeTab = ["cosmetics", "deals", "uniques"].includes(tab) ? tab : "cosmetics";
           if (viewState.activeTab === "deals") {
             const dealsState = this.ensureCollectionPackDealsState();
             if (

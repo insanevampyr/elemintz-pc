@@ -16,6 +16,8 @@ const CATEGORY_ORDER = BASE_CATEGORY_ORDER.map(([type, label]) => [
   type,
   type === "badge" ? "Badges (Achievement Rewards)" : label
 ]);
+const STORE_TAB_KEYS = new Set(["cosmetics", "deals", "uniques"]);
+const STORE_COSMETICS_RARITIES = FILTERABLE_RARITIES.filter((rarity) => rarity !== "Unique");
 
 function normalizeFilterText(value) {
   return String(value ?? "").trim().toLowerCase();
@@ -34,16 +36,21 @@ function createDefaultViewState() {
     activeTab: "cosmetics",
     searchText: "",
     categories: new Set(FILTERABLE_CATEGORIES.map(([type]) => type)),
-    rarities: new Set(FILTERABLE_RARITIES),
+    rarities: new Set(STORE_COSMETICS_RARITIES),
     elements: new Set(FILTERABLE_ELEMENTS.map(([element]) => element)),
     collections: new Set(),
     showNewFirst: true
   };
 }
 
+function normalizeStoreTab(activeTab) {
+  const key = String(activeTab ?? "").trim();
+  return STORE_TAB_KEYS.has(key) ? key : "cosmetics";
+}
+
 function normalizeViewState(viewState) {
   const defaults = createDefaultViewState();
-  const activeTab = viewState?.activeTab === "deals" ? "deals" : defaults.activeTab;
+  const activeTab = normalizeStoreTab(viewState?.activeTab ?? defaults.activeTab);
   return {
     activeTab,
     searchText: String(viewState?.searchText ?? defaults.searchText),
@@ -203,12 +210,32 @@ function resolveVariantElement(item) {
   return "";
 }
 
-function getStoreCollectionOptions(store) {
+function isCosmeticsTabItem(item) {
+  return item?.rarity !== "Unique";
+}
+
+function isUniqueTabItem(item) {
+  return isUniqueStoreEligible(item);
+}
+
+function getStoreTabItems(store, type, activeTab = "cosmetics") {
+  if (activeTab === "uniques") {
+    return getRenderableStoreItems(store, type).filter(isUniqueTabItem);
+  }
+
+  return getRenderableStoreItems(store, type).filter(isCosmeticsTabItem);
+}
+
+function getStoreTabItemCount(store, activeTab = "cosmetics") {
+  return CATEGORY_ORDER.reduce((total, [type]) => total + getStoreTabItems(store, type, activeTab).length, 0);
+}
+
+function getStoreCollectionOptions(store, activeTab = "cosmetics") {
   const seen = new Set();
   const options = [];
 
-  for (const [, items] of Object.entries(store?.catalog ?? {})) {
-    for (const item of items ?? []) {
+  for (const [type] of CATEGORY_ORDER) {
+    for (const item of getStoreTabItems(store, type, activeTab)) {
       if (item?.owned) {
         continue;
       }
@@ -326,27 +353,50 @@ function buildStorePurchaseKey(type, cosmeticId) {
   return safeType && safeCosmeticId ? `${safeType}:${safeCosmeticId}` : "";
 }
 
+function isUniqueSoldOut(item) {
+  const uniqueLimitedTotal = Math.max(0, Math.floor(Number(item?.saleLimitTotal ?? 0) || 0));
+  const uniqueSold = Math.max(0, Math.floor(Number(item?.saleLimitSold ?? 0) || 0));
+  return item?.saleLimitMode === "limited" && uniqueLimitedTotal > 0 && uniqueSold >= uniqueLimitedTotal;
+}
+
+function isUniquePurchaseReady(item) {
+  return (
+    item?.rarity === "Unique" &&
+    item?.shopEligible !== false &&
+    item?.shopListed !== false &&
+    !item?.storeHidden &&
+    !item?.grantOnly &&
+    !item?.chestOnly &&
+    !item?.supporterOnly &&
+    item?.price != null &&
+    Number.isInteger(Number(item.price)) &&
+    Number(item.price) >= 0 &&
+    !isUniqueSoldOut(item)
+  );
+}
+
+function isUniqueStoreEligible(item) {
+  return (
+    item?.rarity === "Unique" &&
+    item?.shopEligible !== false &&
+    item?.shopListed !== false &&
+    !item?.storeHidden &&
+    !item?.grantOnly &&
+    !item?.chestOnly &&
+    !item?.supporterOnly &&
+    item?.price != null &&
+    Number.isInteger(Number(item.price)) &&
+    Number(item.price) >= 0
+  );
+}
+
 function renderActions(type, item) {
   const equipButton = item.owned
     ? `<button class="btn" data-equip-type="${type}" data-equip-id="${item.id}" ${item.equipped ? "disabled" : ""}>${item.equipped ? "Equipped" : "Equip"}</button>`
     : "";
 
-  const uniqueLimitedTotal = Math.max(0, Math.floor(Number(item.saleLimitTotal ?? 0) || 0));
-  const uniqueSold = Math.max(0, Math.floor(Number(item.saleLimitSold ?? 0) || 0));
-  const uniqueSoldOut =
-    item.saleLimitMode === "limited" &&
-    uniqueLimitedTotal > 0 &&
-    uniqueSold >= uniqueLimitedTotal;
-  const uniquePurchaseReady =
-    item.rarity === "Unique" &&
-    item.shopEligible !== false &&
-    item.shopListed !== false &&
-    !item.storeHidden &&
-    !item.grantOnly &&
-    item.price != null &&
-    Number.isInteger(Number(item.price)) &&
-    Number(item.price) >= 0 &&
-    !uniqueSoldOut;
+  const uniqueSoldOut = isUniqueSoldOut(item);
+  const uniquePurchaseReady = isUniquePurchaseReady(item);
   const uniquePurchaseButton =
     !item.owned && item.rarity === "Unique"
       ? uniquePurchaseReady
@@ -367,7 +417,7 @@ function renderUniqueCreatedFor(item) {
   }
   const createdFor = String(item.createdForUsername ?? "").trim();
 
-  return createdFor ? `<p>Created For: ${escapeAttribute(createdFor)}</p>` : "";
+  return createdFor ? `<p class="unique-gallery-provenance">Created in honor of ${escapeAttribute(createdFor)}</p>` : "";
 }
 
 function renderUniqueStoreAvailability(item) {
@@ -391,6 +441,16 @@ function renderUniqueStoreAvailability(item) {
 
 function renderStoreItem(type, item, originalIndex) {
   const framed = usesRarityFrame(type);
+  const isUnique = item.rarity === "Unique";
+  const className = [
+    "cosmetic-item",
+    `cosmetic-item-${type}`,
+    framed ? "cosmetic-item-framed" : "",
+    framed ? rarityClassName(item.rarity) : "",
+    isUnique ? "cosmetic-item-unique-gallery" : "",
+    isUnique ? "unique-gallery-card" : "",
+    item.owned ? "owned" : "locked"
+  ].filter(Boolean).join(" ");
   const variantHint =
     type === "elementCardVariant" && item.element
       ? `<p>Applies to: ${item.element[0].toUpperCase()}${item.element.slice(1)} cards only</p>`
@@ -399,7 +459,7 @@ function renderStoreItem(type, item, originalIndex) {
 
   return `
     <article
-      class="cosmetic-item cosmetic-item-${type} ${framed ? "cosmetic-item-framed" : ""} ${framed ? rarityClassName(item.rarity) : ""} ${item.owned ? "owned" : "locked"}"
+      class="${className}"
       data-store-item
       data-store-type="${type}"
       data-store-rarity="${normalizeRarity(item.rarity)}"
@@ -410,11 +470,12 @@ function renderStoreItem(type, item, originalIndex) {
       data-store-original-index="${originalIndex}"
     >
       ${newBadge}
+      ${isUnique ? '<span class="unique-gallery-seal" aria-label="Unique cosmetic">Unique</span>' : ""}
       ${renderPreview(type, item)}
       <div class="cosmetic-meta">
         <p><strong>${item.name}</strong></p>
         ${renderCollectionChip(item.collection)}
-        <p>Type: ${getCosmeticTypeLabel(type, item)}</p>
+        <p class="${isUnique ? "unique-gallery-type-line" : ""}">Type: ${getCosmeticTypeLabel(type, item)}${isUnique ? " · Unique" : ""}</p>
         <p>Status: ${item.owned ? "Owned" : "Not Owned"}</p>
         <p>Rarity: <span class="cosmetic-rarity-label ${framed ? rarityClassName(item.rarity) : ""}">${normalizeRarity(item.rarity)}</span></p>
         ${item.rarity === "Unique" ? '<p class="unique-cosmetic-label">Unique Cosmetic</p>' : ""}
@@ -429,8 +490,18 @@ function renderStoreItem(type, item, originalIndex) {
   `;
 }
 
+function getStoreGalleryItems(store, activeTab = "cosmetics") {
+  return CATEGORY_ORDER.flatMap(([type]) =>
+    getStoreTabItems(store, type, activeTab).map((item, index) => ({ type, item, index }))
+  );
+}
+
 function renderFeaturedRotationSection(featuredRotation) {
   if (!featuredRotation?.featuredItems?.length) {
+    return "";
+  }
+  const featuredItems = featuredRotation.featuredItems.filter(({ item }) => isCosmeticsTabItem(item));
+  if (!featuredItems.length) {
     return "";
   }
 
@@ -454,7 +525,7 @@ function renderFeaturedRotationSection(featuredRotation) {
         </div>
       </div>
       <div class="cosmetic-grid cosmetic-grid-featured">
-        ${featuredRotation.featuredItems
+        ${featuredItems
           .map(({ type, item }, index) => renderStoreItem(type, item, index))
           .join("")}
       </div>
@@ -503,7 +574,7 @@ function formatTokenAmount(value) {
 }
 
 function renderStoreTabs(activeTab) {
-  const normalizedActiveTab = activeTab === "deals" ? "deals" : "cosmetics";
+  const normalizedActiveTab = normalizeStoreTab(activeTab);
   return `
     <nav class="store-tabs" aria-label="Store sections">
       <button
@@ -518,6 +589,12 @@ function renderStoreTabs(activeTab) {
         data-store-tab="deals"
         aria-pressed="${normalizedActiveTab === "deals" ? "true" : "false"}"
       >Deals</button>
+      <button
+        class="store-tab ${normalizedActiveTab === "uniques" ? "is-active" : ""}"
+        type="button"
+        data-store-tab="uniques"
+        aria-pressed="${normalizedActiveTab === "uniques" ? "true" : "false"}"
+      >Uniques</button>
     </nav>
   `;
 }
@@ -738,12 +815,34 @@ function renderCollectionPackDeals(collectionPackDeals = {}, store = {}) {
   `;
 }
 
-function renderCosmeticsStoreContent({ store, viewState, collectionOptions, featuredRotation }) {
+function renderStoreCatalogContent({ store, viewState, collectionOptions, featuredRotation, activeTab }) {
+  const isUniquesTab = activeTab === "uniques";
+  const tabItemCount = getStoreTabItemCount(store, activeTab);
+  if (isUniquesTab && tabItemCount === 0) {
+    return `
+      <section class="store-empty-unique unique-gallery-empty panel" data-store-unique-empty="true">
+        <p class="unique-gallery-eyebrow">Unique Collection</p>
+        <h3>Uniques</h3>
+        <p>No Unique cosmetics are available right now.</p>
+        <p>Unique items are rare special releases. Check back later.</p>
+      </section>
+    `;
+  }
+
   return `
-    ${renderFeaturedRotationSection(featuredRotation)}
-    <section class="store-toolbar panel">
+    ${isUniquesTab ? "" : renderFeaturedRotationSection(featuredRotation)}
+    ${
+      isUniquesTab
+        ? `<section class="unique-gallery-hero panel" data-store-unique-gallery>
+            <p class="unique-gallery-eyebrow">Unique Collection</p>
+            <h3>Rare special releases for collectors.</h3>
+            <p>Browse limited creator drops and one-of-a-kind cosmetics when they are available.</p>
+          </section>`
+        : ""
+    }
+    <section class="store-toolbar panel ${isUniquesTab ? "store-toolbar-uniques" : ""}">
       <div class="store-search-group">
-        <label class="store-search-label" for="store-search-input">Search Cosmetics</label>
+        <label class="store-search-label" for="store-search-input">Search ${isUniquesTab ? "Uniques" : "Cosmetics"}</label>
         <input
           id="store-search-input"
           class="store-search-input"
@@ -767,10 +866,10 @@ function renderCosmeticsStoreContent({ store, viewState, collectionOptions, feat
             ).join("")}
           </div>
         </fieldset>
-        <fieldset class="store-filter-group">
+        ${isUniquesTab ? "" : `<fieldset class="store-filter-group">
           <legend>Rarity</legend>
           <div class="store-filter-options">
-            ${FILTERABLE_RARITIES.map(
+            ${STORE_COSMETICS_RARITIES.map(
               (rarity) => `
                 <label class="store-filter-option">
                   <input type="checkbox" data-store-rarity-filter="${rarity}" ${viewState.rarities.has(rarity) ? "checked" : ""} />
@@ -779,7 +878,7 @@ function renderCosmeticsStoreContent({ store, viewState, collectionOptions, feat
               `
             ).join("")}
           </div>
-        </fieldset>
+        </fieldset>`}
         <fieldset class="store-filter-group">
           <legend>Element</legend>
           <div class="store-filter-options">
@@ -826,18 +925,26 @@ function renderCosmeticsStoreContent({ store, viewState, collectionOptions, feat
         </div>
       </div>
     </section>
-    <div class="grid cosmetics-sections">
+    ${
+      isUniquesTab
+        ? `<div class="unique-gallery-grid" data-store-unique-gallery-grid="true">
+            ${getStoreGalleryItems(store, activeTab)
+              .map(({ type, item, index }) => renderStoreItem(type, item, index))
+              .join("")}
+          </div>`
+        : `<div class="grid cosmetics-sections">
       ${CATEGORY_ORDER.map(
-        ([type, label]) => `
+          ([type, label]) => `
           <section class="cosmetic-section" data-store-section="${type}">
             <h3 class="section-title">${label}</h3>
             <div class="cosmetic-grid">
-              ${getRenderableStoreItems(store, type).map((item, index) => renderStoreItem(type, item, index)).join("")}
+              ${getStoreTabItems(store, type, activeTab).map((item, index) => renderStoreItem(type, item, index)).join("")}
             </div>
           </section>
         `
-      ).join("")}
-    </div>
+        ).join("")}
+    </div>`
+    }
     <p id="store-empty-state" class="store-empty-state" hidden>No cosmetics match the current search and filters.</p>
   `;
 }
@@ -846,9 +953,11 @@ export const storeScreen = {
   render(context) {
     const store = context.store;
     const viewState = normalizeViewState(context.viewState);
-    const collectionOptions = getStoreCollectionOptions(store);
+    const collectionOptions =
+      viewState.activeTab === "deals" ? [] : getStoreCollectionOptions(store, viewState.activeTab);
     reconcileCollectionSelections(viewState, collectionOptions);
     if (context.viewState) {
+      context.viewState.activeTab = viewState.activeTab;
       context.viewState.collections = viewState.collections;
     }
 
@@ -879,11 +988,12 @@ export const storeScreen = {
           ${
             viewState.activeTab === "deals"
               ? renderCollectionPackDeals(context.collectionPackDeals, store)
-              : renderCosmeticsStoreContent({
+              : renderStoreCatalogContent({
                   store,
                   viewState,
                   collectionOptions,
-                  featuredRotation: context.featuredRotation
+                  featuredRotation: context.featuredRotation,
+                  activeTab: viewState.activeTab
                 })
           }
           </div>
@@ -912,9 +1022,10 @@ export const storeScreen = {
     const applyFilters = () => {
       const items = Array.from(root.querySelectorAll("[data-store-item]"));
       const sections = Array.from(root.querySelectorAll("[data-store-section]"));
+      const uniqueGalleryGrid = root.querySelector?.("[data-store-unique-gallery-grid]") ?? null;
       const featuredSection = root.querySelector?.("[data-store-featured-section]") ?? null;
       const categoriesEnabled = viewState.categories.size > 0;
-      const raritiesEnabled = viewState.rarities.size > 0;
+      const raritiesEnabled = viewState.activeTab !== "uniques" && viewState.rarities.size > 0;
       const elementsEnabled = viewState.elements.size > 0;
       const collectionsEnabled = viewState.collections.size > 0;
       const normalizedSearchText = normalizeFilterText(viewState.searchText);
@@ -927,7 +1038,7 @@ export const storeScreen = {
         const collection = normalizeCollectionKey(item.getAttribute("data-store-collection"));
         const matchesSearch = !normalizedSearchText || name.includes(normalizedSearchText);
         const matchesCategory = categoriesEnabled && viewState.categories.has(type);
-        const matchesRarity = raritiesEnabled && viewState.rarities.has(rarity);
+        const matchesRarity = viewState.activeTab === "uniques" || (raritiesEnabled && viewState.rarities.has(rarity));
         const matchesElement =
           type !== "elementCardVariant" || !elementsEnabled || (element && viewState.elements.has(element));
         const matchesCollection =
@@ -942,6 +1053,16 @@ export const storeScreen = {
       }
 
       let anyVisible = false;
+      if (uniqueGalleryGrid) {
+        sortSectionItemsByNewness(
+          Array.from(uniqueGalleryGrid.querySelectorAll("[data-store-item]")),
+          viewState.showNewFirst
+        ).forEach((item) => {
+          uniqueGalleryGrid.appendChild(item);
+        });
+        anyVisible = Array.from(uniqueGalleryGrid.querySelectorAll("[data-store-item]")).some((item) => !item.hidden);
+      }
+
       for (const section of sections) {
         const grid = section.querySelector(".cosmetic-grid");
         if (grid) {
@@ -1003,7 +1124,7 @@ export const storeScreen = {
 
     root.querySelectorAll("[data-store-tab]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const tab = button.getAttribute("data-store-tab") === "deals" ? "deals" : "cosmetics";
+        const tab = normalizeStoreTab(button.getAttribute("data-store-tab"));
         if (viewState.activeTab === tab) {
           return;
         }
@@ -1188,7 +1309,7 @@ export const storeScreen = {
       viewState.categories.clear();
       FILTERABLE_CATEGORIES.forEach(([type]) => viewState.categories.add(type));
       viewState.rarities.clear();
-      FILTERABLE_RARITIES.forEach((rarity) => viewState.rarities.add(rarity));
+      STORE_COSMETICS_RARITIES.forEach((rarity) => viewState.rarities.add(rarity));
       viewState.elements.clear();
       FILTERABLE_ELEMENTS.forEach(([element]) => viewState.elements.add(element));
       viewState.collections.clear();

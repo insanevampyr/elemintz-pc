@@ -147,7 +147,7 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
 
   const storeHtml = storeScreen.render({
     store: { tokens: 0, supporterPass: false, catalog: storeCatalog },
-    viewState: {}
+    viewState: { activeTab: "uniques" }
   });
   const cosmeticsHtml = cosmeticsScreen.render({
     cosmetics: {
@@ -155,7 +155,7 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
       loadouts: [],
       catalog: ownedCatalog
     },
-    viewState: {}
+    viewState: { activeTab: "uniques" }
   });
   const profileHtml = profileScreen.render({
     profile: {
@@ -182,16 +182,16 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
     }
   );
 
-  assert.match(storeHtml, /data-store-rarity-filter="Unique"/);
+  assert.doesNotMatch(storeHtml, /data-store-rarity-filter="Unique"/);
   assert.match(storeHtml, /id="store-reset-filters-btn"[^>]*>Reset Filters<\/button>/);
   assert.match(storeHtml, /data-store-rarity="Unique"/);
   assert.match(storeHtml, /cosmetic-rarity-label rarity-unique">Unique<\/span>/);
   assert.match(storeHtml, /class="unique-cosmetic-label">Unique Cosmetic<\/p>/);
   assert.match(storeHtml, /Price: 750 Tokens/);
-  assert.match(storeHtml, /Created For: CopyCell/);
-  assert.ok(storeHtml.indexOf("Unique Cosmetic") < storeHtml.indexOf("Created For: CopyCell"));
-  assert.ok(storeHtml.indexOf("Created For: CopyCell") < storeHtml.indexOf("Price: 750 Tokens"));
-  assert.ok(storeHtml.indexOf("Created For: CopyCell") < storeHtml.indexOf("Limited: 3 of 10 available"));
+  assert.match(storeHtml, /Created in honor of CopyCell/);
+  assert.ok(storeHtml.indexOf("Unique Cosmetic") < storeHtml.indexOf("Created in honor of CopyCell"));
+  assert.ok(storeHtml.indexOf("Created in honor of CopyCell") < storeHtml.indexOf("Price: 750 Tokens"));
+  assert.ok(storeHtml.indexOf("Created in honor of CopyCell") < storeHtml.indexOf("Limited: 3 of 10 available"));
   assert.doesNotMatch(storeHtml, /Owner: CopyCell/);
   assert.doesNotMatch(storeHtml, /Acquired:/);
   assert.doesNotMatch(storeHtml, /RoyaltyOnlyUser/);
@@ -236,7 +236,7 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   assert.match(renderHiddenHandSummary(2, "card-back.png", "Unique"), /hidden-hand-summary rarity-unique/);
 });
 
-test("ui: Store renders Cosmetics and Deals tabs with Cosmetics active by default", () => {
+test("ui: Store renders Cosmetics, Deals, and Uniques tabs with Cosmetics active by default", () => {
   const html = storeScreen.render({
     store: {
       tokens: 100,
@@ -263,8 +263,314 @@ test("ui: Store renders Cosmetics and Deals tabs with Cosmetics active by defaul
 
   assert.match(html, /data-store-tab="cosmetics"[^>]*aria-pressed="true"/);
   assert.match(html, /data-store-tab="deals"[^>]*aria-pressed="false"/);
+  assert.match(html, /data-store-tab="uniques"[^>]*aria-pressed="false"/);
   assert.match(html, /Search Cosmetics/);
   assert.match(html, /data-buy-type="avatar"/);
+  assert.doesNotMatch(html, /data-store-rarity-filter="Unique"/);
+});
+
+test("ui: Store Cosmetics excludes Unique cosmetics and Uniques includes only eligible Unique cosmetics", () => {
+  const store = {
+    tokens: 2000,
+    supporterPass: false,
+    catalog: {
+      avatar: [
+        {
+          id: "normal_avatar",
+          name: "Normal Avatar",
+          image: "avatars/normal.png",
+          rarity: "Epic",
+          price: 100,
+          purchasable: true,
+          owned: false,
+          collection: "Normal Collection"
+        },
+        {
+          id: "visible_unique_avatar",
+          name: "Visible Unique Avatar",
+          image: "avatars/unique.png",
+          rarity: "Unique",
+          price: 1500,
+          purchasable: false,
+          owned: false,
+          shopEligible: true,
+          shopListed: true,
+          grantOnly: false,
+          storeHidden: false,
+          collection: "Unique Collection",
+          createdForUsername: "CopyCell"
+        },
+        {
+          id: "hidden_unique_avatar",
+          name: "Hidden Unique Avatar",
+          image: "avatars/hidden.png",
+          rarity: "Unique",
+          price: 1500,
+          purchasable: true,
+          owned: false,
+          shopEligible: true,
+          shopListed: true,
+          grantOnly: false,
+          storeHidden: true
+        },
+        {
+          id: "grant_unique_avatar",
+          name: "Grant Unique Avatar",
+          image: "avatars/grant.png",
+          rarity: "Unique",
+          price: 1500,
+          purchasable: true,
+          owned: false,
+          shopEligible: true,
+          shopListed: true,
+          grantOnly: true,
+          storeHidden: false
+        },
+        {
+          id: "unlisted_unique_avatar",
+          name: "Unlisted Unique Avatar",
+          image: "avatars/unlisted.png",
+          rarity: "Unique",
+          price: 1500,
+          purchasable: true,
+          owned: false,
+          shopEligible: true,
+          shopListed: false,
+          grantOnly: false,
+          storeHidden: false
+        },
+        {
+          id: "invalid_price_unique_avatar",
+          name: "Invalid Price Unique Avatar",
+          image: "avatars/invalid-price.png",
+          rarity: "Unique",
+          price: null,
+          purchasable: false,
+          owned: false,
+          shopEligible: true,
+          shopListed: true,
+          grantOnly: false,
+          storeHidden: false
+        },
+        {
+          id: "owned_unique_avatar",
+          name: "Owned Unique Avatar",
+          image: "avatars/owned.png",
+          rarity: "Unique",
+          price: 1500,
+          purchasable: true,
+          owned: true,
+          equipped: false,
+          shopEligible: true,
+          shopListed: true,
+          grantOnly: false,
+          storeHidden: false
+        }
+      ],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      badge: [],
+      title: []
+    }
+  };
+
+  const cosmeticsHtml = storeScreen.render({ store, viewState: { activeTab: "cosmetics" } });
+  const uniquesHtml = storeScreen.render({
+    store,
+    viewState: {
+      activeTab: "uniques",
+      rarities: new Set(["Common"])
+    }
+  });
+
+  assert.match(cosmeticsHtml, /Normal Avatar/);
+  assert.doesNotMatch(cosmeticsHtml, /Visible Unique Avatar/);
+  assert.doesNotMatch(cosmeticsHtml, /Unique Cosmetic/);
+  assert.match(cosmeticsHtml, /data-store-collection-filter="Normal Collection"/);
+  assert.doesNotMatch(cosmeticsHtml, /data-store-collection-filter="Unique Collection"/);
+
+  assert.match(uniquesHtml, /data-store-tab="uniques"[^>]*aria-pressed="true"/);
+  assert.match(uniquesHtml, /data-store-unique-gallery/);
+  assert.match(uniquesHtml, /Unique Collection/);
+  assert.match(uniquesHtml, /Rare special releases for collectors\./);
+  assert.match(uniquesHtml, /Search Uniques/);
+  assert.doesNotMatch(uniquesHtml, /<legend>Rarity<\/legend>/);
+  assert.match(uniquesHtml, /data-store-unique-gallery-grid="true"/);
+  assert.doesNotMatch(uniquesHtml, /data-store-section="avatar"/);
+  assert.doesNotMatch(uniquesHtml, /<h3 class="section-title">Avatars<\/h3>/);
+  assert.doesNotMatch(uniquesHtml, /<h3 class="section-title">Element Card Variants<\/h3>/);
+  assert.match(uniquesHtml, /Visible Unique Avatar/);
+  assert.doesNotMatch(uniquesHtml, /Owned Unique Avatar/);
+  assert.doesNotMatch(uniquesHtml, /data-equip-type="avatar"/);
+  assert.match(uniquesHtml, /Unique Cosmetic/);
+  assert.match(uniquesHtml, /class="unique-gallery-seal"[^>]*>Unique<\/span>/);
+  assert.match(uniquesHtml, /cosmetic-item-unique-gallery[^"]*unique-gallery-card/);
+  assert.match(uniquesHtml, /class="unique-gallery-type-line">Type: Avatar · Unique<\/p>/);
+  assert.match(uniquesHtml, /Created in honor of CopyCell/);
+  assert.match(uniquesHtml, /data-buy-type="avatar"/);
+  assert.match(uniquesHtml, /data-buy-id="visible_unique_avatar"/);
+  assert.match(uniquesHtml, /data-store-collection-filter="Unique Collection"/);
+  assert.doesNotMatch(uniquesHtml, /Normal Avatar/);
+  assert.doesNotMatch(uniquesHtml, /Hidden Unique Avatar/);
+  assert.doesNotMatch(uniquesHtml, /Grant Unique Avatar/);
+  assert.doesNotMatch(uniquesHtml, /Unlisted Unique Avatar/);
+  assert.doesNotMatch(uniquesHtml, /Invalid Price Unique Avatar/);
+});
+
+test("ui: Store Uniques renders current live Unique fixtures from the server-filtered Store payload", () => {
+  const lycan = COSMETIC_CATALOG.avatar.find((item) => item.id === "avatar_lycan_anubis");
+  const bane = COSMETIC_CATALOG.elementCardVariant.find((item) => item.id === "fire_variant_bane_flame");
+  assert.ok(lycan);
+  assert.ok(bane);
+  assert.equal(lycan.purchasable, false);
+  assert.equal(bane.purchasable, false);
+
+  const store = getStoreViewForProfile(
+    {
+      username: "UnownedUniqueAudit",
+      tokens: 3000,
+      supporterPass: false,
+      ownedCosmetics: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      },
+      equippedCosmetics: {}
+    },
+    {
+      specialRecords: [
+        {
+          cosmeticId: "avatar_lycan_anubis",
+          status: "granted",
+          assignmentStatus: "assigned",
+          createdForUsername: "CopyCell",
+          grantOnly: false,
+          shopEligible: true,
+          shopListed: true,
+          storeHidden: false,
+          rotationOnly: false,
+          price: 1500,
+          saleLimitMode: "limited",
+          saleLimitTotal: 10,
+          saleLimitSold: 1
+        },
+        {
+          cosmeticId: "fire_variant_bane_flame",
+          status: "granted",
+          assignmentStatus: "assigned",
+          createdForUsername: "Enab",
+          grantOnly: false,
+          shopEligible: true,
+          shopListed: true,
+          storeHidden: false,
+          rotationOnly: false,
+          price: 1200,
+          saleLimitMode: "limited",
+          saleLimitTotal: 10,
+          saleLimitSold: 1
+        }
+      ]
+    }
+  );
+  const lycanPayload = store.catalog.avatar.find((item) => item.id === "avatar_lycan_anubis");
+  const banePayload = store.catalog.elementCardVariant.find((item) => item.id === "fire_variant_bane_flame");
+  assert.equal(lycanPayload?.purchasable, false);
+  assert.equal(banePayload?.purchasable, false);
+
+  const cosmeticsHtml = storeScreen.render({
+    store,
+    viewState: { activeTab: "cosmetics" }
+  });
+  const html = storeScreen.render({
+    store,
+    viewState: { activeTab: "uniques" }
+  });
+
+  assert.doesNotMatch(cosmeticsHtml, /Lycan Anubis/);
+  assert.doesNotMatch(cosmeticsHtml, /Bane Flame Fire/);
+  assert.doesNotMatch(cosmeticsHtml, /data-store-rarity-filter="Unique"/);
+  assert.match(html, /data-store-unique-gallery-grid="true"/);
+  assert.match(html, /Lycan Anubis/);
+  assert.match(html, /Bane Flame Fire/);
+  assert.match(html, /Created in honor of CopyCell/);
+  assert.match(html, /Created in honor of Enab/);
+  assert.match(html, /class="unique-gallery-type-line">Type: Avatar · Unique<\/p>/);
+  assert.match(html, /class="unique-gallery-type-line">Type: Fire Variant · Unique<\/p>/);
+  assert.match(html, /data-buy-id="avatar_lycan_anubis"/);
+  assert.match(html, /data-buy-id="fire_variant_bane_flame"/);
+  assert.doesNotMatch(html, /data-unique-purchase-blocked="true"/);
+  assert.doesNotMatch(html, /No Unique cosmetics are available right now/);
+  assert.match(html, /Applies to: Fire cards only/);
+});
+
+test("ui: Store Uniques empty state distinguishes unavailable Uniques from filtered results", () => {
+  const baseStore = {
+    tokens: 0,
+    supporterPass: false,
+    catalog: {
+      avatar: [],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      badge: [],
+      title: []
+    }
+  };
+  const unavailableHtml = storeScreen.render({
+    store: {
+      ...baseStore,
+      catalog: {
+        ...baseStore.catalog,
+        avatar: [
+          {
+            id: "hidden_unique_avatar",
+            name: "Hidden Unique Avatar",
+            rarity: "Unique",
+            price: 1500,
+            purchasable: true,
+            shopEligible: true,
+            shopListed: true,
+            grantOnly: false,
+            storeHidden: true
+          }
+        ]
+      }
+    },
+    viewState: { activeTab: "uniques" }
+  });
+  const filteredHtml = storeScreen.render({
+    store: {
+      ...baseStore,
+      catalog: {
+        ...baseStore.catalog,
+        avatar: [
+          {
+            id: "visible_unique_avatar",
+            name: "Visible Unique Avatar",
+            rarity: "Unique",
+            price: 1500,
+            purchasable: true,
+            shopEligible: true,
+            shopListed: true,
+            grantOnly: false,
+            storeHidden: false
+          }
+        ]
+      }
+    },
+    viewState: { activeTab: "uniques", searchText: "no match" }
+  });
+
+  assert.match(unavailableHtml, /No Unique cosmetics are available right now\./);
+  assert.match(unavailableHtml, /Unique items are rare special releases\. Check back later\./);
+  assert.doesNotMatch(unavailableHtml, /id="store-empty-state"/);
+
+  assert.doesNotMatch(filteredHtml, /No Unique cosmetics are available right now\./);
+  assert.match(filteredHtml, /id="store-empty-state"[^>]*hidden>No cosmetics match the current search and filters\./);
 });
 
 test("ui: Store Deals renders online-required, loading, empty, and error states", () => {
@@ -604,6 +910,33 @@ test("ui: Store Deals CSS keeps featured region and max two-column standard grid
   assert.doesNotMatch(css, /\.collection-pack-deals-grid\s*\{[\s\S]*?repeat\(3,/);
 });
 
+test("ui: Store Uniques gallery CSS keeps premium wrapper, card seal, and narrow one-column safety", () => {
+  const gameCss = fs.readFileSync(
+    new URL("../../src/renderer/styles/game.css", import.meta.url),
+    "utf8"
+  );
+  const layoutCss = fs.readFileSync(
+    new URL("../../src/renderer/styles/layout.css", import.meta.url),
+    "utf8"
+  );
+  const uniqueGridBlock =
+    layoutCss.match(/\.unique-gallery-grid\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(gameCss, /\.unique-gallery-hero\s*,\s*[\s\S]*?\.unique-gallery-empty\s*\{/);
+  assert.match(gameCss, /\.unique-gallery-eyebrow\s*\{/);
+  assert.match(gameCss, /\.store-toolbar-uniques\s*\{/);
+  assert.match(layoutCss, /\.unique-gallery-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(layoutCss, /\.cosmetic-item-unique-gallery\s*\{/);
+  assert.match(layoutCss, /\.unique-gallery-card \.cosmetic-preview-wrap\.is-avatar\s*\{/);
+  assert.match(layoutCss, /\.unique-gallery-seal\s*\{/);
+  assert.match(
+    layoutCss,
+    /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.cosmetic-grid,\s*[\s\S]*?\.unique-gallery-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr/
+  );
+  assert.doesNotMatch(uniqueGridBlock, /repeat\(3,/);
+  assert.doesNotMatch(uniqueGridBlock, /auto-fit/);
+});
+
 test("ui: Store Deals details body renders all contents ownership states and quote fields", () => {
   const store = {
     catalog: {
@@ -787,7 +1120,7 @@ test("ui: sold-out Unique Store item remains visible and blocked", () => {
         title: []
       }
     },
-    viewState: {}
+    viewState: { activeTab: "uniques" }
   });
 
   assert.match(html, /data-unique-availability="sold-out">Sold Out<\/p>/);
@@ -820,7 +1153,7 @@ test("ui: Unique public credit rows are omitted when Created For metadata is abs
         title: []
       }
     },
-    viewState: {}
+    viewState: { activeTab: "uniques" }
   });
   const cosmeticsHtml = cosmeticsScreen.render({
     cosmetics: {
@@ -835,7 +1168,7 @@ test("ui: Unique public credit rows are omitted when Created For metadata is abs
         title: []
       }
     },
-    viewState: {}
+    viewState: { activeTab: "uniques" }
   });
   const profileHtml = profileScreen.render({
     profile: {
@@ -845,6 +1178,7 @@ test("ui: Unique public credit rows are omitted when Created For metadata is abs
   });
 
   assert.doesNotMatch(storeHtml, /Created For:/);
+  assert.doesNotMatch(storeHtml, /Created in honor of/);
   assert.doesNotMatch(cosmeticsHtml, /Created For:/);
   assert.doesNotMatch(profileHtml, /Created For:/);
 });
@@ -901,7 +1235,7 @@ test("ui: Unique acquisition labels map safely and omit invalid or non-Unique me
         title: []
       }
     },
-    viewState: {}
+    viewState: { activeTab: "uniques" }
   });
   assert.doesNotMatch(nonUniqueHtml, /Acquired:/);
 });
@@ -8762,7 +9096,7 @@ test("ui: Store banner controls still bind while the token balance lives in the 
   }
 });
 
-test("ui: Store Unique and category filters combine, and reset restores the normal catalog", () => {
+test("ui: Store category and rarity filters combine, and reset restores the normal non-Unique catalog", () => {
   const previousDocument = global.document;
   const uniqueAvatar = createSortableItem({
     "data-store-name": "unique avatar",
@@ -8869,18 +9203,18 @@ test("ui: Store Unique and category filters combine, and reset restores the norm
 
     resetButton.trigger("click");
 
-    assert.equal(uniqueAvatar.hidden, false);
+    assert.equal(uniqueAvatar.hidden, true);
     assert.equal(legendaryTitle.hidden, false);
     assert.equal(viewState.categories.has("title"), true);
     assert.equal(viewState.rarities.has("Legendary"), true);
-    assert.equal(viewState.rarities.has("Unique"), true);
+    assert.equal(viewState.rarities.has("Unique"), false);
     assert.equal(viewState.showNewFirst, true);
   } finally {
     global.document = previousDocument;
   }
 });
 
-test("ui: Unique ordering respects NEW priority, normal rarity order, and Store catalog order", () => {
+test("ui: Unique ordering respects NEW priority, normal rarity order, and Uniques catalog order", () => {
   const storeHtml = storeScreen.render({
     store: {
       tokens: 0,
@@ -8888,12 +9222,35 @@ test("ui: Unique ordering respects NEW priority, normal rarity order, and Store 
       catalog: {
         avatar: [
           { id: "legendary_first", name: "Legendary First", rarity: "Legendary", owned: false },
-          { id: "unique_middle", name: "Unique Middle", rarity: "Unique", owned: false },
+          {
+            id: "unique_first",
+            name: "Unique First",
+            rarity: "Unique",
+            owned: false,
+            price: 1500,
+            purchasable: true,
+            shopEligible: true,
+            shopListed: true,
+            grantOnly: false,
+            storeHidden: false
+          },
+          {
+            id: "unique_second",
+            name: "Unique Second",
+            rarity: "Unique",
+            owned: false,
+            price: 1200,
+            purchasable: true,
+            shopEligible: true,
+            shopListed: true,
+            grantOnly: false,
+            storeHidden: false
+          },
           { id: "epic_last", name: "Epic Last", rarity: "Epic", owned: false }
         ]
       }
     },
-    viewState: { showNewFirst: false }
+    viewState: { activeTab: "uniques", showNewFirst: false }
   });
   const ownedHtml = cosmeticsScreen.render({
     cosmetics: {
@@ -8910,8 +9267,9 @@ test("ui: Unique ordering respects NEW priority, normal rarity order, and Store 
     viewState: { showNewFirst: true }
   });
 
-  assert.ok(storeHtml.indexOf("Legendary First") < storeHtml.indexOf("Unique Middle"));
-  assert.ok(storeHtml.indexOf("Unique Middle") < storeHtml.indexOf("Epic Last"));
+  assert.doesNotMatch(storeHtml, /Legendary First/);
+  assert.doesNotMatch(storeHtml, /Epic Last/);
+  assert.ok(storeHtml.indexOf("Unique First") < storeHtml.indexOf("Unique Second"));
   assert.ok(ownedHtml.indexOf("Legendary New") < ownedHtml.indexOf("Unique Owned"));
   assert.ok(ownedHtml.indexOf("Unique Owned") < ownedHtml.indexOf("Legendary Owned"));
 });
@@ -11481,6 +11839,7 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
           shopEligible: true,
           shopListed: true,
           storeHidden: false,
+          purchasable: true,
           price: 1500,
           createdForUsername: "CopyCell",
           royalty: ownedItem.royalty,
@@ -11493,7 +11852,7 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
         title: []
       }
     },
-    viewState: {}
+    viewState: { activeTab: "uniques" }
   });
   const cosmeticsHtml = cosmeticsScreen.render({
     cosmetics: {
@@ -11555,7 +11914,7 @@ test("ui: owned Lycan Anubis resolves across Cosmetics and own/viewed profiles",
 
   assert.match(getAvatarImage(item.id), /assets\/avatars\/avatar_lycan_anubis\.png/);
   assert.match(storeHtml, /Lycan Anubis/);
-  assert.match(storeHtml, /Unique Cosmetic[\s\S]*Created For: CopyCell[\s\S]*Price: 1500 Tokens/);
+  assert.match(storeHtml, /Unique Cosmetic[\s\S]*Created in honor of CopyCell[\s\S]*Price: 1500 Tokens/);
   assert.doesNotMatch(storeHtml, /CopyCell Uniques/);
   assert.doesNotMatch(storeHtml, /data-store-collection-filter=/);
   assert.doesNotMatch(storeHtml, /PrivateRoyaltyRecipient|private Lycan review/);
@@ -23465,6 +23824,80 @@ test("ui: authenticated Unique Store purchase sends transactionId and uses autho
     assert.match(purchasePayloads[0].transactionId, /^store-[A-Za-z0-9._:-]{8,}$/);
     assert.equal(shown.at(-1).store.tokens, 300);
     assert.equal(shown.at(-1).store.catalog.avatar.length, 0);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController preserves Store Uniques tab across repeated tab actions and rerenders", async () => {
+  const previousWindow = global.window;
+  const shown = [];
+  const store = {
+    tokens: 2500,
+    supporterPass: false,
+    catalog: {
+      avatar: [{
+        id: "fixture_unique_avatar",
+        name: "Unique Fixture",
+        rarity: "Unique",
+        price: 900,
+        purchasable: true,
+        owned: false,
+        shopEligible: true,
+        shopListed: true,
+        storeHidden: false,
+        grantOnly: false
+      }],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      title: [],
+      badge: []
+    }
+  };
+
+  global.window = {
+    elemintz: {
+      state: {
+        getStore: async () => store
+      }
+    }
+  };
+
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (_screenId, context) => shown.push(context)
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    await controller.showStore({ featuredRotationOverride: null });
+    assert.equal(shown.at(-1).viewState.activeTab, "cosmetics");
+
+    await shown.at(-1).actions.setStoreTab("uniques");
+    assert.equal(controller.storeViewState.activeTab, "uniques");
+    assert.equal(shown.at(-1).viewState.activeTab, "uniques");
+
+    await controller.showStore({ skipProfileRefresh: true, featuredRotationOverride: null });
+    assert.equal(shown.at(-1).viewState.activeTab, "uniques");
+
+    await shown.at(-1).actions.setStoreTab("cosmetics");
+    assert.equal(shown.at(-1).viewState.activeTab, "cosmetics");
+
+    await shown.at(-1).actions.setStoreTab("uniques");
+    assert.equal(shown.at(-1).viewState.activeTab, "uniques");
+
+    await shown.at(-1).actions.setStoreTab("deals");
+    assert.equal(shown.at(-1).viewState.activeTab, "deals");
+
+    await shown.at(-1).actions.setStoreTab("uniques");
+    assert.equal(shown.at(-1).viewState.activeTab, "uniques");
   } finally {
     global.window = previousWindow;
   }
