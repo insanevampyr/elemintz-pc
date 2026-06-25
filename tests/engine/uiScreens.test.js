@@ -368,6 +368,7 @@ test("ui: Store Deals card renders server fields, cover image, and state-specifi
         {
           packId: "frostveil_court",
           name: "Frostveil Court",
+          sortPriority: 10,
           description: "A discounted winter court bundle.",
           image: "assets/collection_packs/collection_pack_frostveil_court.png",
           includedCosmeticIds: [
@@ -399,6 +400,8 @@ test("ui: Store Deals card renders server fields, cover image, and state-specifi
         {
           packId: "complete_pack",
           name: "Complete Pack",
+          sortPriority: 20,
+          description: "A full invoice-style description for completed packs.",
           image: "collection_packs/collection_pack_frostveil_court.png",
           includedItemCount: 1,
           ownedItemCount: 1,
@@ -413,6 +416,8 @@ test("ui: Store Deals card renders server fields, cover image, and state-specifi
         {
           packId: "sold_out_pack",
           name: "Sold Out Pack",
+          sortPriority: 30,
+          description: "A verbose sold-out pack description.",
           image: "collection_packs/collection_pack_frostveil_court.png",
           includedItemCount: 1,
           ownedItemCount: 0,
@@ -431,27 +436,110 @@ test("ui: Store Deals card renders server fields, cover image, and state-specifi
 
   assert.match(html, /Frostveil Court/);
   assert.match(html, /A discounted winter court bundle\./);
-  assert.match(html, /Included<\/dt><dd>6 cosmetics/);
-  assert.match(html, /Owned<\/dt><dd>1/);
-  assert.match(html, /Remaining<\/dt><dd>5/);
-  assert.match(html, /Normal Value<\/dt><dd>1,500 Tokens/);
-  assert.match(html, /Discount<\/dt><dd>20%/);
-  assert.match(html, /Savings<\/dt><dd>300 Tokens/);
-  assert.match(html, /Price<\/dt><dd>1,200 Tokens/);
+  const featuredSegment = html.slice(
+    html.indexOf('data-collection-pack-featured="true"'),
+    html.indexOf('data-collection-pack-featured="false"')
+  );
+  assert.match(featuredSegment, /A discounted winter court bundle\./);
+  assert.match(featuredSegment, /Included<\/dt><dd>6 cosmetics/);
+  assert.match(featuredSegment, /Owned<\/dt><dd>1/);
+  assert.match(featuredSegment, /Remaining<\/dt><dd>5/);
+  assert.match(featuredSegment, /Normal Value<\/dt><dd>1,500 Tokens/);
+  assert.match(featuredSegment, /Discount<\/dt><dd>20%/);
+  assert.match(featuredSegment, /Savings<\/dt><dd>300 Tokens/);
+  assert.match(featuredSegment, /Price<\/dt><dd>1,200 Tokens/);
   assert.match(html, /Limited: 2 purchases left/);
   assert.match(html, /data-buy-pack-id="frostveil_court"/);
   assert.match(html, /data-view-pack-contents="frostveil_court"/);
   assert.match(html, /View Contents/);
+  assert.match(html, /data-collection-pack-featured-region/);
+  assert.match(html, /data-collection-pack-standard-grid/);
+  assert.match(html, /data-collection-pack-featured="true"[\s\S]*Frostveil Court/);
+  assert.equal((html.match(/data-collection-pack-featured="true"/g) ?? []).length, 1);
+  assert.equal((html.match(/data-collection-pack-deal(?=\s)/g) ?? []).length, 3);
+  assert.ok(html.indexOf("Frostveil Court") < html.indexOf("Complete Pack"));
+  assert.ok(html.indexOf("Complete Pack") < html.indexOf("Sold Out Pack"));
   assert.match(html, /Frostveil Heir preview/);
   assert.match(html, /Aurora Flare preview/);
   assert.match(html, /\+2 more/);
   assert.doesNotMatch(html, /title_shiverborne preview/);
   assert.match(html, /data-collection-pack-status="complete"[\s\S]*Complete<\/button>/);
   assert.match(html, /data-collection-pack-status="sold_out"[\s\S]*Sold Out<\/button>/);
+  const completeSegment = html.slice(
+    html.indexOf('data-collection-pack-status="complete"'),
+    html.indexOf('data-collection-pack-status="sold_out"')
+  );
+  assert.match(completeSegment, /Complete Pack/);
+  assert.match(completeSegment, /Complete/);
+  assert.match(completeSegment, /Included<\/dt><dd>1 cosmetics/);
+  assert.match(completeSegment, /Price<\/dt><dd>0 Tokens/);
+  assert.match(completeSegment, /Discount<\/dt><dd>20%/);
+  assert.match(completeSegment, /Savings<\/dt><dd>0 Tokens/);
+  assert.match(completeSegment, /data-view-pack-contents="complete_pack"/);
+  assert.doesNotMatch(completeSegment, /A full invoice-style description for completed packs\./);
+  assert.doesNotMatch(completeSegment, /Owned<\/dt>/);
+  assert.doesNotMatch(completeSegment, /Remaining<\/dt>/);
+  assert.doesNotMatch(completeSegment, /Normal Value<\/dt>/);
+  const soldOutSegment = html.slice(html.indexOf('data-collection-pack-status="sold_out"'));
+  assert.match(soldOutSegment, /Sold Out Pack/);
+  assert.match(soldOutSegment, /Sold Out/);
+  assert.match(soldOutSegment, /Included<\/dt><dd>1 cosmetics/);
+  assert.match(soldOutSegment, /Price<\/dt><dd>450 Tokens/);
+  assert.match(soldOutSegment, /Discount<\/dt><dd>10%/);
+  assert.match(soldOutSegment, /Savings<\/dt><dd>50 Tokens/);
+  assert.match(soldOutSegment, /data-view-pack-contents="sold_out_pack"/);
+  assert.doesNotMatch(soldOutSegment, /A verbose sold-out pack description\./);
+  assert.doesNotMatch(soldOutSegment, /Owned<\/dt>/);
+  assert.doesNotMatch(soldOutSegment, /Remaining<\/dt>/);
+  assert.doesNotMatch(soldOutSegment, /Normal Value<\/dt>/);
   assert.doesNotMatch(html, /assets\/assets\/collection_packs/);
   assert.match(html, /src="file:[^"]*assets\/collection_packs\/collection_pack_frostveil_court\.png"/);
   assert.match(html, /alt="Frostveil Court Collection Pack cover art"/);
   assert.doesNotMatch(html, /data-collection-pack-status="available"[\s\S]*No Pack Art/);
+});
+
+test("ui: Store Deals renders a single Deal as featured without a standard grid", () => {
+  const html = storeScreen.render({
+    store: {
+      tokens: 2500,
+      supporterPass: false,
+      catalog: {
+        avatar: [],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    viewState: { activeTab: "deals" },
+    collectionPackDeals: {
+      status: "loaded",
+      deals: [
+        {
+          packId: "frostveil_court",
+          name: "Frostveil Court",
+          image: "collection_packs/collection_pack_frostveil_court.png",
+          includedItemCount: 1,
+          ownedItemCount: 0,
+          remainingItemCount: 1,
+          remainingNormalValue: 500,
+          discountPercent: 10,
+          savings: 50,
+          finalPrice: 450,
+          status: "available",
+          saleLimitMode: "unlimited"
+        }
+      ]
+    }
+  });
+
+  assert.match(html, /data-collection-pack-featured-region/);
+  assert.match(html, /data-collection-pack-featured="true"[\s\S]*Frostveil Court/);
+  assert.equal((html.match(/data-collection-pack-deal(?=\s)/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /data-collection-pack-standard-grid/);
+  assert.match(html, /data-view-pack-contents="frostveil_court"/);
+  assert.match(html, /data-buy-pack-id="frostveil_court"/);
 });
 
 test("ui: Store Deals card keeps No Pack Art fallback for missing pack images", () => {
@@ -492,6 +580,28 @@ test("ui: Store Deals card keeps No Pack Art fallback for missing pack images", 
 
   assert.match(html, /No Pack Art/);
   assert.doesNotMatch(html, /Missing Art Pack Collection Pack cover art/);
+});
+
+test("ui: Store Deals CSS keeps featured region and max two-column standard grid", () => {
+  const css = fs.readFileSync(
+    new URL("../../src/renderer/styles/game.css", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(css, /\.collection-pack-featured-region\s*\{/);
+  assert.match(
+    css,
+    /\.collection-pack-deals-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/
+  );
+  assert.match(
+    css,
+    /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.collection-pack-deals-grid,\s*[\s\S]*?\.collection-pack-deal-card--featured\s*\{[\s\S]*?grid-template-columns:\s*1fr/
+  );
+  assert.doesNotMatch(
+    css,
+    /\.collection-pack-deals-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(260px,\s*1fr\)\)/
+  );
+  assert.doesNotMatch(css, /\.collection-pack-deals-grid\s*\{[\s\S]*?repeat\(3,/);
 });
 
 test("ui: Store Deals details body renders all contents ownership states and quote fields", () => {
@@ -558,6 +668,7 @@ test("ui: Store Deals details body renders all contents ownership states and quo
   const html = renderCollectionPackDetailsBody({ deal, store, purchaseInFlight: false });
   assert.match(html, /src="file:[^"]*assets\/collection_packs\/collection_pack_frostveil_court\.png"/);
   assert.match(html, /alt="Frostveil Court Collection Pack cover art"/);
+  assert.match(html, /A discounted winter court bundle\./);
   assert.match(html, /4 included cosmetics/);
   assert.match(html, /Limited: 2 purchases left/);
   assert.match(html, /Frostveil Heir/);

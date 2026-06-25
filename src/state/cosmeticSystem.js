@@ -3134,6 +3134,14 @@ function applyCosmeticCollections(catalog) {
   );
 }
 
+export function getCosmeticCollectionName(type, item) {
+  const directCollection = String(item?.collection ?? "").trim();
+  if (directCollection) {
+    return directCollection;
+  }
+  return COSMETIC_COLLECTION_BY_KEY[`${String(type ?? "").trim()}:${String(item?.id ?? "").trim()}`] ?? "";
+}
+
 export const COSMETIC_CATALOG = applyCosmeticCollections(RAW_COSMETIC_CATALOG);
 
 const ACHIEVEMENT_COSMETIC_REWARDS = Object.freeze({

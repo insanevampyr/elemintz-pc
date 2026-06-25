@@ -80,7 +80,7 @@ test("collection packs: eligible cosmetic picker model includes only normal purc
   const cosmetics = listEligibleCollectionPackCosmetics({
     catalog: {
       avatar: [
-        { id: "valid_avatar", name: "Valid Avatar", rarity: "Common", purchasable: true, price: 100 },
+        { id: "valid_avatar", name: "Valid Avatar", rarity: "Common", purchasable: true, price: 100, collection: "Vampire Elegance" },
         { id: "unique_avatar", name: "Unique Avatar", rarity: "Unique", purchasable: true, price: 100 },
         { id: "hidden_avatar", name: "Hidden Avatar", rarity: "Common", hidden: true, purchasable: true, price: 100 },
         { id: "store_hidden_avatar", name: "Store Hidden Avatar", rarity: "Common", storeHidden: true, purchasable: true, price: 100 },
@@ -101,8 +101,54 @@ test("collection packs: eligible cosmetic picker model includes only normal purc
     name: "Valid Avatar",
     rarity: "Common",
     price: 100,
-    purchasable: true
+    purchasable: true,
+    collectionName: "Vampire Elegance"
   }]);
+
+  const collectionless = listEligibleCollectionPackCosmetics({
+    catalog: {
+      avatar: [
+        { id: "valid_avatar", name: "Valid Avatar", rarity: "Common", purchasable: true, price: 100 }
+      ]
+    }
+  });
+  assert.equal(collectionless[0].collectionName, null);
+});
+
+test("collection packs: eligible picker derives collection names from the catalog key map when item.collection is absent", () => {
+  const cosmetics = listEligibleCollectionPackCosmetics({
+    catalog: {
+      avatar: [
+        {
+          id: "avatar_frostveil_heir",
+          name: "Heir",
+          rarity: "Legendary",
+          purchasable: true,
+          price: 1200
+        },
+        {
+          id: "avatar_vampire_female",
+          name: "Duchess",
+          rarity: "Legendary",
+          purchasable: true,
+          price: 1200
+        }
+      ],
+      background: [
+        {
+          id: "background_bg_lycan_law",
+          name: "Pack Law",
+          rarity: "Epic",
+          purchasable: true,
+          price: 900
+        }
+      ]
+    }
+  });
+
+  assert.equal(cosmetics.find((entry) => entry.id === "avatar_frostveil_heir")?.collectionName, "Frostveil Court");
+  assert.equal(cosmetics.find((entry) => entry.id === "avatar_vampire_female")?.collectionName, "Vampire Elegance");
+  assert.equal(cosmetics.find((entry) => entry.id === "background_bg_lycan_law")?.collectionName, "Lycan Power");
 });
 
 test("collection packs: discount boundaries are enforced", () => {
@@ -351,6 +397,7 @@ test("collection packs: player deals are sanitized and priced for the current ow
   assert.equal("createdAt" in partial, false);
   assert.equal("updatedAt" in partial, false);
   assert.equal("sortPriority" in partial, false);
+  assert.equal("collectionName" in partial, false);
   assert.equal("startsAt" in partial, false);
   assert.equal("endsAt" in partial, false);
   assert.equal(soldOut.status, "sold_out");

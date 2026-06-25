@@ -592,7 +592,18 @@ function renderQuoteFields(deal) {
   `;
 }
 
-function renderCollectionPackDealCard(deal, purchaseInFlight, store) {
+function renderCompactQuoteFields(deal) {
+  return `
+    <dl class="collection-pack-deal-stats collection-pack-deal-stats--compact">
+      <div><dt>Included</dt><dd>${formatTokenAmount(deal.includedItemCount)} cosmetics</dd></div>
+      <div><dt>Price</dt><dd>${formatTokenAmount(deal.finalPrice)} Tokens</dd></div>
+      <div><dt>Discount</dt><dd>${formatTokenAmount(deal.discountPercent)}%</dd></div>
+      <div><dt>Savings</dt><dd>${formatTokenAmount(deal.savings)} Tokens</dd></div>
+    </dl>
+  `;
+}
+
+function renderCollectionPackDealCard(deal, purchaseInFlight, store, { featured = false } = {}) {
   const status = ["available", "complete", "sold_out"].includes(deal?.status)
     ? deal.status
     : "unavailable";
@@ -603,16 +614,16 @@ function renderCollectionPackDealCard(deal, purchaseInFlight, store) {
     : `<button class="btn" type="button" disabled>${status === "complete" ? "Complete" : "Sold Out"}</button>`;
 
   return `
-    <article class="collection-pack-deal-card" data-collection-pack-deal data-collection-pack-status="${status}">
+    <article class="collection-pack-deal-card ${featured ? "collection-pack-deal-card--featured" : ""}" data-collection-pack-deal data-collection-pack-featured="${featured ? "true" : "false"}" data-collection-pack-status="${status}">
       ${imageHtml}
       <div class="collection-pack-deal-body">
         <div class="collection-pack-deal-header">
           <h3>${escapeAttribute(deal.name)}</h3>
           <span class="collection-pack-deal-status">${renderDealAvailability(deal)}</span>
         </div>
-        ${deal.description ? `<p class="collection-pack-deal-description">${escapeAttribute(deal.description)}</p>` : ""}
+        ${featured && deal.description ? `<p class="collection-pack-deal-description">${escapeAttribute(deal.description)}</p>` : ""}
         ${renderCollectionPackPreviewStrip(deal, store)}
-        ${renderQuoteFields(deal)}
+        ${featured ? renderQuoteFields(deal) : renderCompactQuoteFields(deal)}
       </div>
       <div class="collection-pack-deal-actions">
         <button class="btn secondary" type="button" data-view-pack-contents="${escapeAttribute(deal.packId)}">View Contents</button>
@@ -705,6 +716,7 @@ function renderCollectionPackDeals(collectionPackDeals = {}, store = {}) {
       </section>
     `;
   }
+  const [featuredDeal, ...standardDeals] = deals;
 
   return `
     <section class="collection-pack-deals-panel panel" data-collection-pack-deals-state="loaded">
@@ -712,9 +724,16 @@ function renderCollectionPackDeals(collectionPackDeals = {}, store = {}) {
         <h3>Collection Pack Deals</h3>
         <p>Deals use server-authoritative pricing and ownership checks.</p>
       </div>
-      <div class="collection-pack-deals-grid">
-        ${deals.map((deal) => renderCollectionPackDealCard(deal, Boolean(collectionPackDeals.purchaseInFlight), store)).join("")}
+      <div class="collection-pack-featured-region" data-collection-pack-featured-region>
+        ${renderCollectionPackDealCard(featuredDeal, Boolean(collectionPackDeals.purchaseInFlight), store, { featured: true })}
       </div>
+      ${
+        standardDeals.length
+          ? `<div class="collection-pack-deals-grid" data-collection-pack-standard-grid>
+              ${standardDeals.map((deal) => renderCollectionPackDealCard(deal, Boolean(collectionPackDeals.purchaseInFlight), store)).join("")}
+            </div>`
+          : ""
+      }
     </section>
   `;
 }

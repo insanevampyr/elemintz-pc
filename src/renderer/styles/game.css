@@ -2476,7 +2476,24 @@ select {
 .collection-pack-deals-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.collection-pack-featured-region {
+  display: grid;
+  min-width: 0;
+}
+
+.collection-pack-deal-card--featured {
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.1fr);
+  align-items: stretch;
+}
+
+.collection-pack-deal-card--featured .collection-pack-deal-image,
+.collection-pack-deal-card--featured .collection-pack-deal-image--missing {
+  max-height: none;
+  min-height: 280px;
+  height: 100%;
 }
 
 .collection-pack-deal-card {
@@ -2486,6 +2503,16 @@ select {
   border: 1px solid rgba(126, 172, 210, 0.28);
   border-radius: 16px;
   background: rgba(10, 22, 34, 0.78);
+}
+
+.collection-pack-deal-card:not(.collection-pack-deal-card--featured) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.collection-pack-deal-body {
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
 
 .collection-pack-deal-image {
@@ -2545,6 +2572,11 @@ select {
 .collection-pack-deal-stats dd {
   margin: 0;
   color: #eef7ff;
+}
+
+.collection-pack-deal-stats--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
 }
 
 .collection-pack-preview-strip {
@@ -2657,6 +2689,19 @@ select {
 .collection-pack-details-actions {
   display: flex;
   justify-content: flex-start;
+}
+
+@media (max-width: 900px) {
+  .collection-pack-deals-grid,
+  .collection-pack-deal-card--featured {
+    grid-template-columns: 1fr;
+  }
+
+  .collection-pack-deal-card--featured .collection-pack-deal-image,
+  .collection-pack-deal-card--featured .collection-pack-deal-image--missing {
+    min-height: 200px;
+    max-height: 260px;
+  }
 }
 
 .unique-cosmetic-label {

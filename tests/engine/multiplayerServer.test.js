@@ -3831,13 +3831,17 @@ test("multiplayer foundation: admin Collection Pack seams are admin-only and ser
     const entries = eligible?.result?.cosmetics ?? [];
     assert.ok(entries.some((entry) => entry.id === "fireavatarF" && entry.type === "avatar"));
     assert.ok(entries.some((entry) => entry.id === "wateravatarF" && entry.type === "avatar"));
+    assert.ok(entries.some((entry) => entry.id === "avatar_vampire_female" && entry.collectionName === "Vampire Elegance"));
+    assert.ok(entries.some((entry) => entry.id === "title_shiverborne" && entry.name === "Shiverborne" && entry.collectionName === "Frostveil Court"));
+    assert.ok(entries.some((entry) => entry.id === "earth_variant_stone_graves" && entry.name === "Stone Graves Earth" && entry.collectionName === "Vampire Elegance"));
+    assert.ok(entries.some((entry) => entry.id === "earth_variant_stone_paw" && entry.name === "Stone Paw Earth" && entry.collectionName === "Lycan Power"));
     assert.equal(entries.some((entry) => entry.id === "avatar_lycan_anubis"), false);
     assert.equal(entries.some((entry) => entry.id === "avatar_inferno_crown_f"), false);
     assert.equal(entries.some((entry) => entry.id === "avatar_chestbound_adept"), false);
     assert.equal(entries.some((entry) => entry.id === "founder_deluxe_card_back"), false);
     assert.equal(entries.some((entry) => entry.id === "default_avatar"), false);
     for (const entry of entries) {
-      assert.deepEqual(Object.keys(entry).sort(), ["id", "name", "price", "purchasable", "rarity", "type"]);
+      assert.deepEqual(Object.keys(entry).sort(), ["collectionName", "id", "name", "price", "purchasable", "rarity", "type"]);
       assert.notEqual(entry.rarity, "Unique");
       assert.equal(entry.purchasable, true);
       assert.equal(Number.isInteger(entry.price) && entry.price > 0, true);

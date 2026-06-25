@@ -1,4 +1,4 @@
-import { COSMETIC_CATALOG } from "./cosmeticSystem.js";
+import { COSMETIC_CATALOG, getCosmeticCollectionName } from "./cosmeticSystem.js";
 import { JsonStore } from "./storage/jsonStore.js";
 
 export const COLLECTION_PACK_REGISTRY_VERSION = 1;
@@ -179,7 +179,8 @@ export function listEligibleCollectionPackCosmetics({ catalog = COSMETIC_CATALOG
         name: String(item.name ?? item.id),
         rarity: String(item.rarity ?? "Common"),
         price: item.price,
-        purchasable: item.purchasable === true
+        purchasable: item.purchasable === true,
+        collectionName: getCosmeticCollectionName(type, item) || null
       });
     }
   }
