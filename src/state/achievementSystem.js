@@ -332,6 +332,65 @@ const FEATURED_RIVAL_ACHIEVEMENTS = Object.freeze([
   }
 ]);
 
+const BLOOD_MATCH_ACHIEVEMENTS = Object.freeze([
+  {
+    id: "blood_match_first_win",
+    name: "Blood Match First Win",
+    description: "Win your first Blood Match.",
+    image: "badges/blood_match/badge_blood_match_first_win.png",
+    repeatable: false
+  },
+  {
+    id: "blood_match_eliminate_lycan",
+    name: "Moonfang Felled",
+    description: "Eliminate Ravena Moonfang in Blood Match.",
+    image: "badges/blood_match/badge_blood_match_eliminate_lycan.png",
+    repeatable: true
+  },
+  {
+    id: "blood_match_eliminate_vampire",
+    name: "Veyra Vanquished",
+    description: "Eliminate Countess Veyra in Blood Match.",
+    image: "badges/blood_match/badge_blood_match_eliminate_vampire.png",
+    repeatable: true
+  },
+  {
+    id: "blood_match_dual_elimination",
+    name: "Twin Rival Reaper",
+    description: "Win Blood Match by eliminating both rivals.",
+    image: "badges/blood_match/badge_blood_match_dual_elimination.png",
+    repeatable: true
+  },
+  {
+    id: "blood_match_three_way_war",
+    name: "Three-Way Blood War",
+    description: "Enter a three-way WAR in Blood Match.",
+    image: "badges/blood_match/badge_blood_match_three_way_war.png",
+    repeatable: true
+  },
+  {
+    id: "blood_match_timeout_victory",
+    name: "Last Drop Lead",
+    description: "Win Blood Match by leading at timeout.",
+    image: "badges/blood_match/badge_blood_match_timeout_victory.png",
+    repeatable: true
+  },
+  {
+    id: "blood_match_win_streak",
+    name: "Blood Match Streak",
+    description: "Reach a 3-win Blood Match streak.",
+    image: "badges/blood_match/badge_blood_match_win_streak.png",
+    repeatable: true
+  },
+  {
+    id: "blood_match_mastery",
+    name: "Blood Match Mastery",
+    description: "Win 10 Blood Matches.",
+    image: "badges/blood_match/badge_blood_match_mastery.png",
+    repeatable: true
+  }
+]);
+
 const ACHIEVEMENT_TOKEN_REWARDS = Object.freeze({
   comeback_win_5: 5,
   local_pvp_wins_25: 5,
@@ -496,6 +555,7 @@ export const ACHIEVEMENT_DEFINITIONS = Object.freeze([
   ...APPROVED_EXPANSION_ACHIEVEMENTS,
   ...FIRST_EXPANSION_BATCH_ACHIEVEMENTS,
   ...FEATURED_RIVAL_ACHIEVEMENTS,
+  ...BLOOD_MATCH_ACHIEVEMENTS,
   ...PHASE_ONE_TIERED_ACHIEVEMENTS
 ]);
 
@@ -563,7 +623,15 @@ const NUMERIC_PROGRESS_RULES = Object.freeze({
   comeback_win_25: {
     target: 25,
     current: (profile) => getRepeatableAchievementCount(profile, "comeback_win")
-  }
+  },
+  blood_match_first_win: { target: 1, current: (profile) => Number(profile?.bloodMatchWins ?? 0) },
+  blood_match_eliminate_lycan: { target: 1, current: (profile) => Number(profile?.bloodMatchLycanEliminations ?? 0) },
+  blood_match_eliminate_vampire: { target: 1, current: (profile) => Number(profile?.bloodMatchVampireEliminations ?? 0) },
+  blood_match_dual_elimination: { target: 1, current: (profile) => Number(profile?.bloodMatchDoubleEliminationWins ?? 0) },
+  blood_match_three_way_war: { target: 1, current: (profile) => Number(profile?.bloodMatchThreeWayWars ?? 0) },
+  blood_match_timeout_victory: { target: 1, current: (profile) => Number(profile?.bloodMatchTimeoutWins ?? 0) },
+  blood_match_win_streak: { target: 3, current: (profile) => Number(profile?.bloodMatchBestWinStreak ?? 0) },
+  blood_match_mastery: { target: 10, current: (profile) => Number(profile?.bloodMatchWins ?? 0) }
 });
 
 export function normalizeAchievementProgressEntry(entry) {
@@ -717,6 +785,13 @@ function unlock(definitionId, unlocks) {
   const definition = DEFINITION_MAP.get(definitionId);
   if (!definition) return;
   unlocks.push(definition);
+}
+
+function unlockRepeated(definitionId, count, unlocks) {
+  const repeatCount = Math.max(0, Math.floor(Number(count ?? 0) || 0));
+  for (let index = 0; index < repeatCount; index += 1) {
+    unlock(definitionId, unlocks);
+  }
 }
 
 function hasPendingUnlock(unlocks, definitionId) {
@@ -930,6 +1005,36 @@ export function evaluateAchievements({
   applyApprovedExpansionUnlockRules(profileBefore, profileAfter, unlocks);
   applyFirstExpansionBatchUnlockRules(profileAfter, unlocks);
   applyTieredUnlockRules(profileAfter, unlocks);
+
+  return unlocks.filter((definition) => definition.repeatable || !hasUnlocked(profileBefore, definition.id));
+}
+
+export function evaluateBloodMatchAchievements({
+  profileBefore,
+  profileAfter,
+  bloodMatchStats = {}
+} = {}) {
+  const unlocks = [];
+
+  if ((bloodMatchStats.bloodMatchWins ?? 0) > 0) {
+    unlock("blood_match_first_win", unlocks);
+  }
+
+  unlockRepeated("blood_match_eliminate_lycan", bloodMatchStats.bloodMatchLycanEliminations, unlocks);
+  unlockRepeated("blood_match_eliminate_vampire", bloodMatchStats.bloodMatchVampireEliminations, unlocks);
+  unlockRepeated("blood_match_dual_elimination", bloodMatchStats.bloodMatchDoubleEliminationWins, unlocks);
+  unlockRepeated("blood_match_three_way_war", bloodMatchStats.bloodMatchThreeWayWars, unlocks);
+  unlockRepeated("blood_match_timeout_victory", bloodMatchStats.bloodMatchTimeoutWins, unlocks);
+
+  const priorCurrentStreak = Math.max(0, Number(profileBefore?.bloodMatchCurrentWinStreak ?? 0) || 0);
+  const nextCurrentStreak = Math.max(0, Number(profileAfter?.bloodMatchCurrentWinStreak ?? 0) || 0);
+  if (priorCurrentStreak < 3 && nextCurrentStreak >= 3) {
+    unlock("blood_match_win_streak", unlocks);
+  }
+
+  const priorMasteryBlocks = Math.floor(Math.max(0, Number(profileBefore?.bloodMatchWins ?? 0) || 0) / 10);
+  const nextMasteryBlocks = Math.floor(Math.max(0, Number(profileAfter?.bloodMatchWins ?? 0) || 0) / 10);
+  unlockRepeated("blood_match_mastery", Math.max(0, nextMasteryBlocks - priorMasteryBlocks), unlocks);
 
   return unlocks.filter((definition) => definition.repeatable || !hasUnlocked(profileBefore, definition.id));
 }

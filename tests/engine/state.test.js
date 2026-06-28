@@ -184,6 +184,494 @@ test("state: new profile defaults include gauntlet stats at 0", async () => {
   assert.equal(profile.gauntletRivalsDefeated, 0);
 });
 
+function createBloodMatchSettlementSummary({
+  result = "player_win",
+  winnerId = "player",
+  endReason = "both_rivals_eliminated",
+  playerHandCount = 6,
+  playerCapturedCount = 9,
+  vampireHandCount = 0,
+  lycanHandCount = 0,
+  vampireEliminated = true,
+  lycanEliminated = true,
+  playerEliminated = false,
+  history = [
+    {
+      type: "three_way_war",
+      classificationId: "three_way_war",
+      winnerId: ""
+    },
+    {
+      type: "war_resolved",
+      classificationId: "two_combatant_war_resolved",
+      winnerId: "player",
+      activeCombatantIds: ["player", "vampire"]
+    }
+  ]
+} = {}) {
+  return {
+    mode: "bloodMatch",
+    status: "completed",
+    round: 7,
+    winnerId,
+    endReason,
+    terminalResult: {
+      terminal: true,
+      winnerId,
+      result,
+      endReason,
+      reason: endReason
+    },
+    combatants: {
+      player: {
+        handCount: playerHandCount,
+        capturedCount: playerCapturedCount,
+        eliminated: playerEliminated
+      },
+      vampire: {
+        handCount: vampireHandCount,
+        capturedCount: 2,
+        eliminated: vampireEliminated
+      },
+      lycan: {
+        handCount: lycanHandCount,
+        capturedCount: 1,
+        eliminated: lycanEliminated
+      }
+    },
+    history
+  };
+}
+
+test("state: new profile defaults include Blood Match stats at 0", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  const profile = await state.profiles.ensureProfile("BloodDefaultsUser");
+
+  assert.equal(profile.bloodMatchMatchesPlayed, 0);
+  assert.equal(profile.bloodMatchWins, 0);
+  assert.equal(profile.bloodMatchLosses, 0);
+  assert.equal(profile.bloodMatchCurrentWinStreak, 0);
+  assert.equal(profile.bloodMatchBestWinStreak, 0);
+  assert.equal(profile.bloodMatchDoubleEliminationWins, 0);
+  assert.equal(profile.bloodMatchCardsCaptured, 0);
+});
+
+test("state: Blood Match win records dedicated stats, recent battle, +10 XP/+10 tokens, and badge unlocks", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+
+  const result = await state.recordBloodMatchResult({
+    username: "BloodWinUser",
+    settlementKey: "blood-win-1",
+    nowMs: Date.parse("2026-06-27T12:00:00.000Z"),
+    summary: createBloodMatchSettlementSummary()
+  });
+
+  assert.equal(result.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
+  assert.equal(result.profile.playerXP, 10);
+  assert.equal(result.profile.bloodMatchMatchesPlayed, 1);
+  assert.equal(result.profile.bloodMatchWins, 1);
+  assert.equal(result.profile.bloodMatchLosses, 0);
+  assert.equal(result.profile.bloodMatchCurrentWinStreak, 1);
+  assert.equal(result.profile.bloodMatchBestWinStreak, 1);
+  assert.equal(result.profile.bloodMatchDoubleEliminationWins, 1);
+  assert.equal(result.profile.bloodMatchVampireEliminations, 1);
+  assert.equal(result.profile.bloodMatchLycanEliminations, 1);
+  assert.equal(result.profile.bloodMatchCardsCaptured, 9);
+  assert.equal(result.profile.chests.basic, 0);
+  assert.deepEqual(result.chestGrants, []);
+  assert.deepEqual(
+    result.unlockedAchievements.map((item) => item.id).sort(),
+    [
+      "blood_match_dual_elimination",
+      "blood_match_eliminate_lycan",
+      "blood_match_eliminate_vampire",
+      "blood_match_first_win",
+      "blood_match_three_way_war"
+    ].sort()
+  );
+  assert.equal(result.profile.achievements.blood_match_first_win.count, 1);
+  assert.equal(result.profile.achievements.blood_match_dual_elimination.count, 1);
+  assert.equal(result.profile.achievements.blood_match_three_way_war.count, 1);
+  assert.deepEqual(result.grantedCosmetics, []);
+  assert.deepEqual(result.profile.latestBattle, {
+    mode: "bloodMatch",
+    displayMode: "Blood Match",
+    result: "win",
+    completedAt: "2026-06-27T12:00:00.000Z",
+    rounds: 7,
+    warsEntered: 2,
+    rivalName: "Countess Veyra & Ravena Moonfang",
+    endReason: "both_rivals_eliminated",
+    playerCardsCaptured: 9,
+    playerHandAtEnd: 6,
+    vampireHandAtEnd: 0,
+    lycanHandAtEnd: 0,
+    twoWayWars: 1,
+    threeWayWars: 1
+  });
+  assert.deepEqual(result.profile.recentBattles, [result.profile.latestBattle]);
+
+  const saves = await state.saves.listMatchResults();
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].mode, "bloodMatch");
+  assert.deepEqual(
+    saves[0].unlockedAchievements.map((item) => item.id).sort(),
+    result.unlockedAchievements.map((item) => item.id).sort()
+  );
+  assert.deepEqual(saves[0].grantedCosmetics, []);
+});
+
+test("state: Blood Match loss grants normal participation XP, +1 token, and duplicate settlement does not double-write", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+
+  const summary = createBloodMatchSettlementSummary({
+    result: "player_loss",
+    winnerId: "vampire",
+    endReason: "player_required_play_failed",
+    playerHandCount: 0,
+    playerCapturedCount: 3,
+    vampireHandCount: 5,
+    lycanHandCount: 4,
+    vampireEliminated: false,
+    lycanEliminated: false,
+    playerEliminated: true
+  });
+  const first = await state.recordBloodMatchResult({
+    username: "BloodLossUser",
+    settlementKey: "blood-loss-1",
+    summary
+  });
+  const duplicate = await state.recordBloodMatchResult({
+    username: "BloodLossUser",
+    settlementKey: "blood-loss-1",
+    summary
+  });
+
+  assert.equal(first.profile.tokens, DEFAULT_STARTING_TOKENS + 1);
+  assert.equal(first.profile.playerXP, 1);
+  assert.equal(first.profile.bloodMatchMatchesPlayed, 1);
+  assert.equal(first.profile.bloodMatchWins, 0);
+  assert.equal(first.profile.bloodMatchLosses, 1);
+  assert.equal(first.profile.bloodMatchCurrentWinStreak, 0);
+  assert.equal(first.profile.bloodMatchPlayerEliminations, 1);
+  assert.equal(first.matchTokenDelta, 1);
+  assert.equal(first.matchXpDelta, 1);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.profile.tokens, DEFAULT_STARTING_TOKENS + 1);
+  assert.equal(duplicate.profile.playerXP, 1);
+  assert.deepEqual(duplicate.chestGrants, []);
+  assert.deepEqual(duplicate.unlockedAchievements, []);
+  assert.equal(duplicate.profile.bloodMatchMatchesPlayed, 1);
+  assert.equal(duplicate.profile.recentBattles.length, 1);
+
+  const saves = await state.saves.listMatchResults();
+  assert.equal(saves.length, 1);
+});
+
+test("state: Blood Match persistence rejects invalid non-timeout Player victory when a rival survives", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+
+  const result = await state.recordBloodMatchResult({
+    username: "BloodInvalidVictoryUser",
+    settlementKey: "blood-invalid-victory",
+    summary: createBloodMatchSettlementSummary({
+      result: "player_win",
+      winnerId: "player",
+      endReason: "all_ai_required_play_unavailable",
+      playerHandCount: 3,
+      playerCapturedCount: 4,
+      vampireHandCount: 5,
+      lycanHandCount: 0,
+      vampireEliminated: false,
+      lycanEliminated: true,
+      history: []
+    })
+  });
+
+  assert.equal(result.profile.bloodMatchWins, 0);
+  assert.equal(result.profile.bloodMatchLosses, 1);
+  assert.equal(result.profile.tokens, DEFAULT_STARTING_TOKENS + 1);
+  assert.equal(result.matchTokenDelta, 1);
+  assert.equal(result.matchXpDelta, 1);
+  assert.deepEqual(result.unlockedAchievements.map((item) => item.id), ["blood_match_eliminate_lycan"]);
+  assert.equal(result.profile.achievements.blood_match_eliminate_lycan.count, 1);
+  assert.equal(result.profile.achievements.blood_match_first_win?.count ?? 0, 0);
+});
+
+test("state: Blood Match achievement triggers unlock once and do not grant reward tokens or cosmetics", async () => {
+  const scenarios = [
+    {
+      username: "BloodTimeoutAchievementUser",
+      settlementKey: "blood-ach-timeout",
+      expectedIds: ["blood_match_first_win", "blood_match_timeout_victory"],
+      summary: createBloodMatchSettlementSummary({
+        endReason: "timeout_lead",
+        vampireEliminated: false,
+        lycanEliminated: false,
+        playerCapturedCount: 0,
+        playerHandCount: 10,
+        vampireHandCount: 6,
+        lycanHandCount: 5,
+        history: []
+      })
+    },
+    {
+      username: "BloodLycanAchievementUser",
+      settlementKey: "blood-ach-lycan",
+      expectedIds: ["blood_match_first_win", "blood_match_eliminate_lycan", "blood_match_timeout_victory"],
+      summary: createBloodMatchSettlementSummary({
+        endReason: "timeout_lead",
+        vampireEliminated: false,
+        lycanEliminated: true,
+        playerCapturedCount: 0,
+        playerHandCount: 8,
+        vampireHandCount: 4,
+        lycanHandCount: 0,
+        history: []
+      })
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    const dataDir = await createTempDataDir();
+    const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+    const result = await state.recordBloodMatchResult({
+      username: scenario.username,
+      settlementKey: scenario.settlementKey,
+      summary: scenario.summary
+    });
+    const duplicate = await state.recordBloodMatchResult({
+      username: scenario.username,
+      settlementKey: scenario.settlementKey,
+      summary: scenario.summary
+    });
+
+    assert.deepEqual(result.unlockedAchievements.map((item) => item.id).sort(), scenario.expectedIds.sort());
+    assert.equal(result.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
+    assert.deepEqual(result.grantedCosmetics, []);
+    assert.deepEqual(duplicate.unlockedAchievements, []);
+    assert.equal(duplicate.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
+  }
+});
+
+test("state: Blood Match streak and mastery achievements use authoritative cumulative stats", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+  await state.profiles.updateProfile("BloodMasteryUser", (profile) => ({
+    ...profile,
+    bloodMatchWins: 9,
+    bloodMatchMatchesPlayed: 9,
+    bloodMatchCurrentWinStreak: 2,
+    bloodMatchBestWinStreak: 2
+  }));
+
+  const result = await state.recordBloodMatchResult({
+    username: "BloodMasteryUser",
+    settlementKey: "blood-ach-mastery",
+    summary: createBloodMatchSettlementSummary({
+      vampireEliminated: true,
+      lycanEliminated: true,
+      playerCapturedCount: 0,
+      playerHandCount: 7,
+      vampireHandCount: 0,
+      lycanHandCount: 0,
+      history: []
+    })
+  });
+
+  const ids = result.unlockedAchievements.map((item) => item.id);
+  assert.ok(ids.includes("blood_match_win_streak"));
+  assert.ok(ids.includes("blood_match_mastery"));
+  assert.equal(result.profile.achievements.blood_match_win_streak.count, 1);
+  assert.equal(result.profile.achievements.blood_match_mastery.count, 1);
+  assert.equal(result.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
+});
+
+test("state: Blood Match repeatable achievements increment by qualifying event without duplicate settlement rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+  await state.profiles.updateProfile("BloodRepeatUser", (profile) => ({
+    ...profile,
+    bloodMatchWins: 19,
+    bloodMatchMatchesPlayed: 19,
+    bloodMatchCurrentWinStreak: 2,
+    bloodMatchBestWinStreak: 5,
+    achievements: {
+      ...profile.achievements,
+      blood_match_first_win: { count: 1 },
+      blood_match_eliminate_lycan: { count: 2 },
+      blood_match_eliminate_vampire: { count: 2 },
+      blood_match_dual_elimination: { count: 2 },
+      blood_match_three_way_war: { count: 3 },
+      blood_match_timeout_victory: { count: 1 },
+      blood_match_win_streak: { count: 1 },
+      blood_match_mastery: { count: 1 }
+    }
+  }));
+
+  const result = await state.recordBloodMatchResult({
+    username: "BloodRepeatUser",
+    settlementKey: "blood-repeat-1",
+    summary: createBloodMatchSettlementSummary({
+      history: [
+        { type: "three_way_war", classificationId: "three_way_war", winnerId: "" },
+        { type: "three_way_war", classificationId: "three_way_war", winnerId: "" },
+        {
+          type: "war_resolved",
+          classificationId: "two_combatant_war_resolved",
+          winnerId: "player",
+          activeCombatantIds: ["player", "vampire"]
+        }
+      ]
+    })
+  });
+  const duplicate = await state.recordBloodMatchResult({
+    username: "BloodRepeatUser",
+    settlementKey: "blood-repeat-1",
+    summary: createBloodMatchSettlementSummary()
+  });
+
+  assert.equal(result.profile.achievements.blood_match_first_win.count, 1);
+  assert.equal(result.profile.achievements.blood_match_eliminate_lycan.count, 3);
+  assert.equal(result.profile.achievements.blood_match_eliminate_vampire.count, 3);
+  assert.equal(result.profile.achievements.blood_match_dual_elimination.count, 3);
+  assert.equal(result.profile.achievements.blood_match_three_way_war.count, 5);
+  assert.equal(result.profile.achievements.blood_match_win_streak.count, 2);
+  assert.equal(result.profile.achievements.blood_match_mastery.count, 2);
+  assert.equal(result.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
+  assert.deepEqual(duplicate.unlockedAchievements, []);
+  assert.equal(duplicate.profile.tokens, DEFAULT_STARTING_TOKENS + 10);
+});
+
+test("state: Blood Match streak and mastery repeats only at new streak and ten-win block boundaries", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+  await state.profiles.updateProfile("BloodRepeatBoundaryUser", (profile) => ({
+    ...profile,
+    bloodMatchWins: 10,
+    bloodMatchMatchesPlayed: 10,
+    bloodMatchCurrentWinStreak: 3,
+    bloodMatchBestWinStreak: 3,
+    achievements: {
+      ...profile.achievements,
+      blood_match_first_win: { count: 1 },
+      blood_match_win_streak: { count: 1 },
+      blood_match_mastery: { count: 1 }
+    }
+  }));
+
+  const result = await state.recordBloodMatchResult({
+    username: "BloodRepeatBoundaryUser",
+    settlementKey: "blood-repeat-boundary-1",
+    summary: createBloodMatchSettlementSummary()
+  });
+
+  assert.equal(result.profile.bloodMatchWins, 11);
+  assert.equal(result.profile.bloodMatchCurrentWinStreak, 4);
+  assert.equal(result.profile.achievements.blood_match_win_streak.count, 1);
+  assert.equal(result.profile.achievements.blood_match_mastery.count, 1);
+  assert.ok(!result.unlockedAchievements.some((item) => item.id === "blood_match_win_streak"));
+  assert.ok(!result.unlockedAchievements.some((item) => item.id === "blood_match_mastery"));
+});
+
+test("state: Blood Match non-qualifying loss does not unlock Blood Match achievements", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+  const result = await state.recordBloodMatchResult({
+    username: "BloodNoAchievementUser",
+    settlementKey: "blood-ach-none",
+    summary: createBloodMatchSettlementSummary({
+      result: "player_loss",
+      winnerId: "vampire",
+      endReason: "player_required_play_failed",
+      playerHandCount: 0,
+      playerCapturedCount: 0,
+      vampireHandCount: 9,
+      lycanHandCount: 8,
+      vampireEliminated: false,
+      lycanEliminated: false,
+      playerEliminated: true,
+      history: []
+    })
+  });
+
+  assert.deepEqual(result.unlockedAchievements, []);
+  assert.equal(Object.keys(result.profile.achievements ?? {}).length, 0);
+});
+
+test("state: Blood Match win uses normal PvE chest roll without guaranteed or extra chest", async () => {
+  const missDataDir = await createTempDataDir();
+  const missState = createBoostAwareStateCoordinator({ dataDir: missDataDir, random: constantRandom(0.11) });
+  const miss = await missState.recordBloodMatchResult({
+    username: "BloodWinChestMissUser",
+    settlementKey: "blood-win-chest-miss",
+    summary: createBloodMatchSettlementSummary()
+  });
+
+  assert.equal(miss.profile.chests.basic, 0);
+  assert.deepEqual(miss.chestGrants, []);
+
+  const hitDataDir = await createTempDataDir();
+  const hitState = createBoostAwareStateCoordinator({ dataDir: hitDataDir, random: constantRandom(0.05) });
+  const hit = await hitState.recordBloodMatchResult({
+    username: "BloodWinChestHitUser",
+    settlementKey: "blood-win-chest-hit",
+    summary: createBloodMatchSettlementSummary()
+  });
+
+  assert.equal(hit.profile.chests.basic, 1);
+  assert.deepEqual(hit.chestGrants, [{ chestType: "basic", amount: 1 }]);
+});
+
+test("state: Blood Match loss uses normal PvE chest roll and duplicate settlement does not reroll", async () => {
+  const summary = createBloodMatchSettlementSummary({
+    result: "player_loss",
+    winnerId: "lycan",
+    endReason: "timeout_tie_or_deficit",
+    playerHandCount: 4,
+    playerCapturedCount: 3,
+    vampireHandCount: 5,
+    lycanHandCount: 5,
+    vampireEliminated: false,
+    lycanEliminated: false,
+    playerEliminated: false
+  });
+  const missDataDir = await createTempDataDir();
+  const missState = createBoostAwareStateCoordinator({ dataDir: missDataDir, random: constantRandom(0.03) });
+  const miss = await missState.recordBloodMatchResult({
+    username: "BloodLossChestMissUser",
+    settlementKey: "blood-loss-chest-miss",
+    summary
+  });
+
+  assert.equal(miss.profile.chests.basic, 0);
+  assert.deepEqual(miss.chestGrants, []);
+
+  const hitDataDir = await createTempDataDir();
+  const hitState = createBoostAwareStateCoordinator({ dataDir: hitDataDir, random: constantRandom(0.01) });
+  const hit = await hitState.recordBloodMatchResult({
+    username: "BloodLossChestHitUser",
+    settlementKey: "blood-loss-chest-hit",
+    summary
+  });
+  const duplicate = await hitState.recordBloodMatchResult({
+    username: "BloodLossChestHitUser",
+    settlementKey: "blood-loss-chest-hit",
+    summary
+  });
+
+  assert.equal(hit.profile.chests.basic, 1);
+  assert.deepEqual(hit.chestGrants, [{ chestType: "basic", amount: 1 }]);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.profile.chests.basic, 1);
+  assert.deepEqual(duplicate.chestGrants, []);
+});
+
 test("state: old profile data normalizes missing gauntlet stats to 0", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
@@ -3385,6 +3873,51 @@ test("state: public profile snapshot includes sanitized longestMatch", async () 
     capturedAgainst: 40,
     achievedAt: "2026-06-01T12:34:56.000Z"
   });
+});
+
+test("state: public profile snapshot exposes permitted Blood Match public stats", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.updateProfile("PublicBloodUser", (current) => ({
+    ...current,
+    bloodMatchMatchesPlayed: 6,
+    bloodMatchWins: 4,
+    bloodMatchLosses: 2,
+    bloodMatchCurrentWinStreak: 3,
+    bloodMatchBestWinStreak: 4,
+    bloodMatchVampireEliminations: 3,
+    bloodMatchLycanEliminations: 2,
+    bloodMatchDoubleEliminationWins: 1,
+    bloodMatchTwoWayWars: 7,
+    bloodMatchThreeWayWars: 5,
+    bloodMatchWarsWon: 6,
+    bloodMatchWarsLost: 3,
+    bloodMatchThreeWayWarsWon: 2,
+    bloodMatchCardsCaptured: 22,
+    bloodMatchTimeoutWins: 1,
+    bloodMatchTimeoutLosses: 2
+  }));
+
+  const viewed = await authority.viewProfile("PublicBloodUser");
+  assert.equal(viewed.profile.bloodMatchMatchesPlayed, 6);
+  assert.equal(viewed.profile.bloodMatchWins, 4);
+  assert.equal(viewed.profile.bloodMatchLosses, 2);
+  assert.equal(viewed.profile.bloodMatchCurrentWinStreak, 3);
+  assert.equal(viewed.profile.bloodMatchBestWinStreak, 4);
+  assert.equal(viewed.profile.bloodMatchVampireEliminations, 3);
+  assert.equal(viewed.profile.bloodMatchLycanEliminations, 2);
+  assert.equal(viewed.profile.bloodMatchDoubleEliminationWins, 1);
+  assert.equal(viewed.profile.bloodMatchTwoWayWars, 7);
+  assert.equal(viewed.profile.bloodMatchThreeWayWars, 5);
+  assert.equal(viewed.profile.bloodMatchWarsWon, 6);
+  assert.equal(viewed.profile.bloodMatchWarsLost, 3);
+  assert.equal(viewed.profile.bloodMatchThreeWayWarsWon, 2);
+  assert.equal(viewed.profile.bloodMatchCardsCaptured, 22);
+  assert.equal(viewed.profile.bloodMatchTimeoutWins, 1);
+  assert.equal(viewed.profile.bloodMatchTimeoutLosses, 2);
+  assert.equal("bloodMatchHighestHandCount" in viewed.profile, false);
+  assert.equal("potCardEntries" in viewed.profile, false);
 });
 
 test("state: VampyrLee backfill seeds the known 97-round record and first three Longest Match achievements", async () => {

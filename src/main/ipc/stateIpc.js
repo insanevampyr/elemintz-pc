@@ -83,6 +83,14 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
     }
   );
 
+  registerGuardedMutation(
+    "state:recordBloodMatchResult",
+    async (payload) => coordinator.recordBloodMatchResult(payload),
+    {
+      allowWhen: (payload) => Boolean(payload && typeof payload === "object" && !Array.isArray(payload))
+    }
+  );
+
   ipcMain.handle("state:getProfile", async (_event, username) =>
     coordinator.profiles.getProfile(username)
   );

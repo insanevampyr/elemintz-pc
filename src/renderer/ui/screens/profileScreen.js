@@ -686,6 +686,8 @@ function formatBattleReportMode(mode) {
       return "Gauntlet";
     case "featuredRival":
       return "Featured Rival";
+    case "bloodMatch":
+      return "Blood Match";
     default:
       return "Unknown";
   }
@@ -722,9 +724,10 @@ function renderBattleReportIdentityRow(latestBattle = {}) {
   const mode = String(latestBattle?.mode ?? "").trim();
   const canViewOpponent =
     mode === "online" && String(latestBattle?.opponentUsername ?? "").trim().length > 0;
-  const label = mode === "gauntlet" || mode === "featuredRival" ? "Rival" : "Opponent";
+  const isRivalMode = mode === "gauntlet" || mode === "featuredRival" || mode === "bloodMatch";
+  const label = isRivalMode ? "Rival" : "Opponent";
   const name =
-    mode === "gauntlet" || mode === "featuredRival"
+    isRivalMode
       ? String(latestBattle?.rivalName ?? "").trim()
       : String(latestBattle?.opponentName ?? "").trim();
   const username = String(latestBattle?.opponentUsername ?? "").trim();
@@ -806,6 +809,24 @@ function buildBattleReportRows(battle = {}) {
       value: Math.max(0, Number(battle.warsEntered ?? 0) || 0)
     });
   }
+  if (battle.mode === "bloodMatch") {
+    if (battle.playerCardsCaptured != null) {
+      rows.push({
+        label: "Cards Captured",
+        value: Math.max(0, Number(battle.playerCardsCaptured ?? 0) || 0)
+      });
+    }
+    if (battle.playerHandAtEnd != null) {
+      rows.push({
+        label: "Final Hands",
+        value: `Player ${Math.max(0, Number(battle.playerHandAtEnd ?? 0) || 0)} / Veyra ${Math.max(0, Number(battle.vampireHandAtEnd ?? 0) || 0)} / Ravena ${Math.max(0, Number(battle.lycanHandAtEnd ?? 0) || 0)}`
+      });
+    }
+    rows.push({
+      label: "Two-Way / Three-Way WARs",
+      value: `${Math.max(0, Number(battle.twoWayWars ?? 0) || 0)} / ${Math.max(0, Number(battle.threeWayWars ?? 0) || 0)}`
+    });
+  }
 
   return rows;
 }
@@ -814,7 +835,7 @@ function renderBattleReportListEntries(entries = []) {
   return entries
     .map((battle, index) => {
       const opponentLabel =
-        battle?.mode === "gauntlet" || battle?.mode === "featuredRival"
+        battle?.mode === "gauntlet" || battle?.mode === "featuredRival" || battle?.mode === "bloodMatch"
           ? String(battle?.rivalName ?? "").trim() || "Unknown"
           : String(battle?.opponentName ?? "").trim() || String(battle?.opponentUsername ?? "").trim() || "Unknown";
       const roundsLine =
@@ -981,6 +1002,71 @@ function renderGauntletStatsCard(profile = {}) {
         { label: "Gauntlet Losses", value: safeStat(profile.gauntletLosses) },
         { label: "Rivals Defeated", value: safeStat(profile.gauntletRivalsDefeated) }
       ])}
+    </section>
+  `;
+}
+
+function renderBloodMatchStatsCard(profile = {}, { publicView = false } = {}) {
+  const matchesPlayed = safeStat(profile.bloodMatchMatchesPlayed);
+  const wins = safeStat(profile.bloodMatchWins);
+  const losses = safeStat(profile.bloodMatchLosses);
+  const winRate = matchesPlayed > 0 ? `${Math.round((wins / matchesPlayed) * 100)}%` : "0%";
+  const leftSections = [
+    {
+      title: "Record",
+      rows: [
+        { label: "Played", value: matchesPlayed },
+        { label: "Wins / Losses", value: `${wins} / ${losses}` },
+        { label: "Win Rate", value: winRate },
+        { label: "Current Streak", value: safeStat(profile.bloodMatchCurrentWinStreak) },
+        { label: "Best Streak", value: safeStat(profile.bloodMatchBestWinStreak) }
+      ]
+    },
+    {
+      title: "WAR Performance",
+      rows: [
+        { label: "Two-Way / Three-Way", value: `${safeStat(profile.bloodMatchTwoWayWars)} / ${safeStat(profile.bloodMatchThreeWayWars)}` },
+        { label: "Won / Lost", value: `${safeStat(profile.bloodMatchWarsWon)} / ${safeStat(profile.bloodMatchWarsLost)}` },
+        { label: "Three-Way Wins", value: safeStat(profile.bloodMatchThreeWayWarsWon) }
+      ]
+    }
+  ];
+  const rightSections = [
+    {
+      title: "Rival Eliminations",
+      rows: [
+        { label: "Veyra", value: safeStat(profile.bloodMatchVampireEliminations) },
+        { label: "Ravena", value: safeStat(profile.bloodMatchLycanEliminations) },
+        { label: "Double Elimination", value: safeStat(profile.bloodMatchDoubleEliminationWins) }
+      ]
+    },
+    {
+      title: "Captures / Timeouts",
+      rows: [
+        { label: "Cards Captured", value: safeStat(profile.bloodMatchCardsCaptured) },
+        { label: "Timeout Wins", value: safeStat(profile.bloodMatchTimeoutWins) },
+        { label: "Timeout Losses", value: safeStat(profile.bloodMatchTimeoutLosses) }
+      ]
+    }
+  ];
+  const renderBloodMatchColumn = (sections) => `
+    <div class="profile-blood-match-column">
+      ${sections.map((section) => `
+        <div class="profile-blood-match-group">
+          <h4>${escapeProfileText(section.title)}</h4>
+          ${renderStatList(section.rows)}
+        </div>
+      `).join("")}
+    </div>
+  `;
+
+  return `
+    <section class="profile-summary-card stack-sm profile-blood-match-card" data-profile-blood-match-card="true">
+      <h3 class="section-title">Blood Match</h3>
+      <div class="profile-blood-match-grid">
+        ${renderBloodMatchColumn(leftSections)}
+        ${renderBloodMatchColumn(rightSections)}
+      </div>
     </section>
   `;
 }
@@ -1289,6 +1375,7 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
             ${renderStatList([{ label: "Featured Rival Wins", value: featuredRivalWins }])}
           </section>
           ${renderGauntletStatsCard(viewedProfile)}
+          ${renderBloodMatchStatsCard(viewedProfile, { publicView: true })}
         </div>
         <section class="profile-summary-card stack-sm">
           <h3 class="section-title">Mode Stats</h3>
@@ -1422,6 +1509,7 @@ export const profileScreen = {
               ])}
             </section>
             ${renderGauntletStatsCard(profile)}
+            ${renderBloodMatchStatsCard(profile)}
           </div>
 
           <section class="profile-summary-card stack-sm">

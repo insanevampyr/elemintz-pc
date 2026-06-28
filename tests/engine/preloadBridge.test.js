@@ -88,6 +88,7 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.updates.requestInstall, "function");
   assert.equal(typeof bridge.updates.reportPromptEvent, "function");
   assert.equal(typeof bridge.multiplayer.getState, "function");
+  assert.equal(typeof bridge.state.recordBloodMatchResult, "function");
   assert.equal(typeof bridge.multiplayer.listPublicRooms, "function");
   assert.equal(typeof bridge.multiplayer.getCollectionPackDeals, "function");
   assert.equal(typeof bridge.multiplayer.buyCollectionPack, "function");
@@ -102,6 +103,7 @@ test("preload bridge remains available when version falls back", async () => {
   await bridge.state.getSettings();
   await bridge.updates.getState();
   await bridge.updates.reportPromptEvent({ type: "install_prompt_shown", version: "2.1.5" });
+  await bridge.state.recordBloodMatchResult({ username: "BloodBridgeUser", settlementKey: "blood-bridge-1" });
   await bridge.multiplayer.listPublicRooms({ username: "VampyrLee" });
   await bridge.multiplayer.listAnnouncements({ username: "VampyrLee" });
   await bridge.multiplayer.dismissAnnouncement({ username: "VampyrLee", id: "patch-2-1-9" });
@@ -117,10 +119,14 @@ test("preload bridge remains available when version falls back", async () => {
   });
   await bridge.multiplayer.submitFeedback({ category: "Bug / Error", message: "Hello" });
 
-  assert.deepEqual(ipcRenderer.invocations.slice(0, 13), [
+  assert.deepEqual(ipcRenderer.invocations.slice(0, 14), [
     { channel: "state:getSettings", payload: undefined },
     { channel: "updates:getState", payload: undefined },
     { channel: "updates:reportPromptEvent", payload: { type: "install_prompt_shown", version: "2.1.5" } },
+    {
+      channel: "state:recordBloodMatchResult",
+      payload: { username: "BloodBridgeUser", settlementKey: "blood-bridge-1" }
+    },
     { channel: "multiplayer:listPublicRooms", payload: { username: "VampyrLee" } },
     { channel: "multiplayer:listAnnouncements", payload: { username: "VampyrLee" } },
     { channel: "multiplayer:dismissAnnouncement", payload: { username: "VampyrLee", id: "patch-2-1-9" } },

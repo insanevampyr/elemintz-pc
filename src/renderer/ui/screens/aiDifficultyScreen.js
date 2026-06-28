@@ -65,13 +65,40 @@ function renderGauntletOption({ name, id, checked }) {
   `;
 }
 
+function renderBloodMatchOption({ name, id, checked }) {
+  return `
+    <label class="settings-radio-option settings-radio-option-featured-rival settings-radio-option-blood-match" for="${id}">
+      <span class="settings-radio-main">
+        <input id="${id}" name="${name}" type="radio" value="blood_match" ${checked ? "checked" : ""} />
+        <strong>Blood Match</strong>
+      </span>
+      <span class="featured-rival-card">
+        <img
+          class="featured-rival-card__art"
+          src="${getAssetPath("menu_tiles/tile_blood_match_mode.png")}"
+          alt="Blood Match"
+        />
+        <span class="featured-rival-card__body">
+          <span class="featured-rival-card__eyebrow">Three-Combatant Challenge</span>
+          <strong class="featured-rival-card__name">Blood Match</strong>
+          <span class="featured-rival-card__title">Player vs Countess Veyra vs Ravena Moonfang</span>
+          <span class="featured-rival-card__detail">Eliminate both rivals.</span>
+          <span class="featured-rival-card__detail">Or lead both surviving rivals when time expires.</span>
+        </span>
+      </span>
+    </label>
+  `;
+}
+
 export const aiDifficultyScreen = {
   render(context) {
     const selectedDifficulty = ["easy", "normal", "hard"].includes(String(context.selectedDifficulty ?? ""))
       ? String(context.selectedDifficulty)
       : "normal";
     const selectedOption =
-      context.selectedGauntletMode
+      context.selectedBloodMatch
+        ? "blood_match"
+        : context.selectedGauntletMode
         ? "gauntlet_mode"
         : String(context.selectedFeaturedRivalId ?? "").trim().toLowerCase() === "crownfire_duelist"
           ? "featured_rival_crownfire"
@@ -121,6 +148,11 @@ export const aiDifficultyScreen = {
                   id: "ai-difficulty-select-gauntlet",
                   checked: selectedOption === "gauntlet_mode"
                 })}
+                ${renderBloodMatchOption({
+                  name: "pveOpponentChoice",
+                  id: "ai-difficulty-select-blood-match",
+                  checked: selectedOption === "blood_match"
+                })}
                 ${renderFeaturedRivalOption({
                   name: "pveOpponentChoice",
                   id: "ai-difficulty-select-featured-rival",
@@ -142,6 +174,10 @@ export const aiDifficultyScreen = {
       const pveOpponentChoice = String(formData.get("pveOpponentChoice") ?? "normal").trim().toLowerCase();
       if (pveOpponentChoice === "gauntlet_mode") {
         await context.actions.start({ gauntletMode: true });
+        return;
+      }
+      if (pveOpponentChoice === "blood_match") {
+        await context.actions.start({ bloodMatch: true });
         return;
       }
       if (pveOpponentChoice === "featured_rival_crownfire") {

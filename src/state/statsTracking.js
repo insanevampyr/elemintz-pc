@@ -26,6 +26,35 @@ function emptyLocalPvpRewardTracking() {
   };
 }
 
+export function createDefaultBloodMatchStats() {
+  return {
+    bloodMatchMatchesPlayed: 0,
+    bloodMatchWins: 0,
+    bloodMatchLosses: 0,
+    bloodMatchCurrentWinStreak: 0,
+    bloodMatchBestWinStreak: 0,
+    bloodMatchEliminationWins: 0,
+    bloodMatchTimeoutWins: 0,
+    bloodMatchTimeoutLosses: 0,
+    bloodMatchDoubleEliminationWins: 0,
+    bloodMatchVampireEliminations: 0,
+    bloodMatchLycanEliminations: 0,
+    bloodMatchPlayerEliminations: 0,
+    bloodMatchTwoWayWars: 0,
+    bloodMatchThreeWayWars: 0,
+    bloodMatchWarsWon: 0,
+    bloodMatchWarsLost: 0,
+    bloodMatchThreeWayWarsWon: 0,
+    bloodMatchBloodFeudWarsWon: 0,
+    bloodMatchCardsCaptured: 0,
+    bloodMatchHighestHandCount: 0,
+    bloodMatchLowestHandCount: 0,
+    bloodMatchComebackWins: 0,
+    bloodMatchOneCardWins: 0,
+    bloodMatchNoWarWins: 0
+  };
+}
+
 function extractPlayedElements(matchState, perspective) {
   const played = new Set();
   const cardKey = perspective === "p2" ? "p2Card" : "p1Card";
@@ -128,8 +157,17 @@ export function normalizeProfileModeStats(profile) {
       ? profile.localPvpRewardTracking
       : {};
 
+  const bloodMatchDefaults = createDefaultBloodMatchStats();
+  const normalizedBloodMatchStats = Object.fromEntries(
+    Object.keys(bloodMatchDefaults).map((key) => [
+      key,
+      safeNonNegativeInt(profile?.[key], bloodMatchDefaults[key])
+    ])
+  );
+
   return {
     ...profile,
+    ...normalizedBloodMatchStats,
     wins: safeNonNegativeInt(profile.wins),
     losses: safeNonNegativeInt(profile.losses),
     gamesPlayed: safeNonNegativeInt(profile.gamesPlayed),
@@ -239,6 +277,7 @@ export function createDefaultProfile(username) {
     gauntletWins: 0,
     gauntletLosses: 0,
     gauntletRivalsDefeated: 0,
+    ...createDefaultBloodMatchStats(),
     longestMatch: null,
     latestBattle: null,
     recentBattles: [],

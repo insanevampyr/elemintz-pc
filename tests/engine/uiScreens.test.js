@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 import { achievementsScreen } from "../../src/renderer/ui/screens/achievementsScreen.js";
 import { aiDifficultyScreen } from "../../src/renderer/ui/screens/aiDifficultyScreen.js";
+import { bloodMatchScreen } from "../../src/renderer/ui/screens/bloodMatchScreen.js";
 import { cosmeticsScreen } from "../../src/renderer/ui/screens/cosmeticsScreen.js";
 import { dailyChallengesScreen } from "../../src/renderer/ui/screens/dailyChallengesScreen.js";
 import {
@@ -4266,7 +4267,7 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 });
 
-test("ui: ai difficulty screen renders Easy, Normal, Hard, Gauntlet, and Featured Rival choices", () => {
+test("ui: ai difficulty screen renders Easy, Normal, Hard, Gauntlet, Blood Match, and Featured Rival choices", () => {
   const html = aiDifficultyScreen.render({
     selectedDifficulty: "normal",
     actions: {}
@@ -4277,17 +4278,21 @@ test("ui: ai difficulty screen renders Easy, Normal, Hard, Gauntlet, and Feature
   assert.match(html, /Normal AI/);
   assert.match(html, /Hard AI/);
   assert.match(html, /Gauntlet Mode/);
+  assert.match(html, /Blood Match/);
+  assert.match(html, /Player vs Countess Veyra vs Ravena Moonfang/);
+  assert.match(html, /tile_blood_match_mode\.png/);
   assert.match(html, /Featured Rival/);
 });
 
-test("ui: ai difficulty screen places Gauntlet Mode after Hard and before Featured Rival", () => {
+test("ui: ai difficulty screen places Blood Match as a separate challenge before Featured Rival", () => {
   const html = aiDifficultyScreen.render({
     selectedDifficulty: "normal",
     actions: {}
   });
 
   assert.ok(html.indexOf("Hard AI") < html.indexOf("Gauntlet Mode"));
-  assert.ok(html.indexOf("Gauntlet Mode") < html.indexOf("Featured Rival"));
+  assert.ok(html.indexOf("Gauntlet Mode") < html.indexOf("Blood Match"));
+  assert.ok(html.indexOf("Blood Match") < html.indexOf("Featured Rival"));
 });
 
 test("ui: ai difficulty screen renders the Gauntlet placeholder card details", () => {
@@ -4663,6 +4668,579 @@ test("ui: ai difficulty screen binds the Gauntlet start payload", async () => {
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;
+  }
+});
+
+test("ui: ai difficulty screen binds the Blood Match start payload", async () => {
+  const previousDocument = global.document;
+  const previousFormData = global.FormData;
+  const starts = [];
+  const form = {
+    values: new Map([["pveOpponentChoice", "blood_match"]])
+  };
+  const elements = new Map();
+
+  elements.set("ai-difficulty-form", {
+    addEventListener: (_type, handler) => {
+      form.submit = handler;
+    }
+  });
+  elements.set("ai-difficulty-back-btn", {
+    addEventListener: () => {}
+  });
+
+  global.document = {
+    getElementById: (id) => elements.get(id)
+  };
+  global.FormData = class {
+    constructor(target) {
+      this.target = target;
+    }
+
+    get(key) {
+      return this.target.values.get(key) ?? null;
+    }
+  };
+
+  try {
+    aiDifficultyScreen.bind({
+      actions: {
+        start: async (payload) => starts.push(payload),
+        back: () => {}
+      }
+    });
+
+    await form.submit({
+      preventDefault: () => {},
+      currentTarget: form
+    });
+
+    assert.deepEqual(starts, [{ bloodMatch: true }]);
+  } finally {
+    global.document = previousDocument;
+    global.FormData = previousFormData;
+  }
+});
+
+function createBloodMatchScreenState(overrides = {}) {
+  return {
+    mode: "blood_match",
+    status: "active",
+    round: 1,
+    combatants: {
+      player: {
+        id: "player",
+        name: "VampyrLee",
+        hand: ["fire", "water"],
+        capturedCards: [],
+        recentMoves: []
+      },
+      vampire: {
+        id: "vampire",
+        name: "Countess Veyra",
+        rivalId: "vampire_rival",
+        hand: ["earth", "wind"],
+        capturedCards: [],
+        recentMoves: []
+      },
+      lycan: {
+        id: "lycan",
+        name: "Ravena Moonfang",
+        rivalId: "lycan_rival",
+        hand: ["fire", "earth"],
+        capturedCards: [],
+        recentMoves: []
+      }
+    },
+    potCardEntries: [],
+    lastResult: null,
+    war: { active: false, activeCombatantIds: [], clashes: 0 },
+    legalPlayableCards: { player: ["fire", "water"], vampire: ["earth", "wind"], lycan: ["fire", "earth"] },
+    terminalResult: null,
+    timerSeconds: 18,
+    totalMatchSeconds: 286,
+    ...overrides
+  };
+}
+
+test("ui: blood match screen renders dedicated three-combatant layout and mode-owned arena", () => {
+  const html = bloodMatchScreen.render({
+    state: {
+      ...createBloodMatchScreenState(),
+      equippedCosmetics: {
+        avatar: "avatar_crystal_soul",
+        title: "title_war_master",
+        badge: "badge_arena_challenger",
+        elementCardVariant: {
+          fire: "fire_variant_bane_flame",
+          water: "water_variant_crystal"
+        }
+      }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-blood-match-screen="true"/);
+  assert.match(html, /data-blood-match-arena-source="assets\/rivals\/BloodMatch\/background_blood_match_arena\.png"/);
+  assert.match(html, /Countess Veyra/);
+  assert.match(html, /VampyrLee/);
+  assert.match(html, /Ravena Moonfang/);
+  assert.match(html, /avatar_crystal_soul\.png/);
+  assert.match(html, /War Master/);
+  assert.match(html, /badge_arena_challenger\.png/);
+  assert.match(html, /data-blood-combatant="vampire"/);
+  assert.match(html, /data-blood-combatant="player"/);
+  assert.match(html, /data-blood-combatant="lycan"/);
+  assert.match(html, /data-blood-countess-strip="true"/);
+  assert.match(html, /data-blood-player-column="true"/);
+  assert.match(html, /data-blood-ravena-column="true"/);
+  assert.match(html, /Shared Clash Zone/);
+  assert.match(html, /data-blood-war-pile="true"/);
+  assert.match(html, /No cards committed to WAR yet\./);
+  assert.match(html, /Turn: <strong>18s<\/strong>/);
+  assert.match(html, /Match: <strong>04:46<\/strong>/);
+  assert.doesNotMatch(html, /backgrounds\/background_blood_match_arena/);
+  assert.equal((html.match(/data-blood-play-card-element=/g) ?? []).length, 4);
+  const playerOrder = [...html.matchAll(/data-blood-play-card-element="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(playerOrder, ["fire", "earth", "wind", "water"]);
+  assert.match(html, /data-blood-play-card-element="earth"[\s\S]*disabled/);
+  assert.match(html, /data-blood-play-card-element="wind"[\s\S]*disabled/);
+  assert.match(html, /×1/);
+  assert.match(html, /fire_variant_bane_flame\.png/);
+});
+
+test("ui: blood match renders visual-only Countess and Ravena cosmetic racks", () => {
+  const html = bloodMatchScreen.render({
+    state: createBloodMatchScreenState(),
+    actions: {}
+  });
+
+  assert.match(html, /data-blood-rival-rack="vampire"/);
+  assert.match(html, /data-blood-rival-rack="lycan"/);
+  assert.match(html, /cardback_blood_gem\.png/);
+  assert.match(html, /cardback_lycan_pack\.png/);
+  assert.match(html, /fire_variant_flame_wings\.png/);
+  assert.match(html, /earth_variant_stone_graves\.png/);
+  assert.match(html, /wind_variant_wings_wind\.png/);
+  assert.match(html, /water_variant_blood_wings\.png/);
+  assert.match(html, /fire_variant_fire_paw\.png/);
+  assert.match(html, /earth_variant_stone_paw\.png/);
+  assert.match(html, /wind_variant_lycan_duo\.png/);
+  assert.match(html, /water_variant_water_wolf\.png/);
+
+  for (const rivalId of ["vampire", "lycan"]) {
+    const start = html.indexOf(`data-blood-rival-rack="${rivalId}"`);
+    const next = html.indexOf("</div>\n    </section>", start);
+    const rackHtml = html.slice(start, next);
+    assert.doesNotMatch(rackHtml, /blood-match-hand-card__count/);
+    assert.doesNotMatch(rackHtml, /Playable|Fatigued|Unavailable|No cards remaining/);
+    assert.doesNotMatch(rackHtml, /data-blood-play-card-element/);
+  }
+});
+
+test("ui: blood match hand renders element counts, fatigue, and zero states without duplicate physical cards", () => {
+  const html = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      combatants: {
+        ...createBloodMatchScreenState().combatants,
+        player: {
+          ...createBloodMatchScreenState().combatants.player,
+          hand: ["fire", "fire", "water"],
+          recentMoves: ["fire", "fire"]
+        }
+      },
+      legalPlayableCards: { player: ["water"], vampire: ["earth", "wind"], lycan: ["fire", "earth"] }
+    }),
+    actions: {}
+  });
+
+  assert.equal((html.match(/data-blood-play-card-element=/g) ?? []).length, 4);
+  const playerOrder = [...html.matchAll(/data-blood-play-card-element="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(playerOrder, ["fire", "earth", "wind", "water"]);
+  assert.match(html, /data-blood-play-card-element="fire"[\s\S]*×2/);
+  assert.match(html, /data-blood-play-card-element="water"[\s\S]*×1/);
+  assert.match(html, /data-blood-play-card-element="earth"[\s\S]*×0/);
+  assert.match(html, /aria-label="Fire card, 2 remaining, Fatigued"/);
+  assert.match(html, /aria-label="Water card, 1 remaining, Playable"/);
+  assert.match(html, /aria-label="Earth card, 0 remaining, No cards remaining"/);
+  assert.doesNotMatch(html, /blood-match-hand-card__state/);
+  assert.doesNotMatch(html, />Playable</);
+  assert.doesNotMatch(html, />No cards remaining</);
+});
+
+test("ui: blood match screen renders three-way WAR active participants and shared pot", () => {
+  const html = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      potCardEntries: [
+        { ownerId: "player", element: "fire" },
+        { ownerId: "vampire", element: "fire" },
+        { ownerId: "lycan", element: "fire" }
+      ],
+      lastResult: {
+        type: "three_way_war",
+        activeCombatantIds: ["player", "vampire", "lycan"],
+        revealedCardEntries: [
+          { ownerId: "player", element: "fire" },
+          { ownerId: "vampire", element: "fire" },
+          { ownerId: "lycan", element: "fire" }
+        ]
+      },
+      war: { active: true, activeCombatantIds: ["player", "vampire", "lycan"], clashes: 0 }
+    }),
+    actions: {}
+  });
+
+  assert.match(html, /Three-Way WAR/);
+  assert.match(html, /data-blood-war-pile="true"/);
+  assert.match(html, /Total Committed: <strong>3<\/strong>/);
+  assert.equal((html.match(/data-blood-war-pile-mini-card="true"/g) ?? []).length, 3);
+  assert.match(html, /aria-label="VampyrLee Fire, 1 committed"/);
+  assert.match(html, /aria-label="Countess Veyra Fire, 1 committed"/);
+  assert.match(html, /aria-label="Ravena Moonfang Fire, 1 committed"/);
+  assert.match(html, /fire_variant_flame_wings\.png/);
+  assert.match(html, /fire_variant_fire_paw\.png/);
+  assert.doesNotMatch(html, /data-blood-war-pile-chip="true"/);
+  assert.equal((html.match(/is-war-active/g) ?? []).length, 3);
+  assert.equal((html.match(/data-blood-card-slot="true"/g) ?? []).length, 3);
+});
+
+test("ui: blood match WAR pile groups multi-round committed cards into compact owner mini-cards", () => {
+  const html = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      equippedCosmetics: {
+        elementCardVariant: {
+          water: "water_variant_crystal"
+        }
+      },
+      potCardEntries: [
+        { ownerId: "player", element: "water" },
+        { ownerId: "player", element: "water" },
+        { ownerId: "vampire", element: "fire" },
+        { ownerId: "lycan", element: "wind" },
+        { ownerId: "lycan", element: "wind" }
+      ],
+      war: { active: true, activeCombatantIds: ["player", "vampire", "lycan"], clashes: 2 }
+    }),
+    actions: {}
+  });
+
+  assert.match(html, /Total Committed: <strong>5<\/strong>/);
+  assert.equal((html.match(/data-blood-war-pile-mini-card="true"/g) ?? []).length, 3);
+  assert.match(html, /aria-label="VampyrLee Water, 2 committed"/);
+  assert.match(html, /aria-label="Countess Veyra Fire, 1 committed"/);
+  assert.match(html, /aria-label="Ravena Moonfang Wind, 2 committed"/);
+  assert.match(html, /water_variant_crystal\.png/);
+  assert.match(html, /fire_variant_flame_wings\.png/);
+  assert.match(html, /wind_variant_lycan_duo\.png/);
+  assert.match(html, />×2<\/span>/);
+  assert.doesNotMatch(html, /data-blood-war-pile-chip="true"/);
+  const warPileStart = html.indexOf('data-blood-war-pile="true"');
+  const warPileHtml = html.slice(warPileStart, html.indexOf("</section>", warPileStart));
+  assert.doesNotMatch(warPileHtml, /Playable|No cards remaining/);
+});
+
+test("ui: blood match WAR pile CSS keeps mini-cards compact while preserving visual ledger parts", () => {
+  const css = fs.readFileSync(
+    new URL("../../src/renderer/styles/game.css", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(css, /\.blood-match-war-pile\s*\{[^}]*padding:\s*12px;[^}]*max-height:\s*156px;/s);
+  assert.match(css, /\.blood-match-war-pile__cards\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(58px,\s*70px\)\);[^}]*gap:\s*6px;[^}]*margin-top:\s*8px;/s);
+  assert.match(css, /\.blood-match-war-pile__mini-card\s*\{[^}]*gap:\s*3px;[^}]*padding:\s*5px;/s);
+  assert.match(css, /\.blood-match-war-pile__owner-strip\s*\{/);
+  assert.match(css, /\.blood-match-war-pile__count\s*\{/);
+});
+
+test("ui: blood match screen renders defeated-third and neutral-return two-way WAR states", () => {
+  const defeatedHtml = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      potCardEntries: [
+        { ownerId: "player", element: "fire" },
+        { ownerId: "vampire", element: "fire" },
+        { ownerId: "lycan", element: "earth" }
+      ],
+      lastResult: {
+        type: "two_way_war_defeated_third",
+        activeCombatantIds: ["player", "vampire"],
+        excludedCombatantIds: ["lycan"],
+        revealedCardEntries: [
+          { ownerId: "player", element: "fire" },
+          { ownerId: "vampire", element: "fire" },
+          { ownerId: "lycan", element: "earth" }
+        ]
+      },
+      war: { active: true, activeCombatantIds: ["player", "vampire"], clashes: 0 }
+    }),
+    actions: {}
+  });
+  const neutralHtml = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      potCardEntries: [
+        { ownerId: "player", element: "fire" },
+        { ownerId: "vampire", element: "fire" }
+      ],
+      lastResult: {
+        type: "two_way_war_neutral_third",
+        activeCombatantIds: ["player", "vampire"],
+        excludedCombatantIds: ["lycan"],
+        returnedCardEntries: [{ ownerId: "lycan", element: "wind" }],
+        revealedCardEntries: [
+          { ownerId: "player", element: "fire" },
+          { ownerId: "vampire", element: "fire" },
+          { ownerId: "lycan", element: "wind" }
+        ]
+      },
+      war: { active: true, activeCombatantIds: ["player", "vampire"], clashes: 0 }
+    }),
+    actions: {}
+  });
+
+  assert.match(defeatedHtml, /Two-Way WAR · Third defeated/);
+  assert.match(defeatedHtml, /Out of this WAR/);
+  assert.match(neutralHtml, /Two-Way WAR · Card Returned/);
+  assert.match(neutralHtml, /Card Returned/);
+});
+
+test("ui: blood match screen renders eliminated rival and terminal states", () => {
+  const eliminatedHtml = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      combatants: {
+        ...createBloodMatchScreenState().combatants,
+        vampire: {
+          ...createBloodMatchScreenState().combatants.vampire,
+          eliminated: true
+        }
+      },
+      war: { active: true, activeCombatantIds: ["player", "lycan"], clashes: 1 }
+    }),
+    actions: {}
+  });
+  const victoryHtml = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      status: "completed",
+      terminalResult: { result: "player_win", endReason: "both_rivals_eliminated" },
+      settlementResult: {
+        status: "settled",
+        matchXpDelta: 10,
+        matchTokenDelta: 10,
+        chestGrants: [{ chestType: "basic", amount: 1 }],
+        unlockedAchievements: [{ id: "blood_match_first_win", name: "Blood Match First Win" }]
+      }
+    }),
+    actions: {}
+  });
+  const defeatHtml = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      status: "completed",
+      terminalResult: { result: "player_loss", endReason: "player_required_play_unavailable" },
+      settlementResult: {
+        status: "settled",
+        matchXpDelta: 1,
+        matchTokenDelta: 1,
+        chestGrants: [],
+        unlockedAchievements: []
+      }
+    }),
+    actions: {}
+  });
+  const pendingHtml = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      status: "completed",
+      terminalResult: { result: "player_win", endReason: "timeout_lead" },
+      settlementResult: { status: "pending" }
+    }),
+    actions: {}
+  });
+
+  assert.match(eliminatedHtml, /is-eliminated/);
+  assert.match(eliminatedHtml, /Eliminated/);
+  assert.match(victoryHtml, /Blood Match Victory/);
+  assert.match(victoryHtml, /Status: <strong>Victor<\/strong>/);
+  assert.match(victoryHtml, /Reason: <strong>Both rivals were eliminated\.<\/strong>/);
+  assert.match(victoryHtml, /State: <strong>Match Complete<\/strong>/);
+  assert.doesNotMatch(victoryHtml, /Awaiting Card/);
+  assert.doesNotMatch(victoryHtml, /Turn: <strong>/);
+  assert.doesNotMatch(victoryHtml, /WAR: <strong>/);
+  assert.match(victoryHtml, /XP Gained: <strong>10<\/strong>/);
+  assert.match(victoryHtml, /Tokens Gained: <strong>10<\/strong>/);
+  assert.match(victoryHtml, /Basic Chest ×1/);
+  assert.match(victoryHtml, /Blood Match First Win/);
+  assert.match(defeatHtml, /Blood Match Defeat/);
+  assert.match(defeatHtml, /Status: <strong>Defeated<\/strong>/);
+  assert.doesNotMatch(defeatHtml, /Status: <strong>In Match<\/strong>/);
+  assert.match(defeatHtml, /Status: <strong>Survived<\/strong>/);
+  assert.match(defeatHtml, /Reason: <strong>You had no card available to continue\.<\/strong>/);
+  assert.match(defeatHtml, /XP Gained: <strong>1<\/strong>/);
+  assert.match(defeatHtml, /Tokens Gained: <strong>1<\/strong>/);
+  assert.match(defeatHtml, /No chest earned/);
+  assert.match(defeatHtml, /<strong>New Achievements:<\/strong>[\s\S]*None/);
+  assert.match(pendingHtml, /Finalizing settlement results/);
+  assert.match(pendingHtml, /Reason: <strong>You led every surviving rival when time expired\.<\/strong>/);
+  assert.match(victoryHtml, /id="blood-match-rematch-btn"/);
+  assert.match(victoryHtml, /id="blood-match-return-menu-btn"/);
+});
+
+test("ui: blood match terminal reason display never leaks raw required-play enum text", () => {
+  const html = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      status: "completed",
+      terminalResult: { result: "player_win", endReason: "all_ai_required_play_unavailable" },
+      settlementResult: { status: "settled", matchXpDelta: 10, matchTokenDelta: 10, chestGrants: [], unlockedAchievements: [] }
+    }),
+    actions: {}
+  });
+
+  assert.match(html, /Reason: <strong>Both rivals were eliminated\.<\/strong>/);
+  assert.doesNotMatch(html, /all ai required play unavailable/i);
+  assert.doesNotMatch(html, /all_ai_required_play_unavailable/);
+  assert.doesNotMatch(html, /required play/i);
+});
+
+test("ui: blood match screen binds card, quit, rematch, and return actions", () => {
+  const previousDocument = global.document;
+  const calls = [];
+  const cardButton = {
+    dataset: { bloodPlayCardElement: "water" },
+    addEventListener: (_type, handler) => {
+      cardButton.click = handler;
+    }
+  };
+  const buttons = new Map([
+    ["blood-match-quit-btn", createFakeElement()],
+    ["blood-match-rematch-btn", createFakeElement()],
+    ["blood-match-return-menu-btn", createFakeElement()]
+  ]);
+
+  global.document = {
+    querySelectorAll: (selector) => selector === "[data-blood-play-card-element]" ? [cardButton] : [],
+    getElementById: (id) => buttons.get(id) ?? null
+  };
+
+  try {
+    bloodMatchScreen.bind({
+      actions: {
+        playCard: (index) => calls.push(["play", index]),
+        quit: () => calls.push(["quit"]),
+        rematch: () => calls.push(["rematch"]),
+        returnToMenu: () => calls.push(["menu"])
+      }
+    });
+
+    cardButton.click();
+    buttons.get("blood-match-quit-btn").listeners.get("click")();
+    buttons.get("blood-match-rematch-btn").listeners.get("click")();
+    buttons.get("blood-match-return-menu-btn").listeners.get("click")();
+
+    assert.deepEqual(calls, [["play", "water"], ["quit"], ["rematch"], ["menu"]]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: appController starts Blood Match with BloodMatchController instead of GameController", () => {
+  const shownScreens = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, context) => shownScreens.push({ screen, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+  controller.requireOwnProfileHydratedForAction = () => true;
+  controller.username = "VampyrLee";
+  controller.profile = { username: "VampyrLee" };
+  controller.sound = {
+    ...controller.sound,
+    playRoundResolved: () => {},
+    playMatchComplete: () => {}
+  };
+
+  try {
+    controller.startBloodMatch();
+
+    assert.equal(controller.gameController, null);
+    assert.equal(typeof controller.bloodMatchController?.playPlayerCard, "function");
+    assert.equal(shownScreens.at(-1)?.screen, "bloodMatch");
+    assert.match(shownScreens.at(-1)?.context?.state?.combatants?.vampire?.name, /Countess Veyra/);
+    assert.match(shownScreens.at(-1)?.context?.state?.combatants?.lycan?.name, /Ravena Moonfang/);
+  } finally {
+    controller.bloodMatchController?.stopTimers?.();
+  }
+});
+
+test("ui: appController persists completed Blood Match through the local state bridge once", async () => {
+  const previousWindow = global.window;
+  const calls = [];
+  global.window = {
+    elemintz: {
+      state: {
+        recordBloodMatchResult: async (payload) => {
+          calls.push(payload);
+          return {
+            profile: { username: "VampyrLee", bloodMatchWins: 1 },
+            cosmetics: { equipped: {}, owned: {}, catalog: {} },
+            profileAchievements: {},
+            matchXpDelta: 10,
+            matchTokenDelta: 10,
+            chestGrants: [{ chestType: "basic", amount: 1 }],
+            unlockedAchievements: [{ id: "blood_match_first_win", name: "Blood Match First Win" }]
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    const controller = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: { show: () => {} }
+    });
+    controller.username = "VampyrLee";
+    controller.bloodMatchSettlementKey = "blood-ui-1";
+    const state = {
+      settlementSummary: {
+        mode: "bloodMatch",
+        status: "completed",
+        round: 3,
+        winnerId: "player",
+        terminalResult: { result: "player_win", winnerId: "player" },
+        combatants: {
+          player: { handCount: 5, capturedCount: 8, eliminated: false },
+          vampire: { handCount: 0, capturedCount: 0, eliminated: true },
+          lycan: { handCount: 0, capturedCount: 0, eliminated: true }
+        },
+        history: []
+      }
+    };
+
+    const first = await controller.persistBloodMatchResult(null, state);
+    controller.bloodMatchSettlementInFlight = true;
+    const skipped = await controller.persistBloodMatchResult(null, state);
+
+    assert.equal(first.profile.username, "VampyrLee");
+    assert.equal(controller.profile.username, "VampyrLee");
+    assert.deepEqual(controller.bloodMatchSettlementResult, {
+      status: "settled",
+      duplicate: false,
+      matchXpDelta: 10,
+      matchTokenDelta: 10,
+      xpConversionTokenBonus: 0,
+      levelRewardTokenDelta: 0,
+      chestGrants: [{ chestType: "basic", amount: 1 }],
+      unlockedAchievements: [{ id: "blood_match_first_win", name: "Blood Match First Win" }]
+    });
+    assert.equal(skipped, null);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], {
+      username: "VampyrLee",
+      settlementKey: "blood-ui-1",
+      summary: state.settlementSummary
+    });
+  } finally {
+    global.window = previousWindow;
   }
 });
 
@@ -7087,6 +7665,95 @@ test("ui: own profile shows a Battle Report button", () => {
   assert.match(html, /View your 5 most recent completed battles\./);
 });
 
+test("ui: own profile renders Blood Match stats as a full-width two-column row", () => {
+  const context = createProfileScreenContext();
+  const html = profileScreen.render({
+    ...context,
+    profile: {
+      ...context.profile,
+      bloodMatchMatchesPlayed: 4,
+      bloodMatchWins: 3,
+      bloodMatchLosses: 1,
+      bloodMatchCurrentWinStreak: 2,
+      bloodMatchBestWinStreak: 3,
+      bloodMatchVampireEliminations: 2,
+      bloodMatchLycanEliminations: 1,
+      bloodMatchDoubleEliminationWins: 1,
+      bloodMatchThreeWayWarsWon: 2,
+      bloodMatchTimeoutWins: 1,
+      bloodMatchTwoWayWars: 5,
+      bloodMatchThreeWayWars: 3,
+      bloodMatchWarsWon: 4,
+      bloodMatchWarsLost: 1,
+      bloodMatchCardsCaptured: 17,
+      bloodMatchTimeoutLosses: 1
+    }
+  });
+
+  assert.match(html, /data-profile-blood-match-card="true"/);
+  assert.match(html, />Blood Match</);
+  assert.match(html, /profile-blood-match-grid/);
+  assert.equal((html.match(/profile-blood-match-column/g) ?? []).length, 2);
+  assert.match(html, />Record</);
+  assert.match(html, />Rival Eliminations</);
+  assert.match(html, />WAR Performance</);
+  assert.match(html, />Captures \/ Timeouts</);
+  assert.match(html, /Current Streak/);
+  assert.match(html, /Two-Way \/ Three-Way/);
+  assert.match(html, /Cards Captured/);
+});
+
+test("ui: viewed profile renders public Blood Match card with matching two-column structure", () => {
+  const html = profileScreen.renderViewedProfileModalBody(
+    {
+      username: "RemoteBloodUser",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      gamesPlayed: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      cardsCaptured: 0,
+      longestWar: 0,
+      bestWinStreak: 0,
+      featuredRivalWins: 0,
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" },
+      achievements: {},
+      bloodMatchMatchesPlayed: 5,
+      bloodMatchWins: 4,
+      bloodMatchLosses: 1,
+      bloodMatchCurrentWinStreak: 4,
+      bloodMatchBestWinStreak: 4,
+      bloodMatchVampireEliminations: 3,
+      bloodMatchLycanEliminations: 2,
+      bloodMatchDoubleEliminationWins: 2,
+      bloodMatchThreeWayWarsWon: 1,
+      bloodMatchTimeoutWins: 1,
+      bloodMatchTwoWayWars: 5,
+      bloodMatchThreeWayWars: 2,
+      bloodMatchWarsWon: 4,
+      bloodMatchWarsLost: 1,
+      bloodMatchCardsCaptured: 12,
+      bloodMatchTimeoutLosses: 1
+    },
+    {}
+  );
+
+  assert.match(html, /data-profile-blood-match-card="true"/);
+  assert.match(html, /profile-blood-match-grid/);
+  assert.equal((html.match(/profile-blood-match-column/g) ?? []).length, 2);
+  assert.match(html, />Record</);
+  assert.match(html, />Rival Eliminations</);
+  assert.match(html, />WAR Performance</);
+  assert.match(html, />Captures \/ Timeouts</);
+  assert.match(html, /Double Elimination/);
+  assert.match(html, /Timeout Wins/);
+  assert.match(html, /Current Streak/);
+  assert.match(html, /Two-Way \/ Three-Way/);
+  assert.match(html, /Cards Captured/);
+});
+
 test("ui: Battle Report modal shows an empty state when no battle history exists", () => {
   const html = profileScreen.renderBattleReportModalBody({
     username: "ChestUser",
@@ -7187,6 +7854,41 @@ test("ui: Battle Report detail view keeps non-online opponent text plain", () =>
   assert.match(html, />Crownfire Duelist</);
   assert.doesNotMatch(html, /data-battle-report-view-profile=/);
   assert.doesNotMatch(html, /data-battle-report-opponent-link="true"/);
+});
+
+test("ui: Battle Report detail view renders Blood Match rivals and terminal summary without profile links", () => {
+  const html = profileScreen.renderBattleReportModalBody(
+    {
+      username: "ChestUser",
+      recentBattles: [
+        {
+          mode: "bloodMatch",
+          displayMode: "Blood Match",
+          result: "win",
+          rivalName: "Countess Veyra & Ravena Moonfang",
+          completedAt: "2026-06-27T12:00:00.000Z",
+          rounds: 7,
+          endReason: "both_rivals_eliminated",
+          playerCardsCaptured: 9,
+          playerHandAtEnd: 6,
+          vampireHandAtEnd: 0,
+          lycanHandAtEnd: 0,
+          twoWayWars: 1,
+          threeWayWars: 1
+        }
+      ]
+    },
+    { selectedBattleIndex: 0 }
+  );
+
+  assert.match(html, />Blood Match</);
+  assert.match(html, />Victory</);
+  assert.match(html, />Rival</);
+  assert.match(html, />Countess Veyra &amp; Ravena Moonfang|>Countess Veyra & Ravena Moonfang/);
+  assert.match(html, /Cards Captured/);
+  assert.match(html, /Final Hands/);
+  assert.match(html, /Player 6 \/ Veyra 0 \/ Ravena 0/);
+  assert.doesNotMatch(html, /data-battle-report-view-profile=/);
 });
 
 test("ui: profile screen renders safe fallback values for missing online and featured rival stats", () => {
@@ -10298,6 +11000,66 @@ test("ui: profile unlocked achievements render approved expansion badge asset pa
   assert.match(html, /assets\/badges\/badge_longest_war_5\.png/);
   assert.match(html, /assets\/badges\/badge_longest_war_7\.png/);
   assert.match(html, /assets\/badges\/badge_all_elements_25\.png/);
+});
+
+test("ui: profile unlocked achievements render Blood Match badge asset paths", () => {
+  const html = profileScreen.render({
+    profile: {
+      username: "BloodBadgeViewer",
+      title: "Initiate",
+      wins: 0,
+      losses: 0,
+      warsEntered: 0,
+      warsWon: 0,
+      longestWar: 0,
+      cardsCaptured: 0,
+      gamesPlayed: 0,
+      bestWinStreak: 0,
+      bloodMatchMatchesPlayed: 1,
+      bloodMatchWins: 1,
+      achievements: {
+        blood_match_first_win: { count: 1 },
+        blood_match_three_way_war: { count: 4 }
+      },
+      modeStats: { pve: { wins: 0, losses: 0 }, local_pvp: { wins: 0, losses: 0 } },
+      equippedCosmetics: { avatar: "default_avatar", title: "Initiate", badge: "none" }
+    },
+    cosmetics: {
+      equipped: {
+        avatar: "default_avatar",
+        cardBack: "default_card_back",
+        background: "default_background",
+        elementCardVariant: { fire: "default_fire_card", water: "default_water_card", earth: "default_earth_card", wind: "default_wind_card" },
+        badge: "none",
+        title: "Initiate"
+      },
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", owned: true }],
+        cardBack: [{ id: "default_card_back", name: "Default", owned: true }],
+        background: [{ id: "default_background", name: "Default", owned: true }],
+        elementCardVariant: [{ id: "default_fire_card", name: "Core Fire", element: "fire", owned: true }],
+        badge: [{ id: "none", name: "No Badge", owned: true }],
+        title: [{ id: "Initiate", name: "Initiate", owned: true }]
+      }
+    },
+    searchResults: [],
+    searchQuery: "",
+    profileAchievementsExpanded: true,
+    viewedProfileAchievementsExpanded: false,
+    viewedProfile: null,
+    backgroundImage: "assets/EleMintzIcon.png"
+  });
+
+  assert.match(html, /Blood Match First Win/);
+  assert.match(html, /Three-Way Blood War/);
+  assert.match(html, /assets\/badges\/blood_match\/badge_blood_match_first_win\.png/);
+  assert.match(html, /assets\/badges\/blood_match\/badge_blood_match_three_way_war\.png/);
+  assert.match(html, /Repeat Count: 4/);
+  const firstWinIndex = html.indexOf("Blood Match First Win");
+  const threeWayIndex = html.indexOf("Three-Way Blood War");
+  assert.ok(firstWinIndex >= 0);
+  assert.ok(threeWayIndex > firstWinIndex);
+  assert.doesNotMatch(html.slice(firstWinIndex, threeWayIndex), /Repeat Count/);
 });
 
 test("ui: profile renders all valid attained achievements and shows achievement progress heading", () => {

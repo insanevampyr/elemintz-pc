@@ -267,6 +267,27 @@ function sanitizePublicLongestMatch(profile) {
   };
 }
 
+function buildPublicBloodMatchStats(profile = {}) {
+  return {
+    bloodMatchMatchesPlayed: Number(profile?.bloodMatchMatchesPlayed ?? 0),
+    bloodMatchWins: Number(profile?.bloodMatchWins ?? 0),
+    bloodMatchLosses: Number(profile?.bloodMatchLosses ?? 0),
+    bloodMatchCurrentWinStreak: Number(profile?.bloodMatchCurrentWinStreak ?? 0),
+    bloodMatchBestWinStreak: Number(profile?.bloodMatchBestWinStreak ?? 0),
+    bloodMatchVampireEliminations: Number(profile?.bloodMatchVampireEliminations ?? 0),
+    bloodMatchLycanEliminations: Number(profile?.bloodMatchLycanEliminations ?? 0),
+    bloodMatchDoubleEliminationWins: Number(profile?.bloodMatchDoubleEliminationWins ?? 0),
+    bloodMatchTwoWayWars: Number(profile?.bloodMatchTwoWayWars ?? 0),
+    bloodMatchThreeWayWars: Number(profile?.bloodMatchThreeWayWars ?? 0),
+    bloodMatchWarsWon: Number(profile?.bloodMatchWarsWon ?? 0),
+    bloodMatchWarsLost: Number(profile?.bloodMatchWarsLost ?? 0),
+    bloodMatchThreeWayWarsWon: Number(profile?.bloodMatchThreeWayWarsWon ?? 0),
+    bloodMatchCardsCaptured: Number(profile?.bloodMatchCardsCaptured ?? 0),
+    bloodMatchTimeoutLosses: Number(profile?.bloodMatchTimeoutLosses ?? 0),
+    bloodMatchTimeoutWins: Number(profile?.bloodMatchTimeoutWins ?? 0)
+  };
+}
+
 function buildProfileSnapshot({ profile, challenges }) {
   const cosmetics = buildSnapshotCosmetics(profile);
   const stats = buildSnapshotStats(profile);
@@ -341,6 +362,7 @@ function buildPublicProfileSnapshot({ profile, specialRecords = [] }) {
       gauntletWins: Number(profile?.gauntletWins ?? 0),
       gauntletLosses: Number(profile?.gauntletLosses ?? 0),
       gauntletRivalsDefeated: Number(profile?.gauntletRivalsDefeated ?? 0),
+      ...buildPublicBloodMatchStats(profile),
       longestMatch: sanitizePublicLongestMatch(profile),
       achievements: profile?.achievements ?? {},
       modeStats: stats.modes,

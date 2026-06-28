@@ -537,7 +537,8 @@ const VALID_LATEST_BATTLE_MODES = new Set([
   "pve",
   "localHotseat",
   "gauntlet",
-  "featuredRival"
+  "featuredRival",
+  "bloodMatch"
 ]);
 const VALID_LATEST_BATTLE_RESULTS = new Set(["win", "loss", "draw"]);
 const RECENT_BATTLES_LIMIT = 5;
@@ -590,6 +591,21 @@ function normalizeLatestBattleSummary(entry) {
     return {
       ...normalizedEntry,
       rivalName: sanitizeOptionalString(entry.rivalName)
+    };
+  }
+
+  if (mode === "bloodMatch") {
+    return {
+      ...normalizedEntry,
+      displayMode: sanitizeOptionalString(entry.displayMode) ?? "Blood Match",
+      rivalName: sanitizeOptionalString(entry.rivalName),
+      endReason: sanitizeOptionalString(entry.endReason),
+      playerCardsCaptured: sanitizeOptionalCount(entry.playerCardsCaptured),
+      playerHandAtEnd: sanitizeOptionalCount(entry.playerHandAtEnd),
+      vampireHandAtEnd: sanitizeOptionalCount(entry.vampireHandAtEnd),
+      lycanHandAtEnd: sanitizeOptionalCount(entry.lycanHandAtEnd),
+      twoWayWars: sanitizeOptionalCount(entry.twoWayWars),
+      threeWayWars: sanitizeOptionalCount(entry.threeWayWars)
     };
   }
 

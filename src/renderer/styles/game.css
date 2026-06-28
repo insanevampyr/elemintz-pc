@@ -3157,3 +3157,489 @@ select {
   }
 }
 
+.profile-blood-match-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-blood-match-card {
+  grid-column: 1 / -1;
+}
+
+.profile-blood-match-column {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.profile-blood-match-group {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.profile-blood-match-group h4 {
+  margin: 0 0 8px;
+  color: #ffb6c8;
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 640px) {
+  .profile-blood-match-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.screen-blood-match {
+  min-height: 100vh;
+  padding: 18px;
+  background-position: center;
+  background-size: cover;
+}
+
+.blood-match-backdrop {
+  min-height: calc(100vh - 36px);
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(12, 6, 14, 0.82), rgba(12, 6, 14, 0.94));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+  overflow: hidden;
+}
+
+.blood-match-topbar,
+.blood-match-countess-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(18, 12, 24, 0.82);
+}
+
+.blood-match-eyebrow,
+.blood-match-combatant__role {
+  margin: 0;
+  color: #ffb6c8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.blood-match-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(340px, 1.2fr) minmax(220px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+  margin: 16px 0;
+  min-width: 0;
+}
+
+.blood-match-combatant,
+.blood-match-clash-zone,
+.blood-match-player-hand-panel,
+.blood-match-war-pile,
+.blood-match-rival-rack {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  background: rgba(16, 10, 22, 0.86);
+}
+
+.blood-match-countess-strip {
+  margin-top: 16px;
+}
+
+.blood-match-combatant--strip {
+  flex: 1 1 320px;
+}
+
+.blood-match-board-column,
+.blood-match-center-column {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.blood-match-clash-zone {
+  text-align: center;
+}
+
+.blood-match-combatant.is-war-active {
+  border-color: rgba(255, 100, 130, 0.72);
+  box-shadow: 0 0 22px rgba(255, 80, 120, 0.16);
+}
+
+.blood-match-combatant.is-war-excluded,
+.blood-match-combatant.is-eliminated {
+  opacity: 0.58;
+  filter: grayscale(0.35);
+}
+
+.blood-match-combatant.is-card-returned {
+  border-color: rgba(125, 226, 202, 0.48);
+}
+
+.blood-match-combatant__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.blood-match-combatant__identity h3 {
+  margin: 2px 0;
+}
+
+.blood-match-combatant__avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  object-fit: cover;
+}
+
+.blood-match-combatant__badge {
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  border-radius: 999px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 14px rgba(255, 182, 200, 0.18);
+}
+
+.blood-match-combatant__stats,
+.blood-match-clash-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.blood-match-combatant__stats span,
+.blood-match-clash-status span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.blood-match-card-row,
+.blood-match-hand {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.blood-match-hand {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.blood-match-card-slot,
+.blood-match-hand-card,
+.blood-match-war-pile__mini-card {
+  width: 116px;
+  min-height: 158px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.22);
+  color: inherit;
+}
+
+.blood-match-hand-card {
+  position: relative;
+  width: auto;
+  min-height: 138px;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.blood-match-hand-card:not(.is-disabled):hover,
+.blood-match-hand-card:not(.is-disabled):focus-visible {
+  border-color: rgba(255, 182, 200, 0.72);
+  box-shadow: 0 0 20px rgba(255, 80, 120, 0.18);
+  transform: translateY(-2px);
+}
+
+.blood-match-card-slot img,
+.blood-match-hand-card img,
+.blood-match-rival-rack img,
+.blood-match-war-pile__mini-card img {
+  display: block;
+  width: 100%;
+  border-radius: 11px;
+}
+
+.blood-match-hand-card img {
+  max-height: 96px;
+  object-fit: contain;
+}
+
+.blood-match-hand-card__name {
+  display: block;
+  margin-top: 6px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.blood-match-hand-card__count {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-width: 34px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.74);
+  color: #fff;
+  font-weight: 800;
+  text-align: center;
+}
+
+.blood-match-card-slot.is-empty {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+}
+
+.blood-match-hand-card.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.blood-match-hand-card.is-fatigued {
+  border-color: rgba(255, 207, 117, 0.46);
+}
+
+.blood-match-terminal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.blood-match-rival-rack {
+  display: grid;
+  grid-template-columns: minmax(58px, 0.52fr) minmax(0, 2fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.blood-match-rival-rack__back,
+.blood-match-rival-rack__variant {
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  text-align: center;
+  min-width: 0;
+}
+
+.blood-match-rival-rack__variants {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(44px, 1fr));
+  gap: 6px;
+}
+
+.blood-match-rival-rack span,
+.blood-match-war-pile__owner,
+.blood-match-war-pile__element {
+  display: block;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.blood-match-rival-rack img {
+  max-height: 86px;
+  object-fit: contain;
+}
+
+.blood-match-war-pile {
+  padding: 12px;
+  max-height: 156px;
+  overflow: hidden;
+}
+
+.blood-match-war-pile.is-inactive {
+  background: rgba(16, 10, 22, 0.62);
+}
+
+.blood-match-war-pile__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.blood-match-war-pile__header span {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.blood-match-war-pile__empty {
+  margin: 8px 0 0;
+}
+
+.blood-match-war-pile__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(58px, 70px));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.blood-match-war-pile__mini-card {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  min-height: 0;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  overflow: hidden;
+}
+
+.blood-match-war-pile__owner-strip {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: #ffb6c8;
+}
+
+.blood-match-war-pile__mini-card--vampire .blood-match-war-pile__owner-strip {
+  background: #d9416d;
+}
+
+.blood-match-war-pile__mini-card--lycan .blood-match-war-pile__owner-strip {
+  background: #b6e6ff;
+}
+
+.blood-match-war-pile__image-wrap {
+  position: relative;
+  display: block;
+  padding-left: 2px;
+}
+
+.blood-match-war-pile__image-wrap img {
+  max-height: 60px;
+  object-fit: contain;
+}
+
+.blood-match-war-pile__count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 22px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.76);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.blood-match-war-pile__owner,
+.blood-match-war-pile__element {
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blood-match-war-pile__element {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.blood-match-terminal-result {
+  padding: 16px;
+  border: 1px solid rgba(255, 182, 200, 0.28);
+  border-radius: 20px;
+  background: rgba(45, 15, 32, 0.86);
+}
+
+.blood-match-terminal-result h2 {
+  margin: 4px 0 8px;
+}
+
+.blood-match-terminal-result__rewards {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.blood-match-terminal-result__rewards span {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.blood-match-terminal-result__achievements {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.blood-match-terminal-result__achievements ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.blood-match-terminal-result__warning {
+  color: #ffcf75;
+  font-weight: 700;
+}
+
+.blood-match-preload-cardback {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .blood-match-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .blood-match-countess-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .screen-blood-match {
+    padding: 8px;
+  }
+
+  .blood-match-topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .blood-match-card-slot,
+  .blood-match-hand-card {
+    width: 96px;
+  }
+
+  .blood-match-hand {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    width: 100%;
+  }
+
+  .blood-match-hand-card {
+    width: auto;
+  }
+
+  .blood-match-rival-rack,
+  .blood-match-rival-rack__variants {
+    grid-template-columns: repeat(2, minmax(90px, 1fr));
+  }
+}
+

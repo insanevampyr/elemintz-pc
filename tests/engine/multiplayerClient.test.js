@@ -9,6 +9,8 @@ import { MULTIPLAYER_RUNTIME_CONFIG_FILENAME } from "../../src/main/multiplayer/
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
 
+const TEST_SESSION_EXPIRES_AT = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
 function createMockRoom({ roomCode, host, guest = null, status = "waiting", visibility = "private" }) {
   return {
     roomCode,
@@ -350,7 +352,7 @@ class FakeSocket {
             accountId: "account-id-1",
             authenticated: true,
             rememberSession: payload?.rememberSession !== false,
-            expiresAt: "2026-06-27T12:00:00.000Z"
+            expiresAt: TEST_SESSION_EXPIRES_AT
           }
         });
       });
@@ -368,7 +370,7 @@ class FakeSocket {
             accountId: this.sessionAuthenticated ? "account-id-1" : null,
             authenticated: this.sessionAuthenticated,
             rememberSession: this.sessionAuthenticated,
-            expiresAt: "2026-06-27T12:00:00.000Z"
+            expiresAt: TEST_SESSION_EXPIRES_AT
           }
         });
       });
@@ -2606,7 +2608,7 @@ test("multiplayer client: authenticated login reuses the server-issued session f
     const persisted = JSON.parse(await fs.readFile(path.join(dataDir, "multiplayer-session.json"), "utf8"));
     assert.equal(persisted.session?.token, "session-token-1");
     assert.equal(persisted.session?.rememberSession, true);
-    assert.equal(persisted.session?.expiresAt, "2026-06-27T12:00:00.000Z");
+    assert.equal(persisted.session?.expiresAt, TEST_SESSION_EXPIRES_AT);
     assert.equal("password" in persisted.session, false);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
@@ -3174,7 +3176,7 @@ test("multiplayer client: persisted session serverUrl still works when runtime c
           profileKey: "RegisteredUser",
           authenticated: true,
           rememberSession: true,
-          expiresAt: "2026-06-27T12:00:00.000Z",
+          expiresAt: TEST_SESSION_EXPIRES_AT,
           persistedAt: "2026-05-27T12:00:00.000Z"
         }
       }),

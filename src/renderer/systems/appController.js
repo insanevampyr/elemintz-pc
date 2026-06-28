@@ -1,6 +1,7 @@
 import {
   aiDifficultyScreen,
   achievementsScreen,
+  bloodMatchScreen,
   cosmeticsScreen,
   dailyChallengesScreen,
   gameScreen,
@@ -30,6 +31,7 @@ import {
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../utils/assets.js";
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
+import { createBloodMatchController } from "./bloodMatchController.js";
 import { SoundManager } from "./soundManager.js";
 import {
   applyAchievementUnlocks,
@@ -331,6 +333,10 @@ export class AppController {
     this.tauntRandom = Math.random;
     this.gauntletRandom = Math.random;
     this.opponentDisplayName = "Elemental AI";
+    this.bloodMatchController = null;
+    this.bloodMatchSettlementKey = null;
+    this.bloodMatchSettlementInFlight = false;
+    this.bloodMatchSettlementResult = null;
     this.storeViewState = this.createDefaultStoreViewState();
     this.storePurchaseInFlight = false;
     this.storePurchaseInFlightKey = null;
@@ -1128,6 +1134,7 @@ export class AppController {
     this.screenManager.register("login", loginScreen);
     this.screenManager.register("menu", menuScreen);
     this.screenManager.register("aiDifficulty", aiDifficultyScreen);
+    this.screenManager.register("bloodMatch", bloodMatchScreen);
     this.screenManager.register("localSetup", localSetupScreen);
     this.screenManager.register("game", gameScreen);
     this.screenManager.register("pass", passScreen);
@@ -1339,7 +1346,7 @@ export class AppController {
         return;
       }
 
-      if (["game", "pass"].includes(this.screenFlow) || this.isOnlinePlayEscapeBlockedState()) {
+      if (["game", "pass", "bloodMatch"].includes(this.screenFlow) || this.isOnlinePlayEscapeBlockedState()) {
         return;
       }
 
@@ -1738,11 +1745,229 @@ export class AppController {
       selectedGauntletMode: Boolean(this.pveGauntletMode),
       selectedFeaturedRivalId: this.pveFeaturedRivalId,
       actions: {
-        start: async ({ aiDifficulty, featuredRivalId, gauntletMode } = {}) => {
+        start: async ({ aiDifficulty, featuredRivalId, gauntletMode, bloodMatch } = {}) => {
+          if (bloodMatch === true) {
+            this.startBloodMatch();
+            return;
+          }
           this.startGame(MATCH_MODE.PVE, { aiDifficulty, featuredRivalId, gauntletMode });
         },
         back: () => this.showMenu()
       }
+    });
+  }
+
+  startBloodMatch() {
+    if (!this.requireOwnProfileHydratedForAction("start_blood_match")) {
+      return;
+    }
+
+    this.clearPassTimer();
+    this.gameController?.stopTimer?.();
+    this.gameController?.stopMatchClock?.();
+    this.bloodMatchController?.stopTimers?.();
+    this.pendingMatchCompletePayload = null;
+    this.pendingGauntletVictoryPayload = null;
+    this.pendingGauntletContinuation = null;
+    this.pendingGauntletContinuationRequiresConfirm = false;
+    this.clearGauntletRunState();
+    this.pveFeaturedRivalId = null;
+    this.pveOpponentStyle = null;
+    this.bloodMatchSettlementKey = this.createBloodMatchSettlementKey();
+    this.bloodMatchSettlementInFlight = false;
+    this.bloodMatchSettlementResult = null;
+    this.roundPresentation = {
+      phase: "idle",
+      busy: false,
+      selectedCardIndex: null
+    };
+
+    this.bloodMatchController = createBloodMatchController({
+      username: this.username,
+      timerSeconds: this.settings?.gameplay?.timerSeconds ?? FALLBACK_SETTINGS.gameplay.timerSeconds,
+      matchTimeLimitSeconds: 300,
+      onUpdate: () => this.showBloodMatch(),
+      onRoundResolved: () => {
+        this.sound.playRoundResolved({
+          mode: "blood_match",
+          round: this.bloodMatchController?.getState?.()?.lastResult ?? null
+        });
+      },
+      onMatchComplete: (terminalResult, state) => {
+        this.sound.playMatchComplete({ mode: "blood_match", match: terminalResult });
+        void this.persistBloodMatchResult(terminalResult, state);
+      }
+    });
+    this.bloodMatchController.startMatch();
+    this.screenFlow = "bloodMatch";
+    this.showBloodMatch();
+  }
+
+  createBloodMatchSettlementKey() {
+    const username = String(this.username ?? "player").trim() || "player";
+    return `blood-match:${username}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  }
+
+  normalizeBloodMatchSettlementResult(result) {
+    if (!result || typeof result !== "object") {
+      return null;
+    }
+    const chestGrants = Array.isArray(result.chestGrants)
+      ? result.chestGrants
+        .map((grant) => ({
+          chestType: String(grant?.chestType ?? "basic").trim() || "basic",
+          amount: Math.max(0, Math.floor(Number(grant?.amount ?? 0) || 0))
+        }))
+        .filter((grant) => grant.amount > 0)
+      : [];
+    const unlockedAchievements = Array.isArray(result.unlockedAchievements)
+      ? result.unlockedAchievements
+        .map((achievement) => ({
+          id: String(achievement?.id ?? "").trim(),
+          name: String(achievement?.name ?? achievement?.id ?? "").trim()
+        }))
+        .filter((achievement) => achievement.id)
+      : [];
+
+    return {
+      status: "settled",
+      duplicate: Boolean(result.duplicate),
+      matchXpDelta: Math.max(0, Number(result.matchXpDelta ?? result.xpDelta ?? 0) || 0),
+      matchTokenDelta: Math.max(0, Number(result.matchTokenDelta ?? result.tokenDelta ?? 0) || 0),
+      xpConversionTokenBonus: Math.max(0, Number(result.xpConversionTokenBonus ?? 0) || 0),
+      levelRewardTokenDelta: Math.max(0, Number(result.levelRewardTokenDelta ?? 0) || 0),
+      chestGrants,
+      unlockedAchievements
+    };
+  }
+
+  async persistBloodMatchResult(_terminalResult, state = null) {
+    if (this.bloodMatchSettlementInFlight) {
+      return null;
+    }
+    const settlementSummary = state?.settlementSummary ?? this.bloodMatchController?.getState?.()?.settlementSummary;
+    if (!settlementSummary || settlementSummary.status !== "completed") {
+      return null;
+    }
+    if (!window.elemintz?.state?.recordBloodMatchResult || !this.username) {
+      return null;
+    }
+
+    this.bloodMatchSettlementInFlight = true;
+    this.bloodMatchSettlementResult = { status: "pending" };
+    this.showBloodMatch();
+    try {
+      const result = await window.elemintz.state.recordBloodMatchResult({
+        username: this.username,
+        settlementKey: this.bloodMatchSettlementKey ?? this.createBloodMatchSettlementKey(),
+        summary: settlementSummary
+      });
+      if (result?.profile) {
+        this.profile = result.profile;
+        if (result.cosmetics) {
+          this.cosmetics = result.cosmetics;
+        }
+        if (result.profileAchievements) {
+          this.profileAchievements = result.profileAchievements;
+        }
+        if (result.dailyChallenges || result.weeklyChallenges) {
+          this.dailyChallenges = {
+            ...this.dailyChallenges,
+            daily: result.dailyChallenges ?? this.dailyChallenges?.daily ?? null,
+            weekly: result.weeklyChallenges ?? this.dailyChallenges?.weekly ?? null
+          };
+        }
+      }
+      this.bloodMatchSettlementResult = this.normalizeBloodMatchSettlementResult(result);
+      this.showBloodMatch();
+      return result;
+    } catch (error) {
+      console.error("[BloodMatch] Failed to persist Blood Match result", {
+        message: error?.message ?? String(error)
+      });
+      this.bloodMatchSettlementResult = {
+        status: "error",
+        message: error?.message ?? "Blood Match settlement failed."
+      };
+      this.showBloodMatch();
+      return null;
+    } finally {
+      this.bloodMatchSettlementInFlight = false;
+    }
+  }
+
+  showBloodMatch() {
+    const state = this.bloodMatchController?.getState?.();
+    if (!state) {
+      return false;
+    }
+
+    this.screenFlow = "bloodMatch";
+    this.screenManager.show("bloodMatch", {
+      state: {
+        ...state,
+        equippedCosmetics: this.profile?.equippedCosmetics ?? null,
+        settlementInFlight: this.bloodMatchSettlementInFlight,
+        settlementResult: this.bloodMatchSettlementResult
+      },
+      actions: {
+        playCard: async (selection) => {
+          if (typeof selection === "string") {
+            this.bloodMatchController?.playPlayerCard?.({ card: selection });
+          } else {
+            this.bloodMatchController?.playPlayerCard?.({ cardIndex: Number(selection) });
+          }
+          this.showBloodMatch();
+        },
+        rematch: async () => {
+          this.bloodMatchSettlementKey = this.createBloodMatchSettlementKey();
+          this.bloodMatchSettlementInFlight = false;
+          this.bloodMatchSettlementResult = null;
+          this.bloodMatchController?.rematch?.();
+          this.showBloodMatch();
+        },
+        quit: async () => this.confirmQuitBloodMatch(),
+        returnToMenu: async () => {
+          this.bloodMatchController?.stopTimers?.();
+          this.bloodMatchController = null;
+          this.bloodMatchSettlementKey = null;
+          this.bloodMatchSettlementInFlight = false;
+          this.bloodMatchSettlementResult = null;
+          this.showMenu();
+        }
+      }
+    });
+    return true;
+  }
+
+  confirmQuitBloodMatch() {
+    if (!this.bloodMatchController || this.bloodMatchController.getState()?.status !== "active") {
+      this.bloodMatchController?.stopTimers?.();
+      this.bloodMatchController = null;
+      this.showMenu();
+      return;
+    }
+
+    this.modalManager.show({
+      title: "Quit Blood Match?",
+      body: "Quitting now counts as a Blood Match defeat.",
+      actions: [
+        {
+          label: "Cancel",
+          onClick: () => this.modalManager.hide()
+        },
+        {
+          label: "Quit Match",
+          primary: true,
+          onClick: () => {
+            this.modalManager.hide();
+            this.bloodMatchController?.quit?.({ reason: "quit_forfeit" });
+            this.bloodMatchController?.stopTimers?.();
+            this.bloodMatchController = null;
+            this.showMenu();
+          }
+        }
+      ]
     });
   }
 
@@ -8031,9 +8256,8 @@ export class AppController {
                 );
               }
 
-              this.onlinePlayState = this.normalizeOnlinePlayState(
-                await window.elemintz?.multiplayer?.getState?.()
-              );
+              const rawOnlinePlayState = await window.elemintz?.multiplayer?.getState?.();
+              this.onlinePlayState = this.normalizeOnlinePlayState(rawOnlinePlayState);
               this.username =
                 authResult?.session?.username ??
                 authResult?.account?.username ??
@@ -8462,6 +8686,8 @@ export class AppController {
     this.clearPassTimer();
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
+    this.bloodMatchController?.stopTimers?.();
+    this.bloodMatchController = null;
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;

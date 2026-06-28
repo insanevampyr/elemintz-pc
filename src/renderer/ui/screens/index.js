@@ -12,4 +12,5 @@ export * from "./dailyChallengesScreen.js";
 export * from "./onlinePlayScreen.js";
 export * from "./howToPlayScreen.js";
 export * from "./aiDifficultyScreen.js";
+export * from "./bloodMatchScreen.js";
 export * from "./roadmapScreen.js";

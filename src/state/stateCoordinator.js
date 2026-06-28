@@ -20,7 +20,8 @@ import {
   applyAchievementUnlocks,
   buildAchievementCatalog,
   buildAchievementView,
-  evaluateAchievements
+  evaluateAchievements,
+  evaluateBloodMatchAchievements
 } from "./achievementSystem.js";
 import {
   acknowledgeUnlockedLoadoutSlots,
@@ -38,7 +39,7 @@ import {
   RANDOMIZABLE_COSMETIC_TYPES,
   saveCosmeticLoadout
 } from "./cosmeticSystem.js";
-import { deriveMatchStats } from "./statsTracking.js";
+import { createDefaultBloodMatchStats, deriveMatchStats } from "./statsTracking.js";
 import {
   buyCollectionPackItems,
   buyConfiguredUniqueStoreItem,
@@ -72,6 +73,7 @@ import {
 import {
   applyLevelRewardsForLevelChange,
   applyXpWithMaxLevelFallback,
+  buildXpBreakdown,
   deriveLevelFromXp,
   getLevelProgress
 } from "./levelRewardsSystem.js";
@@ -107,6 +109,10 @@ const FEATURED_RIVAL_PUBLIC_NAMES = Object.freeze({
   crownfire_duelist: "Crownfire Duelist"
 });
 const VALID_RUNTIME_MODES = new Set(["pve", "local_pvp", "online_pvp"]);
+const BLOOD_MATCH_WIN_XP = 10;
+const BLOOD_MATCH_WIN_TOKENS = 10;
+const BLOOD_MATCH_LOSS_TOKENS = 1;
+const BLOOD_MATCH_RIVAL_NAME = "Countess Veyra & Ravena Moonfang";
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 const GAUNTLET_MILESTONE_REWARDS = Object.freeze([
   Object.freeze({ streak: 3, tokens: 25 }),
@@ -796,6 +802,162 @@ function applyRecentBattleSummary(profile, latestBattle, limit = 5) {
     latestBattle: nextRecentBattles[0] ?? latestBattle,
     recentBattles: nextRecentBattles
   };
+}
+
+function normalizeBloodMatchCombatantSummary(summary = {}, combatantId) {
+  const combatant = summary?.combatants?.[combatantId] ?? {};
+  return {
+    handCount: safeRuntimeCount(combatant.handCount, 0),
+    capturedCount: safeRuntimeCount(combatant.capturedCount, 0),
+    eliminated: Boolean(combatant.eliminated)
+  };
+}
+
+function normalizeBloodMatchHistory(summary = {}) {
+  return (Array.isArray(summary?.history) ? summary.history : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({
+      type: String(entry?.type ?? "").trim(),
+      classificationId: String(entry?.classificationId ?? "").trim(),
+      reason: String(entry?.reason ?? "").trim(),
+      winnerId: String(entry?.winnerId ?? "").trim(),
+      activeCombatantIds: Array.isArray(entry?.activeCombatantIds) ? [...entry.activeCombatantIds] : [],
+      excludedCombatantIds: Array.isArray(entry?.excludedCombatantIds) ? [...entry.excludedCombatantIds] : []
+    }));
+}
+
+function isBloodMatchWarEvent(entry = {}) {
+  const type = String(entry?.type ?? "").toLowerCase();
+  const classificationId = String(entry?.classificationId ?? "").toLowerCase();
+  return type.includes("war") || classificationId.includes("war");
+}
+
+function isBloodMatchThreeWayWarEvent(entry = {}) {
+  const type = String(entry?.type ?? "").toLowerCase();
+  const activeIds = Array.isArray(entry?.activeCombatantIds) ? entry.activeCombatantIds : [];
+  return type === "three_way_war" || activeIds.length >= 3;
+}
+
+function deriveBloodMatchProfileStats(summary = {}) {
+  const terminal = summary?.terminalResult && typeof summary.terminalResult === "object"
+    ? summary.terminalResult
+    : {};
+  const winnerId = String(summary?.winnerId ?? terminal?.winnerId ?? "").trim();
+  const result = String(terminal?.result ?? "").trim();
+  const endReason = String(summary?.endReason ?? terminal?.endReason ?? terminal?.reason ?? "").trim();
+  const player = normalizeBloodMatchCombatantSummary(summary, "player");
+  const vampire = normalizeBloodMatchCombatantSummary(summary, "vampire");
+  const lycan = normalizeBloodMatchCombatantSummary(summary, "lycan");
+  const timeoutWin = endReason === "timeout_lead";
+  const bothRivalsEliminated = vampire.eliminated && lycan.eliminated;
+  const playerWon = (winnerId === "player" || result === "player_win") && (timeoutWin || bothRivalsEliminated);
+  const playerLost = !playerWon;
+  const history = normalizeBloodMatchHistory(summary);
+  const warEvents = history.filter(isBloodMatchWarEvent);
+  const threeWayWars = history.filter(isBloodMatchThreeWayWarEvent).length;
+  const twoWayWars = Math.max(0, warEvents.length - threeWayWars);
+  const warsWon = warEvents.filter((entry) => entry.winnerId === "player").length;
+  const warsLost = warEvents.filter((entry) => entry.winnerId && entry.winnerId !== "player").length;
+  const threeWayWarsWon = warEvents.filter(
+    (entry) => entry.winnerId === "player" && isBloodMatchThreeWayWarEvent(entry)
+  ).length;
+  const bloodFeudWarsWon = warEvents.filter(
+    (entry) =>
+      entry.winnerId === "player" &&
+      Array.isArray(entry.activeCombatantIds) &&
+      entry.activeCombatantIds.includes("player") &&
+      (entry.activeCombatantIds.includes("vampire") || entry.activeCombatantIds.includes("lycan"))
+  ).length;
+  const aiEliminationWin = playerWon && (vampire.eliminated || lycan.eliminated);
+  const doubleEliminationWin = playerWon && vampire.eliminated && lycan.eliminated;
+  const validTimeoutWin = playerWon && timeoutWin;
+  const timeoutLoss = playerLost && endReason === "timeout_tie_or_deficit";
+
+  return {
+    bloodMatchMatchesPlayed: 1,
+    bloodMatchWins: playerWon ? 1 : 0,
+    bloodMatchLosses: playerLost ? 1 : 0,
+    bloodMatchCurrentWinStreak: playerWon ? 1 : 0,
+    bloodMatchBestWinStreak: playerWon ? 1 : 0,
+    bloodMatchEliminationWins: aiEliminationWin ? 1 : 0,
+    bloodMatchTimeoutWins: validTimeoutWin ? 1 : 0,
+    bloodMatchTimeoutLosses: timeoutLoss ? 1 : 0,
+    bloodMatchDoubleEliminationWins: doubleEliminationWin ? 1 : 0,
+    bloodMatchVampireEliminations: vampire.eliminated ? 1 : 0,
+    bloodMatchLycanEliminations: lycan.eliminated ? 1 : 0,
+    bloodMatchPlayerEliminations: player.eliminated ? 1 : 0,
+    bloodMatchTwoWayWars: twoWayWars,
+    bloodMatchThreeWayWars: threeWayWars,
+    bloodMatchWarsWon: warsWon,
+    bloodMatchWarsLost: warsLost,
+    bloodMatchThreeWayWarsWon: threeWayWarsWon,
+    bloodMatchBloodFeudWarsWon: bloodFeudWarsWon,
+    bloodMatchCardsCaptured: player.capturedCount,
+    bloodMatchHighestHandCount: player.handCount,
+    bloodMatchLowestHandCount: player.handCount,
+    bloodMatchComebackWins:
+      playerWon && history.some((entry) => entry.winnerId && entry.winnerId !== "player") ? 1 : 0,
+    bloodMatchOneCardWins: playerWon && player.handCount <= 1 ? 1 : 0,
+    bloodMatchNoWarWins: playerWon && warEvents.length === 0 ? 1 : 0,
+    playerHandAtEnd: player.handCount,
+    vampireHandAtEnd: vampire.handCount,
+    lycanHandAtEnd: lycan.handCount,
+    endReason,
+    winnerId: playerWon ? "player" : winnerId || null
+  };
+}
+
+function applyBloodMatchStatsToProfile(profile, stats = {}) {
+  const defaults = createDefaultBloodMatchStats();
+  const nextProfile = { ...profile };
+  for (const key of Object.keys(defaults)) {
+    const current = safeRuntimeCount(nextProfile[key], defaults[key]);
+    const delta = safeRuntimeCount(stats[key], 0);
+    if (key === "bloodMatchCurrentWinStreak") {
+      nextProfile[key] = stats.bloodMatchWins > 0 ? current + 1 : 0;
+    } else if (key === "bloodMatchBestWinStreak") {
+      const currentStreak = safeRuntimeCount(nextProfile.bloodMatchCurrentWinStreak, 0);
+      nextProfile[key] = Math.max(current, currentStreak);
+    } else if (key === "bloodMatchHighestHandCount") {
+      nextProfile[key] = Math.max(current, delta);
+    } else if (key === "bloodMatchLowestHandCount") {
+      nextProfile[key] = current > 0 ? Math.min(current, delta) : delta;
+    } else {
+      nextProfile[key] = current + delta;
+    }
+  }
+  return nextProfile;
+}
+
+function buildBloodMatchLatestBattleSummary(summary = {}, stats = {}, nowMs = Date.now()) {
+  const result = stats.bloodMatchWins > 0 ? "win" : "loss";
+  return {
+    mode: "bloodMatch",
+    displayMode: "Blood Match",
+    result,
+    completedAt: new Date(nowMs).toISOString(),
+    rounds: safeRuntimeCount(summary?.round, 0),
+    warsEntered:
+      safeRuntimeCount(stats.bloodMatchTwoWayWars, 0) +
+      safeRuntimeCount(stats.bloodMatchThreeWayWars, 0),
+    rivalName: BLOOD_MATCH_RIVAL_NAME,
+    endReason: stats.endReason || null,
+    playerCardsCaptured: safeRuntimeCount(stats.bloodMatchCardsCaptured, 0),
+    playerHandAtEnd: safeRuntimeCount(stats.playerHandAtEnd, 0),
+    vampireHandAtEnd: safeRuntimeCount(stats.vampireHandAtEnd, 0),
+    lycanHandAtEnd: safeRuntimeCount(stats.lycanHandAtEnd, 0),
+    twoWayWars: safeRuntimeCount(stats.bloodMatchTwoWayWars, 0),
+    threeWayWars: safeRuntimeCount(stats.bloodMatchThreeWayWars, 0)
+  };
+}
+
+function getBloodMatchLossParticipationXp() {
+  return buildXpBreakdown({
+    isCompleted: true,
+    isQuit: false,
+    didWin: false,
+    warsWon: 0
+  }).total;
 }
 
 function applyLongestMatchCandidate(profile, candidate) {
@@ -1536,6 +1698,180 @@ export class StateCoordinator {
       levelRewards: xpAwardSummary.levelRewards,
       levelRewardTokenDelta: xpAwardSummary.levelRewardTokenDelta
     };
+  }
+
+  async recordBloodMatchResult({
+    username,
+    summary,
+    settlementKey = null,
+    nowMs = Date.now()
+  } = {}) {
+    return this.runMatchPersistence(async () => {
+      if (!username) {
+        throw new Error("username is required to record Blood Match results.");
+      }
+      if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+        throw new Error("Blood Match summary is required.");
+      }
+      if (String(summary.status ?? "").trim() !== "completed") {
+        throw new Error("Blood Match must be completed before recording results.");
+      }
+
+      const effectiveSettlementKey = normalizeSettlementKey(settlementKey);
+      if (!effectiveSettlementKey) {
+        throw new Error("Blood Match settlementKey is required.");
+      }
+      const existingSaves = await this.saves.listMatchResults();
+      const duplicateSave = effectiveSettlementKey
+        ? existingSaves.find(
+            (entry) =>
+              entry?.username === username &&
+              entry?.mode === "bloodMatch" &&
+              entry?.settlementKey === effectiveSettlementKey
+          ) ?? null
+        : null;
+      if (duplicateSave) {
+        const committedProfile = await this.profiles.ensureProfile(username);
+        return {
+          duplicate: true,
+          profile: committedProfile,
+          save: duplicateSave,
+          stats: duplicateSave.stats ?? {},
+          dailyChallenges: getDailyChallengesView(committedProfile).view.daily,
+          weeklyChallenges: getDailyChallengesView(committedProfile).view.weekly,
+          xp: getLevelProgress(committedProfile),
+          tokenDelta: 0,
+          matchTokenDelta: 0,
+          matchXpDelta: 0,
+          xpDelta: 0,
+          xpConversionTokenBonus: 0,
+          overflowXp: 0,
+          xpBreakdown: { lines: [], total: 0 },
+          levelBefore: committedProfile.playerLevel ?? 1,
+          levelAfter: committedProfile.playerLevel ?? 1,
+          levelRewards: [],
+          levelRewardTokenDelta: 0,
+          profileAchievements: buildAchievementView(committedProfile),
+          unlockedAchievements: [],
+          chestGrants: []
+        };
+      }
+
+      const profileBefore = await this.profiles.ensureProfile(username);
+      const bloodMatchStats = deriveBloodMatchProfileStats(summary);
+      const playerWon = bloodMatchStats.bloodMatchWins > 0;
+      let workingProfile = applyBloodMatchStatsToProfile(profileBefore, bloodMatchStats);
+      const baseXpDelta = playerWon ? BLOOD_MATCH_WIN_XP : getBloodMatchLossParticipationXp();
+      const baseTokenDelta = playerWon ? BLOOD_MATCH_WIN_TOKENS : BLOOD_MATCH_LOSS_TOKENS;
+      const xpAwardSummary = applyXpAwardToProfile(
+        workingProfile,
+        baseXpDelta,
+        baseTokenDelta
+      );
+      workingProfile = xpAwardSummary.profile;
+      const chestGrants = [];
+      if (
+        rollBasicChest(playerWon ? "win" : "loss", {
+          mode: "pve",
+          difficulty: "normal",
+          random: this.random
+        })
+      ) {
+        workingProfile = grantChest(workingProfile, { amount: 1 });
+        chestGrants.push({ chestType: DEFAULT_CHEST_TYPE, amount: 1 });
+      }
+      const latestBattle = buildBloodMatchLatestBattleSummary(summary, bloodMatchStats, nowMs);
+      workingProfile = applyRecentBattleSummary(workingProfile, latestBattle);
+      const unlockedDefinitions = evaluateBloodMatchAchievements({
+        profileBefore,
+        profileAfter: workingProfile,
+        bloodMatchStats
+      });
+      const withAchievements = applyAchievementUnlocks(workingProfile, unlockedDefinitions);
+      workingProfile = withAchievements.profile;
+      const unlockEvents = withAchievements.unlockEvents;
+
+      await this.profiles.updateProfile(username, workingProfile);
+      const committedProfile = await this.profiles.getProfile(username);
+      if (!committedProfile) {
+        throw new Error(`Failed to reload committed profile for ${username}.`);
+      }
+
+      const matchXpDelta = xpAwardSummary.xpDelta;
+      const matchTokenDelta = baseTokenDelta;
+      const saveEntry = {
+        id: `save-${Date.now()}`,
+        recordedAt: new Date(nowMs).toISOString(),
+        username,
+        perspective: "player",
+        mode: "bloodMatch",
+        settlementKey: effectiveSettlementKey,
+        winner: bloodMatchStats.winnerId ?? null,
+        rounds: safeRuntimeCount(summary.round, 0),
+        endReason: bloodMatchStats.endReason || null,
+        stats: bloodMatchStats,
+        unlockedAchievements: unlockEvents,
+        grantedCosmetics: [],
+        chestGrants,
+        dailyRewards: [],
+        weeklyRewards: [],
+        tokenDelta: xpAwardSummary.tokenDelta,
+        xpConversionTokenBonus: xpAwardSummary.xpConversionTokenBonus ?? 0,
+        overflowXp: xpAwardSummary.overflowXp ?? 0,
+        matchTokenDelta,
+        challengeTokenDelta: 0,
+        matchXpDelta,
+        challengeXpDelta: 0,
+        xpDelta: matchXpDelta,
+        xpBreakdown: {
+          lines:
+            matchXpDelta > 0
+              ? [{ key: "blood_match", label: "Blood Match", amount: matchXpDelta }]
+              : [],
+          total: matchXpDelta
+        },
+        boostDisplay: null,
+        levelRewards: xpAwardSummary.levelRewards,
+        levelRewardTokenDelta: xpAwardSummary.levelRewardTokenDelta,
+        latestBattle
+      };
+
+      await this.saves.appendMatchResult(saveEntry);
+
+      return {
+        profile: committedProfile,
+        cosmetics: {
+          equipped: committedProfile.equippedCosmetics,
+          owned: committedProfile.ownedCosmetics,
+          catalog: getCosmeticCatalogForProfile(committedProfile)
+        },
+        profileAchievements: buildAchievementView(committedProfile),
+        unlockedAchievements: unlockEvents,
+        grantedCosmetics: [],
+        chestGrants,
+        dailyChallenges: getDailyChallengesView(committedProfile).view.daily,
+        weeklyChallenges: getDailyChallengesView(committedProfile).view.weekly,
+        xp: getLevelProgress(committedProfile),
+        dailyRewards: [],
+        weeklyRewards: [],
+        tokenDelta: xpAwardSummary.tokenDelta,
+        xpConversionTokenBonus: xpAwardSummary.xpConversionTokenBonus ?? 0,
+        overflowXp: xpAwardSummary.overflowXp ?? 0,
+        matchTokenDelta,
+        challengeTokenDelta: 0,
+        matchXpDelta,
+        challengeXpDelta: 0,
+        xpDelta: matchXpDelta,
+        xpBreakdown: saveEntry.xpBreakdown,
+        boostDisplay: null,
+        levelBefore: xpAwardSummary.levelBefore,
+        levelAfter: xpAwardSummary.levelAfter,
+        levelRewards: xpAwardSummary.levelRewards,
+        levelRewardTokenDelta: xpAwardSummary.levelRewardTokenDelta,
+        save: saveEntry,
+        stats: bloodMatchStats
+      };
+    });
   }
 
   async recordMatchResult({
