@@ -1408,6 +1408,82 @@ test("trainingCoachEvaluator: WAR commitments reduce available totals without ex
   assert.equal(Object.hasOwn(coach.war, "pileCards"), false);
   assert.equal(Object.hasOwn(coach.war, "cards"), false);
   assert.equal(Object.hasOwn(coach.war, "committedCards"), false);
+  assert.equal(coach.warSurvival.playerAvailableCards, 1);
+  assert.equal(coach.warSurvival.opponentAvailableCards, 2);
+  assert.equal(coach.warSurvival.pot, 4);
+  assert.equal(coach.warSurvival.commitmentTotal, 4);
+  assert.equal(coach.warSurvival.playerCanContinueCurrentWar, true);
+  assert.equal(coach.warSurvival.opponentCanContinueCurrentWar, true);
+  assert.equal(coach.warSurvival.playerCanSurviveAnotherTie, false);
+  assert.equal(coach.warSurvival.opponentCanSurviveAnotherTie, true);
+  assert.equal(coach.warSurvival.opponentCardEdge, true);
+  assert.equal(coach.warSurvival.riskLevel, "danger");
+});
+
+test("trainingCoachEvaluator: WAR survival math uses aggregate availability only", () => {
+  const playerBlocked = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: [],
+    opponentRemainingByElement: { fire: 1, water: 0, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: WAR_REQUIRED_CARDS - 1, opponent: WAR_REQUIRED_CARDS + 1 },
+    war: { pileCount: 2, commitmentTotals: { player: 1, opponent: 1 } }
+  });
+  assert.equal(playerBlocked.warSurvival.playerCanContinueCurrentWar, false);
+  assert.equal(playerBlocked.warSurvival.opponentCanContinueCurrentWar, true);
+  assert.equal(playerBlocked.warSurvival.riskLevel, "critical");
+  assert.match(playerBlocked.warSurvival.message, /You cannot continue/);
+
+  const opponentBlocked = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: WAR_REQUIRED_CARDS + 1, opponent: WAR_REQUIRED_CARDS - 1 },
+    war: { pileCount: 2, commitmentTotals: { player: 1, opponent: 1 } }
+  });
+  assert.equal(opponentBlocked.warSurvival.playerCanContinueCurrentWar, true);
+  assert.equal(opponentBlocked.warSurvival.opponentCanContinueCurrentWar, false);
+  assert.equal(opponentBlocked.warSurvival.riskLevel, "opponent_pressure");
+  assert.match(opponentBlocked.warSurvival.message, /Opponent cannot continue/);
+
+  const equal = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 1, water: 1, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: WAR_REQUIRED_CARDS + 1, opponent: WAR_REQUIRED_CARDS + 1 },
+    war: { pileCount: 2, commitmentTotals: { player: 1, opponent: 1 } }
+  });
+  assert.equal(equal.warSurvival.playerCanSurviveAnotherTie, true);
+  assert.equal(equal.warSurvival.opponentCanSurviveAnotherTie, true);
+  assert.equal(equal.warSurvival.playerCardEdge, false);
+  assert.equal(equal.warSurvival.opponentCardEdge, false);
+
+  const playerEdge = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 1, water: 1, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: WAR_REQUIRED_CARDS + 3, opponent: WAR_REQUIRED_CARDS + 1 },
+    war: { pileCount: 2, commitmentTotals: { player: 1, opponent: 1 } }
+  });
+  assert.equal(playerEdge.warSurvival.playerCardEdge, true);
+  assert.equal(playerEdge.warSurvival.opponentCardEdge, false);
+  assert.equal(playerEdge.warSurvival.riskLevel, "edge");
+
+  const potPressure = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 1, water: 1, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: WAR_REQUIRED_CARDS + 1, opponent: WAR_REQUIRED_CARDS + 1 },
+    war: { pileCount: 6, commitmentTotals: { player: 3, opponent: 3 } }
+  });
+  assert.equal(potPressure.warSurvival.riskLevel, "pot_pressure");
+  assert.match(potPressure.warSurvival.message, /WAR pot is large/);
+  assert.equal(JSON.stringify(potPressure.warSurvival).includes("faceDown"), false);
+  assert.equal(Object.hasOwn(potPressure.warSurvival, "pileCards"), false);
 });
 
 test("trainingCoachEvaluator: exhausted opponent element is reported unavailable", () => {
@@ -1422,6 +1498,168 @@ test("trainingCoachEvaluator: exhausted opponent element is reported unavailable
   const read = coach.tacticalRead.join(" | ");
   assert.match(read, /fire unavailable/);
   assert.match(read, /wind unavailable/);
+});
+
+test("trainingCoachEvaluator: outcome coverage maps visible wins losses no-effect and ties", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water", "earth", "wind"],
+    opponentRemainingByElement: { fire: 1, water: 2, earth: 3, wind: 4 },
+    phase: "normal",
+    availableCards: { player: 4, opponent: 10 }
+  });
+
+  assert.deepEqual(coach.outcomeCoverage, [
+    {
+      element: "fire",
+      winsAgainst: 3,
+      losesTo: 2,
+      noEffectAgainst: 4,
+      tiesAgainst: 1,
+      opponentTotalConsidered: 10
+    },
+    {
+      element: "water",
+      winsAgainst: 1,
+      losesTo: 4,
+      noEffectAgainst: 3,
+      tiesAgainst: 2,
+      opponentTotalConsidered: 10
+    },
+    {
+      element: "earth",
+      winsAgainst: 4,
+      losesTo: 1,
+      noEffectAgainst: 2,
+      tiesAgainst: 3,
+      opponentTotalConsidered: 10
+    },
+    {
+      element: "wind",
+      winsAgainst: 2,
+      losesTo: 3,
+      noEffectAgainst: 1,
+      tiesAgainst: 4,
+      opponentTotalConsidered: 10
+    }
+  ]);
+  assert.deepEqual(Object.keys(coach.outcomeCoverage[0]).sort(), [
+    "element",
+    "losesTo",
+    "noEffectAgainst",
+    "opponentTotalConsidered",
+    "tiesAgainst",
+    "winsAgainst"
+  ]);
+});
+
+test("trainingCoachEvaluator: exhausted and illegal elements are excluded from outcome coverage", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth", "wind"],
+    opponentRemainingByElement: { fire: 0, water: 2, earth: 0, wind: 1 },
+    fatigue: { playerBlockedElement: "fire" },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 3 }
+  });
+
+  assert.deepEqual(coach.outcomeCoverage.map((entry) => entry.element), ["earth", "wind"]);
+  assert.equal(coach.outcomeCoverage.some((entry) => entry.element === "fire"), false);
+  assert.deepEqual(
+    coach.outcomeCoverage.find((entry) => entry.element === "earth"),
+    {
+      element: "earth",
+      winsAgainst: 1,
+      losesTo: 0,
+      noEffectAgainst: 2,
+      tiesAgainst: 0,
+      opponentTotalConsidered: 3
+    }
+  );
+});
+
+test("trainingCoachEvaluator: fatigue forecast identifies next-turn restriction and legal options", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    playerRemainingByElement: { fire: 2, water: 1, earth: 1, wind: 0 },
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+    recentPlayerMoves: ["fire"],
+    phase: "normal",
+    availableCards: { player: 4, opponent: 2 }
+  });
+
+  const fireForecast = coach.futureOptionForecast.entries.find((entry) => entry.element === "fire");
+  const waterForecast = coach.futureOptionForecast.entries.find((entry) => entry.element === "water");
+  assert.equal(fireForecast.createsFatigueNextTurn, true);
+  assert.equal(fireForecast.fatiguedElementNextTurn, "fire");
+  assert.deepEqual(fireForecast.futureLegalElements, ["water", "earth"]);
+  assert.equal(fireForecast.futureOptionState, "multiple");
+  assert.equal(fireForecast.visibleAnswer, true);
+  assert.equal(fireForecast.targetOpponentElement, "earth");
+  assert.equal(fireForecast.alternatePreservesVisibleAnswer, true);
+  assert.deepEqual(fireForecast.preservingElements, ["water"]);
+  assert.equal(waterForecast.createsFatigueNextTurn, false);
+  assert.notEqual(waterForecast.fatiguedElementNextTurn, "water");
+  assert.match(coach.futureOptionForecast.warning, /Playing Fire now will fatigue Fire next turn/);
+  assert.match(coach.futureOptionForecast.warning, /Fire is still useful against their remaining Earth cards/);
+});
+
+test("trainingCoachEvaluator: fatigue forecast warns when a move narrows future options", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    playerRemainingByElement: { fire: 2, water: 1, earth: 0, wind: 0 },
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 0 },
+    recentPlayerMoves: ["fire"],
+    phase: "normal",
+    availableCards: { player: 3, opponent: 0 }
+  });
+
+  assert.equal(coach.suggestion.kind, "none");
+  assert.match(coach.futureOptionForecast.warning, /Playing Fire now will fatigue Fire next turn/);
+  assert.match(coach.futureOptionForecast.warning, /This leaves Water available next turn/);
+  assert.doesNotMatch(coach.futureOptionForecast.warning, /no legal/i);
+  assert.doesNotMatch(coach.futureOptionForecast.warning, /will play|going to play|must play/i);
+});
+
+test("trainingCoachEvaluator: alternate legal move can preserve a useful fatigued answer", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    playerRemainingByElement: { fire: 2, water: 2, earth: 0, wind: 0 },
+    opponentRemainingByElement: { fire: 3, water: 0, earth: 1, wind: 0 },
+    recentPlayerMoves: ["fire"],
+    phase: "normal",
+    availableCards: { player: 4, opponent: 4 }
+  });
+
+  const fireForecast = coach.futureOptionForecast.entries.find((entry) => entry.element === "fire");
+  const waterForecast = coach.futureOptionForecast.entries.find((entry) => entry.element === "water");
+  assert.equal(coach.suggestion.kind, "safe");
+  assert.equal(coach.suggestion.element, "water");
+  assert.equal(fireForecast.createsFatigueNextTurn, true);
+  assert.equal(fireForecast.visibleAnswer, true);
+  assert.equal(fireForecast.alternatePreservesVisibleAnswer, true);
+  assert.deepEqual(fireForecast.preservingElements, ["water"]);
+  assert.equal(waterForecast.createsFatigueNextTurn, false);
+  assert.match(coach.futureOptionForecast.note, /Water keeps Fire available for their Earth cards/);
+});
+
+test("trainingCoachEvaluator: future option forecast warns before spending the last visible counter", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["water", "earth"],
+    playerRemainingByElement: { fire: 0, water: 1, earth: 2, wind: 0 },
+    opponentRemainingByElement: { fire: 2, water: 0, earth: 0, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 3, opponent: 2 }
+  });
+
+  const waterForecast = coach.futureOptionForecast.entries.find((entry) => entry.element === "water");
+  assert.equal(waterForecast.removesVisibleCounter, true);
+  assert.equal(waterForecast.targetOpponentElement, "fire");
+  assert.match(coach.futureOptionForecast.warning, /Using Water now leaves no other visible answer to their Fire cards/);
 });
 
 test("trainingCoachEvaluator: player fatigue prevents illegal Coach suggestions", () => {
@@ -1493,7 +1731,17 @@ test("trainingCoachEvaluator: only one legal player move is forced, not safe", (
 
   assert.equal(coach.suggestion.kind, "forced");
   assert.equal(coach.suggestion.element, "fire");
-  assert.equal(coach.suggestion.reason, "Only legal move available.");
+  assert.equal(coach.suggestion.reason, "Fire is your only legal move. It beats 2 remaining cards but loses to 0.");
+  assert.deepEqual(coach.outcomeCoverage, [
+    {
+      element: "fire",
+      winsAgainst: 2,
+      losesTo: 0,
+      noEffectAgainst: 0,
+      tiesAgainst: 0,
+      opponentTotalConsidered: 2
+    }
+  ]);
   assert.equal(coach.confidence, "certain");
   assert.equal(coach.riskNote, null);
 });
@@ -1509,7 +1757,7 @@ test("trainingCoachEvaluator: forced move can carry a truthful danger note", () 
 
   assert.equal(coach.suggestion.kind, "forced");
   assert.equal(coach.suggestion.element, "fire");
-  assert.equal(coach.suggestion.reason, "Only legal move available.");
+  assert.equal(coach.suggestion.reason, "Fire is your only legal move. It beats 0 remaining cards but loses to 2.");
   assert.match(coach.riskNote, /forced move may be beaten/i);
 });
 
@@ -1524,6 +1772,7 @@ test("trainingCoachEvaluator: Safe recommendation uses remaining-card coverage",
 
   assert.equal(coach.suggestion.kind, "safe");
   assert.equal(coach.suggestion.element, "fire");
+  assert.equal(coach.suggestion.reason, "Fire defeats 2 remaining cards, loses to 0, and has no tie risk.");
   assert.deepEqual(
     coach.coverage.find((entry) => entry.element === "fire"),
     { element: "fire", defeats: 2, beatenBy: 0, tieExposure: 0 }
@@ -1548,7 +1797,22 @@ test("trainingCoachEvaluator: Avoid recommendation appears only when materially 
 
   assert.equal(avoid.suggestion.kind, "avoid");
   assert.equal(avoid.suggestion.element, "fire");
+  assert.equal(avoid.suggestion.reason, "Fire loses to 2 remaining cards and has 0 tie risk.");
   assert.equal(balanced.suggestion.kind, "none");
+});
+
+test("trainingCoachEvaluator: Avoid can preserve a visible answer", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "earth"],
+    opponentRemainingByElement: { fire: 0, water: 4, earth: 1, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 5 }
+  });
+
+  assert.equal(coach.suggestion.kind, "avoid");
+  assert.equal(coach.suggestion.element, "fire");
+  assert.equal(coach.suggestion.reason, "Keep Fire available as an answer to their Earth cards.");
 });
 
 test("trainingCoachEvaluator: all unfavorable legal choices never produce Safe", () => {
@@ -1562,6 +1826,157 @@ test("trainingCoachEvaluator: all unfavorable legal choices never produce Safe",
 
   assert.notEqual(coach.suggestion.kind, "safe");
   assert.match(coach.riskNote, /Every legal option is vulnerable/);
+});
+
+test("trainingCoachEvaluator: mixed highest-win coverage is not mislabeled Safe", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "earth"],
+    opponentRemainingByElement: { fire: 0, water: 1, earth: 3, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 4 }
+  });
+
+  assert.notEqual(coach.suggestion.kind, "safe");
+  assert.deepEqual(
+    coach.outcomeCoverage.find((entry) => entry.element === "fire"),
+    {
+      element: "fire",
+      winsAgainst: 3,
+      losesTo: 1,
+      noEffectAgainst: 0,
+      tiesAgainst: 0,
+      opponentTotalConsidered: 4
+    }
+  );
+});
+
+test("trainingCoachEvaluator: outcome confidence classifies visible positions without changing recommendations", () => {
+  const guaranteed = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+  assert.equal(guaranteed.outcomeConfidence.kind, "guaranteed_win");
+  assert.equal(guaranteed.outcomeConfidence.message, "Guaranteed win visible.");
+  assert.equal(guaranteed.suggestion.kind, "safe");
+
+  const strong = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["wind", "fire"],
+    opponentRemainingByElement: { fire: 0, water: 3, earth: 0, wind: 1 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 4 }
+  });
+  assert.equal(strong.outcomeConfidence.kind, "strong_position");
+  assert.equal(strong.outcomeConfidence.message, "Strong position: most remaining cards lose to Wind.");
+
+  const mixed = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "earth"],
+    opponentRemainingByElement: { fire: 0, water: 1, earth: 3, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 4 }
+  });
+  assert.equal(mixed.outcomeConfidence.kind, "mixed_outcome");
+  assert.equal(mixed.outcomeConfidence.message, "Mixed outcome: this can win, but losses and tie risk remain.");
+  assert.notEqual(mixed.suggestion.kind, "safe");
+
+  const forced = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire"],
+    opponentRemainingByElement: { fire: 0, water: 2, earth: 0, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 1, opponent: 2 }
+  });
+  assert.equal(forced.outcomeConfidence.kind, "forced_risk");
+  assert.equal(forced.suggestion.kind, "forced");
+  assert.equal(forced.outcomeConfidence.message, "Forced risk: this is your only legal move and it may be beaten.");
+
+  const noSafe = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 2, earth: 0, wind: 2 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 4 }
+  });
+  assert.equal(noSafe.outcomeConfidence.kind, "no_safe_response");
+  assert.equal(noSafe.outcomeConfidence.message, "No safe response is visible.");
+  assert.notEqual(noSafe.suggestion.kind, "safe");
+});
+
+test("trainingCoachEvaluator: no-effect guidance explains relevant neutral outcomes", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 2 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+
+  assert.equal(coach.suggestion.kind, "avoid");
+  assert.deepEqual(coach.noEffectGuidance.entries, [
+    {
+      element: "fire",
+      noEffectAgainst: 2,
+      noEffectElements: ["wind"]
+    }
+  ]);
+  assert.match(coach.noEffectGuidance.note, /Fire against Wind has no immediate winner/);
+  assert.match(coach.noEffectGuidance.note, /neither a win, loss, nor WAR|not a guaranteed advantage/);
+  assert.notEqual(coach.suggestion.kind, "safe");
+});
+
+test("trainingCoachEvaluator: merely neutral no-effect coverage is not overexplained", () => {
+  const neutral = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 2 },
+    phase: "normal",
+    availableCards: { player: 1, opponent: 2 }
+  });
+
+  assert.deepEqual(neutral.noEffectGuidance.entries, [
+    {
+      element: "fire",
+      noEffectAgainst: 2,
+      noEffectElements: ["wind"]
+    }
+  ]);
+  assert.equal(neutral.noEffectGuidance.note, null);
+  assert.equal(neutral.noEffectGuidance.warning, null);
+
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 1, wind: 1 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 },
+    recentPlayerMoves: ["fire"],
+    playerRemainingByElement: { fire: 2, water: 1, earth: 0, wind: 0 }
+  });
+
+  assert.equal(coach.noEffectGuidance.entries.some((entry) => entry.element === "fire"), true);
+  assert.equal(coach.noEffectGuidance.note, null);
+  assert.equal(coach.noEffectGuidance.warning, null);
+  assert.match(coach.futureOptionForecast.warning, /Playing Fire now will fatigue Fire next turn/);
+});
+
+test("trainingCoachEvaluator: no-effect guidance does not override preservation or fatigue guidance", () => {
+  const preserve = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["water", "earth"],
+    playerRemainingByElement: { fire: 0, water: 1, earth: 2, wind: 0 },
+    opponentRemainingByElement: { fire: 2, water: 0, earth: 0, wind: 2 },
+    phase: "normal",
+    availableCards: { player: 3, opponent: 4 }
+  });
+
+  assert.match(preserve.futureOptionForecast.warning, /no other visible answer/);
+  assert.equal(preserve.noEffectGuidance.note, null);
+  assert.equal(preserve.noEffectGuidance.warning, null);
 });
 
 test("trainingCoachEvaluator: no-strong-read produces no forced recommendation", () => {
@@ -1593,6 +2008,19 @@ test("trainingCoachEvaluator: WAR state reports pressure and no face-down elemen
 
   assert.equal(coach.war.active, true);
   assert.match(coach.riskNote, /Tie risk/);
+  assert.equal(coach.suggestion.reason, "Only legal move available.");
+  assert.deepEqual(coach.outcomeConfidence, { kind: "none", message: null, element: null });
+  assert.deepEqual(coach.noEffectGuidance, { entries: [], note: null, warning: null });
+  assert.deepEqual(coach.outcomeCoverage, [
+    {
+      element: "fire",
+      winsAgainst: 0,
+      losesTo: 0,
+      noEffectAgainst: 0,
+      tiesAgainst: 1,
+      opponentTotalConsidered: 1
+    }
+  ]);
   assert.equal(JSON.stringify(coach).includes("faceDown"), false);
   assert.equal(Object.hasOwn(coach.war, "pileCards"), false);
   assert.equal(Object.hasOwn(coach.war, "faceDownCards"), false);
@@ -1850,6 +2278,10 @@ test("gameController: Training Coach WAR payload uses aggregate available counts
     assert.deepEqual(coach.war.availableCards, { player: 1, opponent: 2 });
     assert.deepEqual(coach.war.commitmentTotals, { player: 2, opponent: 2 });
     assert.equal(coach.war.pileCount, 4);
+    assert.equal(coach.warSurvival.playerAvailableCards, 1);
+    assert.equal(coach.warSurvival.opponentAvailableCards, 2);
+    assert.equal(coach.warSurvival.playerCanSurviveAnotherTie, false);
+    assert.equal(coach.warSurvival.opponentCanSurviveAnotherTie, true);
     assert.deepEqual(Object.keys(coach.war).sort(), [
       "active",
       "availableCards",

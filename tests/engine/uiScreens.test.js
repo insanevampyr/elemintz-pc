@@ -8381,7 +8381,8 @@ test("ui: Training Mode renders live Coach panel instead of Expressions", () => 
         opponentRemainingByElement: { fire: 2, water: 1, earth: 0, wind: 2 },
         opponentTotalCards: 5,
         tacticalRead: ["earth unavailable", "fire/wind most remaining"],
-        suggestion: { kind: "safe", element: "water", reason: "Likely based on remaining cards." },
+        suggestion: { kind: "safe", element: "water", reason: "Water defeats 2 remaining cards, loses to 0, and has no tie risk." },
+        outcomeConfidence: { kind: "guaranteed_win", message: "Guaranteed win visible.", element: "water" },
         riskNote: "Tie risk still available.",
         confidence: "likely",
         strategyPlan: {
@@ -8415,7 +8416,8 @@ test("ui: Training Mode renders live Coach panel instead of Expressions", () => 
   assert.match(html, /Coach Advice/);
   assert.match(html, /Safe: Water/);
   assert.match(html, /Why/);
-  assert.match(html, /Likely based on remaining cards\./);
+  assert.match(html, /Water defeats 2 remaining cards, loses to 0, and has no tie risk\./);
+  assert.match(html, /Guaranteed win visible\./);
   assert.match(html, /Watch Out/);
   assert.match(html, /Tie risk still available\./);
   assert.match(html, /Focus on Earth\. Your Fire cards help cover that route\./);
@@ -8463,7 +8465,8 @@ test("ui: Training Mode renders live Coach panel instead of Expressions", () => 
       coach: {
         opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
         tacticalRead: ["earth most remaining"],
-        suggestion: { kind: "safe", element: "fire", reason: "Likely based on remaining cards." },
+        suggestion: { kind: "safe", element: "fire", reason: "Fire defeats 2 remaining cards, loses to 0, and has no tie risk." },
+        outcomeConfidence: { kind: "guaranteed_win", message: "Guaranteed win visible.", element: "fire" },
         riskNote: null,
         confidence: "likely",
         war: null
@@ -8474,7 +8477,168 @@ test("ui: Training Mode renders live Coach panel instead of Expressions", () => 
   assert.match(noRiskHtml, /Coach Advice/);
   assert.match(noRiskHtml, /Safe: Fire/);
   assert.match(noRiskHtml, /Why/);
+  assert.match(noRiskHtml, /Fire defeats 2 remaining cards, loses to 0, and has no tie risk\./);
+  assert.match(noRiskHtml, /Guaranteed win visible\./);
   assert.doesNotMatch(noRiskHtml, /Watch Out/);
+
+  const lightConfidenceHtml = gameScreen.render({
+    trainingMode: true,
+    trainingCoachMode: "light",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+        tacticalRead: ["earth most remaining"],
+        suggestion: { kind: "safe", element: "fire", reason: "Fire defeats 2 remaining cards, loses to 0, and has no tie risk.", confidence: "likely" },
+        outcomeConfidence: { kind: "guaranteed_win", message: "Guaranteed win visible.", element: "fire" },
+        riskNote: null,
+        confidence: "likely",
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+  assert.match(lightConfidenceHtml, /data-training-coach-display="light"/);
+  assert.match(lightConfidenceHtml, /Guaranteed win visible\./);
+  assert.doesNotMatch(lightConfidenceHtml, /Coach Advice/);
+  assert.doesNotMatch(lightConfidenceHtml, /outcomeConfidence|guaranteed_win/);
+});
+
+test("ui: Training Coach renders concise future-option guidance without adding a matrix", () => {
+  const baseContext = {
+    trainingMode: true,
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 2,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire", "water"],
+      opponentHand: ["earth", "earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+        tacticalRead: ["earth most remaining"],
+        suggestion: { kind: "safe", element: "fire", reason: "Fire defeats 2 remaining cards, loses to 0, and has no tie risk.", confidence: "likely" },
+        riskNote: null,
+        confidence: "likely",
+        futureOptionForecast: {
+          note: null,
+          warning: "Playing Fire now will fatigue Fire next turn. This leaves Water available next turn.",
+          entries: []
+        },
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  };
+
+  const fullHtml = gameScreen.render({ ...baseContext, trainingCoachMode: "full" });
+  assert.match(fullHtml, /Coach Advice/);
+  assert.match(fullHtml, /Why/);
+  assert.match(fullHtml, /Fire defeats 2 remaining cards, loses to 0, and has no tie risk\./);
+  assert.match(fullHtml, /Watch Out/);
+  assert.match(fullHtml, /Playing Fire now will fatigue Fire next turn\. This leaves Water available next turn\./);
+  assert.doesNotMatch(fullHtml, /futureOptionForecast/);
+  assert.doesNotMatch(fullHtml, /winsAgainst|losesTo|tiesAgainst|opponentTotalConsidered/);
+  assert.doesNotMatch(fullHtml, /will play|going to play|must play/i);
+
+  const lightHtml = gameScreen.render({ ...baseContext, trainingCoachMode: "light" });
+  assert.match(lightHtml, /data-training-coach-display="light"/);
+  assert.match(lightHtml, /Playing Fire now will fatigue Fire next turn\. This leaves Water available next turn\./);
+  assert.doesNotMatch(lightHtml, /Coach Advice/);
+  assert.doesNotMatch(lightHtml, /Fire defeats 2 remaining cards, loses to 0, and has no tie risk\./);
+  assert.doesNotMatch(lightHtml, /futureOptionForecast/);
+  assert.doesNotMatch(lightHtml, /outcomeCoverage|winsAgainst|losesTo|tiesAgainst|opponentTotalConsidered/);
+});
+
+test("ui: Training Coach renders concise no-effect guidance without crowding Light Hints", () => {
+  const baseContext = {
+    trainingMode: true,
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 2,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire", "water"],
+      opponentHand: ["wind", "wind"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 2 },
+        tacticalRead: ["wind most remaining"],
+        suggestion: { kind: "none", element: null, reason: "No strong read.", confidence: "none" },
+        riskNote: null,
+        confidence: "none",
+        noEffectGuidance: {
+          note: "Fire against Wind has no immediate winner; it avoids direct loss risk but is not a guaranteed advantage.",
+          warning: null,
+          entries: [{ element: "fire", noEffectAgainst: 2, noEffectElements: ["wind"] }]
+        },
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  };
+
+  const fullHtml = gameScreen.render({ ...baseContext, trainingCoachMode: "full" });
+  assert.match(fullHtml, /No strong read/);
+  assert.match(fullHtml, /Why/);
+  assert.match(fullHtml, /Fire against Wind has no immediate winner; it avoids direct loss risk but is not a guaranteed advantage\./);
+  assert.doesNotMatch(fullHtml, /noEffectGuidance/);
+  assert.doesNotMatch(fullHtml, /noEffectAgainst|noEffectElements/);
+
+  const lightHtml = gameScreen.render({ ...baseContext, trainingCoachMode: "light" });
+  assert.match(lightHtml, /data-training-coach-display="light"/);
+  assert.match(lightHtml, /Fire against Wind has no immediate winner; it avoids direct loss risk but is not a guaranteed advantage\./);
+  assert.doesNotMatch(lightHtml, /Coach Advice/);
+  assert.doesNotMatch(lightHtml, /noEffectGuidance/);
 });
 
 test("ui: Training Coach light and off modes render scoped hint controls", () => {
@@ -8509,6 +8673,22 @@ test("ui: Training Coach light and off modes render scoped hint controls", () =>
         suggestion: { kind: "avoid", element: "fire", reason: "Tie risk or counter pressure is higher." },
         riskNote: "Tie risk: another WAR continuation could eliminate you.",
         confidence: "likely",
+        warSurvival: {
+          playerAvailableCards: 1,
+          opponentAvailableCards: 2,
+          pot: 2,
+          commitmentTotal: 2,
+          commitmentTotals: { player: 1, opponent: 1 },
+          requiredCards: 1,
+          playerCanContinueCurrentWar: true,
+          opponentCanContinueCurrentWar: true,
+          playerCanSurviveAnotherTie: false,
+          opponentCanSurviveAnotherTie: true,
+          playerCardEdge: false,
+          opponentCardEdge: true,
+          riskLevel: "danger",
+          message: "Another tie could eliminate you."
+        },
         war: { active: true }
       }
     },
@@ -8519,7 +8699,8 @@ test("ui: Training Coach light and off modes render scoped hint controls", () =>
   assert.match(lightHtml, /data-training-coach-display="light"/);
   assert.match(lightHtml, /data-training-coach-count="fire"[^>]*>\s*Fire: 1/);
   assert.match(lightHtml, /data-training-coach-total="true"[^>]*>\s*Total: 2/);
-  assert.match(lightHtml, /Tie risk: another WAR continuation could eliminate you\./);
+  assert.match(lightHtml, /Another tie could eliminate you\./);
+  assert.doesNotMatch(lightHtml, /Tie risk: another WAR continuation could eliminate you\./);
   assert.doesNotMatch(lightHtml, /Avoid: Fire/);
   assert.doesNotMatch(lightHtml, /Tie risk or counter pressure is higher\./);
   assert.doesNotMatch(lightHtml, /Element counter chart/);
@@ -8531,7 +8712,7 @@ test("ui: Training Coach light and off modes render scoped hint controls", () =>
       ...baseContext.game,
       coach: {
         ...baseContext.game.coach,
-        suggestion: { kind: "forced", element: "earth", reason: "Only legal move available.", confidence: "certain" },
+        suggestion: { kind: "forced", element: "earth", reason: "Earth is your only legal move. It beats 0 remaining cards but loses to 1.", confidence: "certain" },
         riskNote: "This forced move may be beaten.",
         confidence: "certain"
       }
@@ -8539,7 +8720,7 @@ test("ui: Training Coach light and off modes render scoped hint controls", () =>
   });
   assert.match(certainLightHtml, /data-training-coach-suggestion="forced"/);
   assert.match(certainLightHtml, /Forced: Earth/);
-  assert.match(certainLightHtml, /Only legal move available\./);
+  assert.match(certainLightHtml, /Earth is your only legal move\. It beats 0 remaining cards but loses to 1\./);
   assert.match(certainLightHtml, /This forced move may be beaten\./);
   assert.doesNotMatch(certainLightHtml, /Coach Advice/);
 
@@ -8583,6 +8764,7 @@ test("ui: Training WAR Coach prioritizes aggregate WAR information without hidde
         opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 1 },
         tacticalRead: ["Tie risk still available"],
         suggestion: { kind: "avoid", element: "earth", reason: "Tie risk or counter pressure is higher." },
+        outcomeConfidence: { kind: "guaranteed_win", message: "Guaranteed win visible.", element: "earth" },
         riskNote: "Tie risk: another WAR continuation could eliminate you.",
         confidence: "strong",
         strategyPlan: {
@@ -8593,6 +8775,32 @@ test("ui: Training WAR Coach prioritizes aggregate WAR information without hidde
           message: "Control plan: pressure Earth."
         },
         planNote: "Control plan: pressure Earth.",
+        futureOptionForecast: {
+          note: "Playing Earth now will fatigue Earth next turn.",
+          warning: "This choice narrows your next-turn options.",
+          entries: []
+        },
+        noEffectGuidance: {
+          note: "Earth against Water has no immediate winner; it is neither a win, loss, nor WAR.",
+          warning: null,
+          entries: [{ element: "earth", noEffectAgainst: 1, noEffectElements: ["water"] }]
+        },
+        warSurvival: {
+          playerAvailableCards: 1,
+          opponentAvailableCards: 1,
+          pot: 4,
+          commitmentTotal: 4,
+          commitmentTotals: { player: 2, opponent: 2 },
+          requiredCards: 1,
+          playerCanContinueCurrentWar: true,
+          opponentCanContinueCurrentWar: true,
+          playerCanSurviveAnotherTie: false,
+          opponentCanSurviveAnotherTie: false,
+          playerCardEdge: false,
+          opponentCardEdge: false,
+          riskLevel: "danger",
+          message: "Another tie could eliminate you."
+        },
         war: {
           active: true,
           pileCount: 4,
@@ -8611,11 +8819,22 @@ test("ui: Training WAR Coach prioritizes aggregate WAR information without hidde
   assert.match(html, /data-training-coach-war-player-available="true"[^>]*>\s*Your cards: 1/);
   assert.match(html, /data-training-coach-war-opponent-available="true"[^>]*>\s*Opponent cards: 1/);
   assert.match(html, /Another tie could eliminate you\./);
-  assert.match(html, /Opponent is low on available cards\./);
+  assert.match(html, /Opponent cannot continue another WAR after this commitment\./);
+  assert.match(html, /The WAR pot is large; avoid another tie if possible\./);
   assert.match(html, /Avoid unnecessary tie risk\./);
   assert.match(html, /Watch Out/);
   assert.ok(html.indexOf('data-training-coach-war="true"') < html.indexOf('data-training-coach-read="true"'));
   assert.doesNotMatch(html, /Control plan/);
+  assert.doesNotMatch(html, /defeats \d+ remaining cards/);
+  assert.doesNotMatch(html, /only legal move\. It beats/);
+  assert.doesNotMatch(html, /Playing Earth now will fatigue Earth next turn/);
+  assert.doesNotMatch(html, /This choice narrows your next-turn options/);
+  assert.doesNotMatch(html, /Earth against Water has no immediate winner/);
+  assert.doesNotMatch(html, /Guaranteed win visible/);
+  assert.doesNotMatch(html, /outcomeConfidence|guaranteed_win/);
+  assert.doesNotMatch(html, /warSurvival|riskLevel|playerAvailableCards|opponentAvailableCards/);
+  assert.doesNotMatch(html, /outcomeCoverage/);
+  assert.doesNotMatch(html, /noEffectGuidance/);
   assert.doesNotMatch(html, /pressure Earth/);
   assert.doesNotMatch(html, /bridge/);
   assert.doesNotMatch(html, /shift/);

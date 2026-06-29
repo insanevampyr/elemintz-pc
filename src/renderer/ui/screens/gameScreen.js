@@ -567,15 +567,31 @@ function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, sh
   const label = kind === "safe" ? "Safe" : kind === "avoid" ? "Avoid" : kind === "forced" ? "Forced" : "No strong read";
   const element = suggestion.element ? `: ${formatElement(suggestion.element)}` : "";
   const reason = String(suggestion.reason ?? "").trim() || "No strong read.";
+  const showFutureOptionGuidance = !coach?.war?.active;
+  const optionNote = showFutureOptionGuidance ? String(coach?.futureOptionForecast?.note ?? "").trim() : "";
+  const optionWarning = showFutureOptionGuidance ? String(coach?.futureOptionForecast?.warning ?? "").trim() : "";
+  const noEffectNote = showFutureOptionGuidance ? String(coach?.noEffectGuidance?.note ?? "").trim() : "";
+  const noEffectWarning = showFutureOptionGuidance ? String(coach?.noEffectGuidance?.warning ?? "").trim() : "";
+  const confidenceKind = String(coach?.outcomeConfidence?.kind ?? "none").trim();
+  const confidenceMessage = showFutureOptionGuidance ? String(coach?.outcomeConfidence?.message ?? "").trim() : "";
+  const confidenceWarning = confidenceKind === "forced_risk" || confidenceKind === "no_safe_response" ? confidenceMessage : "";
+  const confidenceNote = confidenceWarning ? "" : confidenceMessage;
+  const warningLines = [coach?.riskNote, optionWarning, noEffectWarning, confidenceWarning].map((line) => String(line ?? "").trim()).filter(Boolean);
+  const hasWhyDetail = kind !== "none" || optionNote || noEffectNote || confidenceNote;
   return `
     <section class="game-match-taunt-section" data-training-coach-suggestion="${escapeHtml(kind)}">
       ${showSectionLabel && kind !== "none" ? "<p><strong>Coach Advice</strong></p>" : ""}
       <p><strong>${escapeHtml(label)}${escapeHtml(element)}</strong></p>
-      ${kind !== "none" ? "<p><strong>Why</strong></p>" : ""}
+      ${hasWhyDetail ? "<p><strong>Why</strong></p>" : ""}
       <p class="text-muted">${escapeHtml(reason)}</p>
+      ${confidenceNote ? `<p class="text-muted" data-training-coach-confidence="true">${escapeHtml(confidenceNote)}</p>` : ""}
+      ${optionNote ? `<p class="text-muted" data-training-coach-option-note="true">${escapeHtml(optionNote)}</p>` : ""}
+      ${noEffectNote ? `<p class="text-muted" data-training-coach-no-effect="true">${escapeHtml(noEffectNote)}</p>` : ""}
       ${
-        coach?.riskNote
-          ? `<p><strong>Watch Out</strong></p><p class="text-muted" data-training-coach-risk="true">${escapeHtml(coach.riskNote)}</p>`
+        warningLines.length > 0
+          ? `<p><strong>Watch Out</strong></p>${warningLines
+              .map((line) => `<p class="text-muted" data-training-coach-risk="true">${escapeHtml(line)}</p>`)
+              .join("")}`
           : ""
       }
     </section>
@@ -633,19 +649,28 @@ function renderTrainingCoachWarSummary(coach) {
   const opponentCommitted = Math.max(0, Number(coach.war?.commitmentTotals?.opponent ?? 0) || 0);
   const playerAvailable = Math.max(0, Number(coach.war?.availableCards?.player ?? 0) || 0);
   const opponentAvailable = Math.max(0, Number(coach.war?.availableCards?.opponent ?? 0) || 0);
+  const survival = coach.warSurvival ?? {};
   const pressureLines = [];
 
-  if (coach.riskNote) {
+  if (survival.message) {
+    pressureLines.push(survival.message);
+  } else if (coach.riskNote) {
     pressureLines.push(coach.riskNote);
   }
-  if (playerAvailable <= 1) {
+  if (survival.playerCanSurviveAnotherTie === false) {
     pressureLines.push("Another tie could eliminate you.");
   }
-  if (opponentAvailable <= 1) {
-    pressureLines.push("Opponent is low on available cards.");
+  if (survival.opponentCanSurviveAnotherTie === false || survival.opponentCanContinueCurrentWar === false) {
+    pressureLines.push("Opponent cannot continue another WAR after this commitment.");
   }
-  if (playerAvailable > opponentAvailable) {
+  if (survival.playerCardEdge) {
     pressureLines.push("You have a card-count edge after this commitment.");
+  }
+  if (survival.opponentCardEdge) {
+    pressureLines.push("Both players can continue, but your margin is thin.");
+  }
+  if (pileCount >= 4 || Number(survival.commitmentTotal ?? 0) >= 4) {
+    pressureLines.push("The WAR pot is large; avoid another tie if possible.");
   }
   pressureLines.push("Avoid unnecessary tie risk.");
 
@@ -697,9 +722,25 @@ function renderTrainingCoachHelp(coach) {
 }
 
 function getLightCoachRead(coach) {
+  const warSurvivalLine = String(coach?.warSurvival?.message ?? "").trim();
+  if (warSurvivalLine && coach?.war?.active) {
+    return [warSurvivalLine];
+  }
   const riskNote = String(coach?.riskNote ?? "").trim();
   if (riskNote) {
     return [riskNote];
+  }
+  const optionWarning = String(coach?.futureOptionForecast?.warning ?? "").trim();
+  if (optionWarning && !coach?.war?.active) {
+    return [optionWarning];
+  }
+  const noEffectLine = String(coach?.noEffectGuidance?.warning ?? coach?.noEffectGuidance?.note ?? "").trim();
+  if (noEffectLine && !coach?.war?.active) {
+    return [noEffectLine];
+  }
+  const confidenceLine = String(coach?.outcomeConfidence?.message ?? "").trim();
+  if (confidenceLine && !coach?.war?.active) {
+    return [confidenceLine];
   }
   const tacticalRead = Array.isArray(coach?.tacticalRead) ? coach.tacticalRead : [];
   return [String(tacticalRead[0] ?? "No strong read")];
@@ -741,6 +782,8 @@ function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = 
     tacticalRead: coachMode === "full" ? coach.tacticalRead ?? [] : getLightCoachRead(coach),
     suggestion: visibleSuggestion,
     riskNote: coachMode === "full" ? coach.riskNote ?? null : null,
+    confidenceLine: !coach.war?.active ? coach.outcomeConfidence?.message ?? null : null,
+    warLine: coach.war?.active ? coach.warSurvival?.message ?? null : null,
     planNote: coachMode === "full" && !coach.war?.active ? getTrainingCoachStrategyNote(coach) : null,
     warActive: Boolean(coach.war?.active)
   };
