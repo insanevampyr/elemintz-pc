@@ -2083,6 +2083,9 @@ test("multiplayer foundation: boostEvent:getActive returns null safely for inval
 
 test("multiplayer foundation: admin boost event routes validate, persist, read, and clear config", async () => {
   const dataDir = await createTempDataDir();
+  const dayMs = 1000 * 60 * 60 * 24;
+  const activeStartsAt = new Date(Date.now() - dayMs).toISOString();
+  const activeEndsAt = new Date(Date.now() + dayMs).toISOString();
   const accountStore = new MultiplayerAccountStore({
     dataDir,
     logger: { info: () => {} }
@@ -2210,8 +2213,8 @@ test("multiplayer foundation: admin boost event routes validate, persist, read, 
           enabled: true,
           title: "Online Only Weekend",
           message: "Earn boosted online rewards this weekend.",
-          startsAt: "2026-05-10T00:00:00.000Z",
-          endsAt: "2026-06-29T00:00:00.000Z",
+          startsAt: activeStartsAt,
+          endsAt: activeEndsAt,
           targets: {
             pve_normal: false,
             pve_hard: false,
@@ -2232,8 +2235,8 @@ test("multiplayer foundation: admin boost event routes validate, persist, read, 
       enabled: true,
       title: "Online Only Weekend",
       message: "Earn boosted online rewards this weekend.",
-      startsAt: "2026-05-10T00:00:00.000Z",
-      endsAt: "2026-06-29T00:00:00.000Z",
+      startsAt: activeStartsAt,
+      endsAt: activeEndsAt,
       scope: "online",
       excludeDifficulties: [],
       targets: {
@@ -2258,8 +2261,8 @@ test("multiplayer foundation: admin boost event routes validate, persist, read, 
           enabled: true,
           title: "Elemental Boost Week",
           message: "Earn 1.5x XP and Tokens in eligible modes this week.",
-          startsAt: "2026-05-10T00:00:00.000Z",
-          endsAt: "2026-06-29T00:00:00.000Z",
+          startsAt: activeStartsAt,
+          endsAt: activeEndsAt,
           scope: "all",
           excludeDifficulties: ["easy", "easy"],
           xpMultiplier: 1.5,
@@ -2274,8 +2277,8 @@ test("multiplayer foundation: admin boost event routes validate, persist, read, 
       enabled: true,
       title: "Elemental Boost Week",
       message: "Earn 1.5x XP and Tokens in eligible modes this week.",
-      startsAt: "2026-05-10T00:00:00.000Z",
-      endsAt: "2026-06-29T00:00:00.000Z",
+      startsAt: activeStartsAt,
+      endsAt: activeEndsAt,
       scope: "all",
       excludeDifficulties: ["easy"],
       targets: {
