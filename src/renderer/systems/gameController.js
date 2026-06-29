@@ -1680,6 +1680,7 @@ export class GameController {
             warClashes: Math.max(0, Number(entry?.warClashes ?? 0) || 0)
           }))
         : [],
+      recentPlayerMoves: this.getRecentMovesForTurn("p1"),
       recentOpponentMoves: this.getRecentMovesForTurn("p2"),
       fatigue: {
         playerBlockedElement: this.getBlockedFatiguedElementForTurn("p1"),
