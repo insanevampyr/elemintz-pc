@@ -6,18 +6,25 @@ import {
   completeMatch,
   completeMatchByCardCount,
   createMatch,
+  elementThatBeats,
   getMatchSummary,
   playRoundManualWarStep
 } from "../../engine/index.js";
 import { createRoomStore } from "../../multiplayer/rooms.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
 import { getGauntletRivalById } from "../../engine/gauntletRivals.js";
+import { evaluateTrainingCoach } from "./trainingCoachEvaluator.js";
 
 const MATCH_MODE = Object.freeze({
   PVE: "pve",
   LOCAL_PVP: "local_pvp"
 });
 const LOCAL_AUTHORITY_ELEMENT_ORDER = Object.freeze(["fire", "water", "earth", "wind"]);
+const TRAINING_OPPONENT_PERSONALITIES = Object.freeze({
+  REPEATER: "repeater",
+  COUNTERER: "counterer",
+  SURVIVOR: "survivor"
+});
 const FATIGUE_TOOLTIP = "This Elemint must rest for 1 turn.";
 
 function normalizeElementMove(value) {
@@ -80,6 +87,73 @@ function getBlockedFatiguedElementForCounts(elementCounts = {}, recentMoves = []
   );
 
   return hasAlternative ? fatiguedElement : null;
+}
+
+function normalizeTrainingOpponentPersonality(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return Object.values(TRAINING_OPPONENT_PERSONALITIES).includes(normalized)
+    ? normalized
+    : TRAINING_OPPONENT_PERSONALITIES.REPEATER;
+}
+
+function buildLegalCardOptions(hand = [], blockedElement = null) {
+  return (Array.isArray(hand) ? hand : [])
+    .map((card, index) => ({ card: normalizeElementMove(card), index }))
+    .filter(({ card }) => card && card !== blockedElement);
+}
+
+function chooseFirstLegalOptionByElement(legalOptions = [], element) {
+  const normalizedElement = normalizeElementMove(element);
+  if (!normalizedElement) {
+    return null;
+  }
+
+  return legalOptions.find((option) => option.card === normalizedElement) ?? null;
+}
+
+function chooseTrainingOpponentCardIndex({
+  personality = TRAINING_OPPONENT_PERSONALITIES.REPEATER,
+  legalOptions = [],
+  recentPlayerMoves = [],
+  recentOpponentMoves = [],
+  publicState = {}
+} = {}) {
+  if (!Array.isArray(legalOptions) || legalOptions.length === 0) {
+    return null;
+  }
+
+  const normalizedPersonality = normalizeTrainingOpponentPersonality(personality);
+  const lastOpponentMove = normalizeElementMove(recentOpponentMoves.at(-1));
+  const lastPlayerMove = normalizeElementMove(recentPlayerMoves.at(-1));
+
+  if (normalizedPersonality === TRAINING_OPPONENT_PERSONALITIES.REPEATER) {
+    const repeatedOption = chooseFirstLegalOptionByElement(legalOptions, lastOpponentMove);
+    if (repeatedOption) {
+      return repeatedOption.index;
+    }
+  }
+
+  if (normalizedPersonality === TRAINING_OPPONENT_PERSONALITIES.COUNTERER && lastPlayerMove) {
+    const counterOption = chooseFirstLegalOptionByElement(legalOptions, elementThatBeats(lastPlayerMove));
+    if (counterOption) {
+      return counterOption.index;
+    }
+  }
+
+  if (normalizedPersonality === TRAINING_OPPONENT_PERSONALITIES.SURVIVOR) {
+    const warPressure =
+      Boolean(publicState?.warActive) ||
+      Number(publicState?.aiCardsRemaining ?? legalOptions.length) <= WAR_REQUIRED_CARDS ||
+      Number(publicState?.playerCardsRemaining ?? 0) <= WAR_REQUIRED_CARDS;
+    if (warPressure && lastPlayerMove) {
+      const lowerTieRiskOption = legalOptions.find((option) => option.card !== lastPlayerMove);
+      if (lowerTieRiskOption) {
+        return lowerTieRiskOption.index;
+      }
+    }
+  }
+
+  return legalOptions[0]?.index ?? null;
 }
 
 function createLocalAuthoritySocket(label) {
@@ -629,6 +703,10 @@ export class GameController {
     this.gauntletMode = options.gauntletMode === true;
     this.gauntletRivalId = String(options.gauntletRivalId ?? "").trim().toLowerCase() || null;
     this.mode = options.mode ?? MATCH_MODE.PVE;
+    this.trainingMode = options.trainingMode === true;
+    this.trainingOpponentPersonality = this.trainingMode
+      ? normalizeTrainingOpponentPersonality(options.trainingOpponentPersonality)
+      : null;
     this.persistMatchResults = options.persistMatchResults ?? true;
     this.persistMatchResult = typeof options.persistMatchResult === "function" ? options.persistMatchResult : null;
     this.localAuthorityStoreFactory = options.localAuthorityStoreFactory ?? (() => createRoomStore());
@@ -846,13 +924,19 @@ export class GameController {
     this.resetMatchClock();
     this.recalculateCapturedTotals();
 
-    if (!this.isLocalPvp()) {
+    if (this.trainingMode) {
+      this.stopTimer();
+    } else if (!this.isLocalPvp()) {
       this.startTimer();
     } else {
       this.stopTimer();
     }
 
-    this.startMatchClock();
+    if (this.trainingMode) {
+      this.stopMatchClock();
+    } else {
+      this.startMatchClock();
+    }
     this.onUpdate();
   }
 
@@ -895,9 +979,19 @@ export class GameController {
   }
 
   startMatchClock() {
+    if (this.trainingMode) {
+      this.stopMatchClock();
+      return;
+    }
+
     this.stopMatchClock();
 
     this.matchClockId = setInterval(async () => {
+      if (this.trainingMode) {
+        this.stopMatchClock();
+        return;
+      }
+
       if (!this.match || this.match.status !== "active") {
         this.stopMatchClock();
         return;
@@ -916,9 +1010,19 @@ export class GameController {
   }
 
   startTimer() {
+    if (this.trainingMode) {
+      this.stopTimer();
+      return;
+    }
+
     this.stopTimer();
 
     this.timerId = setInterval(async () => {
+      if (this.trainingMode) {
+        this.stopTimer();
+        return;
+      }
+
       if (this.isResolvingRound || !this.match || this.match.status !== "active") {
         return;
       }
@@ -1167,6 +1271,10 @@ export class GameController {
     if (this.match.status === "completed") {
       this.recalculateCapturedTotals();
       await this.finalizeCompletedMatch();
+    } else if (this.trainingMode) {
+      this.stopTimer();
+      this.stopMatchClock();
+      this.onUpdate();
     } else if (!this.isLocalPvp()) {
       this.resetTimer();
       this.startTimer();
@@ -1298,6 +1406,10 @@ export class GameController {
           if (forcedResolution) {
             return forcedResolution;
           }
+        } else if (this.trainingMode) {
+          this.stopTimer();
+          this.stopMatchClock();
+          this.onUpdate();
         } else {
           this.resetTimer();
           this.startTimer();
@@ -1328,24 +1440,35 @@ export class GameController {
         buildElementCountsFromCards(this.match.players.p2.hand),
         recentOpponentMoves
       );
+      const legalOpponentOptions = buildLegalCardOptions(this.match.players.p2.hand, blockedOpponentElement);
       const legalOpponentHand = this.match.players.p2.hand.filter(
         (card) => normalizeElementMove(card) !== blockedOpponentElement
       );
       const gauntletRival = this.gauntletMode ? getGauntletRivalById(this.gauntletRivalId) : null;
-      const opponentIndex = gauntletRival
-        ? chooseGauntletRivalCardIndex(legalOpponentHand, {
-            rival: gauntletRival,
-            turnIndex: Math.max(0, Number(this.match?.round ?? 1) - 1),
-            playerPreviousElement: recentPlayerMoves.at(-1) ?? null,
+      const opponentIndex = this.trainingMode
+        ? chooseTrainingOpponentCardIndex({
+            personality: this.trainingOpponentPersonality,
+            legalOptions: legalOpponentOptions,
+            recentPlayerMoves,
+            recentOpponentMoves,
             publicState
           })
-        : chooseAiCardIndex(legalOpponentHand, {
-            difficulty: this.aiDifficulty,
-            publicState
-          });
+        : gauntletRival
+          ? chooseGauntletRivalCardIndex(legalOpponentHand, {
+              rival: gauntletRival,
+              turnIndex: Math.max(0, Number(this.match?.round ?? 1) - 1),
+              playerPreviousElement: recentPlayerMoves.at(-1) ?? null,
+              publicState
+            })
+          : chooseAiCardIndex(legalOpponentHand, {
+              difficulty: this.aiDifficulty,
+              publicState
+            });
       const revealedCards = {
         p1Card: playerCard,
-        p2Card: getCardAtIndex(legalOpponentHand, opponentIndex)
+        p2Card: this.trainingMode
+          ? getCardAtIndex(this.match.players.p2.hand, opponentIndex)
+          : getCardAtIndex(legalOpponentHand, opponentIndex)
       };
 
       const result = await this.finalizeRound({
@@ -1539,6 +1662,43 @@ export class GameController {
       ? [...this.match.currentPile]
       : [];
     const warPileCount = committedWarPile.length;
+    const playerSelectableIndices = this.getSelectableCardIndices("p1");
+    const opponentRemainingByElement = buildElementCountsFromCards(this.match.players.p2.hand);
+    const coach = evaluateTrainingCoach({
+      trainingActive: this.trainingMode,
+      legalPlayableElements: playerSelectableIndices
+        .map((index) => normalizeElementMove(this.match.players.p1.hand[index]))
+        .filter(Boolean),
+      playerRemainingByElement: buildElementCountsFromCards(this.match.players.p1.hand),
+      opponentRemainingByElement,
+      visibleHistory: Array.isArray(this.match.history)
+        ? this.match.history.map((entry) => ({
+            round: entry?.round ?? null,
+            p1Card: normalizeElementMove(entry?.p1Card),
+            p2Card: normalizeElementMove(entry?.p2Card),
+            result: entry?.result ?? null,
+            warClashes: Math.max(0, Number(entry?.warClashes ?? 0) || 0)
+          }))
+        : [],
+      recentOpponentMoves: this.getRecentMovesForTurn("p2"),
+      fatigue: {
+        playerBlockedElement: this.getBlockedFatiguedElementForTurn("p1"),
+        opponentBlockedElement: this.getBlockedFatiguedElementForTurn("p2")
+      },
+      phase: warActive ? "war" : "normal",
+      availableCards: {
+        player: this.match.players.p1.hand.length,
+        opponent: this.match.players.p2.hand.length
+      },
+      war: {
+        pileCount: warPileCount,
+        commitmentTotals: {
+          player: committedWarPile.filter((_, index) => index % 2 === 0).length,
+          opponent: committedWarPile.filter((_, index) => index % 2 === 1).length
+        }
+      },
+      captured: { ...this.captured }
+    });
 
     return {
       status: summary.status,
@@ -1547,6 +1707,7 @@ export class GameController {
       round: summary.round,
       timerSeconds: this.timerSeconds,
       totalMatchSeconds: this.totalMatchSeconds,
+      trainingMode: this.trainingMode,
       mode: this.mode,
       hotseatTurn: this.hotseatTurn,
       hotseatPending:
@@ -1566,7 +1727,8 @@ export class GameController {
       roundResult: this.roundResultText,
       roundOutcome,
       canSelectCard: this.match.status === "active" && !this.isResolvingRound,
-      selectionFatigue: this.getSelectionFatigueSummary()
+      selectionFatigue: this.getSelectionFatigueSummary(),
+      coach
     };
   }
 }

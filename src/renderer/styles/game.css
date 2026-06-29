@@ -3087,6 +3087,37 @@ select {
   box-shadow: 0 0 0 1px rgba(125, 226, 202, 0.18), 0 8px 18px rgba(63, 216, 180, 0.18);
 }
 
+.training-complete-modal-shell,
+.training-complete-modal-shell .modal-body,
+.training-complete-modal-shell .match-complete-modal,
+.training-complete-modal-shell .match-complete-hero,
+.training-complete-modal-shell .match-complete-meta,
+.training-complete-modal-shell .match-complete-actions {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.training-complete-modal-shell .modal-body {
+  overflow-x: hidden;
+}
+
+.training-complete-modal-shell .match-complete-kicker,
+.training-complete-modal-shell .match-complete-outcome,
+.training-complete-modal-shell .match-complete-subtitle,
+.training-complete-modal-shell .match-complete-meta p {
+  overflow-wrap: anywhere;
+}
+
+.training-complete-modal-shell .match-complete-actions {
+  flex-wrap: wrap;
+}
+
+.training-complete-modal-shell .match-complete-actions .btn {
+  flex: 1 1 132px;
+  min-width: 0;
+}
+
 @keyframes match-complete-intro {
   0% {
     opacity: 0;

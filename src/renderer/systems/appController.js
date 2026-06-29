@@ -68,6 +68,12 @@ const FALLBACK_SETTINGS = {
   aiOpponentStyle: "random",
   ui: { reducedMotion: false }
 };
+const TRAINING_COACH_MODES = Object.freeze(["full", "light", "off"]);
+
+function normalizeTrainingCoachMode(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return TRAINING_COACH_MODES.includes(normalized) ? normalized : "full";
+}
 
 const TITLE_ICON_MAP = Object.freeze({
   "Flame Vanguard": "badges/firstFlame.png",
@@ -259,6 +265,7 @@ export class AppController {
     this.pveOpponentStyle = null;
     this.pveGauntletMode = false;
     this.pveFeaturedRivalId = null;
+    this.trainingCoachMode = "full";
     this.currentProtectedLocalMatchSession = null;
     this.pendingProtectedLocalMatchSessionPromise = null;
     this.protectedLocalMatchSessionRequestId = 0;
@@ -745,6 +752,34 @@ export class AppController {
     }
   }
 
+  captureCurrentTrainingCoachDomState() {
+    if (typeof document?.querySelector !== "function") {
+      return null;
+    }
+
+    const rail = document.querySelector?.('[data-training-coach-rail="true"]');
+    const railBody = rail?.querySelector?.('[data-training-coach-rail-body="true"]') ?? null;
+    if (!railBody) {
+      return null;
+    }
+
+    return {
+      railBodyScrollTop: Number(railBody.scrollTop ?? 0)
+    };
+  }
+
+  restoreCurrentTrainingCoachDomState(preservedState = null) {
+    if (!preservedState || typeof document?.querySelector !== "function") {
+      return;
+    }
+
+    const rail = document.querySelector?.('[data-training-coach-rail="true"]');
+    const railBody = rail?.querySelector?.('[data-training-coach-rail-body="true"]') ?? null;
+    if (railBody && Number.isFinite(preservedState.railBodyScrollTop)) {
+      railBody.scrollTop = preservedState.railBodyScrollTop;
+    }
+  }
+
   finalizeRenderedTauntHud(screenFlow = this.screenFlow, preservedState = null) {
     if (typeof document?.querySelector !== "function") {
       return;
@@ -913,6 +948,11 @@ export class AppController {
   }
 
   ensureMatchTauntUiTimer() {
+    if (this.gameController?.trainingMode === true && this.screenFlow === "game") {
+      this.clearMatchTauntUiTimer();
+      return;
+    }
+
     if (this.matchTauntUiTimerId || !this.hasActiveTauntHudState()) {
       return;
     }
@@ -1745,12 +1785,12 @@ export class AppController {
       selectedGauntletMode: Boolean(this.pveGauntletMode),
       selectedFeaturedRivalId: this.pveFeaturedRivalId,
       actions: {
-        start: async ({ aiDifficulty, featuredRivalId, gauntletMode, bloodMatch } = {}) => {
+        start: async ({ aiDifficulty, featuredRivalId, gauntletMode, bloodMatch, trainingMode } = {}) => {
           if (bloodMatch === true) {
             this.startBloodMatch();
             return;
           }
-          this.startGame(MATCH_MODE.PVE, { aiDifficulty, featuredRivalId, gauntletMode });
+          this.startGame(MATCH_MODE.PVE, { aiDifficulty, featuredRivalId, gauntletMode, trainingMode });
         },
         back: () => this.showMenu()
       }
@@ -7397,6 +7437,75 @@ export class AppController {
     return `<p><strong>Boost Event:</strong> ${escapeHtml(segments.join(" / "))} applied</p>`;
   }
 
+  buildTrainingCompleteObservations(match) {
+    const observations = [];
+    const history = Array.isArray(match?.history) ? match.history : [];
+    const warRounds = history.filter((round) => Number(round?.warClashes ?? 0) > 0).length;
+    const playerFinalCards = Math.max(0, Number(match?.players?.p1?.hand?.length ?? 0) || 0);
+    const opponentFinalCards = Math.max(0, Number(match?.players?.p2?.hand?.length ?? 0) || 0);
+    const endReason = String(match?.endReason ?? "").trim().toLowerCase();
+
+    if (warRounds > 0) {
+      observations.push("WAR pressure mattered. Watch available cards before chasing ties.");
+    }
+
+    if (endReason.includes("hand") || playerFinalCards === 0 || opponentFinalCards === 0) {
+      observations.push("Card count decided the ending. Preserve legal options before WAR chains.");
+    }
+
+    if (playerFinalCards > opponentFinalCards) {
+      observations.push("You finished with more available cards than the opponent.");
+    } else if (opponentFinalCards > playerFinalCards) {
+      observations.push("The opponent finished with more available cards.");
+    }
+
+    if (observations.length === 0) {
+      observations.push("Review the final element counts and look for safer tie-risk spots.");
+    }
+
+    return observations.slice(0, 2);
+  }
+
+  buildTrainingCompleteModalPayload(match) {
+    const won = match?.winner === "p1";
+    const outcomeLabel = won ? "Victory" : "Defeat";
+    const outcomeClass = won ? "is-victory" : "is-defeat";
+    const observations = this.buildTrainingCompleteObservations(match);
+    const bodyHtml = renderMatchCompleteVisualShell({
+      variant: "modal",
+      rootClassName: outcomeClass,
+      headerHtml: `
+        <header class="match-complete-hero">
+          <p class="match-complete-kicker">TRAINING COMPLETE</p>
+          <h4 class="match-complete-outcome">${outcomeLabel}</h4>
+          <p class="match-complete-subtitle">No rewards or progression were recorded.</p>
+        </header>`,
+      summaryHtml: `
+        <section class="match-complete-meta" data-training-complete-observations="true">
+          ${observations.map((observation) => `<p>${escapeHtml(observation)}</p>`).join("")}
+        </section>`,
+      statsHtml: "",
+      rewardsHtml: `
+        <section class="match-complete-meta" data-training-complete-zero-rewards="true">
+          <p>Training results are local only and were not recorded.</p>
+        </section>`,
+      actionsHtml: `
+        <div class="match-complete-actions">
+          <button id="match-complete-play-again" class="btn btn-primary">Play Again</button>
+          <button id="match-complete-standard-pve" class="btn">Try Standard PvE</button>
+          <button id="match-complete-return-menu" class="btn">Return to Menu</button>
+        </div>`
+    });
+
+    return {
+      title: "TRAINING COMPLETE",
+      bodyHtml,
+      mode: MATCH_MODE.PVE,
+      startOptions: { aiDifficulty: "easy", trainingMode: true, trainingCoachMode: this.trainingCoachMode },
+      trainingComplete: true
+    };
+  }
+
   playRoundRevealSounds(result, mode = MATCH_MODE.PVE, { warWasActive = false } = {}) {
     if (!result) {
       return false;
@@ -7832,12 +7941,22 @@ export class AppController {
     const roundsPlayed = Array.isArray(match?.history) ? match.history.length : 0;
     const safeValue = (value) => (value ?? "-");
     const isLocalPvp = mode === MATCH_MODE.LOCAL_PVP;
+    const isTrainingMode =
+      !isLocalPvp &&
+      mode === MATCH_MODE.PVE &&
+      this.gameController?.trainingMode === true;
+    if (isTrainingMode) {
+      return this.buildTrainingCompleteModalPayload(match);
+    }
+
     const isEasyPracticePve =
       !isLocalPvp &&
       mode === MATCH_MODE.PVE &&
       String(match?.difficulty ?? "").trim().toLowerCase() === "easy";
     const startOptions =
-      !isLocalPvp && mode === MATCH_MODE.PVE && this.pveGauntletMode
+      !isLocalPvp && mode === MATCH_MODE.PVE && this.gameController?.trainingMode === true
+        ? { aiDifficulty: "easy", trainingMode: true, trainingCoachMode: this.trainingCoachMode }
+        : !isLocalPvp && mode === MATCH_MODE.PVE && this.pveGauntletMode
         ? { gauntletMode: true }
         : !isLocalPvp && mode === MATCH_MODE.PVE && this.pveFeaturedRivalId
           ? { featuredRivalId: this.pveFeaturedRivalId }
@@ -7990,12 +8109,18 @@ export class AppController {
     this.modalManager.show({
       title: payload.title,
       bodyHtml: payload.bodyHtml,
-      actions: []
+      actions: [],
+      modalClassName: payload.trainingComplete ? "training-complete-modal-shell" : ""
     });
 
     document.getElementById("match-complete-play-again")?.addEventListener("click", () => {
       this.modalManager.hide();
       this.startGame(payload.mode ?? MATCH_MODE.PVE, payload.startOptions ?? {});
+    });
+
+    document.getElementById("match-complete-standard-pve")?.addEventListener("click", () => {
+      this.modalManager.hide();
+      this.showAiDifficultySelect();
     });
 
     document.getElementById("match-complete-return-menu")?.addEventListener("click", async () => {
@@ -8317,6 +8442,7 @@ export class AppController {
     this.localPlayers = null;
     this.localProfiles = null;
     this.localPlayerAuthorities = null;
+    this.trainingCoachMode = "full";
     this.preserveAuthenticatedOwnProfileIfSafer({
       username: this.username,
       onlineState: this.onlinePlayState,
@@ -8707,11 +8833,21 @@ export class AppController {
       mode === MATCH_MODE.PVE && !wantsGauntlet
         ? String(options?.featuredRivalId ?? "").trim().toLowerCase() || null
         : null;
+    const trainingMode =
+      mode === MATCH_MODE.PVE &&
+      options?.trainingMode === true &&
+      !wantsGauntlet &&
+      !this.pveFeaturedRivalId;
+    if (trainingMode) {
+      this.trainingCoachMode = normalizeTrainingCoachMode(options?.trainingCoachMode);
+    }
     const featuredRival = this.getFeaturedRivalConfig(this.pveFeaturedRivalId);
     this.pveOpponentStyle =
       mode === MATCH_MODE.PVE ? this.buildPveOpponentStyle(this.pveFeaturedRivalId) : null;
     const resolvedAiDifficulty =
-      mode === MATCH_MODE.PVE
+      trainingMode
+        ? "easy"
+        : mode === MATCH_MODE.PVE
         ? featuredRival?.aiDifficulty ??
           (String(options?.aiDifficulty ?? "").trim().toLowerCase() ||
             this.getConfiguredAiDifficulty())
@@ -8739,7 +8875,8 @@ export class AppController {
       gauntletRivalId: wantsGauntlet ? this.gauntletRunState?.currentRivalId ?? null : null,
       featuredRivalId: this.pveFeaturedRivalId,
       mode,
-      persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP,
+      trainingMode,
+      persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP && !trainingMode,
       persistMatchResult:
         mode === MATCH_MODE.PVE ? async (match) => this.persistPveResult(match) : null,
       onRoundResolved: (round) => {
@@ -8940,6 +9077,7 @@ export class AppController {
         mode,
         gauntletMode: wantsGauntlet
       }) &&
+      !trainingMode &&
       this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, this.username)
     ) {
       this.pendingProtectedLocalMatchSessionPromise = this.startProtectedPveLocalMatchSession({
@@ -9042,7 +9180,9 @@ export class AppController {
               rivalHint: gauntletRival.hint
             }
           : null,
-      presentation: this.roundPresentation
+      presentation: this.roundPresentation,
+      trainingMode: Boolean(vm.trainingMode),
+      trainingCoachMode: Boolean(vm.trainingMode) ? this.trainingCoachMode : "full"
     };
   }
 
@@ -9482,7 +9622,13 @@ export class AppController {
       preserveModal: this.hasActiveQuitConfirmationModal() || this.hasActiveMatchCompleteModal()
     });
     this.screenFlow = "game";
-    const preservedTauntHudState = this.captureCurrentTauntHudDomState("game");
+    const trainingMode = Boolean(vm.trainingMode);
+    const preservedTauntHudState = trainingMode
+      ? null
+      : this.captureCurrentTauntHudDomState("game");
+    const preservedTrainingCoachState = trainingMode
+      ? this.captureCurrentTrainingCoachDomState()
+      : null;
     const tauntHud = this.getCurrentTauntHudState();
 
     const localPvp = vm.mode === MATCH_MODE.LOCAL_PVP;
@@ -9578,6 +9724,8 @@ export class AppController {
             ? opponentDisplay?.name ?? nonLocalOpponentName
             : null
       },
+      trainingMode,
+      trainingCoachMode: trainingMode ? this.trainingCoachMode : "full",
       reducedMotion: this.isReducedMotion(),
       presentation: this.roundPresentation,
       hotseat: {
@@ -9612,11 +9760,20 @@ export class AppController {
         },
         sendTaunt: async (line) => {
           await this.sendCurrentMatchTaunt(line);
+        },
+        setTrainingCoachMode: async (mode) => {
+          this.trainingCoachMode = normalizeTrainingCoachMode(mode);
+          this.showGame();
         }
       }
     });
-    this.finalizeRenderedTauntHud("game", preservedTauntHudState);
-    this.ensureMatchTauntUiTimer();
+    if (trainingMode) {
+      this.restoreCurrentTrainingCoachDomState(preservedTrainingCoachState);
+      this.clearMatchTauntUiTimer();
+    } else {
+      this.finalizeRenderedTauntHud("game", preservedTauntHudState);
+      this.ensureMatchTauntUiTimer();
+    }
   }
 
   async showProfile({

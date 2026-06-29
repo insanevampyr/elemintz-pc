@@ -26,12 +26,17 @@ let detachGameKeyboardHandler = null;
 export function buildGameHudPrimaryLine({ game, hotseat }) {
   const vm = game ?? {};
   const compactTurnLabel = escapeHtml(hotseat?.turnLabel ?? "Player Turn");
+  if (vm.trainingMode) {
+    return `Round ${vm.round} | Training Mode | ${compactTurnLabel}`;
+  }
   return `Round ${vm.round} | Turn: ${vm.timerSeconds}s | Match: ${formatClock(vm.totalMatchSeconds)} | ${compactTurnLabel}`;
 }
 
 export function buildGameLiveUpdateSignature(context) {
   const vm = context.game ?? {};
-  return JSON.stringify({
+  const trainingMode = Boolean(context.trainingMode || vm.trainingMode);
+  const trainingCoachMode = normalizeTrainingCoachMode(context.trainingCoachMode);
+  const signature = {
     status: vm.status ?? null,
     winner: vm.winner ?? null,
     endReason: vm.endReason ?? null,
@@ -44,7 +49,6 @@ export function buildGameLiveUpdateSignature(context) {
     warActive: Boolean(vm.warActive),
     pileCount: Number(vm.pileCount ?? 0),
     totalWarClashes: Number(vm.totalWarClashes ?? 0),
-    warPileCards: Array.isArray(vm.warPileCards) ? vm.warPileCards : [],
     warPileSizes: Array.isArray(vm.warPileSizes) ? vm.warPileSizes : [],
     captured: {
       p1: Number(vm.captured?.p1 ?? 0),
@@ -91,8 +95,15 @@ export function buildGameLiveUpdateSignature(context) {
     battleStatus: {
       difficulty: context.battleStatus?.difficulty ?? null,
       featuredRivalName: context.battleStatus?.featuredRivalName ?? null
-    }
-  });
+    },
+    trainingMode,
+    trainingCoachMode,
+    coach: buildTrainingCoachLiveSignature({ coach: vm.coach, mode: trainingCoachMode, trainingMode })
+  };
+  if (!trainingMode) {
+    signature.warPileCards = Array.isArray(vm.warPileCards) ? vm.warPileCards : [];
+  }
+  return JSON.stringify(signature);
 }
 
 function formatClock(seconds) {
@@ -480,6 +491,312 @@ function renderHands(vm, context, phase, names) {
   };
 }
 
+function normalizeTrainingCoachMode(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "light" || normalized === "off" ? normalized : "full";
+}
+
+function renderTrainingCoachModeControls(mode) {
+  const controls = [
+    ["full", "Full Coach"],
+    ["light", "Light Hints"],
+    ["off", "Off"]
+  ];
+  return `
+    <div class="match-taunt-controls-row" data-training-coach-controls="true">
+      ${controls
+        .map(([value, label]) => `
+          <button
+            type="button"
+            class="btn btn-small"
+            data-training-coach-mode="${escapeHtml(value)}"
+            aria-pressed="${mode === value ? "true" : "false"}"
+          >${escapeHtml(label)}</button>
+        `)
+        .join("")}
+    </div>
+  `;
+}
+
+function renderTrainingCoachCounts(counts = {}) {
+  const total = ELEMENT_ORDER.reduce(
+    (sum, element) => sum + Math.max(0, Number(counts?.[element] ?? 0) || 0),
+    0
+  );
+  return `
+    <section class="game-match-taunt-section" data-training-coach-counts="true">
+      <p><strong>Opponent remaining</strong></p>
+      <div class="battle-status-grid">
+        ${ELEMENT_ORDER.map((element) => `
+          <span data-training-coach-count="${escapeHtml(element)}">
+            ${escapeHtml(formatElement(element))}: ${Math.max(0, Number(counts?.[element] ?? 0) || 0)}
+          </span>
+        `).join("")}
+      </div>
+      <p class="text-muted" data-training-coach-total="true">Total: ${total}</p>
+    </section>
+  `;
+}
+
+function renderTrainingCoachTacticalRead(read = []) {
+  const lines = Array.isArray(read) && read.length > 0 ? read : ["No strong read"];
+  return `
+    <section class="game-match-taunt-section" data-training-coach-read="true">
+      <p><strong>Opponent Outlook</strong></p>
+      <ul>
+        ${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function isStrongCoachConfidence(confidence) {
+  const normalized = String(confidence ?? "").trim().toLowerCase();
+  return normalized === "certain" || normalized === "strong";
+}
+
+function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, showSectionLabel = true } = {}) {
+  const suggestion = coach?.suggestion ?? {};
+  const kind =
+    suggestion.kind === "safe" || suggestion.kind === "avoid" || suggestion.kind === "forced"
+      ? suggestion.kind
+      : "none";
+  if (!allowDirectSuggestion && kind !== "none" && !isStrongCoachConfidence(suggestion.confidence ?? coach?.confidence)) {
+    return "";
+  }
+  const label = kind === "safe" ? "Safe" : kind === "avoid" ? "Avoid" : kind === "forced" ? "Forced" : "No strong read";
+  const element = suggestion.element ? `: ${formatElement(suggestion.element)}` : "";
+  const reason = String(suggestion.reason ?? "").trim() || "No strong read.";
+  return `
+    <section class="game-match-taunt-section" data-training-coach-suggestion="${escapeHtml(kind)}">
+      ${showSectionLabel && kind !== "none" ? "<p><strong>Coach Advice</strong></p>" : ""}
+      <p><strong>${escapeHtml(label)}${escapeHtml(element)}</strong></p>
+      ${kind !== "none" ? "<p><strong>Why</strong></p>" : ""}
+      <p class="text-muted">${escapeHtml(reason)}</p>
+      ${
+        coach?.riskNote
+          ? `<p><strong>Watch Out</strong></p><p class="text-muted" data-training-coach-risk="true">${escapeHtml(coach.riskNote)}</p>`
+          : ""
+      }
+    </section>
+  `;
+}
+
+function getTrainingCoachStrategyNote(coach) {
+  const plan = coach?.strategyPlan ?? {};
+  const kind = String(plan.kind ?? "none").trim().toLowerCase();
+  if (!plan || kind === "none") {
+    return "";
+  }
+
+  const target = formatElement(plan.targetOpponentElement);
+  const protecting = formatElement(plan.protectingElement);
+  const move = formatElement(plan.pressureElement);
+  const bridge = formatElement(plan.bridgeElement);
+  let note = String(coach?.planNote ?? plan.message ?? "").trim();
+
+  if (kind === "pressure" && target && protecting) {
+    note = `Focus on ${target}. Your ${protecting} cards help cover that route.`;
+  } else if (kind === "bridge" && move && bridge) {
+    note = `${move} is resting. Use ${bridge} for now, then reassess.`;
+  } else if (kind === "shift" && target) {
+    note = `That pool is exhausted. Look toward ${target} next.`;
+  } else if (kind === "preserve" && protecting && target) {
+    note = `Keep ${protecting} available as an answer to their ${target} cards.`;
+  }
+
+  return note;
+}
+
+function renderTrainingCoachStrategyNote(coach) {
+  if (coach?.war?.active) {
+    return "";
+  }
+
+  const note = getTrainingCoachStrategyNote(coach);
+  return note
+    ? `
+      <section class="game-match-taunt-section" data-training-coach-plan="true">
+        <p class="text-muted">${escapeHtml(note)}</p>
+      </section>
+    `
+    : "";
+}
+
+function renderTrainingCoachWarSummary(coach) {
+  if (!coach?.war?.active) {
+    return "";
+  }
+
+  const pileCount = Math.max(0, Number(coach.war?.pileCount ?? 0) || 0);
+  const playerCommitted = Math.max(0, Number(coach.war?.commitmentTotals?.player ?? 0) || 0);
+  const opponentCommitted = Math.max(0, Number(coach.war?.commitmentTotals?.opponent ?? 0) || 0);
+  const playerAvailable = Math.max(0, Number(coach.war?.availableCards?.player ?? 0) || 0);
+  const opponentAvailable = Math.max(0, Number(coach.war?.availableCards?.opponent ?? 0) || 0);
+  const pressureLines = [];
+
+  if (coach.riskNote) {
+    pressureLines.push(coach.riskNote);
+  }
+  if (playerAvailable <= 1) {
+    pressureLines.push("Another tie could eliminate you.");
+  }
+  if (opponentAvailable <= 1) {
+    pressureLines.push("Opponent is low on available cards.");
+  }
+  if (playerAvailable > opponentAvailable) {
+    pressureLines.push("You have a card-count edge after this commitment.");
+  }
+  pressureLines.push("Avoid unnecessary tie risk.");
+
+  const uniquePressureLines = [...new Set(pressureLines.map((line) => String(line).trim()).filter(Boolean))].slice(0, 4);
+
+  return `
+    <section class="game-match-taunt-section" data-training-coach-war="true">
+      <p><strong>WAR active</strong></p>
+      <div class="battle-status-grid">
+        <span data-training-coach-war-pot="true">Pot: ${pileCount}</span>
+        <span data-training-coach-war-commitments="true">Committed: ${playerCommitted} | ${opponentCommitted}</span>
+        <span data-training-coach-war-player-available="true">Your cards: ${playerAvailable}</span>
+        <span data-training-coach-war-opponent-available="true">Opponent cards: ${opponentAvailable}</span>
+      </div>
+      ${uniquePressureLines.length > 0 ? "<p><strong>Watch Out</strong></p>" : ""}
+      <ul>
+        ${uniquePressureLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function renderTrainingCoachHelp(coach) {
+  const warHelp = coach?.war?.active
+    ? `
+      <details data-training-coach-help="war">
+        <summary>WAR reminder</summary>
+        <p class="text-muted">Cards committed to WAR are unavailable now. Another tie can extend WAR pressure.</p>
+      </details>
+    `
+    : "";
+  return `
+    <section class="game-match-taunt-section" data-training-coach-help-section="true">
+      <details data-training-coach-help="why">
+        <summary>Why this hint?</summary>
+        <p class="text-muted">Coach reads visible cards, fatigue, WAR pressure, and exact remaining counts.</p>
+      </details>
+      <details data-training-coach-help="chart">
+        <summary>Element counter chart</summary>
+        <p class="text-muted">Fire beats Earth. Earth beats Wind. Wind beats Water. Water beats Fire.</p>
+      </details>
+      <details data-training-coach-help="fatigue">
+        <summary>Fatigue reminder</summary>
+        <p class="text-muted">An Elemint that repeats twice must rest when another legal element is available.</p>
+      </details>
+      ${warHelp}
+    </section>
+  `;
+}
+
+function getLightCoachRead(coach) {
+  const riskNote = String(coach?.riskNote ?? "").trim();
+  if (riskNote) {
+    return [riskNote];
+  }
+  const tacticalRead = Array.isArray(coach?.tacticalRead) ? coach.tacticalRead : [];
+  return [String(tacticalRead[0] ?? "No strong read")];
+}
+
+function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = false } = {}) {
+  if (!trainingMode) {
+    return null;
+  }
+
+  const coachMode = normalizeTrainingCoachMode(mode);
+  if (coachMode === "off") {
+    return { display: "off" };
+  }
+
+  if (!coach || typeof coach !== "object") {
+    return { display: coachMode, available: false };
+  }
+
+  const counts = {};
+  for (const element of ELEMENT_ORDER) {
+    counts[element] = Math.max(0, Number(coach.opponentRemainingByElement?.[element] ?? 0) || 0);
+  }
+
+  const visibleSuggestion =
+    coachMode === "full" || isStrongCoachConfidence(coach.suggestion?.confidence ?? coach.confidence)
+      ? {
+          kind: coach.suggestion?.kind ?? "none",
+          element: coach.suggestion?.element ?? null,
+          reason: coach.suggestion?.reason ?? "",
+          confidence: coach.suggestion?.confidence ?? coach.confidence ?? null
+        }
+      : null;
+
+  return {
+    display: coachMode,
+    available: true,
+    opponentRemainingByElement: counts,
+    tacticalRead: coachMode === "full" ? coach.tacticalRead ?? [] : getLightCoachRead(coach),
+    suggestion: visibleSuggestion,
+    riskNote: coachMode === "full" ? coach.riskNote ?? null : null,
+    planNote: coachMode === "full" && !coach.war?.active ? getTrainingCoachStrategyNote(coach) : null,
+    warActive: Boolean(coach.war?.active)
+  };
+}
+
+function renderTrainingCoachRail({ coach, mode = "full" } = {}) {
+  const coachMode = normalizeTrainingCoachMode(mode);
+  if (coachMode === "off") {
+    return `
+      <aside class="match-taunt-shell game-match-taunt-rail" data-training-coach-rail="true" data-training-coach-display="off" aria-label="Training Mode Coach">
+        <div class="game-match-taunt-rail-header match-taunt-controls-row game-match-taunt-topbar">
+          <strong>COACH</strong>
+        </div>
+        <div class="game-match-taunt-box game-match-taunt-fixed-box">
+          <div class="game-match-taunt-rail-body game-match-taunt-box-scroll" data-training-coach-rail-body="true">
+            <p class="text-muted">Coach hints are off.</p>
+            <button type="button" class="btn btn-primary btn-small" data-training-coach-mode="full">Enable Coach</button>
+          </div>
+        </div>
+      </aside>
+    `;
+  }
+
+  const hasCoach = coach && typeof coach === "object";
+  return `
+    <aside class="match-taunt-shell game-match-taunt-rail" data-training-coach-rail="true" data-training-coach-display="${escapeHtml(coachMode)}" aria-label="Training Mode Coach">
+      <div class="game-match-taunt-rail-header match-taunt-controls-row game-match-taunt-topbar">
+        <strong>COACH</strong>
+      </div>
+      <div class="game-match-taunt-box game-match-taunt-fixed-box">
+        <div class="game-match-taunt-rail-body game-match-taunt-box-scroll" data-training-coach-rail-body="true">
+          ${renderTrainingCoachModeControls(coachMode)}
+          ${
+            hasCoach
+              ? `
+                ${renderTrainingCoachCounts(coach.opponentRemainingByElement)}
+                ${renderTrainingCoachWarSummary(coach)}
+                ${renderTrainingCoachTacticalRead(coachMode === "full" ? coach.tacticalRead : getLightCoachRead(coach))}
+                ${renderTrainingCoachSuggestion(coach, {
+                  allowDirectSuggestion: coachMode === "full" || isStrongCoachConfidence(coach.suggestion?.confidence ?? coach.confidence),
+                  showSectionLabel: coachMode === "full"
+                })}
+                ${coachMode === "full" ? renderTrainingCoachStrategyNote(coach) : ""}
+                ${coachMode === "full" ? renderTrainingCoachHelp(coach) : ""}
+              `
+              : `
+                <p><strong>No strong read</strong></p>
+                <p class="text-muted">Coach data is unavailable.</p>
+              `
+          }
+        </div>
+      </div>
+    </aside>
+  `;
+}
+
 export const gameScreen = {
   render(context) {
     const vm = context.game;
@@ -492,6 +809,7 @@ export const gameScreen = {
       const emphasizePlayed = phase === "reveal" || phase === "result";
       const hands = renderHands(vm, context, phase, names);
       const opponentCardVariantImages = getVariantCardImages(context.opponentCardVariants ?? null);
+      const trainingMode = Boolean(context.trainingMode || vm.trainingMode);
     const playedVariantRarities = {
       p1: getVariantRarityMap(context.cosmeticIds?.variants?.p1),
       p2: getVariantRarityMap(context.cosmeticIds?.variants?.p2)
@@ -549,14 +867,16 @@ export const gameScreen = {
                 </article>
               </section>
             `,
-            expressionsSlotHtml: renderBattleExpressionsRail({
-                idPrefix: "game",
-                panelOpen: Boolean(context.taunts?.panelOpen),
-                messages: context.taunts?.messages ?? [],
-                presetLines: context.taunts?.presetLines ?? [],
-                cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
-                canSend: context.taunts?.canSend ?? true
-              }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS),
+            expressionsSlotHtml: trainingMode
+              ? renderTrainingCoachRail({ coach: vm.coach, mode: context.trainingCoachMode })
+              : renderBattleExpressionsRail({
+                  idPrefix: "game",
+                  panelOpen: Boolean(context.taunts?.panelOpen),
+                  messages: context.taunts?.messages ?? [],
+                  presetLines: context.taunts?.presetLines ?? [],
+                  cooldownRemainingMs: context.taunts?.cooldownRemainingMs ?? 0,
+                  canSend: context.taunts?.canSend ?? true
+                }, GAME_BATTLE_EXPRESSIONS_RAIL_OPTIONS),
             statusSlotHtml: renderLowerHudLayout({
               variant: "game",
               rootClassName: `${outcomeClass(vm)} ${clashWinnerClass} ${warTriggered ? "war-impact" : ""}`,
@@ -604,6 +924,13 @@ export const gameScreen = {
     detachGameKeyboardHandler = null;
 
     document.getElementById("back-menu-btn").addEventListener("click", context.actions.backToMenu);
+    if (typeof document.querySelectorAll === "function") {
+      document.querySelectorAll("[data-training-coach-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          void context.actions?.setTrainingCoachMode?.(button.dataset?.trainingCoachMode);
+        });
+      });
+    }
     let locked = false;
 
     const warImpactRing = document.getElementById("war-impact-ring");

@@ -4267,13 +4267,15 @@ test("ui: store search and filters update visible cosmetics without mutating cat
   }
 });
 
-test("ui: ai difficulty screen renders Easy, Normal, Hard, Gauntlet, Blood Match, and Featured Rival choices", () => {
+test("ui: ai difficulty screen renders Training, Easy, Normal, Hard, Gauntlet, Blood Match, and Featured Rival choices", () => {
   const html = aiDifficultyScreen.render({
     selectedDifficulty: "normal",
     actions: {}
   });
 
   assert.match(html, /Choose AI Challenge/);
+  assert.match(html, /Training Mode \(Easy\)/);
+  assert.match(html, /menu_tiles\/tile_training_mode\.png/);
   assert.match(html, /Easy Practice/);
   assert.match(html, /Normal AI/);
   assert.match(html, /Hard AI/);
@@ -4291,6 +4293,7 @@ test("ui: ai difficulty screen places Blood Match as a separate challenge before
   });
 
   assert.ok(html.indexOf("Hard AI") < html.indexOf("Gauntlet Mode"));
+  assert.ok(html.indexOf("Training Mode (Easy)") < html.indexOf("Easy Practice"));
   assert.ok(html.indexOf("Gauntlet Mode") < html.indexOf("Blood Match"));
   assert.ok(html.indexOf("Blood Match") < html.indexOf("Featured Rival"));
 });
@@ -4563,6 +4566,57 @@ test("ui: ai difficulty screen binds start and back actions", async () => {
 
     assert.deepEqual(starts, [{ aiDifficulty: "hard" }]);
     assert.equal(backCalls, 1);
+  } finally {
+    global.document = previousDocument;
+    global.FormData = previousFormData;
+  }
+});
+
+test("ui: ai difficulty screen binds the Training Mode start payload", async () => {
+  const previousDocument = global.document;
+  const previousFormData = global.FormData;
+  const starts = [];
+  const form = {
+    values: new Map([["pveOpponentChoice", "training_mode"]])
+  };
+  const elements = new Map();
+
+  elements.set("ai-difficulty-form", {
+    addEventListener: (_type, handler) => {
+      form.submit = handler;
+    }
+  });
+  elements.set("ai-difficulty-back-btn", {
+    addEventListener: () => {}
+  });
+
+  global.document = {
+    getElementById: (id) => elements.get(id)
+  };
+  global.FormData = class {
+    constructor(target) {
+      this.target = target;
+    }
+
+    get(key) {
+      return this.target.values.get(key) ?? null;
+    }
+  };
+
+  try {
+    aiDifficultyScreen.bind({
+      actions: {
+        start: async (payload) => starts.push(payload),
+        back: () => {}
+      }
+    });
+
+    await form.submit({
+      preventDefault: () => {},
+      currentTarget: form
+    });
+
+    assert.deepEqual(starts, [{ aiDifficulty: "easy", trainingMode: true }]);
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;
@@ -8274,6 +8328,9 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
   assert.match(html, /Recent expressions/);
   assert.match(html, /Expressions\s*<\/button>/);
   assert.match(html, /aria-label="Match Expressions"/);
+  assert.doesNotMatch(html, /Opponent Outlook/);
+  assert.doesNotMatch(html, /Coach Advice/);
+  assert.doesNotMatch(html, /Watch Out/);
   assert.ok(html.indexOf('data-game-active-match-main="true"') < html.indexOf('data-game-active-match-expressions="true"'));
   assert.ok(html.indexOf('data-game-active-match-expressions="true"') < html.indexOf('data-game-active-match-status-shell="true"'));
   assert.ok(html.indexOf('data-game-active-match-expressions="true"') < html.indexOf('data-game-match-taunt-rail="true"'));
@@ -8284,6 +8341,288 @@ test("ui: game screen renders taunts feed and open panel without breaking the ma
   assert.ok(html.indexOf('id="game-taunts-toggle-btn"') < html.indexOf('data-game-match-taunt-box="true"'));
   assert.ok(html.indexOf('data-game-match-taunt-box="true"') < html.indexOf("Recent expressions"));
   assert.match(html, /data-card-owner="active"/);
+});
+
+test("ui: Training Mode renders live Coach panel instead of Expressions", () => {
+  const html = gameScreen.render({
+    trainingMode: true,
+    trainingCoachMode: "full",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {
+      panelOpen: true,
+      messages: [{ id: "taunt-1", speaker: "Hero", text: "Nice play.", kind: "player" }],
+      presetLines: ["Nice play."],
+      cooldownRemainingMs: 0,
+      canSend: true
+    },
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 2, water: 1, earth: 0, wind: 2 },
+        opponentTotalCards: 5,
+        tacticalRead: ["earth unavailable", "fire/wind most remaining"],
+        suggestion: { kind: "safe", element: "water", reason: "Likely based on remaining cards." },
+        riskNote: "Tie risk still available.",
+        confidence: "likely",
+        strategyPlan: {
+          kind: "pressure",
+          protectingElement: "fire",
+          pressureElement: "earth",
+          bridgeElement: null,
+          targetOpponentElement: "earth",
+          message: "Control plan: pressure Earth. Your Fire supply protects this route.",
+          nextStep: null
+        },
+        planNote: "Control plan: pressure Earth. Your Fire supply protects this route.",
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /data-training-coach-rail="true"/);
+  assert.match(html, /COACH/);
+  assert.match(html, /data-training-coach-controls="true"/);
+  assert.match(html, /Full Coach/);
+  assert.match(html, /Light Hints/);
+  assert.match(html, /Off/);
+  assert.match(html, /data-training-coach-count="fire"[^>]*>\s*Fire: 2/);
+  assert.match(html, /data-training-coach-count="earth"[^>]*>\s*Earth: 0/);
+  assert.match(html, /data-training-coach-total="true"[^>]*>\s*Total: 5/);
+  assert.match(html, /Opponent Outlook/);
+  assert.match(html, /earth unavailable/);
+  assert.match(html, /data-training-coach-suggestion="safe"/);
+  assert.match(html, /Coach Advice/);
+  assert.match(html, /Safe: Water/);
+  assert.match(html, /Why/);
+  assert.match(html, /Likely based on remaining cards\./);
+  assert.match(html, /Watch Out/);
+  assert.match(html, /Tie risk still available\./);
+  assert.match(html, /Focus on Earth\. Your Fire cards help cover that route\./);
+  assert.match(html, /Why this hint\?/);
+  assert.match(html, /Element counter chart/);
+  assert.match(html, /Fatigue reminder/);
+  assert.match(html, /Round 1 \| Training Mode \| Player Turn/);
+  assert.doesNotMatch(html, /data-game-match-taunt-rail="true"/);
+  assert.doesNotMatch(html, /id="game-taunts-toggle-btn"/);
+  assert.doesNotMatch(html, /Recent expressions/);
+  assert.doesNotMatch(html, /Coach coming soon/);
+  assert.doesNotMatch(html, /Control plan/);
+  assert.doesNotMatch(html, /pressure Earth/);
+  assert.doesNotMatch(html, /bridge/);
+  assert.doesNotMatch(html, /shift/);
+  assert.doesNotMatch(html, /preserve/);
+  assert.doesNotMatch(html, /Turn: 20s/);
+  assert.doesNotMatch(html, /Match: 05:00/);
+
+  const noRiskHtml = gameScreen.render({
+    trainingMode: true,
+    trainingCoachMode: "full",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+        tacticalRead: ["earth most remaining"],
+        suggestion: { kind: "safe", element: "fire", reason: "Likely based on remaining cards." },
+        riskNote: null,
+        confidence: "likely",
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+  assert.match(noRiskHtml, /Coach Advice/);
+  assert.match(noRiskHtml, /Safe: Fire/);
+  assert.match(noRiskHtml, /Why/);
+  assert.doesNotMatch(noRiskHtml, /Watch Out/);
+});
+
+test("ui: Training Coach light and off modes render scoped hint controls", () => {
+  const baseContext = {
+    trainingMode: true,
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "war_triggered", label: "WAR" },
+      roundResult: "WAR continues.",
+      round: 2,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      warActive: true,
+      pileCount: 2,
+      totalWarClashes: 1,
+      warPileCards: ["fire", "fire"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 1, water: 1, earth: 0, wind: 0 },
+        tacticalRead: ["Tie risk still available"],
+        suggestion: { kind: "avoid", element: "fire", reason: "Tie risk or counter pressure is higher." },
+        riskNote: "Tie risk: another WAR continuation could eliminate you.",
+        confidence: "likely",
+        war: { active: true }
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  };
+
+  const lightHtml = gameScreen.render({ ...baseContext, trainingCoachMode: "light" });
+  assert.match(lightHtml, /data-training-coach-display="light"/);
+  assert.match(lightHtml, /data-training-coach-count="fire"[^>]*>\s*Fire: 1/);
+  assert.match(lightHtml, /data-training-coach-total="true"[^>]*>\s*Total: 2/);
+  assert.match(lightHtml, /Tie risk: another WAR continuation could eliminate you\./);
+  assert.doesNotMatch(lightHtml, /Avoid: Fire/);
+  assert.doesNotMatch(lightHtml, /Tie risk or counter pressure is higher\./);
+  assert.doesNotMatch(lightHtml, /Element counter chart/);
+
+  const certainLightHtml = gameScreen.render({
+    ...baseContext,
+    trainingCoachMode: "light",
+    game: {
+      ...baseContext.game,
+      coach: {
+        ...baseContext.game.coach,
+        suggestion: { kind: "forced", element: "earth", reason: "Only legal move available.", confidence: "certain" },
+        riskNote: "This forced move may be beaten.",
+        confidence: "certain"
+      }
+    }
+  });
+  assert.match(certainLightHtml, /data-training-coach-suggestion="forced"/);
+  assert.match(certainLightHtml, /Forced: Earth/);
+  assert.match(certainLightHtml, /Only legal move available\./);
+  assert.match(certainLightHtml, /This forced move may be beaten\./);
+  assert.doesNotMatch(certainLightHtml, /Coach Advice/);
+
+  const offHtml = gameScreen.render({ ...baseContext, trainingCoachMode: "off" });
+  assert.match(offHtml, /data-training-coach-display="off"/);
+  assert.match(offHtml, /Coach hints are off\./);
+  assert.match(offHtml, /Enable Coach/);
+  assert.doesNotMatch(offHtml, /Avoid: Fire/);
+  assert.doesNotMatch(offHtml, /data-training-coach-count="fire"/);
+  assert.doesNotMatch(offHtml, /Tie risk: another WAR continuation could eliminate you\./);
+});
+
+test("ui: Training WAR Coach prioritizes aggregate WAR information without hidden identity leaks", () => {
+  const html = gameScreen.render({
+    trainingMode: true,
+    trainingCoachMode: "full",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "war_triggered", label: "WAR" },
+      roundResult: "WAR continues.",
+      round: 3,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["earth"],
+      opponentHand: ["wind"],
+      warActive: true,
+      pileCount: 4,
+      totalWarClashes: 2,
+      warPileCards: ["fire", "fire", "water", "earth"],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 1 },
+        tacticalRead: ["Tie risk still available"],
+        suggestion: { kind: "avoid", element: "earth", reason: "Tie risk or counter pressure is higher." },
+        riskNote: "Tie risk: another WAR continuation could eliminate you.",
+        confidence: "strong",
+        strategyPlan: {
+          kind: "pressure",
+          protectingElement: "fire",
+          pressureElement: "earth",
+          targetOpponentElement: "earth",
+          message: "Control plan: pressure Earth."
+        },
+        planNote: "Control plan: pressure Earth.",
+        war: {
+          active: true,
+          pileCount: 4,
+          commitmentTotals: { player: 2, opponent: 2 },
+          availableCards: { player: 1, opponent: 1 }
+        }
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /data-training-coach-war="true"/);
+  assert.match(html, /WAR active/);
+  assert.match(html, /data-training-coach-war-pot="true"[^>]*>\s*Pot: 4/);
+  assert.match(html, /data-training-coach-war-commitments="true"[^>]*>\s*Committed: 2 \| 2/);
+  assert.match(html, /data-training-coach-war-player-available="true"[^>]*>\s*Your cards: 1/);
+  assert.match(html, /data-training-coach-war-opponent-available="true"[^>]*>\s*Opponent cards: 1/);
+  assert.match(html, /Another tie could eliminate you\./);
+  assert.match(html, /Opponent is low on available cards\./);
+  assert.match(html, /Avoid unnecessary tie risk\./);
+  assert.match(html, /Watch Out/);
+  assert.ok(html.indexOf('data-training-coach-war="true"') < html.indexOf('data-training-coach-read="true"'));
+  assert.doesNotMatch(html, /Control plan/);
+  assert.doesNotMatch(html, /pressure Earth/);
+  assert.doesNotMatch(html, /bridge/);
+  assert.doesNotMatch(html, /shift/);
+  assert.doesNotMatch(html, /preserve/);
+  assert.doesNotMatch(html, /warPileCards/);
+  assert.doesNotMatch(html, /faceDown/);
+  assert.doesNotMatch(html, /"fire","fire","water","earth"/);
 });
 
 test("ui: game taunt feed caps visible messages at four most recent entries", () => {
@@ -16724,6 +17063,57 @@ test("ui: bind arms WAR impact on the first PvE WAR render", () => {
   }
 });
 
+test("ui: Training Coach controls call the session mode action", () => {
+  const backButton = createFakeElement();
+  const fullButton = createFakeElement();
+  fullButton.dataset = { trainingCoachMode: "full" };
+  const lightButton = createFakeElement();
+  lightButton.dataset = { trainingCoachMode: "light" };
+  const offButton = createFakeElement();
+  offButton.dataset = { trainingCoachMode: "off" };
+  const calls = [];
+  let playCardCalls = 0;
+  let backToMenuCalls = 0;
+  const previousDocument = global.document;
+
+  global.document = {
+    getElementById(id) {
+      return id === "back-menu-btn" ? backButton : null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-training-coach-mode]") {
+        return [fullButton, lightButton, offButton];
+      }
+      return [];
+    }
+  };
+
+  try {
+    gameScreen.bind({
+      game: { warActive: false, roundOutcome: { key: "no_effect", label: "No effect" } },
+      actions: {
+        backToMenu: () => {
+          backToMenuCalls += 1;
+        },
+        playCard: async () => {
+          playCardCalls += 1;
+        },
+        setTrainingCoachMode: async (mode) => calls.push(mode)
+      }
+    });
+
+    lightButton.listeners.get("click")();
+    offButton.listeners.get("click")();
+    fullButton.listeners.get("click")();
+
+    assert.deepEqual(calls, ["light", "off", "full"]);
+    assert.equal(playCardCalls, 0);
+    assert.equal(backToMenuCalls, 0);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: appController randomizes enabled cosmetic categories after a completed match using the shared owned-cosmetics path", async () => {
   const previousWindow = global.window;
   const randomizeCalls = [];
@@ -21551,6 +21941,105 @@ test("ui: showGame preserves the game Expressions picker across a full post-roun
 
     assert.equal(toggleCalls, 1);
     assert.equal(sendCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: showGame preserves Training Coach rail scroll across ordinary rerenders", () => {
+  const previousDocument = global.document;
+  const createCoachRail = (scrollTop = 0) => {
+    const railBody = { scrollTop };
+    const rail = {
+      querySelector(selector) {
+        if (selector === '[data-training-coach-rail-body="true"]') return railBody;
+        return null;
+      }
+    };
+    return { rail, railBody };
+  };
+
+  const oldRailState = createCoachRail(132);
+  const newRailState = createCoachRail(0);
+  let currentRail = oldRailState.rail;
+
+  global.document = {
+    activeElement: { tagName: "BODY", isContentEditable: false },
+    querySelector: (selector) => (selector === '[data-training-coach-rail="true"]' ? currentRail : null)
+  };
+
+  const controller = createRendererController();
+  controller.clearTransientUiBeforeScreenTransition = () => {};
+  controller.clearMatchTauntUiTimer = () => {
+    controller.matchTauntUiTimerId = null;
+  };
+  controller.ensureMatchTauntUiTimer = () => {
+    throw new Error("Training Coach renders must not start the Expressions ticker");
+  };
+  controller.resolvePveOpponentStyle = () => ({
+    name: "Elemental AI",
+    titleName: "Arena Rival",
+    avatarId: "default_avatar",
+    cardBackId: "default_card_back",
+    elementCardVariant: null,
+    backgroundPath: null
+  });
+  controller.getCurrentPveOpponentName = () => "Elemental AI";
+  controller.getBackgroundFromProfile = () => "assets/backgrounds/default_background.png";
+  controller.profile = {
+    username: "Hero",
+    equippedCosmetics: {
+      cardBack: "default_card_back",
+      elementCardVariant: null,
+      background: "default_background"
+    }
+  };
+  controller.settings = {
+    gameplay: { timerSeconds: 20 },
+    aiDifficulty: "easy",
+    ui: { reducedMotion: true },
+    audio: { enabled: true }
+  };
+  controller.screenManager.show = () => {
+    currentRail = newRailState.rail;
+  };
+  controller.gameController = {
+    trainingMode: true,
+    getViewModel: () => ({
+      status: "active",
+      mode: "pve",
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 2,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["earth"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 1, p2: 0 },
+      lastRound: { result: "p1", p1Card: "fire", p2Card: "earth" },
+      coach: {
+        opponentRemainingByElement: { fire: 2, water: 2, earth: 1, wind: 2 },
+        tacticalRead: ["earth still available"],
+        suggestion: { kind: "none", element: null, reason: "No strong read." },
+        confidence: "none",
+        war: null
+      }
+    })
+  };
+  controller.screenFlow = "game";
+  controller.trainingCoachMode = "full";
+  controller.matchTauntUiTimerId = "stale-training-taunt-tick";
+
+  try {
+    controller.showGame();
+
+    assert.equal(newRailState.railBody.scrollTop, 132);
+    assert.equal(controller.matchTauntUiTimerId, null);
   } finally {
     global.document = previousDocument;
   }
@@ -27016,6 +27505,70 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   assert.ok(payload.bodyHtml.indexOf("match-complete-hero") < payload.bodyHtml.indexOf("match-complete-stats"));
   assert.ok(payload.bodyHtml.indexOf("match-complete-stats") < payload.bodyHtml.indexOf("match-complete-rewards"));
   assert.ok(payload.bodyHtml.indexOf("match-complete-rewards") < payload.bodyHtml.indexOf("match-complete-actions"));
+});
+
+test("ui: Training Complete payload renders local result and required actions without rewards", () => {
+  const controller = createRendererController();
+  controller.username = "TrainingUser";
+  controller.profile = { username: "TrainingUser" };
+  controller.trainingCoachMode = "light";
+  controller.gameController = {
+    trainingMode: true,
+    captured: { p1: 2, p2: 1 }
+  };
+
+  const victoryPayload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      difficulty: "easy",
+      history: [{ result: "p1", warClashes: 2 }],
+      players: {
+        p1: { hand: ["fire", "water"] },
+        p2: { hand: ["earth"] }
+      }
+    },
+    null
+  );
+  const defeatPayload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p2",
+      endReason: "hand_exhaustion",
+      difficulty: "easy",
+      history: [{ result: "p2", warClashes: 1 }],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: ["wind"] }
+      }
+    },
+    null
+  );
+
+  assert.equal(victoryPayload.title, "TRAINING COMPLETE");
+  assert.equal(victoryPayload.trainingComplete, true);
+  assert.deepEqual(victoryPayload.startOptions, {
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingCoachMode: "light"
+  });
+  assert.match(victoryPayload.bodyHtml, /TRAINING COMPLETE/);
+  assert.match(victoryPayload.bodyHtml, /<h4 class="match-complete-outcome">Victory<\/h4>/);
+  assert.match(defeatPayload.bodyHtml, /<h4 class="match-complete-outcome">Defeat<\/h4>/);
+  assert.match(victoryPayload.bodyHtml, /WAR pressure mattered/);
+  assert.match(victoryPayload.bodyHtml, /id="match-complete-play-again"[^>]*>\s*Play Again/);
+  assert.match(victoryPayload.bodyHtml, /id="match-complete-standard-pve"[^>]*>\s*Try Standard PvE/);
+  assert.match(victoryPayload.bodyHtml, /id="match-complete-return-menu"[^>]*>\s*Return to Menu/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /match-complete-stats/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /XP Gained/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /Tokens Gained/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /Chest/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /Achievement/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /Challenge/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /Battle Report/);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /stars?/i);
+  assert.doesNotMatch(victoryPayload.bodyHtml, /score/i);
 });
 
 test("ui: PvE match complete payload shows max level bonus line when xp conversion occurs", () => {

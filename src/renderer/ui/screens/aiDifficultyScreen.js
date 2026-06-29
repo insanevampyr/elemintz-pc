@@ -65,6 +65,30 @@ function renderGauntletOption({ name, id, checked }) {
   `;
 }
 
+function renderTrainingModeOption({ name, id, checked }) {
+  return `
+    <label class="settings-radio-option settings-radio-option-featured-rival" for="${id}">
+      <span class="settings-radio-main">
+        <input id="${id}" name="${name}" type="radio" value="training_mode" ${checked ? "checked" : ""} />
+        <strong>Training Mode (Easy)</strong>
+      </span>
+      <span class="featured-rival-card">
+        <img
+          class="featured-rival-card__art"
+          src="${getAssetPath("menu_tiles/tile_training_mode.png")}"
+          alt="Training Mode"
+        />
+        <span class="featured-rival-card__body">
+          <span class="featured-rival-card__eyebrow">Training Mode / Easy</span>
+          <strong class="featured-rival-card__name">Training Mode (Easy)</strong>
+          <span class="featured-rival-card__detail">Practice normal PvE rules without timers or progression.</span>
+          <span class="featured-rival-card__detail">Coach panel placeholder included.</span>
+        </span>
+      </span>
+    </label>
+  `;
+}
+
 function renderBloodMatchOption({ name, id, checked }) {
   return `
     <label class="settings-radio-option settings-radio-option-featured-rival settings-radio-option-blood-match" for="${id}">
@@ -96,7 +120,9 @@ export const aiDifficultyScreen = {
       ? String(context.selectedDifficulty)
       : "normal";
     const selectedOption =
-      context.selectedBloodMatch
+      context.selectedTrainingMode
+        ? "training_mode"
+        : context.selectedBloodMatch
         ? "blood_match"
         : context.selectedGauntletMode
         ? "gauntlet_mode"
@@ -118,6 +144,11 @@ export const aiDifficultyScreen = {
               </p>
 
               <div class="settings-group">
+                ${renderTrainingModeOption({
+                  name: "pveOpponentChoice",
+                  id: "ai-difficulty-select-training",
+                  checked: selectedOption === "training_mode"
+                })}
                 ${renderRadioOption({
                   name: "pveOpponentChoice",
                   id: "ai-difficulty-select-easy",
@@ -172,6 +203,10 @@ export const aiDifficultyScreen = {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
       const pveOpponentChoice = String(formData.get("pveOpponentChoice") ?? "normal").trim().toLowerCase();
+      if (pveOpponentChoice === "training_mode") {
+        await context.actions.start({ aiDifficulty: "easy", trainingMode: true });
+        return;
+      }
       if (pveOpponentChoice === "gauntlet_mode") {
         await context.actions.start({ gauntletMode: true });
         return;

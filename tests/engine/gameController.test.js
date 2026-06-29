@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { GameController, MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
+import { evaluateTrainingCoach } from "../../src/renderer/systems/trainingCoachEvaluator.js";
 import { getUpdateSafetyState, isSafeForUpdateRestart } from "../../src/renderer/systems/updateSafety.js";
 import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
 import { buildOnlineMatchStateFromRoom } from "../../src/multiplayer/foundation.js";
@@ -1161,6 +1162,709 @@ test("gameController: non-authoritative PvE passes visible hand counts and recen
   }
 });
 
+async function captureTrainingOpponentChoice({
+  personality = "repeater",
+  p1Hand = ["water"],
+  p2Hand = ["fire", "earth"],
+  history = [],
+  warActive = false,
+  playerCardIndex = 0
+} = {}) {
+  const controller = new GameController({
+    username: "TrainingAiUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingOpponentPersonality: personality,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  let capturedFinalizeCall = null;
+
+  controller.localAuthority = null;
+  controller.match = {
+    ...createMinimalMatch(MATCH_MODE.PVE),
+    difficulty: "easy",
+    players: {
+      p1: { hand: p1Hand, wonRounds: 0 },
+      p2: { hand: p2Hand, wonRounds: 0 }
+    },
+    history,
+    currentPile: [],
+    war: {
+      active: warActive,
+      clashes: warActive ? 1 : 0
+    }
+  };
+  controller.captured = { p1: 0, p2: 0 };
+  controller.finalizeRound = async ({ p1CardIndex, p2CardIndex }) => {
+    capturedFinalizeCall = { p1CardIndex, p2CardIndex };
+    return {
+      status: "resolved",
+      round: {
+        result: "none",
+        p1Card: p1Hand[p1CardIndex],
+        p2Card: p2Hand[p2CardIndex],
+        warClashes: 0
+      }
+    };
+  };
+
+  try {
+    const result = await controller.playCard(playerCardIndex);
+    return {
+      controller,
+      capturedFinalizeCall,
+      selectedCard: p2Hand[capturedFinalizeCall?.p2CardIndex],
+      result
+    };
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+}
+
+test("gameController: Training Mode personality config is isolated from normal Easy PvE", async () => {
+  const originalRandom = Math.random;
+  const controller = new GameController({
+    username: "NormalEasyUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingOpponentPersonality: "counterer",
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  let capturedFinalizeCall = null;
+
+  try {
+    Math.random = () => 0.99;
+    controller.localAuthority = null;
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.PVE),
+      players: {
+        p1: { hand: ["earth"], wonRounds: 0 },
+        p2: { hand: ["water", "earth"], wonRounds: 0 }
+      },
+      history: [{ round: 1, p1Card: "fire", p2Card: "wind", result: "none" }]
+    };
+    controller.finalizeRound = async ({ p1CardIndex, p2CardIndex }) => {
+      capturedFinalizeCall = { p1CardIndex, p2CardIndex };
+      return { status: "resolved" };
+    };
+
+    await controller.playCard(0);
+
+    assert.equal(controller.trainingMode, false);
+    assert.equal(controller.trainingOpponentPersonality, null);
+    assert.equal(capturedFinalizeCall?.p2CardIndex, 1);
+  } finally {
+    Math.random = originalRandom;
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: Training Repeater chooses a legal repeated element when available", async () => {
+  const { capturedFinalizeCall, selectedCard } = await captureTrainingOpponentChoice({
+    personality: "repeater",
+    p2Hand: ["earth", "fire"],
+    history: [{ round: 1, p1Card: "water", p2Card: "fire", result: "none" }]
+  });
+
+  assert.equal(capturedFinalizeCall?.p2CardIndex, 1);
+  assert.equal(selectedCard, "fire");
+});
+
+test("gameController: Training Repeater falls back legally when repetition is unavailable or fatigued", async () => {
+  const unavailable = await captureTrainingOpponentChoice({
+    personality: "repeater",
+    p2Hand: ["earth", "wind"],
+    history: [{ round: 1, p1Card: "water", p2Card: "fire", result: "none" }]
+  });
+  const fatigued = await captureTrainingOpponentChoice({
+    personality: "repeater",
+    p2Hand: ["fire", "earth"],
+    history: [
+      { round: 1, p1Card: "water", p2Card: "fire", result: "none" },
+      { round: 2, p1Card: "earth", p2Card: "fire", result: "none" }
+    ]
+  });
+
+  assert.equal(unavailable.selectedCard, "earth");
+  assert.equal(fatigued.selectedCard, "earth");
+});
+
+test("gameController: Training Counterer chooses a legal counter when player history supports one", async () => {
+  const { selectedCard } = await captureTrainingOpponentChoice({
+    personality: "counterer",
+    p2Hand: ["earth", "water"],
+    history: [{ round: 1, p1Card: "fire", p2Card: "wind", result: "none" }]
+  });
+
+  assert.equal(selectedCard, "water");
+});
+
+test("gameController: Training Counterer falls back legally when no counter is available", async () => {
+  const { selectedCard } = await captureTrainingOpponentChoice({
+    personality: "counterer",
+    p2Hand: ["earth", "wind"],
+    history: [{ round: 1, p1Card: "fire", p2Card: "earth", result: "p1" }]
+  });
+
+  assert.equal(selectedCard, "earth");
+});
+
+test("gameController: Training Survivor deterministically avoids simple low-card tie risk", async () => {
+  const first = await captureTrainingOpponentChoice({
+    personality: "survivor",
+    p1Hand: ["water"],
+    p2Hand: ["fire", "earth"],
+    history: [{ round: 1, p1Card: "fire", p2Card: "wind", result: "none" }]
+  });
+  const second = await captureTrainingOpponentChoice({
+    personality: "survivor",
+    p1Hand: ["water"],
+    p2Hand: ["fire", "earth"],
+    history: [{ round: 1, p1Card: "fire", p2Card: "wind", result: "none" }]
+  });
+
+  assert.equal(first.selectedCard, "earth");
+  assert.equal(second.selectedCard, "earth");
+});
+
+test("gameController: Training personalities obey fatigue and available hand constraints", async () => {
+  for (const personality of ["repeater", "counterer", "survivor"]) {
+    const { selectedCard } = await captureTrainingOpponentChoice({
+      personality,
+      p2Hand: ["fire", "earth"],
+      history: [
+        { round: 1, p1Card: "fire", p2Card: "fire", result: "none" },
+        { round: 2, p1Card: "fire", p2Card: "fire", result: "none" }
+      ],
+      warActive: personality === "survivor"
+    });
+
+    assert.equal(selectedCard, "earth");
+  }
+});
+
+test("trainingCoachEvaluator: initial opponent counts are two per element", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water", "earth", "wind"],
+    opponentRemainingByElement: { fire: 2, water: 2, earth: 2, wind: 2 },
+    phase: "normal",
+    availableCards: { player: 8, opponent: 8 }
+  });
+
+  assert.deepEqual(coach.opponentRemainingByElement, { fire: 2, water: 2, earth: 2, wind: 2 });
+  assert.equal(coach.opponentTotalCards, 8);
+  assert.equal(coach.suggestion.kind, "none");
+});
+
+test("trainingCoachEvaluator: revealed opponent plays reduce exact remaining counts", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["water", "earth"],
+    opponentRemainingByElement: { fire: 1, water: 2, earth: 0, wind: 2 },
+    visibleHistory: [
+      { round: 1, p1Card: "water", p2Card: "earth" },
+      { round: 2, p1Card: "wind", p2Card: "fire" }
+    ],
+    phase: "normal",
+    availableCards: { player: 5, opponent: 5 }
+  });
+
+  assert.deepEqual(coach.opponentRemainingByElement, { fire: 1, water: 2, earth: 0, wind: 2 });
+  assert.match(coach.tacticalRead.join(" | "), /earth unavailable/);
+});
+
+test("trainingCoachEvaluator: WAR commitments reduce available totals without exposing face-down identity", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 1, water: 1, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: 1, opponent: 2 },
+    war: {
+      pileCount: 4,
+      commitmentTotals: { player: 2, opponent: 2 }
+    }
+  });
+
+  assert.equal(coach.war.active, true);
+  assert.equal(coach.war.pileCount, 4);
+  assert.deepEqual(coach.war.commitmentTotals, { player: 2, opponent: 2 });
+  assert.deepEqual(coach.war.availableCards, { player: 1, opponent: 2 });
+  assert.deepEqual(Object.keys(coach.war).sort(), [
+    "active",
+    "availableCards",
+    "commitmentTotals",
+    "pileCount"
+  ]);
+  assert.equal(Object.hasOwn(coach.war, "pileCards"), false);
+  assert.equal(Object.hasOwn(coach.war, "cards"), false);
+  assert.equal(Object.hasOwn(coach.war, "committedCards"), false);
+});
+
+test("trainingCoachEvaluator: exhausted opponent element is reported unavailable", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 1, earth: 2, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 4, opponent: 3 }
+  });
+
+  const read = coach.tacticalRead.join(" | ");
+  assert.match(read, /fire unavailable/);
+  assert.match(read, /wind unavailable/);
+});
+
+test("trainingCoachEvaluator: player fatigue prevents illegal Coach suggestions", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 2 },
+    fatigue: { playerBlockedElement: "fire" },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+
+  assert.equal(coach.suggestion.element, "earth");
+  assert.notEqual(coach.suggestion.element, "fire");
+  assert.equal(coach.fatigue.playerBlockedElement, "fire");
+});
+
+test("trainingCoachEvaluator: Avoid suggestion cannot target a fatigued illegal element", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth", "wind"],
+    opponentRemainingByElement: { fire: 0, water: 2, earth: 0, wind: 0 },
+    fatigue: { playerBlockedElement: "fire" },
+    phase: "normal",
+    availableCards: { player: 3, opponent: 2 }
+  });
+
+  assert.equal(coach.fatigue.playerBlockedElement, "fire");
+  assert.equal(coach.legalPlayableElements.includes("fire"), false);
+  assert.equal(coach.coverage.some((entry) => entry.element === "fire"), false);
+  assert.notEqual(coach.suggestion.element, "fire");
+});
+
+test("trainingCoachEvaluator: opponent fatigue affects tactical read when visible", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["water", "earth"],
+    opponentRemainingByElement: { fire: 1, water: 0, earth: 2, wind: 1 },
+    fatigue: { opponentBlockedElement: "earth" },
+    phase: "normal",
+    availableCards: { player: 4, opponent: 4 }
+  });
+
+  assert.equal(coach.fatigue.opponentBlockedElement, "earth");
+  assert.match(coach.tacticalRead.join(" | "), /Opponent earth unavailable from fatigue/);
+});
+
+test("trainingCoachEvaluator: opponent fatigue wording is absent when not supplied", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["water", "earth"],
+    opponentRemainingByElement: { fire: 1, water: 0, earth: 2, wind: 1 },
+    phase: "normal",
+    availableCards: { player: 4, opponent: 4 }
+  });
+
+  assert.equal(coach.fatigue.opponentBlockedElement, null);
+  assert.doesNotMatch(coach.tacticalRead.join(" | "), /Opponent .* unavailable from fatigue/);
+});
+
+test("trainingCoachEvaluator: only one legal player move is forced, not safe", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 1, opponent: 2 }
+  });
+
+  assert.equal(coach.suggestion.kind, "forced");
+  assert.equal(coach.suggestion.element, "fire");
+  assert.equal(coach.suggestion.reason, "Only legal move available.");
+  assert.equal(coach.confidence, "certain");
+  assert.equal(coach.riskNote, null);
+});
+
+test("trainingCoachEvaluator: forced move can carry a truthful danger note", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire"],
+    opponentRemainingByElement: { fire: 0, water: 2, earth: 0, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 1, opponent: 2 }
+  });
+
+  assert.equal(coach.suggestion.kind, "forced");
+  assert.equal(coach.suggestion.element, "fire");
+  assert.equal(coach.suggestion.reason, "Only legal move available.");
+  assert.match(coach.riskNote, /forced move may be beaten/i);
+});
+
+test("trainingCoachEvaluator: Safe recommendation uses remaining-card coverage", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+
+  assert.equal(coach.suggestion.kind, "safe");
+  assert.equal(coach.suggestion.element, "fire");
+  assert.deepEqual(
+    coach.coverage.find((entry) => entry.element === "fire"),
+    { element: "fire", defeats: 2, beatenBy: 0, tieExposure: 0 }
+  );
+});
+
+test("trainingCoachEvaluator: Avoid recommendation appears only when materially justified", () => {
+  const avoid = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "earth"],
+    opponentRemainingByElement: { fire: 0, water: 2, earth: 0, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+  const balanced = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "earth"],
+    opponentRemainingByElement: { fire: 1, water: 1, earth: 1, wind: 1 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 4 }
+  });
+
+  assert.equal(avoid.suggestion.kind, "avoid");
+  assert.equal(avoid.suggestion.element, "fire");
+  assert.equal(balanced.suggestion.kind, "none");
+});
+
+test("trainingCoachEvaluator: all unfavorable legal choices never produce Safe", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 2, earth: 0, wind: 2 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 4 }
+  });
+
+  assert.notEqual(coach.suggestion.kind, "safe");
+  assert.match(coach.riskNote, /Every legal option is vulnerable/);
+});
+
+test("trainingCoachEvaluator: no-strong-read produces no forced recommendation", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water", "earth", "wind"],
+    opponentRemainingByElement: { fire: 1, water: 1, earth: 1, wind: 1 },
+    phase: "normal",
+    availableCards: { player: 4, opponent: 4 }
+  });
+
+  assert.equal(coach.suggestion.kind, "none");
+  assert.equal(coach.suggestion.element, null);
+  assert.equal(coach.confidence, "none");
+});
+
+test("trainingCoachEvaluator: WAR state reports pressure and no face-down element identity", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire"],
+    opponentRemainingByElement: { fire: 1, water: 0, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: 1, opponent: 1 },
+    war: {
+      pileCount: 2,
+      commitmentTotals: { player: 1, opponent: 1 }
+    }
+  });
+
+  assert.equal(coach.war.active, true);
+  assert.match(coach.riskNote, /Tie risk/);
+  assert.equal(JSON.stringify(coach).includes("faceDown"), false);
+  assert.equal(Object.hasOwn(coach.war, "pileCards"), false);
+  assert.equal(Object.hasOwn(coach.war, "faceDownCards"), false);
+  assert.deepEqual(Object.keys(coach.war).sort(), [
+    "active",
+    "availableCards",
+    "commitmentTotals",
+    "pileCount"
+  ]);
+});
+
+test("trainingCoachEvaluator: Coach returns null outside Training Mode", () => {
+  assert.equal(evaluateTrainingCoach({ trainingActive: false }), null);
+  assert.equal(evaluateTrainingCoach({}), null);
+});
+
+test("trainingCoachEvaluator: strategy pressure supports the full protecting element cycle", () => {
+  const scenarios = [
+    { protecting: "fire", pressure: "earth", target: "earth" },
+    { protecting: "earth", pressure: "wind", target: "wind" },
+    { protecting: "wind", pressure: "water", target: "water" },
+    { protecting: "water", pressure: "fire", target: "fire" }
+  ];
+
+  for (const scenario of scenarios) {
+    const playerCounts = { fire: 0, water: 0, earth: 0, wind: 0 };
+    playerCounts[scenario.protecting] = 3;
+    playerCounts[scenario.pressure] = 1;
+    const opponentCounts = { fire: 0, water: 0, earth: 0, wind: 0 };
+    opponentCounts[scenario.target] = 2;
+
+    const coach = evaluateTrainingCoach({
+      trainingActive: true,
+      legalPlayableElements: [scenario.pressure, scenario.protecting],
+      playerRemainingByElement: playerCounts,
+      opponentRemainingByElement: opponentCounts,
+      phase: "normal",
+      availableCards: { player: 4, opponent: 2 }
+    });
+
+    assert.equal(coach.strategyPlan.kind, "pressure", scenario.target);
+    assert.equal(coach.strategyPlan.protectingElement, scenario.protecting);
+    assert.equal(coach.strategyPlan.pressureElement, scenario.pressure);
+    assert.equal(coach.strategyPlan.targetOpponentElement, scenario.target);
+  }
+});
+
+test("trainingCoachEvaluator: weak or tied player counts do not create a control claim", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth", "fire"],
+    playerRemainingByElement: { fire: 1, water: 0, earth: 1, wind: 0 },
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 1, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 1 }
+  });
+
+  assert.equal(coach.strategyPlan.kind, "none");
+  assert.equal(coach.planNote, null);
+});
+
+test("trainingCoachEvaluator: fatigued pressure element produces a legal bridge plan", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["wind"],
+    playerRemainingByElement: { fire: 3, water: 0, earth: 1, wind: 1 },
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+    fatigue: { playerBlockedElement: "earth" },
+    phase: "normal",
+    availableCards: { player: 5, opponent: 2 }
+  });
+
+  assert.equal(coach.strategyPlan.kind, "bridge");
+  assert.equal(coach.strategyPlan.pressureElement, "earth");
+  assert.equal(coach.strategyPlan.bridgeElement, "wind");
+  assert.notEqual(coach.strategyPlan.bridgeElement, coach.fatigue.playerBlockedElement);
+  assert.match(coach.planNote, /earth is resting from fatigue/i);
+});
+
+test("trainingCoachEvaluator: exhausted target pool shifts to another meaningful control target", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["wind", "earth"],
+    playerRemainingByElement: { fire: 4, water: 0, earth: 3, wind: 1 },
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 0, wind: 2 },
+    phase: "normal",
+    availableCards: { player: 8, opponent: 2 }
+  });
+
+  assert.equal(coach.strategyPlan.kind, "shift");
+  assert.equal(coach.strategyPlan.targetOpponentElement, "wind");
+  assert.equal(coach.strategyPlan.protectingElement, "earth");
+  assert.notEqual(coach.strategyPlan.targetOpponentElement, "earth");
+  assert.match(coach.planNote, /earth is exhausted/i);
+});
+
+test("trainingCoachEvaluator: scarce valuable counter is marked for preserve", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth", "water"],
+    playerRemainingByElement: { fire: 0, water: 1, earth: 1, wind: 0 },
+    opponentRemainingByElement: { fire: 2, water: 0, earth: 0, wind: 0 },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+
+  assert.equal(coach.strategyPlan.kind, "preserve");
+  assert.equal(coach.strategyPlan.protectingElement, "water");
+  assert.equal(coach.strategyPlan.targetOpponentElement, "fire");
+  assert.match(coach.planNote, /Preserve water/);
+});
+
+test("trainingCoachEvaluator: active WAR elimination risk suppresses long-term pressure advice", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth", "fire"],
+    playerRemainingByElement: { fire: 3, water: 0, earth: 1, wind: 0 },
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+    phase: "war",
+    availableCards: { player: 1, opponent: 2 },
+    war: { pileCount: 4, commitmentTotals: { player: 2, opponent: 2 } }
+  });
+
+  assert.match(coach.riskNote, /Tie risk/);
+  assert.equal(coach.strategyPlan.kind, "none");
+  assert.match(coach.strategyPlan.message, /WAR pressure is the priority/);
+});
+
+test("gameController: Training view model exposes Coach data while normal PvE does not", () => {
+  const trainingController = new GameController({
+    username: "TrainingCoachVm",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  const normalController = new GameController({
+    username: "NormalCoachVm",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    trainingController.localAuthority = null;
+    normalController.localAuthority = null;
+    trainingController.match = createMinimalMatch(MATCH_MODE.PVE);
+    normalController.match = createMinimalMatch(MATCH_MODE.PVE);
+
+    assert.equal(trainingController.getViewModel().coach.opponentTotalCards, 2);
+    assert.equal(normalController.getViewModel().coach, null);
+  } finally {
+    trainingController.stopTimer();
+    trainingController.stopMatchClock();
+    normalController.stopTimer();
+    normalController.stopMatchClock();
+  }
+});
+
+test("gameController: Training Coach live counts update after a revealed opponent move", async () => {
+  const controller = new GameController({
+    username: "TrainingCoachLiveCounts",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingOpponentPersonality: "repeater",
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.localAuthority = null;
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.PVE),
+      difficulty: "easy",
+      players: {
+        p1: { hand: ["water", "water", "fire", "fire", "earth", "earth", "wind", "wind"], wonRounds: 0 },
+        p2: { hand: ["fire", "fire", "water", "water", "earth", "earth", "wind", "wind"], wonRounds: 0 }
+      },
+      history: [],
+      currentPile: [],
+      war: {
+        active: false,
+        clashes: 0
+      },
+      meta: {
+        totalCards: 16
+      }
+    };
+
+    const initialCoach = controller.getViewModel().coach;
+    assert.deepEqual(initialCoach.opponentRemainingByElement, {
+      fire: 2,
+      water: 2,
+      earth: 2,
+      wind: 2
+    });
+
+    const result = await controller.playCard(0);
+
+    assert.equal(result.revealedCards.p2Card, "fire");
+    assert.deepEqual(controller.getViewModel().coach.opponentRemainingByElement, {
+      fire: 1,
+      water: 2,
+      earth: 2,
+      wind: 2
+    });
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: Training Coach WAR payload uses aggregate available counts only", () => {
+  const controller = new GameController({
+    username: "TrainingCoachWarCounts",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.localAuthority = null;
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.PVE),
+      difficulty: "easy",
+      players: {
+        p1: { hand: ["earth"], wonRounds: 0 },
+        p2: { hand: ["water", "wind"], wonRounds: 0 }
+      },
+      history: [],
+      currentPile: ["fire", "fire", "water", "earth"],
+      war: {
+        active: true,
+        clashes: 1
+      },
+      meta: {
+        totalCards: 7
+      }
+    };
+
+    const coach = controller.getViewModel().coach;
+
+    assert.deepEqual(coach.war.availableCards, { player: 1, opponent: 2 });
+    assert.deepEqual(coach.war.commitmentTotals, { player: 2, opponent: 2 });
+    assert.equal(coach.war.pileCount, 4);
+    assert.deepEqual(Object.keys(coach.war).sort(), [
+      "active",
+      "availableCards",
+      "commitmentTotals",
+      "pileCount"
+    ]);
+    assert.equal(Object.hasOwn(coach.war, "pileCards"), false);
+    assert.equal(Object.hasOwn(coach.war, "faceDownCards"), false);
+    assert.equal(Object.hasOwn(coach.war, "committedCards"), false);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
 test("gameController: completed PvE rounds wait for async match-complete handling before the trailing update", async () => {
   const originalWindow = globalThis.window;
   let releaseMatchComplete;
@@ -1222,6 +1926,218 @@ test("gameController: completed PvE rounds wait for async match-complete handlin
     controller.stopTimer();
     controller.stopMatchClock();
     globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: Training Mode disables local timers and persistence", async () => {
+  const originalWindow = globalThis.window;
+  let recordCalls = 0;
+  let matchCompleteCalls = 0;
+  const controller = new GameController({
+    username: "TrainingBoundaryUser",
+    timerSeconds: 30,
+    matchTimeLimitSeconds: 300,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {
+      matchCompleteCalls += 1;
+    }
+  });
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => {
+            recordCalls += 1;
+            return {};
+          }
+        }
+      }
+    };
+
+    controller.startNewMatch();
+
+    assert.equal(controller.mode, MATCH_MODE.PVE);
+    assert.equal(controller.aiDifficulty, "easy");
+    assert.equal(controller.trainingMode, true);
+    assert.equal(controller.timerId, null);
+    assert.equal(controller.matchClockId, null);
+    assert.equal(controller.persistMatchResults, false);
+
+    controller.match.status = "completed";
+    controller.match.winner = "p1";
+    await controller.finalizeCompletedMatch();
+
+    assert.equal(recordCalls, 0);
+    assert.equal(matchCompleteCalls, 1);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: Training Mode does not restart timers after a resolved round", async () => {
+  const controller = new GameController({
+    username: "TrainingNoTimerRestart",
+    timerSeconds: 30,
+    matchTimeLimitSeconds: 300,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    persistMatchResults: false,
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  let startTimerCalls = 0;
+  let startMatchClockCalls = 0;
+  const originalStartTimer = controller.startTimer.bind(controller);
+  const originalStartMatchClock = controller.startMatchClock.bind(controller);
+
+  try {
+    controller.localAuthority = null;
+    controller.match = {
+      ...createMinimalMatch(MATCH_MODE.PVE),
+      players: {
+        p1: { hand: ["water", "earth"], wonRounds: 0 },
+        p2: { hand: ["fire", "wind"], wonRounds: 0 }
+      }
+    };
+    controller.startTimer = () => {
+      startTimerCalls += 1;
+      return originalStartTimer();
+    };
+    controller.startMatchClock = () => {
+      startMatchClockCalls += 1;
+      return originalStartMatchClock();
+    };
+
+    const result = await controller.finalizeRound({ p1CardIndex: 0, p2CardIndex: 0 });
+
+    assert.equal(result.status, "resolved");
+    assert.equal(controller.timerId, null);
+    assert.equal(controller.matchClockId, null);
+    assert.equal(startTimerCalls, 0);
+    assert.equal(startMatchClockCalls, 0);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: Training Mode stale timeout cannot auto-select a player card", async () => {
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  let intervalCallback = null;
+  let clearedInterval = null;
+  const controller = new GameController({
+    username: "TrainingStaleTimerGuard",
+    timerSeconds: 1,
+    matchTimeLimitSeconds: 300,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  let playCardCalls = 0;
+
+  try {
+    globalThis.setInterval = (callback) => {
+      intervalCallback = callback;
+      return "round-timer";
+    };
+    globalThis.clearInterval = (id) => {
+      clearedInterval = id;
+    };
+    controller.localAuthority = null;
+    controller.match = createMinimalMatch(MATCH_MODE.PVE);
+    controller.playCard = async () => {
+      playCardCalls += 1;
+      return { status: "resolved" };
+    };
+
+    controller.startTimer();
+    controller.trainingMode = true;
+    await intervalCallback();
+
+    assert.equal(playCardCalls, 0);
+    assert.equal(clearedInterval, "round-timer");
+    assert.equal(controller.timerId, null);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  }
+});
+
+test("gameController: normal Easy PvE still starts local timers", () => {
+  const controller = new GameController({
+    username: "EasyTimerUser",
+    timerSeconds: 30,
+    matchTimeLimitSeconds: 300,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+
+    assert.equal(controller.trainingMode, false);
+    assert.equal(controller.aiDifficulty, "easy");
+    assert.notEqual(controller.timerId, null);
+    assert.notEqual(controller.matchClockId, null);
+    assert.equal(controller.persistMatchResults, true);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: normal Easy PvE timeout still auto-selects a player card", async () => {
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  let intervalCallback = null;
+  const controller = new GameController({
+    username: "EasyTimeoutAutoSelect",
+    timerSeconds: 1,
+    matchTimeLimitSeconds: 300,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+  let playCardCalls = 0;
+
+  try {
+    globalThis.setInterval = (callback) => {
+      intervalCallback = callback;
+      return "easy-round-timer";
+    };
+    globalThis.clearInterval = () => {};
+    controller.localAuthority = null;
+    controller.match = createMinimalMatch(MATCH_MODE.PVE);
+    controller.playCard = async (cardIndex) => {
+      playCardCalls += 1;
+      return { status: "resolved", cardIndex };
+    };
+
+    controller.startTimer();
+    await intervalCallback();
+
+    assert.equal(controller.trainingMode, false);
+    assert.equal(playCardCalls, 1);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
   }
 });
 
@@ -10604,6 +11520,53 @@ test("appController: selecting Easy from the difficulty screen starts PvE with e
   }
 });
 
+test("appController: selecting Training Mode starts Easy PvE with Training boundary", async () => {
+  const originalWindow = globalThis.window;
+  const shownScreens = [];
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "hard", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "TrainingPicker";
+  app.profile = { username: "TrainingPicker" };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.showAiDifficultySelect();
+    await shownScreens.at(-1).context.actions.start({ aiDifficulty: "easy", trainingMode: true });
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.mode, MATCH_MODE.PVE);
+    assert.equal(app.gameController?.aiDifficulty, "easy");
+    assert.equal(app.gameController?.trainingMode, true);
+    assert.equal(app.gameController?.persistMatchResults, false);
+    assert.equal(app.gameController?.timerId, null);
+    assert.equal(app.gameController?.matchClockId, null);
+    assert.equal(app.trainingCoachMode, "full");
+    assert.equal(shownScreens.at(-1).context.trainingMode, true);
+    assert.equal(shownScreens.at(-1).context.trainingCoachMode, "full");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: selecting Normal from the difficulty screen starts PvE with normal difficulty", async () => {
   const originalWindow = globalThis.window;
   const shownScreens = [];
@@ -15799,6 +16762,10 @@ test("appController: Featured Rival Play Again preserves crownfire_duelist launc
               listeners.set(`${id}:${event}`, handler);
             }
           }
+        : id === "match-complete-standard-pve"
+          ? {
+              addEventListener: () => {}
+            }
         : id === "match-complete-return-menu"
           ? {
               addEventListener: () => {}
@@ -15837,6 +16804,177 @@ test("appController: Featured Rival Play Again preserves crownfire_duelist launc
   } finally {
     global.document = originalDocument;
   }
+});
+
+test("appController: Training Mode Play Again preserves Easy timerless no-persistence config", () => {
+  const originalDocument = global.document;
+  const originalWindow = globalThis.window;
+  const listeners = new Map();
+  const shownScreens = [];
+
+  global.document = {
+    getElementById: (id) =>
+      id === "match-complete-play-again"
+        ? {
+            addEventListener: (event, handler) => {
+              listeners.set(`${id}:${event}`, handler);
+            }
+          }
+        : id === "match-complete-return-menu"
+          ? {
+              addEventListener: () => {}
+            }
+          : null
+  };
+
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "hard", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "TrainingReplay";
+  app.profile = { username: "TrainingReplay" };
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+
+    app.startGame(MATCH_MODE.PVE, { aiDifficulty: "easy", trainingMode: true, trainingCoachMode: "light" });
+    const payload = app.buildMatchCompleteModalPayload(
+      MATCH_MODE.PVE,
+      {
+        winner: "p1",
+        endReason: "normal",
+        difficulty: "easy",
+        history: [],
+        players: {
+          p1: { hand: [] },
+          p2: { hand: [] }
+        }
+      },
+      null
+    );
+
+    assert.deepEqual(payload.startOptions, { aiDifficulty: "easy", trainingMode: true, trainingCoachMode: "light" });
+
+    app.showMatchCompleteModal(payload);
+    listeners.get("match-complete-play-again:click")?.();
+
+    assert.equal(shownScreens.at(-1).name, "game");
+    assert.equal(app.gameController?.mode, MATCH_MODE.PVE);
+    assert.equal(app.gameController?.aiDifficulty, "easy");
+    assert.equal(app.gameController?.trainingMode, true);
+    assert.equal(app.gameController?.timerId, null);
+    assert.equal(app.gameController?.matchClockId, null);
+    assert.equal(app.gameController?.persistMatchResults, false);
+    assert.equal(app.trainingCoachMode, "light");
+    assert.equal(shownScreens.at(-1).context.trainingMode, true);
+    assert.equal(shownScreens.at(-1).context.trainingCoachMode, "light");
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    global.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: Training Complete Try Standard PvE and Return to Menu use existing routes", async () => {
+  const originalDocument = global.document;
+  const listeners = new Map();
+  const modalShows = [];
+  let difficultySelectCalls = 0;
+  let menuCalls = 0;
+  let refreshCalls = 0;
+
+  global.document = {
+    getElementById: (id) =>
+      ["match-complete-play-again", "match-complete-standard-pve", "match-complete-return-menu"].includes(id)
+        ? {
+            addEventListener: (event, handler) => {
+              listeners.set(`${id}:${event}`, handler);
+            }
+          }
+        : null
+  };
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: (payload) => modalShows.push(payload), hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.showAiDifficultySelect = () => {
+    difficultySelectCalls += 1;
+  };
+  app.showMenu = () => {
+    menuCalls += 1;
+  };
+  app.refreshDailyChallengesForMenu = async () => {
+    refreshCalls += 1;
+  };
+
+  try {
+    app.showMatchCompleteModal({
+      title: "TRAINING COMPLETE",
+      bodyHtml: `
+        <button id="match-complete-play-again" class="btn btn-primary">Play Again</button>
+        <button id="match-complete-standard-pve" class="btn">Try Standard PvE</button>
+        <button id="match-complete-return-menu" class="btn">Return to Menu</button>
+      `,
+      mode: MATCH_MODE.PVE,
+      startOptions: { aiDifficulty: "easy", trainingMode: true },
+      trainingComplete: true
+    });
+
+    assert.equal(modalShows.at(-1)?.modalClassName, "training-complete-modal-shell");
+
+    listeners.get("match-complete-standard-pve:click")?.();
+    await listeners.get("match-complete-return-menu:click")?.();
+
+    assert.equal(difficultySelectCalls, 1);
+    assert.equal(menuCalls, 1);
+    assert.equal(refreshCalls, 1);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test("appController: returning to menu resets future Training Coach sessions to Full", () => {
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.trainingCoachMode = "off";
+  app.clearTransientUiBeforeScreenTransition = () => {};
+  app.clearGauntletRunState = () => {};
+  app.preserveAuthenticatedOwnProfileIfSafer = () => {};
+  app.renderMenuScreen = () => {};
+  app.updateOnlineReconnectReminderModal = () => {};
+  app.refreshDailyChallengesForMenu = () => {};
+  app.refreshDailyElementChestStatus = () => {};
+  app.refreshMenuAnnouncement = () => {};
+  app.refreshMenuBoostEvent = () => {};
+  app.releaseQueuedAdminGrantNotice = () => {};
+  app.maybeShowLoadoutUnlockNotice = async () => {};
+  app.maybeShowNewCosmeticsAnnouncement = async () => {};
+  app.ensureDailyLoginAutoClaim = async () => null;
+
+  app.showMenu({ autoClaimDailyLogin: false, skipInitialDailyChallengesRefresh: true });
+
+  assert.equal(app.trainingCoachMode, "full");
 });
 
 test("appController: normal PvE Play Again stays on generic Elemental AI flow", () => {
