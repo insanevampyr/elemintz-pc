@@ -8677,12 +8677,13 @@ test("ui: Training Coach renders explicit preservation wording", () => {
           element: "earth",
           avoidElement: "water",
           targetOpponentElement: "fire",
-          message: "Save Water for their remaining Fire cards."
+          supportingMessage: "Save Water for their remaining Fire cards.",
+          message: "Use Earth now. It preserves your answer to their remaining Fire."
         },
         suggestion: {
-          kind: "avoid",
-          element: "water",
-          reason: "Save Water for their remaining Fire cards.",
+          kind: "use",
+          element: "earth",
+          reason: "Use Earth now. It preserves your answer to their remaining Fire.",
           confidence: "likely"
         },
         riskNote: null,
@@ -8694,7 +8695,8 @@ test("ui: Training Coach renders explicit preservation wording", () => {
   });
 
   assert.match(html, /Coach Advice/);
-  assert.match(html, /Avoid: Water/);
+  assert.match(html, /Use: Earth/);
+  assert.match(html, /Use Earth now\. It preserves your answer to their remaining Fire\./);
   assert.match(html, /Save Water for their remaining Fire cards\./);
   assert.doesNotMatch(html, /Focus on|Consider|Use Water now/);
   assert.doesNotMatch(html, /preservation_based|tacticalPriority/);
@@ -8849,7 +8851,8 @@ test("ui: Training Coach light and off modes render scoped hint controls", () =>
   assert.match(certainLightHtml, /data-training-coach-suggestion="forced"/);
   assert.match(certainLightHtml, /Forced: Earth/);
   assert.match(certainLightHtml, /Earth is your only legal move\. It beats 0 remaining cards but loses to 1\./);
-  assert.match(certainLightHtml, /This forced move may be beaten\./);
+  assert.match(certainLightHtml, /Another tie could eliminate you\./);
+  assert.doesNotMatch(certainLightHtml, /This forced move may be beaten\./);
   assert.doesNotMatch(certainLightHtml, /Coach Advice/);
 
   const offHtml = gameScreen.render({ ...baseContext, trainingCoachMode: "off" });
@@ -8948,8 +8951,8 @@ test("ui: Training WAR Coach prioritizes aggregate WAR information without hidde
   assert.match(html, /data-training-coach-war-opponent-available="true"[^>]*>\s*Opponent cards: 1/);
   assert.match(html, /Another tie could eliminate you\./);
   assert.match(html, /Opponent cannot continue another WAR after this commitment\./);
-  assert.match(html, /The WAR pot is large; avoid another tie if possible\./);
-  assert.match(html, /Avoid unnecessary tie risk\./);
+  assert.doesNotMatch(html, /The WAR pot is large; avoid another tie if possible\./);
+  assert.doesNotMatch(html, /Avoid unnecessary tie risk\./);
   assert.match(html, /Watch Out/);
   assert.ok(html.indexOf('data-training-coach-war="true"') < html.indexOf('data-training-coach-read="true"'));
   assert.doesNotMatch(html, /Control plan/);
@@ -8970,6 +8973,92 @@ test("ui: Training WAR Coach prioritizes aggregate WAR information without hidde
   assert.doesNotMatch(html, /warPileCards/);
   assert.doesNotMatch(html, /faceDown/);
   assert.doesNotMatch(html, /"fire","fire","water","earth"/);
+});
+
+test("ui: Training WAR Coach renders primary action and deduplicated supporting warnings", () => {
+  const html = gameScreen.render({
+    trainingMode: true,
+    trainingCoachMode: "full",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "war_triggered", label: "WAR" },
+      roundResult: "WAR continues.",
+      round: 5,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire", "water"],
+      opponentHand: ["water"],
+      warActive: true,
+      pileCount: 6,
+      totalWarClashes: 3,
+      warPileCards: [{ element: "earth", faceDown: true }],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 0, water: 1, earth: 0, wind: 0 },
+        tacticalRead: ["water most remaining", "Tie risk still available"],
+        tacticalPriority: {
+          kind: "forced_war_elimination",
+          element: "water",
+          avoidElement: "fire",
+          losingToElement: "water",
+          supportingMessage: "Do not use Fire; it loses to their remaining Water.",
+          message: "Use Water now. The tie forces a WAR they cannot continue."
+        },
+        suggestion: {
+          kind: "safe",
+          element: "water",
+          reason: "Use Water now. The tie forces a WAR they cannot continue.",
+          confidence: "certain"
+        },
+        riskNote: "Opponent low-card pressure is visible.",
+        confidence: "certain",
+        warSurvival: {
+          playerAvailableCards: 2,
+          opponentAvailableCards: 1,
+          pot: 6,
+          commitmentTotal: 6,
+          commitmentTotals: { player: 3, opponent: 3 },
+          requiredCards: 1,
+          playerCanContinueCurrentWar: true,
+          opponentCanContinueCurrentWar: true,
+          playerCanSurviveAnotherTie: true,
+          opponentCanSurviveAnotherTie: false,
+          playerCardEdge: true,
+          opponentCardEdge: false,
+          riskLevel: "opponent_pressure",
+          message: "Opponent cannot continue another WAR after this commitment."
+        },
+        war: {
+          active: true,
+          pileCount: 6,
+          commitmentTotals: { player: 3, opponent: 3 },
+          availableCards: { player: 2, opponent: 1 }
+        }
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /Use Water now\. The tie forces a WAR they cannot continue\./);
+  assert.match(html, /Do not use Fire; it loses to their remaining Water\./);
+  assert.doesNotMatch(html, /No strong read/);
+  assert.doesNotMatch(html, /Avoid: Fire/);
+  assert.ok(html.indexOf("Use Water now. The tie forces a WAR they cannot continue.") < html.indexOf('data-training-coach-war="true"'));
+  const warSection = html.match(/<section class="game-match-taunt-section" data-training-coach-war="true">[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.equal((warSection.match(/<li>/g) ?? []).length, 2);
+  assert.doesNotMatch(warSection, /Opponent cannot continue another WAR after this commitment\./);
+  assert.doesNotMatch(warSection, /Avoid unnecessary tie risk\./);
+  assert.doesNotMatch(warSection, /The WAR pot is large; avoid another tie if possible\.[\s\S]*Avoid unnecessary tie risk\./);
+  assert.doesNotMatch(html, /faceDown|warPileCards|riskLevel|playerAvailableCards|opponentAvailableCards|forced_war_elimination/i);
 });
 
 test("ui: game taunt feed caps visible messages at four most recent entries", () => {

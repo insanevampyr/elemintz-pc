@@ -342,12 +342,129 @@ function emptyTacticalPriority() {
     avoidElement: null,
     losingToElement: null,
     targetOpponentElement: null,
+    supportingMessage: null,
     message: "No strong read."
   };
 }
 
+function getDominatedLossWarning(coverage, preferredElement = null) {
+  const dominatedLoss = [...(Array.isArray(coverage) ? coverage : [])]
+    .filter((entry) => entry.element !== preferredElement && entry.losesTo > 0)
+    .sort((a, b) => b.losesTo - a.losesTo || a.score - b.score || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element))[0] ?? null;
+  if (!dominatedLoss) {
+    return { avoidElement: null, losingToElement: null, message: null };
+  }
+  const losingToElement = elementThatBeats(dominatedLoss.element);
+  return {
+    avoidElement: dominatedLoss.element,
+    losingToElement,
+    message: `Do not use ${formatElementLabel(dominatedLoss.element)}; it loses to their remaining ${formatElementLabel(losingToElement)}.`
+  };
+}
+
+function buildWarTacticalPriority({ coverage, available, opponentTotalCards }) {
+  if (!Array.isArray(coverage) || coverage.length === 0) {
+    return emptyTacticalPriority();
+  }
+
+  const requiredCards = Math.max(1, Number(WAR_REQUIRED_CARDS) || 1);
+  const playerAvailableAfterTie = Math.max(0, Number(available?.player ?? 0) - 1);
+  const opponentAvailableAfterTie = Math.max(0, Number(available?.opponent ?? opponentTotalCards) - 1);
+  const opponentVisibleElements = coverage
+    .flatMap((entry) => ELEMENTS.filter((element) => {
+      if (entry.element !== element) {
+        return false;
+      }
+      return entry.tiesAgainst > 0;
+    }));
+  const forcedWarElimination = coverage.find(
+    (entry) =>
+      opponentTotalCards > 0 &&
+      entry.tiesAgainst === opponentTotalCards &&
+      new Set(opponentVisibleElements).size <= 1 &&
+      playerAvailableAfterTie >= requiredCards &&
+      opponentAvailableAfterTie < requiredCards
+  );
+  if (forcedWarElimination) {
+    const warning = getDominatedLossWarning(coverage, forcedWarElimination.element);
+    return {
+      kind: "forced_war_elimination",
+      element: forcedWarElimination.element,
+      avoidElement: warning.avoidElement,
+      losingToElement: warning.losingToElement,
+      targetOpponentElement: forcedWarElimination.element,
+      supportingMessage: warning.message,
+      message: `Use ${formatElementLabel(forcedWarElimination.element)} now. The tie forces a WAR they cannot continue.`
+    };
+  }
+
+  const directWin = coverage.find(
+    (entry) =>
+      opponentTotalCards > 0 &&
+      entry.winsAgainst === opponentTotalCards &&
+      entry.losesTo === 0 &&
+      entry.tiesAgainst === 0 &&
+      entry.noEffectAgainst === 0
+  );
+  if (directWin) {
+    const warning = getDominatedLossWarning(coverage, directWin.element);
+    return {
+      kind: "direct_win",
+      element: directWin.element,
+      avoidElement: warning.avoidElement,
+      losingToElement: warning.losingToElement,
+      targetOpponentElement: BEATS_MAP[directWin.element] ?? null,
+      supportingMessage: warning.message,
+      message: `Use ${formatElementLabel(directWin.element)} now for a direct win.`
+    };
+  }
+
+  const ranked = [...coverage].sort((a, b) => {
+    const lossDelta = a.losesTo - b.losesTo;
+    if (lossDelta !== 0) {
+      return lossDelta;
+    }
+    const tieDelta = a.tiesAgainst - b.tiesAgainst;
+    if (tieDelta !== 0 && (available?.player <= 1 || available?.opponent <= 1)) {
+      return tieDelta;
+    }
+    return b.score - a.score || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element);
+  });
+  const best = ranked[0];
+  const nextBest = ranked[1];
+  if (!best || !nextBest) {
+    return emptyTacticalPriority();
+  }
+
+  const materiallyAvoidsLoss = best.losesTo === 0 && nextBest.losesTo > 0;
+  const materiallyAvoidsTie = best.tiesAgainst === 0 && nextBest.tiesAgainst > 0 && (available?.player <= 1 || available?.opponent <= 1);
+  const materiallyBetterCoverage = best.score - nextBest.score >= 2 && (best.winsAgainst > nextBest.winsAgainst || best.losesTo < nextBest.losesTo);
+  if (materiallyAvoidsLoss || materiallyAvoidsTie || materiallyBetterCoverage) {
+    const warning = getDominatedLossWarning(coverage, best.element);
+    const avoidedElement = warning.losingToElement ?? elementThatBeats(nextBest.element);
+    const message = materiallyAvoidsLoss && avoidedElement
+      ? `Use ${formatElementLabel(best.element)} now. It avoids their remaining ${formatElementLabel(avoidedElement)}.`
+      : `Use ${formatElementLabel(best.element)} now. It gives the safest visible outcome.`;
+    return {
+      kind: "coverage_based",
+      element: best.element,
+      avoidElement: warning.avoidElement,
+      losingToElement: warning.losingToElement,
+      targetOpponentElement: BEATS_MAP[best.element] ?? null,
+      supportingMessage: warning.message,
+      message
+    };
+  }
+
+  return emptyTacticalPriority();
+}
+
 function buildTacticalPriority({ coverage, available, opponentTotalCards, playerCounts, warActive }) {
-  if (warActive || !Array.isArray(coverage) || coverage.length === 0) {
+  if (warActive) {
+    return buildWarTacticalPriority({ coverage, available, opponentTotalCards });
+  }
+
+  if (!Array.isArray(coverage) || coverage.length === 0) {
     return emptyTacticalPriority();
   }
 
@@ -360,13 +477,14 @@ function buildTacticalPriority({ coverage, available, opponentTotalCards, player
       entry.noEffectAgainst === 0
   );
   if (directWin) {
-    const dominatedLoss = coverage.find((entry) => entry.element !== directWin.element && entry.losesTo > 0) ?? null;
+    const warning = getDominatedLossWarning(coverage, directWin.element);
     return {
       kind: "direct_win",
       element: directWin.element,
-      avoidElement: dominatedLoss?.element ?? null,
-      losingToElement: dominatedLoss ? elementThatBeats(dominatedLoss.element) : null,
+      avoidElement: warning.avoidElement,
+      losingToElement: warning.losingToElement,
       targetOpponentElement: BEATS_MAP[directWin.element] ?? null,
+      supportingMessage: warning.message,
       message: `Use ${formatElementLabel(directWin.element)} now for a direct win.`
     };
   }
@@ -381,20 +499,22 @@ function buildTacticalPriority({ coverage, available, opponentTotalCards, player
       opponentAvailableAfterTie < requiredCards
   );
   if (forcedWarElimination) {
-    const dominatedLoss = coverage.find((entry) => entry.element !== forcedWarElimination.element && entry.losesTo > 0) ?? null;
+    const warning = getDominatedLossWarning(coverage, forcedWarElimination.element);
     return {
       kind: "forced_war_elimination",
       element: forcedWarElimination.element,
-      avoidElement: dominatedLoss?.element ?? null,
-      losingToElement: dominatedLoss ? elementThatBeats(dominatedLoss.element) : null,
+      avoidElement: warning.avoidElement,
+      losingToElement: warning.losingToElement,
       targetOpponentElement: forcedWarElimination.element,
-      message: `Tie with ${formatElementLabel(forcedWarElimination.element)}; they cannot continue the WAR.`
+      supportingMessage: warning.message,
+      message: `Use ${formatElementLabel(forcedWarElimination.element)} now. The tie forces a WAR they cannot continue.`
     };
   }
 
   const sortedBest = [...coverage].sort((a, b) => b.score - a.score || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element));
   const sortedWorst = [...coverage].sort((a, b) => a.score - b.score || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element));
   const best = sortedBest[0];
+  const nextBest = sortedBest[1];
   const worst = sortedWorst[0];
   if (worst?.losesTo > 0 && best && best.element !== worst.element && best.score - worst.score >= 2) {
     const losingToElement = elementThatBeats(worst.element);
@@ -404,7 +524,8 @@ function buildTacticalPriority({ coverage, available, opponentTotalCards, player
       avoidElement: worst.element,
       losingToElement,
       targetOpponentElement: null,
-      message: `Do not use ${formatElementLabel(worst.element)}: it loses to their remaining ${formatElementLabel(losingToElement)}.`
+      supportingMessage: `Do not use ${formatElementLabel(worst.element)}; it loses to their remaining ${formatElementLabel(losingToElement)}.`,
+      message: `Use ${formatElementLabel(best.element)} now. Do not use ${formatElementLabel(worst.element)}; it loses to their remaining ${formatElementLabel(losingToElement)}.`
     };
   }
 
@@ -437,18 +558,31 @@ function buildTacticalPriority({ coverage, available, opponentTotalCards, player
       avoidElement: preservationCandidate.element,
       losingToElement: null,
       targetOpponentElement,
-      message: `Save ${formatElementLabel(preservationCandidate.element)} for their remaining ${formatElementLabel(targetOpponentElement)} cards.`
+      supportingMessage: `Save ${formatElementLabel(preservationCandidate.element)} for their remaining ${formatElementLabel(targetOpponentElement)} cards.`,
+      message: preferredAlternative?.element
+        ? `Use ${formatElementLabel(preferredAlternative.element)} now. It preserves your answer to their remaining ${formatElementLabel(targetOpponentElement)}.`
+        : `Save ${formatElementLabel(preservationCandidate.element)} for their remaining ${formatElementLabel(targetOpponentElement)} cards.`
     };
   }
 
-  if (best?.winsAgainst > 0 || best?.score > 0) {
+  const materiallyAvoidsLoss = best?.losesTo === 0 && nextBest?.losesTo > 0;
+  const materiallyAvoidsTie = best?.tiesAgainst === 0 && nextBest?.tiesAgainst > 0;
+  const materiallyBetterCoverage =
+    best && nextBest && best.score - nextBest.score >= 2 && (best.winsAgainst > nextBest.winsAgainst || best.losesTo < nextBest.losesTo);
+  if (best && nextBest && (materiallyAvoidsLoss || materiallyAvoidsTie || materiallyBetterCoverage || best.score > 0)) {
+    const warning = getDominatedLossWarning(coverage, best.element);
+    const avoidedElement = warning.losingToElement ?? elementThatBeats(nextBest.element);
+    const message = materiallyAvoidsLoss && avoidedElement
+      ? `Use ${formatElementLabel(best.element)} now. It avoids their remaining ${formatElementLabel(avoidedElement)}.`
+      : `Use ${formatElementLabel(best.element)} now. It gives the safest visible outcome.`;
     return {
       kind: "coverage_based",
       element: best.element,
-      avoidElement: null,
-      losingToElement: null,
+      avoidElement: warning.avoidElement,
+      losingToElement: warning.losingToElement,
       targetOpponentElement: BEATS_MAP[best.element] ?? null,
-      message: null
+      supportingMessage: warning.message,
+      message
     };
   }
 
@@ -814,7 +948,32 @@ function chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }) {
     };
   }
 
+  if (tacticalPriority?.kind === "coverage_based" && tacticalPriority.message && tacticalPriority.element) {
+    const priorityCoverage = coverage.find((entry) => entry.element === tacticalPriority.element);
+    return {
+      kind:
+        priorityCoverage?.winsAgainst > 0 &&
+        priorityCoverage?.losesTo === 0 &&
+        priorityCoverage?.tiesAgainst === 0
+          ? "safe"
+          : "use",
+      element: tacticalPriority.element,
+      reason: tacticalPriority.message,
+      confidence: "strong",
+      reasonSource: "tactical"
+    };
+  }
+
   if (tacticalPriority?.kind === "avoid_dominated_loss") {
+    if (tacticalPriority.element && tacticalPriority.message) {
+      return {
+        kind: "use",
+        element: tacticalPriority.element,
+        reason: tacticalPriority.message,
+        confidence: "strong",
+        reasonSource: "tactical"
+      };
+    }
     return {
       kind: "avoid",
       element: tacticalPriority.avoidElement,
@@ -825,6 +984,15 @@ function chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }) {
   }
 
   if (tacticalPriority?.kind === "preservation_based") {
+    if (tacticalPriority.element && tacticalPriority.message) {
+      return {
+        kind: "use",
+        element: tacticalPriority.element,
+        reason: tacticalPriority.message,
+        confidence: "likely",
+        reasonSource: "tactical"
+      };
+    }
     return {
       kind: "avoid",
       element: tacticalPriority.avoidElement,

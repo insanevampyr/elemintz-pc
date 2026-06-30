@@ -1486,6 +1486,76 @@ test("trainingCoachEvaluator: WAR survival math uses aggregate availability only
   assert.equal(Object.hasOwn(potPressure.warSurvival, "pileCards"), false);
 });
 
+test("trainingCoachEvaluator: active WAR recommends forced elimination before no strong read", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 1, earth: 0, wind: 0 },
+    phase: "war",
+    availableCards: { player: WAR_REQUIRED_CARDS + 1, opponent: 1 },
+    war: { pileCount: 4, commitmentTotals: { player: 2, opponent: 2 } }
+  });
+
+  assert.equal(coach.tacticalPriority.kind, "forced_war_elimination");
+  assert.equal(coach.tacticalPriority.element, "water");
+  assert.equal(coach.tacticalPriority.avoidElement, "fire");
+  assert.equal(coach.tacticalPriority.losingToElement, "water");
+  assert.equal(coach.tacticalPriority.supportingMessage, "Do not use Fire; it loses to their remaining Water.");
+  assert.equal(coach.suggestion.kind, "safe");
+  assert.equal(coach.suggestion.element, "water");
+  assert.equal(coach.suggestion.reason, "Use Water now. The tie forces a WAR they cannot continue.");
+  assert.notEqual(coach.suggestion.reason, "No strong read.");
+  assert.equal(coach.warSurvival.opponentCanSurviveAnotherTie, false);
+});
+
+test("trainingCoachEvaluator: active WAR direct win and visible safest option outrank no strong read", () => {
+  const directWin = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 0, water: 0, earth: 2, wind: 0 },
+    phase: "war",
+    availableCards: { player: 3, opponent: 2 },
+    war: { pileCount: 2, commitmentTotals: { player: 1, opponent: 1 } }
+  });
+
+  assert.equal(directWin.tacticalPriority.kind, "direct_win");
+  assert.equal(directWin.suggestion.element, "fire");
+  assert.equal(directWin.suggestion.reason, "Use Fire now for a direct win.");
+  assert.notEqual(directWin.suggestion.reason, "No strong read.");
+
+  const safest = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "earth"],
+    opponentRemainingByElement: { fire: 0, water: 1, earth: 1, wind: 0 },
+    phase: "war",
+    availableCards: { player: 3, opponent: 2 },
+    war: { pileCount: 2, commitmentTotals: { player: 1, opponent: 1 } }
+  });
+
+  assert.equal(safest.tacticalPriority.kind, "coverage_based");
+  assert.equal(safest.suggestion.kind, "use");
+  assert.equal(safest.suggestion.element, "earth");
+  assert.equal(safest.suggestion.reason, "Use Earth now. It avoids their remaining Water.");
+  assert.equal(safest.tacticalPriority.supportingMessage, "Do not use Fire; it loses to their remaining Water.");
+});
+
+test("trainingCoachEvaluator: active WAR no strong read remains only for comparable legal choices", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "wind"],
+    opponentRemainingByElement: { fire: 0, water: 1, earth: 1, wind: 0 },
+    phase: "war",
+    availableCards: { player: 4, opponent: 4 },
+    war: { pileCount: 2, commitmentTotals: { player: 1, opponent: 1 } }
+  });
+
+  assert.equal(coach.tacticalPriority.kind, "no_strong_read");
+  assert.equal(coach.suggestion.kind, "none");
+  assert.equal(coach.suggestion.reason, "No strong read.");
+  assert.equal(coach.warSurvival.playerAvailableCards, 4);
+  assert.equal(coach.warSurvival.opponentAvailableCards, 4);
+});
+
 test("trainingCoachEvaluator: exhausted opponent element is reported unavailable", () => {
   const coach = evaluateTrainingCoach({
     trainingActive: true,
@@ -1773,7 +1843,7 @@ test("trainingCoachEvaluator: Safe recommendation uses remaining-card coverage",
 
   assert.equal(coach.suggestion.kind, "safe");
   assert.equal(coach.suggestion.element, "fire");
-  assert.equal(coach.suggestion.reason, "Fire defeats 2 remaining cards, loses to 0, and has no tie risk.");
+  assert.equal(coach.suggestion.reason, "Use Fire now. It gives the safest visible outcome.");
   assert.deepEqual(
     coach.coverage.find((entry) => entry.element === "fire"),
     { element: "fire", defeats: 2, beatenBy: 0, tieExposure: 0 }
@@ -1796,13 +1866,13 @@ test("trainingCoachEvaluator: Avoid recommendation appears only when materially 
     availableCards: { player: 2, opponent: 4 }
   });
 
-  assert.equal(avoid.suggestion.kind, "avoid");
-  assert.equal(avoid.suggestion.element, "fire");
-  assert.equal(avoid.suggestion.reason, "Do not use Fire: it loses to their remaining Water.");
+  assert.equal(avoid.suggestion.kind, "use");
+  assert.equal(avoid.suggestion.element, "earth");
+  assert.equal(avoid.suggestion.reason, "Use Earth now. Do not use Fire; it loses to their remaining Water.");
   assert.equal(balanced.suggestion.kind, "none");
 });
 
-test("trainingCoachEvaluator: Avoid uses explicit dominated-loss wording", () => {
+test("trainingCoachEvaluator: dominated-loss advice uses positive action with explicit warning", () => {
   const coach = evaluateTrainingCoach({
     trainingActive: true,
     legalPlayableElements: ["fire", "earth"],
@@ -1811,9 +1881,9 @@ test("trainingCoachEvaluator: Avoid uses explicit dominated-loss wording", () =>
     availableCards: { player: 2, opponent: 5 }
   });
 
-  assert.equal(coach.suggestion.kind, "avoid");
-  assert.equal(coach.suggestion.element, "fire");
-  assert.equal(coach.suggestion.reason, "Do not use Fire: it loses to their remaining Water.");
+  assert.equal(coach.suggestion.kind, "use");
+  assert.equal(coach.suggestion.element, "earth");
+  assert.equal(coach.suggestion.reason, "Use Earth now. Do not use Fire; it loses to their remaining Water.");
 });
 
 test("trainingCoachEvaluator: all unfavorable legal choices never produce Safe", () => {
@@ -1948,14 +2018,14 @@ test("trainingCoachEvaluator: tactical priority detects forced-WAR elimination b
   assert.equal(coach.suggestion.kind, "safe");
   assert.equal(coach.suggestion.element, "earth");
   assert.equal(coach.suggestion.confidence, "certain");
-  assert.equal(coach.suggestion.reason, "Tie with Earth; they cannot continue the WAR.");
+  assert.equal(coach.suggestion.reason, "Use Earth now. The tie forces a WAR they cannot continue.");
   assert.notEqual(coach.suggestion.reason, "No strong read.");
   assert.equal(coach.noEffectGuidance.entries.some((entry) => entry.element === "water"), true);
   assert.equal(coach.noEffectGuidance.note, null);
   assert.equal(coach.noEffectGuidance.warning, null);
 });
 
-test("trainingCoachEvaluator: dominated losing Avoid wording is explicit preservation", () => {
+test("trainingCoachEvaluator: dominated losing warning is paired with positive primary advice", () => {
   const coach = evaluateTrainingCoach({
     trainingActive: true,
     legalPlayableElements: ["fire", "earth"],
@@ -1965,13 +2035,14 @@ test("trainingCoachEvaluator: dominated losing Avoid wording is explicit preserv
   });
 
   assert.equal(coach.tacticalPriority.kind, "avoid_dominated_loss");
-  assert.equal(coach.suggestion.kind, "avoid");
-  assert.equal(coach.suggestion.element, "fire");
-  assert.equal(coach.suggestion.reason, "Do not use Fire: it loses to their remaining Water.");
-  assert.doesNotMatch(coach.suggestion.reason, /Use Fire now|Focus on Fire|Consider Fire/i);
+  assert.equal(coach.suggestion.kind, "use");
+  assert.equal(coach.suggestion.element, "earth");
+  assert.equal(coach.suggestion.reason, "Use Earth now. Do not use Fire; it loses to their remaining Water.");
+  assert.equal(coach.tacticalPriority.supportingMessage, "Do not use Fire; it loses to their remaining Water.");
+  assert.doesNotMatch(coach.suggestion.reason, /Focus on|Consider/i);
 });
 
-test("trainingCoachEvaluator: preservation_based appears only as primary save advice", () => {
+test("trainingCoachEvaluator: preservation_based pairs a usable action with save advice", () => {
   const coach = evaluateTrainingCoach({
     trainingActive: true,
     legalPlayableElements: ["water", "earth"],
@@ -1984,9 +2055,10 @@ test("trainingCoachEvaluator: preservation_based appears only as primary save ad
   assert.equal(coach.tacticalPriority.kind, "preservation_based");
   assert.equal(coach.tacticalPriority.avoidElement, "water");
   assert.equal(coach.tacticalPriority.targetOpponentElement, "fire");
-  assert.equal(coach.suggestion.kind, "avoid");
-  assert.equal(coach.suggestion.element, "water");
-  assert.equal(coach.suggestion.reason, "Save Water for their remaining Fire cards.");
+  assert.equal(coach.suggestion.kind, "use");
+  assert.equal(coach.suggestion.element, "earth");
+  assert.equal(coach.suggestion.reason, "Use Earth now. It preserves your answer to their remaining Fire.");
+  assert.equal(coach.tacticalPriority.supportingMessage, "Save Water for their remaining Fire cards.");
   assert.doesNotMatch(coach.suggestion.reason, /Focus on|Consider|Use Water now/i);
 });
 
@@ -2011,7 +2083,7 @@ test("trainingCoachEvaluator: preservation_based does not outrank solved tactics
     availableCards: { player: WAR_REQUIRED_CARDS + 1, opponent: 1 }
   });
   assert.equal(forcedWar.tacticalPriority.kind, "forced_war_elimination");
-  assert.equal(forcedWar.suggestion.reason, "Tie with Water; they cannot continue the WAR.");
+  assert.equal(forcedWar.suggestion.reason, "Use Water now. The tie forces a WAR they cannot continue.");
 
   const coverage = evaluateTrainingCoach({
     trainingActive: true,
@@ -2126,7 +2198,7 @@ test("trainingCoachEvaluator: pattern recognition remains below tactical priorit
   });
   assert.equal(forcedWar.patternRecognition.repeatedElementPattern.element, "earth");
   assert.equal(forcedWar.tacticalPriority.kind, "forced_war_elimination");
-  assert.equal(forcedWar.suggestion.reason, "Tie with Earth; they cannot continue the WAR.");
+  assert.equal(forcedWar.suggestion.reason, "Use Earth now. The tie forces a WAR they cannot continue.");
 
   const war = evaluateTrainingCoach({
     trainingActive: true,
@@ -2149,7 +2221,7 @@ test("trainingCoachEvaluator: no-effect guidance explains relevant neutral outco
     availableCards: { player: 2, opponent: 2 }
   });
 
-  assert.equal(coach.suggestion.kind, "avoid");
+  assert.equal(coach.suggestion.kind, "use");
   assert.deepEqual(coach.noEffectGuidance.entries, [
     {
       element: "fire",
@@ -2207,7 +2279,9 @@ test("trainingCoachEvaluator: no-effect guidance does not override preservation 
     availableCards: { player: 3, opponent: 4 }
   });
 
-  assert.match(preserve.futureOptionForecast.warning, /no other visible answer/);
+  assert.equal(preserve.tacticalPriority.kind, "preservation_based");
+  assert.equal(preserve.tacticalPriority.supportingMessage, "Save Water for their remaining Fire cards.");
+  assert.equal(preserve.suggestion.reason, "Use Earth now. It preserves your answer to their remaining Fire.");
   assert.equal(preserve.noEffectGuidance.note, null);
   assert.equal(preserve.noEffectGuidance.warning, null);
 });

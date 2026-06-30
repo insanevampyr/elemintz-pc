@@ -555,16 +555,63 @@ function isStrongCoachConfidence(confidence) {
   return normalized === "certain" || normalized === "strong";
 }
 
+function getTrainingCoachWarningConcept(line) {
+  const normalized = String(line ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.includes("tie") || normalized.includes("war")) {
+    return "tie_risk";
+  }
+  if (normalized.includes("fatigue") || normalized.includes("next-turn") || normalized.includes("next turn")) {
+    return "fatigue";
+  }
+  if (normalized.includes("card-count") || normalized.includes("available cards") || normalized.includes("margin")) {
+    return "card_edge";
+  }
+  if (normalized.includes("cannot continue")) {
+    return "cannot_continue";
+  }
+  if (normalized.includes("loses to") || normalized.includes("vulnerable")) {
+    return "direct_loss";
+  }
+  return normalized;
+}
+
+function getDistinctTrainingCoachWarnings(lines = [], primaryReason = "") {
+  const primary = String(primaryReason ?? "").trim();
+  const seenLines = new Set();
+  const seenConcepts = new Set();
+  const warnings = [];
+  for (const value of Array.isArray(lines) ? lines : []) {
+    const line = String(value ?? "").trim();
+    if (!line || primary.includes(line)) {
+      continue;
+    }
+    const concept = getTrainingCoachWarningConcept(line);
+    if (seenLines.has(line) || seenConcepts.has(concept)) {
+      continue;
+    }
+    seenLines.add(line);
+    seenConcepts.add(concept);
+    warnings.push(line);
+    if (warnings.length >= 2) {
+      break;
+    }
+  }
+  return warnings;
+}
+
 function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, showSectionLabel = true } = {}) {
   const suggestion = coach?.suggestion ?? {};
   const kind =
-    suggestion.kind === "safe" || suggestion.kind === "avoid" || suggestion.kind === "forced"
+    suggestion.kind === "safe" || suggestion.kind === "use" || suggestion.kind === "avoid" || suggestion.kind === "forced"
       ? suggestion.kind
       : "none";
   if (!allowDirectSuggestion && kind !== "none" && !isStrongCoachConfidence(suggestion.confidence ?? coach?.confidence)) {
     return "";
   }
-  const label = kind === "safe" ? "Safe" : kind === "avoid" ? "Avoid" : kind === "forced" ? "Forced" : "No strong read";
+  const label = kind === "safe" ? "Safe" : kind === "use" ? "Use" : kind === "avoid" ? "Avoid" : kind === "forced" ? "Forced" : "No strong read";
   const element = suggestion.element ? `: ${formatElement(suggestion.element)}` : "";
   const reason = String(suggestion.reason ?? "").trim() || "No strong read.";
   const showFutureOptionGuidance = !coach?.war?.active;
@@ -576,7 +623,12 @@ function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, sh
   const confidenceMessage = showFutureOptionGuidance ? String(coach?.outcomeConfidence?.message ?? "").trim() : "";
   const confidenceWarning = confidenceKind === "forced_risk" || confidenceKind === "no_safe_response" ? confidenceMessage : "";
   const confidenceNote = confidenceWarning ? "" : confidenceMessage;
-  const warningLines = [coach?.riskNote, optionWarning, noEffectWarning, confidenceWarning].map((line) => String(line ?? "").trim()).filter(Boolean);
+  const warningLines = coach?.war?.active
+    ? []
+    : getDistinctTrainingCoachWarnings(
+        [coach?.tacticalPriority?.supportingMessage, coach?.riskNote, optionWarning, noEffectWarning, confidenceWarning],
+        reason
+      );
   const hasWhyDetail = kind !== "none" || optionNote || noEffectNote || confidenceNote;
   return `
     <section class="game-match-taunt-section" data-training-coach-suggestion="${escapeHtml(kind)}">
@@ -683,31 +735,52 @@ function renderTrainingCoachWarSummary(coach) {
   const playerAvailable = Math.max(0, Number(coach.war?.availableCards?.player ?? 0) || 0);
   const opponentAvailable = Math.max(0, Number(coach.war?.availableCards?.opponent ?? 0) || 0);
   const survival = coach.warSurvival ?? {};
-  const pressureLines = [];
+  const primaryInstruction = String(coach?.suggestion?.reason ?? "").trim();
+  const pressureEntries = [];
+  const addPressureLine = (line, concept) => {
+    const normalized = String(line ?? "").trim();
+    if (!normalized || normalized === primaryInstruction) {
+      return;
+    }
+    pressureEntries.push({ line: normalized, concept });
+  };
 
-  if (survival.message) {
-    pressureLines.push(survival.message);
-  } else if (coach.riskNote) {
-    pressureLines.push(coach.riskNote);
-  }
+  addPressureLine(coach?.tacticalPriority?.supportingMessage, "direct_loss");
   if (survival.playerCanSurviveAnotherTie === false) {
-    pressureLines.push("Another tie could eliminate you.");
+    addPressureLine("Another tie could eliminate you.", "player_cannot_survive_tie");
   }
-  if (survival.opponentCanSurviveAnotherTie === false || survival.opponentCanContinueCurrentWar === false) {
-    pressureLines.push("Opponent cannot continue another WAR after this commitment.");
+  if (
+    String(coach?.tacticalPriority?.kind ?? "") !== "forced_war_elimination" &&
+    (survival.opponentCanSurviveAnotherTie === false || survival.opponentCanContinueCurrentWar === false)
+  ) {
+    addPressureLine("Opponent cannot continue another WAR after this commitment.", "opponent_cannot_continue");
   }
   if (survival.playerCardEdge) {
-    pressureLines.push("You have a card-count edge after this commitment.");
+    addPressureLine("You have a card-count edge after this commitment.", "card_edge");
   }
   if (survival.opponentCardEdge) {
-    pressureLines.push("Both players can continue, but your margin is thin.");
+    addPressureLine("Both players can continue, but your margin is thin.", "card_edge");
   }
-  if (pileCount >= 4 || Number(survival.commitmentTotal ?? 0) >= 4) {
-    pressureLines.push("The WAR pot is large; avoid another tie if possible.");
+  if ((pileCount >= 4 || Number(survival.commitmentTotal ?? 0) >= 4) && survival.playerCanSurviveAnotherTie !== false) {
+    addPressureLine("The WAR pot is large; avoid another tie if possible.", "tie_risk");
   }
-  pressureLines.push("Avoid unnecessary tie risk.");
+  addPressureLine(survival.message, String(survival.riskLevel ?? "war_status"));
+  addPressureLine(coach.riskNote, "risk_note");
 
-  const uniquePressureLines = [...new Set(pressureLines.map((line) => String(line).trim()).filter(Boolean))].slice(0, 4);
+  const seenConcepts = new Set();
+  const seenLines = new Set();
+  const uniquePressureLines = [];
+  for (const entry of pressureEntries) {
+    if (seenLines.has(entry.line) || seenConcepts.has(entry.concept)) {
+      continue;
+    }
+    seenLines.add(entry.line);
+    seenConcepts.add(entry.concept);
+    uniquePressureLines.push(entry.line);
+    if (uniquePressureLines.length >= 2) {
+      break;
+    }
+  }
 
   return `
     <section class="game-match-taunt-section" data-training-coach-war="true">
@@ -856,18 +929,29 @@ function renderTrainingCoachRail({ coach, mode = "full" } = {}) {
           ${renderTrainingCoachModeControls(coachMode)}
           ${
             hasCoach
-              ? `
-                ${renderTrainingCoachCounts(coach.opponentRemainingByElement)}
-                ${renderTrainingCoachWarSummary(coach)}
-                ${renderTrainingCoachTacticalRead(coachMode === "full" ? coach.tacticalRead : getLightCoachRead(coach))}
-                ${renderTrainingCoachSuggestion(coach, {
-                  allowDirectSuggestion: coachMode === "full" || isStrongCoachConfidence(coach.suggestion?.confidence ?? coach.confidence),
-                  showSectionLabel: coachMode === "full"
-                })}
-                ${coachMode === "full" ? renderTrainingCoachStrategyNote(coach) : ""}
-                ${coachMode === "full" ? renderTrainingCoachPatternNote(coach) : ""}
-                ${coachMode === "full" ? renderTrainingCoachHelp(coach) : ""}
-              `
+              ? coach?.war?.active
+                ? `
+                  ${renderTrainingCoachCounts(coach.opponentRemainingByElement)}
+                  ${renderTrainingCoachSuggestion(coach, {
+                    allowDirectSuggestion: coachMode === "full" || isStrongCoachConfidence(coach.suggestion?.confidence ?? coach.confidence),
+                    showSectionLabel: coachMode === "full"
+                  })}
+                  ${renderTrainingCoachWarSummary(coach)}
+                  ${renderTrainingCoachTacticalRead(coachMode === "full" ? coach.tacticalRead : getLightCoachRead(coach))}
+                  ${coachMode === "full" ? renderTrainingCoachHelp(coach) : ""}
+                `
+                : `
+                  ${renderTrainingCoachCounts(coach.opponentRemainingByElement)}
+                  ${renderTrainingCoachWarSummary(coach)}
+                  ${renderTrainingCoachTacticalRead(coachMode === "full" ? coach.tacticalRead : getLightCoachRead(coach))}
+                  ${renderTrainingCoachSuggestion(coach, {
+                    allowDirectSuggestion: coachMode === "full" || isStrongCoachConfidence(coach.suggestion?.confidence ?? coach.confidence),
+                    showSectionLabel: coachMode === "full"
+                  })}
+                  ${coachMode === "full" ? renderTrainingCoachStrategyNote(coach) : ""}
+                  ${coachMode === "full" ? renderTrainingCoachPatternNote(coach) : ""}
+                  ${coachMode === "full" ? renderTrainingCoachHelp(coach) : ""}
+                `
               : `
                 <p><strong>No strong read</strong></p>
                 <p class="text-muted">Coach data is unavailable.</p>
