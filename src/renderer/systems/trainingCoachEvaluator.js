@@ -114,7 +114,7 @@ function formatCoverageReason(entry, suggestionKind) {
   if (suggestionKind === "avoid" && entry.winsAgainst > 0) {
     const targetElement = BEATS_MAP[entry.element];
     const targetLabel = formatElementLabel(targetElement);
-    return `Keep ${elementLabel} available as an answer to their ${targetLabel} cards.`;
+    return `Do not use ${elementLabel} now. Save it for their remaining ${targetLabel} cards.`;
   }
 
   if (suggestionKind === "avoid") {
@@ -258,9 +258,9 @@ function buildFutureOptionForecast({
   } else if (selectedEntry.createsFatigueNextTurn && futureOptionsLabel) {
     note = `Playing ${elementLabel} now will fatigue ${elementLabel} next turn. This leaves ${futureOptionsLabel} available next turn.`;
   } else if (preservedAnswer && preservedAnswerLabel && preservedAnswerTargetLabel) {
-    note = `${elementLabel} keeps ${preservedAnswerLabel} available for their ${preservedAnswerTargetLabel} cards.`;
+    note = `Using ${elementLabel} keeps ${preservedAnswerLabel} available for their ${preservedAnswerTargetLabel} cards.`;
   } else if (selectedEntry.reducesVisibleCounter) {
-    note = `Keep ${elementLabel} available as an answer to their ${targetLabel} cards.`;
+    note = `Save ${elementLabel} for their remaining ${targetLabel} cards.`;
   }
 
   return { entries, note, warning };
@@ -326,13 +326,133 @@ function buildNoEffectGuidance({
 }
 
 function withCoverageReason(suggestion, coverage, { warActive = false } = {}) {
-  if (warActive || !suggestion || suggestion.kind === "none") {
+  if (warActive || !suggestion || suggestion.kind === "none" || suggestion.reasonSource === "tactical") {
     return suggestion;
   }
 
   const entry = coverage.find((item) => item.element === suggestion.element);
   const reason = formatCoverageReason(entry, suggestion.kind);
   return reason ? { ...suggestion, reason } : suggestion;
+}
+
+function emptyTacticalPriority() {
+  return {
+    kind: "no_strong_read",
+    element: null,
+    avoidElement: null,
+    losingToElement: null,
+    targetOpponentElement: null,
+    message: "No strong read."
+  };
+}
+
+function buildTacticalPriority({ coverage, available, opponentTotalCards, playerCounts, warActive }) {
+  if (warActive || !Array.isArray(coverage) || coverage.length === 0) {
+    return emptyTacticalPriority();
+  }
+
+  const directWin = coverage.find(
+    (entry) =>
+      opponentTotalCards > 0 &&
+      entry.winsAgainst === opponentTotalCards &&
+      entry.losesTo === 0 &&
+      entry.tiesAgainst === 0 &&
+      entry.noEffectAgainst === 0
+  );
+  if (directWin) {
+    const dominatedLoss = coverage.find((entry) => entry.element !== directWin.element && entry.losesTo > 0) ?? null;
+    return {
+      kind: "direct_win",
+      element: directWin.element,
+      avoidElement: dominatedLoss?.element ?? null,
+      losingToElement: dominatedLoss ? elementThatBeats(dominatedLoss.element) : null,
+      targetOpponentElement: BEATS_MAP[directWin.element] ?? null,
+      message: `Use ${formatElementLabel(directWin.element)} now for a direct win.`
+    };
+  }
+
+  const requiredCards = Math.max(1, Number(WAR_REQUIRED_CARDS) || 1);
+  const playerAvailableAfterTie = Math.max(0, Number(available?.player ?? 0) - 1);
+  const opponentAvailableAfterTie = Math.max(0, Number(available?.opponent ?? opponentTotalCards) - 1);
+  const forcedWarElimination = coverage.find(
+    (entry) =>
+      entry.tiesAgainst > 0 &&
+      playerAvailableAfterTie >= requiredCards &&
+      opponentAvailableAfterTie < requiredCards
+  );
+  if (forcedWarElimination) {
+    const dominatedLoss = coverage.find((entry) => entry.element !== forcedWarElimination.element && entry.losesTo > 0) ?? null;
+    return {
+      kind: "forced_war_elimination",
+      element: forcedWarElimination.element,
+      avoidElement: dominatedLoss?.element ?? null,
+      losingToElement: dominatedLoss ? elementThatBeats(dominatedLoss.element) : null,
+      targetOpponentElement: forcedWarElimination.element,
+      message: `Tie with ${formatElementLabel(forcedWarElimination.element)}; they cannot continue the WAR.`
+    };
+  }
+
+  const sortedBest = [...coverage].sort((a, b) => b.score - a.score || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element));
+  const sortedWorst = [...coverage].sort((a, b) => a.score - b.score || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element));
+  const best = sortedBest[0];
+  const worst = sortedWorst[0];
+  if (worst?.losesTo > 0 && best && best.element !== worst.element && best.score - worst.score >= 2) {
+    const losingToElement = elementThatBeats(worst.element);
+    return {
+      kind: "avoid_dominated_loss",
+      element: best.element,
+      avoidElement: worst.element,
+      losingToElement,
+      targetOpponentElement: null,
+      message: `Do not use ${formatElementLabel(worst.element)}: it loses to their remaining ${formatElementLabel(losingToElement)}.`
+    };
+  }
+
+  const preservationCandidate = coverage.find((entry) => {
+    const playerCount = Math.max(0, Number(playerCounts?.[entry.element] ?? 0) || 0);
+    const targetRemaining = entry.winsAgainst;
+    if (playerCount !== 1 || targetRemaining <= 0) {
+      return false;
+    }
+    const bestVisibleScore = Math.max(...coverage.map((item) => item.score));
+    if (bestVisibleScore - entry.score >= 2) {
+      return false;
+    }
+    return coverage.some(
+      (otherEntry) =>
+        otherEntry.element !== entry.element &&
+        otherEntry.score >= entry.score - 1 &&
+        otherEntry.losesTo <= entry.losesTo &&
+        otherEntry.tiesAgainst <= entry.tiesAgainst
+    );
+  });
+  if (preservationCandidate) {
+    const targetOpponentElement = BEATS_MAP[preservationCandidate.element];
+    const preferredAlternative = [...coverage]
+      .filter((entry) => entry.element !== preservationCandidate.element)
+      .sort((a, b) => b.score - a.score || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element))[0];
+    return {
+      kind: "preservation_based",
+      element: preferredAlternative?.element ?? null,
+      avoidElement: preservationCandidate.element,
+      losingToElement: null,
+      targetOpponentElement,
+      message: `Save ${formatElementLabel(preservationCandidate.element)} for their remaining ${formatElementLabel(targetOpponentElement)} cards.`
+    };
+  }
+
+  if (best?.winsAgainst > 0 || best?.score > 0) {
+    return {
+      kind: "coverage_based",
+      element: best.element,
+      avoidElement: null,
+      losingToElement: null,
+      targetOpponentElement: BEATS_MAP[best.element] ?? null,
+      message: null
+    };
+  }
+
+  return emptyTacticalPriority();
 }
 
 function buildOutcomeConfidence({ coverage, suggestion, warActive }) {
@@ -409,6 +529,158 @@ function buildOutcomeConfidence({ coverage, suggestion, warActive }) {
   }
 
   return empty;
+}
+
+function emptyPatternRecognition() {
+  return {
+    repeatedElementPattern: null,
+    responsePattern: null,
+    tieAvoidancePattern: null,
+    avoidancePattern: null,
+    confidence: "none",
+    sampleCount: 0,
+    message: null
+  };
+}
+
+function countByElement(elements = []) {
+  return elements.reduce((counts, element) => {
+    const normalized = normalizeElement(element);
+    if (normalized) {
+      counts[normalized] = (counts[normalized] ?? 0) + 1;
+    }
+    return counts;
+  }, {});
+}
+
+function buildPatternRecognition({ visibleHistory, opponentCounts, opponentTotalCards, warActive }) {
+  if (warActive || !Array.isArray(visibleHistory)) {
+    return emptyPatternRecognition();
+  }
+
+  const revealed = visibleHistory
+    .map((entry) => ({
+      playerElement: normalizeElement(entry?.p1Card),
+      opponentElement: normalizeElement(entry?.p2Card)
+    }))
+    .filter((entry) => entry.opponentElement);
+  if (revealed.length < 3) {
+    return emptyPatternRecognition();
+  }
+
+  const opponentMoves = revealed.map((entry) => entry.opponentElement);
+  const opponentMoveCounts = countByElement(opponentMoves);
+  const repeatedElement = ELEMENTS
+    .map((element) => ({
+      element,
+      count: opponentMoveCounts[element] ?? 0,
+      currentRemaining: Math.max(0, Number(opponentCounts?.[element] ?? 0) || 0)
+    }))
+    .filter((entry) => entry.count >= 3 && entry.count / revealed.length >= 0.6 && entry.currentRemaining > 0)
+    .sort((a, b) => b.count - a.count || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element))[0] ?? null;
+  if (repeatedElement) {
+    const message = `They have often used ${formatElementLabel(repeatedElement.element)} when it was available.`;
+    return {
+      ...emptyPatternRecognition(),
+      repeatedElementPattern: {
+        element: repeatedElement.element,
+        sampleCount: revealed.length,
+        observedCount: repeatedElement.count,
+        message
+      },
+      confidence: "moderate",
+      sampleCount: revealed.length,
+      message
+    };
+  }
+
+  const responseCandidates = [];
+  for (const playerElement of ELEMENTS) {
+    const responses = revealed.filter((entry) => entry.playerElement === playerElement && entry.opponentElement);
+    if (responses.length < 3) {
+      continue;
+    }
+    const responseCounts = countByElement(responses.map((entry) => entry.opponentElement));
+    const bestResponse = ELEMENTS
+      .map((element) => ({ element, count: responseCounts[element] ?? 0 }))
+      .filter((entry) => entry.count >= 3 && entry.count / responses.length >= 0.6)
+      .sort((a, b) => b.count - a.count || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element))[0] ?? null;
+    if (bestResponse) {
+      responseCandidates.push({
+        playerElement,
+        responseElement: bestResponse.element,
+        sampleCount: responses.length,
+        observedCount: bestResponse.count
+      });
+    }
+  }
+  const responsePattern = responseCandidates
+    .sort((a, b) => b.observedCount - a.observedCount || ELEMENTS.indexOf(a.playerElement) - ELEMENTS.indexOf(b.playerElement))[0] ?? null;
+  if (responsePattern) {
+    const message = `They have tended to answer ${formatElementLabel(responsePattern.playerElement)} with ${formatElementLabel(responsePattern.responseElement)}.`;
+    return {
+      ...emptyPatternRecognition(),
+      responsePattern: {
+        ...responsePattern,
+        message
+      },
+      confidence: "moderate",
+      sampleCount: responsePattern.sampleCount,
+      message
+    };
+  }
+
+  const recentLowCard = revealed.slice(-3);
+  const tieAvoidCount = recentLowCard.filter(
+    (entry) => entry.playerElement && entry.opponentElement && entry.playerElement !== entry.opponentElement
+  ).length;
+  if (opponentTotalCards <= 3 && recentLowCard.length >= 3 && tieAvoidCount >= 3) {
+    const message = "They seem to avoid likely ties when low on cards.";
+    return {
+      ...emptyPatternRecognition(),
+      tieAvoidancePattern: {
+        sampleCount: recentLowCard.length,
+        observedCount: tieAvoidCount,
+        message
+      },
+      confidence: "cautious",
+      sampleCount: recentLowCard.length,
+      message
+    };
+  }
+
+  const strongestObservedCount = Math.max(...ELEMENTS.map((element) => opponentMoveCounts[element] ?? 0));
+  const avoidancePattern = ELEMENTS
+    .map((element) => ({
+      element,
+      count: opponentMoveCounts[element] ?? 0,
+      currentRemaining: Math.max(0, Number(opponentCounts?.[element] ?? 0) || 0)
+    }))
+    .filter(
+      (entry) =>
+        revealed.length >= 5 &&
+        strongestObservedCount >= 3 &&
+        entry.count / revealed.length <= 0.2 &&
+        entry.currentRemaining > 0
+    )
+    .sort((a, b) => a.count - b.count || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element))[0] ?? null;
+  if (avoidancePattern) {
+    const message = `They have rarely used ${formatElementLabel(avoidancePattern.element)} when other options were available.`;
+    return {
+      ...emptyPatternRecognition(),
+      avoidancePattern: {
+        element: avoidancePattern.element,
+        sampleCount: revealed.length,
+        observedCount: avoidancePattern.count,
+        message
+      },
+      confidence: "cautious",
+      sampleCount: revealed.length,
+      message
+    };
+  }
+
+  return emptyPatternRecognition();
 }
 
 function buildWarSurvival({ warActive, available, war }) {
@@ -522,13 +794,43 @@ function buildTacticalRead({
   return read.length > 0 ? read : ["No strong read"];
 }
 
-function chooseSuggestion({ coverage, opponentTotalCards }) {
+function chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }) {
   if (!Array.isArray(coverage) || coverage.length === 0) {
     return {
       kind: "none",
       element: null,
       reason: "No legal move available.",
       confidence: "none"
+    };
+  }
+
+  if (tacticalPriority?.kind === "direct_win" || tacticalPriority?.kind === "forced_war_elimination") {
+    return {
+      kind: "safe",
+      element: tacticalPriority.element,
+      reason: tacticalPriority.message,
+      confidence: "certain",
+      reasonSource: "tactical"
+    };
+  }
+
+  if (tacticalPriority?.kind === "avoid_dominated_loss") {
+    return {
+      kind: "avoid",
+      element: tacticalPriority.avoidElement,
+      reason: tacticalPriority.message,
+      confidence: "strong",
+      reasonSource: "tactical"
+    };
+  }
+
+  if (tacticalPriority?.kind === "preservation_based") {
+    return {
+      kind: "avoid",
+      element: tacticalPriority.avoidElement,
+      reason: tacticalPriority.message,
+      confidence: "likely",
+      reasonSource: "tactical"
     };
   }
 
@@ -790,8 +1092,15 @@ export function evaluateTrainingCoach(snapshot = {}) {
     available,
     war: snapshot.war
   });
+  const tacticalPriority = buildTacticalPriority({
+    coverage,
+    available,
+    opponentTotalCards,
+    playerCounts: playerRemainingByElement,
+    warActive
+  });
   const suggestion = withCoverageReason(
-    chooseSuggestion({ coverage, opponentTotalCards }),
+    chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }),
     coverage,
     { warActive }
   );
@@ -812,6 +1121,12 @@ export function evaluateTrainingCoach(snapshot = {}) {
     futureOptionForecast,
     warActive
   });
+  const patternRecognition = buildPatternRecognition({
+    visibleHistory: snapshot.visibleHistory,
+    opponentCounts: opponentRemainingByElement,
+    opponentTotalCards,
+    warActive
+  });
   const strategyPlan = buildStrategyPlan({
     playerCounts: playerRemainingByElement,
     opponentCounts: opponentRemainingByElement,
@@ -821,6 +1136,9 @@ export function evaluateTrainingCoach(snapshot = {}) {
     warActive,
     riskNote
   });
+  const tacticalSolved =
+    tacticalPriority.kind === "direct_win" ||
+    tacticalPriority.kind === "forced_war_elimination";
 
   return {
     opponentRemainingByElement,
@@ -859,10 +1177,16 @@ export function evaluateTrainingCoach(snapshot = {}) {
       tiesAgainst,
       opponentTotalConsidered
     })),
-    futureOptionForecast,
-    noEffectGuidance,
+    futureOptionForecast: tacticalSolved
+      ? { entries: futureOptionForecast.entries, note: null, warning: null }
+      : futureOptionForecast,
+    noEffectGuidance: tacticalSolved
+      ? { entries: noEffectGuidance.entries, note: null, warning: null }
+      : noEffectGuidance,
     outcomeConfidence,
     warSurvival,
+    tacticalPriority,
+    patternRecognition,
     suggestion,
     riskNote,
     strategyPlan,

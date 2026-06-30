@@ -8420,7 +8420,9 @@ test("ui: Training Mode renders live Coach panel instead of Expressions", () => 
   assert.match(html, /Guaranteed win visible\./);
   assert.match(html, /Watch Out/);
   assert.match(html, /Tie risk still available\./);
-  assert.match(html, /Focus on Earth\. Your Fire cards help cover that route\./);
+  assert.match(html, /Use Earth only when it stays safe\. Save Fire for their Earth cards\./);
+  assert.doesNotMatch(html, /Focus on/);
+  assert.doesNotMatch(html, /helps cover/);
   assert.match(html, /Why this hint\?/);
   assert.match(html, /Element counter chart/);
   assert.match(html, /Fatigue reminder/);
@@ -8639,6 +8641,132 @@ test("ui: Training Coach renders concise no-effect guidance without crowding Lig
   assert.match(lightHtml, /Fire against Wind has no immediate winner; it avoids direct loss risk but is not a guaranteed advantage\./);
   assert.doesNotMatch(lightHtml, /Coach Advice/);
   assert.doesNotMatch(lightHtml, /noEffectGuidance/);
+});
+
+test("ui: Training Coach renders explicit preservation wording", () => {
+  const html = gameScreen.render({
+    trainingMode: true,
+    trainingCoachMode: "full",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 2,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["water", "earth", "earth"],
+      opponentHand: ["fire", "wind"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 1, water: 0, earth: 0, wind: 1 },
+        tacticalRead: ["fire/wind most remaining"],
+        tacticalPriority: {
+          kind: "preservation_based",
+          element: "earth",
+          avoidElement: "water",
+          targetOpponentElement: "fire",
+          message: "Save Water for their remaining Fire cards."
+        },
+        suggestion: {
+          kind: "avoid",
+          element: "water",
+          reason: "Save Water for their remaining Fire cards.",
+          confidence: "likely"
+        },
+        riskNote: null,
+        confidence: "likely",
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /Coach Advice/);
+  assert.match(html, /Avoid: Water/);
+  assert.match(html, /Save Water for their remaining Fire cards\./);
+  assert.doesNotMatch(html, /Focus on|Consider|Use Water now/);
+  assert.doesNotMatch(html, /preservation_based|tacticalPriority/);
+});
+
+test("ui: Training Coach renders cautious pattern wording only as secondary guidance", () => {
+  const context = {
+    trainingMode: true,
+    trainingCoachMode: "full",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "resolved", label: "Resolved" },
+      roundResult: "You win.",
+      round: 4,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire", "water"],
+      opponentHand: ["earth", "water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 0, water: 1, earth: 1, wind: 0 },
+        tacticalRead: ["water/earth most remaining"],
+        tacticalPriority: {
+          kind: "direct_win",
+          element: "fire",
+          avoidElement: null,
+          message: "Use Fire now for a direct win."
+        },
+        suggestion: {
+          kind: "safe",
+          element: "fire",
+          reason: "Use Fire now for a direct win.",
+          confidence: "certain"
+        },
+        patternRecognition: {
+          repeatedElementPattern: { element: "water", sampleCount: 4, observedCount: 3 },
+          responsePattern: null,
+          tieAvoidancePattern: null,
+          avoidancePattern: null,
+          confidence: "moderate",
+          sampleCount: 4,
+          message: "They have often used Water when it was available."
+        },
+        riskNote: null,
+        confidence: "certain",
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  };
+
+  const fullHtml = gameScreen.render(context);
+  assert.match(fullHtml, /Use Fire now for a direct win\./);
+  assert.match(fullHtml, /They have often used Water when it was available\./);
+  assert.ok(fullHtml.indexOf("Use Fire now for a direct win.") < fullHtml.indexOf("They have often used Water when it was available."));
+  assert.doesNotMatch(fullHtml, /will play|guaranteed because|Counterer|Repeater|Survivor|patternRecognition|repeatedElementPattern/i);
+
+  const lightHtml = gameScreen.render({ ...context, trainingCoachMode: "light" });
+  assert.match(lightHtml, /Use Fire now for a direct win\./);
+  assert.doesNotMatch(lightHtml, /They have often used Water when it was available\./);
 });
 
 test("ui: Training Coach light and off modes render scoped hint controls", () => {
@@ -27742,7 +27870,7 @@ test("ui: Training Complete payload renders local result and required actions wi
       winner: "p1",
       endReason: "normal",
       difficulty: "easy",
-      history: [{ result: "p1", warClashes: 2 }],
+      history: [{ p1Card: "fire", p2Card: "fire", result: "war", warClashes: 2 }],
       players: {
         p1: { hand: ["fire", "water"] },
         p2: { hand: ["earth"] }
@@ -27775,7 +27903,7 @@ test("ui: Training Complete payload renders local result and required actions wi
   assert.match(victoryPayload.bodyHtml, /TRAINING COMPLETE/);
   assert.match(victoryPayload.bodyHtml, /<h4 class="match-complete-outcome">Victory<\/h4>/);
   assert.match(defeatPayload.bodyHtml, /<h4 class="match-complete-outcome">Defeat<\/h4>/);
-  assert.match(victoryPayload.bodyHtml, /WAR pressure mattered/);
+  assert.match(victoryPayload.bodyHtml, /A tie could have forced a WAR they could not continue\./);
   assert.match(victoryPayload.bodyHtml, /id="match-complete-play-again"[^>]*>\s*Play Again/);
   assert.match(victoryPayload.bodyHtml, /id="match-complete-standard-pve"[^>]*>\s*Try Standard PvE/);
   assert.match(victoryPayload.bodyHtml, /id="match-complete-return-menu"[^>]*>\s*Return to Menu/);
@@ -27788,6 +27916,165 @@ test("ui: Training Complete payload renders local result and required actions wi
   assert.doesNotMatch(victoryPayload.bodyHtml, /Battle Report/);
   assert.doesNotMatch(victoryPayload.bodyHtml, /stars?/i);
   assert.doesNotMatch(victoryPayload.bodyHtml, /score/i);
+});
+
+test("ui: Training Complete learning review selects direct tactical lessons", () => {
+  const controller = createRendererController();
+  controller.gameController = { trainingMode: true };
+
+  const review = controller.buildTrainingCompleteLearningReview({
+    winner: "p1",
+    endReason: "normal",
+    history: [
+      { p1Card: "fire", p2Card: "earth", result: "p1", warClashes: 0 },
+      { p1Card: "wind", p2Card: "earth", result: "p2", warClashes: 0 }
+    ],
+    players: {
+      p1: { hand: ["water", "fire"] },
+      p2: { hand: ["water"] }
+    }
+  });
+
+  assert.equal(review.length, 2);
+  assert.equal(review[0].kind, "direct_tactical");
+  assert.equal(review[0].message, "Fire gave you a direct winning answer against their Earth.");
+  assert.equal(review[1].message, "Wind was vulnerable to their remaining Earth.");
+  assert.doesNotMatch(review.map((lesson) => lesson.message).join(" "), /great job|played perfectly|should have won|score|earned/i);
+});
+
+test("ui: Training Complete learning review selects fatigue and Forced Risk lessons", () => {
+  const controller = createRendererController();
+  controller.gameController = { trainingMode: true };
+
+  const payload = controller.buildTrainingCompleteModalPayload({
+    winner: "p2",
+    endReason: "hand_exhaustion",
+    history: [
+      { p1Card: "water", p2Card: "earth", result: "no_effect", warClashes: 0 },
+      { p1Card: "water", p2Card: "earth", result: "no_effect", warClashes: 0 }
+    ],
+    players: {
+      p1: { hand: ["fire"] },
+      p2: { hand: ["wind"] }
+    }
+  });
+
+  assert.match(payload.bodyHtml, /Water fatigue reduced your next-turn options\./);
+  assert.match(payload.bodyHtml, /You faced a Forced Risk when only one legal card remained\./);
+  assert.equal((payload.bodyHtml.match(/data-training-complete-observations/g) ?? []).length, 1);
+});
+
+test("ui: Training Complete learning review selects WAR pressure lessons without hidden leaks", () => {
+  const controller = createRendererController();
+  controller.gameController = { trainingMode: true };
+
+  const payload = controller.buildTrainingCompleteModalPayload({
+    winner: "p1",
+    endReason: "normal",
+    history: [
+      {
+        p1Card: "fire",
+        p2Card: "fire",
+        result: "war",
+        warClashes: 2,
+        warPileCards: [{ owner: "p2", element: "water", faceDown: true }],
+        hiddenRngSeed: "secret"
+      },
+      { p1Card: "water", p2Card: "earth", result: "no_effect", warClashes: 0 }
+    ],
+    players: {
+      p1: { hand: ["earth", "wind"] },
+      p2: { hand: ["water", "wind"] }
+    }
+  });
+
+  assert.match(payload.bodyHtml, /A late WAR changed the available-card balance\./);
+  assert.doesNotMatch(payload.bodyHtml, /faceDown|warPileCards|hiddenRngSeed|secret|Counterer|Repeater|Survivor|AI prefers/i);
+});
+
+test("ui: Training Complete learning review selects board-state and fallback lessons", () => {
+  const controller = createRendererController();
+  controller.gameController = { trainingMode: true };
+
+  const boardStatePayload = controller.buildTrainingCompleteModalPayload({
+    winner: "p1",
+    endReason: "normal",
+    history: [
+      { p1Card: "fire", p2Card: "wind", result: "no_effect", warClashes: 0 },
+      { p1Card: "wind", p2Card: "wind", result: "war", warClashes: 0 }
+    ],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    }
+  });
+  assert.match(boardStatePayload.bodyHtml, /Wind was exhausted; it could not appear again\./);
+
+  const noEffectPayload = controller.buildTrainingCompleteModalPayload({
+    winner: "p1",
+    endReason: "normal",
+    history: [{ p1Card: "fire", p2Card: "wind", result: "no_effect", warClashes: 0 }],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    }
+  });
+  assert.match(noEffectPayload.bodyHtml, /A no-effect result avoided a direct loss but did not capture cards\./);
+
+  const fallbackPayload = controller.buildTrainingCompleteModalPayload({
+    winner: "p2",
+    endReason: "normal",
+    history: [],
+    players: {
+      p1: { hand: [] },
+      p2: { hand: [] }
+    }
+  });
+  assert.match(fallbackPayload.bodyHtml, /Review the revealed cards and Coach notes to spot future advantages\./);
+});
+
+test("ui: Training Complete learning review caps lessons and preserves non-Training completion UI", () => {
+  const controller = createRendererController();
+  controller.gameController = { trainingMode: true };
+  const trainingPayload = controller.buildTrainingCompleteModalPayload({
+    winner: "p1",
+    endReason: "hand_exhaustion",
+    history: [
+      { p1Card: "fire", p2Card: "earth", result: "p1", warClashes: 0 },
+      { p1Card: "water", p2Card: "water", result: "war", warClashes: 2 },
+      { p1Card: "water", p2Card: "fire", result: "p1", warClashes: 0 },
+      { p1Card: "wind", p2Card: "earth", result: "p2", warClashes: 0 }
+    ],
+    players: {
+      p1: { hand: ["fire"] },
+      p2: { hand: [] }
+    }
+  });
+
+  const lessonCount = (trainingPayload.bodyHtml.match(/<section class="match-complete-meta" data-training-complete-observations="true">[\s\S]*?<\/section>/)?.[0].match(/<p>/g) ?? []).length;
+  assert.equal(lessonCount, 2);
+  assert.match(trainingPayload.bodyHtml, /id="match-complete-play-again"[^>]*>\s*Play Again/);
+  assert.match(trainingPayload.bodyHtml, /id="match-complete-standard-pve"[^>]*>\s*Try Standard PvE/);
+  assert.match(trainingPayload.bodyHtml, /id="match-complete-return-menu"[^>]*>\s*Return to Menu/);
+  assert.doesNotMatch(trainingPayload.bodyHtml, /XP Gained|Tokens Gained|Chest|Achievement|Challenge|Battle Report|Cosmetic|earned|score|stars?/i);
+
+  controller.gameController = { trainingMode: false };
+  const normalPayload = controller.buildMatchCompleteModalPayload(
+    "pve",
+    {
+      winner: "p1",
+      endReason: "normal",
+      difficulty: "normal",
+      history: [{ p1Card: "fire", p2Card: "earth", result: "p1", warClashes: 0 }],
+      players: {
+        p1: { hand: ["fire"] },
+        p2: { hand: ["water"] }
+      }
+    },
+    { stats: { xpGained: 0, tokensGained: 0, warsEntered: 0, longestWar: 0 } }
+  );
+  assert.notEqual(normalPayload.title, "TRAINING COMPLETE");
+  assert.doesNotMatch(normalPayload.bodyHtml, /data-training-complete-observations/);
 });
 
 test("ui: PvE match complete payload shows max level bonus line when xp conversion occurs", () => {

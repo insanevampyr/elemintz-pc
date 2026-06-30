@@ -612,13 +612,13 @@ function getTrainingCoachStrategyNote(coach) {
   let note = String(coach?.planNote ?? plan.message ?? "").trim();
 
   if (kind === "pressure" && target && protecting) {
-    note = `Focus on ${target}. Your ${protecting} cards help cover that route.`;
+    note = `Use ${target} only when it stays safe. Save ${protecting} for their ${target} cards.`;
   } else if (kind === "bridge" && move && bridge) {
-    note = `${move} is resting. Use ${bridge} for now, then reassess.`;
+    note = `Use ${bridge} now while ${move} is resting.`;
   } else if (kind === "shift" && target) {
-    note = `That pool is exhausted. Look toward ${target} next.`;
+    note = `Use ${target} only when visible coverage supports it.`;
   } else if (kind === "preserve" && protecting && target) {
-    note = `Keep ${protecting} available as an answer to their ${target} cards.`;
+    note = `Save ${protecting} for their remaining ${target} cards.`;
   }
 
   return note;
@@ -633,6 +633,39 @@ function renderTrainingCoachStrategyNote(coach) {
   return note
     ? `
       <section class="game-match-taunt-section" data-training-coach-plan="true">
+        <p class="text-muted">${escapeHtml(note)}</p>
+      </section>
+    `
+    : "";
+}
+
+function getTrainingCoachPatternNote(coach) {
+  if (coach?.war?.active) {
+    return "";
+  }
+  return String(coach?.patternRecognition?.message ?? "").trim();
+}
+
+function hasStrongerTrainingCoachAdvice(coach) {
+  const priorityKind = String(coach?.tacticalPriority?.kind ?? "no_strong_read").trim();
+  if (
+    priorityKind === "direct_win" ||
+    priorityKind === "forced_war_elimination" ||
+    priorityKind === "avoid_dominated_loss" ||
+    priorityKind === "coverage_based" ||
+    priorityKind === "preservation_based"
+  ) {
+    return true;
+  }
+  const confidenceKind = String(coach?.outcomeConfidence?.kind ?? "none").trim();
+  return confidenceKind === "guaranteed_win" || confidenceKind === "strong_position";
+}
+
+function renderTrainingCoachPatternNote(coach) {
+  const note = getTrainingCoachPatternNote(coach);
+  return note
+    ? `
+      <section class="game-match-taunt-section" data-training-coach-pattern="true">
         <p class="text-muted">${escapeHtml(note)}</p>
       </section>
     `
@@ -742,6 +775,10 @@ function getLightCoachRead(coach) {
   if (confidenceLine && !coach?.war?.active) {
     return [confidenceLine];
   }
+  const patternLine = getTrainingCoachPatternNote(coach);
+  if (patternLine && !hasStrongerTrainingCoachAdvice(coach)) {
+    return [patternLine];
+  }
   const tacticalRead = Array.isArray(coach?.tacticalRead) ? coach.tacticalRead : [];
   return [String(tacticalRead[0] ?? "No strong read")];
 }
@@ -785,6 +822,7 @@ function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = 
     confidenceLine: !coach.war?.active ? coach.outcomeConfidence?.message ?? null : null,
     warLine: coach.war?.active ? coach.warSurvival?.message ?? null : null,
     planNote: coachMode === "full" && !coach.war?.active ? getTrainingCoachStrategyNote(coach) : null,
+    patternNote: coachMode === "full" && !coach.war?.active ? getTrainingCoachPatternNote(coach) : null,
     warActive: Boolean(coach.war?.active)
   };
 }
@@ -827,6 +865,7 @@ function renderTrainingCoachRail({ coach, mode = "full" } = {}) {
                   showSectionLabel: coachMode === "full"
                 })}
                 ${coachMode === "full" ? renderTrainingCoachStrategyNote(coach) : ""}
+                ${coachMode === "full" ? renderTrainingCoachPatternNote(coach) : ""}
                 ${coachMode === "full" ? renderTrainingCoachHelp(coach) : ""}
               `
               : `

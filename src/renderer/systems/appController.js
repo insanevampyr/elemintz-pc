@@ -49,6 +49,7 @@ import { buildFeaturedRotationCatalog, getStoreViewForProfile } from "../../stat
 import { deriveMatchStats } from "../../state/statsTracking.js";
 import { deriveLevelFromXp, MAX_LEVEL } from "../../state/levelRewardsSystem.js";
 import { listGauntletRivals, resolveGauntletRivalById } from "../../engine/gauntletRivals.js";
+import { BEATS_MAP, ELEMENTS, elementThatBeats } from "../../engine/index.js";
 import { createDefaultCategoryViewState } from "../ui/shared/cosmeticCategoryShared.js";
 import { bindCosmeticHoverPreview } from "../ui/shared/cosmeticHoverPreview.js";
 import { renderMatchCompleteVisualShell } from "../ui/shared/matchCompleteVisualShell.js";
@@ -7438,32 +7439,187 @@ export class AppController {
   }
 
   buildTrainingCompleteObservations(match) {
-    const observations = [];
+    return this.buildTrainingCompleteLearningReview(match).map((lesson) => lesson.message);
+  }
+
+  buildTrainingCompleteLearningReview(match) {
+    const lessons = [];
+    const addLesson = (kind, message, metadata = {}) => {
+      const normalizedMessage = String(message ?? "").trim();
+      if (!normalizedMessage || lessons.some((lesson) => lesson.message === normalizedMessage)) {
+        return;
+      }
+      lessons.push({ kind, message: normalizedMessage, ...metadata });
+    };
     const history = Array.isArray(match?.history) ? match.history : [];
-    const warRounds = history.filter((round) => Number(round?.warClashes ?? 0) > 0).length;
+    const revealedHistory = history
+      .map((round) => ({
+        p1Card: String(round?.p1Card ?? "").trim().toLowerCase(),
+        p2Card: String(round?.p2Card ?? "").trim().toLowerCase(),
+        result: String(round?.result ?? "").trim().toLowerCase(),
+        warClashes: Math.max(0, Number(round?.warClashes ?? 0) || 0)
+      }))
+      .filter((round) => ELEMENTS.includes(round.p1Card) || ELEMENTS.includes(round.p2Card));
+    const playerFinalHand = Array.isArray(match?.players?.p1?.hand) ? match.players.p1.hand : [];
+    const opponentFinalHand = Array.isArray(match?.players?.p2?.hand) ? match.players.p2.hand : [];
     const playerFinalCards = Math.max(0, Number(match?.players?.p1?.hand?.length ?? 0) || 0);
     const opponentFinalCards = Math.max(0, Number(match?.players?.p2?.hand?.length ?? 0) || 0);
     const endReason = String(match?.endReason ?? "").trim().toLowerCase();
 
+    const directWinRound = revealedHistory.find(
+      (round) => ELEMENTS.includes(round.p1Card) && BEATS_MAP[round.p1Card] === round.p2Card
+    );
+    if (directWinRound) {
+      addLesson(
+        "direct_tactical",
+        `${this.formatTrainingElementLabel(directWinRound.p1Card)} gave you a direct winning answer against their ${this.formatTrainingElementLabel(directWinRound.p2Card)}.`
+      );
+    }
+
+    const warTieRound = revealedHistory.find(
+      (round) =>
+        ELEMENTS.includes(round.p1Card) &&
+        round.p1Card === round.p2Card &&
+        Number(round.warClashes ?? 0) > 0 &&
+        (playerFinalCards <= 1 || opponentFinalCards <= 1 || endReason.includes("hand"))
+    );
+    if (warTieRound) {
+      addLesson("direct_tactical", "A tie could have forced a WAR they could not continue.");
+    }
+
+    const dominatedLossRound = revealedHistory.find(
+      (round) => ELEMENTS.includes(round.p1Card) && elementThatBeats(round.p1Card) === round.p2Card
+    );
+    if (dominatedLossRound) {
+      addLesson(
+        "direct_tactical",
+        `${this.formatTrainingElementLabel(dominatedLossRound.p1Card)} was vulnerable to their remaining ${this.formatTrainingElementLabel(dominatedLossRound.p2Card)}.`
+      );
+    }
+
+    const fatigueElement = this.getTrainingRepeatedPlayerElement(revealedHistory);
+    if (fatigueElement) {
+      addLesson(
+        "fatigue",
+        `${this.formatTrainingElementLabel(fatigueElement)} fatigue reduced your next-turn options.`
+      );
+    }
+
+    if (playerFinalCards === 1 || endReason.includes("hand")) {
+      addLesson("forced_risk", "You faced a Forced Risk when only one legal card remained.");
+    }
+
+    const preservedAnswer = this.getTrainingPreservedAnswer(playerFinalHand, opponentFinalHand);
+    if (preservedAnswer) {
+      addLesson(
+        "fatigue",
+        `${this.formatTrainingElementLabel(preservedAnswer.answerElement)} stayed available as an answer to their ${this.formatTrainingElementLabel(preservedAnswer.targetElement)} cards.`
+      );
+    }
+
+    const warRounds = revealedHistory.filter((round) => Number(round?.warClashes ?? 0) > 0).length;
     if (warRounds > 0) {
-      observations.push("WAR pressure mattered. Watch available cards before chasing ties.");
+      addLesson("war", "A late WAR changed the available-card balance.");
+      if (playerFinalCards <= 1 || opponentFinalCards <= 1 || endReason.includes("hand")) {
+        addLesson("war", "Another tie would have created elimination pressure.");
+      }
     }
 
-    if (endReason.includes("hand") || playerFinalCards === 0 || opponentFinalCards === 0) {
-      observations.push("Card count decided the ending. Preserve legal options before WAR chains.");
+    const exhaustedElement = this.getTrainingExhaustedOpponentElement(revealedHistory, opponentFinalHand);
+    if (exhaustedElement) {
+      addLesson(
+        "board_state",
+        `${this.formatTrainingElementLabel(exhaustedElement)} was exhausted; it could not appear again.`
+      );
     }
 
-    if (playerFinalCards > opponentFinalCards) {
-      observations.push("You finished with more available cards than the opponent.");
-    } else if (opponentFinalCards > playerFinalCards) {
-      observations.push("The opponent finished with more available cards.");
+    if (revealedHistory.some((round) => round.result === "no_effect")) {
+      addLesson("board_state", "A no-effect result avoided a direct loss but did not capture cards.");
     }
 
-    if (observations.length === 0) {
-      observations.push("Review the final element counts and look for safer tie-risk spots.");
+    const patternLesson = this.getTrainingPatternLearningLesson(revealedHistory, opponentFinalHand);
+    if (patternLesson) {
+      addLesson("pattern", patternLesson);
     }
 
-    return observations.slice(0, 2);
+    if (lessons.length === 0) {
+      addLesson("fallback", "Review the revealed cards and Coach notes to spot future advantages.");
+    }
+
+    return lessons.slice(0, 2);
+  }
+
+  formatTrainingElementLabel(element) {
+    const normalized = String(element ?? "").trim().toLowerCase();
+    return ELEMENTS.includes(normalized)
+      ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`
+      : "that element";
+  }
+
+  getTrainingRepeatedPlayerElement(revealedHistory = []) {
+    for (let index = 1; index < revealedHistory.length; index += 1) {
+      const current = revealedHistory[index]?.p1Card;
+      const previous = revealedHistory[index - 1]?.p1Card;
+      if (ELEMENTS.includes(current) && current === previous) {
+        return current;
+      }
+    }
+    return null;
+  }
+
+  getTrainingPreservedAnswer(playerFinalHand = [], opponentFinalHand = []) {
+    const playerCounts = this.buildTrainingElementCounts(playerFinalHand);
+    const opponentCounts = this.buildTrainingElementCounts(opponentFinalHand);
+    return ELEMENTS
+      .map((answerElement) => ({
+        answerElement,
+        targetElement: BEATS_MAP[answerElement],
+        answerCount: playerCounts[answerElement] ?? 0,
+        targetCount: opponentCounts[BEATS_MAP[answerElement]] ?? 0
+      }))
+      .filter((entry) => entry.answerCount > 0 && entry.targetCount > 0)
+      .sort((a, b) => b.targetCount - a.targetCount || ELEMENTS.indexOf(a.answerElement) - ELEMENTS.indexOf(b.answerElement))[0] ?? null;
+  }
+
+  getTrainingExhaustedOpponentElement(revealedHistory = [], opponentFinalHand = []) {
+    const finalCounts = this.buildTrainingElementCounts(opponentFinalHand);
+    const revealedCounts = this.buildTrainingElementCounts(revealedHistory.map((round) => round.p2Card));
+    return ELEMENTS.find(
+      (element) =>
+        Math.max(0, Number(finalCounts[element] ?? 0) || 0) === 0 &&
+        Math.max(0, Number(revealedCounts[element] ?? 0) || 0) >= 2
+    ) ?? null;
+  }
+
+  getTrainingPatternLearningLesson(revealedHistory = [], opponentFinalHand = []) {
+    const opponentCounts = this.buildTrainingElementCounts(revealedHistory.map((round) => round.p2Card));
+    const remainingCounts = this.buildTrainingElementCounts(opponentFinalHand);
+    const totalRevealed = revealedHistory.filter((round) => ELEMENTS.includes(round.p2Card)).length;
+    if (totalRevealed < 3) {
+      return null;
+    }
+    const repeated = ELEMENTS
+      .map((element) => ({
+        element,
+        count: opponentCounts[element] ?? 0,
+        remaining: remainingCounts[element] ?? 0
+      }))
+      .filter((entry) => entry.count >= 3 && entry.count / totalRevealed >= 0.6 && entry.remaining > 0)
+      .sort((a, b) => b.count - a.count || ELEMENTS.indexOf(a.element) - ELEMENTS.indexOf(b.element))[0] ?? null;
+    return repeated
+      ? `The opponent often used ${this.formatTrainingElementLabel(repeated.element)} when it was available.`
+      : null;
+  }
+
+  buildTrainingElementCounts(cards = []) {
+    const counts = Object.fromEntries(ELEMENTS.map((element) => [element, 0]));
+    for (const card of Array.isArray(cards) ? cards : []) {
+      const element = String(card ?? "").trim().toLowerCase();
+      if (ELEMENTS.includes(element)) {
+        counts[element] += 1;
+      }
+    }
+    return counts;
   }
 
   buildTrainingCompleteModalPayload(match) {
