@@ -578,14 +578,21 @@ function getTrainingCoachWarningConcept(line) {
   return normalized;
 }
 
-function getDistinctTrainingCoachWarnings(lines = [], primaryReason = "") {
+function getDistinctTrainingCoachWarnings(lines = [], primaryReason = "", selectedElement = null) {
   const primary = String(primaryReason ?? "").trim();
+  const selectedLabel = formatElement(selectedElement);
   const seenLines = new Set();
   const seenConcepts = new Set();
   const warnings = [];
   for (const value of Array.isArray(lines) ? lines : []) {
     const line = String(value ?? "").trim();
     if (!line || primary.includes(line)) {
+      continue;
+    }
+    if (line === "Tie risk still available.") {
+      continue;
+    }
+    if (selectedLabel && new RegExp(`\\bSave\\s+${selectedLabel}\\b`, "i").test(line)) {
       continue;
     }
     const concept = getTrainingCoachWarningConcept(line);
@@ -602,6 +609,18 @@ function getDistinctTrainingCoachWarnings(lines = [], primaryReason = "") {
   return warnings;
 }
 
+function suppressConflictingTrainingCoachNote(note, selectedElement = null) {
+  const line = String(note ?? "").trim();
+  const selectedLabel = formatElement(selectedElement);
+  if (!line) {
+    return "";
+  }
+  if (selectedLabel && new RegExp(`\\bSave\\s+${selectedLabel}\\b`, "i").test(line)) {
+    return "";
+  }
+  return line;
+}
+
 function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, showSectionLabel = true } = {}) {
   const suggestion = coach?.suggestion ?? {};
   const kind =
@@ -614,8 +633,11 @@ function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, sh
   const label = kind === "safe" ? "Safe" : kind === "use" ? "Use" : kind === "avoid" ? "Avoid" : kind === "forced" ? "Forced" : "No strong read";
   const element = suggestion.element ? `: ${formatElement(suggestion.element)}` : "";
   const reason = String(suggestion.reason ?? "").trim() || "No strong read.";
+  const showReason = kind !== "none" || (reason && reason !== "No strong read.");
   const showFutureOptionGuidance = !coach?.war?.active;
-  const optionNote = showFutureOptionGuidance ? String(coach?.futureOptionForecast?.note ?? "").trim() : "";
+  const optionNote = showFutureOptionGuidance
+    ? suppressConflictingTrainingCoachNote(coach?.futureOptionForecast?.note, suggestion.element)
+    : "";
   const optionWarning = showFutureOptionGuidance ? String(coach?.futureOptionForecast?.warning ?? "").trim() : "";
   const noEffectNote = showFutureOptionGuidance ? String(coach?.noEffectGuidance?.note ?? "").trim() : "";
   const noEffectWarning = showFutureOptionGuidance ? String(coach?.noEffectGuidance?.warning ?? "").trim() : "";
@@ -627,15 +649,16 @@ function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, sh
     ? []
     : getDistinctTrainingCoachWarnings(
         [coach?.tacticalPriority?.supportingMessage, coach?.riskNote, optionWarning, noEffectWarning, confidenceWarning],
-        reason
+        reason,
+        suggestion.element
       );
-  const hasWhyDetail = kind !== "none" || optionNote || noEffectNote || confidenceNote;
+  const hasWhyDetail = (showReason && kind !== "none") || optionNote || noEffectNote || confidenceNote;
   return `
     <section class="game-match-taunt-section" data-training-coach-suggestion="${escapeHtml(kind)}">
       ${showSectionLabel && kind !== "none" ? "<p><strong>Coach Advice</strong></p>" : ""}
       <p><strong>${escapeHtml(label)}${escapeHtml(element)}</strong></p>
       ${hasWhyDetail ? "<p><strong>Why</strong></p>" : ""}
-      <p class="text-muted">${escapeHtml(reason)}</p>
+      ${showReason ? `<p class="text-muted">${escapeHtml(reason)}</p>` : ""}
       ${confidenceNote ? `<p class="text-muted" data-training-coach-confidence="true">${escapeHtml(confidenceNote)}</p>` : ""}
       ${optionNote ? `<p class="text-muted" data-training-coach-option-note="true">${escapeHtml(optionNote)}</p>` : ""}
       ${noEffectNote ? `<p class="text-muted" data-training-coach-no-effect="true">${escapeHtml(noEffectNote)}</p>` : ""}

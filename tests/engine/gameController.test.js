@@ -1551,7 +1551,7 @@ test("trainingCoachEvaluator: active WAR no strong read remains only for compara
 
   assert.equal(coach.tacticalPriority.kind, "no_strong_read");
   assert.equal(coach.suggestion.kind, "none");
-  assert.equal(coach.suggestion.reason, "No strong read.");
+  assert.equal(coach.suggestion.reason, "Fire and Wind both expose you to visible counters.");
   assert.equal(coach.warSurvival.playerAvailableCards, 4);
   assert.equal(coach.warSurvival.opponentAvailableCards, 4);
 });
@@ -1774,7 +1774,57 @@ test("trainingCoachEvaluator: opponent fatigue affects tactical read when visibl
   });
 
   assert.equal(coach.fatigue.opponentBlockedElement, "earth");
-  assert.match(coach.tacticalRead.join(" | "), /Opponent earth unavailable from fatigue/);
+  assert.match(coach.tacticalRead.join(" | "), /Their Earth is resting this turn\./);
+});
+
+test("trainingCoachEvaluator: player fatigue is not rendered as opponent outlook", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "earth"],
+    opponentRemainingByElement: { fire: 1, water: 1, earth: 1, wind: 1 },
+    fatigue: { playerBlockedElement: "water" },
+    phase: "normal",
+    availableCards: { player: 4, opponent: 4 }
+  });
+
+  const read = coach.tacticalRead.join(" | ");
+  assert.equal(coach.fatigue.playerBlockedElement, "water");
+  assert.doesNotMatch(read, /water unavailable from fatigue/i);
+  assert.doesNotMatch(read, /Their Water is resting this turn\./);
+  assert.equal(coach.legalPlayableElements.includes("water"), false);
+});
+
+test("trainingCoachEvaluator: opponent fatigue affects opponent responses without blocking player moves", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth", "water"],
+    opponentRemainingByElement: { fire: 2, water: 0, earth: 0, wind: 0 },
+    fatigue: { opponentBlockedElement: "fire" },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+
+  const earthCoverage = coach.outcomeCoverage.find((entry) => entry.element === "earth");
+  assert.equal(coach.legalPlayableElements.includes("earth"), true);
+  assert.equal(earthCoverage.losesTo, 0);
+  assert.equal(earthCoverage.opponentTotalConsidered, 0);
+  assert.match(coach.tacticalRead.join(" | "), /Their Fire is resting this turn\./);
+});
+
+test("trainingCoachEvaluator: player fatigue does not remove opponent response coverage", () => {
+  const coach = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["earth"],
+    opponentRemainingByElement: { fire: 2, water: 0, earth: 0, wind: 0 },
+    fatigue: { playerBlockedElement: "fire" },
+    phase: "normal",
+    availableCards: { player: 2, opponent: 2 }
+  });
+
+  const earthCoverage = coach.outcomeCoverage.find((entry) => entry.element === "earth");
+  assert.equal(coach.legalPlayableElements.includes("fire"), false);
+  assert.equal(earthCoverage.losesTo, 2);
+  assert.equal(earthCoverage.opponentTotalConsidered, 2);
 });
 
 test("trainingCoachEvaluator: opponent fatigue wording is absent when not supplied", () => {
@@ -2297,7 +2347,32 @@ test("trainingCoachEvaluator: no-strong-read produces no forced recommendation",
 
   assert.equal(coach.suggestion.kind, "none");
   assert.equal(coach.suggestion.element, null);
+  assert.match(coach.suggestion.reason, /comparable visible coverage|expose you to visible counters|visible tie risk/);
   assert.equal(coach.confidence, "none");
+});
+
+test("trainingCoachEvaluator: generic tie risk is omitted unless materially relevant", () => {
+  const generic = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 1, water: 0, earth: 0, wind: 1 },
+    phase: "normal",
+    availableCards: { player: 4, opponent: 2 }
+  });
+
+  assert.doesNotMatch(generic.tacticalRead.join(" | "), /Tie risk still available/);
+
+  const materialWar = evaluateTrainingCoach({
+    trainingActive: true,
+    legalPlayableElements: ["fire", "water"],
+    opponentRemainingByElement: { fire: 1, water: 0, earth: 0, wind: 1 },
+    phase: "war",
+    availableCards: { player: 1, opponent: 2 },
+    war: { pileCount: 4, commitmentTotals: { player: 2, opponent: 2 } }
+  });
+
+  assert.match(materialWar.tacticalRead.join(" | "), /Tie risk still available/);
+  assert.match(materialWar.warSurvival.message, /Another tie could eliminate you/);
 });
 
 test("trainingCoachEvaluator: WAR state reports pressure and no face-down element identity", () => {

@@ -259,7 +259,7 @@ function buildFutureOptionForecast({
     note = `Playing ${elementLabel} now will fatigue ${elementLabel} next turn. This leaves ${futureOptionsLabel} available next turn.`;
   } else if (preservedAnswer && preservedAnswerLabel && preservedAnswerTargetLabel) {
     note = `Using ${elementLabel} keeps ${preservedAnswerLabel} available for their ${preservedAnswerTargetLabel} cards.`;
-  } else if (selectedEntry.reducesVisibleCounter) {
+  } else if (selectedEntry.reducesVisibleCounter && selectedEntry.element !== suggestion?.element) {
     note = `Save ${elementLabel} for their remaining ${targetLabel} cards.`;
   }
 
@@ -887,9 +887,11 @@ function buildWarSurvival({ warActive, available, war }) {
 function buildTacticalRead({
   opponentCounts,
   opponentFatigueElement,
-  playerFatigueElement,
   coverage,
-  recentOpponentMoves
+  recentOpponentMoves,
+  warActive = false,
+  tacticalPriority,
+  warSurvival
 }) {
   const read = [];
   for (const element of ELEMENTS) {
@@ -904,12 +906,8 @@ function buildTacticalRead({
     read.push(`${largestElements.join("/")} most remaining`);
   }
 
-  if (playerFatigueElement) {
-    read.push(`${playerFatigueElement} unavailable from fatigue`);
-  }
-
   if (opponentFatigueElement) {
-    read.push(`Opponent ${opponentFatigueElement} unavailable from fatigue`);
+    read.push(`Their ${formatElementLabel(opponentFatigueElement)} is resting this turn.`);
   }
 
   const recent = Array.isArray(recentOpponentMoves)
@@ -921,7 +919,15 @@ function buildTacticalRead({
   }
 
   const tieRisk = coverage.find((entry) => entry.tieExposure > 0);
-  if (tieRisk) {
+  const tieMaterial =
+    tacticalPriority?.kind === "forced_war_elimination" ||
+    (warActive && (
+      warSurvival?.playerCanSurviveAnotherTie === false ||
+      warSurvival?.opponentCanSurviveAnotherTie === false ||
+      warSurvival?.playerCanContinueCurrentWar === false ||
+      warSurvival?.opponentCanContinueCurrentWar === false
+    ));
+  if (tieRisk && tieMaterial) {
     read.push("Tie risk still available");
   }
 
@@ -1044,9 +1050,27 @@ function chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }) {
   return {
     kind: "none",
     element: null,
-    reason: "No strong read.",
+    reason: formatNoStrongReadReason(best, nextBest),
     confidence: "none"
   };
+}
+
+function formatNoStrongReadReason(best, nextBest) {
+  if (!best || !nextBest) {
+    return "No strong read.";
+  }
+  const bestLabel = formatElementLabel(best.element);
+  const nextLabel = formatElementLabel(nextBest.element);
+  if (!bestLabel || !nextLabel) {
+    return "No strong read.";
+  }
+  if (best.losesTo > 0 && nextBest.losesTo > 0) {
+    return `${bestLabel} and ${nextLabel} both expose you to visible counters.`;
+  }
+  if (best.tiesAgainst > 0 && nextBest.tiesAgainst > 0) {
+    return `${bestLabel} and ${nextLabel} both carry visible tie risk.`;
+  }
+  return `${bestLabel} and ${nextLabel} have comparable visible coverage.`;
 }
 
 function buildRiskNote({ coverage, suggestion, warActive, available, tieExposureTotal }) {
@@ -1245,10 +1269,15 @@ export function evaluateTrainingCoach(snapshot = {}) {
   const legalElements = uniqueLegalElements(snapshot.legalPlayableElements);
   const playerFatigueElement = normalizeElement(snapshot.fatigue?.playerBlockedElement);
   const opponentFatigueElement = normalizeElement(snapshot.fatigue?.opponentBlockedElement);
+  const opponentCoverageCounts = {
+    ...opponentRemainingByElement,
+    ...(opponentFatigueElement ? { [opponentFatigueElement]: 0 } : {})
+  };
+  const opponentTotalConsidered = sumCounts(opponentCoverageCounts);
   const recentPlayerMoves = Array.isArray(snapshot.recentPlayerMoves)
     ? snapshot.recentPlayerMoves.map(normalizeElement).filter(Boolean).slice(-6)
     : [];
-  const coverage = buildCoverage(legalElements, opponentRemainingByElement);
+  const coverage = buildCoverage(legalElements, opponentCoverageCounts);
   const phase = snapshot.phase === "war" ? "war" : "normal";
   const available = {
     player: Math.max(0, Number(snapshot.availableCards?.player ?? 0) || 0),
@@ -1263,12 +1292,12 @@ export function evaluateTrainingCoach(snapshot = {}) {
   const tacticalPriority = buildTacticalPriority({
     coverage,
     available,
-    opponentTotalCards,
+    opponentTotalCards: opponentTotalConsidered,
     playerCounts: playerRemainingByElement,
     warActive
   });
   const suggestion = withCoverageReason(
-    chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }),
+    chooseSuggestion({ coverage, opponentTotalCards: opponentTotalConsidered, tacticalPriority }),
     coverage,
     { warActive }
   );
@@ -1320,9 +1349,11 @@ export function evaluateTrainingCoach(snapshot = {}) {
     tacticalRead: buildTacticalRead({
       opponentCounts: opponentRemainingByElement,
       opponentFatigueElement,
-      playerFatigueElement,
       coverage,
-      recentOpponentMoves: snapshot.recentOpponentMoves
+      recentOpponentMoves: snapshot.recentOpponentMoves,
+      warActive,
+      tacticalPriority,
+      warSurvival
     }),
     coverage: coverage.map(({ element, defeats, beatenBy, tieExposure }) => ({
       element,

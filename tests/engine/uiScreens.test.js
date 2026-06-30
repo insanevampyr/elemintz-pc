@@ -8418,8 +8418,9 @@ test("ui: Training Mode renders live Coach panel instead of Expressions", () => 
   assert.match(html, /Why/);
   assert.match(html, /Water defeats 2 remaining cards, loses to 0, and has no tie risk\./);
   assert.match(html, /Guaranteed win visible\./);
-  assert.match(html, /Watch Out/);
-  assert.match(html, /Tie risk still available\./);
+  const visibleCoachHtml = html.match(/<aside class="match-taunt-shell game-match-taunt-rail"[\s\S]*?<\/aside>/)?.[0] ?? "";
+  assert.doesNotMatch(visibleCoachHtml, /Watch Out/);
+  assert.doesNotMatch(visibleCoachHtml, /Tie risk still available\./);
   assert.match(html, /Use Earth only when it stays safe\. Save Fire for their Earth cards\./);
   assert.doesNotMatch(html, /Focus on/);
   assert.doesNotMatch(html, /helps cover/);
@@ -8700,6 +8701,113 @@ test("ui: Training Coach renders explicit preservation wording", () => {
   assert.match(html, /Save Water for their remaining Fire cards\./);
   assert.doesNotMatch(html, /Focus on|Consider|Use Water now/);
   assert.doesNotMatch(html, /preservation_based|tacticalPriority/);
+});
+
+test("ui: Training Coach suppresses contradictory preservation and duplicate no-read text", () => {
+  const baseContext = {
+    trainingMode: true,
+    trainingCoachMode: "full",
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "AI" },
+    presentation: { phase: "idle", busy: false, selectedCardIndex: null },
+    cardImages: { p1: {}, p2: {} },
+    taunts: {},
+    game: {
+      trainingMode: true,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 2,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["water", "wind"],
+      opponentHand: ["fire", "water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null,
+      coach: {
+        opponentRemainingByElement: { fire: 1, water: 1, earth: 0, wind: 0 },
+        tacticalRead: ["fire/water most remaining"],
+        tacticalPriority: {
+          kind: "coverage_based",
+          element: "water",
+          supportingMessage: "Save Water for their remaining Fire cards.",
+          message: "Use Water now. It avoids their remaining Fire."
+        },
+        suggestion: {
+          kind: "use",
+          element: "water",
+          reason: "Use Water now. It avoids their remaining Fire.",
+          confidence: "strong"
+        },
+        futureOptionForecast: {
+          note: "Save Water for their remaining Fire cards.",
+          warning: null,
+          entries: []
+        },
+        riskNote: "Tie risk still available.",
+        confidence: "strong",
+        war: null
+      }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  };
+
+  const html = gameScreen.render(baseContext);
+  assert.match(html, /Use: Water/);
+  assert.match(html, /Use Water now\. It avoids their remaining Fire\./);
+  assert.doesNotMatch(html, /Save Water for their remaining Fire cards\./);
+  const visibleCoachHtml = html.match(/<aside class="match-taunt-shell game-match-taunt-rail"[\s\S]*?<\/aside>/)?.[0] ?? "";
+  assert.doesNotMatch(visibleCoachHtml, /Tie risk still available\./);
+
+  const otherElementHtml = gameScreen.render({
+    ...baseContext,
+    game: {
+      ...baseContext.game,
+      coach: {
+        ...baseContext.game.coach,
+        tacticalPriority: {
+          kind: "coverage_based",
+          element: "water",
+          supportingMessage: "Save Wind for their remaining Water cards.",
+          message: "Use Water now. It avoids their remaining Fire."
+        },
+        futureOptionForecast: {
+          note: "Save Wind for their remaining Water cards.",
+          warning: null,
+          entries: []
+        }
+      }
+    }
+  });
+  assert.match(otherElementHtml, /Save Wind for their remaining Water cards\./);
+
+  const noReadHtml = gameScreen.render({
+    ...baseContext,
+    game: {
+      ...baseContext.game,
+      coach: {
+        opponentRemainingByElement: { fire: 1, water: 1, earth: 0, wind: 0 },
+        tacticalRead: ["fire/water most remaining"],
+        suggestion: {
+          kind: "none",
+          element: null,
+          reason: "Fire and Wind both expose you to visible counters.",
+          confidence: "none"
+        },
+        riskNote: null,
+        confidence: "none",
+        war: null
+      }
+    }
+  });
+  assert.equal((noReadHtml.match(/No strong read/g) ?? []).length, 1);
+  assert.match(noReadHtml, /Fire and Wind both expose you to visible counters\./);
+  assert.doesNotMatch(noReadHtml, /No strong read\.<\/p>/);
 });
 
 test("ui: Training Coach renders cautious pattern wording only as secondary guidance", () => {
