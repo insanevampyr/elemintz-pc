@@ -464,7 +464,7 @@ test("chests: weekly completion now grants exactly one epic chest and does not d
   assert.equal(second.profile.chests.epic, 1);
 });
 
-test("chests: win streak grants epic at exactly 3, legendary at exactly 6, and a fresh later streak can grant epic again", async () => {
+test("chests: win streak grants basic at exactly 3, milestone at exactly 7, and a fresh later streak can grant basic again", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({
     dataDir,
@@ -494,7 +494,34 @@ test("chests: win streak grants epic at exactly 3, legendary at exactly 6, and a
   }
 
   let profile = await state.profiles.getProfile("StreakChestUser");
-  assert.equal(profile.chests.epic, 1);
+  assert.equal(profile.chests.basic, 1);
+  assert.equal(profile.chests.milestone, 0);
+  assert.equal(profile.chests.epic, 0);
+  assert.equal(profile.chests.legendary, 0);
+
+  for (let index = 0; index < 3; index += 1) {
+    await state.recordMatchResult({
+      username: "StreakChestUser",
+      matchState: winMatch,
+      perspective: "p1"
+    });
+    profile = await state.profiles.getProfile("StreakChestUser");
+    assert.equal(profile.chests.basic, 1);
+    assert.equal(profile.chests.milestone, 0);
+    assert.equal(profile.chests.epic, 0);
+    assert.equal(profile.chests.legendary, 0);
+  }
+
+  await state.recordMatchResult({
+    username: "StreakChestUser",
+    matchState: winMatch,
+    perspective: "p1"
+  });
+
+  profile = await state.profiles.getProfile("StreakChestUser");
+  assert.equal(profile.chests.basic, 1);
+  assert.equal(profile.chests.milestone, 1);
+  assert.equal(profile.chests.epic, 0);
   assert.equal(profile.chests.legendary, 0);
 
   await state.recordMatchResult({
@@ -504,19 +531,8 @@ test("chests: win streak grants epic at exactly 3, legendary at exactly 6, and a
   });
 
   profile = await state.profiles.getProfile("StreakChestUser");
-  assert.equal(profile.chests.epic, 1);
-
-  for (let index = 0; index < 2; index += 1) {
-    await state.recordMatchResult({
-      username: "StreakChestUser",
-      matchState: winMatch,
-      perspective: "p1"
-    });
-  }
-
-  profile = await state.profiles.getProfile("StreakChestUser");
-  assert.equal(profile.chests.epic, 1);
-  assert.equal(profile.chests.legendary, 1);
+  assert.equal(profile.chests.basic, 1);
+  assert.equal(profile.chests.milestone, 1);
 
   await state.recordMatchResult({
     username: "StreakChestUser",
@@ -533,8 +549,10 @@ test("chests: win streak grants epic at exactly 3, legendary at exactly 6, and a
   }
 
   profile = await state.profiles.getProfile("StreakChestUser");
-  assert.equal(profile.chests.epic, 2);
-  assert.equal(profile.chests.legendary, 1);
+  assert.equal(profile.chests.basic, 2);
+  assert.equal(profile.chests.milestone, 1);
+  assert.equal(profile.chests.epic, 0);
+  assert.equal(profile.chests.legendary, 0);
 });
 
 test("chests: legendary level milestones grant exactly once at 25-level intervals and stay stable on reload", async () => {

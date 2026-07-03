@@ -6562,7 +6562,7 @@ async function seedDay7ReadyProfile(coordinator, username) {
 
 test("multiplayer foundation: Day 7 daily login miss still grants 50 tokens and preserved XP without a chest", async () => {
   const { dataDir, coordinator, foundation } = await createDailyLoginDay7AuthorityHarness({
-    randomValues: [0.5, 0.5]
+    randomValues: [0.13]
   });
   let client = null;
 
@@ -6599,7 +6599,7 @@ test("multiplayer foundation: Day 7 daily login miss still grants 50 tokens and 
 
 test("multiplayer foundation: Day 7 daily login epic hit grants 50 tokens plus one Epic Chest", async () => {
   const { dataDir, coordinator, foundation } = await createDailyLoginDay7AuthorityHarness({
-    randomValues: [0.5, 0.05]
+    randomValues: [0.03]
   });
   let client = null;
 
@@ -10140,8 +10140,8 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
         winner: "host",
         isDraw: false,
         rewards: {
-          host: { tokens: 25, xp: 20, basicChests: 1 },
-          guest: { tokens: 5, xp: 5, basicChests: 0 }
+          host: { tokens: 12, xp: 10, basicChests: 1 },
+          guest: { tokens: 2, xp: 2, basicChests: 0 }
         },
         participants: {
           hostUsername: "HostRewardUser",
@@ -10154,22 +10154,22 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
         winner: "host",
         settledHostUsername: "HostRewardUser",
         settledGuestUsername: "GuestRewardUser",
-        hostRewards: { tokens: 25, xp: 20, basicChests: 1 },
-        guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+        hostRewards: { tokens: 12, xp: 10, basicChests: 1 },
+        guestRewards: { tokens: 2, xp: 2, basicChests: 0 }
       }
     });
     assert.equal(settleCalls.length, 1);
 
     const hostProfile = await coordinator.profiles.getProfile("HostRewardUser");
     const guestProfile = await coordinator.profiles.getProfile("GuestRewardUser");
-    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 25);
-    assert.equal(hostProfile.playerXP, 20);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 12);
+    assert.equal(hostProfile.playerXP, 10);
     assert.equal(hostProfile.chests.basic, 1);
     assert.deepEqual(hostProfile.onlineRewardSettlements?.appliedSettlementKeys, [
       `${room.roomCode}:match:1`
     ]);
-    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 5);
-    assert.equal(guestProfile.playerXP, 5);
+    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 2);
+    assert.equal(guestProfile.playerXP, 2);
     assert.equal(guestProfile.chests.basic, 0);
     assert.deepEqual(guestProfile.onlineRewardSettlements?.appliedSettlementKeys, [
       `${room.roomCode}:match:1`
@@ -10275,8 +10275,8 @@ test("multiplayer rewards: draw completion emits a server reward decision payloa
       winner: "draw",
       isDraw: true,
       rewards: {
-        host: { tokens: 10, xp: 10, basicChests: 0 },
-        guest: { tokens: 10, xp: 10, basicChests: 0 }
+        host: { tokens: 5, xp: 5, basicChests: 0 },
+        guest: { tokens: 5, xp: 5, basicChests: 0 }
       },
       participants: {
         hostUsername: "DrawRewardHost",
@@ -10293,10 +10293,10 @@ test("multiplayer rewards: draw completion emits a server reward decision payloa
 
     const hostProfile = await coordinator.profiles.getProfile("DrawRewardHost");
     const guestProfile = await coordinator.profiles.getProfile("DrawRewardGuest");
-    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 10);
-    assert.equal(hostProfile.playerXP, 10);
-    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 10);
-    assert.equal(guestProfile.playerXP, 10);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 5);
+    assert.equal(hostProfile.playerXP, 5);
+    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 5);
+    assert.equal(guestProfile.playerXP, 5);
     assert.deepEqual(hostProfile.onlineRewardSettlements?.appliedSettlementKeys, [
       `${room.roomCode}:match:1`
     ]);
@@ -10328,8 +10328,8 @@ test("multiplayer rewards: draw summary grants fallback rewards with no chest", 
       winner: "draw",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 10, xp: 10, basicChests: 0 },
-      guestRewards: { tokens: 10, xp: 10, basicChests: 0 }
+      hostRewards: { tokens: 5, xp: 5, basicChests: 0 },
+      guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
     }
   );
 });
@@ -10353,8 +10353,8 @@ test("multiplayer rewards: draw chest uses the draw drop chance for both players
       winner: "draw",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 10, xp: 10, basicChests: 1 },
-      guestRewards: { tokens: 10, xp: 10, basicChests: 0 }
+      hostRewards: { tokens: 5, xp: 5, basicChests: 1 },
+      guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
     }
   );
 });
@@ -10383,8 +10383,8 @@ test("multiplayer rewards: online boost scope can boost XP without changing toke
       winner: "host",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 25, xp: 40, basicChests: 0 },
-      guestRewards: { tokens: 5, xp: 10, basicChests: 0 }
+      hostRewards: { tokens: 12, xp: 20, basicChests: 0 },
+      guestRewards: { tokens: 2, xp: 4, basicChests: 0 }
     }
   );
 });
@@ -10415,8 +10415,8 @@ test("multiplayer rewards: explicit online target can boost online base rewards"
       winner: "host",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 37, xp: 40, basicChests: 0 },
-      guestRewards: { tokens: 7, xp: 10, basicChests: 0 }
+      hostRewards: { tokens: 18, xp: 20, basicChests: 0 },
+      guestRewards: { tokens: 3, xp: 4, basicChests: 0 }
     }
   );
 });
@@ -10445,8 +10445,8 @@ test("multiplayer rewards: online boost scope can boost tokens without changing 
       winner: "draw",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 15, xp: 10, basicChests: 0 },
-      guestRewards: { tokens: 15, xp: 10, basicChests: 0 }
+      hostRewards: { tokens: 7, xp: 5, basicChests: 0 },
+      guestRewards: { tokens: 7, xp: 5, basicChests: 0 }
     }
   );
 });
@@ -10475,8 +10475,8 @@ test("multiplayer rewards: online boost uses floor rounding for both host and gu
       winner: "host",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 37, xp: 30, basicChests: 0 },
-      guestRewards: { tokens: 7, xp: 7, basicChests: 0 }
+      hostRewards: { tokens: 18, xp: 15, basicChests: 0 },
+      guestRewards: { tokens: 3, xp: 3, basicChests: 0 }
     }
   );
 });
@@ -10498,9 +10498,39 @@ test("multiplayer rewards: winner chest is chance-based and not guaranteed", () 
       winner: "host",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 25, xp: 20, basicChests: 0 },
-      guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+      hostRewards: { tokens: 12, xp: 10, basicChests: 0 },
+      guestRewards: { tokens: 2, xp: 2, basicChests: 0 }
     }
+  );
+});
+
+test("multiplayer rewards: winner basic chest uses the 10 percent online chance", () => {
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "host"
+      },
+      {
+        random: () => 0.099,
+        logger: { info: () => {} }
+      }
+    ).hostRewards,
+    { tokens: 12, xp: 10, basicChests: 1 }
+  );
+
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "host"
+      },
+      {
+        random: () => 0.1,
+        logger: { info: () => {} }
+      }
+    ).hostRewards,
+    { tokens: 12, xp: 10, basicChests: 0 }
   );
 });
 
@@ -10523,9 +10553,67 @@ test("multiplayer rewards: loser chest uses the lower chance roll", () => {
       winner: "guest",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 5, xp: 5, basicChests: 1 },
-      guestRewards: { tokens: 25, xp: 20, basicChests: 0 }
+      hostRewards: { tokens: 2, xp: 2, basicChests: 1 },
+      guestRewards: { tokens: 12, xp: 10, basicChests: 0 }
     }
+  );
+});
+
+test("multiplayer rewards: loss and draw basic chests use the 2 percent online chance", () => {
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "guest"
+      },
+      {
+        random: () => 0.019,
+        logger: { info: () => {} }
+      }
+    ).hostRewards,
+    { tokens: 2, xp: 2, basicChests: 1 }
+  );
+
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "guest"
+      },
+      {
+        random: () => 0.02,
+        logger: { info: () => {} }
+      }
+    ).hostRewards,
+    { tokens: 2, xp: 2, basicChests: 0 }
+  );
+
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "draw"
+      },
+      {
+        random: () => 0.019,
+        logger: { info: () => {} }
+      }
+    ).hostRewards,
+    { tokens: 5, xp: 5, basicChests: 1 }
+  );
+
+  assert.deepEqual(
+    buildRewardSummary(
+      {
+        matchComplete: true,
+        winner: "draw"
+      },
+      {
+        random: () => 0.02,
+        logger: { info: () => {} }
+      }
+    ).hostRewards,
+    { tokens: 5, xp: 5, basicChests: 0 }
   );
 });
 
@@ -10549,8 +10637,8 @@ test("multiplayer rewards: duplicate settled usernames disable reward persistenc
       winner: "host",
       settledHostUsername: null,
       settledGuestUsername: null,
-      hostRewards: { tokens: 25, xp: 20, basicChests: 0 },
-      guestRewards: { tokens: 5, xp: 5, basicChests: 0 }
+      hostRewards: { tokens: 12, xp: 10, basicChests: 0 },
+      guestRewards: { tokens: 2, xp: 2, basicChests: 0 }
     }
   );
 });
@@ -10606,15 +10694,15 @@ test("multiplayer rewards: boosted online settlement is not boosted again during
     });
 
     assert.equal(first.duplicate, false);
-    assert.equal(first.rewards.tokens, 50);
-    assert.equal(first.rewards.xp, 40);
-    assert.equal(first.profile.tokens, DEFAULT_STARTING_TOKENS + 50);
-    assert.equal(first.profile.playerXP, 40);
+    assert.equal(first.rewards.tokens, 24);
+    assert.equal(first.rewards.xp, 20);
+    assert.equal(first.profile.tokens, DEFAULT_STARTING_TOKENS + 24);
+    assert.equal(first.profile.playerXP, 20);
     assert.equal(duplicate.duplicate, true);
 
     const profile = await coordinator.profiles.getProfile("BoostPersistHost");
-    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 50);
-    assert.equal(profile.playerXP, 40);
+    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 24);
+    assert.equal(profile.playerXP, 20);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
@@ -10636,8 +10724,8 @@ test("multiplayer rewards: reward decision payload is derived from authoritative
       winner: "guest",
       settledHostUsername: "HostDecisionUser",
       settledGuestUsername: "GuestDecisionUser",
-      hostRewards: { tokens: 5, xp: 5, basicChests: 0 },
-      guestRewards: { tokens: 25, xp: 20, basicChests: 1 }
+      hostRewards: { tokens: 2, xp: 2, basicChests: 0 },
+      guestRewards: { tokens: 12, xp: 10, basicChests: 1 }
     },
     {
       settlementKey: "AAA111:match:3",
@@ -10652,8 +10740,8 @@ test("multiplayer rewards: reward decision payload is derived from authoritative
     isDraw: false,
     settlementKey: "AAA111:match:3",
     rewards: {
-      host: { tokens: 5, xp: 5, basicChests: 0 },
-      guest: { tokens: 25, xp: 20, basicChests: 1 }
+      host: { tokens: 2, xp: 2, basicChests: 0 },
+      guest: { tokens: 12, xp: 10, basicChests: 1 }
     },
     participants: {
       hostUsername: "HostDecisionUser",
@@ -10679,8 +10767,8 @@ test("multiplayer rewards: settlementKey prevents duplicate persisted reward gra
           guestUsername: "OtherUser"
         },
         rewards: {
-          host: { tokens: 25, xp: 20, basicChests: 1 },
-          guest: { tokens: 5, xp: 5, basicChests: 0 }
+          host: { tokens: 12, xp: 10, basicChests: 1 },
+          guest: { tokens: 2, xp: 2, basicChests: 0 }
         }
       },
       participantRole: "host"
@@ -10695,8 +10783,8 @@ test("multiplayer rewards: settlementKey prevents duplicate persisted reward gra
           guestUsername: "OtherUser"
         },
         rewards: {
-          host: { tokens: 25, xp: 20, basicChests: 1 },
-          guest: { tokens: 5, xp: 5, basicChests: 0 }
+          host: { tokens: 12, xp: 10, basicChests: 1 },
+          guest: { tokens: 2, xp: 2, basicChests: 0 }
         }
       },
       participantRole: "host"
@@ -10705,8 +10793,8 @@ test("multiplayer rewards: settlementKey prevents duplicate persisted reward gra
     const profile = await coordinator.profiles.getProfile("DuplicateRewardUser");
     assert.equal(firstGrant.duplicate, false);
     assert.equal(secondGrant.duplicate, true);
-    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 25);
-    assert.equal(profile.playerXP, 20);
+    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 12);
+    assert.equal(profile.playerXP, 10);
     assert.equal(profile.chests.basic, 1);
     assert.deepEqual(profile.onlineRewardSettlements?.appliedSettlementKeys, ["ROOM99:match:1"]);
   } finally {
@@ -11190,8 +11278,8 @@ test("multiplayer rewards: reward application retry after a persistence failure 
             guestUsername: "RetryOtherUser"
           },
           rewards: {
-            host: { tokens: 25, xp: 20, basicChests: 1 },
-            guest: { tokens: 5, xp: 5, basicChests: 0 }
+            host: { tokens: 12, xp: 10, basicChests: 1 },
+            guest: { tokens: 2, xp: 2, basicChests: 0 }
           }
         },
         participantRole: "host"
@@ -11209,8 +11297,8 @@ test("multiplayer rewards: reward application retry after a persistence failure 
           guestUsername: "RetryOtherUser"
         },
         rewards: {
-          host: { tokens: 25, xp: 20, basicChests: 1 },
-          guest: { tokens: 5, xp: 5, basicChests: 0 }
+          host: { tokens: 12, xp: 10, basicChests: 1 },
+          guest: { tokens: 2, xp: 2, basicChests: 0 }
         }
       },
       participantRole: "host"
@@ -11218,8 +11306,8 @@ test("multiplayer rewards: reward application retry after a persistence failure 
 
     const profile = await coordinator.profiles.getProfile("RetryRewardUser");
     assert.equal(retryGrant.duplicate, false);
-    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 25);
-    assert.equal(profile.playerXP, 20);
+    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 12);
+    assert.equal(profile.playerXP, 10);
     assert.equal(profile.chests.basic, 1);
     assert.deepEqual(profile.onlineRewardSettlements?.appliedSettlementKeys, ["ROOM100:match:1"]);
   } finally {
@@ -11310,11 +11398,11 @@ test("multiplayer rewards: rematch reset clears prior reward settlement and allo
 
     const hostProfile = await coordinator.profiles.getProfile("HostRematchRewardUser");
     const guestProfile = await coordinator.profiles.getProfile("GuestRematchRewardUser");
-    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 50);
-    assert.equal(hostProfile.playerXP, 40);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 24);
+    assert.equal(hostProfile.playerXP, 20);
     assert.equal(hostProfile.chests.basic, 2);
-    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 10);
-    assert.equal(guestProfile.playerXP, 10);
+    assert.equal(guestProfile.tokens, DEFAULT_STARTING_TOKENS + 4);
+    assert.equal(guestProfile.playerXP, 4);
     assert.equal(guestProfile.chests.basic, 0);
   } finally {
     host?.disconnect();
@@ -12173,8 +12261,8 @@ test("multiplayer online challenges: completed match updates progress exactly on
 
     assert.equal(hostProfile.dailyChallenges.daily.progress.matchesWon, 2);
     assert.equal(hostProfile.dailyChallenges.daily.progress.matchesPlayed, 1);
-    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 31);
-    assert.equal(hostProfile.playerXP, 34);
+    assert.equal(hostProfile.tokens, DEFAULT_STARTING_TOKENS + 18);
+    assert.equal(hostProfile.playerXP, 24);
     assert.equal(guestProfile.dailyChallenges.daily.progress.matchesWon, 0);
     assert.equal(guestProfile.dailyChallenges.daily.progress.matchesPlayed, 1);
     assert.ok(hostSave.dailyRewards.some((item) => item.id === "daily_win_1_match"));

@@ -12998,9 +12998,13 @@ test("appController: gauntlet match win records persistent win stats without inc
                 gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
                 gauntletRivalsDefeated: payload.matchWon ? 1 : 0
               },
-              claimedMilestoneStreaks: payload.matchWon ? [3] : payload.claimedMilestoneStreaks ?? [],
-              milestoneRewards: payload.matchWon
-                ? [{ streak: 3, xp: 0, tokens: 25, chests: [] }]
+              claimedMilestoneStreaks:
+                payload.matchWon && payload.currentStreak === 3
+                  ? [3]
+                  : payload.claimedMilestoneStreaks ?? [],
+              milestoneRewards:
+                payload.matchWon && payload.currentStreak === 3
+                ? [{ streak: 3, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1 }] }]
                 : [],
               xpConversionTokenBonus: payload.matchWon ? 2 : 0
             };
@@ -13024,6 +13028,11 @@ test("appController: gauntlet match win records persistent win stats without inc
     try {
       app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
       await Promise.resolve();
+      app.gauntletRunState = {
+        ...app.gauntletRunState,
+        currentStreak: 2,
+        defeatedRivalIds: ["pyro_maniac", "stonewall"]
+      };
       app.roundPresentation = { phase: "reveal", busy: true, selectedCardIndex: 0 };
       app.screenFlow = "game";
       const originalStartGame = app.startGame.bind(app);
@@ -13034,7 +13043,11 @@ test("appController: gauntlet match win records persistent win stats without inc
 
       await app.gameController.onMatchComplete({
         match: { winner: "p1", endReason: "normal" },
-        persisted: { profile: { username: "GauntletWinner" } }
+        persisted: {
+          profile: { username: "GauntletWinner" },
+          matchXpDelta: 10,
+          matchTokenDelta: 12
+        }
       });
 
       assert.equal(modalManager.shows.length, 0);
@@ -13046,10 +13059,13 @@ test("appController: gauntlet match win records persistent win stats without inc
 
       assert.equal(modalManager.shows.length, 1);
       assert.equal(modalManager.shows[0].title, "Gauntlet Victory!");
-      assert.match(modalManager.shows[0].bodyHtml, /Streak: 1/);
+      assert.match(modalManager.shows[0].bodyHtml, /Streak: 3/);
       assert.match(modalManager.shows[0].bodyHtml, /Next Rival:/);
-      assert.match(modalManager.shows[0].bodyHtml, /Milestone Reward!/);
-      assert.match(modalManager.shows[0].bodyHtml, /\+25 Tokens/);
+      assert.match(modalManager.shows[0].bodyHtml, /Rewards Earned/);
+      assert.match(modalManager.shows[0].bodyHtml, /Match Reward: \+10 XP, \+12 Tokens/);
+      assert.match(modalManager.shows[0].bodyHtml, /Gauntlet Milestone 3: \+1 Basic Chest/);
+      assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Milestone Reward!/);
+      assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Gauntlet Milestone 3: \+25 Tokens/);
       assert.match(modalManager.shows[0].bodyHtml, /Max Level Bonus: \+2 Tokens/);
       assert.match(modalManager.shows[0].bodyHtml, /Continue Gauntlet/);
       assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Gauntlet Run Ended|Lost To/);
@@ -13082,7 +13098,7 @@ test("appController: gauntlet match win records persistent win stats without inc
           runStarted: false,
           matchWon: true,
           runEndedWithLoss: false,
-          currentStreak: 1,
+          currentStreak: 3,
           claimedMilestoneStreaks: []
         },
       {
@@ -13094,7 +13110,7 @@ test("appController: gauntlet match win records persistent win stats without inc
       assert.equal(app.profile.gauntletRuns, 1);
       assert.equal(app.profile.gauntletWins, 1);
       assert.equal(app.profile.gauntletRivalsDefeated, 1);
-      assert.equal(app.profile.gauntletBestStreak, 1);
+      assert.equal(app.profile.gauntletBestStreak, 3);
       assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, [3]);
       assert.equal(continuedStarts.length, 1);
       await continueButton.listeners.get("click")?.();
@@ -13151,11 +13167,15 @@ test("appController: gauntlet time-limit win records persistent win stats and co
                 gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
                 gauntletRivalsDefeated: payload.matchWon ? 1 : 0
               },
-              claimedMilestoneStreaks: payload.matchWon ? [3] : payload.claimedMilestoneStreaks ?? [],
-              milestoneRewards: payload.matchWon
-                ? [{ streak: 3, xp: 0, tokens: 25, chests: [] }]
+              claimedMilestoneStreaks:
+                payload.matchWon && payload.currentStreak === 3
+                  ? [3]
+                  : payload.claimedMilestoneStreaks ?? [],
+              milestoneRewards:
+                payload.matchWon && payload.currentStreak === 3
+                ? [{ streak: 3, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1 }] }]
                 : [],
-              xpConversionTokenBonus: payload.matchWon ? 2 : 0
+              xpConversionTokenBonus: payload.matchWon && payload.currentStreak === 3 ? 2 : 0
             };
           }
         }
@@ -13244,7 +13264,7 @@ test("appController: gauntlet time-limit win records persistent win stats and co
       assert.equal(app.profile.gauntletWins, 1);
       assert.equal(app.profile.gauntletRivalsDefeated, 1);
       assert.equal(app.profile.gauntletBestStreak, 1);
-      assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, [3]);
+      assert.deepEqual(app.gauntletRunState.claimedMilestoneStreaks, []);
       assert.equal(continuedStarts.length, 1);
       assert.equal(continuedStarts.at(-1)?.options?.gauntletContinue, true);
       assert.equal(app.pendingGauntletContinuation, null);

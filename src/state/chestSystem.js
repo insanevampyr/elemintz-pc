@@ -442,13 +442,13 @@ export function applyWinStreakChestGrants(
   const granted = [];
 
   if (next === 3 && prior < 3) {
-    nextProfile = grantChest(nextProfile, { chestType: EPIC_CHEST_TYPE, amount: 1 });
-    granted.push({ chestType: EPIC_CHEST_TYPE, amount: 1 });
+    nextProfile = grantChest(nextProfile, { chestType: DEFAULT_CHEST_TYPE, amount: 1 });
+    granted.push({ chestType: DEFAULT_CHEST_TYPE, amount: 1 });
   }
 
-  if (next === 6 && prior < 6) {
-    nextProfile = grantChest(nextProfile, { chestType: LEGENDARY_CHEST_TYPE, amount: 1 });
-    granted.push({ chestType: LEGENDARY_CHEST_TYPE, amount: 1 });
+  if (next === 7 && prior < 7) {
+    nextProfile = grantChest(nextProfile, { chestType: MILESTONE_CHEST_TYPE, amount: 1 });
+    granted.push({ chestType: MILESTONE_CHEST_TYPE, amount: 1 });
   }
 
   return {

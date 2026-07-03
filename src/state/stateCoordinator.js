@@ -115,12 +115,13 @@ const BLOOD_MATCH_LOSS_TOKENS = 1;
 const BLOOD_MATCH_RIVAL_NAME = "Countess Veyra & Ravena Moonfang";
 const VALID_ADMIN_CHEST_TYPES = new Set(["basic", "milestone", "epic", "legendary"]);
 const GAUNTLET_MILESTONE_REWARDS = Object.freeze([
-  Object.freeze({ streak: 3, tokens: 25 }),
-  Object.freeze({ streak: 5, chests: Object.freeze([{ chestType: DEFAULT_CHEST_TYPE, amount: 1 }]) }),
+  Object.freeze({ streak: 3, chests: Object.freeze([{ chestType: DEFAULT_CHEST_TYPE, amount: 1 }]) }),
+  Object.freeze({ streak: 5, tokens: 25 }),
   Object.freeze({ streak: 10, chests: Object.freeze([{ chestType: MILESTONE_CHEST_TYPE, amount: 1 }]) }),
   Object.freeze({ streak: 15, xp: 100, tokens: 75 }),
   Object.freeze({ streak: 20, chests: Object.freeze([{ chestType: EPIC_CHEST_TYPE, amount: 1 }]) })
 ]);
+const GAUNTLET_MILESTONE_CYCLE_LENGTH = 20;
 const LOCAL_PVP_DAILY_REWARD_CAP = 3;
 
 function profilesEqual(a, b) {
@@ -378,9 +379,24 @@ function applyGauntletMilestoneRewards(
 ) {
   const safeCurrentStreak = Math.max(0, Math.floor(Number(currentStreak ?? 0) || 0));
   const alreadyClaimed = new Set(normalizeGauntletClaimedMilestoneStreaks(claimedMilestoneStreaks));
-  const milestonesToGrant = GAUNTLET_MILESTONE_REWARDS.filter(
-    (entry) => safeCurrentStreak >= entry.streak && !alreadyClaimed.has(entry.streak)
-  );
+  const eligibleMilestones = [];
+  for (
+    let cycleStart = 0;
+    cycleStart < safeCurrentStreak;
+    cycleStart += GAUNTLET_MILESTONE_CYCLE_LENGTH
+  ) {
+    for (const entry of GAUNTLET_MILESTONE_REWARDS) {
+      const absoluteStreak = cycleStart + entry.streak;
+      if (absoluteStreak > safeCurrentStreak) {
+        continue;
+      }
+      eligibleMilestones.push({
+        ...entry,
+        streak: absoluteStreak
+      });
+    }
+  }
+  const milestonesToGrant = eligibleMilestones.filter((entry) => !alreadyClaimed.has(entry.streak));
 
   if (milestonesToGrant.length === 0) {
     return {
@@ -1634,8 +1650,15 @@ export class StateCoordinator {
     let chestAwarded = null;
     const chestGrants = [];
 
-    for (const roll of rewardPlan?.chestRolls ?? []) {
-      if ((typeof random === "function" ? random() : Math.random()) < Number(roll?.chance ?? 0)) {
+    const chestRolls = Array.isArray(rewardPlan?.chestRolls) ? rewardPlan.chestRolls : [];
+    if (chestRolls.length > 0) {
+      const chestRollValue = typeof random === "function" ? Number(random()) : Math.random();
+      let chanceBand = 0;
+      for (const roll of chestRolls) {
+        chanceBand += Math.max(0, Number(roll?.chance ?? 0) || 0);
+        if (chestRollValue >= chanceBand) {
+          continue;
+        }
         const chestType = String(roll?.chestType ?? "").trim() || DEFAULT_CHEST_TYPE;
         workingProfile = grantChest(workingProfile, { chestType, amount: 1 });
         chestAwarded = {

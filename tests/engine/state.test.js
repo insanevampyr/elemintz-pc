@@ -722,7 +722,7 @@ test("state: gauntlet stat updates increment runs once and wins/best streak sepa
   assert.equal(profile.gauntletLosses, 0);
 });
 
-test("state: gauntlet 3-streak grants +25 tokens once", async () => {
+test("state: gauntlet 3-streak grants 1 basic chest once", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
 
@@ -743,15 +743,18 @@ test("state: gauntlet 3-streak grants +25 tokens once", async () => {
     claimedMilestoneStreaks: [3]
   });
 
-  assert.equal(awarded.tokenDelta, 25);
-  assert.equal(awarded.profile.tokens, DEFAULT_STARTING_TOKENS + 25);
-  assert.deepEqual(awarded.chestGrants, []);
+  assert.equal(awarded.tokenDelta, 0);
+  assert.equal(awarded.profile.tokens, DEFAULT_STARTING_TOKENS);
+  assert.equal(awarded.profile.chests.basic, 1);
+  assert.deepEqual(awarded.chestGrants, [{ chestType: "basic", amount: 1 }]);
   assert.deepEqual(awarded.claimedMilestoneStreaks, [3]);
   assert.equal(noDuplicate.tokenDelta, 0);
-  assert.equal(noDuplicate.profile.tokens, DEFAULT_STARTING_TOKENS + 25);
+  assert.deepEqual(noDuplicate.chestGrants, []);
+  assert.equal(noDuplicate.profile.tokens, DEFAULT_STARTING_TOKENS);
+  assert.equal(noDuplicate.profile.chests.basic, 1);
 });
 
-test("state: gauntlet 5-streak grants 1 basic chest once", async () => {
+test("state: gauntlet 5-streak grants +25 tokens once", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
 
@@ -766,8 +769,10 @@ test("state: gauntlet 5-streak grants 1 basic chest once", async () => {
     claimedMilestoneStreaks: [3]
   });
 
-  assert.equal(awarded.profile.chests.basic, 1);
-  assert.deepEqual(awarded.chestGrants, [{ chestType: "basic", amount: 1 }]);
+  assert.equal(awarded.tokenDelta, 25);
+  assert.equal(awarded.profile.tokens, DEFAULT_STARTING_TOKENS + 25);
+  assert.equal(awarded.profile.chests.basic, 0);
+  assert.deepEqual(awarded.chestGrants, []);
   assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5]);
 });
 
@@ -884,30 +889,187 @@ test("state: gauntlet milestone rewards do not grant on non-win terminal results
   assert.equal(draw.profile.chests[MILESTONE_CHEST_TYPE], 0);
 });
 
-test("state: gauntlet streaks above 20 do not grant repeated or extra milestone rewards", async () => {
+test("state: gauntlet repeatable milestone ladder grants later-cycle rewards at absolute streaks only", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
 
   await state.recordGauntletStats({
-    username: "GauntletAboveTwentyUser",
+    username: "GauntletRepeatCycleUser",
     runStarted: true
   });
 
-  const awarded = await state.recordGauntletStats({
-    username: "GauntletAboveTwentyUser",
+  const streak21 = await state.recordGauntletStats({
+    username: "GauntletRepeatCycleUser",
     matchWon: true,
     currentStreak: 21,
     claimedMilestoneStreaks: [3, 5, 10, 15, 20]
   });
+  const streak22 = await state.recordGauntletStats({
+    username: "GauntletRepeatCycleUser",
+    matchWon: true,
+    currentStreak: 22,
+    claimedMilestoneStreaks: streak21.claimedMilestoneStreaks
+  });
+  const streak23 = await state.recordGauntletStats({
+    username: "GauntletRepeatCycleUser",
+    matchWon: true,
+    currentStreak: 23,
+    claimedMilestoneStreaks: streak22.claimedMilestoneStreaks
+  });
+  const streak25 = await state.recordGauntletStats({
+    username: "GauntletRepeatCycleUser",
+    matchWon: true,
+    currentStreak: 25,
+    claimedMilestoneStreaks: streak23.claimedMilestoneStreaks
+  });
+  const streak30 = await state.recordGauntletStats({
+    username: "GauntletRepeatCycleUser",
+    matchWon: true,
+    currentStreak: 30,
+    claimedMilestoneStreaks: streak25.claimedMilestoneStreaks
+  });
+  const streak35 = await state.recordGauntletStats({
+    username: "GauntletRepeatCycleUser",
+    matchWon: true,
+    currentStreak: 35,
+    claimedMilestoneStreaks: streak30.claimedMilestoneStreaks
+  });
+  const streak40 = await state.recordGauntletStats({
+    username: "GauntletRepeatCycleUser",
+    matchWon: true,
+    currentStreak: 40,
+    claimedMilestoneStreaks: streak35.claimedMilestoneStreaks
+  });
 
-  assert.equal(awarded.tokenDelta, 0);
+  assert.equal(streak21.tokenDelta, 0);
+  assert.equal(streak21.xpDelta, 0);
+  assert.deepEqual(streak21.chestGrants, []);
+  assert.deepEqual(streak21.milestoneRewards, []);
+  assert.deepEqual(streak21.claimedMilestoneStreaks, [3, 5, 10, 15, 20]);
+  assert.equal(streak22.tokenDelta, 0);
+  assert.equal(streak22.xpDelta, 0);
+  assert.deepEqual(streak22.chestGrants, []);
+  assert.deepEqual(streak22.milestoneRewards, []);
+  assert.deepEqual(streak22.claimedMilestoneStreaks, [3, 5, 10, 15, 20]);
+
+  assert.equal(streak23.tokenDelta, 0);
+  assert.equal(streak23.xpDelta, 0);
+  assert.deepEqual(streak23.chestGrants, [{ chestType: "basic", amount: 1 }]);
+  assert.deepEqual(streak23.milestoneRewards, [
+    {
+      streak: 23,
+      xp: 0,
+      tokens: 0,
+      chests: [{ chestType: "basic", amount: 1, chestLabel: "Basic Chest" }]
+    }
+  ]);
+  assert.deepEqual(streak23.claimedMilestoneStreaks, [3, 5, 10, 15, 20, 23]);
+
+  assert.equal(streak25.tokenDelta, 25);
+  assert.equal(streak25.xpDelta, 0);
+  assert.deepEqual(streak25.chestGrants, []);
+  assert.deepEqual(streak25.milestoneRewards, [{ streak: 25, xp: 0, tokens: 25, chests: [] }]);
+  assert.deepEqual(streak25.claimedMilestoneStreaks, [3, 5, 10, 15, 20, 23, 25]);
+
+  assert.equal(streak30.tokenDelta, 0);
+  assert.equal(streak30.xpDelta, 0);
+  assert.deepEqual(streak30.chestGrants, [{ chestType: MILESTONE_CHEST_TYPE, amount: 1 }]);
+  assert.deepEqual(streak30.claimedMilestoneStreaks, [3, 5, 10, 15, 20, 23, 25, 30]);
+
+  assert.equal(streak35.tokenDelta, 75);
+  assert.equal(streak35.xpDelta, 100);
+  assert.deepEqual(streak35.chestGrants, []);
+  assert.deepEqual(streak35.milestoneRewards, [{ streak: 35, xp: 100, tokens: 75, chests: [] }]);
+  assert.deepEqual(streak35.claimedMilestoneStreaks, [3, 5, 10, 15, 20, 23, 25, 30, 35]);
+
+  assert.equal(streak40.tokenDelta, 0);
+  assert.equal(streak40.xpDelta, 0);
+  assert.deepEqual(streak40.chestGrants, [{ chestType: EPIC_CHEST_TYPE, amount: 1 }]);
+  assert.deepEqual(streak40.claimedMilestoneStreaks, [3, 5, 10, 15, 20, 23, 25, 30, 35, 40]);
+  assert.equal(streak40.profile.chests.basic, 1);
+  assert.equal(streak40.profile.chests[MILESTONE_CHEST_TYPE], 1);
+  assert.equal(streak40.profile.chests[EPIC_CHEST_TYPE], 1);
+  assert.equal(streak40.profile.gauntletBestStreak, 40);
+  assert.equal(streak40.profile.gauntletWins, 7);
+  assert.equal(streak40.profile.gauntletRivalsDefeated, 7);
+});
+
+test("state: gauntlet restored runs grant crossed later-cycle milestones without duplicating claimed first-cycle milestones", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletRestoredCycleUser",
+    runStarted: true
+  });
+
+  const awarded = await state.recordGauntletStats({
+    username: "GauntletRestoredCycleUser",
+    matchWon: true,
+    currentStreak: 25,
+    claimedMilestoneStreaks: [3, 5, 10, 15, 20]
+  });
+
+  assert.equal(awarded.tokenDelta, 25);
   assert.equal(awarded.xpDelta, 0);
-  assert.deepEqual(awarded.chestGrants, []);
-  assert.deepEqual(awarded.milestoneRewards, []);
-  assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10, 15, 20]);
-  assert.equal(awarded.profile.gauntletBestStreak, 21);
-  assert.equal(awarded.profile.gauntletWins, 1);
-  assert.equal(awarded.profile.gauntletRivalsDefeated, 1);
+  assert.deepEqual(awarded.chestGrants, [{ chestType: "basic", amount: 1 }]);
+  assert.deepEqual(awarded.milestoneRewards, [
+    {
+      streak: 23,
+      xp: 0,
+      tokens: 0,
+      chests: [{ chestType: "basic", amount: 1, chestLabel: "Basic Chest" }]
+    },
+    { streak: 25, xp: 0, tokens: 25, chests: [] }
+  ]);
+  assert.deepEqual(awarded.claimedMilestoneStreaks, [3, 5, 10, 15, 20, 23, 25]);
+  assert.equal(awarded.profile.tokens, DEFAULT_STARTING_TOKENS + 25);
+  assert.equal(awarded.profile.chests.basic, 1);
+});
+
+test("state: gauntlet reprocessing an absolute milestone and starting a new run keep rewards scoped to the run ledger", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  await state.recordGauntletStats({
+    username: "GauntletRunLedgerUser",
+    runStarted: true
+  });
+  const firstRunMilestone = await state.recordGauntletStats({
+    username: "GauntletRunLedgerUser",
+    matchWon: true,
+    currentStreak: 23,
+    claimedMilestoneStreaks: [3, 5, 10, 15, 20]
+  });
+  const duplicate = await state.recordGauntletStats({
+    username: "GauntletRunLedgerUser",
+    matchWon: true,
+    currentStreak: 23,
+    claimedMilestoneStreaks: firstRunMilestone.claimedMilestoneStreaks
+  });
+  await state.recordGauntletStats({
+    username: "GauntletRunLedgerUser",
+    runStarted: true
+  });
+  const secondRunMilestone = await state.recordGauntletStats({
+    username: "GauntletRunLedgerUser",
+    matchWon: true,
+    currentStreak: 3,
+    claimedMilestoneStreaks: []
+  });
+
+  assert.equal(firstRunMilestone.tokenDelta, 0);
+  assert.deepEqual(firstRunMilestone.chestGrants, [{ chestType: "basic", amount: 1 }]);
+  assert.equal(duplicate.tokenDelta, 0);
+  assert.deepEqual(duplicate.milestoneRewards, []);
+  assert.equal(duplicate.profile.tokens, DEFAULT_STARTING_TOKENS);
+  assert.equal(duplicate.profile.chests.basic, 1);
+  assert.equal(secondRunMilestone.tokenDelta, 0);
+  assert.deepEqual(secondRunMilestone.chestGrants, [{ chestType: "basic", amount: 1 }]);
+  assert.deepEqual(secondRunMilestone.claimedMilestoneStreaks, [3]);
+  assert.equal(secondRunMilestone.profile.tokens, DEFAULT_STARTING_TOKENS);
+  assert.equal(secondRunMilestone.profile.chests.basic, 2);
+  assert.equal(secondRunMilestone.profile.gauntletRuns, 2);
 });
 
 test("state: gauntlet terminal non-win updates increment losses once", async () => {
@@ -1785,6 +1947,53 @@ test("state: online_pvp draw records games played, resets win streak, and avoids
   );
 });
 
+test("state: online_pvp streak chests grant basic at 3 and milestone at 7 without repeats or legacy epic/legendary grants", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.99)
+  });
+  const match = createRewardHookMatch({ winner: "p1", mode: "online_pvp" });
+
+  for (let index = 1; index <= 8; index += 1) {
+    await state.recordOnlineMatchResult({
+      username: "OnlineStreakChestUser",
+      perspective: "p1",
+      matchState: match,
+      settlementKey: `ONLINE-STREAK:${index}`
+    });
+
+    const profile = await state.profiles.getProfile("OnlineStreakChestUser");
+    if (index < 3) {
+      assert.equal(profile.chests.basic, 0);
+      assert.equal(profile.chests.milestone, 0);
+    } else if (index < 7) {
+      assert.equal(profile.chests.basic, 1);
+      assert.equal(profile.chests.milestone, 0);
+    } else {
+      assert.equal(profile.chests.basic, 1);
+      assert.equal(profile.chests.milestone, 1);
+    }
+    assert.equal(profile.chests.epic, 0);
+    assert.equal(profile.chests.legendary, 0);
+  }
+
+  const duplicate = await state.recordOnlineMatchResult({
+    username: "OnlineStreakChestUser",
+    perspective: "p1",
+    matchState: match,
+    settlementKey: "ONLINE-STREAK:7"
+  });
+  const profileAfterDuplicate = await state.profiles.getProfile("OnlineStreakChestUser");
+
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(profileAfterDuplicate.winStreak, 8);
+  assert.equal(profileAfterDuplicate.chests.basic, 1);
+  assert.equal(profileAfterDuplicate.chests.milestone, 1);
+  assert.equal(profileAfterDuplicate.chests.epic, 0);
+  assert.equal(profileAfterDuplicate.chests.legendary, 0);
+});
+
 test("state: local_pvp draw records games played and resets win streak through the shared stat path", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });
@@ -1881,6 +2090,112 @@ test("state: pve draw records games played and resets win streak through the sha
     quickWins: 0,
     timeLimitWins: 0
   });
+});
+
+test("state: tracked local PvE streak chests grant basic at 3 and milestone at 7 only", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.99)
+  });
+  const match = createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "normal" });
+
+  for (let index = 1; index <= 8; index += 1) {
+    await state.recordMatchResult({
+      username: "PveStreakChestUser",
+      perspective: "p1",
+      matchState: match,
+      settlementKey: `PVE-STREAK:${index}`
+    });
+
+    const profile = await state.profiles.getProfile("PveStreakChestUser");
+    if (index < 3) {
+      assert.equal(profile.chests.basic, 0);
+      assert.equal(profile.chests.milestone, 0);
+    } else if (index < 7) {
+      assert.equal(profile.chests.basic, 1);
+      assert.equal(profile.chests.milestone, 0);
+    } else {
+      assert.equal(profile.chests.basic, 1);
+      assert.equal(profile.chests.milestone, 1);
+    }
+    assert.equal(profile.chests.epic, 0);
+    assert.equal(profile.chests.legendary, 0);
+  }
+
+  await state.profiles.updateProfile("PveStreakResetUser", {
+    winStreak: 2,
+    bestWinStreak: 2
+  });
+  const loss = await state.recordMatchResult({
+    username: "PveStreakResetUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p2", mode: "pve", difficulty: "normal" }),
+    settlementKey: "PVE-STREAK:LOSS"
+  });
+  await state.profiles.updateProfile("PveDrawResetUser", {
+    winStreak: 2,
+    bestWinStreak: 2
+  });
+  const draw = await state.recordMatchResult({
+    username: "PveDrawResetUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "draw", mode: "pve", difficulty: "normal" }),
+    settlementKey: "PVE-STREAK:DRAW"
+  });
+
+  assert.equal(loss.profile.winStreak, 0);
+  assert.equal(draw.profile.winStreak, 0);
+  assert.equal(loss.profile.chests.basic, 0);
+  assert.equal(loss.profile.chests.milestone, 0);
+  assert.equal(draw.profile.chests.basic, 0);
+  assert.equal(draw.profile.chests.milestone, 0);
+  assert.equal(draw.profile.chests.epic, 0);
+  assert.equal(draw.profile.chests.legendary, 0);
+});
+
+test("state: Easy Practice and Training-like PvE results do not grant streak chests", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: constantRandom(0.01)
+  });
+
+  await state.profiles.updateProfile("PracticeStreakUser", {
+    winStreak: 2,
+    bestWinStreak: 2
+  });
+  await state.profiles.updateProfile("TrainingStreakUser", {
+    winStreak: 2,
+    bestWinStreak: 2
+  });
+
+  const easyPractice = await state.recordMatchResult({
+    username: "PracticeStreakUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "easy" }),
+    settlementKey: "PVE-EASY-PRACTICE-STREAK"
+  });
+  const trainingLike = await state.recordMatchResult({
+    username: "TrainingStreakUser",
+    perspective: "p1",
+    matchState: {
+      ...createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "easy" }),
+      trainingMode: true
+    },
+    settlementKey: "PVE-TRAINING-STREAK"
+  });
+
+  assert.equal(easyPractice.profile.winStreak, 2);
+  assert.equal(easyPractice.profile.chests.basic, 0);
+  assert.equal(easyPractice.profile.chests.milestone, 0);
+  assert.equal(easyPractice.profile.chests.epic, 0);
+  assert.equal(easyPractice.profile.chests.legendary, 0);
+  assert.equal(trainingLike.profile.winStreak, 2);
+  assert.equal(trainingLike.profile.chests.basic, 0);
+  assert.equal(trainingLike.profile.chests.milestone, 0);
+  assert.equal(trainingLike.profile.chests.epic, 0);
+  assert.equal(trainingLike.profile.chests.legendary, 0);
 });
 
 test("state: online_pvp rematch can settle the next completed match once and WAR counters persist", async () => {
@@ -3297,8 +3612,8 @@ test("state: completed online match stores latest battle with opponent lookup in
         guestUsername: "OnlineLatestGuest"
       },
       rewards: {
-        host: { tokens: 10, xp: 10, basicChests: 0 },
-        guest: { tokens: 25, xp: 20, basicChests: 1 }
+        host: { tokens: 2, xp: 2, basicChests: 0 },
+        guest: { tokens: 12, xp: 10, basicChests: 1 }
       }
     },
     participantRole: "guest"
@@ -4457,20 +4772,29 @@ test("state: daily login reward loops back to Day 1 after Day 7 on the next cons
   assert.equal(result.profile.dailyLoginStreakDay, 1);
 });
 
-test("state: day 7 legendary branch grants the base day 7 payout plus a legendary chest", async () => {
-  const dataDir = await createTempDataDir();
-  const state = new StateCoordinator({ dataDir });
-  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+async function seedDailyLoginDay7ReadyProfile(state, username, nowMs) {
   const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
 
-  await state.profiles.updateProfile("LegendaryLoginUser", (current) => ({
+  await state.profiles.updateProfile(username, (current) => ({
     ...current,
     lastDailyLoginClaimDate: previousWindowKey,
     dailyLoginStreakDay: 6
   }));
+}
+
+test("state: day 7 roll below 0.03 grants the base payout plus exactly one legendary chest", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+  let randomCalls = 0;
+
+  await seedDailyLoginDay7ReadyProfile(state, "LegendaryLoginUser", nowMs);
 
   const result = await state.claimDailyLoginReward("LegendaryLoginUser", nowMs, {
-    random: () => 0
+    random: () => {
+      randomCalls += 1;
+      return 0.029;
+    }
   });
 
   assert.equal(result.streakDay, 7);
@@ -4479,61 +4803,72 @@ test("state: day 7 legendary branch grants the base day 7 payout plus a legendar
   assert.deepEqual(result.chestGrants, [{ chestType: LEGENDARY_CHEST_TYPE, amount: 1 }]);
   assert.equal(result.chestAwarded?.chestType, LEGENDARY_CHEST_TYPE);
   assert.equal(result.profile.chests[LEGENDARY_CHEST_TYPE], 1);
-  assert.equal(result.profile.playerXP, 20);
-});
-
-test("state: day 7 epic branch grants the base day 7 payout plus an epic chest after a legendary miss", async () => {
-  const dataDir = await createTempDataDir();
-  const state = new StateCoordinator({ dataDir });
-  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
-  const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
-  const rolls = [0.5, 0];
-
-  await state.profiles.updateProfile("EpicLoginUser", (current) => ({
-    ...current,
-    lastDailyLoginClaimDate: previousWindowKey,
-    dailyLoginStreakDay: 6
-  }));
-
-  const result = await state.claimDailyLoginReward("EpicLoginUser", nowMs, {
-    random: () => rolls.shift() ?? 0.99
-  });
-
-  assert.equal(result.streakDay, 7);
-  assert.equal(result.rewardTokens, 50);
-  assert.equal(result.rewardXp, 20);
-  assert.deepEqual(result.chestGrants, [{ chestType: EPIC_CHEST_TYPE, amount: 1 }]);
-  assert.equal(result.chestAwarded?.chestType, EPIC_CHEST_TYPE);
-  assert.equal(result.profile.chests[EPIC_CHEST_TYPE], 1);
-  assert.equal(result.profile.playerXP, 20);
-});
-
-test("state: day 7 fallback grants the base 50 tokens and 20 XP when no chest drops", async () => {
-  const dataDir = await createTempDataDir();
-  const state = new StateCoordinator({ dataDir });
-  const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
-  const previousWindowKey = new Date(getDailyResetWindow(getDailyResetWindow(nowMs).lastResetMs - 1).lastResetMs).toISOString();
-  const rolls = [0.5, 0.5];
-
-  await state.profiles.updateProfile("FallbackLoginUser", (current) => ({
-    ...current,
-    lastDailyLoginClaimDate: previousWindowKey,
-    dailyLoginStreakDay: 6
-  }));
-
-  const result = await state.claimDailyLoginReward("FallbackLoginUser", nowMs, {
-    random: () => rolls.shift() ?? 0.99
-  });
-
-  assert.equal(result.streakDay, 7);
-  assert.equal(result.rewardTokens, 50);
-  assert.equal(result.rewardXp, 20);
-  assert.equal(result.chestAwarded, null);
-  assert.deepEqual(result.chestGrants, []);
-  assert.equal(result.profile.playerXP, 20);
   assert.equal(result.profile.chests[EPIC_CHEST_TYPE], 0);
-  assert.equal(result.profile.chests[LEGENDARY_CHEST_TYPE], 0);
+  assert.equal(result.profile.playerXP, 20);
+  assert.equal(randomCalls, 1);
 });
+
+for (const { name, rollValue } of [
+  { name: "at 0.03", rollValue: 0.03 },
+  { name: "below 0.13 and at or above 0.03", rollValue: 0.129 }
+]) {
+  test(`state: day 7 roll ${name} grants the base payout plus exactly one epic chest`, async () => {
+    const dataDir = await createTempDataDir();
+    const state = new StateCoordinator({ dataDir });
+    const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+    let randomCalls = 0;
+
+    await seedDailyLoginDay7ReadyProfile(state, `EpicLoginUser-${rollValue}`, nowMs);
+
+    const result = await state.claimDailyLoginReward(`EpicLoginUser-${rollValue}`, nowMs, {
+      random: () => {
+        randomCalls += 1;
+        return rollValue;
+      }
+    });
+
+    assert.equal(result.streakDay, 7);
+    assert.equal(result.rewardTokens, 50);
+    assert.equal(result.rewardXp, 20);
+    assert.deepEqual(result.chestGrants, [{ chestType: EPIC_CHEST_TYPE, amount: 1 }]);
+    assert.equal(result.chestAwarded?.chestType, EPIC_CHEST_TYPE);
+    assert.equal(result.profile.chests[EPIC_CHEST_TYPE], 1);
+    assert.equal(result.profile.chests[LEGENDARY_CHEST_TYPE], 0);
+    assert.equal(result.profile.playerXP, 20);
+    assert.equal(randomCalls, 1);
+  });
+}
+
+for (const { name, rollValue } of [
+  { name: "at 0.13", rollValue: 0.13 },
+  { name: "above 0.13", rollValue: 0.5 }
+]) {
+  test(`state: day 7 roll ${name} grants the base payout with no chest`, async () => {
+    const dataDir = await createTempDataDir();
+    const state = new StateCoordinator({ dataDir });
+    const nowMs = Date.parse("2026-03-12T01:00:00.000Z");
+    let randomCalls = 0;
+
+    await seedDailyLoginDay7ReadyProfile(state, `FallbackLoginUser-${rollValue}`, nowMs);
+
+    const result = await state.claimDailyLoginReward(`FallbackLoginUser-${rollValue}`, nowMs, {
+      random: () => {
+        randomCalls += 1;
+        return rollValue;
+      }
+    });
+
+    assert.equal(result.streakDay, 7);
+    assert.equal(result.rewardTokens, 50);
+    assert.equal(result.rewardXp, 20);
+    assert.equal(result.chestAwarded, null);
+    assert.deepEqual(result.chestGrants, []);
+    assert.equal(result.profile.playerXP, 20);
+    assert.equal(result.profile.chests[EPIC_CHEST_TYPE], 0);
+    assert.equal(result.profile.chests[LEGENDARY_CHEST_TYPE], 0);
+    assert.equal(randomCalls, 1);
+  });
+}
 
 test("state: legacy daily login profiles without streak fields normalize safely and continue at Day 2", async () => {
   const dataDir = await createTempDataDir();
@@ -4850,33 +5185,55 @@ test("state: hard PvE match rewards grant +5 XP and +5 tokens over normal PvE be
   assert.ok(normalResult.xpBreakdown.lines.every((line) => line.label !== "Hard AI Victory Bonus"));
 });
 
-test("state: hard PvE win has a slightly better basic chest chance than normal PvE", async () => {
-  assert.equal(HARD_PVE_WIN_CHEST_DROP_CHANCE, 0.12);
+test("state: hard PvE win uses the same 10 percent basic chest chance as normal PvE", async () => {
+  assert.equal(HARD_PVE_WIN_CHEST_DROP_CHANCE, 0.1);
 
-  const normalDataDir = await createTempDataDir();
-  const hardDataDir = await createTempDataDir();
-  const normalState = new StateCoordinator({
-    dataDir: normalDataDir,
-    random: constantRandom(0.11)
+  const normalHitDataDir = await createTempDataDir();
+  const hardHitDataDir = await createTempDataDir();
+  const normalMissDataDir = await createTempDataDir();
+  const hardMissDataDir = await createTempDataDir();
+  const normalHitState = new StateCoordinator({
+    dataDir: normalHitDataDir,
+    random: constantRandom(0.09)
   });
-  const hardState = new StateCoordinator({
-    dataDir: hardDataDir,
-    random: constantRandom(0.11)
+  const hardHitState = new StateCoordinator({
+    dataDir: hardHitDataDir,
+    random: constantRandom(0.09)
+  });
+  const normalMissState = new StateCoordinator({
+    dataDir: normalMissDataDir,
+    random: constantRandom(0.1)
+  });
+  const hardMissState = new StateCoordinator({
+    dataDir: hardMissDataDir,
+    random: constantRandom(0.1)
   });
 
-  const normalResult = await normalState.recordMatchResult({
-    username: "NormalChestChanceUser",
+  const normalHitResult = await normalHitState.recordMatchResult({
+    username: "NormalChestChanceHitUser",
     perspective: "p1",
     matchState: createRewardHookMatch({ winner: "p1", difficulty: "normal" })
   });
-  const hardResult = await hardState.recordMatchResult({
-    username: "HardChestChanceUser",
+  const hardHitResult = await hardHitState.recordMatchResult({
+    username: "HardChestChanceHitUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
+  });
+  const normalMissResult = await normalMissState.recordMatchResult({
+    username: "NormalChestChanceMissUser",
+    perspective: "p1",
+    matchState: createRewardHookMatch({ winner: "p1", difficulty: "normal" })
+  });
+  const hardMissResult = await hardMissState.recordMatchResult({
+    username: "HardChestChanceMissUser",
     perspective: "p1",
     matchState: createRewardHookMatch({ winner: "p1", difficulty: "hard" })
   });
 
-  assert.equal(normalResult.profile.chests.basic, 0);
-  assert.equal(hardResult.profile.chests.basic, 1);
+  assert.equal(normalHitResult.profile.chests.basic, 1);
+  assert.equal(hardHitResult.profile.chests.basic, 1);
+  assert.equal(normalMissResult.profile.chests.basic, 0);
+  assert.equal(hardMissResult.profile.chests.basic, 0);
 });
 
 test("state: hard PvE loss and draw do not receive the hard-mode win bonus", async () => {

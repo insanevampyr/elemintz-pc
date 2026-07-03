@@ -369,14 +369,14 @@ function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMES
     const hostBoostedRewards = applyBoostEventToBaseMatchRewards({
       boostEvent,
       matchState: { mode: "online_pvp" },
-      xp: 10,
-      tokens: 10
+      xp: 5,
+      tokens: 5
     });
     const guestBoostedRewards = applyBoostEventToBaseMatchRewards({
       boostEvent,
       matchState: { mode: "online_pvp" },
-      xp: 10,
-      tokens: 10
+      xp: 5,
+      tokens: 5
     });
     return {
       granted: true,
@@ -403,14 +403,14 @@ function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMES
     const hostBoostedRewards = applyBoostEventToBaseMatchRewards({
       boostEvent,
       matchState: { mode: "online_pvp" },
-      xp: 20,
-      tokens: 25
+      xp: 10,
+      tokens: 12
     });
     const guestBoostedRewards = applyBoostEventToBaseMatchRewards({
       boostEvent,
       matchState: { mode: "online_pvp" },
-      xp: 5,
-      tokens: 5
+      xp: 2,
+      tokens: 2
     });
     return {
       granted: true,
@@ -437,14 +437,14 @@ function buildRewardSummary(room, { random = Math.random, logger = DEFAULT_TIMES
     const hostBoostedRewards = applyBoostEventToBaseMatchRewards({
       boostEvent,
       matchState: { mode: "online_pvp" },
-      xp: 5,
-      tokens: 5
+      xp: 2,
+      tokens: 2
     });
     const guestBoostedRewards = applyBoostEventToBaseMatchRewards({
       boostEvent,
       matchState: { mode: "online_pvp" },
-      xp: 20,
-      tokens: 25
+      xp: 10,
+      tokens: 12
     });
     return {
       granted: true,

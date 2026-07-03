@@ -171,8 +171,8 @@ const DAILY_LOGIN_STREAK_MAX_DAY = 7;
 const DAY_7_DAILY_LOGIN_PREVIEW_LINES = Object.freeze([
   "Day 7 Streak Reward",
   "Guaranteed 50 tokens",
-  "10% chance for an Epic Chest",
-  "3% chance for a Legendary Chest"
+  "3% chance for a Legendary Chest",
+  "10% chance for an Epic Chest"
 ]);
 
 function getSafeDailyLoginStreakDay(value) {
@@ -7395,10 +7395,7 @@ export class AppController {
         ? `<p><strong>${escapeHtml(featuredRivalReward.label ?? "Featured Rival Bonus")}:</strong> +${Math.max(0, Number(featuredRivalReward.xpDelta ?? 0))} XP / +${Math.max(0, Number(featuredRivalReward.tokenDelta ?? 0))} tokens</p>`
         : "";
     const boostLine = this.buildMatchCompleteBoostSummaryLine(boostDisplay);
-    const chestLine =
-      difficulty === "hard"
-        ? `<p><strong>Basic Chest Win Chance:</strong> 12%</p>`
-        : `<p><strong>Basic Chest Win Chance:</strong> 10%</p>`;
+    const chestLine = `<p><strong>Basic Chest Win Chance:</strong> 10%</p>`;
     const maxLevelBonusLine =
       xpConversionTokenBonus > 0
         ? `<p><strong>Max Level Bonus:</strong> +${xpConversionTokenBonus} Tokens</p>`
@@ -8092,6 +8089,126 @@ export class AppController {
     return lines;
   }
 
+  formatRewardAmountLine(label, xp = 0, tokens = 0) {
+    const safeLabel = String(label ?? "").trim();
+    const safeXp = Math.max(0, Number(xp ?? 0));
+    const safeTokens = Math.max(0, Number(tokens ?? 0));
+    const parts = [];
+    if (safeXp > 0) {
+      parts.push(`+${safeXp} XP`);
+    }
+    if (safeTokens > 0) {
+      parts.push(`+${safeTokens} Tokens`);
+    }
+    return safeLabel && parts.length ? `${safeLabel}: ${parts.join(", ")}` : null;
+  }
+
+  formatChestGrantLine(label, grant) {
+    const safeLabel = String(label ?? "").trim();
+    const amount = Math.max(0, Number(grant?.amount ?? 0));
+    if (!safeLabel || amount <= 0) {
+      return null;
+    }
+    const chestLabel = String(grant?.chestLabel ?? this.getChestLabel(grant?.chestType)).trim() || "Chest";
+    return `${safeLabel}: +${amount} ${chestLabel}${amount === 1 ? "" : "s"}`;
+  }
+
+  buildGauntletRewardRecapLines(finalPersisted = {}) {
+    const result = finalPersisted ?? {};
+    const lines = [];
+    const addLine = (line) => {
+      const normalized = String(line ?? "").trim();
+      if (normalized && !lines.includes(normalized)) {
+        lines.push(normalized);
+      }
+    };
+
+    addLine(this.formatRewardAmountLine("Match Reward", result.matchXpDelta, result.matchTokenDelta));
+    const challengeRewards = [
+      ...(Array.isArray(result.dailyRewards) ? result.dailyRewards : []),
+      ...(Array.isArray(result.weeklyRewards) ? result.weeklyRewards : [])
+    ];
+    if (challengeRewards.length === 0) {
+      addLine(this.formatRewardAmountLine("Challenge Rewards", result.challengeXpDelta, result.challengeTokenDelta));
+    }
+
+    for (const reward of challengeRewards) {
+      addLine(this.formatRewardAmountLine(`${reward?.name ?? "Challenge"} Challenge`, reward?.rewardXp, reward?.rewardTokens));
+    }
+
+    const featuredRivalReward = result.featuredRivalReward ?? null;
+    if (featuredRivalReward?.granted) {
+      addLine(this.formatRewardAmountLine(
+        featuredRivalReward.label ?? "Featured Rival Bonus",
+        featuredRivalReward.xpDelta,
+        featuredRivalReward.tokenDelta
+      ));
+    }
+
+    for (const grant of Array.isArray(result.chestGrants) ? result.chestGrants : []) {
+      addLine(this.formatChestGrantLine("Chest Grant", grant));
+    }
+
+    const milestoneRewards = Array.isArray(result.gauntletMilestoneRewards)
+      ? result.gauntletMilestoneRewards
+      : [];
+    for (const reward of milestoneRewards) {
+      const streak = Math.max(0, Number(reward?.streak ?? 0));
+      const label = streak > 0 ? `Gauntlet Milestone ${streak}` : "Gauntlet Milestone";
+      addLine(this.formatRewardAmountLine(label, reward?.xp, reward?.tokens));
+      for (const chest of Array.isArray(reward?.chests) ? reward.chests : []) {
+        addLine(this.formatChestGrantLine(label, chest));
+      }
+    }
+
+    const levelRewards = [
+      ...(Array.isArray(result.levelRewards) ? result.levelRewards : []),
+      ...(Array.isArray(result.gauntletLevelRewards) ? result.gauntletLevelRewards : [])
+    ];
+    for (const reward of levelRewards) {
+      const label = String(reward?.label ?? "Level Reward").trim() || "Level Reward";
+      if (String(reward?.kind ?? "").trim().toLowerCase() === "tokens") {
+        addLine(this.formatRewardAmountLine(label, 0, reward?.amount));
+      } else if (String(reward?.kind ?? "").trim().toLowerCase() === "chest") {
+        addLine(this.formatChestGrantLine(label, { chestType: reward?.chestType, amount: reward?.amount ?? 1 }));
+      } else {
+        addLine(`${label}: ${String(reward?.name ?? reward?.amount ?? "Granted")}`);
+      }
+    }
+
+    for (const achievement of Array.isArray(result.unlockedAchievements) ? result.unlockedAchievements : []) {
+      addLine(`Achievement Unlocked: ${achievement?.name ?? achievement?.title ?? achievement?.id ?? "Achievement"}`);
+    }
+
+    for (const cosmetic of Array.isArray(result.grantedCosmetics) ? result.grantedCosmetics : []) {
+      addLine(`Cosmetic Unlocked: ${cosmetic?.name ?? cosmetic?.id ?? "Cosmetic"}`);
+    }
+
+    const xpConversionTokenBonus = Math.max(
+      0,
+      Number(result.gauntletXpConversionTokenBonus ?? result.xpConversionTokenBonus ?? 0)
+    );
+    if (xpConversionTokenBonus > 0) {
+      addLine(`Max Level Bonus: +${xpConversionTokenBonus} Tokens`);
+    }
+
+    return lines;
+  }
+
+  buildGauntletRewardRecapHtml(finalPersisted = {}) {
+    const lines = this.buildGauntletRewardRecapLines(finalPersisted);
+    if (!lines.length) {
+      return "";
+    }
+
+    return `
+      <section class="match-complete-meta match-complete-rewards" data-gauntlet-reward-recap="true">
+        <p><strong>Rewards Earned</strong></p>
+        ${lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+      </section>
+    `;
+  }
+
   buildMatchCompleteModalPayload(mode, match, finalPersisted, options = {}) {
     const names = this.getLocalNames();
     const roundsPlayed = Array.isArray(match?.history) ? match.history.length : 0;
@@ -8140,6 +8257,9 @@ export class AppController {
     const rightFinalHand = safeValue(match?.players?.p2?.hand?.length);
     const rewardSummary = this.buildMatchCompleteRewardSummary(mode, match, finalPersisted);
     const gauntletSummary = options?.gauntletSummary ?? null;
+    const gauntletRewardRecapHtml = gauntletSummary
+      ? this.buildGauntletRewardRecapHtml(finalPersisted)
+      : "";
     const isCrownfireFeaturedRival =
       mode === MATCH_MODE.PVE && String(this.pveFeaturedRivalId ?? "").trim().toLowerCase() === "crownfire_duelist";
 
@@ -8244,7 +8364,7 @@ export class AppController {
           <p><strong>Mode:</strong> ${escapeHtml(mode)}</p>
           <p><strong>End Reason:</strong> ${escapeHtml(match.endReason ?? "normal")}</p>
         </section>`,
-      rewardsHtml: rewardSummary,
+      rewardsHtml: gauntletSummary ? `${gauntletRewardRecapHtml}${rewardSummary}` : rewardSummary,
       actionsHtml: `
         <div class="match-complete-actions">
           <button id="match-complete-play-again" class="btn btn-primary">Play Again</button>
@@ -8290,12 +8410,24 @@ export class AppController {
     streak = 0,
     nextRival = null,
     milestoneRewards = [],
-    xpConversionTokenBonus = 0
+    xpConversionTokenBonus = 0,
+    rewardRecap = null
   } = {}) {
     this.prepareForFinalModal();
-    const milestoneLines = this.buildGauntletMilestoneRewardLines(milestoneRewards);
+    const rewardRecapLines = Array.isArray(rewardRecap)
+      ? rewardRecap
+      : this.buildGauntletRewardRecapLines({
+          gauntletMilestoneRewards: milestoneRewards,
+          gauntletXpConversionTokenBonus: xpConversionTokenBonus
+        });
+    const milestoneLines = rewardRecapLines.length > 0
+      ? rewardRecapLines
+      : this.buildGauntletMilestoneRewardLines(milestoneRewards);
     if (Math.max(0, Number(xpConversionTokenBonus ?? 0)) > 0) {
-      milestoneLines.push(`Max Level Bonus: +${Math.max(0, Number(xpConversionTokenBonus ?? 0))} Tokens`);
+      const maxLevelLine = `Max Level Bonus: +${Math.max(0, Number(xpConversionTokenBonus ?? 0))} Tokens`;
+      if (!milestoneLines.includes(maxLevelLine)) {
+        milestoneLines.push(maxLevelLine);
+      }
     }
     const bodyHtml = renderMatchCompleteVisualShell({
       variant: "modal",
@@ -8315,8 +8447,8 @@ export class AppController {
       summaryHtml:
         milestoneLines.length > 0
           ? `
-        <section class="match-complete-gauntlet-summary">
-          <p class="match-complete-helper">Milestone Reward!</p>
+        <section class="match-complete-gauntlet-summary" data-gauntlet-reward-recap="true">
+          <p class="match-complete-helper">Rewards Earned</p>
           <div class="match-complete-meta">
             ${milestoneLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
           </div>
@@ -9157,7 +9289,10 @@ export class AppController {
                 gauntletXpConversionTokenBonus: Math.max(
                   0,
                   Number(gauntletStatsResult.xpConversionTokenBonus ?? 0)
-                )
+                ),
+                gauntletLevelRewards: Array.isArray(gauntletStatsResult.levelRewards)
+                  ? gauntletStatsResult.levelRewards
+                  : []
               };
             }
           } else if (!isQuitForfeit) {
@@ -9192,7 +9327,8 @@ export class AppController {
             xpConversionTokenBonus: Math.max(
               0,
               Number(finalPersisted?.gauntletXpConversionTokenBonus ?? 0)
-            )
+            ),
+            rewardRecap: this.buildGauntletRewardRecapLines(finalPersisted)
           };
           if (this.roundPresentation.busy || this.screenFlow === "pass") {
             this.pendingGauntletVictoryPayload = gauntletVictoryPayload;

@@ -15462,8 +15462,8 @@ test("ui: menu shows Day 7 daily login preview copy when the streak milestone is
         previewLines: [
           "Day 7 Streak Reward",
           "Guaranteed 50 tokens",
-          "10% chance for an Epic Chest",
-          "3% chance for a Legendary Chest"
+          "3% chance for a Legendary Chest",
+          "10% chance for an Epic Chest"
         ]
       },
       daily: {
@@ -15480,8 +15480,10 @@ test("ui: menu shows Day 7 daily login preview copy when the streak milestone is
 
   assert.match(html, /Day 7 Streak Reward/);
   assert.match(html, /Guaranteed 50 tokens/);
-  assert.match(html, /10% chance for an Epic Chest/);
   assert.match(html, /3% chance for a Legendary Chest/);
+  assert.match(html, /10% chance for an Epic Chest/);
+  assert.ok(html.indexOf("3% chance for a Legendary Chest") < html.indexOf("10% chance for an Epic Chest"));
+  assert.doesNotMatch(html, /then Epic|after a Legendary miss|if Legendary misses/i);
 });
 
 test("ui: menu shows the Daily EleMintz Chest card between Daily Login and Challenges", () => {
@@ -28604,7 +28606,7 @@ test("ui: PvE match complete payload prefers authoritative live capture totals o
   assert.match(payload.bodyHtml, /<strong>Tokens Gained:<\/strong> 12/);
   assert.match(payload.bodyHtml, /<strong>Hard AI Victory Bonus:<\/strong> \+5 XP \/ \+5 tokens/);
   assert.match(payload.bodyHtml, /<strong>Boost Event:<\/strong> 2x XP \/ 1\.5x Tokens applied/);
-  assert.match(payload.bodyHtml, /<strong>Basic Chest Win Chance:<\/strong> 12%/);
+  assert.match(payload.bodyHtml, /<strong>Basic Chest Win Chance:<\/strong> 10%/);
   assert.doesNotMatch(payload.bodyHtml, /Crownfire First Win Bonus/);
 });
 
@@ -29141,6 +29143,158 @@ test("ui: Gauntlet intermediate victory and run-ended completion keep distinct a
     assert.match(runEndedPayload.bodyHtml, /id="match-complete-play-again"/);
     assert.match(runEndedPayload.bodyHtml, /id="match-complete-return-menu"/);
     assert.doesNotMatch(runEndedPayload.bodyHtml, /id="gauntlet-continue-btn"/);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: Gauntlet reward recap aggregates persisted match, challenge, milestone, level, achievement, and cosmetic grants", () => {
+  const controller = createRendererController();
+  const recapLines = controller.buildGauntletRewardRecapLines({
+    matchXpDelta: 10,
+    matchTokenDelta: 12,
+    dailyRewards: [{ name: "Win 1 Match", rewardXp: 4, rewardTokens: 2 }],
+    weeklyRewards: [{ name: "Reach A 3-Match Win Streak", rewardXp: 15, rewardTokens: 7 }],
+    chestGrants: [{ chestType: "basic", amount: 1 }],
+    gauntletMilestoneRewards: [
+      { streak: 5, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1, chestLabel: "Basic Chest" }] },
+      { streak: 15, xp: 100, tokens: 75, chests: [] }
+    ],
+    levelRewards: [{ kind: "tokens", amount: 25, label: "Level 10 Reward" }],
+    gauntletLevelRewards: [{ kind: "chest", chestType: "milestone", amount: 1, label: "Level 20 Reward" }],
+    unlockedAchievements: [{ name: "War Master" }],
+    grantedCosmetics: [{ name: "Storm Back" }],
+    xpConversionTokenBonus: 3
+  });
+
+  assert.deepEqual(recapLines, [
+    "Match Reward: +10 XP, +12 Tokens",
+    "Win 1 Match Challenge: +4 XP, +2 Tokens",
+    "Reach A 3-Match Win Streak Challenge: +15 XP, +7 Tokens",
+    "Chest Grant: +1 Basic Chest",
+    "Gauntlet Milestone 5: +1 Basic Chest",
+    "Gauntlet Milestone 15: +100 XP, +75 Tokens",
+    "Level 10 Reward: +25 Tokens",
+    "Level 20 Reward: +1 Milestone Chest",
+    "Achievement Unlocked: War Master",
+    "Cosmetic Unlocked: Storm Back",
+    "Max Level Bonus: +3 Tokens"
+  ]);
+  assert.ok(!recapLines.some((line) => line === "Challenge Rewards: +19 XP, +9 Tokens"));
+
+  const payload = controller.buildMatchCompleteModalPayload(
+    MATCH_MODE.PVE,
+    {
+      winner: "p2",
+      endReason: "normal",
+      difficulty: "hard",
+      history: [{ result: "p2" }],
+      players: {
+        p1: { hand: [] },
+        p2: { hand: ["earth"] }
+      }
+    },
+    {
+      stats: { cardsCaptured: 3, warsEntered: 1, longestWar: 2 },
+      matchXpDelta: 10,
+      matchTokenDelta: 12,
+      gauntletMilestoneRewards: [{ streak: 20, xp: 0, tokens: 0, chests: [{ chestType: "epic", amount: 1 }] }],
+      gauntletLevelRewards: [{ kind: "tokens", amount: 25, label: "Level 10 Reward" }],
+      unlockedAchievements: [{ name: "War Master" }],
+      grantedCosmetics: [{ name: "Storm Back" }]
+    },
+    {
+      gauntletSummary: {
+        rivalLabel: "Lost To",
+        rivalName: "Stone Warden",
+        finalStreak: 20,
+        bestStreak: 20,
+        rivalsDefeated: 20
+      }
+    }
+  );
+
+  assert.equal(payload.title, "Gauntlet Run Ended");
+  assert.match(payload.bodyHtml, /data-gauntlet-reward-recap="true"/);
+  assert.match(payload.bodyHtml, /Rewards Earned/);
+  assert.match(payload.bodyHtml, /Match Reward: \+10 XP, \+12 Tokens/);
+  assert.match(payload.bodyHtml, /Gauntlet Milestone 20: \+1 Epic Chest/);
+  assert.match(payload.bodyHtml, /Level 10 Reward: \+25 Tokens/);
+  assert.match(payload.bodyHtml, /Achievement Unlocked: War Master/);
+  assert.match(payload.bodyHtml, /Cosmetic Unlocked: Storm Back/);
+  assert.match(payload.bodyHtml, /id="match-complete-play-again"/);
+  assert.match(payload.bodyHtml, /id="match-complete-return-menu"/);
+  assert.doesNotMatch(payload.bodyHtml, /id="gauntlet-continue-btn"/);
+});
+
+test("ui: Gauntlet victory recap can show all persisted reward lines and run-ended loss clears pending victory state", () => {
+  const previousDocument = global.document;
+  const modalShows = [];
+  const continueButton = createFakeElement();
+  const returnButton = createFakeElement();
+  global.document = {
+    getElementById: (id) =>
+      id === "gauntlet-continue-btn"
+        ? continueButton
+        : id === "gauntlet-return-menu-btn"
+          ? returnButton
+          : null
+  };
+
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalShows.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  try {
+    controller.showGauntletVictoryModal({
+      streak: 15,
+      nextRival: { displayName: "Stone Warden", title: "Arena Rival" },
+      rewardRecap: [
+        "Match Reward: +10 XP, +12 Tokens",
+        "Gauntlet Milestone 15: +100 XP, +75 Tokens",
+        "Level 10 Reward: +25 Tokens"
+      ]
+    });
+
+    assert.equal(modalShows[0].title, "Gauntlet Victory!");
+    assert.match(modalShows[0].bodyHtml, /Rewards Earned/);
+    assert.match(modalShows[0].bodyHtml, /Match Reward: \+10 XP, \+12 Tokens/);
+    assert.match(modalShows[0].bodyHtml, /Gauntlet Milestone 15: \+100 XP, \+75 Tokens/);
+    assert.match(modalShows[0].bodyHtml, /Level 10 Reward: \+25 Tokens/);
+    assert.doesNotMatch(modalShows[0].bodyHtml, /Milestone Reward!/);
+
+    controller.pveGauntletMode = true;
+    controller.gauntletRunState = {
+      active: true,
+      currentStreak: 2,
+      defeatedRivalIds: ["ember_scout", "stone_warden"],
+      claimedMilestoneStreaks: [],
+      rivalBag: []
+    };
+    controller.pendingGauntletVictoryPayload = { streak: 99 };
+    controller.pendingGauntletContinuation = { mode: MATCH_MODE.PVE };
+    controller.pendingGauntletContinuationRequiresConfirm = true;
+
+    const completion = controller.handleGauntletMatchCompletion(
+      { winner: "p2", endReason: "normal" },
+      {
+        isGauntletMatch: true,
+        runState: controller.gauntletRunState,
+        rivalName: "Stone Warden"
+      }
+    );
+
+    assert.equal(completion.type, "ended");
+    assert.equal(completion.showSummary, true);
+    assert.equal(completion.finalStreak, 2);
+    assert.equal(controller.pendingGauntletVictoryPayload, null);
+    assert.equal(controller.pendingGauntletContinuation, null);
+    assert.equal(controller.pendingGauntletContinuationRequiresConfirm, false);
   } finally {
     global.document = previousDocument;
   }
