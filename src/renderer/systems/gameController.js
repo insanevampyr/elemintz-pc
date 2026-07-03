@@ -1398,14 +1398,14 @@ export class GameController {
           this.match.status === "completed" || Boolean(hostSubmit.room.matchComplete);
         const warContinues =
           hostSubmit.roundResult?.outcomeType === "war" && !matchCompleted;
+        const forcedWarExhaustionResolution = matchCompleted
+          ? null
+          : await this.maybeAutoResolveAuthoritativeWarExhaustion();
 
         if (matchCompleted) {
           await this.finalizeCompletedMatch();
-        } else if (warContinues) {
-          const forcedResolution = await this.maybeAutoResolveAuthoritativeWarExhaustion();
-          if (forcedResolution) {
-            return forcedResolution;
-          }
+        } else if (forcedWarExhaustionResolution) {
+          return forcedWarExhaustionResolution;
         } else if (this.trainingMode) {
           this.stopTimer();
           this.stopMatchClock();

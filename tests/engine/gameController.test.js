@@ -13995,6 +13995,268 @@ test("appController: gauntlet loss wrap-up survives async completion context res
   }
 });
 
+test("appController: delayed Gauntlet loss run-ended payload renders once after round presentation settles", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const gauntletStatCalls = [];
+  const modalManager = createModalCapture();
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletDelayedLoss";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletDelayedLoss", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+
+  const playAgainButton = createFakeDomElement();
+  const returnButton = createFakeDomElement();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: 2,
+                gauntletRuns: 1,
+                gauntletWins: 2,
+                gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
+                gauntletRivalsDefeated: 2
+              }
+            };
+          }
+        }
+      }
+    };
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "match-complete-play-again"
+          ? playAgainButton
+          : id === "match-complete-return-menu"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+
+    app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+    await Promise.resolve();
+    app.gauntletRunState = {
+      ...app.gauntletRunState,
+      currentStreak: 2,
+      defeatedRivalIds: ["pyro_maniac", "stonewall"],
+      claimedMilestoneStreaks: [3],
+      active: true
+    };
+    app.pendingGauntletVictoryPayload = { stale: true };
+    app.pendingGauntletContinuation = { mode: MATCH_MODE.PVE, options: { gauntletMode: true } };
+    app.pendingGauntletContinuationRequiresConfirm = true;
+    app.roundPresentation = { phase: "idle", busy: true, selectedCardIndex: null };
+    app.screenFlow = "game";
+    gauntletStatCalls.length = 0;
+
+    await app.gameController.onMatchComplete({
+      match: { winner: "p2", endReason: "normal" },
+      persisted: {
+        profile: { username: "GauntletDelayedLoss", gauntletBestStreak: 2 },
+        matchXpDelta: 2,
+        matchTokenDelta: 2
+      }
+    });
+
+    assert.equal(modalManager.shows.length, 0);
+    assert.ok(app.pendingMatchCompletePayload);
+    assert.equal(app.pendingMatchCompletePayload.title, "Gauntlet Run Ended");
+    assert.match(app.pendingMatchCompletePayload.bodyHtml, /Gauntlet Run Ended/);
+    assert.equal(app.pendingGauntletVictoryPayload, null);
+    assert.equal(app.pendingGauntletContinuation, null);
+    assert.equal(app.pendingGauntletContinuationRequiresConfirm, false);
+
+    app.handleGameUpdate();
+    assert.equal(modalManager.shows.length, 0);
+    assert.ok(app.pendingMatchCompletePayload);
+
+    app.roundPresentation = { phase: "idle", busy: false, selectedCardIndex: null };
+    app.screenFlow = "game";
+    app.handleGameUpdate();
+
+    assert.equal(modalManager.shows.length, 1);
+    assert.equal(modalManager.shows[0].title, "Gauntlet Run Ended");
+    assert.match(modalManager.shows[0].bodyHtml, /Gauntlet Run Ended/);
+    assert.match(modalManager.shows[0].bodyHtml, /Rewards Earned/);
+    assert.match(modalManager.shows[0].bodyHtml, /Match Reward: \+2 XP, \+2 Tokens/);
+    assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Gauntlet Victory|Continue Gauntlet/);
+    assert.equal(app.pendingMatchCompletePayload, null);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(modalManager.shows.length, 1);
+    assert.equal(gauntletStatCalls.length, 1);
+    assertGauntletStatCallPayload(
+      gauntletStatCalls[0],
+      {
+        username: "GauntletDelayedLoss",
+        runStarted: false,
+        matchWon: false,
+        runEndedWithLoss: true,
+        currentStreak: 0,
+        claimedMilestoneStreaks: []
+      },
+      {
+        matchState: { winner: "p2", endReason: "normal" },
+        battleReportAlreadyRecorded: true
+      }
+    );
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
+test("appController: delayed Gauntlet mutual-exhaustion draw run-ended payload renders once after round presentation settles", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const gauntletStatCalls = [];
+  const modalManager = createModalCapture();
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager,
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+  app.username = "GauntletDelayedDraw";
+  app.gauntletRandom = () => 0;
+  app.profile = { username: "GauntletDelayedDraw", equippedCosmetics: { background: "default_background" } };
+  app.applyPostMatchCosmeticRandomization = async () => {};
+  app.maybeEmitPveAiTaunt = () => {};
+  app.sound.playMatchComplete = () => {};
+  app.emitRewardToastsForResult = () => {};
+
+  const playAgainButton = createFakeDomElement();
+  const returnButton = createFakeDomElement();
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({}),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                username: payload.username,
+                gauntletBestStreak: 1,
+                gauntletRuns: 1,
+                gauntletWins: 1,
+                gauntletLosses: payload.runEndedWithLoss ? 1 : 0,
+                gauntletRivalsDefeated: 1
+              }
+            };
+          }
+        }
+      }
+    };
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "match-complete-play-again"
+          ? playAgainButton
+          : id === "match-complete-return-menu"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+
+    app.startGame(MATCH_MODE.PVE, { gauntletMode: true });
+    await Promise.resolve();
+    app.gauntletRunState = {
+      ...app.gauntletRunState,
+      currentStreak: 1,
+      defeatedRivalIds: ["pyro_maniac"],
+      claimedMilestoneStreaks: [],
+      active: true
+    };
+    app.pendingGauntletVictoryPayload = { stale: true };
+    app.pendingGauntletContinuation = { mode: MATCH_MODE.PVE, options: { gauntletMode: true } };
+    app.pendingGauntletContinuationRequiresConfirm = true;
+    app.roundPresentation = { phase: "idle", busy: true, selectedCardIndex: null };
+    app.screenFlow = "game";
+    gauntletStatCalls.length = 0;
+
+    await app.gameController.onMatchComplete({
+      match: { winner: "draw", endReason: "hand_exhaustion" },
+      persisted: {
+        profile: { username: "GauntletDelayedDraw", gauntletBestStreak: 1 },
+        matchXpDelta: 5,
+        matchTokenDelta: 5
+      }
+    });
+
+    assert.equal(modalManager.shows.length, 0);
+    assert.ok(app.pendingMatchCompletePayload);
+    assert.equal(app.pendingMatchCompletePayload.title, "Gauntlet Run Ended");
+    assert.match(app.pendingMatchCompletePayload.bodyHtml, /Gauntlet Run Ended/);
+    assert.equal(app.pendingGauntletVictoryPayload, null);
+    assert.equal(app.pendingGauntletContinuation, null);
+    assert.equal(app.pendingGauntletContinuationRequiresConfirm, false);
+
+    app.handleGameUpdate();
+    assert.equal(modalManager.shows.length, 0);
+    assert.ok(app.pendingMatchCompletePayload);
+
+    app.roundPresentation = { phase: "idle", busy: false, selectedCardIndex: null };
+    app.screenFlow = "game";
+    app.handleGameUpdate();
+
+    assert.equal(modalManager.shows.length, 1);
+    assert.equal(modalManager.shows[0].title, "Gauntlet Run Ended");
+    assert.match(modalManager.shows[0].bodyHtml, /Gauntlet Run Ended/);
+    assert.match(modalManager.shows[0].bodyHtml, /Final Rival/);
+    assert.match(modalManager.shows[0].bodyHtml, /Rewards Earned/);
+    assert.match(modalManager.shows[0].bodyHtml, /Match Reward: \+5 XP, \+5 Tokens/);
+    assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Gauntlet Victory|Continue Gauntlet/);
+    assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Gauntlet Milestone/);
+    assert.equal(app.pendingMatchCompletePayload, null);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(modalManager.shows.length, 1);
+    assert.equal(gauntletStatCalls.length, 1);
+    assertGauntletStatCallPayload(
+      gauntletStatCalls[0],
+      {
+        username: "GauntletDelayedDraw",
+        runStarted: false,
+        matchWon: false,
+        runEndedWithLoss: true,
+        currentStreak: 0,
+        claimedMilestoneStreaks: []
+      },
+      {
+        matchState: { winner: "draw", endReason: "hand_exhaustion" },
+        battleReportAlreadyRecorded: true
+      }
+    );
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
+  }
+});
+
 test("appController: gauntlet victory modal does not show milestone reward text when no milestone is earned", async () => {
   const originalWindow = globalThis.window;
   const modalManager = createModalCapture();
@@ -18885,6 +19147,138 @@ test("gameController: PvE simultaneous WAR exhaustion resolves immediately witho
     assert.equal(controller.match.status, "completed");
     assert.equal(controller.match.winner, "draw");
     assert.equal(controller.timerSeconds, 30);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE active WAR mutual exhaustion resolves draw even when latest authority payload is not war_continues", async () => {
+  const originalWindow = globalThis.window;
+  let submitCount = 0;
+  const completionCalls = [];
+  const matchCompleteCalls = [];
+  const initialRoom = createAuthoritativeLocalRoom();
+  const warRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 0, water: 1, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 1, wind: 0 },
+    warActive: true,
+    warRounds: [{ round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" }],
+    warPot: { host: ["fire"], guest: ["fire"] },
+    roundHistory: [
+      {
+        round: 1,
+        hostMove: "fire",
+        guestMove: "fire",
+        outcomeType: "war",
+        hostResult: "war",
+        guestResult: "war"
+      }
+    ]
+  });
+  const exhaustedWarRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    warActive: true,
+    totalWarClashes: 2,
+    warRounds: [
+      { round: 1, hostMove: "fire", guestMove: "fire", outcomeType: "war" },
+      { round: 2, hostMove: "water", guestMove: "earth", outcomeType: "no_effect" }
+    ],
+    warPot: { host: ["fire", "water"], guest: ["fire", "earth"] },
+    roundHistory: warRoom.roundHistory
+  });
+  const completedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    matchComplete: true,
+    winner: "draw",
+    winReason: "hand_exhaustion",
+    hostHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    warActive: false,
+    warRounds: [],
+    warPot: { host: [], guest: [] },
+    roundHistory: exhaustedWarRoom.roundHistory
+  });
+
+  const controller = new GameController({
+    username: "PveWarMutualExhaustion",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: () => {
+          submitCount += 1;
+          return submitCount === 1
+            ? {
+                ok: true,
+                room: warRoom,
+                roundResult: {
+                  round: 1,
+                  hostMove: "fire",
+                  guestMove: "fire",
+                  outcomeType: "war",
+                  hostResult: "war",
+                  guestResult: "war",
+                  warRounds: [{ round: 1, outcomeType: "war" }],
+                  warPot: { host: ["fire"], guest: ["fire"] }
+                }
+              }
+            : {
+                ok: true,
+                room: exhaustedWarRoom,
+                roundResult: {
+                  round: 2,
+                  hostMove: "water",
+                  guestMove: "earth",
+                  outcomeType: "no_effect",
+                  hostResult: "no_effect",
+                  guestResult: "no_effect",
+                  warRounds: exhaustedWarRoom.warRounds,
+                  warPot: exhaustedWarRoom.warPot
+                }
+              };
+        },
+        completeMatch: (_socketId, options) => {
+          completionCalls.push(options);
+          return { ok: true, room: completedRoom };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: ({ match }) => {
+      matchCompleteCalls.push({
+        winner: match?.winner ?? null,
+        endReason: match?.endReason ?? null,
+        warActive: Boolean(match?.war?.active)
+      });
+    }
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    const first = await controller.playCard(0);
+    assert.equal(first.status, "war_continues");
+    assert.equal(controller.match.status, "active");
+    assert.equal(controller.match.war.active, true);
+
+    const second = await controller.playCard(0);
+    assert.equal(second.status, "resolved");
+    assert.notEqual(second.status, "war_continues");
+    assert.equal(controller.match.status, "completed");
+    assert.equal(controller.match.winner, "draw");
+    assert.equal(controller.match.endReason, "hand_exhaustion");
+    assert.equal(controller.match.war.active, false);
+    assert.deepEqual(completionCalls, [{ winner: "draw", reason: "hand_exhaustion" }]);
+    assert.deepEqual(matchCompleteCalls, [
+      { winner: "draw", endReason: "hand_exhaustion", warActive: false }
+    ]);
   } finally {
     controller.stopTimer();
     controller.stopMatchClock();

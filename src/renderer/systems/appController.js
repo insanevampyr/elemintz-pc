@@ -8497,12 +8497,17 @@ export class AppController {
 
   flushPendingMatchCompleteModal() {
     if (!this.pendingMatchCompletePayload) {
-      return;
+      return false;
+    }
+
+    if (this.roundPresentation?.busy || this.screenFlow === "pass") {
+      return false;
     }
 
     const payload = this.pendingMatchCompletePayload;
     this.pendingMatchCompletePayload = null;
     this.showMatchCompleteModal(payload);
+    return true;
   }
 
   flushPendingGauntletContinuation({ force = false } = {}) {
@@ -8531,6 +8536,21 @@ export class AppController {
   schedulePendingGauntletVictoryModalFlush() {
     setTimeout(() => {
       this.flushPendingGauntletVictoryModal();
+    }, 0);
+  }
+
+  schedulePendingMatchCompleteModalFlush() {
+    setTimeout(() => {
+      if (this.flushPendingMatchCompleteModal()) {
+        return;
+      }
+
+      if (
+        this.pendingMatchCompletePayload &&
+        (this.roundPresentation?.busy || this.screenFlow === "pass")
+      ) {
+        this.schedulePendingMatchCompleteModalFlush();
+      }
     }, 0);
   }
 
@@ -9012,6 +9032,10 @@ export class AppController {
       return;
     }
 
+    if (this.flushPendingMatchCompleteModal()) {
+      return;
+    }
+
     if (this.refreshActiveGameHudInPlace()) {
       return;
     }
@@ -9357,6 +9381,9 @@ export class AppController {
         });
         if (this.roundPresentation.busy || this.screenFlow === "pass") {
           this.pendingMatchCompletePayload = modalPayload;
+          if (gauntletSummary) {
+            this.schedulePendingMatchCompleteModalFlush();
+          }
           return;
         }
 
