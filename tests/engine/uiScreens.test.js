@@ -4286,16 +4286,52 @@ test("ui: ai difficulty screen renders Training, Easy, Normal, Hard, Gauntlet, B
   assert.match(html, /Featured Rival/);
 });
 
-test("ui: ai difficulty screen places Blood Match as a separate challenge before Featured Rival", () => {
+test("ui: ai difficulty screen groups practice, standard, and challenge choices", () => {
   const html = aiDifficultyScreen.render({
     selectedDifficulty: "normal",
     actions: {}
   });
 
-  assert.ok(html.indexOf("Hard AI") < html.indexOf("Gauntlet Mode"));
-  assert.ok(html.indexOf("Training Mode (Easy)") < html.indexOf("Easy Practice"));
-  assert.ok(html.indexOf("Gauntlet Mode") < html.indexOf("Blood Match"));
-  assert.ok(html.indexOf("Blood Match") < html.indexOf("Featured Rival"));
+  const practiceHeadingIndex = html.indexOf("Practice — No Rewards");
+  const trainingIndex = html.indexOf("Training Mode (Easy)");
+  const easyIndex = html.indexOf("Easy Practice");
+  const standardHeadingIndex = html.indexOf("Standard VS AI");
+  const normalIndex = html.indexOf("Normal AI");
+  const hardIndex = html.indexOf("Hard AI");
+  const challengeHeadingIndex = html.indexOf("Challenge Modes");
+  const gauntletIndex = html.indexOf("Gauntlet Mode");
+  const bloodMatchIndex = html.indexOf("Blood Match");
+  const featuredRivalIndex = html.indexOf("Featured Rival");
+
+  assert.match(html, /class="ai-mode-layout"/);
+  assert.match(html, /class="ai-mode-column ai-mode-column-practice"/);
+  assert.match(html, /class="ai-mode-column ai-mode-column-challenge"/);
+  assert.ok(practiceHeadingIndex >= 0);
+  assert.ok(standardHeadingIndex >= 0);
+  assert.ok(challengeHeadingIndex >= 0);
+  assert.ok(practiceHeadingIndex < trainingIndex);
+  assert.ok(trainingIndex < easyIndex);
+  assert.ok(easyIndex < standardHeadingIndex);
+  assert.ok(standardHeadingIndex < normalIndex);
+  assert.ok(normalIndex < hardIndex);
+  assert.ok(challengeHeadingIndex < gauntletIndex);
+  assert.ok(gauntletIndex < bloodMatchIndex);
+  assert.ok(bloodMatchIndex < featuredRivalIndex);
+});
+
+test("ui: ai difficulty screen preserves existing input ids and values", () => {
+  const html = aiDifficultyScreen.render({
+    selectedDifficulty: "normal",
+    actions: {}
+  });
+
+  assert.match(html, /id="ai-difficulty-select-training"[^>]*name="pveOpponentChoice"[^>]*value="training_mode"/);
+  assert.match(html, /id="ai-difficulty-select-easy"[^>]*name="pveOpponentChoice"[^>]*value="easy"/);
+  assert.match(html, /id="ai-difficulty-select-normal"[^>]*name="pveOpponentChoice"[^>]*value="normal"/);
+  assert.match(html, /id="ai-difficulty-select-hard"[^>]*name="pveOpponentChoice"[^>]*value="hard"/);
+  assert.match(html, /id="ai-difficulty-select-gauntlet"[^>]*name="pveOpponentChoice"[^>]*value="gauntlet_mode"/);
+  assert.match(html, /id="ai-difficulty-select-blood-match"[^>]*name="pveOpponentChoice"[^>]*value="blood_match"/);
+  assert.match(html, /id="ai-difficulty-select-featured-rival"[^>]*name="pveOpponentChoice"[^>]*value="featured_rival_crownfire"/);
 });
 
 test("ui: ai difficulty screen renders the Gauntlet placeholder card details", () => {

@@ -61,6 +61,35 @@ input[type="number"] {
   margin: 0;
 }
 
+.screen-ai-difficulty .ai-mode-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+
+.screen-ai-difficulty .ai-mode-column,
+.screen-ai-difficulty .ai-mode-section,
+.screen-ai-difficulty .ai-mode-choice-group {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.screen-ai-difficulty .ai-mode-choice-group {
+  margin-bottom: 0;
+}
+
+.screen-ai-difficulty .ai-mode-section-heading {
+  margin: 0;
+  color: rgba(203, 223, 239, 0.88);
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .settings-radio-option {
   display: grid;
   gap: 6px;
@@ -150,6 +179,12 @@ input[type="number"] {
 .featured-rival-card__detail {
   color: rgba(244, 232, 218, 0.88);
   line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+  .screen-ai-difficulty .ai-mode-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .game-grid {

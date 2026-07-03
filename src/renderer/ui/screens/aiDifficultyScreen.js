@@ -143,52 +143,71 @@ export const aiDifficultyScreen = {
                 Choose your PvE opponent difficulty before starting the match.
               </p>
 
-              <div class="settings-group">
-                ${renderTrainingModeOption({
-                  name: "pveOpponentChoice",
-                  id: "ai-difficulty-select-training",
-                  checked: selectedOption === "training_mode"
-                })}
-                ${renderRadioOption({
-                  name: "pveOpponentChoice",
-                  id: "ai-difficulty-select-easy",
-                  value: "easy",
-                  checked: selectedOption === "easy",
-                  title: "Easy Practice",
-                  subtitle: "Practice mode. No stats, quests, achievements, rewards, or chest progress.",
-                  warning: "Easy AI is practice-only and does not count toward progression."
-                })}
-                ${renderRadioOption({
-                  name: "pveOpponentChoice",
-                  id: "ai-difficulty-select-normal",
-                  value: "normal",
-                  checked: selectedOption === "normal",
-                  title: "Normal AI",
-                  subtitle: "Standard rewards and progression."
-                })}
-                ${renderRadioOption({
-                  name: "pveOpponentChoice",
-                  id: "ai-difficulty-select-hard",
-                  value: "hard",
-                  checked: selectedOption === "hard",
-                  title: "Hard AI",
-                  subtitle: "Smarter, tougher AI. Win for +5 XP, +5 tokens, and improved chest chance."
-                })}
-                ${renderGauntletOption({
-                  name: "pveOpponentChoice",
-                  id: "ai-difficulty-select-gauntlet",
-                  checked: selectedOption === "gauntlet_mode"
-                })}
-                ${renderBloodMatchOption({
-                  name: "pveOpponentChoice",
-                  id: "ai-difficulty-select-blood-match",
-                  checked: selectedOption === "blood_match"
-                })}
-                ${renderFeaturedRivalOption({
-                  name: "pveOpponentChoice",
-                  id: "ai-difficulty-select-featured-rival",
-                  checked: selectedOption === "featured_rival_crownfire"
-                })}
+              <div class="ai-mode-layout">
+                <div class="ai-mode-column ai-mode-column-practice">
+                  <section class="ai-mode-section" aria-labelledby="ai-mode-practice-heading">
+                    <h3 id="ai-mode-practice-heading" class="ai-mode-section-heading">Practice — No Rewards</h3>
+                    <div class="settings-group ai-mode-choice-group">
+                      ${renderTrainingModeOption({
+                        name: "pveOpponentChoice",
+                        id: "ai-difficulty-select-training",
+                        checked: selectedOption === "training_mode"
+                      })}
+                      ${renderRadioOption({
+                        name: "pveOpponentChoice",
+                        id: "ai-difficulty-select-easy",
+                        value: "easy",
+                        checked: selectedOption === "easy",
+                        title: "Easy Practice",
+                        subtitle: "Practice mode. No stats, quests, achievements, rewards, or chest progress.",
+                        warning: "Easy AI is practice-only and does not count toward progression."
+                      })}
+                    </div>
+                  </section>
+                  <section class="ai-mode-section" aria-labelledby="ai-mode-standard-heading">
+                    <h3 id="ai-mode-standard-heading" class="ai-mode-section-heading">Standard VS AI</h3>
+                    <div class="settings-group ai-mode-choice-group">
+                      ${renderRadioOption({
+                        name: "pveOpponentChoice",
+                        id: "ai-difficulty-select-normal",
+                        value: "normal",
+                        checked: selectedOption === "normal",
+                        title: "Normal AI",
+                        subtitle: "Standard rewards and progression."
+                      })}
+                      ${renderRadioOption({
+                        name: "pveOpponentChoice",
+                        id: "ai-difficulty-select-hard",
+                        value: "hard",
+                        checked: selectedOption === "hard",
+                        title: "Hard AI",
+                        subtitle: "Smarter, tougher AI. Win for +5 XP, +5 tokens, and improved chest chance."
+                      })}
+                    </div>
+                  </section>
+                </div>
+                <div class="ai-mode-column ai-mode-column-challenge">
+                  <section class="ai-mode-section" aria-labelledby="ai-mode-challenge-heading">
+                    <h3 id="ai-mode-challenge-heading" class="ai-mode-section-heading">Challenge Modes</h3>
+                    <div class="settings-group ai-mode-choice-group">
+                      ${renderGauntletOption({
+                        name: "pveOpponentChoice",
+                        id: "ai-difficulty-select-gauntlet",
+                        checked: selectedOption === "gauntlet_mode"
+                      })}
+                      ${renderBloodMatchOption({
+                        name: "pveOpponentChoice",
+                        id: "ai-difficulty-select-blood-match",
+                        checked: selectedOption === "blood_match"
+                      })}
+                      ${renderFeaturedRivalOption({
+                        name: "pveOpponentChoice",
+                        id: "ai-difficulty-select-featured-rival",
+                        checked: selectedOption === "featured_rival_crownfire"
+                      })}
+                    </div>
+                  </section>
+                </div>
               </div>
 
               <button type="submit" class="btn btn-primary">Start Match</button>
