@@ -12,6 +12,7 @@ import { getCosmeticDisplayName } from "../../../state/cosmeticSystem.js";
 const BLOOD_MATCH_ARENA_PATH = "rivals/BloodMatch/background_blood_match_arena.png";
 const BLOOD_MATCH_MENU_TILE_PATH = "menu_tiles/tile_blood_match_mode.png";
 const ELEMENT_ORDER = Object.freeze(["fire", "earth", "wind", "water"]);
+let detachBloodMatchKeyboardHandler = null;
 const RIVAL_COSMETIC_RACKS = Object.freeze({
   vampire: Object.freeze({
     cardBack: "cardback_blood_gem",
@@ -43,6 +44,21 @@ function formatClock(seconds) {
 function formatElementLabel(element) {
   const value = String(element ?? "").trim().toLowerCase();
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Unknown";
+}
+
+function isEditableShortcutTarget(target) {
+  if (!target) {
+    return false;
+  }
+
+  const tagName = String(target.tagName ?? "").trim().toLowerCase();
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    Boolean(target.isContentEditable) ||
+    Boolean(target.closest?.("[contenteditable='true']"))
+  );
 }
 
 function getCombatant(state, id) {
@@ -538,6 +554,7 @@ function renderPlayerColumn(state) {
         <div>
           <h2>Your Hand</h2>
           <p class="muted">Playable cards are based on controller-provided legal state.</p>
+          <p class="keyboard-hint">Keyboard: [1] Fire   [2] Earth   [3] Wind   [4] Water</p>
         </div>
         ${renderPlayerHand(state)}
       </section>
@@ -579,12 +596,75 @@ export const bloodMatchScreen = {
     `;
   },
   bind(context = {}) {
+    detachBloodMatchKeyboardHandler?.();
+    detachBloodMatchKeyboardHandler = null;
+
+    let locked = false;
+    const selectButton = async (button) => {
+      if (!button || locked || button.hasAttribute?.("disabled")) {
+        return;
+      }
+
+      locked = true;
+      document.querySelectorAll("[data-blood-play-card-element]").forEach((cardButton) => {
+        cardButton.setAttribute?.("disabled", "disabled");
+      });
+
+      try {
+        const element = button.dataset?.bloodPlayCardElement;
+        await context.actions?.playCard?.(element);
+      } finally {
+        if (button.isConnected === false) {
+          return;
+        }
+
+        locked = false;
+        document.querySelectorAll("[data-blood-play-card-element]").forEach((cardButton) => {
+          if (!cardButton.classList?.contains?.("is-disabled") && !cardButton.classList?.contains?.("is-zero")) {
+            cardButton.removeAttribute?.("disabled");
+          }
+        });
+      }
+    };
+
     document.querySelectorAll("[data-blood-play-card-element]").forEach((button) => {
       button.addEventListener("click", () => {
-        const element = button.dataset.bloodPlayCardElement;
-        void context.actions?.playCard?.(element);
+        void selectButton(button);
       });
     });
+
+    const keyToElement = {
+      "1": "fire",
+      "2": "earth",
+      "3": "wind",
+      "4": "water"
+    };
+    const hasOpenModal = () => Boolean(document.querySelector?.(".modal-overlay"));
+    const keydownHandler = async (event) => {
+      const element = keyToElement[event.key];
+      const target = event.target ?? document.activeElement ?? null;
+      if (!element || locked || hasOpenModal() || isEditableShortcutTarget(target)) {
+        return;
+      }
+
+      const activeButton = Array.from(document.querySelectorAll("[data-blood-play-card-element]")).find(
+        (button) => button.dataset?.bloodPlayCardElement === element && !button.hasAttribute?.("disabled")
+      );
+      if (!activeButton) {
+        return;
+      }
+
+      event.preventDefault?.();
+      await selectButton(activeButton);
+    };
+
+    if (typeof document.addEventListener === "function") {
+      document.addEventListener("keydown", keydownHandler);
+      detachBloodMatchKeyboardHandler = () => {
+        document.removeEventListener?.("keydown", keydownHandler);
+      };
+    }
+
     document.getElementById("blood-match-quit-btn")?.addEventListener("click", () => {
       void context.actions?.quit?.();
     });
