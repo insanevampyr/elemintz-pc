@@ -560,75 +560,115 @@ function normalizeLatestBattleSummary(entry) {
     return null;
   }
 
+  const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
   const sanitizeOptionalString = (value) => {
     const normalized = String(value ?? "").trim();
     return normalized.length > 0 ? normalized : null;
   };
   const sanitizeOptionalCount = (value) => {
+    if (value == null || String(value).trim() === "") {
+      return null;
+    }
     const numeric = Number(value);
     return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : null;
+  };
+  const assignOptionalString = (target, key, fallback = null) => {
+    if (!hasOwn(entry, key) && fallback == null) {
+      return;
+    }
+    target[key] = sanitizeOptionalString(entry[key]) ?? fallback;
+  };
+  const assignOptionalCount = (target, key) => {
+    if (!hasOwn(entry, key)) {
+      return;
+    }
+    target[key] = sanitizeOptionalCount(entry[key]);
   };
 
   const normalizedEntry = {
     mode,
     result,
-    completedAt,
-    rounds: sanitizeOptionalCount(entry.rounds),
-    warsEntered: sanitizeOptionalCount(entry.warsEntered)
+    completedAt
   };
+  assignOptionalCount(normalizedEntry, "rounds");
+  assignOptionalCount(normalizedEntry, "warsEntered");
 
   if (mode === "online") {
     const opponentUsername = sanitizeOptionalString(entry.opponentUsername);
-    return {
-      ...normalizedEntry,
-      opponentName: sanitizeOptionalString(entry.opponentName) ?? opponentUsername,
-      opponentUsername,
-      opponentUserId: sanitizeOptionalString(entry.opponentUserId)
-    };
+    const onlineEntry = { ...normalizedEntry };
+    assignOptionalString(onlineEntry, "opponentName", opponentUsername);
+    assignOptionalString(onlineEntry, "opponentUsername");
+    assignOptionalString(onlineEntry, "opponentUserId");
+    return onlineEntry;
   }
 
   if (mode === "featuredRival" || mode === "gauntlet") {
-    return {
-      ...normalizedEntry,
-      rivalName: sanitizeOptionalString(entry.rivalName)
-    };
+    const rivalEntry = { ...normalizedEntry };
+    assignOptionalString(rivalEntry, "rivalName");
+    return rivalEntry;
   }
 
   if (mode === "bloodMatch") {
-    return {
-      ...normalizedEntry,
+    const bloodEntry = {
+      mode,
       displayMode: sanitizeOptionalString(entry.displayMode) ?? "Blood Match",
-      rivalName: sanitizeOptionalString(entry.rivalName),
-      endReason: sanitizeOptionalString(entry.endReason),
-      playerCardsCaptured: sanitizeOptionalCount(entry.playerCardsCaptured),
-      playerHandAtEnd: sanitizeOptionalCount(entry.playerHandAtEnd),
-      vampireHandAtEnd: sanitizeOptionalCount(entry.vampireHandAtEnd),
-      lycanHandAtEnd: sanitizeOptionalCount(entry.lycanHandAtEnd),
-      twoWayWars: sanitizeOptionalCount(entry.twoWayWars),
-      threeWayWars: sanitizeOptionalCount(entry.threeWayWars)
+      result,
+      completedAt
     };
+    assignOptionalCount(bloodEntry, "rounds");
+    assignOptionalCount(bloodEntry, "warsEntered");
+    assignOptionalString(bloodEntry, "rivalName");
+    assignOptionalString(bloodEntry, "endReason");
+    assignOptionalCount(bloodEntry, "playerCardsCaptured");
+    assignOptionalCount(bloodEntry, "playerHandAtEnd");
+    assignOptionalCount(bloodEntry, "vampireHandAtEnd");
+    assignOptionalCount(bloodEntry, "lycanHandAtEnd");
+    assignOptionalCount(bloodEntry, "twoWayWars");
+    assignOptionalCount(bloodEntry, "threeWayWars");
+    return bloodEntry;
   }
 
-  return {
-    ...normalizedEntry,
-    opponentName: sanitizeOptionalString(entry.opponentName)
-  };
+  const localEntry = { ...normalizedEntry };
+  assignOptionalString(localEntry, "opponentName");
+  return localEntry;
 }
 
 function normalizeRecentBattles(entries, fallbackLatestBattle = null) {
   const normalizedEntries = Array.isArray(entries)
     ? entries
-        .map((entry) => normalizeLatestBattleSummary(entry))
-        .filter(Boolean)
-        .slice(0, RECENT_BATTLES_LIMIT)
+        .map((entry, index) => ({ entry: normalizeLatestBattleSummary(entry), index }))
+        .filter((item) => item.entry)
     : [];
 
-  if (normalizedEntries.length > 0) {
-    return normalizedEntries;
+  const normalizedFallback = normalizeLatestBattleSummary(fallbackLatestBattle);
+  if (normalizedFallback && normalizedEntries.length === 0) {
+    normalizedEntries.push({ entry: normalizedFallback, index: 0 });
   }
 
-  const normalizedFallback = normalizeLatestBattleSummary(fallbackLatestBattle);
-  return normalizedFallback ? [normalizedFallback] : [];
+  const dedupedEntries = [];
+  const seenEntries = new Set();
+  for (const item of normalizedEntries) {
+    const signature = JSON.stringify(item.entry);
+    if (seenEntries.has(signature)) {
+      continue;
+    }
+    seenEntries.add(signature);
+    dedupedEntries.push(item);
+  }
+
+  return dedupedEntries
+    .sort((a, b) => {
+      const timeA = Date.parse(a.entry.completedAt);
+      const timeB = Date.parse(b.entry.completedAt);
+      const safeTimeA = Number.isFinite(timeA) ? timeA : Number.NEGATIVE_INFINITY;
+      const safeTimeB = Number.isFinite(timeB) ? timeB : Number.NEGATIVE_INFINITY;
+      if (safeTimeA !== safeTimeB) {
+        return safeTimeB - safeTimeA;
+      }
+      return a.index - b.index;
+    })
+    .slice(0, RECENT_BATTLES_LIMIT)
+    .map((item) => item.entry);
 }
 
 export function normalizeProfile(profile, { applyRetroactive = false } = {}) {

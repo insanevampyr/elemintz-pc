@@ -319,6 +319,176 @@ test("profile validation: corrupted profile repairs only on first normalize pass
   assert.equal(idempotentLogs.length, 0);
 });
 
+test("profile validation: Battle Report normalization repairs once and remains stable", async (t) => {
+  const dataDir = await createTempDataDir();
+  const filePath = path.join(dataDir, "profiles.json");
+
+  t.after(async () => {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  const pveBattle = {
+    mode: "pve",
+    result: "win",
+    opponentName: "Elemental AI",
+    completedAt: "2026-06-27T12:01:00.000Z",
+    rounds: null,
+    warsEntered: null
+  };
+  const localBattle = {
+    mode: "localHotseat",
+    result: "draw",
+    opponentName: "Player Two",
+    completedAt: "2026-06-27T12:02:00.000Z",
+    rounds: 4,
+    warsEntered: 0
+  };
+  const gauntletBattle = {
+    mode: "gauntlet",
+    result: "loss",
+    rivalName: "Countess Veyra",
+    completedAt: "2026-06-27T12:03:00.000Z",
+    rounds: 5,
+    warsEntered: 1
+  };
+  const featuredBattle = {
+    mode: "featuredRival",
+    result: "win",
+    rivalName: "Crownfire Duelist",
+    completedAt: "2026-06-27T12:04:00.000Z",
+    rounds: 6,
+    warsEntered: 2
+  };
+  const onlineBattle = {
+    mode: "online",
+    result: "win",
+    opponentName: "RemoteUser",
+    opponentUsername: "RemoteUser",
+    opponentUserId: null,
+    completedAt: "2026-06-27T12:05:00.000Z",
+    rounds: 7,
+    warsEntered: 3
+  };
+  const bloodBattle = {
+    mode: "bloodMatch",
+    displayMode: "Blood Match",
+    result: "loss",
+    completedAt: "2026-06-27T12:06:00.000Z",
+    rounds: 8,
+    warsEntered: 4,
+    rivalName: "Countess Veyra & Ravena Moonfang",
+    endReason: null,
+    playerCardsCaptured: 5,
+    playerHandAtEnd: 0,
+    vampireHandAtEnd: 3,
+    lycanHandAtEnd: 2,
+    twoWayWars: null,
+    threeWayWars: 1
+  };
+  const legacyProfile = {
+    ...normalizeProfile({ username: "BattleReportRepairUser" }),
+    latestBattle: pveBattle,
+    recentBattles: [
+      pveBattle,
+      gauntletBattle,
+      localBattle,
+      bloodBattle,
+      onlineBattle,
+      featuredBattle,
+      onlineBattle
+    ]
+  };
+
+  await fs.writeFile(filePath, JSON.stringify([legacyProfile], null, 2), "utf8");
+
+  const profiles = new ProfileSystem({ dataDir });
+  const firstInfoLogs = [];
+  const firstWarnLogs = [];
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+  console.info = (...args) => firstInfoLogs.push(args);
+  console.warn = (...args) => firstWarnLogs.push(args);
+
+  let repaired;
+  try {
+    repaired = await profiles.getProfile("BattleReportRepairUser");
+  } finally {
+    console.info = originalInfo;
+    console.warn = originalWarn;
+  }
+
+  assert.equal(
+    firstWarnLogs.some(
+      (entry) => entry[0] === "[ProfileSystem] WARNING: normalization introduced unexpected mutation"
+    ),
+    false
+  );
+  assert.equal(
+    firstInfoLogs.some(
+      (entry) =>
+        entry[0] === "[ProfileSystem] validation complete" &&
+        entry[1]?.repairedFields?.includes("latestBattle") &&
+        entry[1]?.repairedFields?.includes("recentBattles")
+    ),
+    true
+  );
+  assert.equal(repaired.recentBattles.length, 5);
+  assert.deepEqual(
+    repaired.recentBattles.map((entry) => entry.completedAt),
+    [
+      "2026-06-27T12:06:00.000Z",
+      "2026-06-27T12:05:00.000Z",
+      "2026-06-27T12:04:00.000Z",
+      "2026-06-27T12:03:00.000Z",
+      "2026-06-27T12:02:00.000Z"
+    ]
+  );
+  assert.deepEqual(repaired.latestBattle, repaired.recentBattles[0]);
+  assert.equal(repaired.recentBattles.filter((entry) => entry.mode === "online").length, 1);
+  assert.equal(repaired.recentBattles[0].mode, "bloodMatch");
+  assert.equal(repaired.recentBattles[0].twoWayWars, null);
+  assert.equal(repaired.recentBattles[0].threeWayWars, 1);
+  assert.equal(repaired.recentBattles.some((entry) => entry.mode === "featuredRival"), true);
+  assert.equal(repaired.recentBattles.some((entry) => entry.mode === "gauntlet"), true);
+  assert.equal(repaired.recentBattles.some((entry) => entry.mode === "localHotseat"), true);
+  assert.equal(repaired.recentBattles.some((entry) => entry.mode === "online"), true);
+  assert.equal(repaired.recentBattles.some((entry) => entry.mode === "pve"), false);
+
+  const savedAfterRepair = JSON.parse(await fs.readFile(filePath, "utf8"))[0];
+  assert.deepEqual(savedAfterRepair.latestBattle, repaired.latestBattle);
+  assert.deepEqual(savedAfterRepair.recentBattles, repaired.recentBattles);
+
+  const secondInfoLogs = [];
+  const secondWarnLogs = [];
+  console.info = (...args) => secondInfoLogs.push(args);
+  console.warn = (...args) => secondWarnLogs.push(args);
+
+  let reloaded;
+  try {
+    reloaded = await profiles.getProfile("BattleReportRepairUser");
+    await profiles.updateProfile("BattleReportRepairUser", (profile) => profile);
+  } finally {
+    console.info = originalInfo;
+    console.warn = originalWarn;
+  }
+
+  assert.deepEqual(reloaded, repaired);
+  assert.equal(
+    secondInfoLogs.some(
+      (entry) =>
+        entry[0] === "[ProfileSystem] validation complete" &&
+        entry[1]?.repairedFields?.some((field) => field === "latestBattle" || field === "recentBattles")
+    ),
+    false
+  );
+  assert.equal(
+    secondWarnLogs.some(
+      (entry) => entry[0] === "[ProfileSystem] WARNING: normalization introduced unexpected mutation"
+    ),
+    false
+  );
+});
+
 test("profile validation: seenAnnouncements repairs malformed values to an object", () => {
   const normalized = normalizeProfile({
     username: "AnnouncementRepairUser",
