@@ -4887,6 +4887,7 @@ test("ui: blood match screen renders dedicated three-combatant layout and mode-o
   assert.match(html, /Shared Clash Zone/);
   assert.match(html, /data-blood-war-pile="true"/);
   assert.match(html, /No cards committed to WAR yet\./);
+  assert.match(html, /Round: <strong>1<\/strong>/);
   assert.match(html, /Turn: <strong>18s<\/strong>/);
   assert.match(html, /Match: <strong>04:46<\/strong>/);
   assert.doesNotMatch(html, /backgrounds\/background_blood_match_arena/);
@@ -4897,6 +4898,57 @@ test("ui: blood match screen renders dedicated three-combatant layout and mode-o
   assert.match(html, /data-blood-play-card-element="wind"[\s\S]*disabled/);
   assert.match(html, /×1/);
   assert.match(html, /fire_variant_bane_flame\.png/);
+});
+
+test("ui: blood match preserves equipped player cosmetics from full profile context", () => {
+  const equippedCosmetics = {
+    avatar: "avatar_arcane_gambler",
+    title: "title_spellwired",
+    badge: "war_machine_badge",
+    cardBack: "cardback_neon_arcana",
+    elementCardVariant: {
+      fire: "fire_variant_neon_arcana",
+      earth: "earth_variant_goldbound_relics",
+      wind: "wind_variant_sleet_spiral",
+      water: "water_variant_frostbloom"
+    }
+  };
+  const state = createBloodMatchScreenState({
+    status: "completed",
+    round: 6,
+    terminalResult: { result: "player_win", endReason: "both_rivals_eliminated" },
+    settlementResult: {
+      status: "settled",
+      matchXpDelta: 10,
+      matchTokenDelta: 10,
+      chestGrants: [],
+      unlockedAchievements: []
+    },
+    profile: {
+      username: "VampyrLee",
+      equippedCosmetics
+    },
+    cosmetics: {
+      equipped: {
+        ...equippedCosmetics,
+        elementCardVariant: { ...equippedCosmetics.elementCardVariant }
+      }
+    },
+    potCardEntries: [
+      { ownerId: "player", element: "fire" },
+      { ownerId: "player", element: "earth" }
+    ]
+  });
+
+  const html = bloodMatchScreen.render({ state, actions: {} });
+
+  assert.match(html, /avatar_arcane_gambler\.png/);
+  assert.match(html, /Spellwired/);
+  assert.match(html, /warMachine\.png/);
+  assert.match(html, /fire_variant_neon_arcana\.png/);
+  assert.match(html, /earth_variant_goldbound_relics\.png/);
+  assert.match(html, /Round: <strong>6<\/strong>/);
+  assert.doesNotMatch(html, /avatars\/default\.png/);
 });
 
 test("ui: blood match renders visual-only Countess and Ravena cosmetic racks", () => {
@@ -5149,6 +5201,7 @@ test("ui: blood match screen renders eliminated rival and terminal states", () =
   assert.match(victoryHtml, /Status: <strong>Victor<\/strong>/);
   assert.match(victoryHtml, /Reason: <strong>Both rivals were eliminated\.<\/strong>/);
   assert.match(victoryHtml, /State: <strong>Match Complete<\/strong>/);
+  assert.match(victoryHtml, /Round: <strong>1<\/strong>/);
   assert.doesNotMatch(victoryHtml, /Awaiting Card/);
   assert.doesNotMatch(victoryHtml, /Turn: <strong>/);
   assert.doesNotMatch(victoryHtml, /WAR: <strong>/);
@@ -5553,6 +5606,127 @@ test("ui: appController persists completed Blood Match through the local state b
       summary: state.settlementSummary
     });
   } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: appController keeps Blood Match player cosmetics after settlement and rematch", async () => {
+  const previousWindow = global.window;
+  const shownScreens = [];
+  const equippedCosmetics = {
+    avatar: "avatar_arcane_gambler",
+    title: "title_spellwired",
+    badge: "war_machine_badge",
+    cardBack: "cardback_neon_arcana",
+    background: "bg_crystal_nexus",
+    elementCardVariant: {
+      fire: "fire_variant_neon_arcana",
+      earth: "earth_variant_goldbound_relics",
+      wind: "wind_variant_sleet_spiral",
+      water: "water_variant_frostbloom"
+    }
+  };
+  const settledProfile = {
+    username: "VampyrLee",
+    bloodMatchWins: 1,
+    equippedCosmetics,
+    ownedCosmetics: {
+      avatar: [equippedCosmetics.avatar],
+      title: [equippedCosmetics.title],
+      badge: [equippedCosmetics.badge],
+      cardBack: [equippedCosmetics.cardBack],
+      background: [equippedCosmetics.background],
+      elementCardVariant: Object.values(equippedCosmetics.elementCardVariant)
+    }
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        recordBloodMatchResult: async () => ({
+          profile: settledProfile,
+          cosmetics: {
+            equipped: equippedCosmetics,
+            owned: settledProfile.ownedCosmetics,
+            catalog: getCosmeticCatalogForProfile(settledProfile)
+          },
+          profileAchievements: {},
+          matchXpDelta: 10,
+          matchTokenDelta: 10,
+          chestGrants: [],
+          unlockedAchievements: []
+        })
+      }
+    }
+  };
+
+  try {
+    const controller = new AppController({
+      screenManager: {
+        register: () => {},
+        show: (screen, context) => shownScreens.push({ screen, context })
+      },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: { show: () => {} }
+    });
+    controller.requireOwnProfileHydratedForAction = () => true;
+    controller.username = "VampyrLee";
+    controller.profile = {
+      username: "VampyrLee",
+      equippedCosmetics,
+      ownedCosmetics: settledProfile.ownedCosmetics
+    };
+    controller.sound = {
+      ...controller.sound,
+      playRoundResolved: () => {},
+      playMatchComplete: () => {}
+    };
+
+    controller.startBloodMatch();
+    const initialContext = shownScreens.at(-1).context;
+    assert.equal(initialContext.state.equippedCosmetics.avatar, equippedCosmetics.avatar);
+    assert.equal(initialContext.state.equippedCosmetics.title, equippedCosmetics.title);
+    assert.equal(initialContext.state.equippedCosmetics.cardBack, equippedCosmetics.cardBack);
+    assert.equal(
+      initialContext.state.equippedCosmetics.elementCardVariant.fire,
+      equippedCosmetics.elementCardVariant.fire
+    );
+
+    const settlementState = {
+      settlementSummary: {
+        mode: "bloodMatch",
+        status: "completed",
+        round: 3,
+        winnerId: "player",
+        terminalResult: { result: "player_win", winnerId: "player" },
+        combatants: {
+          player: { handCount: 5, capturedCount: 8, eliminated: false },
+          vampire: { handCount: 0, capturedCount: 0, eliminated: true },
+          lycan: { handCount: 0, capturedCount: 0, eliminated: true }
+        },
+        history: []
+      }
+    };
+    await controller.persistBloodMatchResult(null, settlementState);
+    const settledContext = shownScreens.at(-1).context;
+    assert.equal(settledContext.state.equippedCosmetics.avatar, equippedCosmetics.avatar);
+    assert.equal(settledContext.state.profile.equippedCosmetics.title, equippedCosmetics.title);
+    assert.equal(settledContext.state.cosmetics.equipped.cardBack, equippedCosmetics.cardBack);
+    assert.equal(
+      settledContext.state.equippedCosmetics.elementCardVariant.water,
+      equippedCosmetics.elementCardVariant.water
+    );
+
+    await settledContext.actions.rematch();
+    const rematchContext = shownScreens.at(-1).context;
+    assert.equal(rematchContext.state.status, "active");
+    assert.equal(rematchContext.state.equippedCosmetics.avatar, equippedCosmetics.avatar);
+    assert.equal(rematchContext.state.equippedCosmetics.title, equippedCosmetics.title);
+    assert.equal(
+      rematchContext.state.equippedCosmetics.elementCardVariant.earth,
+      equippedCosmetics.elementCardVariant.earth
+    );
+  } finally {
+    shownScreens.at(-1)?.context?.actions?.returnToMenu?.();
     global.window = previousWindow;
   }
 });

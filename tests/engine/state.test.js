@@ -326,6 +326,111 @@ test("state: Blood Match win records dedicated stats, recent battle, +10 XP/+10 
   assert.deepEqual(saves[0].grantedCosmetics, []);
 });
 
+test("state: Blood Match completion preserves equipped cosmetics and records rematches as distinct recent battles", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+  const equippedCosmetics = {
+    avatar: "avatar_arcane_gambler",
+    title: "title_spellwired",
+    badge: "war_machine_badge",
+    cardBack: "cardback_neon_arcana",
+    background: "bg_crystal_nexus",
+    elementCardVariant: {
+      fire: "fire_variant_neon_arcana",
+      earth: "earth_variant_goldbound_relics",
+      wind: "wind_variant_sleet_spiral",
+      water: "water_variant_frostbloom"
+    }
+  };
+
+  await state.profiles.updateProfile("BloodCosmeticReportUser", (profile) => ({
+    ...profile,
+    equippedCosmetics,
+    ownedCosmetics: {
+      ...profile.ownedCosmetics,
+      avatar: [...new Set([...(profile.ownedCosmetics?.avatar ?? []), equippedCosmetics.avatar])],
+      title: [...new Set([...(profile.ownedCosmetics?.title ?? []), equippedCosmetics.title])],
+      badge: [...new Set([...(profile.ownedCosmetics?.badge ?? []), equippedCosmetics.badge])],
+      cardBack: [...new Set([...(profile.ownedCosmetics?.cardBack ?? []), equippedCosmetics.cardBack])],
+      background: [...new Set([...(profile.ownedCosmetics?.background ?? []), equippedCosmetics.background])],
+      elementCardVariant: [
+        ...new Set([
+          ...(profile.ownedCosmetics?.elementCardVariant ?? []),
+          ...Object.values(equippedCosmetics.elementCardVariant)
+        ])
+      ]
+    }
+  }));
+
+  const first = await state.recordBloodMatchResult({
+    username: "BloodCosmeticReportUser",
+    settlementKey: "blood-report-1",
+    nowMs: Date.parse("2026-06-27T12:00:00.000Z"),
+    summary: createBloodMatchSettlementSummary()
+  });
+  const duplicate = await state.recordBloodMatchResult({
+    username: "BloodCosmeticReportUser",
+    settlementKey: "blood-report-1",
+    nowMs: Date.parse("2026-06-27T12:01:00.000Z"),
+    summary: createBloodMatchSettlementSummary()
+  });
+  const rematch = await state.recordBloodMatchResult({
+    username: "BloodCosmeticReportUser",
+    settlementKey: "blood-report-2",
+    nowMs: Date.parse("2026-06-27T12:02:00.000Z"),
+    summary: createBloodMatchSettlementSummary({
+      result: "player_loss",
+      winnerId: "vampire",
+      endReason: "timeout_tie_or_deficit",
+      playerHandCount: 4,
+      playerCapturedCount: 3,
+      vampireHandCount: 5,
+      lycanHandCount: 5,
+      vampireEliminated: false,
+      lycanEliminated: false,
+      history: []
+    })
+  });
+
+  assert.deepEqual(first.profile.equippedCosmetics, equippedCosmetics);
+  assert.equal(first.profile.recentBattles.length, 1);
+  assert.equal(first.profile.recentBattles[0].mode, "bloodMatch");
+  assert.equal(first.profile.recentBattles[0].rivalName, "Countess Veyra & Ravena Moonfang");
+  assert.equal(duplicate.duplicate, true);
+  assert.deepEqual(duplicate.profile.equippedCosmetics, equippedCosmetics);
+  assert.equal(duplicate.profile.recentBattles.length, 1);
+  assert.deepEqual(rematch.profile.equippedCosmetics, equippedCosmetics);
+  assert.equal(rematch.profile.recentBattles.length, 2);
+  assert.deepEqual(rematch.profile.latestBattle, rematch.profile.recentBattles[0]);
+  assert.equal(rematch.profile.recentBattles[0].result, "loss");
+  assert.equal(rematch.profile.recentBattles[1].result, "win");
+
+  for (let index = 3; index <= 7; index += 1) {
+    await state.recordBloodMatchResult({
+      username: "BloodCosmeticReportUser",
+      settlementKey: `blood-report-${index}`,
+      nowMs: Date.parse(`2026-06-27T12:0${index}:00.000Z`),
+      summary: createBloodMatchSettlementSummary({
+        playerCapturedCount: 9 + index
+      })
+    });
+  }
+
+  const capped = await state.profiles.getProfile("BloodCosmeticReportUser");
+  assert.equal(capped.recentBattles.length, 5);
+  assert.deepEqual(capped.latestBattle, capped.recentBattles[0]);
+  assert.deepEqual(
+    capped.recentBattles.map((entry) => entry.completedAt),
+    [
+      "2026-06-27T12:07:00.000Z",
+      "2026-06-27T12:06:00.000Z",
+      "2026-06-27T12:05:00.000Z",
+      "2026-06-27T12:04:00.000Z",
+      "2026-06-27T12:03:00.000Z"
+    ]
+  );
+});
+
 test("state: Blood Match loss grants normal participation XP, +1 token, and duplicate settlement does not double-write", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });

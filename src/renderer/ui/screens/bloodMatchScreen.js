@@ -12,6 +12,19 @@ import { getCosmeticDisplayName } from "../../../state/cosmeticSystem.js";
 const BLOOD_MATCH_ARENA_PATH = "rivals/BloodMatch/background_blood_match_arena.png";
 const BLOOD_MATCH_MENU_TILE_PATH = "menu_tiles/tile_blood_match_mode.png";
 const ELEMENT_ORDER = Object.freeze(["fire", "earth", "wind", "water"]);
+const DEFAULT_PLAYER_EQUIPPED = Object.freeze({
+  avatar: "default_avatar",
+  cardBack: "default_card_back",
+  background: "default_background",
+  elementCardVariant: Object.freeze({
+    fire: "default_fire_card",
+    earth: "default_earth_card",
+    wind: "default_wind_card",
+    water: "default_water_card"
+  }),
+  badge: "none",
+  title: "Initiate"
+});
 let detachBloodMatchKeyboardHandler = null;
 const RIVAL_COSMETIC_RACKS = Object.freeze({
   vampire: Object.freeze({
@@ -91,8 +104,31 @@ function getPanelState(state, id) {
   };
 }
 
+function mergeEquippedCosmetics(base, incoming) {
+  if (!incoming || typeof incoming !== "object") {
+    return base;
+  }
+
+  return {
+    ...base,
+    ...incoming,
+    elementCardVariant: {
+      ...(base.elementCardVariant ?? {}),
+      ...(incoming.elementCardVariant ?? {})
+    }
+  };
+}
+
 function getEquippedCosmetics(state) {
-  return state?.equippedCosmetics ?? state?.profile?.equippedCosmetics ?? state?.cosmetics?.equipped ?? {};
+  return [
+    DEFAULT_PLAYER_EQUIPPED,
+    state?.profile?.cosmetics?.snapshot?.equipped,
+    state?.profile?.cosmetics?.equipped,
+    state?.profile?.equippedCosmetics,
+    state?.cosmetics?.snapshot?.equipped,
+    state?.cosmetics?.equipped,
+    state?.equippedCosmetics
+  ].reduce(mergeEquippedCosmetics, {});
 }
 
 function resolvePlayerIdentity(state) {
@@ -442,6 +478,7 @@ function renderCenterClash(state) {
   const activeWarNames = Array.isArray(state?.war?.activeCombatantIds)
     ? state.war.activeCombatantIds.map((id) => getCombatant(state, id).name)
     : [];
+  const roundNumber = Math.max(1, Number(state?.round ?? 1) || 1);
 
   return `
     <section class="blood-match-center-column" data-blood-center-column="true">
@@ -456,8 +493,10 @@ function renderCenterClash(state) {
         <div class="blood-match-clash-status">
           ${terminal
             ? `<span>State: <strong>Match Complete</strong></span>
+               <span>Round: <strong>${roundNumber}</strong></span>
                <span>Match: <strong>${formatClock(state?.totalMatchSeconds)}</strong></span>`
-            : `<span>WAR: <strong>${state?.war?.active ? activeWarNames.join(" vs ") : "Inactive"}</strong></span>
+            : `<span>Round: <strong>${roundNumber}</strong></span>
+               <span>WAR: <strong>${state?.war?.active ? activeWarNames.join(" vs ") : "Inactive"}</strong></span>
                <span>Turn: <strong>${state?.timerSeconds ?? 0}s</strong></span>
                <span>Match: <strong>${formatClock(state?.totalMatchSeconds)}</strong></span>`}
         </div>

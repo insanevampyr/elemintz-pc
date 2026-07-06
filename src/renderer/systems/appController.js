@@ -1942,12 +1942,16 @@ export class AppController {
     if (!state) {
       return false;
     }
+    const profile = this.buildMatchCosmeticProfileView(this.profile);
+    const cosmetics = this.buildSafeCosmeticsPayload(this.cosmetics, profile ?? this.profile ?? {});
 
     this.screenFlow = "bloodMatch";
     this.screenManager.show("bloodMatch", {
       state: {
         ...state,
-        equippedCosmetics: this.profile?.equippedCosmetics ?? null,
+        profile,
+        cosmetics,
+        equippedCosmetics: profile?.equippedCosmetics ?? this.profile?.equippedCosmetics ?? null,
         settlementInFlight: this.bloodMatchSettlementInFlight,
         settlementResult: this.bloodMatchSettlementResult
       },
