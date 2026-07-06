@@ -13006,6 +13006,10 @@ test("appController: gauntlet match win records persistent win stats without inc
                 payload.matchWon && payload.currentStreak === 3
                 ? [{ streak: 3, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1 }] }]
                 : [],
+              chestGrants:
+                payload.matchWon && payload.currentStreak === 3
+                  ? [{ chestType: "basic", amount: 1 }]
+                  : [],
               xpConversionTokenBonus: payload.matchWon ? 2 : 0
             };
           }
@@ -13175,6 +13179,10 @@ test("appController: gauntlet time-limit win records persistent win stats and co
                 payload.matchWon && payload.currentStreak === 3
                 ? [{ streak: 3, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1 }] }]
                 : [],
+              chestGrants:
+                payload.matchWon && payload.currentStreak === 3
+                  ? [{ chestType: "basic", amount: 1 }]
+                  : [],
               xpConversionTokenBonus: payload.matchWon && payload.currentStreak === 3 ? 2 : 0
             };
           }

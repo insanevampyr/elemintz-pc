@@ -8120,6 +8120,33 @@ export class AppController {
   buildGauntletRewardRecapLines(finalPersisted = {}) {
     const result = finalPersisted ?? {};
     const lines = [];
+    const gauntletChestGrantCounts = new Map();
+    const hasAuthoritativeGauntletChestGrants = Object.prototype.hasOwnProperty.call(
+      result,
+      "gauntletChestGrants"
+    );
+    if (hasAuthoritativeGauntletChestGrants) {
+      for (const grant of Array.isArray(result.gauntletChestGrants) ? result.gauntletChestGrants : []) {
+        const chestType = String(grant?.chestType ?? "basic").trim() || "basic";
+        const amount = Math.max(0, Math.floor(Number(grant?.amount ?? 0) || 0));
+        if (amount > 0) {
+          gauntletChestGrantCounts.set(chestType, (gauntletChestGrantCounts.get(chestType) ?? 0) + amount);
+        }
+      }
+    }
+    const consumeGauntletChestGrant = (chest) => {
+      if (!hasAuthoritativeGauntletChestGrants) {
+        return true;
+      }
+      const chestType = String(chest?.chestType ?? "basic").trim() || "basic";
+      const amount = Math.max(0, Math.floor(Number(chest?.amount ?? 0) || 0));
+      const available = gauntletChestGrantCounts.get(chestType) ?? 0;
+      if (amount <= 0 || available < amount) {
+        return false;
+      }
+      gauntletChestGrantCounts.set(chestType, available - amount);
+      return true;
+    };
     const addLine = (line) => {
       const normalized = String(line ?? "").trim();
       if (normalized && !lines.includes(normalized)) {
@@ -8161,7 +8188,9 @@ export class AppController {
       const label = streak > 0 ? `Gauntlet Milestone ${streak}` : "Gauntlet Milestone";
       addLine(this.formatRewardAmountLine(label, reward?.xp, reward?.tokens));
       for (const chest of Array.isArray(reward?.chests) ? reward.chests : []) {
-        addLine(this.formatChestGrantLine(label, chest));
+        if (consumeGauntletChestGrant(chest)) {
+          addLine(this.formatChestGrantLine(label, chest));
+        }
       }
     }
 
@@ -9320,6 +9349,9 @@ export class AppController {
                 ),
                 gauntletLevelRewards: Array.isArray(gauntletStatsResult.levelRewards)
                   ? gauntletStatsResult.levelRewards
+                  : [],
+                gauntletChestGrants: Array.isArray(gauntletStatsResult.chestGrants)
+                  ? gauntletStatsResult.chestGrants
                   : []
               };
             }

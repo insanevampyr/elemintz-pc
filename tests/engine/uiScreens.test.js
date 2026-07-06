@@ -29554,9 +29554,10 @@ test("ui: Gauntlet reward recap aggregates persisted match, challenge, milestone
     weeklyRewards: [{ name: "Reach A 3-Match Win Streak", rewardXp: 15, rewardTokens: 7 }],
     chestGrants: [{ chestType: "basic", amount: 1 }],
     gauntletMilestoneRewards: [
-      { streak: 5, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1, chestLabel: "Basic Chest" }] },
+      { streak: 3, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1, chestLabel: "Basic Chest" }] },
       { streak: 15, xp: 100, tokens: 75, chests: [] }
     ],
+    gauntletChestGrants: [{ chestType: "basic", amount: 1 }],
     levelRewards: [{ kind: "tokens", amount: 25, label: "Level 10 Reward" }],
     gauntletLevelRewards: [{ kind: "chest", chestType: "milestone", amount: 1, label: "Level 20 Reward" }],
     unlockedAchievements: [{ name: "War Master" }],
@@ -29569,7 +29570,7 @@ test("ui: Gauntlet reward recap aggregates persisted match, challenge, milestone
     "Win 1 Match Challenge: +4 XP, +2 Tokens",
     "Reach A 3-Match Win Streak Challenge: +15 XP, +7 Tokens",
     "Chest Grant: +1 Basic Chest",
-    "Gauntlet Milestone 5: +1 Basic Chest",
+    "Gauntlet Milestone 3: +1 Basic Chest",
     "Gauntlet Milestone 15: +100 XP, +75 Tokens",
     "Level 10 Reward: +25 Tokens",
     "Level 20 Reward: +1 Milestone Chest",
@@ -29578,6 +29579,14 @@ test("ui: Gauntlet reward recap aggregates persisted match, challenge, milestone
     "Max Level Bonus: +3 Tokens"
   ]);
   assert.ok(!recapLines.some((line) => line === "Challenge Rewards: +19 XP, +9 Tokens"));
+
+  const blockedMilestoneChestLines = controller.buildGauntletRewardRecapLines({
+    gauntletMilestoneRewards: [
+      { streak: 3, xp: 0, tokens: 0, chests: [{ chestType: "basic", amount: 1, chestLabel: "Basic Chest" }] }
+    ],
+    gauntletChestGrants: []
+  });
+  assert.deepEqual(blockedMilestoneChestLines, []);
 
   const payload = controller.buildMatchCompleteModalPayload(
     MATCH_MODE.PVE,
