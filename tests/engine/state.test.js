@@ -80,10 +80,12 @@ function markAllChallengeRewardsConsumed(challenges) {
     challenges.daily.completed[def.id] = true;
     challenges.daily.rewarded[def.id] = true;
   }
+  challenges.daily.completionChestGranted = true;
   for (const def of WEEKLY_CHALLENGE_DEFINITIONS) {
     challenges.weekly.completed[def.id] = true;
     challenges.weekly.rewarded[def.id] = true;
   }
+  challenges.weekly.completionChestGranted = true;
   return challenges;
 }
 
@@ -1954,9 +1956,12 @@ test("state: online_pvp streak chests grant basic at 3 and milestone at 7 withou
     random: constantRandom(0.99)
   });
   const match = createRewardHookMatch({ winner: "p1", mode: "online_pvp" });
+  await state.profiles.updateProfile("OnlineStreakChestUser", {
+    dailyChallenges: markAllChallengeRewardsConsumed(createDefaultDailyChallenges(Date.now()))
+  });
 
   for (let index = 1; index <= 8; index += 1) {
-    await state.recordOnlineMatchResult({
+    const result = await state.recordOnlineMatchResult({
       username: "OnlineStreakChestUser",
       perspective: "p1",
       matchState: match,
@@ -1976,6 +1981,24 @@ test("state: online_pvp streak chests grant basic at 3 and milestone at 7 withou
     }
     assert.equal(profile.chests.epic, 0);
     assert.equal(profile.chests.legendary, 0);
+
+    if (index === 3) {
+      const duplicateThird = await state.recordOnlineMatchResult({
+        username: "OnlineStreakChestUser",
+        perspective: "p1",
+        matchState: match,
+        settlementKey: "ONLINE-STREAK:3"
+      });
+      const profileAfterThirdReplay = await state.profiles.getProfile("OnlineStreakChestUser");
+
+      assert.equal(result.duplicate ?? false, false);
+      assert.equal(duplicateThird.duplicate, true);
+      assert.equal(profileAfterThirdReplay.winStreak, 3);
+      assert.equal(profileAfterThirdReplay.chests.basic, 1);
+      assert.equal(profileAfterThirdReplay.chests.milestone, 0);
+      assert.equal(profileAfterThirdReplay.chests.epic, 0);
+      assert.equal(profileAfterThirdReplay.chests.legendary, 0);
+    }
   }
 
   const duplicate = await state.recordOnlineMatchResult({
@@ -1992,6 +2015,66 @@ test("state: online_pvp streak chests grant basic at 3 and milestone at 7 withou
   assert.equal(profileAfterDuplicate.chests.milestone, 1);
   assert.equal(profileAfterDuplicate.chests.epic, 0);
   assert.equal(profileAfterDuplicate.chests.legendary, 0);
+});
+
+test("state: online authoritative reward settlement does not replay the 3-win streak chest", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir });
+  const match = createRewardHookMatch({ winner: "p1", mode: "online_pvp" });
+  const rewardDecision = {
+    participants: {
+      hostUsername: "OnlineAuthorityStreakUser",
+      guestUsername: "OtherUser"
+    },
+    rewards: {
+      host: { tokens: 12, xp: 10, basicChests: 0 },
+      guest: { tokens: 2, xp: 2, basicChests: 0 }
+    }
+  };
+
+  await authority.coordinator.profiles.updateProfile("OnlineAuthorityStreakUser", {
+    winStreak: 2,
+    bestWinStreak: 2,
+    dailyChallenges: markAllChallengeRewardsConsumed(createDefaultDailyChallenges(Date.now()))
+  });
+
+  const first = await authority.applyMatchResult({
+    username: "OnlineAuthorityStreakUser",
+    perspective: "p1",
+    result: match,
+    settlementKey: "ONLINE-AUTH-STREAK:3",
+    rewardDecision,
+    participantRole: "host"
+  });
+  const duplicate = await authority.applyMatchResult({
+    username: "OnlineAuthorityStreakUser",
+    perspective: "p1",
+    result: match,
+    settlementKey: "ONLINE-AUTH-STREAK:3",
+    rewardDecision,
+    participantRole: "host"
+  });
+  const later = await authority.applyMatchResult({
+    username: "OnlineAuthorityStreakUser",
+    perspective: "p1",
+    result: match,
+    settlementKey: "ONLINE-AUTH-STREAK:4",
+    rewardDecision,
+    participantRole: "host"
+  });
+
+  assert.equal(first.duplicate, false);
+  assert.equal(first.snapshot.profile.winStreak, 3);
+  assert.equal(first.snapshot.profile.chests.basic, 1);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.snapshot.profile.winStreak, 3);
+  assert.equal(duplicate.snapshot.profile.chests.basic, 1);
+  assert.equal(later.duplicate, false);
+  assert.equal(later.snapshot.profile.winStreak, 4);
+  assert.equal(later.snapshot.profile.chests.basic, 1);
+  assert.equal(later.snapshot.profile.chests.milestone, 0);
+  assert.equal(later.snapshot.profile.chests.epic, 0);
+  assert.equal(later.snapshot.profile.chests.legendary, 0);
 });
 
 test("state: local_pvp draw records games played and resets win streak through the shared stat path", async () => {
@@ -2099,6 +2182,9 @@ test("state: tracked local PvE streak chests grant basic at 3 and milestone at 7
     random: constantRandom(0.99)
   });
   const match = createRewardHookMatch({ winner: "p1", mode: "pve", difficulty: "normal" });
+  await state.profiles.updateProfile("PveStreakChestUser", {
+    dailyChallenges: markAllChallengeRewardsConsumed(createDefaultDailyChallenges(Date.now()))
+  });
 
   for (let index = 1; index <= 8; index += 1) {
     await state.recordMatchResult({

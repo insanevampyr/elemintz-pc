@@ -5,12 +5,31 @@ import os from "node:os";
 import path from "node:path";
 import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
-import { applyDailyChallengesForMatch, WEEKLY_CHALLENGE_DEFINITIONS } from "../../src/state/dailyChallengesSystem.js";
+import {
+  applyDailyChallengesForMatch,
+  createDefaultDailyChallenges,
+  DAILY_CHALLENGE_DEFINITIONS,
+  WEEKLY_CHALLENGE_DEFINITIONS
+} from "../../src/state/dailyChallengesSystem.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
 import { DEFAULT_STARTING_TOKENS } from "../../src/state/storeSystem.js";
 
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-chests-"));
+}
+
+function markAllChallengeRewardsConsumed(challenges) {
+  for (const definition of DAILY_CHALLENGE_DEFINITIONS) {
+    challenges.daily.completed[definition.id] = true;
+    challenges.daily.rewarded[definition.id] = true;
+  }
+  challenges.daily.completionChestGranted = true;
+  for (const definition of WEEKLY_CHALLENGE_DEFINITIONS) {
+    challenges.weekly.completed[definition.id] = true;
+    challenges.weekly.rewarded[definition.id] = true;
+  }
+  challenges.weekly.completionChestGranted = true;
+  return challenges;
 }
 
 function randomSequence(values) {
@@ -483,6 +502,9 @@ test("chests: win streak grants basic at exactly 3, milestone at exactly 7, and 
         p2Card: "water"
       }
     ]
+  });
+  await state.profiles.updateProfile("StreakChestUser", {
+    dailyChallenges: markAllChallengeRewardsConsumed(createDefaultDailyChallenges(Date.now()))
   });
 
   for (let index = 0; index < 3; index += 1) {
