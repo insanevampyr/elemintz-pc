@@ -818,7 +818,7 @@ function getLongestMatchRounds(profile) {
   return Math.max(0, Number(profile?.longestMatch?.rounds ?? 0) || 0);
 }
 
-function applyApprovedExpansionUnlockRules(profileBefore, profileAfter, unlocks) {
+function applyLongestMatchUnlockRules(profileAfter, unlocks) {
   if (getLongestMatchRounds(profileAfter) >= 25) {
     unlock("long_match_25", unlocks);
   }
@@ -834,6 +834,10 @@ function applyApprovedExpansionUnlockRules(profileBefore, profileAfter, unlocks)
   if (getLongestMatchRounds(profileAfter) >= 100) {
     unlock("long_match_100", unlocks);
   }
+}
+
+function applyApprovedExpansionUnlockRules(profileBefore, profileAfter, unlocks) {
+  applyLongestMatchUnlockRules(profileAfter, unlocks);
 
   if ((profileAfter.longestWar ?? 0) >= 5) {
     unlock("longest_war_5", unlocks);
@@ -1035,6 +1039,7 @@ export function evaluateBloodMatchAchievements({
   const priorMasteryBlocks = Math.floor(Math.max(0, Number(profileBefore?.bloodMatchWins ?? 0) || 0) / 10);
   const nextMasteryBlocks = Math.floor(Math.max(0, Number(profileAfter?.bloodMatchWins ?? 0) || 0) / 10);
   unlockRepeated("blood_match_mastery", Math.max(0, nextMasteryBlocks - priorMasteryBlocks), unlocks);
+  applyLongestMatchUnlockRules(profileAfter, unlocks);
 
   return unlocks.filter((definition) => definition.repeatable || !hasUnlocked(profileBefore, definition.id));
 }

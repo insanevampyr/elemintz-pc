@@ -194,6 +194,8 @@ function formatLongestMatchMode(value) {
       return "Featured Rival";
     case "gauntlet":
       return "Gauntlet";
+    case "blood_match":
+      return "Blood Match";
     case "pve":
       return "PvE";
     default:

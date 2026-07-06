@@ -967,6 +967,28 @@ function buildBloodMatchLatestBattleSummary(summary = {}, stats = {}, nowMs = Da
   };
 }
 
+function buildBloodMatchLongestMatchCandidate(summary = {}, stats = {}, nowMs = Date.now()) {
+  const rounds = safeRuntimeCount(summary?.round, 0);
+  if (rounds <= 0) {
+    return null;
+  }
+
+  const playerWon = safeRuntimeCount(stats.bloodMatchWins, 0) > 0;
+  const endReason = String(stats.endReason ?? summary?.endReason ?? "").trim();
+  const timedOut = endReason === "timeout_lead" || endReason === "timeout_tie_or_deficit";
+
+  return {
+    rounds,
+    mode: "blood_match",
+    opponentId: "blood_match",
+    opponentName: BLOOD_MATCH_RIVAL_NAME,
+    result: timedOut ? (playerWon ? "timer_win" : "timer_loss") : playerWon ? "win" : "loss",
+    capturedFor: safeRuntimeCount(stats.bloodMatchCardsCaptured, 0),
+    capturedAgainst: null,
+    achievedAt: new Date(nowMs).toISOString()
+  };
+}
+
 function getBloodMatchLossParticipationXp() {
   return buildXpBreakdown({
     isCompleted: true,
@@ -1784,6 +1806,10 @@ export class StateCoordinator {
       const bloodMatchStats = deriveBloodMatchProfileStats(summary);
       const playerWon = bloodMatchStats.bloodMatchWins > 0;
       let workingProfile = applyBloodMatchStatsToProfile(profileBefore, bloodMatchStats);
+      workingProfile = applyLongestMatchCandidate(
+        workingProfile,
+        buildBloodMatchLongestMatchCandidate(summary, bloodMatchStats, nowMs)
+      );
       const baseXpDelta = playerWon ? BLOOD_MATCH_WIN_XP : getBloodMatchLossParticipationXp();
       const baseTokenDelta = playerWon ? BLOOD_MATCH_WIN_TOKENS : BLOOD_MATCH_LOSS_TOKENS;
       const xpAwardSummary = applyXpAwardToProfile(

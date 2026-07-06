@@ -187,6 +187,7 @@ test("state: new profile defaults include gauntlet stats at 0", async () => {
 });
 
 function createBloodMatchSettlementSummary({
+  round = 7,
   result = "player_win",
   winnerId = "player",
   endReason = "both_rivals_eliminated",
@@ -214,7 +215,7 @@ function createBloodMatchSettlementSummary({
   return {
     mode: "bloodMatch",
     status: "completed",
-    round: 7,
+    round,
     winnerId,
     endReason,
     terminalResult: {
@@ -779,6 +780,58 @@ test("state: Blood Match loss uses normal PvE chest roll and duplicate settlemen
   assert.deepEqual(duplicate.chestGrants, []);
 });
 
+test("state: Blood Match updates longest match flex record and long-match achievements only", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir, random: constantRandom(0.99) });
+
+  const result = await state.recordBloodMatchResult({
+    username: "BloodLongestMatchUser",
+    settlementKey: "blood-longest-133",
+    nowMs: Date.parse("2026-06-27T13:33:00.000Z"),
+    summary: createBloodMatchSettlementSummary({
+      round: 133,
+      playerCapturedCount: 21
+    })
+  });
+
+  assert.deepEqual(result.profile.longestMatch, {
+    rounds: 133,
+    mode: "blood_match",
+    opponentId: "blood_match",
+    opponentName: "Countess Veyra & Ravena Moonfang",
+    result: "win",
+    capturedFor: 21,
+    capturedAgainst: null,
+    achievedAt: "2026-06-27T13:33:00.000Z"
+  });
+  assert.equal(result.profile.achievements.long_match_25.count, 1);
+  assert.equal(result.profile.achievements.long_match_50.count, 1);
+  assert.equal(result.profile.achievements.long_match_75.count, 1);
+  assert.equal(result.profile.achievements.long_match_100.count, 1);
+  assert.equal(result.profile.wins, 0);
+  assert.equal(result.profile.losses, 0);
+  assert.equal(result.profile.gamesPlayed, 0);
+  assert.equal(result.profile.cardsCaptured, 0);
+  assert.equal(result.profile.winStreak, 0);
+
+  const shorter = await state.recordBloodMatchResult({
+    username: "BloodLongestMatchUser",
+    settlementKey: "blood-longest-20",
+    nowMs: Date.parse("2026-06-27T13:40:00.000Z"),
+    summary: createBloodMatchSettlementSummary({
+      round: 20,
+      playerCapturedCount: 4
+    })
+  });
+
+  assert.equal(shorter.profile.longestMatch.rounds, 133);
+  assert.equal(shorter.profile.longestMatch.achievedAt, "2026-06-27T13:33:00.000Z");
+  assert.equal(shorter.profile.achievements.long_match_100.count, 1);
+  assert.equal(shorter.profile.bloodMatchMatchesPlayed, 2);
+  assert.equal(shorter.profile.wins, 0);
+  assert.equal(shorter.profile.cardsCaptured, 0);
+});
+
 test("state: old profile data normalizes missing gauntlet stats to 0", async () => {
   const dataDir = await createTempDataDir();
   const state = createBoostAwareStateCoordinator({ dataDir });
@@ -855,6 +908,7 @@ test("state: gauntlet 3-streak grants 1 basic chest once", async () => {
   assert.equal(awarded.profile.chests.basic, 1);
   assert.deepEqual(awarded.chestGrants, [{ chestType: "basic", amount: 1 }]);
   assert.deepEqual(awarded.claimedMilestoneStreaks, [3]);
+  assert.equal((await state.profiles.getProfile("GauntletMilestone3User")).chests.basic, 1);
   assert.equal(noDuplicate.tokenDelta, 0);
   assert.deepEqual(noDuplicate.chestGrants, []);
   assert.equal(noDuplicate.profile.tokens, DEFAULT_STARTING_TOKENS);

@@ -83,7 +83,8 @@ export const LONGEST_MATCH_MODES = Object.freeze([
   "local_pvp",
   "pve",
   "featured_rival",
-  "gauntlet"
+  "gauntlet",
+  "blood_match"
 ]);
 
 export const LONGEST_MATCH_RESULTS = Object.freeze([
