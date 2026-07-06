@@ -5187,15 +5187,32 @@ test("ui: blood match terminal reason display never leaks raw required-play enum
   assert.doesNotMatch(html, /required play/i);
 });
 
-test("ui: blood match screen binds card, quit, rematch, and return actions", () => {
+function createBloodMatchCardButton(element, { disabled = false } = {}) {
+  const listeners = new Map();
+  const attributes = new Map();
+  const classList = createClassList();
+  if (disabled) {
+    attributes.set("disabled", "disabled");
+    classList.add("is-disabled");
+  }
+
+  return {
+    isConnected: true,
+    dataset: { bloodPlayCardElement: element },
+    listeners,
+    classList,
+    addEventListener: (type, handler) => listeners.set(type, handler),
+    getAttribute: (name) => attributes.get(name) ?? null,
+    setAttribute: (name, value) => attributes.set(name, String(value)),
+    hasAttribute: (name) => attributes.has(name),
+    removeAttribute: (name) => attributes.delete(name)
+  };
+}
+
+test("ui: blood match screen binds card, quit, rematch, and return actions", async () => {
   const previousDocument = global.document;
   const calls = [];
-  const cardButton = {
-    dataset: { bloodPlayCardElement: "water" },
-    addEventListener: (_type, handler) => {
-      cardButton.click = handler;
-    }
-  };
+  const cardButton = createBloodMatchCardButton("water");
   const buttons = new Map([
     ["blood-match-quit-btn", createFakeElement()],
     ["blood-match-rematch-btn", createFakeElement()],
@@ -5217,12 +5234,218 @@ test("ui: blood match screen binds card, quit, rematch, and return actions", () 
       }
     });
 
-    cardButton.click();
+    await cardButton.listeners.get("click")();
     buttons.get("blood-match-quit-btn").listeners.get("click")();
     buttons.get("blood-match-rematch-btn").listeners.get("click")();
     buttons.get("blood-match-return-menu-btn").listeners.get("click")();
 
     assert.deepEqual(calls, [["play", "water"], ["quit"], ["rematch"], ["menu"]]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: blood match player hand displays standard 1-4 keyboard legend", () => {
+  const html = bloodMatchScreen.render({
+    state: createBloodMatchScreenState(),
+    actions: {}
+  });
+
+  assert.match(html, /Keyboard: \[1\] Fire\s+\[2\] Earth\s+\[3\] Wind\s+\[4\] Water/);
+});
+
+test("ui: blood match number hotkeys submit legal elements through the card action path", async () => {
+  const previousDocument = global.document;
+  const registered = {};
+  const playCalls = [];
+  const cards = [
+    createBloodMatchCardButton("fire"),
+    createBloodMatchCardButton("earth"),
+    createBloodMatchCardButton("wind"),
+    createBloodMatchCardButton("water")
+  ];
+  const buttons = new Map([
+    ["blood-match-quit-btn", createFakeElement()],
+    ["blood-match-rematch-btn", createFakeElement()],
+    ["blood-match-return-menu-btn", createFakeElement()]
+  ]);
+
+  global.document = {
+    addEventListener(type, handler) {
+      registered[type] = handler;
+    },
+    removeEventListener(type, handler) {
+      if (registered[type] === handler) {
+        delete registered[type];
+      }
+    },
+    querySelector: () => null,
+    querySelectorAll: (selector) => selector === "[data-blood-play-card-element]" ? cards : [],
+    getElementById: (id) => buttons.get(id) ?? null
+  };
+
+  try {
+    bloodMatchScreen.bind({
+      actions: {
+        playCard: async (element) => {
+          playCalls.push(element);
+        }
+      }
+    });
+
+    await registered.keydown({ key: "1", preventDefault: () => {} });
+    await registered.keydown({ key: "2", preventDefault: () => {} });
+    await registered.keydown({ key: "3", preventDefault: () => {} });
+    await registered.keydown({ key: "4", preventDefault: () => {} });
+
+    assert.deepEqual(playCalls, ["fire", "earth", "wind", "water"]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: blood match hotkeys ignore unavailable, modal, editable, and completed states", async () => {
+  const previousDocument = global.document;
+  const registered = {};
+  const playCalls = [];
+  const fire = createBloodMatchCardButton("fire", { disabled: true });
+  const earth = createBloodMatchCardButton("earth");
+  const buttons = new Map([
+    ["blood-match-quit-btn", createFakeElement()],
+    ["blood-match-rematch-btn", createFakeElement()],
+    ["blood-match-return-menu-btn", createFakeElement()]
+  ]);
+  let modalOpen = false;
+  let activeCards = [fire, earth];
+
+  global.document = {
+    activeElement: null,
+    addEventListener(type, handler) {
+      registered[type] = handler;
+    },
+    removeEventListener(type, handler) {
+      if (registered[type] === handler) {
+        delete registered[type];
+      }
+    },
+    querySelector: (selector) => selector === ".modal-overlay" && modalOpen ? {} : null,
+    querySelectorAll: (selector) => selector === "[data-blood-play-card-element]" ? activeCards : [],
+    getElementById: (id) => buttons.get(id) ?? null
+  };
+
+  try {
+    bloodMatchScreen.bind({
+      actions: {
+        playCard: async (element) => {
+          playCalls.push(element);
+        }
+      }
+    });
+
+    await registered.keydown({ key: "1", preventDefault: () => {} });
+    modalOpen = true;
+    await registered.keydown({ key: "2", preventDefault: () => {} });
+    modalOpen = false;
+    await registered.keydown({
+      key: "2",
+      target: { tagName: "textarea" },
+      preventDefault: () => {}
+    });
+    activeCards = [];
+    await registered.keydown({ key: "2", preventDefault: () => {} });
+
+    assert.deepEqual(playCalls, []);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: blood match hotkeys work during eligible active WAR selection", async () => {
+  const previousDocument = global.document;
+  const registered = {};
+  const playCalls = [];
+  const water = createBloodMatchCardButton("water");
+
+  global.document = {
+    addEventListener(type, handler) {
+      registered[type] = handler;
+    },
+    removeEventListener(type, handler) {
+      if (registered[type] === handler) {
+        delete registered[type];
+      }
+    },
+    querySelector: () => null,
+    querySelectorAll: (selector) => selector === "[data-blood-play-card-element]" ? [water] : [],
+    getElementById: () => null
+  };
+
+  try {
+    bloodMatchScreen.bind({
+      state: createBloodMatchScreenState({
+        war: { active: true, activeCombatantIds: ["player", "vampire"], clashes: 1 },
+        legalPlayableCards: { player: ["water"], vampire: ["fire"], lycan: [] }
+      }),
+      actions: {
+        playCard: async (element) => {
+          playCalls.push(element);
+        }
+      }
+    });
+
+    await registered.keydown({ key: "4", preventDefault: () => {} });
+
+    assert.deepEqual(playCalls, ["water"]);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: blood match repeated keydown cannot duplicate a locked submission", async () => {
+  const previousDocument = global.document;
+  const registered = {};
+  const playCalls = [];
+  const fire = createBloodMatchCardButton("fire");
+  let resolvePlay = null;
+  let holdNextPlay = true;
+
+  global.document = {
+    addEventListener(type, handler) {
+      registered[type] = handler;
+    },
+    removeEventListener(type, handler) {
+      if (registered[type] === handler) {
+        delete registered[type];
+      }
+    },
+    querySelector: () => null,
+    querySelectorAll: (selector) => selector === "[data-blood-play-card-element]" ? [fire] : [],
+    getElementById: () => null
+  };
+
+  try {
+    bloodMatchScreen.bind({
+      actions: {
+        playCard: async (element) => {
+          playCalls.push(element);
+          if (holdNextPlay) {
+            holdNextPlay = false;
+            await new Promise((resolve) => {
+              resolvePlay = resolve;
+            });
+          }
+        }
+      }
+    });
+
+    const first = registered.keydown({ key: "1", preventDefault: () => {} });
+    await registered.keydown({ key: "1", preventDefault: () => {} });
+    assert.deepEqual(playCalls, ["fire"]);
+
+    resolvePlay();
+    await first;
+    await registered.keydown({ key: "1", preventDefault: () => {} });
+    assert.deepEqual(playCalls, ["fire", "fire"]);
   } finally {
     global.document = previousDocument;
   }
