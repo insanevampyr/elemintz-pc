@@ -1014,7 +1014,9 @@ export const gameScreen = {
         : "";
 
     let roundMessage = buildRoundReasonLine(vm);
-    if (!context.reducedMotion && phase === "reveal") {
+    if (phase === "thinking") {
+      roundMessage = "Opponent thinking...";
+    } else if (!context.reducedMotion && phase === "reveal") {
       roundMessage = "Resolving clash...";
     }
     const centerResultView = buildLocalCenterResultView(vm, context, names, roundMessage, hotseatBusyReveal);
@@ -1077,7 +1079,9 @@ export const gameScreen = {
                   ${renderWarPileSummary(vm.warPileCards, opponentCardVariantImages, warTriggered)}
                 </div>
               `,
-              centerSlotHtml: centerResultView
+              centerSlotHtml: phase === "thinking"
+                ? `<div class="round-center-placeholder" data-round-center-placeholder="true">Opponent thinking...</div>`
+                : centerResultView
                 ? renderCenterRoundResult(centerResultView)
                 : renderCenterRoundPlaceholder(),
               rightSlotHtml: `

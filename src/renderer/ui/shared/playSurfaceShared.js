@@ -226,7 +226,7 @@ export function renderElementHandSummary(cardsOrCounts, owner, options = {}) {
       classes.push("is-empty");
     }
 
-    if (isSelected && phase === "play") {
+    if (isSelected && (phase === "play" || phase === "thinking")) {
       classes.push("is-playing");
     }
 

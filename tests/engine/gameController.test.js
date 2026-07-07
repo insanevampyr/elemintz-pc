@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 
 import { GameController, MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
+import {
+  calculateAiTurnPacingDelayMs,
+  resolveAiTurnPacingProfile
+} from "../../src/renderer/systems/aiTurnPacing.js";
 import { evaluateTrainingCoach } from "../../src/renderer/systems/trainingCoachEvaluator.js";
 import { getUpdateSafetyState, isSafeForUpdateRestart } from "../../src/renderer/systems/updateSafety.js";
 import { WAR_REQUIRED_CARDS } from "../../src/engine/index.js";
@@ -1273,6 +1277,196 @@ test("gameController: AI pacing profiles cover Hard, Gauntlet, Featured Rival, a
     } finally {
       controller.dispose();
     }
+  }
+});
+
+test("gameController: Gauntlet pacing uses Hard profile for multi-choice turns and waits before submit", async () => {
+  const scheduler = createFakeAiPacingScheduler();
+  const events = [];
+  const controller = new GameController({
+    username: "GauntletPacingAuditUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "normal",
+    gauntletMode: true,
+    gauntletRivalId: "pyro_maniac",
+    persistMatchResults: false,
+    aiPacingScheduler: scheduler,
+    aiPacingRandom: () => 0,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom: createAuthoritativeLocalRoom(),
+        submitMove: (_socketId, move) => {
+          events.push(`submit:${move}`);
+          return {
+            ok: true,
+            room: createAuthoritativeLocalRoom({
+              roundNumber: 2,
+              hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+              guestHand: { fire: 2, water: 1, earth: 2, wind: 2 },
+              roundHistory: [
+                {
+                  round: 1,
+                  hostMove: move,
+                  guestMove: "earth",
+                  outcomeType: "resolved",
+                  hostResult: "win",
+                  guestResult: "lose"
+                }
+              ]
+            }),
+            roundResult: {
+              round: 1,
+              hostMove: move,
+              guestMove: "earth",
+              outcomeType: "resolved",
+              hostResult: "win",
+              guestResult: "lose",
+              warRounds: [],
+              warPot: { host: [], guest: [] }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+
+    assert.equal(controller.gauntletMode, true);
+    assert.equal(controller.gauntletRivalId, "pyro_maniac");
+    assert.equal(controller.getAiLegalChoiceCountForPacing(), 8);
+    assert.equal(
+      resolveAiTurnPacingProfile({
+        legalChoiceCount: controller.getAiLegalChoiceCountForPacing(),
+        aiDifficulty: controller.aiDifficulty,
+        gauntletMode: controller.gauntletMode,
+        featuredRivalId: controller.featuredRivalId
+      })?.key,
+      "hard"
+    );
+
+    const pending = controller.playCard(0);
+    await Promise.resolve();
+
+    assert.deepEqual(events, []);
+    assert.equal(scheduler.activeCount(), 1);
+    assert.equal(scheduler.timeouts[0]?.delayMs, 700);
+
+    scheduler.runNext();
+    const result = await pending;
+
+    assert.equal(result.status, "resolved");
+    assert.deepEqual(events, ["submit:fire"]);
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("gameController: Gauntlet forced classification only applies to a single legal AI choice", async () => {
+  const multiChoiceProfile = resolveAiTurnPacingProfile({
+    legalChoiceCount: 8,
+    aiDifficulty: "normal",
+    gauntletMode: true
+  });
+  assert.equal(multiChoiceProfile?.key, "hard");
+  assert.equal(calculateAiTurnPacingDelayMs(multiChoiceProfile, { rng: () => 0 }), 700);
+
+  let maxBaseRolls = [0.999999, 0.999999];
+  assert.equal(
+    calculateAiTurnPacingDelayMs(multiChoiceProfile, {
+      rng: () => maxBaseRolls.shift() ?? 0.999999
+    }),
+    1400
+  );
+
+  let longThinkRolls = [0, 0, 0.999999];
+  assert.equal(
+    calculateAiTurnPacingDelayMs(multiChoiceProfile, {
+      rng: () => longThinkRolls.shift() ?? 0
+    }),
+    1800
+  );
+
+  const scheduler = createFakeAiPacingScheduler();
+  let submitCount = 0;
+  const controller = new GameController({
+    username: "GauntletForcedPacingAuditUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "normal",
+    gauntletMode: true,
+    gauntletRivalId: "pyro_maniac",
+    persistMatchResults: false,
+    aiPacingScheduler: scheduler,
+    aiPacingRandom: () => 0.999999,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom: createAuthoritativeLocalRoom({
+          guestHand: { fire: 1, water: 0, earth: 0, wind: 0 }
+        }),
+        submitMove: (_socketId, move) => {
+          submitCount += 1;
+          return {
+            ok: true,
+            room: createAuthoritativeLocalRoom({
+              roundNumber: 2,
+              guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+              roundHistory: [
+                {
+                  round: 1,
+                  hostMove: move,
+                  guestMove: "fire",
+                  outcomeType: "tie",
+                  hostResult: "tie",
+                  guestResult: "tie"
+                }
+              ]
+            }),
+            roundResult: {
+              round: 1,
+              hostMove: move,
+              guestMove: "fire",
+              outcomeType: "war",
+              hostResult: "tie",
+              guestResult: "tie",
+              warRounds: [],
+              warPot: { host: [move], guest: ["fire"] }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+
+    assert.equal(controller.getAiLegalChoiceCountForPacing(), 1);
+    assert.equal(
+      resolveAiTurnPacingProfile({
+        legalChoiceCount: controller.getAiLegalChoiceCountForPacing(),
+        aiDifficulty: controller.aiDifficulty,
+        gauntletMode: controller.gauntletMode
+      })?.key,
+      "forced"
+    );
+
+    const pending = controller.playCard(0);
+    await Promise.resolve();
+
+    assert.equal(submitCount, 0);
+    assert.equal(scheduler.activeCount(), 1);
+    assert.equal(scheduler.timeouts[0]?.delayMs, 100);
+
+    scheduler.runNext();
+    await pending;
+    assert.equal(submitCount, 1);
+  } finally {
+    controller.dispose();
   }
 });
 
@@ -18344,6 +18538,299 @@ test("appController: PvE match-complete modal waits for shared resolution popup 
   releaseResolution();
   await pending;
   assert.equal(flushCalls, 1);
+});
+
+test("appController: Gauntlet presentation shows opponent thinking while awaiting pacing before authoritative submit", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const scheduler = createFakeAiPacingScheduler();
+  const phases = [];
+  const submissions = [];
+  let popupCount = 0;
+
+  globalThis.setTimeout = scheduler.setTimeout;
+  globalThis.clearTimeout = scheduler.clearTimeout;
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    app.settings = { gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false } };
+    app.showGame = () => {
+      phases.push(app.roundPresentation.phase);
+    };
+    app.waitForRevealSoundSpacing = async () => {};
+    app.showSharedResolutionPopup = async () => {
+      popupCount += 1;
+    };
+    app.flushPendingMatchCompleteModal = () => {};
+    app.sound = { playReveal: () => {}, play: () => {}, playRoundResolved: () => {} };
+    app.gameController = new GameController({
+      username: "GauntletVisiblePacingUser",
+      timerSeconds: 30,
+      mode: MATCH_MODE.PVE,
+      aiDifficulty: "normal",
+      gauntletMode: true,
+      gauntletRivalId: "pyro_maniac",
+      persistMatchResults: false,
+      aiPacingScheduler: globalThis,
+      aiPacingRandom: () => 0,
+      localAuthorityStoreFactory: () =>
+        createAuthoritativePveStore({
+          initialRoom: createAuthoritativeLocalRoom(),
+          submitMove: (_socketId, move) => {
+            submissions.push(move);
+            return {
+              ok: true,
+              room: createAuthoritativeLocalRoom({
+                roundNumber: 2,
+                hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+                guestHand: { fire: 2, water: 1, earth: 2, wind: 2 },
+                roundHistory: [
+                  {
+                    round: 1,
+                    hostMove: move,
+                    guestMove: "earth",
+                    outcomeType: "resolved",
+                    hostResult: "win",
+                    guestResult: "lose"
+                  }
+                ]
+              }),
+              roundResult: {
+                round: 1,
+                hostMove: move,
+                guestMove: "earth",
+                outcomeType: "resolved",
+                hostResult: "win",
+                guestResult: "lose",
+                warRounds: [],
+                warPot: { host: [], guest: [] }
+              }
+            };
+          }
+        }),
+      onUpdate: () => {},
+      onMatchComplete: () => {}
+    });
+    app.gameController.startNewMatch();
+    app.gameController.stopTimer();
+    app.gameController.stopMatchClock();
+
+    const pending = app.presentPveRound(0);
+    await Promise.resolve();
+
+    assert.deepEqual(phases, ["play"]);
+    assert.deepEqual(submissions, []);
+    assert.equal(scheduler.timeouts[0]?.delayMs, 180);
+
+    scheduler.runNext();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(phases, ["play", "thinking"]);
+    assert.deepEqual(submissions, []);
+    assert.equal(scheduler.timeouts[1]?.delayMs, 700);
+
+    scheduler.runNext();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(submissions, []);
+    assert.deepEqual(phases, ["play", "thinking", "reveal"]);
+    assert.equal(scheduler.timeouts[2]?.delayMs, 260);
+
+    scheduler.runNext();
+    await pending;
+
+    assert.deepEqual(submissions, ["fire"]);
+    assert.ok(phases.includes("idle"));
+    assert.equal(popupCount, 1);
+  } finally {
+    app.gameController?.dispose?.();
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
+test("appController: cancelled opponent thinking clears presentation without stale submit", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const scheduler = createFakeAiPacingScheduler();
+  const phases = [];
+  const submissions = [];
+
+  globalThis.setTimeout = scheduler.setTimeout;
+  globalThis.clearTimeout = scheduler.clearTimeout;
+
+  const app = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  try {
+    app.settings = { gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false } };
+    app.showGame = () => {
+      phases.push(app.roundPresentation.phase);
+    };
+    app.waitForRevealSoundSpacing = async () => {};
+    app.showSharedResolutionPopup = async () => {};
+    app.flushPendingMatchCompleteModal = () => {};
+    app.sound = { playReveal: () => {}, play: () => {}, playRoundResolved: () => {} };
+    app.gameController = new GameController({
+      username: "PacingCancelThinkingUser",
+      timerSeconds: 30,
+      mode: MATCH_MODE.PVE,
+      aiDifficulty: "normal",
+      gauntletMode: true,
+      gauntletRivalId: "pyro_maniac",
+      persistMatchResults: false,
+      aiPacingScheduler: globalThis,
+      aiPacingRandom: () => 0,
+      localAuthorityStoreFactory: () =>
+        createAuthoritativePveStore({
+          initialRoom: createAuthoritativeLocalRoom(),
+          submitMove: (_socketId, move) => {
+            submissions.push(move);
+            return {
+              ok: true,
+              room: createAuthoritativeLocalRoom({ roundNumber: 2 }),
+              roundResult: null
+            };
+          }
+        }),
+      onUpdate: () => {},
+      onMatchComplete: () => {}
+    });
+    app.gameController.startNewMatch();
+    app.gameController.stopTimer();
+    app.gameController.stopMatchClock();
+
+    const pending = app.presentPveRound(0);
+    await Promise.resolve();
+    scheduler.runNext();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(phases, ["play", "thinking"]);
+    assert.deepEqual(submissions, []);
+
+    app.gameController.startNewMatch();
+    await pending;
+
+    assert.deepEqual(submissions, []);
+    assert.deepEqual(app.roundPresentation, {
+      phase: "idle",
+      busy: false,
+      selectedCardIndex: null
+    });
+  } finally {
+    app.gameController?.dispose?.();
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
+test("appController: forced and no-choice PvE authority paths skip visible opponent thinking", async () => {
+  const runScenario = async ({ guestHand, expectedPacingDelay }) => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    const scheduler = createFakeAiPacingScheduler();
+    const phases = [];
+    const submissions = [];
+
+    globalThis.setTimeout = scheduler.setTimeout;
+    globalThis.clearTimeout = scheduler.clearTimeout;
+
+    const app = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: { showAchievement: () => {} }
+    });
+
+    try {
+      app.settings = { gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false } };
+      app.showGame = () => {
+        phases.push(app.roundPresentation.phase);
+      };
+      app.waitForRevealSoundSpacing = async () => {};
+      app.showSharedResolutionPopup = async () => {};
+      app.flushPendingMatchCompleteModal = () => {};
+      app.sound = { playReveal: () => {}, play: () => {}, playRoundResolved: () => {} };
+      app.gameController = new GameController({
+        username: "PacingNoThinkingUser",
+        timerSeconds: 30,
+        mode: MATCH_MODE.PVE,
+        aiDifficulty: "normal",
+        gauntletMode: true,
+        gauntletRivalId: "pyro_maniac",
+        persistMatchResults: false,
+        aiPacingScheduler: globalThis,
+        aiPacingRandom: () => 0,
+        localAuthorityStoreFactory: () =>
+          createAuthoritativePveStore({
+            initialRoom: createAuthoritativeLocalRoom({ guestHand }),
+            submitMove: (_socketId, move) => {
+              submissions.push(move);
+              return {
+                ok: true,
+                room: createAuthoritativeLocalRoom({
+                  roundNumber: 2,
+                  guestHand,
+                  roundHistory: []
+                }),
+                roundResult: null
+              };
+            }
+          }),
+        onUpdate: () => {},
+        onMatchComplete: () => {}
+      });
+      app.gameController.startNewMatch();
+      app.gameController.stopTimer();
+      app.gameController.stopMatchClock();
+
+      const pending = app.presentPveRound(0);
+      await Promise.resolve();
+      scheduler.runNext();
+      await Promise.resolve();
+      await Promise.resolve();
+      scheduler.runNext();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      assert.deepEqual(phases, ["play", "reveal"]);
+      assert.notEqual(phases.includes("thinking"), true);
+
+      if (expectedPacingDelay === null) {
+        await pending;
+        assert.deepEqual(submissions, ["fire"]);
+      } else {
+        assert.deepEqual(submissions, []);
+        assert.equal(scheduler.timeouts[2]?.delayMs, expectedPacingDelay);
+        scheduler.runNext();
+        await pending;
+        assert.deepEqual(submissions, ["fire"]);
+      }
+    } finally {
+      app.gameController?.dispose?.();
+      globalThis.setTimeout = originalSetTimeout;
+      globalThis.clearTimeout = originalClearTimeout;
+    }
+  };
+
+  await runScenario({
+    guestHand: { fire: 1, water: 0, earth: 0, wind: 0 },
+    expectedPacingDelay: 0
+  });
+  await runScenario({
+    guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+    expectedPacingDelay: null
+  });
 });
 
 test("appController: Featured Rival Play Again preserves crownfire_duelist launch config", () => {

@@ -1147,14 +1147,23 @@ export class GameController {
     return this.getSelectableCardIndices("p2").length;
   }
 
-  waitForAiTurnPacingIfNeeded() {
-    const profile = resolveAiTurnPacingProfile({
+  getAiTurnPacingProfile() {
+    return resolveAiTurnPacingProfile({
       legalChoiceCount: this.getAiLegalChoiceCountForPacing(),
       aiDifficulty: this.aiDifficulty,
       trainingMode: this.trainingMode,
       gauntletMode: this.gauntletMode,
       featuredRivalId: this.featuredRivalId
     });
+  }
+
+  shouldShowOpponentThinkingPhase() {
+    const profile = this.getAiTurnPacingProfile();
+    return Boolean(profile && profile.key !== "forced");
+  }
+
+  waitForAiTurnPacingIfNeeded() {
+    const profile = this.getAiTurnPacingProfile();
 
     if (!profile || typeof this.aiPacingScheduler?.setTimeout !== "function") {
       return Promise.resolve(true);
@@ -1432,7 +1441,7 @@ export class GameController {
     };
   }
 
-  async playCard(playerCardIndex) {
+  async playCard(playerCardIndex, { aiPacingAlreadyWaited = false } = {}) {
     if (this.isLocalPvp()) {
       return { skipped: true, reason: "local-pvp-uses-hotseat-selection" };
     }
@@ -1460,9 +1469,11 @@ export class GameController {
         this.localAuthority?.hostSocket?.id &&
         this.localAuthority?.guestSocket?.id
       ) {
-        const pacingReady = await this.waitForAiTurnPacingIfNeeded();
-        if (!pacingReady) {
-          return { skipped: true, reason: "ai-pacing-cancelled" };
+        if (!aiPacingAlreadyWaited) {
+          const pacingReady = await this.waitForAiTurnPacingIfNeeded();
+          if (!pacingReady) {
+            return { skipped: true, reason: "ai-pacing-cancelled" };
+          }
         }
 
         if (!this.match || this.match.status !== "active") {

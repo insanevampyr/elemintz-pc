@@ -18816,6 +18816,46 @@ test("ui: PvE reveal path keeps stable cards while retaining clash and result em
   assert.match(html, /Cards Taken:<\/span>\s*<span class="battle-status-value">You 1 · Opponent 0/);
 });
 
+test("ui: local PvE opponent-thinking phase shows clear status and keeps input locked", () => {
+  const html = gameScreen.render({
+    reducedMotion: true,
+    arenaBackground: "assets/EleMintzIcon.png",
+    playerDisplay: { name: "Hero", title: "Initiate", avatar: "assets/avatars/default.png" },
+    opponentDisplay: { name: "Elemental AI", title: "Arena Rival", avatar: "assets/avatars/default.png" },
+    hotseat: { enabled: false, turnLabel: "Player Turn", p1Name: "Hero", p2Name: "Elemental AI" },
+    presentation: { phase: "thinking", busy: true, selectedCardIndex: 0 },
+    cardImages: {
+      p1: { fire: "assets/customFire.jpg", water: "assets/customWater.jpg", earth: "assets/customEarth.jpg", wind: "assets/customWind.jpg" },
+      p2: { fire: "assets/oppFire.jpg", water: "assets/oppWater.jpg", earth: "assets/oppEarth.jpg", wind: "assets/oppWind.jpg" }
+    },
+    cardBacks: { p1: "assets/cards/customP1Back.jpg", p2: "assets/cards/customP2Back.jpg" },
+    game: {
+      roundOutcome: { key: "player_win", label: "Player wins" },
+      roundResult: "Previous round result.",
+      round: 4,
+      timerSeconds: 18,
+      totalMatchSeconds: 270,
+      canSelectCard: true,
+      mode: "pve",
+      playerHand: ["fire", "water", "earth", "wind"],
+      opponentHand: ["wind", "water", "earth", "fire"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 1, p2: 0 },
+      lastRound: { result: "p1", p1Card: "water", p2Card: "fire" }
+    },
+    actions: { playCard: async () => {}, backToMenu: () => {} }
+  });
+
+  assert.match(html, /phase-thinking/);
+  assert.match(html, /Opponent thinking\.\.\./);
+  assert.match(html, /hand-slot-fire[^"]*is-playing/);
+  assert.match(html, /data-card-owner="active"[\s\S]*disabled/);
+  assert.doesNotMatch(html, /data-round-center-result="true"/);
+  assert.doesNotMatch(html, /Resolving clash\.\.\./);
+});
+
 test("ui: local PvE center result persists the last completed round during the next card selection state", () => {
   const html = gameScreen.render({
     reducedMotion: true,

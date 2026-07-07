@@ -9795,6 +9795,30 @@ export class AppController {
       await delay(180);
     }
 
+    const shouldShowOpponentThinking =
+      this.gameController?.shouldShowOpponentThinkingPhase?.() === true;
+    let aiPacingAlreadyWaited = false;
+
+    if (shouldShowOpponentThinking) {
+      this.roundPresentation = {
+        ...this.roundPresentation,
+        phase: "thinking"
+      };
+      this.showGame();
+
+      const pacingReady = await this.gameController.waitForAiTurnPacingIfNeeded();
+      if (!pacingReady) {
+        this.roundPresentation = {
+          phase: "idle",
+          busy: false,
+          selectedCardIndex: null
+        };
+        this.screenFlow = "idle";
+        return;
+      }
+      aiPacingAlreadyWaited = true;
+    }
+
     this.roundPresentation = {
       ...this.roundPresentation,
       phase: "reveal"
@@ -9807,7 +9831,7 @@ export class AppController {
 
     this.deferPveOutcomeSound = true;
     this.deferredPveRoundSound = null;
-    const result = await this.gameController.playCard(cardIndex);
+    const result = await this.gameController.playCard(cardIndex, { aiPacingAlreadyWaited });
     this.maybeEmitPveAiTauntForResult(result);
     const deferredOutcomeRound = this.deferredPveRoundSound;
     this.deferPveOutcomeSound = false;
