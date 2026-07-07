@@ -19616,6 +19616,94 @@ test("ui: keyboard selection triggers the same playCard path as clicking an acti
   }
 });
 
+test("ui: game hand input remains locked while the shared playCard path is pending", async () => {
+  const backButton = createFakeElement();
+  const activeFire = createFakeButton("2");
+  activeFire.getAttribute = (name) => {
+    if (name === "data-element") return "fire";
+    if (name === "data-card-index") return "2";
+    if (name === "data-card-owner") return "active";
+    return null;
+  };
+
+  const activeEarth = createFakeButton("4");
+  activeEarth.getAttribute = (name) => {
+    if (name === "data-element") return "earth";
+    if (name === "data-card-index") return "4";
+    if (name === "data-card-owner") return "active";
+    return null;
+  };
+
+  const previousDocument = global.document;
+  const registered = {};
+  const activeButtons = [activeFire, activeEarth];
+  const playCalls = [];
+  let releasePlayCard;
+
+  global.document = {
+    addEventListener(type, handler) {
+      registered[type] = handler;
+    },
+    removeEventListener(type, handler) {
+      if (registered[type] === handler) {
+        delete registered[type];
+      }
+    },
+    getElementById(id) {
+      return id === "back-menu-btn" ? backButton : null;
+    },
+    querySelector(selector) {
+      if (selector === ".modal-overlay") {
+        return null;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-card-owner='active']") {
+        return activeButtons;
+      }
+      return [];
+    }
+  };
+
+  gameScreen.bind({
+    hotseat: { enabled: false },
+    actions: {
+      backToMenu: () => {},
+      playCard: async (index) => {
+        playCalls.push(index);
+        await new Promise((resolve) => {
+          releasePlayCard = resolve;
+        });
+      }
+    }
+  });
+
+  try {
+    const firstSelection = activeFire.listeners.get("click")();
+    await Promise.resolve();
+
+    assert.deepEqual(playCalls, [2]);
+    assert.equal(activeFire.hasAttribute("disabled"), true);
+    assert.equal(activeEarth.hasAttribute("disabled"), true);
+
+    await registered.keydown({
+      key: "2",
+      preventDefault: () => {}
+    });
+    await activeEarth.listeners.get("click")();
+
+    assert.deepEqual(playCalls, [2]);
+
+    releasePlayCard();
+    await firstSelection;
+    assert.equal(activeFire.hasAttribute("disabled"), false);
+    assert.equal(activeEarth.hasAttribute("disabled"), false);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: keyboard selection is ignored while a modal is open", async () => {
   const backButton = createFakeElement();
   const activeFire = createFakeButton("2");

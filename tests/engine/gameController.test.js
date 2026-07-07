@@ -109,6 +109,44 @@ function createAuthoritativePveStore({
   };
 }
 
+function createFakeAiPacingScheduler() {
+  let nextId = 1;
+  const timeouts = [];
+  return {
+    timeouts,
+    setTimeout(callback, delayMs) {
+      const entry = {
+        id: nextId,
+        callback,
+        delayMs,
+        cleared: false,
+        ran: false
+      };
+      nextId += 1;
+      timeouts.push(entry);
+      return entry.id;
+    },
+    clearTimeout(id) {
+      const entry = timeouts.find((timeout) => timeout.id === id);
+      if (entry) {
+        entry.cleared = true;
+      }
+    },
+    runNext() {
+      const entry = timeouts.find((timeout) => !timeout.cleared && !timeout.ran);
+      if (!entry) {
+        return null;
+      }
+      entry.ran = true;
+      entry.callback();
+      return entry;
+    },
+    activeCount() {
+      return timeouts.filter((timeout) => !timeout.cleared && !timeout.ran).length;
+    }
+  };
+}
+
 function createOnlineSoundState({
   socketId = "guest-1",
   sessionUsername = "SignedInUser",
@@ -1076,6 +1114,461 @@ test("gameController: AI selection is independent from player's current card", a
     controller.stopTimer();
     controller.stopMatchClock();
     globalThis.window = originalWindow;
+  }
+});
+
+test("gameController: PvE AI pacing waits before authoritative bot resolution", async () => {
+  const scheduler = createFakeAiPacingScheduler();
+  const submitMoves = [];
+  const initialRoom = createAuthoritativeLocalRoom();
+  const resolvedRoom = createAuthoritativeLocalRoom({
+    roundNumber: 2,
+    hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+    guestHand: { fire: 2, water: 1, earth: 2, wind: 2 },
+    roundHistory: [
+      { round: 1, hostMove: "fire", guestMove: "earth", outcomeType: "resolved", hostResult: "win", guestResult: "lose" }
+    ]
+  });
+  const controller = new GameController({
+    username: "PacingNormalUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "normal",
+    persistMatchResults: false,
+    aiPacingScheduler: scheduler,
+    aiPacingRandom: () => 0,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: (_socketId, move) => {
+          submitMoves.push(move);
+          return {
+            ok: true,
+            room: resolvedRoom,
+            roundResult: {
+              round: 1,
+              hostMove: move,
+              guestMove: "earth",
+              outcomeType: "resolved",
+              hostResult: "win",
+              guestResult: "lose",
+              warRounds: [],
+              warPot: { host: [], guest: [] }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+    const pending = controller.playCard(0);
+    await Promise.resolve();
+
+    assert.deepEqual(submitMoves, []);
+    assert.equal(scheduler.activeCount(), 1);
+    assert.equal(scheduler.timeouts[0].delayMs, 450);
+
+    scheduler.runNext();
+    const result = await pending;
+
+    assert.equal(result.status, "resolved");
+    assert.deepEqual(submitMoves, ["fire"]);
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("gameController: AI pacing profiles cover Hard, Gauntlet, Featured Rival, and Training", async () => {
+  const scenarios = [
+    {
+      name: "hard",
+      options: { aiDifficulty: "hard" },
+      expectedDelay: 700
+    },
+    {
+      name: "gauntlet",
+      options: { aiDifficulty: "normal", gauntletMode: true, gauntletRivalId: "pyro_maniac" },
+      expectedDelay: 700
+    },
+    {
+      name: "featured",
+      options: { aiDifficulty: "hard", featuredRivalId: "crownfire_duelist" },
+      expectedDelay: 700
+    },
+    {
+      name: "training",
+      options: { aiDifficulty: "easy", trainingMode: true, persistMatchResults: false },
+      expectedDelay: 450,
+      expectTimerless: true
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    const scheduler = createFakeAiPacingScheduler();
+    let submitCount = 0;
+    const controller = new GameController({
+      username: `Pacing-${scenario.name}`,
+      timerSeconds: 30,
+      mode: MATCH_MODE.PVE,
+      persistMatchResults: false,
+      aiPacingScheduler: scheduler,
+      aiPacingRandom: () => 0,
+      localAuthorityStoreFactory: () =>
+        createAuthoritativePveStore({
+          initialRoom: createAuthoritativeLocalRoom(),
+          submitMove: (_socketId, move) => {
+            submitCount += 1;
+            return {
+              ok: true,
+              room: createAuthoritativeLocalRoom({
+                roundNumber: 2,
+                hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+                guestHand: { fire: 2, water: 1, earth: 2, wind: 2 },
+                roundHistory: [
+                  {
+                    round: 1,
+                    hostMove: move,
+                    guestMove: "earth",
+                    outcomeType: "resolved",
+                    hostResult: "win",
+                    guestResult: "lose"
+                  }
+                ]
+              }),
+              roundResult: {
+                round: 1,
+                hostMove: move,
+                guestMove: "earth",
+                outcomeType: "resolved",
+                hostResult: "win",
+                guestResult: "lose",
+                warRounds: [],
+                warPot: { host: [], guest: [] }
+              }
+            };
+          }
+        }),
+      onUpdate: () => {},
+      onMatchComplete: () => {},
+      ...scenario.options
+    });
+
+    try {
+      controller.startNewMatch();
+      assert.equal(controller.timerId === null, Boolean(scenario.expectTimerless));
+      assert.equal(controller.matchClockId === null, Boolean(scenario.expectTimerless));
+
+      const pending = controller.playCard(0);
+      await Promise.resolve();
+
+      assert.equal(submitCount, 0);
+      assert.equal(scheduler.timeouts[0]?.delayMs, scenario.expectedDelay);
+
+      scheduler.runNext();
+      await pending;
+      assert.equal(submitCount, 1);
+    } finally {
+      controller.dispose();
+    }
+  }
+});
+
+test("gameController: forced AI choice uses micro-delay and zero-choice AI does not wait", async () => {
+  const forcedScheduler = createFakeAiPacingScheduler();
+  let forcedSubmitCount = 0;
+  const forcedController = new GameController({
+    username: "ForcedPacingUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    aiPacingScheduler: forcedScheduler,
+    aiPacingRandom: () => 0.99,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom: createAuthoritativeLocalRoom({
+          guestHand: { fire: 1, water: 0, earth: 0, wind: 0 }
+        }),
+        submitMove: (_socketId, move) => {
+          forcedSubmitCount += 1;
+          return {
+            ok: true,
+            room: createAuthoritativeLocalRoom({
+              roundNumber: 2,
+              hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+              guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+              roundHistory: [
+                { round: 1, hostMove: move, guestMove: "fire", outcomeType: "tie", hostResult: "tie", guestResult: "tie" }
+              ]
+            }),
+            roundResult: {
+              round: 1,
+              hostMove: move,
+              guestMove: "fire",
+              outcomeType: "war",
+              hostResult: "tie",
+              guestResult: "tie",
+              warRounds: [],
+              warPot: { host: ["fire"], guest: ["fire"] }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    forcedController.startNewMatch();
+    const forcedPending = forcedController.playCard(0);
+    await Promise.resolve();
+
+    assert.equal(forcedSubmitCount, 0);
+    assert.equal(forcedScheduler.activeCount(), 1);
+    assert.ok(forcedScheduler.timeouts[0].delayMs >= 0);
+    assert.ok(forcedScheduler.timeouts[0].delayMs <= 100);
+
+    forcedScheduler.runNext();
+    await forcedPending;
+    assert.equal(forcedSubmitCount, 1);
+  } finally {
+    forcedController.dispose();
+  }
+
+  const zeroScheduler = createFakeAiPacingScheduler();
+  let zeroSubmitCount = 0;
+  const zeroController = new GameController({
+    username: "ZeroPacingUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    aiPacingScheduler: zeroScheduler,
+    aiPacingRandom: () => 0,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom: createAuthoritativeLocalRoom({
+          guestHand: { fire: 0, water: 0, earth: 0, wind: 0 }
+        }),
+        submitMove: (_socketId, move) => {
+          zeroSubmitCount += 1;
+          return {
+            ok: true,
+            room: createAuthoritativeLocalRoom({
+              roundNumber: 2,
+              hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+              guestHand: { fire: 0, water: 0, earth: 0, wind: 0 },
+              matchComplete: true,
+              winner: "host",
+              winReason: "hand_exhaustion",
+              roundHistory: []
+            }),
+            roundResult: null
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    zeroController.startNewMatch();
+    await zeroController.playCard(0);
+
+    assert.equal(zeroSubmitCount, 1);
+    assert.equal(zeroScheduler.timeouts.length, 0);
+  } finally {
+    zeroController.dispose();
+  }
+});
+
+test("gameController: active WAR uses AI pacing when the opponent has real choices", async () => {
+  const scheduler = createFakeAiPacingScheduler();
+  let submitCount = 0;
+  const initialRoom = createAuthoritativeLocalRoom({
+    warActive: true,
+    warPot: { host: ["fire"], guest: ["fire"] },
+    warRounds: [{ hostMove: "fire", guestMove: "fire" }],
+    guestHand: { fire: 1, water: 1, earth: 0, wind: 0 }
+  });
+  const controller = new GameController({
+    username: "WarPacingUser",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    persistMatchResults: false,
+    aiPacingScheduler: scheduler,
+    aiPacingRandom: () => 0,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        initialRoom,
+        submitMove: (_socketId, move) => {
+          submitCount += 1;
+          return {
+            ok: true,
+            room: createAuthoritativeLocalRoom({
+              roundNumber: 2,
+              hostHand: { fire: 1, water: 2, earth: 2, wind: 2 },
+              guestHand: { fire: 0, water: 1, earth: 0, wind: 0 },
+              roundHistory: [
+                { round: 1, hostMove: move, guestMove: "fire", outcomeType: "resolved", hostResult: "win", guestResult: "lose" }
+              ]
+            }),
+            roundResult: {
+              round: 1,
+              hostMove: move,
+              guestMove: "fire",
+              outcomeType: "war_resolved",
+              hostResult: "win",
+              guestResult: "lose",
+              warRounds: [{ hostMove: move, guestMove: "fire" }],
+              warPot: { host: ["fire", move], guest: ["fire", "fire"] }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+    assert.equal(controller.getViewModel().warActive, true);
+    const pending = controller.playCard(0);
+    await Promise.resolve();
+
+    assert.equal(submitCount, 0);
+    assert.equal(scheduler.timeouts[0]?.delayMs, 450);
+
+    scheduler.runNext();
+    await pending;
+    assert.equal(submitCount, 1);
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("gameController: pending AI pacing is cancellable for quit, rematch, completion, and stale generations", async () => {
+  const makeController = ({ scheduler, submitMoves }) =>
+    new GameController({
+      username: "PacingCancelUser",
+      timerSeconds: 30,
+      mode: MATCH_MODE.PVE,
+      persistMatchResults: false,
+      aiPacingScheduler: scheduler,
+      aiPacingRandom: () => 0,
+      localAuthorityStoreFactory: () =>
+        createAuthoritativePveStore({
+          initialRoom: createAuthoritativeLocalRoom(),
+          submitMove: (_socketId, move) => {
+            submitMoves.push(move);
+            return {
+              ok: true,
+              room: createAuthoritativeLocalRoom({ roundNumber: 2 }),
+              roundResult: {
+                round: 1,
+                hostMove: move,
+                guestMove: "earth",
+                outcomeType: "resolved",
+                hostResult: "win",
+                guestResult: "lose",
+                warRounds: [],
+                warPot: { host: [], guest: [] }
+              }
+            };
+          },
+          completeMatch: () => ({
+            ok: true,
+            room: createAuthoritativeLocalRoom({
+              matchComplete: true,
+              winner: "guest",
+              winReason: "forfeit"
+            })
+          })
+        }),
+      onUpdate: () => {},
+      onMatchComplete: () => {}
+    });
+
+  {
+    const scheduler = createFakeAiPacingScheduler();
+    const submitMoves = [];
+    const controller = makeController({ scheduler, submitMoves });
+    try {
+      controller.startNewMatch();
+      const pending = controller.playCard(0);
+      await Promise.resolve();
+      await controller.quitMatch({ quitter: "p1", reason: "quit_forfeit" });
+      const result = await pending;
+
+      assert.equal(result.skipped, true);
+      assert.equal(result.reason, "ai-pacing-cancelled");
+      assert.deepEqual(submitMoves, []);
+      assert.equal(scheduler.activeCount(), 0);
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  {
+    const scheduler = createFakeAiPacingScheduler();
+    const submitMoves = [];
+    const controller = makeController({ scheduler, submitMoves });
+    try {
+      controller.startNewMatch();
+      const pending = controller.playCard(0);
+      await Promise.resolve();
+      controller.startNewMatch();
+      const result = await pending;
+
+      assert.equal(result.skipped, true);
+      assert.equal(result.reason, "ai-pacing-cancelled");
+      assert.deepEqual(submitMoves, []);
+      assert.equal(scheduler.activeCount(), 0);
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  {
+    const scheduler = createFakeAiPacingScheduler();
+    const submitMoves = [];
+    const controller = makeController({ scheduler, submitMoves });
+    try {
+      controller.startNewMatch();
+      const pending = controller.playCard(0);
+      await Promise.resolve();
+      controller.match.status = "completed";
+      await controller.finalizeCompletedMatch();
+      const result = await pending;
+
+      assert.equal(result.skipped, true);
+      assert.equal(result.reason, "ai-pacing-cancelled");
+      assert.deepEqual(submitMoves, []);
+      assert.equal(scheduler.activeCount(), 0);
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  {
+    const scheduler = createFakeAiPacingScheduler();
+    const submitMoves = [];
+    const controller = makeController({ scheduler, submitMoves });
+    try {
+      controller.startNewMatch();
+      const pending = controller.playCard(0);
+      await Promise.resolve();
+      controller.aiPacingGeneration += 1;
+      scheduler.runNext();
+      const result = await pending;
+
+      assert.equal(result.skipped, true);
+      assert.equal(result.reason, "ai-pacing-cancelled");
+      assert.deepEqual(submitMoves, []);
+    } finally {
+      controller.dispose();
+    }
   }
 });
 

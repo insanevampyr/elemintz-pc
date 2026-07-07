@@ -1804,6 +1804,7 @@ export class AppController {
     }
 
     this.clearPassTimer();
+    this.gameController?.dispose?.();
     this.gameController?.stopTimer?.();
     this.gameController?.stopMatchClock?.();
     this.bloodMatchController?.stopTimers?.();
@@ -9155,6 +9156,7 @@ export class AppController {
     }
 
     this.clearPassTimer();
+    this.gameController?.dispose?.();
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
     this.bloodMatchController?.stopTimers?.();
@@ -9221,6 +9223,8 @@ export class AppController {
       featuredRivalId: this.pveFeaturedRivalId,
       mode,
       trainingMode,
+      aiPacingScheduler: globalThis,
+      aiPacingRandom: Math.random,
       persistMatchResults: mode !== MATCH_MODE.LOCAL_PVP && !trainingMode,
       persistMatchResult:
         mode === MATCH_MODE.PVE ? async (match) => this.persistPveResult(match) : null,

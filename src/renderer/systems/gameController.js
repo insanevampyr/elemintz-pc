@@ -14,6 +14,10 @@ import { createRoomStore } from "../../multiplayer/rooms.js";
 import { deriveMatchStats } from "../../state/statsTracking.js";
 import { getGauntletRivalById } from "../../engine/gauntletRivals.js";
 import { evaluateTrainingCoach } from "./trainingCoachEvaluator.js";
+import {
+  calculateAiTurnPacingDelayMs,
+  resolveAiTurnPacingProfile
+} from "./aiTurnPacing.js";
 
 const MATCH_MODE = Object.freeze({
   PVE: "pve",
@@ -711,6 +715,8 @@ export class GameController {
     this.persistMatchResult = typeof options.persistMatchResult === "function" ? options.persistMatchResult : null;
     this.localAuthorityStoreFactory = options.localAuthorityStoreFactory ?? (() => createRoomStore());
     this.localPlayerNames = options.localPlayerNames ?? null;
+    this.aiPacingScheduler = options.aiPacingScheduler ?? null;
+    this.aiPacingRandom = typeof options.aiPacingRandom === "function" ? options.aiPacingRandom : Math.random;
 
     this.match = null;
     this.lastRound = null;
@@ -724,6 +730,8 @@ export class GameController {
     this.isResolvingRound = false;
     this.completionNotified = false;
     this.pendingTimeLimitFinalization = false;
+    this.aiPacingGeneration = 0;
+    this.pendingAiPacingDelay = null;
 
     this.hotseatTurn = "p1";
     this.pendingHotseatP1CardIndex = null;
@@ -894,6 +902,7 @@ export class GameController {
   }
 
   startNewMatch() {
+    this.cancelAiTurnPacing();
     this.localAuthority = null;
     this.match = this.isLocalPvp() || this.isPve()
       ? null
@@ -1072,6 +1081,26 @@ export class GameController {
     return turn === "p2" ? this.match.players.p2.hand : this.match.players.p1.hand;
   }
 
+  cancelAiTurnPacing() {
+    this.aiPacingGeneration += 1;
+    const pending = this.pendingAiPacingDelay;
+    this.pendingAiPacingDelay = null;
+    if (!pending) {
+      return;
+    }
+
+    if (pending.timeoutId !== null && typeof this.aiPacingScheduler?.clearTimeout === "function") {
+      this.aiPacingScheduler.clearTimeout(pending.timeoutId);
+    }
+    pending.resolve(false);
+  }
+
+  dispose() {
+    this.cancelAiTurnPacing();
+    this.stopTimer();
+    this.stopMatchClock();
+  }
+
   getRecentMovesForTurn(turn) {
     if (!this.match) {
       return [];
@@ -1108,6 +1137,59 @@ export class GameController {
 
   getFirstPlayableCardIndex(turn) {
     return this.getSelectableCardIndices(turn)[0] ?? null;
+  }
+
+  getAiLegalChoiceCountForPacing() {
+    if (!this.isPve() || !this.localAuthority?.store || !this.match || this.match.status !== "active") {
+      return 0;
+    }
+
+    return this.getSelectableCardIndices("p2").length;
+  }
+
+  waitForAiTurnPacingIfNeeded() {
+    const profile = resolveAiTurnPacingProfile({
+      legalChoiceCount: this.getAiLegalChoiceCountForPacing(),
+      aiDifficulty: this.aiDifficulty,
+      trainingMode: this.trainingMode,
+      gauntletMode: this.gauntletMode,
+      featuredRivalId: this.featuredRivalId
+    });
+
+    if (!profile || typeof this.aiPacingScheduler?.setTimeout !== "function") {
+      return Promise.resolve(true);
+    }
+
+    if (this.pendingAiPacingDelay) {
+      return Promise.resolve(false);
+    }
+
+    const generation = this.aiPacingGeneration;
+    const delayMs = calculateAiTurnPacingDelayMs(profile, { rng: this.aiPacingRandom });
+
+    return new Promise((resolve) => {
+      const pending = {
+        generation,
+        timeoutId: null,
+        resolve: (allowed) => {
+          if (this.pendingAiPacingDelay === pending) {
+            this.pendingAiPacingDelay = null;
+          }
+          resolve(Boolean(allowed));
+        }
+      };
+
+      pending.timeoutId = this.aiPacingScheduler.setTimeout(() => {
+        const stillCurrent =
+          this.pendingAiPacingDelay === pending &&
+          this.aiPacingGeneration === generation &&
+          this.match?.status === "active" &&
+          !this.isLocalPvp();
+        pending.resolve(stillCurrent);
+      }, delayMs);
+
+      this.pendingAiPacingDelay = pending;
+    });
   }
 
   getSelectionFatigueSummary() {
@@ -1158,6 +1240,7 @@ export class GameController {
 
     this.pendingTimeLimitFinalization = false;
     this.completionNotified = true;
+    this.cancelAiTurnPacing();
     this.stopTimer();
     this.stopMatchClock();
 
@@ -1235,6 +1318,7 @@ export class GameController {
       return;
     }
 
+    this.cancelAiTurnPacing();
     if ((this.isLocalPvp() || this.isPve()) && this.localAuthority?.store) {
       const winner =
         quitter === "p1" ? "guest" : quitter === "p2" ? "host" : "draw";
@@ -1376,6 +1460,15 @@ export class GameController {
         this.localAuthority?.hostSocket?.id &&
         this.localAuthority?.guestSocket?.id
       ) {
+        const pacingReady = await this.waitForAiTurnPacingIfNeeded();
+        if (!pacingReady) {
+          return { skipped: true, reason: "ai-pacing-cancelled" };
+        }
+
+        if (!this.match || this.match.status !== "active") {
+          return { skipped: true, reason: "match-unavailable" };
+        }
+
         const hostSubmit = this.localAuthority.store.submitMove(
           this.localAuthority.hostSocket.id,
           playerCard
