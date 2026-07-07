@@ -277,6 +277,10 @@ function renderCardSlot(entry, state, { showEmpty = true } = {}) {
 }
 
 function getResultHeadline(state) {
+  if (state?.aiThinking) {
+    return "Opponents thinking...";
+  }
+
   const terminal = state?.terminalResult ?? null;
   if (terminal) {
     if (terminal.result === "player_win") {
@@ -472,8 +476,9 @@ function renderCenterClash(state) {
   const lastResult = state?.lastResult ?? null;
   const revealed = Array.isArray(lastResult?.revealedCardEntries) ? lastResult.revealedCardEntries : [];
   const terminal = state?.status === "completed";
+  const thinking = Boolean(state?.aiThinking);
   const slots = ["vampire", "player", "lycan"]
-    .map((id) => renderCardSlot(revealed.find((entry) => entry.ownerId === id), state, { showEmpty: !terminal }))
+    .map((id) => renderCardSlot(thinking ? null : revealed.find((entry) => entry.ownerId === id), state, { showEmpty: !terminal }))
     .filter(Boolean);
   const activeWarNames = Array.isArray(state?.war?.activeCombatantIds)
     ? state.war.activeCombatantIds.map((id) => getCombatant(state, id).name)
@@ -509,6 +514,8 @@ function renderCenterClash(state) {
 function renderPlayerHand(state) {
   const player = getCombatant(state, "player");
   const legalCards = Array.isArray(state?.legalPlayableCards?.player) ? state.legalPlayableCards.player : [];
+  const thinking = Boolean(state?.aiThinking);
+  const pendingPlayerElement = String(state?.pendingPlayerElement ?? "").trim().toLowerCase();
   if (state?.status !== "active") {
     return '<p class="muted">Match complete.</p>';
   }
@@ -538,10 +545,13 @@ function renderPlayerHand(state) {
     <div class="blood-match-hand" data-blood-player-hand="true">
       ${ELEMENT_ORDER.map((element) => {
         const count = counts[element] ?? 0;
-        const disabled = count <= 0 || !legalElements.has(element);
+        const disabled = thinking || count <= 0 || !legalElements.has(element);
         const fatigued = fatiguedElement === element && disabled && count > 0;
+        const selected = thinking && pendingPlayerElement === element;
         const stateLabel = count <= 0
           ? "No cards remaining"
+          : selected
+            ? "Selected"
           : fatigued
             ? "Fatigued"
             : disabled
@@ -549,7 +559,7 @@ function renderPlayerHand(state) {
               : "Playable";
         return `
           <button
-            class="blood-match-hand-card ${disabled ? "is-disabled" : ""} ${count <= 0 ? "is-zero" : ""} ${fatigued ? "is-fatigued" : ""}"
+            class="blood-match-hand-card ${disabled ? "is-disabled" : ""} ${count <= 0 ? "is-zero" : ""} ${fatigued ? "is-fatigued" : ""} ${selected ? "is-playing" : ""}"
             type="button"
             data-blood-play-card-element="${element}"
             aria-label="${formatElementLabel(element)} card, ${count} remaining, ${stateLabel}"

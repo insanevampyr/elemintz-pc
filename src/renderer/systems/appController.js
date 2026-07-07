@@ -1807,7 +1807,7 @@ export class AppController {
     this.gameController?.dispose?.();
     this.gameController?.stopTimer?.();
     this.gameController?.stopMatchClock?.();
-    this.bloodMatchController?.stopTimers?.();
+    this.bloodMatchController?.dispose?.();
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;
@@ -1828,6 +1828,8 @@ export class AppController {
       username: this.username,
       timerSeconds: this.settings?.gameplay?.timerSeconds ?? FALLBACK_SETTINGS.gameplay.timerSeconds,
       matchTimeLimitSeconds: 300,
+      scheduler: globalThis,
+      aiPacingRandom: Math.random,
       onUpdate: () => this.showBloodMatch(),
       onRoundResolved: () => {
         this.sound.playRoundResolved({
@@ -1959,9 +1961,9 @@ export class AppController {
       actions: {
         playCard: async (selection) => {
           if (typeof selection === "string") {
-            this.bloodMatchController?.playPlayerCard?.({ card: selection });
+            await this.bloodMatchController?.playPlayerCard?.({ card: selection });
           } else {
-            this.bloodMatchController?.playPlayerCard?.({ cardIndex: Number(selection) });
+            await this.bloodMatchController?.playPlayerCard?.({ cardIndex: Number(selection) });
           }
           this.showBloodMatch();
         },
@@ -1974,7 +1976,7 @@ export class AppController {
         },
         quit: async () => this.confirmQuitBloodMatch(),
         returnToMenu: async () => {
-          this.bloodMatchController?.stopTimers?.();
+          this.bloodMatchController?.dispose?.();
           this.bloodMatchController = null;
           this.bloodMatchSettlementKey = null;
           this.bloodMatchSettlementInFlight = false;
@@ -1988,7 +1990,7 @@ export class AppController {
 
   confirmQuitBloodMatch() {
     if (!this.bloodMatchController || this.bloodMatchController.getState()?.status !== "active") {
-      this.bloodMatchController?.stopTimers?.();
+      this.bloodMatchController?.dispose?.();
       this.bloodMatchController = null;
       this.showMenu();
       return;
@@ -2008,7 +2010,7 @@ export class AppController {
           onClick: () => {
             this.modalManager.hide();
             this.bloodMatchController?.quit?.({ reason: "quit_forfeit" });
-            this.bloodMatchController?.stopTimers?.();
+            this.bloodMatchController?.dispose?.();
             this.bloodMatchController = null;
             this.showMenu();
           }
@@ -9159,7 +9161,7 @@ export class AppController {
     this.gameController?.dispose?.();
     this.gameController?.stopTimer();
     this.gameController?.stopMatchClock();
-    this.bloodMatchController?.stopTimers?.();
+    this.bloodMatchController?.dispose?.();
     this.bloodMatchController = null;
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletVictoryPayload = null;

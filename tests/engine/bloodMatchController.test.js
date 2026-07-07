@@ -6,10 +6,12 @@ import {
   createBloodMatchController
 } from "../../src/renderer/systems/bloodMatchController.js";
 
-function createManualScheduler() {
+function createManualScheduler({ timeouts: includeTimeouts = false } = {}) {
   let nextId = 1;
   const intervals = new Map();
-  return {
+  const timeouts = new Map();
+  const scheduler = {
+    timeouts,
     setInterval(callback) {
       const id = nextId;
       nextId += 1;
@@ -19,6 +21,19 @@ function createManualScheduler() {
     clearInterval(id) {
       intervals.delete(id);
     },
+    runNextTimeout() {
+      for (const [id, entry] of timeouts.entries()) {
+        if (!entry.cleared && !entry.ran) {
+          entry.ran = true;
+          entry.callback();
+          return { id, ...entry };
+        }
+      }
+      return null;
+    },
+    activeTimeoutCount() {
+      return [...timeouts.values()].filter((entry) => !entry.cleared && !entry.ran).length;
+    },
     activeCount() {
       return intervals.size;
     },
@@ -26,6 +41,23 @@ function createManualScheduler() {
       intervals.get(id)?.();
     }
   };
+
+  if (includeTimeouts) {
+    scheduler.setTimeout = (callback, delayMs) => {
+      const id = nextId;
+      nextId += 1;
+      timeouts.set(id, { callback, delayMs, cleared: false, ran: false });
+      return id;
+    };
+    scheduler.clearTimeout = (id) => {
+      const entry = timeouts.get(id);
+      if (entry) {
+        entry.cleared = true;
+      }
+    };
+  }
+
+  return scheduler;
 }
 
 function createController(options = {}) {
@@ -141,6 +173,210 @@ test("bloodMatchController: fatigue state remains independent per combatant", ()
   assert.deepEqual(controller.getLegalPlayableCards("player"), ["water"]);
   assert.deepEqual(controller.getLegalPlayableCards("vampire"), ["fire"]);
   assert.deepEqual(controller.getLegalPlayableCards("lycan"), ["earth", "wind"]);
+});
+
+test("bloodMatchController: Blood Match multi-choice AI response uses one shared delay before rival reveal", async () => {
+  const choices = [];
+  const scheduler = createManualScheduler({ timeouts: true });
+  const updates = [];
+  const { controller } = createController({
+    scheduler,
+    initialHands: {
+      player: ["fire", "water"],
+      vampire: ["water", "earth"],
+      lycan: ["earth", "wind"]
+    },
+    aiPacingRandom: () => 0,
+    aiChooser: ({ combatantId, legalHand }) => {
+      choices.push({ combatantId, legalHand });
+      return legalHand[0];
+    },
+    onUpdate: (state) => updates.push(state)
+  });
+
+  const pending = controller.playPlayerCard({ card: "fire" });
+
+  assert.equal(typeof pending?.then, "function");
+  assert.equal(controller.getState().aiThinking, true);
+  assert.equal(controller.getState().pendingPlayerElement, "fire");
+  assert.deepEqual(choices, []);
+  assert.equal(scheduler.activeTimeoutCount(), 1);
+  assert.equal([...scheduler.timeouts.values()][0]?.delayMs, 700);
+
+  const duplicate = controller.playPlayerCard({ card: "water" });
+  assert.equal(duplicate.status, "ignored");
+  assert.equal(scheduler.activeTimeoutCount(), 1);
+
+  scheduler.runNextTimeout();
+  const result = await pending;
+
+  assert.equal(result.status, "resolved");
+  assert.deepEqual(choices, [
+    { combatantId: "vampire", legalHand: ["water", "earth"] },
+    { combatantId: "lycan", legalHand: ["earth", "wind"] }
+  ]);
+  assert.equal(controller.getState().aiThinking, false);
+  assert.equal(controller.getState().pendingPlayerElement, null);
+  assert.equal(updates.some((state) => state.aiThinking === true), true);
+});
+
+test("bloodMatchController: all-forced rival choices use forced micro-delay without visible thinking", async () => {
+  const scheduler = createManualScheduler({ timeouts: true });
+  const { controller } = createController({
+    scheduler,
+    initialHands: {
+      player: ["fire"],
+      vampire: ["water"],
+      lycan: ["earth"]
+    },
+    aiPacingRandom: () => 0.999999,
+    aiChooser: ({ legalHand }) => legalHand[0]
+  });
+
+  const pending = controller.playPlayerCard({ card: "fire" });
+
+  assert.equal(typeof pending?.then, "function");
+  assert.equal(controller.getState().aiThinking, false);
+  assert.equal(scheduler.activeTimeoutCount(), 1);
+  assert.equal([...scheduler.timeouts.values()][0]?.delayMs, 100);
+
+  scheduler.runNextTimeout();
+  const result = await pending;
+
+  assert.equal(result.status, "resolved");
+});
+
+test("bloodMatchController: any multi-choice rival uses Blood Match normal pacing", async () => {
+  const scheduler = createManualScheduler({ timeouts: true });
+  const { controller } = createController({
+    scheduler,
+    initialHands: {
+      player: ["fire"],
+      vampire: ["water"],
+      lycan: ["earth", "wind"]
+    },
+    aiPacingRandom: () => 0,
+    aiChooser: ({ legalHand }) => legalHand[0]
+  });
+
+  const pending = controller.playPlayerCard({ card: "fire" });
+
+  assert.equal(controller.getState().aiThinking, true);
+  assert.equal(scheduler.activeTimeoutCount(), 1);
+  assert.equal([...scheduler.timeouts.values()][0]?.delayMs, 700);
+
+  scheduler.runNextTimeout();
+  const result = await pending;
+
+  assert.equal(result.status, "resolved");
+});
+
+test("bloodMatchController: no-legal-rival required-play path skips AI pacing", () => {
+  const scheduler = createManualScheduler({ timeouts: true });
+  const { controller } = createController({
+    scheduler,
+    initialHands: {
+      player: ["fire"],
+      vampire: [],
+      lycan: []
+    }
+  });
+
+  const result = controller.playPlayerCard({ card: "fire" });
+
+  assert.equal(result.status, "required_play_result");
+  assert.equal(controller.getState().status, "completed");
+  assert.equal(scheduler.activeTimeoutCount(), 0);
+});
+
+test("bloodMatchController: active WAR continuation preserves pacing before rival reveal", async () => {
+  const choices = [];
+  const scheduler = createManualScheduler({ timeouts: true });
+  const { controller } = createController({
+    scheduler,
+    initialHands: {
+      player: ["water"],
+      vampire: ["fire", "earth"],
+      lycan: ["wind"]
+    },
+    aiPacingRandom: () => 0,
+    aiChooser: ({ combatantId, legalHand }) => {
+      choices.push({ combatantId, legalHand });
+      return legalHand[0];
+    }
+  });
+  controller.match.combatants.lycan.eliminated = true;
+  controller.match.potCardEntries = [
+    { ownerId: "player", element: "fire" },
+    { ownerId: "vampire", element: "fire" }
+  ];
+  controller.match.war = { active: true, activeCombatantIds: ["player", "vampire"], clashes: 1 };
+
+  const pending = controller.playPlayerCard({ card: "water" });
+
+  assert.equal(controller.getState().aiThinking, true);
+  assert.deepEqual(choices, []);
+  assert.equal([...scheduler.timeouts.values()][0]?.delayMs, 700);
+
+  scheduler.runNextTimeout();
+  const result = await pending;
+
+  assert.equal(result.status, "resolved");
+  assert.equal(result.result.type, "war_resolved");
+  assert.deepEqual(choices, [{ combatantId: "vampire", legalHand: ["fire", "earth"] }]);
+});
+
+test("bloodMatchController: quit rematch and dispose cancel pending Blood Match AI pacing", async () => {
+  const startPendingRound = () => {
+    const scheduler = createManualScheduler({ timeouts: true });
+    const { controller } = createController({
+      scheduler,
+      initialHands: {
+        player: ["fire", "water"],
+        vampire: ["water", "earth"],
+        lycan: ["earth", "wind"]
+      },
+      aiPacingRandom: () => 0,
+      aiChooser: ({ legalHand }) => legalHand[0]
+    });
+    const pending = controller.playPlayerCard({ card: "fire" });
+    assert.equal(controller.getState().aiThinking, true);
+    assert.equal(scheduler.activeTimeoutCount(), 1);
+    return { controller, scheduler, pending };
+  };
+
+  {
+    const { controller, scheduler, pending } = startPendingRound();
+    controller.quit();
+    const result = await pending;
+
+    assert.equal(result.reason, "ai-pacing-cancelled");
+    assert.equal(controller.getState().status, "completed");
+    assert.equal(controller.getState().aiThinking, false);
+    assert.equal(scheduler.activeTimeoutCount(), 0);
+  }
+
+  {
+    const { controller, scheduler, pending } = startPendingRound();
+    controller.rematch();
+    const result = await pending;
+
+    assert.equal(result.reason, "ai-pacing-cancelled");
+    assert.equal(controller.getState().status, "active");
+    assert.equal(controller.getState().round, 1);
+    assert.equal(controller.getState().aiThinking, false);
+    assert.equal(scheduler.activeTimeoutCount(), 0);
+  }
+
+  {
+    const { controller, scheduler, pending } = startPendingRound();
+    controller.dispose();
+    const result = await pending;
+
+    assert.equal(result.reason, "ai-pacing-cancelled");
+    assert.equal(controller.getState().aiThinking, false);
+    assert.equal(scheduler.activeTimeoutCount(), 0);
+  }
 });
 
 test("bloodMatchController: clear winner settlement awards all three cards", () => {

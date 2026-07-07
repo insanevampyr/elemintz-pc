@@ -10,6 +10,10 @@ import { ELEMENTS, compareElements } from "../../engine/rules.js";
 import { WAR_REQUIRED_CARDS } from "../../engine/war.js";
 import { chooseGauntletRivalCardIndex } from "../../engine/ai.js";
 import { getGauntletRivalById } from "../../engine/gauntletRivals.js";
+import {
+  AI_TURN_PACING_PROFILES,
+  calculateAiTurnPacingDelayMs
+} from "./aiTurnPacing.js";
 
 export const BLOOD_MATCH_RIVAL_IDS = Object.freeze({
   vampire: "vampire_rival",
@@ -182,6 +186,7 @@ export class BloodMatchController {
     this.initialHands = options.initialHands ?? {};
     this.aiChooser = typeof options.aiChooser === "function" ? options.aiChooser : null;
     this.rng = typeof options.rng === "function" ? options.rng : Math.random;
+    this.aiPacingRandom = typeof options.aiPacingRandom === "function" ? options.aiPacingRandom : Math.random;
     this.timerDefault = Math.max(0, Number(options.timerSeconds ?? 30));
     this.matchTimeLimitSeconds = Math.max(0, Number(options.matchTimeLimitSeconds ?? 300));
     this.scheduler = options.scheduler ?? globalThis;
@@ -196,10 +201,16 @@ export class BloodMatchController {
     this.matchClockId = null;
     this.isResolving = false;
     this.completionNotified = false;
+    this.aiThinking = false;
+    this.pendingPlayerElement = null;
+    this.pendingAiPacingDelay = null;
+    this.aiPacingGeneration = 0;
   }
 
   startMatch() {
     this.stopTimers();
+    this.cancelPendingAiPacing({ notify: false });
+    this.aiPacingGeneration += 1;
     this.match = {
       mode: "blood_match",
       status: "active",
@@ -222,6 +233,9 @@ export class BloodMatchController {
     this.timerSeconds = this.timerDefault;
     this.totalMatchSeconds = this.matchTimeLimitSeconds;
     this.completionNotified = false;
+    this.isResolving = false;
+    this.aiThinking = false;
+    this.pendingPlayerElement = null;
     this.startTimers();
     this.onUpdate(this.getState());
     return this.getState();
@@ -232,6 +246,7 @@ export class BloodMatchController {
   }
 
   quit({ reason = "quit_forfeit" } = {}) {
+    this.cancelPendingAiPacing({ notify: false });
     if (!this.match || this.match.status !== "active") {
       this.stopTimers();
       return this.getState();
@@ -281,6 +296,7 @@ export class BloodMatchController {
   }
 
   stopTimers() {
+    this.cancelPendingAiPacing({ notify: false });
     if (this.timerId && typeof this.scheduler?.clearInterval === "function") {
       this.scheduler.clearInterval(this.timerId);
     }
@@ -289,6 +305,31 @@ export class BloodMatchController {
     }
     this.timerId = null;
     this.matchClockId = null;
+  }
+
+  dispose() {
+    this.stopTimers();
+    this.cancelPendingAiPacing({ notify: false });
+  }
+
+  cancelPendingAiPacing({ notify = true } = {}) {
+    const pending = this.pendingAiPacingDelay;
+    if (!pending) {
+      this.aiThinking = false;
+      this.pendingPlayerElement = null;
+      return;
+    }
+
+    this.pendingAiPacingDelay = null;
+    if (pending.timeoutId !== null && typeof this.scheduler?.clearTimeout === "function") {
+      this.scheduler.clearTimeout(pending.timeoutId);
+    }
+    this.aiThinking = false;
+    this.pendingPlayerElement = null;
+    pending.resolve(false);
+    if (notify && this.match) {
+      this.onUpdate(this.getState());
+    }
   }
 
   getState() {
@@ -318,7 +359,9 @@ export class BloodMatchController {
       winnerId: this.match.winnerId,
       endReason: this.match.endReason,
       timerSeconds: this.timerSeconds,
-      totalMatchSeconds: this.totalMatchSeconds
+      totalMatchSeconds: this.totalMatchSeconds,
+      aiThinking: Boolean(this.aiThinking),
+      pendingPlayerElement: this.pendingPlayerElement
     };
   }
 
@@ -368,21 +411,137 @@ export class BloodMatchController {
     return combatant.hand.filter((card) => normalizeElement(card) !== blockedElement);
   }
 
+  getAiPacingProfileForCombatants(activeCombatantIds = []) {
+    if (!this.match || this.match.status !== "active") {
+      return null;
+    }
+
+    const aiChoiceCounts = activeCombatantIds
+      .filter((id) => id !== "player")
+      .map((id) => this.getLegalPlayableCards(id).length);
+    if (aiChoiceCounts.length === 0 || aiChoiceCounts.every((count) => count <= 0)) {
+      return null;
+    }
+
+    return aiChoiceCounts.every((count) => count === 1)
+      ? AI_TURN_PACING_PROFILES.FORCED
+      : AI_TURN_PACING_PROFILES.HARD;
+  }
+
+  waitForAiPacingIfNeeded(profile, { playerElement = null } = {}) {
+    if (!profile || typeof this.scheduler?.setTimeout !== "function") {
+      return true;
+    }
+
+    if (this.pendingAiPacingDelay) {
+      return false;
+    }
+
+    const generation = this.aiPacingGeneration;
+    const delayMs = calculateAiTurnPacingDelayMs(profile, { rng: this.aiPacingRandom });
+    const showThinking = profile.key !== "forced";
+
+    if (showThinking) {
+      this.aiThinking = true;
+      this.pendingPlayerElement = normalizeElement(playerElement);
+      this.onUpdate(this.getState());
+    }
+
+    return new Promise((resolve) => {
+      const pending = {
+        generation,
+        timeoutId: null,
+        resolve: (allowed) => {
+          if (this.pendingAiPacingDelay === pending) {
+            this.pendingAiPacingDelay = null;
+          }
+          this.aiThinking = false;
+          this.pendingPlayerElement = null;
+          resolve(Boolean(allowed));
+        }
+      };
+
+      pending.timeoutId = this.scheduler.setTimeout(() => {
+        const stillCurrent =
+          this.pendingAiPacingDelay === pending &&
+          this.aiPacingGeneration === generation &&
+          this.match?.status === "active" &&
+          this.isResolving;
+        pending.resolve(stillCurrent);
+      }, delayMs);
+
+      this.pendingAiPacingDelay = pending;
+    });
+  }
+
+  getPlayerCardSelection({ card = null, cardIndex = null } = {}) {
+    const legalCards = this.getLegalPlayableCards("player");
+    if (legalCards.length === 0) {
+      return null;
+    }
+
+    if (cardIndex !== null && cardIndex !== undefined) {
+      const selected = normalizeElement(this.match.combatants.player.hand[cardIndex]);
+      return selected && legalCards.includes(selected) ? selected : null;
+    }
+
+    const selectedElement = normalizeElement(card) ?? legalCards[0];
+    return legalCards.includes(selectedElement) ? selectedElement : null;
+  }
+
   playPlayerCard({ card = null, cardIndex = null } = {}) {
     if (!this.match || this.match.status !== "active" || this.isResolving) {
       return { status: "ignored", reason: "match-unavailable", state: this.getState() };
     }
 
     this.isResolving = true;
-    try {
-      const activeCombatantIds = this.match.war.active
-        ? this.match.war.activeCombatantIds
-        : this.getSurvivingCombatantIds();
-      const requiredPlayResult = this.evaluateRequiredPlay(activeCombatantIds);
-      if (requiredPlayResult.terminal || requiredPlayResult.type !== "continue") {
-        return { status: "required_play_result", result: requiredPlayResult, state: this.getState() };
-      }
+    const activeCombatantIds = this.match.war.active
+      ? this.match.war.activeCombatantIds
+      : this.getSurvivingCombatantIds();
 
+    const finishWithoutResolution = (result) => {
+      this.isResolving = false;
+      return result;
+    };
+
+    const requiredPlayResult = this.evaluateRequiredPlay(activeCombatantIds);
+    if (requiredPlayResult.terminal || requiredPlayResult.type !== "continue") {
+      return finishWithoutResolution({
+        status: "required_play_result",
+        result: requiredPlayResult,
+        state: this.getState()
+      });
+    }
+
+    const playerElement = activeCombatantIds.includes("player")
+      ? this.getPlayerCardSelection({ card, cardIndex })
+      : null;
+    if (activeCombatantIds.includes("player") && !playerElement) {
+      return finishWithoutResolution({
+        status: "ignored",
+        reason: "player-card-unavailable",
+        state: this.getState()
+      });
+    }
+
+    const pacingProfile = this.getAiPacingProfileForCombatants(activeCombatantIds);
+    const continueReveal = () => this.resolvePlayerCardAfterPacing({ card, cardIndex, activeCombatantIds });
+    const pacingWait = this.waitForAiPacingIfNeeded(pacingProfile, { playerElement });
+    if (typeof pacingWait?.then === "function") {
+      return pacingWait.then((pacingReady) => {
+        if (!pacingReady) {
+          this.isResolving = false;
+          return { status: "ignored", reason: "ai-pacing-cancelled", state: this.getState() };
+        }
+        return continueReveal();
+      });
+    }
+
+    return continueReveal();
+  }
+
+  resolvePlayerCardAfterPacing({ card = null, cardIndex = null, activeCombatantIds = [] } = {}) {
+    try {
       const revealEntries = [];
       if (activeCombatantIds.includes("player")) {
         const playerCard = this.takePlayerCard({ card, cardIndex });

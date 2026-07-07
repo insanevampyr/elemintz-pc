@@ -5307,6 +5307,31 @@ test("ui: blood match player hand displays standard 1-4 keyboard legend", () => 
   assert.match(html, /Keyboard: \[1\] Fire\s+\[2\] Earth\s+\[3\] Wind\s+\[4\] Water/);
 });
 
+test("ui: blood match opponent-thinking state locks hand and hides stale reveal cards", () => {
+  const html = bloodMatchScreen.render({
+    state: createBloodMatchScreenState({
+      aiThinking: true,
+      pendingPlayerElement: "fire",
+      lastResult: {
+        type: "clear_winner",
+        winnerId: "player",
+        revealedCardEntries: [
+          { ownerId: "player", element: "water" },
+          { ownerId: "vampire", element: "earth" },
+          { ownerId: "lycan", element: "fire" }
+        ]
+      }
+    }),
+    actions: {}
+  });
+
+  assert.match(html, /Opponents thinking\.\.\./);
+  assert.match(html, /blood-match-hand-card[^"]*is-disabled[^"]*is-playing/);
+  assert.match(html, /data-blood-play-card-element="fire"[\s\S]*disabled/);
+  assert.doesNotMatch(html, /Countess Veyra Â· Earth/);
+  assert.doesNotMatch(html, /Ravena Moonfang Â· Fire/);
+});
+
 test("ui: blood match number hotkeys submit legal elements through the card action path", async () => {
   const previousDocument = global.document;
   const registered = {};
