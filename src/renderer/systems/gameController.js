@@ -1,13 +1,15 @@
 import {
   AI_DIFFICULTY,
   WAR_REQUIRED_CARDS,
+  buildLegalTrainingOpponentOptions,
   chooseAiCardIndex,
   chooseGauntletRivalCardIndex,
+  chooseTrainingOpponentCardIndex,
   completeMatch,
   completeMatchByCardCount,
   createMatch,
-  elementThatBeats,
   getMatchSummary,
+  normalizeTrainingOpponentPersonality,
   playRoundManualWarStep
 } from "../../engine/index.js";
 import { createRoomStore } from "../../multiplayer/rooms.js";
@@ -24,11 +26,6 @@ const MATCH_MODE = Object.freeze({
   LOCAL_PVP: "local_pvp"
 });
 const LOCAL_AUTHORITY_ELEMENT_ORDER = Object.freeze(["fire", "water", "earth", "wind"]);
-const TRAINING_OPPONENT_PERSONALITIES = Object.freeze({
-  REPEATER: "repeater",
-  COUNTERER: "counterer",
-  SURVIVOR: "survivor"
-});
 const FATIGUE_TOOLTIP = "This Elemint must rest for 1 turn.";
 
 function normalizeElementMove(value) {
@@ -91,73 +88,6 @@ function getBlockedFatiguedElementForCounts(elementCounts = {}, recentMoves = []
   );
 
   return hasAlternative ? fatiguedElement : null;
-}
-
-function normalizeTrainingOpponentPersonality(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return Object.values(TRAINING_OPPONENT_PERSONALITIES).includes(normalized)
-    ? normalized
-    : TRAINING_OPPONENT_PERSONALITIES.REPEATER;
-}
-
-function buildLegalCardOptions(hand = [], blockedElement = null) {
-  return (Array.isArray(hand) ? hand : [])
-    .map((card, index) => ({ card: normalizeElementMove(card), index }))
-    .filter(({ card }) => card && card !== blockedElement);
-}
-
-function chooseFirstLegalOptionByElement(legalOptions = [], element) {
-  const normalizedElement = normalizeElementMove(element);
-  if (!normalizedElement) {
-    return null;
-  }
-
-  return legalOptions.find((option) => option.card === normalizedElement) ?? null;
-}
-
-function chooseTrainingOpponentCardIndex({
-  personality = TRAINING_OPPONENT_PERSONALITIES.REPEATER,
-  legalOptions = [],
-  recentPlayerMoves = [],
-  recentOpponentMoves = [],
-  publicState = {}
-} = {}) {
-  if (!Array.isArray(legalOptions) || legalOptions.length === 0) {
-    return null;
-  }
-
-  const normalizedPersonality = normalizeTrainingOpponentPersonality(personality);
-  const lastOpponentMove = normalizeElementMove(recentOpponentMoves.at(-1));
-  const lastPlayerMove = normalizeElementMove(recentPlayerMoves.at(-1));
-
-  if (normalizedPersonality === TRAINING_OPPONENT_PERSONALITIES.REPEATER) {
-    const repeatedOption = chooseFirstLegalOptionByElement(legalOptions, lastOpponentMove);
-    if (repeatedOption) {
-      return repeatedOption.index;
-    }
-  }
-
-  if (normalizedPersonality === TRAINING_OPPONENT_PERSONALITIES.COUNTERER && lastPlayerMove) {
-    const counterOption = chooseFirstLegalOptionByElement(legalOptions, elementThatBeats(lastPlayerMove));
-    if (counterOption) {
-      return counterOption.index;
-    }
-  }
-
-  if (normalizedPersonality === TRAINING_OPPONENT_PERSONALITIES.SURVIVOR) {
-    const warPressure =
-      Boolean(publicState?.warActive) ||
-      Number(publicState?.aiCardsRemaining ?? legalOptions.length) <= WAR_REQUIRED_CARDS ||
-      Number(publicState?.playerCardsRemaining ?? 0) <= WAR_REQUIRED_CARDS;
-    if (warPressure && lastPlayerMove) {
-      const lowerTieRiskOption = legalOptions.find((option) => option.card !== lastPlayerMove);
-      if (lowerTieRiskOption) {
-        return lowerTieRiskOption.index;
-      }
-    }
-  }
-
-  return legalOptions[0]?.index ?? null;
 }
 
 function createLocalAuthoritySocket(label) {
@@ -781,6 +711,12 @@ export class GameController {
         ? {
             bot: true,
             aiDifficulty: this.aiDifficulty,
+            ...(this.trainingMode
+              ? {
+                  trainingMode: true,
+                  trainingOpponentPersonality: this.trainingOpponentPersonality
+                }
+              : {}),
             ...(this.featuredRivalId ? { featuredRivalId: this.featuredRivalId } : {}),
             ...(this.gauntletRivalId ? { gauntletRivalId: this.gauntletRivalId } : {})
           }
@@ -1544,7 +1480,10 @@ export class GameController {
         buildElementCountsFromCards(this.match.players.p2.hand),
         recentOpponentMoves
       );
-      const legalOpponentOptions = buildLegalCardOptions(this.match.players.p2.hand, blockedOpponentElement);
+      const legalOpponentOptions = buildLegalTrainingOpponentOptions(
+        this.match.players.p2.hand,
+        blockedOpponentElement
+      );
       const legalOpponentHand = this.match.players.p2.hand.filter(
         (card) => normalizeElementMove(card) !== blockedOpponentElement
       );

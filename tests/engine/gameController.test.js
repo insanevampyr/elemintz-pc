@@ -1954,6 +1954,137 @@ test("gameController: Training Mode personality config is isolated from normal E
   }
 });
 
+test("gameController: Training Mode passes personality metadata into local authority bot join", () => {
+  const joinPayloads = [];
+  const controller = new GameController({
+    username: "TrainingAuthorityMetadata",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingOpponentPersonality: "counterer",
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        joinRoom: (_socket, _roomCode, payload) => {
+          joinPayloads.push(payload);
+          return {
+            ok: true,
+            room: {
+              ...createAuthoritativeLocalRoom(),
+              guest: {
+                username: payload.username,
+                bot: true,
+                aiDifficulty: payload.aiDifficulty,
+                trainingMode: payload.trainingMode,
+                trainingOpponentPersonality: payload.trainingOpponentPersonality
+              }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+
+    assert.equal(joinPayloads.length, 1);
+    assert.equal(joinPayloads[0].bot, true);
+    assert.equal(joinPayloads[0].aiDifficulty, "easy");
+    assert.equal(joinPayloads[0].trainingMode, true);
+    assert.equal(joinPayloads[0].trainingOpponentPersonality, "counterer");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: normal Easy PvE does not pass Training metadata into local authority", () => {
+  const joinPayloads = [];
+  const controller = new GameController({
+    username: "NormalEasyAuthorityMetadata",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingOpponentPersonality: "counterer",
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () =>
+      createAuthoritativePveStore({
+        joinRoom: (_socket, _roomCode, payload) => {
+          joinPayloads.push(payload);
+          return {
+            ok: true,
+            room: {
+              ...createAuthoritativeLocalRoom(),
+              guest: {
+                username: payload.username,
+                bot: true,
+                aiDifficulty: payload.aiDifficulty
+              }
+            }
+          };
+        }
+      }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    controller.startNewMatch();
+
+    assert.equal(joinPayloads.length, 1);
+    assert.equal(joinPayloads[0].bot, true);
+    assert.equal(joinPayloads[0].aiDifficulty, "easy");
+    assert.equal(Object.hasOwn(joinPayloads[0], "trainingMode"), false);
+    assert.equal(Object.hasOwn(joinPayloads[0], "trainingOpponentPersonality"), false);
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+  }
+});
+
+test("gameController: Training AI pacing waits before authority submit without changing personality choice", async () => {
+  const originalWindow = globalThis.window;
+  const scheduler = createFakeAiPacingScheduler();
+  const controller = new GameController({
+    username: "TrainingPacingAuthority",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingOpponentPersonality: "repeater",
+    persistMatchResults: false,
+    aiPacingScheduler: scheduler,
+    aiPacingRandom: () => 0,
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0 }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    const resultPromise = controller.playCard(2);
+
+    assert.equal(scheduler.activeCount(), 1);
+    assert.equal(controller.match.history.length, 0);
+
+    scheduler.runNext();
+    const result = await resultPromise;
+
+    assert.equal(result.revealedCards.p1Card, "water");
+    assert.equal(result.revealedCards.p2Card, "fire");
+    assert.equal(controller.match.history.at(-1)?.p2Card, "fire");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
 test("gameController: Training Repeater chooses a legal repeated element when available", async () => {
   const { capturedFinalizeCall, selectedCard } = await captureTrainingOpponentChoice({
     personality: "repeater",
@@ -2066,7 +2197,7 @@ test("trainingCoachEvaluator: revealed opponent plays reduce exact remaining cou
   });
 
   assert.deepEqual(coach.opponentRemainingByElement, { fire: 1, water: 2, earth: 0, wind: 2 });
-  assert.match(coach.tacticalRead.join(" | "), /earth unavailable/);
+  assert.match(coach.tacticalRead.join(" | "), /Earth is gone from their hand\./);
 });
 
 test("trainingCoachEvaluator: WAR commitments reduce available totals without exposing face-down identity", () => {
@@ -2253,8 +2384,8 @@ test("trainingCoachEvaluator: exhausted opponent element is reported unavailable
   });
 
   const read = coach.tacticalRead.join(" | ");
-  assert.match(read, /fire unavailable/);
-  assert.match(read, /wind unavailable/);
+  assert.match(read, /Fire is gone from their hand\./);
+  assert.match(read, /Wind is gone from their hand\./);
 });
 
 test("trainingCoachEvaluator: outcome coverage maps visible wins losses no-effect and ties", () => {
@@ -3047,7 +3178,7 @@ test("trainingCoachEvaluator: generic tie risk is omitted unless materially rele
     availableCards: { player: 4, opponent: 2 }
   });
 
-  assert.doesNotMatch(generic.tacticalRead.join(" | "), /Tie risk still available/);
+  assert.doesNotMatch(generic.tacticalRead.join(" | "), /A tie could start another WAR/);
 
   const materialWar = evaluateTrainingCoach({
     trainingActive: true,
@@ -3058,7 +3189,7 @@ test("trainingCoachEvaluator: generic tie risk is omitted unless materially rele
     war: { pileCount: 4, commitmentTotals: { player: 2, opponent: 2 } }
   });
 
-  assert.match(materialWar.tacticalRead.join(" | "), /Tie risk still available/);
+  assert.match(materialWar.tacticalRead.join(" | "), /A tie could start another WAR/);
   assert.match(materialWar.warSurvival.message, /Another tie could eliminate you/);
 });
 
@@ -19879,6 +20010,126 @@ test("rooms: gauntlet rival bot branch activates only when gauntletRivalId exist
     const normalSubmit = normalStore.submitMove(normalHost.id, "fire");
     assert.equal(normalSubmit.ok, true);
     assert.equal(normalSubmit.roundResult?.guestMove, "wind");
+  } finally {
+    Math.random = originalMathRandom;
+  }
+});
+
+test("rooms: Training Repeater uses authoritative Training chooser instead of generic Easy AI", () => {
+  const originalMathRandom = Math.random;
+  const store = createRoomStore({ random: () => 0.75 });
+  const host = { id: "training-repeater-host" };
+  const guest = { id: "training-repeater-guest" };
+  const room = store.createRoom(host, { username: "Host" }).room;
+  const join = store.joinRoom(guest, room.roomCode, {
+    username: "Training Bot",
+    bot: true,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingOpponentPersonality: "repeater"
+  });
+
+  try {
+    Math.random = () => 0.75;
+
+    assert.equal(join.ok, true);
+    assert.equal(join.room.guest.trainingMode, true);
+    assert.equal(join.room.guest.trainingOpponentPersonality, "repeater");
+
+    const submit = store.submitMove(host.id, "water");
+
+    assert.equal(submit.ok, true);
+    assert.equal(submit.roundResult?.guestMove, "fire");
+  } finally {
+    Math.random = originalMathRandom;
+  }
+});
+
+test("gameController: Training Counterer remains reachable through live authority history", async () => {
+  const originalWindow = globalThis.window;
+  const controller = new GameController({
+    username: "TrainingCountererAuthority",
+    timerSeconds: 30,
+    mode: MATCH_MODE.PVE,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingOpponentPersonality: "counterer",
+    persistMatchResults: false,
+    localAuthorityStoreFactory: () => createRoomStore({ random: () => 0.75 }),
+    onUpdate: () => {},
+    onMatchComplete: () => {}
+  });
+
+  try {
+    globalThis.window = { elemintz: { state: { recordMatchResult: async () => ({}) } } };
+    controller.startNewMatch();
+
+    const first = await controller.playCard(findCardIndexByElement(controller.match.players.p1.hand, "water"));
+    assert.equal(first.revealedCards.p2Card, "fire");
+
+    const second = await controller.playCard(findCardIndexByElement(controller.match.players.p1.hand, "fire"));
+    assert.equal(second.revealedCards.p2Card, "wind");
+  } finally {
+    controller.stopTimer();
+    controller.stopMatchClock();
+    globalThis.window = originalWindow;
+  }
+});
+
+test("rooms: Training Survivor remains reachable through authoritative submit route", () => {
+  const originalMathRandom = Math.random;
+  const store = createRoomStore({ random: () => 0.75 });
+  const host = { id: "training-survivor-host" };
+  const guest = { id: "training-survivor-guest" };
+  const room = store.createRoom(host, { username: "Host" }).room;
+  const join = store.joinRoom(guest, room.roomCode, {
+    username: "Training Bot",
+    bot: true,
+    aiDifficulty: "easy",
+    trainingMode: true,
+    trainingOpponentPersonality: "survivor"
+  });
+
+  try {
+    Math.random = () => 0.75;
+
+    assert.equal(join.ok, true);
+    assert.equal(join.room.guest.trainingMode, true);
+    assert.equal(join.room.guest.trainingOpponentPersonality, "survivor");
+
+    const submit = store.submitMove(host.id, "water");
+
+    assert.equal(submit.ok, true);
+    assert.equal(submit.roundResult?.guestMove, "fire");
+  } finally {
+    Math.random = originalMathRandom;
+  }
+});
+
+test("rooms: normal Easy bot ignores Training personality metadata without Training mode", () => {
+  const originalMathRandom = Math.random;
+  const store = createRoomStore({ random: () => 0.75 });
+  const host = { id: "normal-easy-training-metadata-host" };
+  const guest = { id: "normal-easy-training-metadata-guest" };
+  const room = store.createRoom(host, { username: "Host" }).room;
+  const join = store.joinRoom(guest, room.roomCode, {
+    username: "Easy Bot",
+    bot: true,
+    aiDifficulty: "easy",
+    trainingOpponentPersonality: "repeater"
+  });
+
+  try {
+    Math.random = () => 0.75;
+
+    assert.equal(join.ok, true);
+    assert.equal(join.room.guest.trainingMode, undefined);
+    assert.equal(join.room.guest.trainingOpponentPersonality, undefined);
+
+    const submit = store.submitMove(host.id, "water");
+
+    assert.equal(submit.ok, true);
+    assert.equal(submit.roundResult?.guestMove, "wind");
   } finally {
     Math.random = originalMathRandom;
   }

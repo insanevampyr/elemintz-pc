@@ -896,14 +896,15 @@ function buildTacticalRead({
   const read = [];
   for (const element of ELEMENTS) {
     if (opponentCounts[element] === 0) {
-      read.push(`${element} unavailable`);
+      read.push(`${formatElementLabel(element)} is gone from their hand.`);
     }
   }
 
   const largestCount = Math.max(...ELEMENTS.map((element) => opponentCounts[element]));
   const largestElements = ELEMENTS.filter((element) => opponentCounts[element] === largestCount && largestCount > 0);
   if (largestElements.length > 0) {
-    read.push(`${largestElements.join("/")} most remaining`);
+    const labels = largestElements.map(formatElementLabel).join("/");
+    read.push(`${labels} ${largestElements.length === 1 ? "has" : "have"} the most cards remaining.`);
   }
 
   if (opponentFatigueElement) {
@@ -915,7 +916,7 @@ function buildTacticalRead({
     : [];
   const repeatedRecent = recent.length >= 2 && recent.at(-1) === recent.at(-2) ? recent.at(-1) : null;
   if (repeatedRecent) {
-    read.push(`${repeatedRecent} repeat pattern likely based on recent cards`);
+    read.push(`They have recently repeated ${formatElementLabel(repeatedRecent)}.`);
   }
 
   const tieRisk = coverage.find((entry) => entry.tieExposure > 0);
@@ -928,7 +929,7 @@ function buildTacticalRead({
       warSurvival?.opponentCanContinueCurrentWar === false
     ));
   if (tieRisk && tieMaterial) {
-    read.push("Tie risk still available");
+    read.push("A tie could start another WAR.");
   }
 
   return read.length > 0 ? read : ["No strong read"];
@@ -1030,7 +1031,7 @@ function chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }) {
     return {
       kind: "safe",
       element: best.element,
-      reason: "Likely based on remaining cards.",
+      reason: "Best visible coverage from remaining cards.",
       confidence: "likely"
     };
   }
@@ -1042,7 +1043,7 @@ function chooseSuggestion({ coverage, opponentTotalCards, tacticalPriority }) {
     return {
       kind: "avoid",
       element: worst.element,
-      reason: "Tie risk or counter pressure is higher.",
+      reason: "Another legal card has better visible coverage.",
       confidence: "likely"
     };
   }

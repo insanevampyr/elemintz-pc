@@ -98,7 +98,12 @@ export function buildGameLiveUpdateSignature(context) {
     },
     trainingMode,
     trainingCoachMode,
-    coach: buildTrainingCoachLiveSignature({ coach: vm.coach, mode: trainingCoachMode, trainingMode })
+    coach: buildTrainingCoachLiveSignature({
+      coach: vm.coach,
+      mode: trainingCoachMode,
+      trainingMode,
+      coachState: getTrainingCoachInteractionState(context)
+    })
   };
   if (!trainingMode) {
     signature.warPileCards = Array.isArray(vm.warPileCards) ? vm.warPileCards : [];
@@ -496,6 +501,21 @@ function normalizeTrainingCoachMode(value) {
   return normalized === "light" || normalized === "off" ? normalized : "full";
 }
 
+function getTrainingCoachInteractionState(context = {}) {
+  const vm = context.game ?? {};
+  const phase = context.presentation?.phase ?? "idle";
+  if (phase === "thinking") {
+    return "thinking";
+  }
+  if (vm.status === "completed") {
+    return "complete";
+  }
+  if (context.presentation?.busy && !vm.canSelectCard) {
+    return "locked";
+  }
+  return "ready";
+}
+
 function renderTrainingCoachModeControls(mode) {
   const controls = [
     ["full", "Full Coach"],
@@ -621,6 +641,67 @@ function suppressConflictingTrainingCoachNote(note, selectedElement = null) {
   return line;
 }
 
+function getTrainingCoachFatigueLine(coach) {
+  const blockedElement = String(coach?.fatigue?.playerBlockedElement ?? "").trim();
+  const blocked = blockedElement ? formatElement(blockedElement) : "";
+  return blocked ? `${blocked} is resting. Choose another card.` : "";
+}
+
+function formatTrainingCoachWarningLine(line, { forced = false, hasFatigue = false } = {}) {
+  const normalized = String(line ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (forced && normalized === "This forced move may be beaten.") {
+    return hasFatigue
+      ? "It may be beaten, but your other elements are resting."
+      : "It may be beaten, but no other legal choice is available.";
+  }
+  if (normalized === "Tie risk: another WAR continuation could eliminate you.") {
+    return "Another WAR could leave you with too few cards.";
+  }
+  return normalized;
+}
+
+function getTrainingCoachSuggestionPresentation(coach, kind, suggestion) {
+  const suggestionElement = String(suggestion?.element ?? "").trim();
+  const elementLabel = suggestionElement ? formatElement(suggestionElement) : "";
+  const fatigueLine = getTrainingCoachFatigueLine(coach);
+
+  if (coach?.war?.active) {
+    const primary = elementLabel
+      ? `WAR continuation — choose ${elementLabel}.`
+      : "WAR continuation — choose a legal card.";
+    const reason =
+      String(coach?.tacticalPriority?.kind ?? "") === "forced_war_elimination"
+        ? "A tie could leave them unable to continue."
+        : "";
+    return { primary, reason };
+  }
+
+  if (kind === "forced") {
+    return {
+      primary: elementLabel ? `Only legal move: ${elementLabel}.` : "Only legal move.",
+      reason: ""
+    };
+  }
+
+  if (kind === "none") {
+    return {
+      primary: fatigueLine || "No clear suggestion — you pick.",
+      reason: ""
+    };
+  }
+
+  const label =
+    kind === "safe" ? "Safe" : kind === "use" ? "Use" : kind === "avoid" ? "Avoid" : "No clear suggestion — you pick.";
+  const element = elementLabel ? `: ${elementLabel}` : "";
+  return {
+    primary: `${label}${element}`,
+    reason: String(suggestion.reason ?? "").trim()
+  };
+}
+
 function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, showSectionLabel = true } = {}) {
   const suggestion = coach?.suggestion ?? {};
   const kind =
@@ -630,10 +711,9 @@ function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, sh
   if (!allowDirectSuggestion && kind !== "none" && !isStrongCoachConfidence(suggestion.confidence ?? coach?.confidence)) {
     return "";
   }
-  const label = kind === "safe" ? "Safe" : kind === "use" ? "Use" : kind === "avoid" ? "Avoid" : kind === "forced" ? "Forced" : "No strong read";
-  const element = suggestion.element ? `: ${formatElement(suggestion.element)}` : "";
-  const reason = String(suggestion.reason ?? "").trim() || "No strong read.";
-  const showReason = kind !== "none" || (reason && reason !== "No strong read.");
+  const suggestionPresentation = getTrainingCoachSuggestionPresentation(coach, kind, suggestion);
+  const reason = suggestionPresentation.reason || "";
+  const showReason = Boolean(reason);
   const showFutureOptionGuidance = !coach?.war?.active;
   const optionNote = showFutureOptionGuidance
     ? suppressConflictingTrainingCoachNote(coach?.futureOptionForecast?.note, suggestion.element)
@@ -645,18 +725,19 @@ function renderTrainingCoachSuggestion(coach, { allowDirectSuggestion = true, sh
   const confidenceMessage = showFutureOptionGuidance ? String(coach?.outcomeConfidence?.message ?? "").trim() : "";
   const confidenceWarning = confidenceKind === "forced_risk" || confidenceKind === "no_safe_response" ? confidenceMessage : "";
   const confidenceNote = confidenceWarning ? "" : confidenceMessage;
+  const hasFatigue = Boolean(getTrainingCoachFatigueLine(coach));
   const warningLines = coach?.war?.active
     ? []
     : getDistinctTrainingCoachWarnings(
         [coach?.tacticalPriority?.supportingMessage, coach?.riskNote, optionWarning, noEffectWarning, confidenceWarning],
         reason,
         suggestion.element
-      );
+      ).map((line) => formatTrainingCoachWarningLine(line, { forced: kind === "forced", hasFatigue })).filter(Boolean);
   const hasWhyDetail = (showReason && kind !== "none") || optionNote || noEffectNote || confidenceNote;
   return `
     <section class="game-match-taunt-section" data-training-coach-suggestion="${escapeHtml(kind)}">
-      ${showSectionLabel && kind !== "none" ? "<p><strong>Coach Advice</strong></p>" : ""}
-      <p><strong>${escapeHtml(label)}${escapeHtml(element)}</strong></p>
+      ${showSectionLabel ? "<p><strong>Coach Advice</strong></p>" : ""}
+      <p><strong>${escapeHtml(suggestionPresentation.primary)}</strong></p>
       ${hasWhyDetail ? "<p><strong>Why</strong></p>" : ""}
       ${showReason ? `<p class="text-muted">${escapeHtml(reason)}</p>` : ""}
       ${confidenceNote ? `<p class="text-muted" data-training-coach-confidence="true">${escapeHtml(confidenceNote)}</p>` : ""}
@@ -770,7 +851,7 @@ function renderTrainingCoachWarSummary(coach) {
 
   addPressureLine(coach?.tacticalPriority?.supportingMessage, "direct_loss");
   if (survival.playerCanSurviveAnotherTie === false) {
-    addPressureLine("Another tie could eliminate you.", "player_cannot_survive_tie");
+    addPressureLine("Another WAR could leave you with too few cards.", "player_cannot_survive_tie");
   }
   if (
     String(coach?.tacticalPriority?.kind ?? "") !== "forced_war_elimination" &&
@@ -785,10 +866,10 @@ function renderTrainingCoachWarSummary(coach) {
     addPressureLine("Both players can continue, but your margin is thin.", "card_edge");
   }
   if ((pileCount >= 4 || Number(survival.commitmentTotal ?? 0) >= 4) && survival.playerCanSurviveAnotherTie !== false) {
-    addPressureLine("The WAR pot is large; avoid another tie if possible.", "tie_risk");
+    addPressureLine("The WAR pot is large; avoid another WAR if possible.", "tie_risk");
   }
-  addPressureLine(survival.message, String(survival.riskLevel ?? "war_status"));
-  addPressureLine(coach.riskNote, "risk_note");
+  addPressureLine(formatTrainingCoachWarningLine(survival.message), String(survival.riskLevel ?? "war_status"));
+  addPressureLine(formatTrainingCoachWarningLine(coach.riskNote), "risk_note");
 
   const seenConcepts = new Set();
   const seenLines = new Set();
@@ -807,7 +888,7 @@ function renderTrainingCoachWarSummary(coach) {
 
   return `
     <section class="game-match-taunt-section" data-training-coach-war="true">
-      <p><strong>WAR active</strong></p>
+      <p><strong>WAR continuation</strong></p>
       <div class="battle-status-grid">
         <span data-training-coach-war-pot="true">Pot: ${pileCount}</span>
         <span data-training-coach-war-commitments="true">Committed: ${playerCommitted} | ${opponentCommitted}</span>
@@ -853,11 +934,11 @@ function renderTrainingCoachHelp(coach) {
 function getLightCoachRead(coach) {
   const warSurvivalLine = String(coach?.warSurvival?.message ?? "").trim();
   if (warSurvivalLine && coach?.war?.active) {
-    return [warSurvivalLine];
+    return [formatTrainingCoachWarningLine(warSurvivalLine)];
   }
   const riskNote = String(coach?.riskNote ?? "").trim();
   if (riskNote) {
-    return [riskNote];
+    return [formatTrainingCoachWarningLine(riskNote)];
   }
   const optionWarning = String(coach?.futureOptionForecast?.warning ?? "").trim();
   if (optionWarning && !coach?.war?.active) {
@@ -879,7 +960,21 @@ function getLightCoachRead(coach) {
   return [String(tacticalRead[0] ?? "No strong read")];
 }
 
-function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = false } = {}) {
+function renderTrainingCoachSuppressedAdvice(state = "locked") {
+  const message =
+    state === "thinking"
+      ? "Opponent is choosing..."
+      : state === "complete"
+        ? "Training is complete."
+        : "Coach advice returns when your next choice is ready.";
+  return `
+    <section class="game-match-taunt-section" data-training-coach-pending="true">
+      <p><strong>${escapeHtml(message)}</strong></p>
+    </section>
+  `;
+}
+
+function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = false, coachState = "ready" } = {}) {
   if (!trainingMode) {
     return null;
   }
@@ -903,7 +998,7 @@ function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = 
       ? {
           kind: coach.suggestion?.kind ?? "none",
           element: coach.suggestion?.element ?? null,
-          reason: coach.suggestion?.reason ?? "",
+          reason: coach.suggestion?.kind === "none" ? "" : coach.suggestion?.reason ?? "",
           confidence: coach.suggestion?.confidence ?? coach.confidence ?? null
         }
       : null;
@@ -911,6 +1006,7 @@ function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = 
   return {
     display: coachMode,
     available: true,
+    state: coachState,
     opponentRemainingByElement: counts,
     tacticalRead: coachMode === "full" ? coach.tacticalRead ?? [] : getLightCoachRead(coach),
     suggestion: visibleSuggestion,
@@ -923,7 +1019,7 @@ function buildTrainingCoachLiveSignature({ coach, mode = "full", trainingMode = 
   };
 }
 
-function renderTrainingCoachRail({ coach, mode = "full" } = {}) {
+function renderTrainingCoachRail({ coach, mode = "full", coachState = "ready" } = {}) {
   const coachMode = normalizeTrainingCoachMode(mode);
   if (coachMode === "off") {
     return `
@@ -942,6 +1038,10 @@ function renderTrainingCoachRail({ coach, mode = "full" } = {}) {
   }
 
   const hasCoach = coach && typeof coach === "object";
+  const normalizedCoachState =
+    coachState === "thinking" || coachState === "complete" || coachState === "locked"
+      ? coachState
+      : "ready";
   return `
     <aside class="match-taunt-shell game-match-taunt-rail" data-training-coach-rail="true" data-training-coach-display="${escapeHtml(coachMode)}" aria-label="Training Mode Coach">
       <div class="game-match-taunt-rail-header match-taunt-controls-row game-match-taunt-topbar">
@@ -952,7 +1052,13 @@ function renderTrainingCoachRail({ coach, mode = "full" } = {}) {
           ${renderTrainingCoachModeControls(coachMode)}
           ${
             hasCoach
-              ? coach?.war?.active
+              ? normalizedCoachState !== "ready"
+                ? `
+                  ${renderTrainingCoachCounts(coach.opponentRemainingByElement)}
+                  ${renderTrainingCoachSuppressedAdvice(normalizedCoachState)}
+                  ${coachMode === "full" ? renderTrainingCoachHelp(coach) : ""}
+                `
+              : coach?.war?.active
                 ? `
                   ${renderTrainingCoachCounts(coach.opponentRemainingByElement)}
                   ${renderTrainingCoachSuggestion(coach, {
@@ -1059,7 +1165,11 @@ export const gameScreen = {
               </section>
             `,
             expressionsSlotHtml: trainingMode
-              ? renderTrainingCoachRail({ coach: vm.coach, mode: context.trainingCoachMode })
+              ? renderTrainingCoachRail({
+                  coach: vm.coach,
+                  mode: context.trainingCoachMode,
+                  coachState: getTrainingCoachInteractionState(context)
+                })
               : renderBattleExpressionsRail({
                   idPrefix: "game",
                   panelOpen: Boolean(context.taunts?.panelOpen),

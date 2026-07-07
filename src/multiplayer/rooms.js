@@ -1,7 +1,9 @@
 import {
   AI_DIFFICULTY,
+  buildLegalTrainingOpponentOptions,
   chooseAiCardIndex,
   chooseGauntletRivalCardIndex,
+  chooseTrainingOpponentCardIndex,
   getGauntletRivalById
 } from "../engine/index.js";
 
@@ -493,11 +495,17 @@ function buildPlayer(socket, payload = {}, identity = null) {
     : null;
   const featuredRivalId = bot ? normalizeFeaturedRivalId(payload?.featuredRivalId) : null;
   const gauntletRivalId = bot ? normalizeGauntletRivalId(payload?.gauntletRivalId) : null;
+  const trainingMode = bot && payload?.trainingMode === true;
+  const trainingOpponentPersonality = trainingMode
+    ? String(payload?.trainingOpponentPersonality ?? "").trim().toLowerCase() || null
+    : null;
   return {
     socketId: socket.id,
     connected: true,
     bot,
     ...(aiDifficulty ? { aiDifficulty } : {}),
+    ...(trainingMode ? { trainingMode: true } : {}),
+    ...(trainingOpponentPersonality ? { trainingOpponentPersonality } : {}),
     ...(featuredRivalId ? { featuredRivalId } : {}),
     ...(gauntletRivalId ? { gauntletRivalId } : {}),
     ...(username ? { username } : {}),
@@ -614,6 +622,7 @@ function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
     .trim()
     .toLowerCase();
   const gauntletRival = getGauntletRivalById(gauntletRivalId);
+  const trainingMode = room?.guest?.trainingMode === true;
 
   if (gauntletRival) {
     const recentPlayerMoves = getRecentRoundMoves(room?.roundHistory, "hostMove");
@@ -629,6 +638,25 @@ function chooseAuthoritativeBotMove(room, { playerElementCounts = null } = {}) {
     });
     if (Number.isInteger(gauntletIndex) && gauntletIndex >= 0 && gauntletIndex < aiHand.length) {
       return aiHand[gauntletIndex] ?? null;
+    }
+  }
+
+  if (trainingMode) {
+    const recentPlayerMoves = getRecentRoundMoves(room?.roundHistory, "hostMove");
+    const recentOpponentMoves = getRecentRoundMoves(room?.roundHistory, "guestMove");
+    const trainingIndex = chooseTrainingOpponentCardIndex({
+      personality: room?.guest?.trainingOpponentPersonality,
+      legalOptions: buildLegalTrainingOpponentOptions(aiHand),
+      recentPlayerMoves,
+      recentOpponentMoves,
+      publicState: buildAuthoritativeBotPublicState(room, {
+        aiCardsRemaining: aiHand.length,
+        playerElementCounts,
+        recentPlayerMoves
+      })
+    });
+    if (Number.isInteger(trainingIndex) && trainingIndex >= 0 && trainingIndex < aiHand.length) {
+      return aiHand[trainingIndex] ?? null;
     }
   }
 
