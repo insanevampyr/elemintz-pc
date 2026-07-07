@@ -11,7 +11,7 @@ export class ModalManager {
     const actionButtons = actions
       .map(
         (action, index) =>
-          `<button class="modal-btn" data-modal-action="${index}">${action.label}</button>`
+          `<button type="button" class="modal-btn" data-modal-action="${index}">${action.label}</button>`
       )
       .join("");
     const safeModalClassName = String(modalClassName ?? "").trim();

@@ -2859,6 +2859,19 @@ export class MultiplayerClient {
     return response.result ?? null;
   }
 
+  async updateProfileShowcaseSlot({ username, slotIndex, cosmetic = null, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:updateProfileShowcaseSlot",
+      { username, slotIndex, cosmetic },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to update Showcase slot.");
+    }
+
+    return response.result ?? null;
+  }
+
   async applyCosmeticLoadout({ username, slotIndex, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:applyCosmeticLoadout",

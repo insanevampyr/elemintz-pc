@@ -20,7 +20,11 @@ import {
   getXpThresholds,
   normalizeProfileDailyChallenges
 } from "../../src/state/dailyChallengesSystem.js";
-import { COSMETIC_CATALOG, getCosmeticCatalogForProfile } from "../../src/state/cosmeticSystem.js";
+import {
+  COSMETIC_CATALOG,
+  getCosmeticCatalogForProfile,
+  resolveProfileShowcaseSlots
+} from "../../src/state/cosmeticSystem.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import {
   applyLevelRewardsForLevelChange,
@@ -4612,6 +4616,400 @@ test("state: authoritative viewed-profile reads reject missing usernames and do 
 
   const created = await authority.coordinator.profiles.getProfile("UnknownRemoteUser");
   assert.equal(created, null);
+});
+
+test("state: Showcase resolver overlays manual slots on equipped automatic defaults", () => {
+  const profile = {
+    username: "ShowcaseResolveUser",
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back", "cardback_neon_arcana"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate", "title_spellwired"]
+    },
+    equippedCosmetics: {
+      avatar: "avatar_crystal_soul",
+      cardBack: "cardback_neon_arcana",
+      background: "default_background",
+      badge: "none",
+      title: "title_spellwired",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    },
+    profileShowcaseSlots: [null, { type: "avatar", id: "default_avatar" }, null]
+  };
+
+  const resolved = resolveProfileShowcaseSlots(profile);
+  assert.deepEqual(
+    resolved.map((item) => `${item.type}:${item.id}`),
+    ["avatar:avatar_crystal_soul", "avatar:default_avatar", "title:title_spellwired"]
+  );
+
+  const cleared = resolveProfileShowcaseSlots({
+    ...profile,
+    profileShowcaseSlots: [null, null, null]
+  });
+  assert.deepEqual(
+    cleared.map((item) => `${item.type}:${item.id}`),
+    ["avatar:avatar_crystal_soul", "cardBack:cardback_neon_arcana", "title:title_spellwired"]
+  );
+
+  const invalidManual = resolveProfileShowcaseSlots({
+    ...profile,
+    profileShowcaseSlots: [
+      { type: "menuTile", id: "tile_training_mode" },
+      { type: "cardBack", id: "missing_card_back" },
+      { type: "title", id: "title_unowned_fixture" }
+    ]
+  });
+  assert.deepEqual(
+    invalidManual.map((item) => `${item.type}:${item.id}`),
+    ["avatar:avatar_crystal_soul", "cardBack:cardback_neon_arcana", "title:title_spellwired"]
+  );
+});
+
+test("state: Showcase manual slot updates validate ownership, duplicates, and clear-to-auto", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.updateProfile("ShowcaseEditorUser", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: [...current.ownedCosmetics.avatar, "avatar_crystal_soul"],
+      cardBack: [...current.ownedCosmetics.cardBack, "cardback_neon_arcana"],
+      title: [...current.ownedCosmetics.title, "title_spellwired"]
+    }
+  }));
+
+  const slot0 = await state.updateProfileShowcaseSlot({
+    username: "ShowcaseEditorUser",
+    slotIndex: 0,
+    cosmetic: { type: "avatar", id: "avatar_crystal_soul" }
+  });
+  const slot1 = await state.updateProfileShowcaseSlot({
+    username: "ShowcaseEditorUser",
+    slotIndex: 1,
+    cosmetic: { type: "cardBack", id: "cardback_neon_arcana" }
+  });
+  const slot2 = await state.updateProfileShowcaseSlot({
+    username: "ShowcaseEditorUser",
+    slotIndex: 2,
+    cosmetic: { type: "title", id: "title_spellwired" }
+  });
+
+  assert.deepEqual(slot0.profile.profileShowcaseSlots, [
+    { type: "avatar", id: "avatar_crystal_soul" },
+    null,
+    null
+  ]);
+  assert.deepEqual(slot1.profile.profileShowcaseSlots, [
+    { type: "avatar", id: "avatar_crystal_soul" },
+    { type: "cardBack", id: "cardback_neon_arcana" },
+    null
+  ]);
+  assert.deepEqual(slot2.profile.profileShowcaseSlots, [
+    { type: "avatar", id: "avatar_crystal_soul" },
+    { type: "cardBack", id: "cardback_neon_arcana" },
+    { type: "title", id: "title_spellwired" }
+  ]);
+
+  await assert.rejects(
+    () =>
+      state.updateProfileShowcaseSlot({
+        username: "ShowcaseEditorUser",
+        slotIndex: 4,
+        cosmetic: { type: "avatar", id: "default_avatar" }
+      }),
+    /Invalid Showcase slot/
+  );
+  await assert.rejects(
+    () =>
+      state.updateProfileShowcaseSlot({
+        username: "ShowcaseEditorUser",
+        slotIndex: 1,
+        cosmetic: { type: "menuTile", id: "tile_training_mode" }
+      }),
+    /Invalid Showcase cosmetic/
+  );
+  await assert.rejects(
+    () =>
+      state.updateProfileShowcaseSlot({
+        username: "ShowcaseEditorUser",
+        slotIndex: 1,
+        cosmetic: { type: "avatar", id: "avatar_missing_debug" }
+      }),
+    /not available/
+  );
+  await assert.rejects(
+    () =>
+      state.updateProfileShowcaseSlot({
+        username: "ShowcaseEditorUser",
+        slotIndex: 1,
+        cosmetic: { type: "avatar", id: "avatar_lycan_anubis" }
+      }),
+    /not owned/
+  );
+  await assert.rejects(
+    () =>
+      state.updateProfileShowcaseSlot({
+        username: "ShowcaseEditorUser",
+        slotIndex: 1,
+        cosmetic: { type: "avatar", id: "avatar_crystal_soul" }
+      }),
+    /already showcased/
+  );
+
+  const afterDuplicate = await state.profiles.getProfile("ShowcaseEditorUser");
+  assert.deepEqual(afterDuplicate.profileShowcaseSlots, slot2.profile.profileShowcaseSlots);
+
+  const cleared = await state.updateProfileShowcaseSlot({
+    username: "ShowcaseEditorUser",
+    slotIndex: 1,
+    cosmetic: null
+  });
+  assert.deepEqual(cleared.profile.profileShowcaseSlots, [
+    { type: "avatar", id: "avatar_crystal_soul" },
+    null,
+    { type: "title", id: "title_spellwired" }
+  ]);
+  assert.deepEqual(
+    resolveProfileShowcaseSlots(cleared.profile).map((item) => `${item.type}:${item.id}`),
+    ["avatar:avatar_crystal_soul", "cardBack:default_card_back", "title:title_spellwired"]
+  );
+});
+
+test("state: public profile Showcase falls back to automatic defaults for null manual slots", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("ShowcaseDefaultPublicUser");
+
+  const viewed = await authority.viewProfile("ShowcaseDefaultPublicUser");
+
+  assert.deepEqual(
+    viewed.profile.showcaseSlots.map((item) => `${item.type}:${item.id}`),
+    ["avatar:default_avatar", "cardBack:default_card_back", "title:Initiate"]
+  );
+  assert.deepEqual(viewed.cosmetics.showcaseSlots, viewed.profile.showcaseSlots);
+  assert.equal("profileShowcaseSlots" in viewed.profile, false);
+  assert.equal("ownedCosmetics" in viewed.profile, false);
+  assert.equal("owned" in viewed.cosmetics, false);
+});
+
+test("state: public profile snapshots expose safe ordered Showcase slots only", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("ShowcasePublicUser");
+  await authority.coordinator.profiles.updateProfile("ShowcasePublicUser", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: [...current.ownedCosmetics.avatar, "avatar_crystal_soul"],
+      background: [...current.ownedCosmetics.background, "bg_verdant_shrine"],
+      elementCardVariant: [...current.ownedCosmetics.elementCardVariant, "fire_variant_crownfire"]
+    },
+    profileShowcaseSlots: [
+      { type: "elementCardVariant", id: "fire_variant_crownfire" },
+      null,
+      { type: "avatar", id: "avatar_crystal_soul" }
+    ],
+    cosmeticLoadouts: [{ name: "Private Loadout", cosmetics: current.equippedCosmetics }],
+    cosmeticRandomizeAfterMatch: {
+      avatar: true,
+      title: true,
+      badge: true,
+      elementCardVariant: true,
+      cardBack: true,
+      background: true
+    },
+    uniqueCosmeticAcquisitions: {
+      "avatar:avatar_crystal_soul": { source: "granted", acquiredAt: "2026-07-01T00:00:00.000Z" }
+    }
+  }));
+
+  const viewed = await authority.viewProfile("ShowcasePublicUser");
+
+  assert.equal(Array.isArray(viewed.profile.showcaseSlots), true);
+  assert.equal(viewed.profile.showcaseSlots.length, 3);
+  assert.deepEqual(viewed.profile.showcaseSlots, [
+    {
+      type: "elementCardVariant",
+      id: "fire_variant_crownfire",
+      name: "Crownfire",
+      rarity: "Legendary",
+      collection: "Flame King",
+      image: "cards/fire_variant_crownfire.png",
+      element: "fire"
+    },
+    {
+      type: "cardBack",
+      id: "default_card_back",
+      name: "Default Card Back",
+      rarity: "Common",
+      collection: "Starter Set",
+      image: "card_backs/default_back.jpg"
+    },
+    {
+      type: "avatar",
+      id: "avatar_crystal_soul",
+      name: "Crystal Soul",
+      rarity: "Epic",
+      collection: null,
+      image: "avatars/avatar_crystal_soul.png"
+    }
+  ]);
+  assert.deepEqual(viewed.cosmetics.showcaseSlots, viewed.profile.showcaseSlots);
+  assert.equal("profileShowcaseSlots" in viewed.profile, false);
+  assert.equal("ownedCosmetics" in viewed.profile, false);
+  assert.equal("owned" in viewed.cosmetics, false);
+  assert.equal("loadouts" in viewed.cosmetics, false);
+  assert.equal("preferences" in viewed.cosmetics, false);
+  assert.equal("cosmeticLoadouts" in viewed.profile, false);
+  assert.equal("cosmeticRandomizeAfterMatch" in viewed.profile, false);
+  assert.equal("uniqueCosmeticAcquisitions" in viewed.profile, false);
+  assert.equal("uniqueCosmeticAcquisitions" in viewed.cosmetics, false);
+});
+
+test("state: public Showcase refresh reflects manual updates without leaking owner inventory", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("ShowcaseRefreshUser");
+  await authority.coordinator.profiles.updateProfile("ShowcaseRefreshUser", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: [...current.ownedCosmetics.avatar, "avatar_crystal_soul"],
+      badge: [...current.ownedCosmetics.badge, "badge_element_initiate"]
+    }
+  }));
+
+  const updated = await authority.updateProfileShowcaseSlot({
+    username: "ShowcaseRefreshUser",
+    slotIndex: 0,
+    cosmetic: { type: "avatar", id: "avatar_crystal_soul" }
+  });
+  const viewed = await authority.viewProfile("ShowcaseRefreshUser");
+
+  assert.deepEqual(updated.profile.profileShowcaseSlots, [
+    { type: "avatar", id: "avatar_crystal_soul" },
+    null,
+    null
+  ]);
+  assert.deepEqual(
+    viewed.profile.showcaseSlots.map((item) => (item ? `${item.type}:${item.id}` : null)),
+    ["avatar:avatar_crystal_soul", "cardBack:default_card_back", "title:Initiate"]
+  );
+  assert.deepEqual(viewed.cosmetics.showcaseSlots, viewed.profile.showcaseSlots);
+  assert.equal("profileShowcaseSlots" in viewed.profile, false);
+  assert.equal("ownedCosmetics" in viewed.profile, false);
+  assert.equal("owned" in viewed.cosmetics, false);
+});
+
+test("state: public Showcase shaping nulls invalid slots and keeps Trophy Shelf behavior", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("ShowcaseInvalidPublicUser");
+  await authority.coordinator.profiles.updateProfile("ShowcaseInvalidPublicUser", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: [...current.ownedCosmetics.avatar, "avatar_crystal_soul"],
+      badge: [...current.ownedCosmetics.badge, "badge_element_initiate"]
+    },
+    profileShowcaseSlots: [
+      { type: "menuTile", id: "tile_training_mode" },
+      "malformed",
+      { type: "avatar", id: "avatar_crystal_soul" }
+    ]
+  }));
+
+  const viewed = await authority.viewProfile("ShowcaseInvalidPublicUser");
+
+  assert.deepEqual(viewed.profile.showcaseSlots, [
+    {
+      type: "avatar",
+      id: "default_avatar",
+      name: "Default Avatar",
+      rarity: "Common",
+      collection: "Starter Set",
+      image: "avatars/default.png"
+    },
+    {
+      type: "cardBack",
+      id: "default_card_back",
+      name: "Default Card Back",
+      rarity: "Common",
+      collection: "Starter Set",
+      image: "card_backs/default_back.jpg"
+    },
+    {
+      type: "avatar",
+      id: "avatar_crystal_soul",
+      name: "Crystal Soul",
+      rarity: "Epic",
+      collection: null,
+      image: "avatars/avatar_crystal_soul.png"
+    }
+  ]);
+  assert.equal(Array.isArray(viewed.profile.trophyShelf), true);
+  assert.ok(viewed.profile.trophyShelf.some((item) => item.id === "avatar_crystal_soul"));
+  const trophyItem = viewed.profile.trophyShelf.find((item) => item.id === "avatar_crystal_soul");
+  assert.equal("typeLabel" in trophyItem, true);
+  assert.equal("equipped" in trophyItem, true);
+});
+
+test("state: public Showcase shaping exposes Unique cosmetics without private acquisition metadata", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("ShowcaseUniquePublicUser");
+  await authority.coordinator.profiles.updateProfile("ShowcaseUniquePublicUser", (current) => ({
+    ...current,
+    ownedCosmetics: {
+      ...current.ownedCosmetics,
+      avatar: [...current.ownedCosmetics.avatar, "avatar_lycan_anubis"]
+    },
+    uniqueCosmeticAcquisitions: {
+      "avatar:avatar_lycan_anubis": {
+        source: "granted",
+        acquiredAt: "2026-07-01T00:00:00.000Z",
+        adminNotes: "private"
+      }
+    },
+    profileShowcaseSlots: [
+      { type: "avatar", id: "avatar_lycan_anubis" },
+      null,
+      null
+    ]
+  }));
+
+  const viewed = await authority.viewProfile("ShowcaseUniquePublicUser");
+  const item = viewed.profile.showcaseSlots[0];
+
+  assert.deepEqual(item, {
+    type: "avatar",
+    id: "avatar_lycan_anubis",
+    name: "Lycan Anubis",
+    rarity: "Unique",
+    collection: null,
+    image: "avatars/avatar_lycan_anubis.png"
+  });
+  assert.equal("acquisitionLabel" in item, false);
+  assert.equal("createdForUsername" in item, false);
+  assert.equal("adminNotes" in item, false);
+  assert.equal("storeHidden" in item, false);
+  assert.equal("grantOnly" in item, false);
+  assert.equal(JSON.stringify(viewed).includes("uniqueCosmeticAcquisitions"), false);
 });
 
 test("state: authoritative viewed-profile reads resolve account usernames through profileKey without creating defaults", async () => {

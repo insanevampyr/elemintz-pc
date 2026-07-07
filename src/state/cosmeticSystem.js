@@ -1,6 +1,12 @@
 import { ACHIEVEMENT_DEFINITIONS } from "./achievementSystem.js";
 
 const COSMETIC_TYPES = ["avatar", "cardBack", "background", "elementCardVariant", "badge", "title"];
+const PROFILE_SHOWCASE_SLOT_COUNT = 3;
+const PROFILE_SHOWCASE_AUTOMATIC_SLOTS = Object.freeze([
+  Object.freeze({ type: "avatar" }),
+  Object.freeze({ type: "cardBack" }),
+  Object.freeze({ type: "title" })
+]);
 const ELEMENTS = ["fire", "water", "earth", "wind"];
 export const LOADOUT_UNLOCK_LEVELS = Object.freeze([10, 20, 40, 60]);
 export const RANDOMIZABLE_COSMETIC_TYPES = Object.freeze([
@@ -3486,6 +3492,7 @@ export function createDefaultCosmeticsState() {
     cosmeticLoadouts,
     acknowledgedLoadoutUnlockSlots: {},
     uniqueCosmeticAcquisitions: {},
+    profileShowcaseSlots: Array(PROFILE_SHOWCASE_SLOT_COUNT).fill(null),
     ownedCosmetics: owned,
     equippedCosmetics: equipped,
     cosmetics: {
@@ -3717,6 +3724,10 @@ export function normalizeProfileCosmetics(profile) {
       profile?.uniqueCosmeticAcquisitions,
       owned
     ),
+    profileShowcaseSlots: normalizeProfileShowcaseSlots({
+      ...profile,
+      ownedCosmetics: owned
+    }),
     ownedCosmetics: {
       avatar: unique(owned.avatar),
       cardBack: unique(owned.cardBack),
@@ -3734,6 +3745,157 @@ export function normalizeProfileCosmetics(profile) {
     },
     title: equipped.title
   };
+}
+
+export function normalizeProfileShowcaseSlots(profile = {}, { catalog = COSMETIC_CATALOG } = {}) {
+  const seenKeys = new Set();
+  const sourceSlots = Array.isArray(profile?.profileShowcaseSlots)
+    ? profile.profileShowcaseSlots
+    : [];
+
+  return Array.from({ length: PROFILE_SHOWCASE_SLOT_COUNT }, (_, index) => {
+    const slot = sourceSlots[index];
+    if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
+      return null;
+    }
+
+    const type = String(slot.type ?? "").trim();
+    const id = String(slot.id ?? "").trim();
+    if (!COSMETIC_TYPES.includes(type) || !id) {
+      return null;
+    }
+
+    const definition = Array.isArray(catalog?.[type])
+      ? catalog[type].find((item) => item?.id === id)
+      : null;
+    if (!definition) {
+      return null;
+    }
+
+    const owned = Array.isArray(profile?.ownedCosmetics?.[type])
+      ? profile.ownedCosmetics[type]
+      : [];
+    if (!owned.includes(id)) {
+      return null;
+    }
+
+    const key = `${type}:${id}`;
+    if (seenKeys.has(key)) {
+      return null;
+    }
+
+    seenKeys.add(key);
+    return { type, id };
+  });
+}
+
+function getShowcaseCatalogEntry(catalog, type, id) {
+  if (!type || !id || !Array.isArray(catalog?.[type])) {
+    return null;
+  }
+
+  return catalog[type].find((item) => item?.id === id) ?? null;
+}
+
+function buildResolvedShowcaseItem(type, entry) {
+  if (!type || !entry?.id) {
+    return null;
+  }
+
+  return {
+    type,
+    id: entry.id,
+    name: entry.name ?? getCosmeticDisplayName(type, entry.id, entry.id),
+    rarity: normalizeCosmeticRarity(entry.rarity),
+    collection: entry.collection ?? null,
+    image: entry.image ?? null,
+    ...(entry.element ? { element: entry.element } : {})
+  };
+}
+
+export function resolveProfileShowcaseSlots(profile = {}, { catalog = null } = {}) {
+  const normalized = normalizeProfileCosmetics(profile);
+  const sourceCatalog = catalog && typeof catalog === "object"
+    ? catalog
+    : getCosmeticCatalogForProfile(normalized);
+  const manualSlots = normalizeProfileShowcaseSlots(
+    {
+      ...normalized,
+      profileShowcaseSlots: Array.isArray(profile?.profileShowcaseSlots)
+        ? profile.profileShowcaseSlots
+        : normalized.profileShowcaseSlots
+    },
+    { catalog: sourceCatalog }
+  );
+
+  return PROFILE_SHOWCASE_AUTOMATIC_SLOTS.map((automaticSlot, index) => {
+    const manualSlot = manualSlots[index];
+    if (manualSlot) {
+      const manualEntry = getShowcaseCatalogEntry(sourceCatalog, manualSlot.type, manualSlot.id);
+      if (manualEntry?.owned) {
+        return buildResolvedShowcaseItem(manualSlot.type, manualEntry);
+      }
+    }
+
+    const automaticId = normalized.equippedCosmetics?.[automaticSlot.type] ?? null;
+    const automaticEntry = getShowcaseCatalogEntry(sourceCatalog, automaticSlot.type, automaticId);
+    return automaticEntry?.owned
+      ? buildResolvedShowcaseItem(automaticSlot.type, automaticEntry)
+      : null;
+  });
+}
+
+export function updateProfileShowcaseSlot(profile = {}, { slotIndex, cosmetic = null } = {}) {
+  const normalized = normalizeProfileCosmetics(profile);
+  const index = Number(slotIndex);
+  if (!Number.isInteger(index) || index < 0 || index >= PROFILE_SHOWCASE_SLOT_COUNT) {
+    throw new Error("Invalid Showcase slot.");
+  }
+
+  const currentSlots = normalizeProfileShowcaseSlots(normalized);
+  const nextSlots = [...currentSlots];
+
+  if (cosmetic == null) {
+    nextSlots[index] = null;
+    return normalizeProfileCosmetics({
+      ...normalized,
+      profileShowcaseSlots: nextSlots
+    });
+  }
+
+  if (!cosmetic || typeof cosmetic !== "object" || Array.isArray(cosmetic)) {
+    throw new Error("Invalid Showcase cosmetic.");
+  }
+
+  const type = String(cosmetic.type ?? "").trim();
+  const id = String(cosmetic.id ?? "").trim();
+  if (!COSMETIC_TYPES.includes(type) || !id) {
+    throw new Error("Invalid Showcase cosmetic.");
+  }
+
+  const definition = getCosmeticDefinition(type, id);
+  if (!definition) {
+    throw new Error("Showcase cosmetic is not available.");
+  }
+
+  if (!normalized.ownedCosmetics?.[type]?.includes(id)) {
+    throw new Error("Showcase cosmetic is not owned.");
+  }
+
+  const key = `${type}:${id}`;
+  const duplicateIndex = currentSlots.findIndex(
+    (slot, slotPosition) =>
+      slotPosition !== index && slot && `${slot.type}:${slot.id}` === key
+  );
+  if (duplicateIndex >= 0) {
+    throw new Error("That cosmetic is already showcased in another slot.");
+  }
+
+  nextSlots[index] = { type, id };
+  return normalizeProfileCosmetics({
+    ...normalized,
+    profileShowcaseSlots: nextSlots
+  });
 }
 
 export function preserveUniqueCosmeticAcquisition(

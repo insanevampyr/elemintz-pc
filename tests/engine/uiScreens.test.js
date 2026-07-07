@@ -158,12 +158,6 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
     },
     viewState: { activeTab: "uniques" }
   });
-  const profileHtml = profileScreen.render({
-    profile: {
-      username: "UniqueTester",
-      trophyShelf: [{ ...uniqueItem, type: "avatar", typeLabel: "Avatar" }]
-    }
-  });
   const sortedTrophies = selectTrophyShelfItems(
     {},
     {
@@ -223,15 +217,6 @@ test("ui: Unique rarity renders, filters, sorts above Legendary, and keeps battl
   assert.doesNotMatch(cosmeticsHtml, /Owner: CopyCell/);
   assert.doesNotMatch(cosmeticsHtml, /RoyaltyOnlyUser/);
   assert.doesNotMatch(cosmeticsHtml, /private admin note/);
-  assert.match(profileHtml, /cosmetic-rarity-label rarity-unique" data-profile-trophy-rarity="true">Unique<\/span>/);
-  assert.match(profileHtml, /Created For: CopyCell/);
-  assert.match(profileHtml, /Acquired: Store Purchase/);
-  assert.match(
-    profileHtml,
-    /data-preview-description="[^"]*Created For: CopyCell[^"]*Acquired: Store Purchase/
-  );
-  assert.doesNotMatch(profileHtml, /RoyaltyOnlyUser/);
-  assert.doesNotMatch(profileHtml, /private admin note/);
   assert.deepEqual(sortedTrophies.map((item) => item.rarity), ["Unique", "Legendary"]);
   assert.equal(normalizeCosmeticRarity("Unique"), "Unique");
   assert.match(renderHiddenHandSummary(2, "card-back.png", "Unique"), /hidden-hand-summary rarity-unique/);
@@ -26060,6 +26045,7 @@ test("ui: modal manager supports large profile modal classes without changing de
 
   assert.match(rootNode.innerHTML, /class="modal viewed-profile-modal"/);
   assert.match(rootNode.innerHTML, /class="modal-body viewed-profile-modal-body"/);
+  assert.match(rootNode.innerHTML, /<button type="button" class="modal-btn" data-modal-action="0">Close<\/button>/);
 
   manager.show({
     title: "Simple Modal",
@@ -30413,7 +30399,602 @@ test("ui: Trophy Shelf falls back safely when qualifying cosmetics or definition
   assert.deepEqual(items, []);
 });
 
-test("ui: own profile renders Trophy Shelf below Profile Overview and keeps Reward Chests", () => {
+test("ui: own profile renders three read-only Showcase slots in manual order", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    profileShowcaseSlots: [
+      { type: "avatar", id: "avatar_crystal_soul" },
+      { type: "badge", id: "badge_element_initiate" },
+      { type: "elementCardVariant", id: "fire_variant_crownfire" }
+    ],
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card", "fire_variant_crownfire"],
+      badge: ["none", "badge_element_initiate"],
+      title: ["Initiate"]
+    }
+  };
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile,
+      cosmetics: {
+        ...createProfileScreenContext().cosmetics,
+        catalog: getCosmeticCatalogForProfile(profile)
+      }
+    })
+  );
+
+  assert.equal((html.match(/data-profile-showcase-slot="/g) ?? []).length, 3);
+  assert.match(html, /data-profile-showcase="true"/);
+  assert.match(html, /Showcase/);
+  assert.match(html, /Crystal Soul/);
+  assert.match(html, /Element Initiate/);
+  assert.match(html, /Crownfire/);
+  assert.match(html, /data-profile-showcase-element="true">Fire</);
+  assert.ok(html.indexOf("Crystal Soul") < html.indexOf("Element Initiate"));
+  assert.ok(html.indexOf("Element Initiate") < html.indexOf("Crownfire"));
+  assert.doesNotMatch(html, /data-profile-trophy-shelf="true"/);
+  assert.match(html, /data-hover-preview="true"[\s\S]*data-profile-showcase-slot="0"|data-profile-showcase-slot="0"[\s\S]*data-hover-preview="true"/);
+  assert.match(html, /data-profile-showcase-choose="0"[^>]*>Replace<\/button>/);
+  assert.match(html, /data-profile-showcase-clear="0"[^>]*>Use Automatic<\/button>/);
+  assert.doesNotMatch(html, />Edit<\/button>|>Remove<\/button>|>Select<\/button>/);
+});
+
+test("ui: own profile renders null Showcase slots as automatic defaults without Trophy fallback", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        profileShowcaseSlots: [null, null, null],
+        trophyShelf: [
+          {
+            id: "title_spellwired",
+            type: "title",
+            name: "Spellwired",
+            rarity: "Legendary",
+            typeLabel: "Title",
+            image: "titles/title_spellwired.png",
+            collection: "Neon Arcana"
+          }
+        ]
+      }
+    })
+  );
+
+  assert.equal((html.match(/data-profile-showcase-slot="/g) ?? []).length, 3);
+  assert.equal((html.match(/data-profile-showcase-empty="true"/g) ?? []).length, 0);
+  assert.match(html, /Default Avatar/);
+  assert.match(html, /Default Card Back/);
+  assert.match(html, /data-profile-showcase-fallback="true">Initiate</);
+  assert.doesNotMatch(html, /Empty Showcase Slot/);
+  assert.doesNotMatch(html, /data-profile-trophy-shelf="true"/);
+  assert.doesNotMatch(html, /Trophy Shelf/);
+  assert.ok(html.indexOf("Default Avatar") < html.indexOf("Default Card Back"));
+});
+
+test("ui: viewed profile renders public Showcase slots only and omits Trophy Shelf", () => {
+  const html = profileScreen.renderViewedProfileModalBody({
+    username: "ShowcasePublic",
+    title: "Initiate",
+    playerLevel: 12,
+    playerXP: 220,
+    wins: 4,
+    losses: 2,
+    gamesPlayed: 6,
+    achievements: {},
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {}
+    },
+    profileShowcaseSlots: [
+      { type: "avatar", id: "avatar_crystal_soul", name: "Private Raw Slot" }
+    ],
+    showcaseSlots: [
+      {
+        type: "cardBack",
+        id: "cardback_neon_arcana",
+        name: "Neon Arcana Card Back",
+        rarity: "Legendary",
+        collection: "Neon Arcana",
+        image: "card_backs/cardback_neon_arcana.png"
+      },
+      {
+        type: "background",
+        id: "bg_verdant_shrine",
+        name: "Verdant Shrine",
+        rarity: "Common",
+        collection: null,
+        image: "backgrounds/bg_verdant_shrine.png"
+      },
+      {
+        type: "title",
+        id: "title_text_only_fixture",
+        name: "Text Only Title",
+        rarity: "Rare",
+        collection: null
+      }
+    ],
+    trophyShelf: [
+      {
+        id: "badge_element_initiate",
+        type: "badge",
+        name: "Element Initiate",
+        rarity: "Common",
+        typeLabel: "Badge",
+        image: "badges/badge_element_initiate.png"
+      }
+    ]
+  });
+
+  assert.equal((html.match(/data-profile-showcase-slot="/g) ?? []).length, 3);
+  assert.match(html, /Neon Arcana Card Back/);
+  assert.match(html, /Verdant Shrine/);
+  assert.match(html, /Text Only Title/);
+  assert.match(html, /data-profile-showcase-fallback="true">Text Only Title</);
+  assert.ok(html.indexOf("Neon Arcana Card Back") < html.indexOf("Verdant Shrine"));
+  assert.ok(html.indexOf("Verdant Shrine") < html.indexOf("Text Only Title"));
+  assert.doesNotMatch(html, /Private Raw Slot/);
+  assert.doesNotMatch(html, /data-profile-trophy-shelf="true"/);
+  assert.doesNotMatch(html, /Element Initiate/);
+  assert.doesNotMatch(html, /data-profile-overview-chests="true"/);
+  assert.doesNotMatch(html, /data-equip-type=/);
+  assert.doesNotMatch(html, /Equip<\/button>/);
+  assert.doesNotMatch(html, /data-profile-showcase-choose=|data-profile-showcase-clear=|data-showcase-picker-select=/);
+});
+
+test("ui: Showcase picker marks current manual selection and disables duplicates from other slots", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    profileShowcaseSlots: [
+      { type: "avatar", id: "avatar_crystal_soul" },
+      { type: "badge", id: "badge_element_initiate" },
+      null
+    ],
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none", "badge_element_initiate"],
+      title: ["Initiate"]
+    }
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(profile)
+  };
+  const html = profileScreen.renderShowcasePickerBody(profile, cosmetics, 0);
+
+  assert.match(html, /data-profile-showcase-picker="true"/);
+  assert.match(html, /data-profile-showcase-picker-slot="0"/);
+  assert.match(html, /Showcase Slot 1/);
+  assert.match(html, /Choose an owned cosmetic for Showcase slot 1/);
+  assert.match(html, /data-showcase-picker-type="avatar"[\s\S]*data-showcase-picker-id="avatar_crystal_soul"/);
+  assert.match(html, /data-showcase-picker-current="true">Current selection</);
+  assert.match(html, /data-showcase-picker-type="badge"[\s\S]*data-showcase-picker-id="badge_element_initiate"[\s\S]*disabled aria-disabled="true"/);
+  assert.match(html, /data-showcase-picker-disabled-reason="true">Already showcased</);
+  assert.match(html, /data-showcase-picker-type="cardBack"[\s\S]*data-showcase-picker-id="default_card_back"/);
+});
+
+test("ui: Showcase picker keeps a stable scroll contract for large owned cosmetic lists", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  const generatedAvatars = Array.from({ length: 24 }, (_, index) => ({
+    id: `fixture_showcase_avatar_${index}`,
+    name: `Fixture Showcase Avatar ${index}`,
+    rarity: index % 2 === 0 ? "Rare" : "Common",
+    image: index % 3 === 0 ? "" : "avatars/default.png",
+    owned: true
+  }));
+  const html = profileScreen.renderShowcasePickerBody(
+    profile,
+    {
+      catalog: {
+        avatar: [{ id: "default_avatar", name: "Default Avatar", rarity: "Common", image: "avatars/default.png", owned: true }, ...generatedAvatars],
+        cardBack: [{ id: "default_card_back", name: "Default Card Back", rarity: "Common", image: "card_backs/default_back.jpg", owned: true }],
+        background: [{ id: "default_background", name: "Default Background", rarity: "Common", image: "backgrounds/default_background.png", owned: true }],
+        elementCardVariant: [],
+        badge: [],
+        title: [{ id: "Initiate", name: "Initiate", rarity: "Common", owned: true }]
+      }
+    },
+    2
+  );
+  const css = fs.readFileSync("src/renderer/styles/layout.css", "utf8");
+
+  assert.match(html, /data-profile-showcase-picker-slot="2"/);
+  assert.match(html, /Showcase Slot 3/);
+  assert.ok((html.match(/data-showcase-picker-select="true"/g) ?? []).length >= 20);
+  assert.match(html, /profile-showcase-picker-fallback/);
+  assert.match(css, /\.profile-showcase-picker-modal\s*{[\s\S]*width: min\(720px, 100%\);/);
+  assert.match(css, /\.profile-showcase-picker-modal-body\s*{[\s\S]*max-height: min\(calc\(100vh - 190px\), 560px\);[\s\S]*overflow-y: auto;/);
+});
+
+test("ui: Showcase picker disabled duplicate buttons cannot dispatch a selection", async () => {
+  const previousDocument = global.document;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    profileShowcaseSlots: [null, { type: "badge", id: "badge_element_initiate" }, null],
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none", "badge_element_initiate"],
+      title: ["Initiate"]
+    }
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(profile)
+  };
+  let modalConfig = null;
+  let selectHandler = null;
+  let mutationCalls = 0;
+  const disabledButton = {
+    disabled: true,
+    getAttribute: (name) => {
+      if (name === "aria-disabled") {
+        return "true";
+      }
+      if (name === "data-showcase-picker-type") {
+        return "badge";
+      }
+      if (name === "data-showcase-picker-id") {
+        return "badge_element_initiate";
+      }
+      return null;
+    },
+    addEventListener: (_type, handler) => {
+      selectHandler = handler;
+    }
+  };
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (config) => {
+        modalConfig = config;
+      },
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.profile = profile;
+  controller.username = "ShowcaseOwner";
+  controller.updateProfileShowcaseSlot = async () => {
+    mutationCalls += 1;
+  };
+  global.document = {
+    querySelector: () => null,
+    querySelectorAll: (selector) => (selector === "[data-showcase-picker-select]" ? [disabledButton] : [])
+  };
+
+  try {
+    controller.showProfileShowcasePicker(0, { cosmetics });
+    assert.match(modalConfig?.bodyHtml ?? "", /Already showcased/);
+
+    await selectHandler?.();
+
+    assert.equal(mutationCalls, 0);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: Showcase picker cancel closes only the picker without mutating owner profile context", async () => {
+  const previousDocument = global.document;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    profileShowcaseSlots: [{ type: "avatar", id: "avatar_crystal_soul" }, null, null],
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(profile)
+  };
+  let modalConfig = null;
+  let hideCalls = 0;
+  let mutationCalls = 0;
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (config) => {
+        modalConfig = config;
+      },
+      hide: () => {
+        hideCalls += 1;
+      }
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.profile = profile;
+  controller.username = "ShowcaseOwner";
+  controller.updateProfileShowcaseSlot = async () => {
+    mutationCalls += 1;
+  };
+  global.document = {
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+
+  try {
+    const beforeHtml = profileScreen.render(createProfileScreenContext({ profile, cosmetics }));
+    controller.showProfileShowcasePicker(0, { cosmetics });
+
+    assert.match(modalConfig?.bodyHtml ?? "", /data-profile-showcase-picker="true"/);
+    assert.equal(modalConfig.actions?.[1]?.label, "Cancel");
+
+    await modalConfig.actions[1].onClick();
+
+    const afterHtml = profileScreen.render(createProfileScreenContext({ profile: controller.profile, cosmetics }));
+    assert.equal(mutationCalls, 0);
+    assert.equal(hideCalls, 1);
+    assert.deepEqual(controller.profile.profileShowcaseSlots, profile.profileShowcaseSlots);
+    assert.match(afterHtml, /data-profile-showcase-choose="0"[^>]*>Replace<\/button>/);
+    assert.match(afterHtml, /data-profile-showcase-clear="0"[^>]*>Use Automatic<\/button>/);
+    assert.equal(beforeHtml.includes("Crystal Soul"), afterHtml.includes("Crystal Soul"));
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: Showcase picker Use Automatic clears only the selected manual slot", async () => {
+  const previousDocument = global.document;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    profileShowcaseSlots: [
+      { type: "avatar", id: "avatar_crystal_soul" },
+      { type: "badge", id: "badge_element_initiate" },
+      null
+    ],
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none", "badge_element_initiate"],
+      title: ["Initiate"]
+    }
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(profile)
+  };
+  const updateCalls = [];
+  let modalConfig = null;
+  let hideCalls = 0;
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (config) => {
+        modalConfig = config;
+      },
+      hide: () => {
+        hideCalls += 1;
+      }
+    },
+    toastManager: { show: () => {} }
+  });
+
+  controller.profile = profile;
+  controller.username = "ShowcaseOwner";
+  controller.updateProfileShowcaseSlot = async (slotIndex, cosmetic, options) => {
+    updateCalls.push({ slotIndex, cosmetic, options });
+    controller.profile = {
+      ...controller.profile,
+      profileShowcaseSlots: [controller.profile.profileShowcaseSlots[0], null, controller.profile.profileShowcaseSlots[2]]
+    };
+  };
+  global.document = {
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+
+  try {
+    controller.showProfileShowcasePicker(1, { cosmetics });
+    assert.equal(modalConfig.actions?.[0]?.label, "Use Automatic");
+
+    await modalConfig.actions[0].onClick();
+
+    assert.deepEqual(updateCalls, [{ slotIndex: 1, cosmetic: null, options: { preserveModal: false } }]);
+    assert.equal(hideCalls, 1);
+    assert.deepEqual(controller.profile.profileShowcaseSlots, [
+      { type: "avatar", id: "avatar_crystal_soul" },
+      null,
+      null
+    ]);
+    const clearedHtml = profileScreen.render(createProfileScreenContext({ profile: controller.profile, cosmetics }));
+    assert.match(clearedHtml, /data-profile-showcase-slot="1"[\s\S]*Default Card Back/);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: Showcase selection refreshes the owner profile with controls still available", async () => {
+  const previousWindow = global.window;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    username: "ShowcaseOwner",
+    profileShowcaseSlots: [null, null, null],
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none", "badge_element_initiate"],
+      title: ["Initiate"]
+    }
+  };
+  const updatedProfile = {
+    ...profile,
+    profileShowcaseSlots: [null, { type: "badge", id: "badge_element_initiate" }, null]
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(updatedProfile)
+  };
+  const controller = createRendererController();
+  let updatePayload = null;
+  let showProfileArgs = null;
+
+  controller.username = "ShowcaseOwner";
+  controller.profile = profile;
+  controller.showProfile = async (args) => {
+    showProfileArgs = args;
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        updateProfileShowcaseSlot: async (payload) => {
+          updatePayload = payload;
+          return { profile: updatedProfile, cosmetics };
+        }
+      }
+    }
+  };
+
+  try {
+    await controller.updateProfileShowcaseSlot(1, { type: "badge", id: "badge_element_initiate" });
+  } finally {
+    global.window = previousWindow;
+  }
+
+  assert.deepEqual(updatePayload, {
+    username: "ShowcaseOwner",
+    slotIndex: 1,
+    cosmetic: { type: "badge", id: "badge_element_initiate" }
+  });
+  assert.deepEqual(controller.profile.profileShowcaseSlots, updatedProfile.profileShowcaseSlots);
+  assert.equal(showProfileArgs?.skipAuthoritativeProfileRefresh, true);
+  assert.equal(showProfileArgs?.preserveAchievementVisibility, true);
+
+  const refreshedHtml = profileScreen.render(
+    createProfileScreenContext({
+      profile: controller.profile,
+      cosmetics
+    })
+  );
+  assert.match(refreshedHtml, /Element Initiate/);
+  assert.match(refreshedHtml, /data-profile-showcase-choose="1"[^>]*>Replace<\/button>/);
+  assert.match(refreshedHtml, /data-profile-showcase-clear="1"[^>]*>Use Automatic<\/button>/);
+
+  const reopenedHtml = profileScreen.render(
+    createProfileScreenContext({
+      profile: controller.profile,
+      cosmetics
+    })
+  );
+  assert.match(reopenedHtml, /Element Initiate/);
+  assert.match(reopenedHtml, /data-profile-showcase-choose="1"[^>]*>Replace<\/button>/);
+});
+
+test("ui: viewed profile stays read-only after rendering an editable owner Showcase", () => {
+  const ownProfile = {
+    ...createProfileScreenContext().profile,
+    profileShowcaseSlots: [{ type: "avatar", id: "avatar_crystal_soul" }, null, null],
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  const ownHtml = profileScreen.render(
+    createProfileScreenContext({
+      profile: ownProfile,
+      cosmetics: {
+        ...createProfileScreenContext().cosmetics,
+        catalog: getCosmeticCatalogForProfile(ownProfile)
+      }
+    })
+  );
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "ViewedAfterOwner",
+    title: "Initiate",
+    achievements: {},
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {}
+    },
+    showcaseSlots: [
+      {
+        type: "avatar",
+        id: "avatar_crystal_soul",
+        name: "Crystal Soul",
+        rarity: "Epic",
+        collection: null,
+        image: "avatars/avatar_crystal_soul.png"
+      },
+      null,
+      null
+    ]
+  });
+
+  assert.match(ownHtml, /data-profile-showcase-choose="0"/);
+  assert.match(ownHtml, /data-profile-showcase-clear="0"/);
+  assert.match(viewedHtml, /Crystal Soul/);
+  assert.doesNotMatch(viewedHtml, /data-profile-showcase-choose=|data-profile-showcase-clear=|data-showcase-picker-select=/);
+  assert.doesNotMatch(viewedHtml, /data-profile-trophy-shelf="true"/);
+});
+
+test("ui: viewed profile invalid Showcase items fail closed to empty slots", () => {
+  const html = profileScreen.renderViewedProfileModalBody({
+    username: "InvalidShowcasePublic",
+    title: "Initiate",
+    achievements: {},
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {}
+    },
+    showcaseSlots: [
+      null,
+      "malformed",
+      { type: "avatar", id: "", name: "Broken Item", image: "avatars/default.png" }
+    ],
+    trophyShelf: []
+  });
+
+  assert.equal((html.match(/data-profile-showcase-slot="/g) ?? []).length, 3);
+  assert.equal((html.match(/data-profile-showcase-empty="true"/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /Broken Item/);
+  assert.match(html, /Empty Showcase Slot/);
+});
+
+test("ui: own profile omits Trophy Shelf and keeps Showcase, Reward Chests, and profile stats", () => {
   const profile = {
     ...createProfileScreenContext().profile,
     tokens: 345,
@@ -30466,19 +31047,23 @@ test("ui: own profile renders Trophy Shelf below Profile Overview and keeps Rewa
   );
 
   assert.match(html, /data-profile-overview="true"/);
-  assert.match(html, /data-profile-trophy-shelf="true"/);
-  assert.match(html, /Trophy Shelf/);
+  assert.match(html, /data-profile-showcase="true"/);
+  assert.doesNotMatch(html, /data-profile-trophy-shelf="true"/);
+  assert.doesNotMatch(html, /Trophy Shelf/);
   assert.match(html, /Spellwired/);
   assert.match(html, /Legendary/);
   assert.match(html, /Title/);
   assert.match(html, /Neon Arcana/);
-  assert.match(html, /data-hover-preview="true"[\s\S]*data-profile-trophy-item="0"|data-profile-trophy-item="0"[\s\S]*data-hover-preview="true"/);
+  assert.match(html, /data-hover-preview="true"[\s\S]*data-profile-showcase-slot="2"|data-profile-showcase-slot="2"[\s\S]*data-hover-preview="true"/);
   assert.match(html, /Reward Chests/);
-  assert.ok(html.indexOf('data-profile-overview="true"') < html.indexOf('data-profile-trophy-shelf="true"'));
-  assert.ok(html.indexOf('data-profile-trophy-shelf="true"') < html.indexOf("Reward Chests"));
+  assert.match(html, /Overall Record/);
+  assert.match(html, /Battle Stats/);
+  assert.match(html, /Battle Report/);
+  assert.ok(html.indexOf('data-profile-overview="true"') < html.indexOf('data-profile-showcase="true"'));
+  assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
 });
 
-test("ui: viewed profile modal renders Trophy Shelf below Profile Overview and keeps the profile read-only", () => {
+test("ui: viewed profile modal omits Trophy Shelf and keeps Showcase read-only", () => {
   const html = profileScreen.renderViewedProfileModalBody({
     username: "Enab",
     title: "Elementalist",
@@ -30538,8 +31123,9 @@ test("ui: viewed profile modal renders Trophy Shelf below Profile Overview and k
   });
 
   assert.match(html, /data-profile-overview="true"/);
-  assert.match(html, /data-profile-trophy-shelf="true"/);
-  assert.match(html, /Trophy Shelf/);
+  assert.match(html, /data-profile-showcase="true"/);
+  assert.doesNotMatch(html, /data-profile-trophy-shelf="true"/);
+  assert.doesNotMatch(html, /Trophy Shelf/);
   assert.match(html, /Spellwired/);
   assert.match(html, /Legendary/);
   assert.match(html, /Title/);
@@ -30547,14 +31133,15 @@ test("ui: viewed profile modal renders Trophy Shelf below Profile Overview and k
   assert.doesNotMatch(html, /data-profile-overview-chests="true"/);
   assert.doesNotMatch(html, /data-equip-type=/);
   assert.doesNotMatch(html, /Equip<\/button>/);
-  assert.ok(html.indexOf('data-profile-overview="true"') < html.indexOf('data-profile-trophy-shelf="true"'));
-  assert.ok(html.indexOf('data-profile-trophy-shelf="true"') < html.indexOf("Overall Record"));
+  assert.doesNotMatch(html, /data-profile-showcase-choose=|data-profile-showcase-clear=/);
+  assert.ok(html.indexOf('data-profile-overview="true"') < html.indexOf('data-profile-showcase="true"'));
+  assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Overall Record"));
 });
 
-test("ui: viewed profile modal can render Trophy Shelf from a sanitized public trophyShelf list", () => {
+test("ui: viewed profile modal ignores sanitized public trophyShelf list while rendering Showcase", () => {
   const html = profileScreen.renderViewedProfileModalBody({
     username: "SanitizedRival",
-    title: "Spellwired",
+    title: "Initiate",
     playerLevel: 22,
     playerXP: 640,
     wins: 12,
@@ -30601,16 +31188,13 @@ test("ui: viewed profile modal can render Trophy Shelf from a sanitized public t
     ]
   });
 
-  assert.match(html, /data-profile-trophy-shelf="true"/);
-  assert.match(html, /Trophy Shelf/);
-  assert.match(html, /Spellwired/);
-  assert.match(html, /Legendary/);
-  assert.match(html, /Title/);
-  assert.match(html, /Neon Arcana/);
+  assert.match(html, /data-profile-showcase="true"/);
+  assert.doesNotMatch(html, /data-profile-trophy-shelf="true"/);
+  assert.doesNotMatch(html, /Trophy Shelf/);
   assert.doesNotMatch(html, /data-profile-overview-chests="true"/);
 });
 
-test("ui: Trophy Shelf shows an empty state when no qualifying rare cosmetics exist", () => {
+test("ui: own profile does not render Trophy Shelf empty state when no qualifying rare cosmetics exist", () => {
   const html = profileScreen.render(
     createProfileScreenContext({
       profile: {
@@ -30641,6 +31225,7 @@ test("ui: Trophy Shelf shows an empty state when no qualifying rare cosmetics ex
     })
   );
 
-  assert.match(html, /data-profile-trophy-shelf="true"/);
-  assert.match(html, /No rare cosmetics yet\./);
+  assert.doesNotMatch(html, /data-profile-trophy-shelf="true"/);
+  assert.doesNotMatch(html, /No rare cosmetics yet\./);
+  assert.match(html, /data-profile-showcase="true"/);
 });

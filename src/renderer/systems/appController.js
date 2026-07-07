@@ -5769,6 +5769,105 @@ export class AppController {
       }
     }
 
+  async updateProfileShowcaseSlot(slotIndex, cosmetic = null, { preserveModal = false } = {}) {
+    const updateWithMultiplayer =
+      this.hasMultiplayerProfileAccess() &&
+      typeof globalThis.window?.elemintz?.multiplayer?.updateProfileShowcaseSlot === "function";
+    const updateAuthority = updateWithMultiplayer
+      ? globalThis.window.elemintz.multiplayer.updateProfileShowcaseSlot
+      : globalThis.window?.elemintz?.state?.updateProfileShowcaseSlot;
+
+    if (typeof updateAuthority !== "function") {
+      this.modalManager.show({
+        title: "Showcase Unavailable",
+        body: "Unable to update Showcase right now.",
+        actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
+      return null;
+    }
+
+    const result = await updateAuthority({
+      username: this.username,
+      slotIndex,
+      cosmetic
+    });
+
+    this.profile = result?.snapshot
+      ? this.buildProfileFromServerSnapshot(result.snapshot)
+      : result?.profile ?? this.profile;
+
+    await this.showProfile({
+      preserveAchievementVisibility: true,
+      preserveModal,
+      profileOverride: this.profile,
+      cosmeticsOverride: this.buildSafeCosmeticsPayload(result?.cosmetics ?? null, this.profile),
+      skipAuthoritativeProfileRefresh: true
+    });
+
+    return result;
+  }
+
+  showProfileShowcasePicker(slotIndex, { cosmetics = null } = {}) {
+    const safeSlotIndex = Math.max(0, Math.min(2, Number(slotIndex) || 0));
+    this.modalManager.show({
+      title: `Edit Showcase Slot ${safeSlotIndex + 1}`,
+      bodyHtml: profileScreen.renderShowcasePickerBody(
+        this.profile ?? {},
+        cosmetics ?? this.buildSafeCosmeticsPayload(null, this.profile),
+        safeSlotIndex
+      ),
+      modalClassName: "profile-showcase-picker-modal",
+      bodyClassName: "profile-showcase-picker-modal-body",
+      actions: [
+        {
+          label: "Use Automatic",
+          onClick: async () => {
+            try {
+              await this.updateProfileShowcaseSlot(safeSlotIndex, null, { preserveModal: false });
+              this.modalManager.hide();
+            } catch (error) {
+              this.modalManager.show({
+                title: "Showcase Update Failed",
+                body: String(error?.message ?? "Unable to update Showcase."),
+                actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+              });
+            }
+          }
+        },
+        {
+          label: "Cancel",
+          onClick: () => this.modalManager.hide()
+        }
+      ]
+    });
+
+    bindCosmeticHoverPreview({
+      root: globalThis.document?.querySelector?.("[data-profile-showcase-picker='true']") ?? globalThis.document,
+      documentRef: globalThis.document
+    });
+
+    globalThis.document?.querySelectorAll?.("[data-showcase-picker-select]")?.forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.disabled || button.getAttribute("aria-disabled") === "true") {
+          return;
+        }
+
+        const type = button.getAttribute("data-showcase-picker-type");
+        const id = button.getAttribute("data-showcase-picker-id");
+        try {
+          await this.updateProfileShowcaseSlot(safeSlotIndex, { type, id }, { preserveModal: false });
+          this.modalManager.hide();
+        } catch (error) {
+          this.modalManager.show({
+            title: "Showcase Update Failed",
+            body: String(error?.message ?? "Unable to update Showcase."),
+            actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+          });
+        }
+      });
+    });
+  }
+
   normalizeChestOpenToastRewards(rewards, previousProfile = null, nextProfile = null) {
     if (!rewards || typeof rewards !== "object") {
       return rewards;
@@ -10336,6 +10435,20 @@ export class AppController {
             viewedProfileOverride: viewedProfile,
             skipAuthoritativeProfileRefresh: true
           });
+        },
+        openShowcasePicker: async (slotIndex) => {
+          this.showProfileShowcasePicker(slotIndex, { cosmetics });
+        },
+        updateShowcaseSlot: async (slotIndex, cosmetic) => {
+          try {
+            await this.updateProfileShowcaseSlot(slotIndex, cosmetic);
+          } catch (error) {
+            this.modalManager.show({
+              title: "Showcase Update Failed",
+              body: String(error?.message ?? "Unable to update Showcase."),
+              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+            });
+          }
         },
         searchProfiles: async (queryValue) => {
           this.profileSearchQuery = queryValue;

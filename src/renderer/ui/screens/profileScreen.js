@@ -6,7 +6,9 @@ import {
   getCosmeticDefinition,
   getCosmeticHoverMetadata,
   getCosmeticCatalogForProfile,
-  normalizeUniqueCosmeticAcquisitionLabel
+  normalizeProfileShowcaseSlots,
+  normalizeUniqueCosmeticAcquisitionLabel,
+  resolveProfileShowcaseSlots
 } from "../../../state/cosmeticSystem.js";
 import {
   bindCosmeticHoverPreview,
@@ -158,6 +160,7 @@ function safeStat(value) {
 
 const FLEX_VARIANT_ORDER = Object.freeze(["fire", "earth", "wind", "water"]);
 const TROPHY_SHELF_LIMIT = 3;
+const PROFILE_SHOWCASE_SLOT_COUNT = 3;
 const TROPHY_RARITY_RANK = Object.freeze({
   Unique: 0,
   Legendary: 1,
@@ -445,6 +448,212 @@ function buildTrophyHoverAttributes(item = {}) {
     previewVisualText: safeName,
     previewRarity: hoverMetadata.rarity ?? item.rarity ?? "Common"
   });
+}
+
+function normalizeShowcaseDisplayItem(item = {}) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const type = String(item.type ?? "").trim();
+  const id = String(item.id ?? "").trim();
+  if (!type || !id) {
+    return null;
+  }
+
+  const name = String(item.name ?? getCosmeticDisplayName(type, id, id) ?? id).trim();
+  const rarity = titleCase(item.rarity) || "Common";
+  const element = type === "elementCardVariant" ? titleCase(item.element) : "";
+
+  return {
+    id,
+    type,
+    name: name || id,
+    rarity,
+    typeLabel: getTrophyTypeLabel(type, item),
+    image: item.image ?? null,
+    collection: item.collection ?? null,
+    element: element || null
+  };
+}
+
+function selectOwnShowcaseItems(profile = {}, options = {}) {
+  const sourceCatalog = options.catalog && typeof options.catalog === "object"
+    ? options.catalog
+    : getCosmeticCatalogForProfile(profile);
+  return resolveProfileShowcaseSlots(profile, { catalog: sourceCatalog }).map((item) =>
+    normalizeShowcaseDisplayItem(item)
+  );
+}
+
+function selectPublicShowcaseItems(profile = {}) {
+  const sourceSlots = Array.isArray(profile?.showcaseSlots) ? profile.showcaseSlots : [];
+  return Array.from({ length: PROFILE_SHOWCASE_SLOT_COUNT }, (_, index) =>
+    normalizeShowcaseDisplayItem(sourceSlots[index])
+  );
+}
+
+function renderProfileShowcase(profile = {}, options = {}) {
+  const items = options.publicView
+    ? selectPublicShowcaseItems(profile)
+    : selectOwnShowcaseItems(profile, { catalog: options.catalog ?? null });
+  const editable = Boolean(options.editable && !options.publicView);
+  const manualSlots = editable
+    ? normalizeProfileShowcaseSlots(profile, { catalog: options.catalog ?? null })
+    : [];
+
+  return `
+    <section class="profile-summary-card stack-sm profile-showcase-panel" data-profile-showcase="true">
+      <div class="section-heading-row">
+        <h3 class="section-title">Showcase</h3>
+      </div>
+      <div class="profile-showcase-grid">
+        ${items
+          .map((item, index) => {
+            if (!item) {
+              return `
+                <article class="profile-showcase-slot profile-showcase-slot-empty" data-profile-showcase-slot="${index}" data-profile-showcase-empty="true">
+                  <div class="profile-showcase-fallback" data-profile-showcase-fallback="true">Empty Showcase Slot</div>
+                  ${
+                    editable
+                      ? `<div class="profile-showcase-actions">
+                          <button class="btn btn-secondary profile-showcase-action" type="button" data-profile-showcase-choose="${index}">Choose</button>
+                        </div>`
+                      : ""
+                  }
+                </article>
+              `;
+            }
+
+            const imageSrc = resolveImagePath(item.image);
+            const hoverAttributes = buildTrophyHoverAttributes(item);
+            const hasImage = hasRenderablePreviewSource(imageSrc, {
+              previewName: item.name,
+              previewVisualText: item.name
+            });
+
+            return `
+              <article class="profile-showcase-slot" data-profile-showcase-slot="${index}" data-profile-showcase-type="${escapeProfileText(item.type)}" data-profile-showcase-id="${escapeProfileText(item.id)}">
+                ${
+                  hasImage
+                    ? `<img class="profile-showcase-image" src="${imageSrc}" alt="${escapeProfileText(item.name)}" ${hoverAttributes} />`
+                    : `<div class="profile-showcase-fallback" data-profile-showcase-fallback="true">${escapeProfileText(item.name)}</div>`
+                }
+                <div class="profile-showcase-copy">
+                  <strong class="profile-showcase-name">${escapeProfileText(item.name)}</strong>
+                  <div class="profile-trophy-chip-row">
+                    <span class="cosmetic-rarity-label rarity-${item.rarity.toLowerCase()}" data-profile-showcase-rarity="true">${escapeProfileText(item.rarity)}</span>
+                    <span class="profile-trophy-chip" data-profile-showcase-type-label="true">${escapeProfileText(item.typeLabel || "Cosmetic")}</span>
+                    ${item.collection ? `<span class="profile-trophy-chip" data-profile-showcase-collection="true">${escapeProfileText(item.collection)}</span>` : ""}
+                    ${item.element ? `<span class="profile-trophy-chip" data-profile-showcase-element="true">${escapeProfileText(item.element)}</span>` : ""}
+                  </div>
+                </div>
+                ${
+                  editable
+                    ? `<div class="profile-showcase-actions">
+                        <button class="btn btn-secondary profile-showcase-action" type="button" data-profile-showcase-choose="${index}">${manualSlots[index] ? "Replace" : "Choose"}</button>
+                        ${
+                          manualSlots[index]
+                            ? `<button class="btn btn-secondary profile-showcase-action" type="button" data-profile-showcase-clear="${index}">Use Automatic</button>`
+                            : ""
+                        }
+                      </div>`
+                    : ""
+                }
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderProfileShowcasePickerBody(profile = {}, cosmetics = {}, slotIndex = 0) {
+  const safeSlotIndex = Math.max(0, Math.min(PROFILE_SHOWCASE_SLOT_COUNT - 1, Number(slotIndex) || 0));
+  const catalog = cosmetics?.catalog && typeof cosmetics.catalog === "object"
+    ? cosmetics.catalog
+    : getCosmeticCatalogForProfile(profile);
+  const manualSlots = normalizeProfileShowcaseSlots(profile, { catalog });
+  const currentKey = manualSlots[safeSlotIndex]
+    ? `${manualSlots[safeSlotIndex].type}:${manualSlots[safeSlotIndex].id}`
+    : null;
+  const usedElsewhere = new Set(
+    manualSlots
+      .map((slot, index) => (index !== safeSlotIndex && slot ? `${slot.type}:${slot.id}` : null))
+      .filter(Boolean)
+  );
+  const items = [];
+
+  for (const [type, entries] of Object.entries(catalog ?? {})) {
+    if (!Array.isArray(entries)) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry?.owned || !entry?.id) {
+        continue;
+      }
+
+      const item = normalizeShowcaseDisplayItem({ ...entry, type });
+      if (item) {
+        items.push(item);
+      }
+    }
+  }
+
+  items.sort((left, right) => {
+    const typeCompare = (left.typeLabel || left.type).localeCompare(right.typeLabel || right.type);
+    if (typeCompare !== 0) {
+      return typeCompare;
+    }
+    return left.name.localeCompare(right.name);
+  });
+
+  return `
+    <div class="profile-showcase-picker stack-sm" data-profile-showcase-picker="true" data-profile-showcase-picker-slot="${safeSlotIndex}">
+      <h4 class="profile-showcase-picker-title">Showcase Slot ${safeSlotIndex + 1}</h4>
+      <p class="text-muted">Choose an owned cosmetic for Showcase slot ${safeSlotIndex + 1}, or use the automatic default.</p>
+      <div class="profile-showcase-picker-grid">
+        ${items
+          .map((item) => {
+            const key = `${item.type}:${item.id}`;
+            const imageSrc = resolveImagePath(item.image);
+            const hasImage = hasRenderablePreviewSource(imageSrc, {
+              previewName: item.name,
+              previewVisualText: item.name
+            });
+            const disabled = usedElsewhere.has(key);
+            const selected = currentKey === key;
+            const hoverAttributes = buildTrophyHoverAttributes(item);
+
+            return `
+              <button
+                class="profile-showcase-picker-item${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}"
+                type="button"
+                data-showcase-picker-select="true"
+                data-showcase-picker-type="${escapeProfileText(item.type)}"
+                data-showcase-picker-id="${escapeProfileText(item.id)}"
+                ${disabled ? 'disabled aria-disabled="true"' : ""}
+              >
+                ${
+                  hasImage
+                    ? `<img class="profile-showcase-picker-image" src="${imageSrc}" alt="${escapeProfileText(item.name)}" ${hoverAttributes} />`
+                    : `<span class="profile-showcase-picker-fallback">${escapeProfileText(item.name)}</span>`
+                }
+                <span class="profile-showcase-picker-copy">
+                  <strong>${escapeProfileText(item.name)}</strong>
+                  <span>${escapeProfileText(item.typeLabel || "Cosmetic")}${item.element ? ` · ${escapeProfileText(item.element)}` : ""}</span>
+                  ${selected ? '<span data-showcase-picker-current="true">Current selection</span>' : ""}
+                  ${disabled ? '<span data-showcase-picker-disabled-reason="true">Already showcased</span>' : ""}
+                </span>
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderProfileOverviewProgress(profile = {}) {
@@ -1352,7 +1561,9 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
         ${renderProfileFlexPanels(viewedProfile, {
           titleIcon: viewedTitleIcon(viewedProfile)
         })}
-        ${renderTrophyShelf(viewedProfile)}
+        ${renderProfileShowcase(viewedProfile, {
+          publicView: true
+        })}
         <div class="profile-summary-grid profile-summary-grid-viewed">
           <section class="profile-summary-card stack-sm">
             <h3 class="section-title">Overall Record</h3>
@@ -1479,8 +1690,9 @@ export const profileScreen = {
           ${renderProfileFlexPanels(profile, {
             titleIcon: profileTitleIcon
           })}
-          ${renderTrophyShelf(profile, {
-            catalog: cosmetics?.catalog ?? null
+          ${renderProfileShowcase(profile, {
+            catalog: cosmetics?.catalog ?? null,
+            editable: true
           })}
           ${renderChestPanel(profile, context.basicChestVisualState, {
             openingInFlight: context.profileChestOpenInFlight
@@ -1555,6 +1767,18 @@ export const profileScreen = {
     if (profileAchievementsToggle && context.actions.toggleProfileAchievements) {
       profileAchievementsToggle.addEventListener("click", context.actions.toggleProfileAchievements);
     }
+    document.querySelectorAll("[data-profile-showcase-choose]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const slotIndex = Number(button.getAttribute("data-profile-showcase-choose"));
+        context.actions.openShowcasePicker?.(slotIndex);
+      });
+    });
+    document.querySelectorAll("[data-profile-showcase-clear]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const slotIndex = Number(button.getAttribute("data-profile-showcase-clear"));
+        context.actions.updateShowcaseSlot?.(slotIndex, null);
+      });
+    });
     const battleReportButton = document.getElementById("profile-battle-report-btn");
     if (battleReportButton && context.actions.openBattleReport) {
       battleReportButton.addEventListener("click", context.actions.openBattleReport);
@@ -1597,6 +1821,7 @@ export const profileScreen = {
 };
 
 profileScreen.renderViewedProfileModalBody = renderViewedProfileModalBody;
+profileScreen.renderShowcasePickerBody = renderProfileShowcasePickerBody;
 profileScreen.renderBattleReportModalBody = renderBattleReportModalBody;
 
 

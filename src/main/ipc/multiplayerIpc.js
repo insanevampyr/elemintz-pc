@@ -239,6 +239,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.renameCosmeticLoadout(payload);
   });
 
+  ipcMain.handle("multiplayer:updateProfileShowcaseSlot", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.updateProfileShowcaseSlot(payload);
+  });
+
   ipcMain.handle("multiplayer:submitMove", async (event, payload) => {
     subscribers.add(event.sender);
     console.info("[OnlinePlay][MainIPC] submitMove handler entered", {

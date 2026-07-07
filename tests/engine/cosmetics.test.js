@@ -517,6 +517,7 @@ test("cosmetics: new profile has default owned and equipped cosmetics", async ()
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("default_earth_card"));
   assert.ok(profile.ownedCosmetics.elementCardVariant.includes("default_wind_card"));
   assert.ok(profile.ownedCosmetics.title.includes("Initiate"));
+  assert.deepEqual(profile.profileShowcaseSlots, [null, null, null]);
 
   const cosmetics = await state.getCosmetics("CosmeticDefaultUser");
   const unlockTag = cosmetics.catalog.title.find((item) => item.id === "Flame Vanguard").unlockSource.type;

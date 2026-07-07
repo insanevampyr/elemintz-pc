@@ -2,7 +2,8 @@ import { StateCoordinator } from "../state/stateCoordinator.js";
 import {
   buildAuthoritativeCosmeticSnapshot,
   getCosmeticCatalogForProfile,
-  getCosmeticDisplayName
+  getCosmeticDisplayName,
+  resolveProfileShowcaseSlots
 } from "../state/cosmeticSystem.js";
 import { getLevelProgress } from "../state/levelRewardsSystem.js";
 
@@ -202,9 +203,32 @@ function buildPublicTrophyShelf(profile, specialRecords = []) {
     .map(({ rarityRank, ...item }) => item);
 }
 
+function buildPublicShowcaseItem(type, entry) {
+  if (!entry?.id || !type) {
+    return null;
+  }
+
+  return {
+    type,
+    id: entry.id,
+    name: entry.name ?? getCosmeticDisplayName(type, entry.id, entry.id),
+    rarity: titleCase(entry.rarity) || "Common",
+    collection: entry.collection ?? null,
+    image: entry.image ?? null,
+    ...(entry.element ? { element: entry.element } : {})
+  };
+}
+
+function buildPublicShowcaseSlots(profile) {
+  return resolveProfileShowcaseSlots(profile).map((item) =>
+    item ? buildPublicShowcaseItem(item.type, item) : null
+  );
+}
+
 function buildPublicSnapshotCosmetics(profile, specialRecords = []) {
   const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
   const trophyShelf = buildPublicTrophyShelf(profile, specialRecords);
+  const showcaseSlots = buildPublicShowcaseSlots(profile);
 
   return {
     authority: "server",
@@ -213,7 +237,8 @@ function buildPublicSnapshotCosmetics(profile, specialRecords = []) {
       equipped: snapshot.equipped
     },
     equipped: snapshot.equipped,
-    trophyShelf
+    trophyShelf,
+    showcaseSlots
   };
 }
 
@@ -367,7 +392,8 @@ function buildPublicProfileSnapshot({ profile, specialRecords = [] }) {
       achievements: profile?.achievements ?? {},
       modeStats: stats.modes,
       equippedCosmetics: cosmetics.equipped,
-      trophyShelf: cosmetics.trophyShelf
+      trophyShelf: cosmetics.trophyShelf,
+      showcaseSlots: cosmetics.showcaseSlots
     },
     cosmetics,
     stats,
@@ -1153,6 +1179,24 @@ export class MultiplayerProfileAuthority {
     const result = await this.coordinator.saveCosmeticLoadout({
       username: safeUsername,
       slotIndex
+    });
+    return {
+      ...sanitizeProfileResult(result),
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async updateProfileShowcaseSlot({ username, slotIndex, cosmetic = null }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Showcase updates.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] updateProfileShowcaseSlot -> ${safeUsername} (slot ${slotIndex ?? "?"})`);
+    const result = await this.coordinator.updateProfileShowcaseSlot({
+      username: safeUsername,
+      slotIndex,
+      cosmetic
     });
     return {
       ...sanitizeProfileResult(result),

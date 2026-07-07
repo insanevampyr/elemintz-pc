@@ -37,7 +37,8 @@ import {
   preserveUniqueCosmeticAcquisition,
   renameCosmeticLoadout,
   RANDOMIZABLE_COSMETIC_TYPES,
-  saveCosmeticLoadout
+  saveCosmeticLoadout,
+  updateProfileShowcaseSlot
 } from "./cosmeticSystem.js";
 import { createDefaultBloodMatchStats, deriveMatchStats } from "./statsTracking.js";
 import {
@@ -3957,6 +3958,17 @@ export class StateCoordinator {
   async renameCosmeticLoadout({ username, slotIndex, name }) {
     const profile = await this.profiles.updateProfile(username, (current) =>
       renameCosmeticLoadout(current, slotIndex, name)
+    );
+
+    return {
+      profile,
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
+    };
+  }
+
+  async updateProfileShowcaseSlot({ username, slotIndex, cosmetic = null }) {
+    const profile = await this.profiles.updateProfile(username, (current) =>
+      updateProfileShowcaseSlot(current, { slotIndex, cosmetic })
     );
 
     return {

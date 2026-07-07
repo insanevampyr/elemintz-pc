@@ -8,6 +8,7 @@ import {
   CURRENT_PROFILE_SCHEMA_VERSION,
   normalizeProfile
 } from "../../src/state/profileSystem.js";
+import { normalizeProfileShowcaseSlots } from "../../src/state/cosmeticSystem.js";
 
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-profile-validation-"));
@@ -511,4 +512,132 @@ test("profile validation: seenAnnouncements preserves valid announcement flags",
     "cosmetics_v0.1.6": true,
     future_release: false
   });
+});
+
+test("profile validation: default profiles receive exactly three empty Showcase slots", () => {
+  const normalized = normalizeProfile({ username: "ShowcaseDefaultUser" });
+
+  assert.deepEqual(normalized.profileShowcaseSlots, [null, null, null]);
+});
+
+test("profile validation: Showcase slots preserve valid owned catalog cosmetics including defaults", () => {
+  const normalized = normalizeProfile({
+    username: "ShowcaseValidUser",
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    profileShowcaseSlots: [
+      { type: "avatar", id: "avatar_crystal_soul" },
+      { type: "cardBack", id: "default_card_back" },
+      { type: "title", id: "Initiate" }
+    ]
+  });
+
+  assert.deepEqual(normalized.profileShowcaseSlots, [
+    { type: "avatar", id: "avatar_crystal_soul" },
+    { type: "cardBack", id: "default_card_back" },
+    { type: "title", id: "Initiate" }
+  ]);
+});
+
+test("profile validation: Showcase slots null unsupported, unknown, unowned, and malformed entries", () => {
+  const normalized = normalizeProfile({
+    username: "ShowcaseInvalidUser",
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    profileShowcaseSlots: [
+      { type: "menuTile", id: "tile_training_mode" },
+      { type: "avatar", id: "missing_avatar" },
+      { type: "avatar", id: "avatar_crystal_soul" }
+    ]
+  });
+
+  assert.deepEqual(normalized.profileShowcaseSlots, [null, null, null]);
+
+  const malformed = normalizeProfile({
+    username: "ShowcaseMalformedUser",
+    profileShowcaseSlots: ["bad", null, { type: "avatar", id: "" }]
+  });
+  assert.deepEqual(malformed.profileShowcaseSlots, [null, null, null]);
+});
+
+test("profile validation: Showcase slots pad, trim, dedupe, and stabilize", () => {
+  const shorter = normalizeProfile({
+    username: "ShowcaseShortUser",
+    profileShowcaseSlots: [{ type: "avatar", id: "default_avatar" }]
+  });
+  assert.deepEqual(shorter.profileShowcaseSlots, [
+    { type: "avatar", id: "default_avatar" },
+    null,
+    null
+  ]);
+
+  const longer = normalizeProfile({
+    username: "ShowcaseLongUser",
+    profileShowcaseSlots: [
+      { type: "avatar", id: "default_avatar" },
+      { type: "cardBack", id: "default_card_back" },
+      { type: "title", id: "Initiate" },
+      { type: "badge", id: "none" }
+    ]
+  });
+  assert.deepEqual(longer.profileShowcaseSlots, [
+    { type: "avatar", id: "default_avatar" },
+    { type: "cardBack", id: "default_card_back" },
+    { type: "title", id: "Initiate" }
+  ]);
+
+  const duplicate = normalizeProfile({
+    username: "ShowcaseDuplicateUser",
+    profileShowcaseSlots: [
+      { type: "badge", id: "none" },
+      { type: "badge", id: "none" },
+      { type: "avatar", id: "default_avatar" }
+    ]
+  });
+  assert.deepEqual(duplicate.profileShowcaseSlots, [
+    { type: "badge", id: "none" },
+    null,
+    { type: "avatar", id: "default_avatar" }
+  ]);
+  assert.deepEqual(normalizeProfile(duplicate).profileShowcaseSlots, duplicate.profileShowcaseSlots);
+});
+
+test("profile validation: Showcase duplicate keys are type-scoped", () => {
+  const slots = normalizeProfileShowcaseSlots(
+    {
+      ownedCosmetics: {
+        avatar: ["shared_cosmetic_id"],
+        title: ["shared_cosmetic_id"]
+      },
+      profileShowcaseSlots: [
+        { type: "avatar", id: "shared_cosmetic_id" },
+        { type: "title", id: "shared_cosmetic_id" },
+        { type: "avatar", id: "shared_cosmetic_id" }
+      ]
+    },
+    {
+      catalog: {
+        avatar: [{ id: "shared_cosmetic_id" }],
+        title: [{ id: "shared_cosmetic_id" }]
+      }
+    }
+  );
+
+  assert.deepEqual(slots, [
+    { type: "avatar", id: "shared_cosmetic_id" },
+    { type: "title", id: "shared_cosmetic_id" },
+    null
+  ]);
 });
