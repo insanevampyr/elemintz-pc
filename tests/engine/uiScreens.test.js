@@ -8154,7 +8154,7 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.match(html, />Featured Rival</);
   assert.match(html, />Gauntlet</);
   assert.match(html, /data-profile-dashboard="true"/);
-  assert.match(html, />SEARCH PLAYER</);
+  assert.match(html, /Search Player Profile/);
   assert.match(html, />Activity</);
   assert.match(html, /View your 5 most recent completed battles\./);
   assert.match(html, /View recent Online players you faced\./);
@@ -12761,16 +12761,16 @@ test("ui: profile achievements toggle keeps search and chest controls visible", 
     backgroundImage: "assets/EleMintzIcon.png"
   });
 
-  assert.match(html, /SEARCH PLAYER/);
-  assert.match(html, /View another player's profile\./);
+  assert.match(html, /Search Player Profile/);
+  assert.match(html, /Find another player profile\./);
   assert.match(html, /placeholder="Enter username"/);
   assert.match(html, />View Profile</);
   assert.match(html, /Reward Chests/);
   assert.match(html, /View Rival/);
   assert.match(html, /Show Achievements/);
   assert.doesNotMatch(html, /First Flame/);
-  assert.ok(html.indexOf("SEARCH PLAYER") < html.indexOf("Overall Record"));
-  assert.ok(html.indexOf("SEARCH PLAYER") < html.indexOf("Achievements"));
+  assert.ok(html.indexOf("Search Player Profile") < html.indexOf("Overall Record"));
+  assert.ok(html.indexOf("Search Player Profile") < html.indexOf("Achievements"));
 });
 
 test("ui: viewed profile achievements default collapsed while keeping count visible", () => {
@@ -13001,7 +13001,7 @@ test("ui: appController opens searched profiles in a read-only modal instead of 
 
     assert.equal(shown.at(-1)?.screenId, "profile");
     const ownProfileHtml = profileScreen.render(shown.at(-1).context);
-    assert.match(ownProfileHtml, /SEARCH PLAYER/);
+    assert.match(ownProfileHtml, /Search Player Profile/);
     assert.match(ownProfileHtml, /Reward Chests/);
     assert.doesNotMatch(ownProfileHtml, /Currency & Chests/);
     assert.doesNotMatch(ownProfileHtml, /Viewing: Rival/);
@@ -30124,7 +30124,7 @@ test("ui: own profile renders top Profile Overview panels near the top", () => {
   assert.match(html, /data-profile-flex-cardback="true"[^>]*data-hover-preview="true"[^>]*data-preview-type="cardBack"/);
   assert.match(html, /data-profile-flex-variant="fire"[\s\S]*data-hover-preview="true"[\s\S]*data-preview-type="elementCardVariant"/);
   assert.match(html, /data-preview-name="Neon Arcana Fire"/);
-  assert.match(html, /SEARCH PLAYER/);
+  assert.match(html, /Search Player Profile/);
   assert.match(html, /Achievements \(/);
 });
 
@@ -31277,7 +31277,7 @@ test("ui: viewed profile invalid Showcase items fail closed to empty slots", () 
   assert.match(html, /Empty Showcase Slot/);
 });
 
-test("ui: owner profile renders Battle Report and Recent Opponents inside one activity card without inline rows", () => {
+test("ui: owner profile groups Search and Recent Opponents separately from Battle Report and Collections", () => {
   const profile = {
     ...createProfileScreenContext().profile,
     recentOpponents: [
@@ -31299,10 +31299,15 @@ test("ui: owner profile renders Battle Report and Recent Opponents inside one ac
     })
   );
 
+  assert.match(html, /data-profile-social-card="true"/);
+  assert.match(html, /data-profile-social-action="search-player"/);
+  assert.match(html, /data-profile-social-action="recent-opponents"/);
   assert.match(html, /data-profile-activity-card="true"/);
   assert.match(html, /data-profile-activity-action="battle-report"/);
-  assert.match(html, /data-profile-activity-action="recent-opponents"/);
   assert.match(html, /data-profile-activity-action="collections"/);
+  assert.match(html, /Search Player Profile/);
+  assert.match(html, /Find another player profile\./);
+  assert.match(html, /profile-search-input/);
   assert.match(html, /data-profile-recent-opponents-btn="true"/);
   assert.match(html, /data-profile-collections-btn="true"/);
   assert.match(html, /<h3 class="section-title">Activity<\/h3>/);
@@ -31318,8 +31323,10 @@ test("ui: owner profile renders Battle Report and Recent Opponents inside one ac
   assert.doesNotMatch(html, /PRIVATE_PROFILE_KEY_ALPHA/);
   assert.doesNotMatch(html, /SETTLEMENT_KEY_SHOULD_NOT_RENDER/);
   assert.equal((html.match(/data-profile-activity-card="true"/g) ?? []).length, 1);
-  assert.ok(html.indexOf('data-profile-battle-report-btn="true"') < html.indexOf('data-profile-recent-opponents-btn="true"'));
-  assert.ok(html.indexOf('data-profile-recent-opponents-btn="true"') < html.indexOf('data-profile-collections-btn="true"'));
+  assert.equal((html.match(/data-profile-social-card="true"/g) ?? []).length, 1);
+  assert.ok(html.indexOf('data-profile-social-action="search-player"') < html.indexOf('data-profile-social-action="recent-opponents"'));
+  assert.ok(html.indexOf('data-profile-social-card="true"') < html.indexOf('data-profile-activity-card="true"'));
+  assert.ok(html.indexOf('data-profile-battle-report-btn="true"') < html.indexOf('data-profile-collections-btn="true"'));
   assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
 });
 
@@ -31337,22 +31344,37 @@ test("ui: Recent Opponents modal renders empty state exactly", () => {
     recentOpponents: []
   });
 
-  assert.match(html, /data-profile-activity-card="true"/);
+  assert.match(html, /data-profile-social-card="true"/);
+  assert.match(html, /data-profile-social-action="recent-opponents"/);
   assert.doesNotMatch(html, /No recent online opponents yet\./);
   assert.match(modalHtml, /data-recent-opponents-empty="true">No recent online opponents yet\.<\/p>/);
 });
 
-test("ui: Activity card binds Battle Report, Recent Opponents, and Collections modal actions", async () => {
+test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Collections actions", async () => {
   const previousDocument = global.document;
   let battleReportClick = null;
   let recentCardClick = null;
   let collectionsClick = null;
+  let searchSubmit = null;
   const calls = [];
+  const searchForm = {};
 
   global.document = {
     getElementById: (id) => {
-      if (id === "profile-back-btn" || id === "profile-search-form") {
+      if (id === "profile-back-btn") {
         return { addEventListener: () => {} };
+      }
+      if (id === "profile-search-form") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "submit") {
+              searchSubmit = handler;
+            }
+          }
+        };
+      }
+      if (id === "profile-search-input") {
+        return null;
       }
       if (id === "profile-recent-opponents-btn") {
         return {
@@ -31387,11 +31409,22 @@ test("ui: Activity card binds Battle Report, Recent Opponents, and Collections m
     querySelectorAll: () => []
   };
 
+  class FakeFormData {
+    get(name) {
+      return name === "profileSearch" ? "RivalSearch" : "";
+    }
+  }
+
+  const previousFormData = global.FormData;
+  global.FormData = FakeFormData;
+
   try {
     profileScreen.bind(
       createProfileScreenContext({
         actions: {
           ...createProfileScreenContext().actions,
+          searchProfiles: async (username) => calls.push(`searchProfiles:${username}`),
+          viewProfile: async (username) => calls.push(`viewProfile:${username}`),
           openBattleReport: () => calls.push("openBattleReport"),
           openRecentOpponents: () => calls.push("openRecentOpponents"),
           openCollections: () => calls.push("openCollections")
@@ -31399,14 +31432,22 @@ test("ui: Activity card binds Battle Report, Recent Opponents, and Collections m
       })
     );
 
+    await searchSubmit?.({ preventDefault: () => {}, currentTarget: searchForm });
     await battleReportClick?.();
     await recentCardClick?.();
     await collectionsClick?.();
   } finally {
     global.document = previousDocument;
+    global.FormData = previousFormData;
   }
 
-  assert.deepEqual(calls, ["openBattleReport", "openRecentOpponents", "openCollections"]);
+  assert.deepEqual(calls, [
+    "searchProfiles:RivalSearch",
+    "viewProfile:RivalSearch",
+    "openBattleReport",
+    "openRecentOpponents",
+    "openCollections"
+  ]);
 });
 
 test("ui: Collections modal lists all albums with progress states and opens detail view", () => {

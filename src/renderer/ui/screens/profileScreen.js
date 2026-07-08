@@ -1455,16 +1455,6 @@ function renderActivityToolsCard() {
             data-profile-battle-report-btn="true"
           >Battle Report</button>
         </div>
-        <div class="profile-activity-action" data-profile-activity-action="recent-opponents">
-          <strong class="profile-activity-action-title">Recent Opponents</strong>
-          <p class="text-muted">View recent Online players you faced.</p>
-          <button
-            id="profile-recent-opponents-btn"
-            class="btn btn-secondary"
-            type="button"
-            data-profile-recent-opponents-btn="true"
-          >Recent Opponents</button>
-        </div>
         <div class="profile-activity-action" data-profile-activity-action="collections">
           <strong class="profile-activity-action-title">Collections</strong>
           <p class="text-muted">Track cosmetic set progress.</p>
@@ -1790,30 +1780,45 @@ function renderProfileIdentityHeader({
   `;
 }
 
-function renderProfileSearchBlock({ searchQuery = "", searchResults = [], searchError = "" } = {}) {
+function renderProfileSocialToolsCard({ searchQuery = "", searchResults = [], searchError = "" } = {}) {
   return `
-    <section class="profile-summary-card stack-sm profile-search-card profile-dashboard-card">
-      <h3 class="section-title">SEARCH PLAYER</h3>
-      <p class="text-muted profile-search-helper">View another player's profile.</p>
-      <form id="profile-search-form" class="stack-sm">
-        <label for="profile-search-input">Username</label>
-        <input
-          id="profile-search-input"
-          name="profileSearch"
-          type="text"
-          value="${searchQuery}"
-          placeholder="Enter username"
-        />
-        <button type="submit" class="btn">View Profile</button>
-      </form>
-      ${searchError ? `<p class="text-muted">${searchError}</p>` : ""}
-      ${
-        searchResults.length
-          ? `<div class="stack-sm profile-search-results">${searchResults
-              .map((item) => `<button class="btn" data-view-profile="${item.username}">View ${item.username}</button>`)
-              .join("")}</div>`
-          : ""
-      }
+    <section class="profile-summary-card stack-sm profile-social-card profile-dashboard-card" data-profile-social-card="true">
+      <h3 class="section-title">Social</h3>
+      <div class="profile-social-actions">
+        <div class="profile-social-action profile-search-card" data-profile-social-action="search-player">
+          <strong class="profile-activity-action-title">Search Player Profile</strong>
+          <p class="text-muted profile-search-helper">Find another player profile.</p>
+          <form id="profile-search-form" class="stack-sm">
+            <label for="profile-search-input">Username</label>
+            <input
+              id="profile-search-input"
+              name="profileSearch"
+              type="text"
+              value="${searchQuery}"
+              placeholder="Enter username"
+            />
+            <button type="submit" class="btn">View Profile</button>
+          </form>
+          ${searchError ? `<p class="text-muted">${searchError}</p>` : ""}
+          ${
+            searchResults.length
+              ? `<div class="stack-sm profile-search-results">${searchResults
+                  .map((item) => `<button class="btn" data-view-profile="${item.username}">View ${item.username}</button>`)
+                  .join("")}</div>`
+              : ""
+          }
+        </div>
+        <div class="profile-social-action" data-profile-social-action="recent-opponents">
+          <strong class="profile-activity-action-title">Recent Opponents</strong>
+          <p class="text-muted">View recent Online players you faced.</p>
+          <button
+            id="profile-recent-opponents-btn"
+            class="btn btn-secondary"
+            type="button"
+            data-profile-recent-opponents-btn="true"
+          >Recent Opponents</button>
+        </div>
+      </div>
     </section>
   `;
 }
@@ -2001,7 +2006,7 @@ export const profileScreen = {
               badgeId: profile.equippedCosmetics?.badge ?? "none",
               badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
             })}
-            ${renderProfileSearchBlock({
+            ${renderProfileSocialToolsCard({
               searchQuery: context.searchQuery ?? "",
               searchError: context.searchError ?? "",
               searchResults
