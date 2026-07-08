@@ -489,6 +489,7 @@ export function containRuntimeMatchSummaryState(matchResult, logger = console) {
 function buildPlayer(socket, payload = {}, identity = null) {
   const username = normalizeUsername(identity?.username ?? payload.username);
   const sessionId = String(identity?.sessionId ?? "").trim() || null;
+  const profileKey = normalizeUsername(identity?.profileKey);
   const bot = Boolean(payload?.bot);
   const aiDifficulty = bot
     ? normalizeAiDifficulty(payload?.aiDifficulty)
@@ -499,7 +500,7 @@ function buildPlayer(socket, payload = {}, identity = null) {
   const trainingOpponentPersonality = trainingMode
     ? String(payload?.trainingOpponentPersonality ?? "").trim().toLowerCase() || null
     : null;
-  return {
+  const player = {
     socketId: socket.id,
     connected: true,
     bot,
@@ -514,6 +515,15 @@ function buildPlayer(socket, payload = {}, identity = null) {
     joinedAt: new Date().toISOString(),
     disconnectedAt: null
   };
+  if (profileKey) {
+    Object.defineProperty(player, "profileKey", {
+      value: profileKey,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+  }
+  return player;
 }
 
 function normalizeAiDifficulty(value) {
@@ -2016,6 +2026,24 @@ function buildResolvedSubmitResult(room, resolvedRoundResult) {
   };
 }
 
+function clonePlayerForRoom(player) {
+  if (!player) {
+    return null;
+  }
+
+  const clonedPlayer = { ...player };
+  const profileKey = normalizeUsername(player.profileKey);
+  if (profileKey) {
+    Object.defineProperty(clonedPlayer, "profileKey", {
+      value: profileKey,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+  }
+  return clonedPlayer;
+}
+
 function cloneRoom(room) {
   const serverMatchState = syncServerMatchState(room);
   const rewardSettlement = cloneRewardSettlement(room);
@@ -2023,8 +2051,8 @@ function cloneRoom(room) {
     roomCode: room.roomCode,
     createdAt: room.createdAt,
     visibility: normalizeRoomVisibility(room.visibility),
-    host: room.host ? { ...room.host } : null,
-    guest: room.guest ? { ...room.guest } : null,
+    host: clonePlayerForRoom(room.host),
+    guest: clonePlayerForRoom(room.guest),
     featuredRivalId: room.featuredRivalId ?? null,
     gauntletRivalId: room.gauntletRivalId ?? null,
     status: room.status,

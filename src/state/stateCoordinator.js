@@ -1,4 +1,4 @@
-import { ProfileSystem } from "./profileSystem.js";
+import { ProfileSystem, normalizeRecentOpponents } from "./profileSystem.js";
 import { AdminGrantStore } from "./adminGrantStore.js";
 import {
   MAX_UNIQUE_ROYALTY_TOKEN_PERCENT,
@@ -818,6 +818,67 @@ function applyRecentBattleSummary(profile, latestBattle, limit = 5) {
     ...profile,
     latestBattle: nextRecentBattles[0] ?? latestBattle,
     recentBattles: nextRecentBattles
+  };
+}
+
+function normalizeRecentOpponentDisplaySnapshot(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      avatar: null,
+      title: null
+    };
+  }
+
+  const normalizeOptionalId = (id) => {
+    const normalized = String(id ?? "").trim();
+    return normalized.length > 0 ? normalized : null;
+  };
+
+  return {
+    avatar: normalizeOptionalId(value.avatar),
+    title: normalizeOptionalId(value.title)
+  };
+}
+
+function applyRecentOpponentSummary(profile, latestBattle, context = null, settlementKey = null) {
+  if (!profile || latestBattle?.mode !== "online" || !context || typeof context !== "object") {
+    return profile;
+  }
+
+  const ownerProfileKey = String(profile.username ?? "").trim();
+  const opponentProfileKey = String(context.opponentProfileKey ?? "").trim();
+  if (!ownerProfileKey || !opponentProfileKey || ownerProfileKey === opponentProfileKey) {
+    return profile;
+  }
+
+  const lastCompletedAt = String(latestBattle.completedAt ?? "").trim();
+  if (!Number.isFinite(Date.parse(lastCompletedAt))) {
+    return profile;
+  }
+
+  const entry = {
+    opponentProfileKey,
+    opponentUsername: String(context.opponentUsername ?? opponentProfileKey).trim() || opponentProfileKey,
+    displayName:
+      String(context.opponentName ?? context.opponentUsername ?? opponentProfileKey).trim() ||
+      opponentProfileKey,
+    latestResult: latestBattle.result,
+    lastCompletedAt,
+    lastSettlementKey: String(settlementKey ?? "").trim() || null,
+    displayCosmetics: normalizeRecentOpponentDisplaySnapshot(context.opponentDisplayCosmetics)
+  };
+  const existingOpponents = normalizeRecentOpponents(profile.recentOpponents, ownerProfileKey);
+  const nextOpponents = normalizeRecentOpponents(
+    [
+      entry,
+      ...existingOpponents.filter((opponent) => opponent.opponentProfileKey !== opponentProfileKey)
+    ],
+    ownerProfileKey
+  );
+
+  return {
+    ...profile,
+    recentOpponents: nextOpponents
   };
 }
 
@@ -2181,16 +2242,14 @@ export class StateCoordinator {
           nowMs
         })
       );
-      workingProfile = applyRecentBattleSummary(
-        workingProfile,
-        buildLatestBattleSummary({
-          matchState: safeMatchState,
-          perspective,
-          matchStats,
-          context: latestBattleContext,
-          nowMs
-        })
-      );
+      const latestBattle = buildLatestBattleSummary({
+        matchState: safeMatchState,
+        perspective,
+        matchStats,
+        context: latestBattleContext,
+        nowMs
+      });
+      workingProfile = applyRecentBattleSummary(workingProfile, latestBattle);
 
       const shouldPersistProfile = !profilesEqual(workingProfile, profileWithStats);
       if (shouldPersistProfile) {
@@ -2404,15 +2463,19 @@ export class StateCoordinator {
           perspective
         })
       );
-      workingProfile = applyRecentBattleSummary(
+      const latestBattle = buildLatestBattleSummary({
+        matchState: safeMatchState,
+        perspective,
+        matchStats,
+        context: latestBattleContext,
+        nowMs
+      });
+      workingProfile = applyRecentBattleSummary(workingProfile, latestBattle);
+      workingProfile = applyRecentOpponentSummary(
         workingProfile,
-        buildLatestBattleSummary({
-          matchState: safeMatchState,
-          perspective,
-          matchStats,
-          context: latestBattleContext,
-          nowMs
-        })
+        latestBattle,
+        latestBattleContext,
+        effectiveSettlementKey
       );
 
       const isQuitForfeit = String(safeMatchState.endReason ?? "") === "quit_forfeit";
@@ -3677,11 +3740,15 @@ export class StateCoordinator {
 
       const normalizedRole = participantRole === "guest" ? "guest" : "host";
       const participantUsernameKey = normalizedRole === "guest" ? "guestUsername" : "hostUsername";
-      const expectedUsername = String(
-        rewardDecision?.participants?.[participantUsernameKey] ?? ""
-      ).trim();
+      const participantProfileKey = normalizedRole === "guest" ? "guestProfileKey" : "hostProfileKey";
+      const expectedUsername = String(rewardDecision?.participants?.[participantUsernameKey] ?? "").trim();
+      const expectedProfileKey = String(rewardDecision?.participants?.[participantProfileKey] ?? "").trim();
 
-      if (expectedUsername && expectedUsername !== username) {
+      if (
+        (expectedProfileKey || expectedUsername) &&
+        username !== expectedProfileKey &&
+        username !== expectedUsername
+      ) {
         throw new Error(`Reward settlement participant mismatch for ${username}.`);
       }
 

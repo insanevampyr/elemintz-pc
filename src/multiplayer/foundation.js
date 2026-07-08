@@ -469,6 +469,12 @@ function buildRewardDecision(room, summary, {
   const matchId =
     room.serverMatchState?.matchId ??
     (room.roomCode ? `${room.roomCode}:match:${Math.max(1, Number(room.matchSequence ?? 1))}` : null);
+  const settledHostProfileKey = summary.settledHostUsername
+    ? normalizeSettledUsername(room?.host?.profileKey)
+    : null;
+  const settledGuestProfileKey = summary.settledGuestUsername
+    ? normalizeSettledUsername(room?.guest?.profileKey)
+    : null;
 
   return {
     matchId,
@@ -482,7 +488,17 @@ function buildRewardDecision(room, summary, {
     },
     participants: {
       hostUsername: summary.settledHostUsername ?? null,
-      guestUsername: summary.settledGuestUsername ?? null
+      guestUsername: summary.settledGuestUsername ?? null,
+      hostProfileKey: settledHostProfileKey,
+      guestProfileKey: settledGuestProfileKey,
+      hostDisplayCosmetics: {
+        avatar: room.host?.equippedCosmetics?.avatar ?? null,
+        title: room.host?.equippedCosmetics?.title ?? null
+      },
+      guestDisplayCosmetics: {
+        avatar: room.guest?.equippedCosmetics?.avatar ?? null,
+        title: room.guest?.equippedCosmetics?.title ?? null
+      }
     },
     decidedAt
   };

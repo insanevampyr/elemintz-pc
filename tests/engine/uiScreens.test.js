@@ -1765,6 +1765,7 @@ function createProfileScreenContext(overrides = {}) {
       openEpicChest: () => {},
       openLegendaryChest: () => {},
       openBattleReport: () => {},
+      openRecentOpponents: () => {},
       searchProfiles: () => {},
       viewProfile: () => {},
       clearViewed: () => {},
@@ -8131,8 +8132,9 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
   assert.match(html, />Gauntlet</);
   assert.match(html, /data-profile-dashboard="true"/);
   assert.match(html, />SEARCH PLAYER</);
-  assert.match(html, />BATTLE REPORT</);
+  assert.match(html, />Activity</);
   assert.match(html, /View your 5 most recent completed battles\./);
+  assert.match(html, /View recent Online players you faced\./);
   assert.match(html, /View Rival/);
   assert.match(html, /Online PvP/);
   assert.match(html, /Featured Rival Wins/);
@@ -8157,6 +8159,7 @@ test("ui: profile screen exposes title\/avatar and searchable profile section", 
 test("ui: own profile shows a Battle Report button", () => {
   const html = profileScreen.render(createProfileScreenContext());
 
+  assert.match(html, /data-profile-activity-card="true"/);
   assert.match(html, /data-profile-battle-report-btn="true"/);
   assert.match(html, />Battle Report</);
   assert.match(html, /View your 5 most recent completed battles\./);
@@ -13642,7 +13645,18 @@ test("ui: authenticated viewed-profile failures show a clear not-found message a
           username: "Owner",
           profile: {
             ...createProfileScreenContext().profile,
-            username: "Owner"
+            username: "Owner",
+            recentOpponents: [
+              {
+                opponentProfileKey: "MissingRemoteUser",
+                opponentUsername: "MissingRemoteUser",
+                displayName: "Missing Remote User",
+                latestResult: "loss",
+                lastCompletedAt: "2026-07-07T18:30:00.000Z",
+                lastSettlementKey: "MISSING_SETTLEMENT_KEY_SHOULD_NOT_RENDER",
+                displayCosmetics: { avatar: "default_avatar", title: "Initiate" }
+              }
+            ]
           },
           cosmetics: { equipped: createProfileScreenContext().profile.equippedCosmetics, owned: {}, loadouts: [], preferences: {} },
           stats: { summary: {}, modes: {} },
@@ -13716,6 +13730,9 @@ test("ui: authenticated viewed-profile failures show a clear not-found message a
     assert.equal(localViewedReads, 0);
     assert.equal(modalCalls.length, 0);
     assert.match(profileHtml, /Profile "MissingRemoteUser" was not found\./);
+    assert.match(profileHtml, /data-profile-activity-card="true"/);
+    assert.doesNotMatch(profileHtml, /Missing Remote User/);
+    assert.doesNotMatch(profileHtml, /MISSING_SETTLEMENT_KEY_SHOULD_NOT_RENDER/);
     assert.doesNotMatch(profileHtml, /Viewing: MissingRemoteUser/);
   } finally {
     global.window = previousWindow;
@@ -30994,6 +31011,304 @@ test("ui: viewed profile invalid Showcase items fail closed to empty slots", () 
   assert.match(html, /Empty Showcase Slot/);
 });
 
+test("ui: owner profile renders Battle Report and Recent Opponents inside one activity card without inline rows", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    recentOpponents: [
+      {
+        opponentProfileKey: "PRIVATE_PROFILE_KEY_ALPHA",
+        opponentUsername: "RawHiddenUsername",
+        displayName: "Visible Rival",
+        latestResult: "win",
+        lastCompletedAt: "2026-07-07T18:52:00.000Z",
+        lastSettlementKey: "SETTLEMENT_KEY_SHOULD_NOT_RENDER",
+        displayCosmetics: { avatar: "default_avatar", title: "Initiate" }
+      }
+    ]
+  };
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile,
+      nowMs: Date.parse("2026-07-07T19:00:00.000Z")
+    })
+  );
+
+  assert.match(html, /data-profile-activity-card="true"/);
+  assert.match(html, /data-profile-activity-action="battle-report"/);
+  assert.match(html, /data-profile-activity-action="recent-opponents"/);
+  assert.match(html, /data-profile-recent-opponents-btn="true"/);
+  assert.match(html, /<h3 class="section-title">Activity<\/h3>/);
+  assert.match(html, /Recent Opponents/);
+  assert.match(html, /View recent Online players you faced\./);
+  assert.doesNotMatch(html, /Visible Rival/);
+  assert.doesNotMatch(html, /data-recent-opponent-index="0"/);
+  assert.match(html, /data-profile-battle-report-btn="true"/);
+  assert.match(html, />Battle Report</);
+  assert.doesNotMatch(html, /PRIVATE_PROFILE_KEY_ALPHA/);
+  assert.doesNotMatch(html, /SETTLEMENT_KEY_SHOULD_NOT_RENDER/);
+  assert.equal((html.match(/data-profile-activity-card="true"/g) ?? []).length, 1);
+  assert.ok(html.indexOf('data-profile-battle-report-btn="true"') < html.indexOf('data-profile-recent-opponents-btn="true"'));
+  assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
+});
+
+test("ui: Recent Opponents modal renders empty state exactly", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        recentOpponents: []
+      }
+    })
+  );
+  const modalHtml = profileScreen.renderRecentOpponentsModalBody({
+    ...createProfileScreenContext().profile,
+    recentOpponents: []
+  });
+
+  assert.match(html, /data-profile-activity-card="true"/);
+  assert.doesNotMatch(html, /No recent online opponents yet\./);
+  assert.match(modalHtml, /data-recent-opponents-empty="true">No recent online opponents yet\.<\/p>/);
+});
+
+test("ui: Activity card binds Battle Report and Recent Opponents modal actions", async () => {
+  const previousDocument = global.document;
+  let battleReportClick = null;
+  let recentCardClick = null;
+  const calls = [];
+
+  global.document = {
+    getElementById: (id) => {
+      if (id === "profile-back-btn" || id === "profile-search-form") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "profile-recent-opponents-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              recentCardClick = handler;
+            }
+          }
+        };
+      }
+      if (id === "profile-battle-report-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              battleReportClick = handler;
+            }
+          }
+        };
+      }
+      return null;
+    },
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+
+  try {
+    profileScreen.bind(
+      createProfileScreenContext({
+        actions: {
+          ...createProfileScreenContext().actions,
+          openBattleReport: () => calls.push("openBattleReport"),
+          openRecentOpponents: () => calls.push("openRecentOpponents")
+        }
+      })
+    );
+
+    await battleReportClick?.();
+    await recentCardClick?.();
+  } finally {
+    global.document = previousDocument;
+  }
+
+  assert.deepEqual(calls, ["openBattleReport", "openRecentOpponents"]);
+});
+
+test("ui: viewed profile and Battle Report do not render Recent Opponents", () => {
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "ViewedRecentRival",
+    title: "Initiate",
+    achievements: {},
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background",
+      cardBack: "default_card_back",
+      elementCardVariant: {}
+    },
+    recentOpponents: [
+      {
+        opponentProfileKey: "PRIVATE_VIEWED_KEY",
+        displayName: "Private Viewed Opponent",
+        latestResult: "loss",
+        lastCompletedAt: "2026-07-07T18:00:00.000Z"
+      }
+    ]
+  });
+  const reportHtml = profileScreen.renderBattleReportModalBody({
+    ...createProfileScreenContext().profile,
+    recentOpponents: [
+      {
+        opponentProfileKey: "PRIVATE_REPORT_KEY",
+        displayName: "Private Report Opponent",
+        latestResult: "draw",
+        lastCompletedAt: "2026-07-07T18:00:00.000Z"
+      }
+    ],
+    recentBattles: [
+      {
+        mode: "online",
+        result: "win",
+        completedAt: "2026-07-07T18:00:00.000Z",
+        opponentName: "Battle Rival"
+      }
+    ]
+  });
+
+  assert.doesNotMatch(viewedHtml, /data-profile-recent-opponents="true"/);
+  assert.doesNotMatch(viewedHtml, /Recent Opponents/);
+  assert.doesNotMatch(viewedHtml, /Private Viewed Opponent|PRIVATE_VIEWED_KEY/);
+  assert.doesNotMatch(reportHtml, /data-profile-recent-opponents="true"/);
+  assert.doesNotMatch(reportHtml, /Recent Opponents/);
+  assert.doesNotMatch(reportHtml, /Private Report Opponent|PRIVATE_REPORT_KEY/);
+});
+
+test("ui: Recent Opponents modal renders result labels, fallback data, deterministic relative times, and a 15-row cap", () => {
+  const nowMs = Date.parse("2026-07-07T19:00:00.000Z");
+  const entries = [
+    {
+      opponentProfileKey: "PRIVATE_RECENT_WIN",
+      displayName: "Win Rival",
+      latestResult: "win",
+      lastCompletedAt: "2026-07-07T18:59:45.000Z",
+      displayCosmetics: { avatar: "default_avatar", title: "Initiate" }
+    },
+    {
+      opponentProfileKey: "PRIVATE_RECENT_LOSS",
+      displayName: "Loss Rival",
+      latestResult: "loss",
+      lastCompletedAt: "2026-07-07T17:00:00.000Z",
+      displayCosmetics: { avatar: "", title: "" }
+    },
+    {
+      opponentProfileKey: "PRIVATE_RECENT_DRAW",
+      opponentUsername: "DrawFallback",
+      latestResult: "draw",
+      lastCompletedAt: "2026-07-06T18:00:00.000Z",
+      displayCosmetics: null
+    },
+    ...Array.from({ length: 13 }, (_, index) => ({
+      opponentProfileKey: `PRIVATE_EXTRA_${index}`,
+      displayName: `Extra Rival ${index}`,
+      latestResult: "win",
+      lastCompletedAt: `2026-07-05T1${index % 10}:00:00.000Z`,
+      displayCosmetics: { avatar: "default_avatar", title: "Initiate" }
+    }))
+  ];
+  const html = profileScreen.renderRecentOpponentsModalBody(
+    {
+      ...createProfileScreenContext().profile,
+      recentOpponents: entries
+    },
+    { nowMs }
+  );
+  const css = fs.readFileSync("src/renderer/styles/layout.css", "utf8");
+
+  assert.match(html, /data-recent-opponents-modal="true"/);
+  assert.equal((html.match(/data-recent-opponent-index="/g) ?? []).length, 15);
+  assert.match(html, /Win Rival/);
+  assert.match(html, /Loss Rival/);
+  assert.match(html, /DrawFallback/);
+  assert.match(html, /Won/);
+  assert.match(html, /Lost/);
+  assert.match(html, /Draw/);
+  assert.match(html, /Just now/);
+  assert.match(html, /2h ago/);
+  assert.match(html, /Yesterday/);
+  assert.match(html, /No title shown/);
+  assert.doesNotMatch(html, /Extra Rival 12/);
+  assert.doesNotMatch(html, /PRIVATE_RECENT_WIN|PRIVATE_EXTRA_0/);
+  assert.match(css, /\.profile-recent-opponents-list\s*{[\s\S]*max-height: 360px;[\s\S]*overflow-y: auto;/);
+});
+
+test("ui: Recent Opponents relative time formatter handles minutes, hours, yesterday, days, and invalid values", () => {
+  const nowMs = Date.parse("2026-07-07T19:00:00.000Z");
+
+  assert.equal(profileScreen.formatRecentOpponentRelativeTime("2026-07-07T18:52:00.000Z", nowMs), "8m ago");
+  assert.equal(profileScreen.formatRecentOpponentRelativeTime("2026-07-07T17:00:00.000Z", nowMs), "2h ago");
+  assert.equal(profileScreen.formatRecentOpponentRelativeTime("2026-07-06T18:00:00.000Z", nowMs), "Yesterday");
+  assert.equal(profileScreen.formatRecentOpponentRelativeTime("2026-07-04T19:00:00.000Z", nowMs), "3d ago");
+  assert.equal(profileScreen.formatRecentOpponentRelativeTime("not-a-date", nowMs), "Recently");
+});
+
+test("ui: Recent Opponents row opens the existing viewed-profile navigation path by stable identity", async () => {
+  const previousDocument = global.document;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    recentOpponents: [
+      {
+        opponentProfileKey: "StableOpponentProfileKey",
+        displayName: "Clickable Rival",
+        latestResult: "win",
+        lastCompletedAt: "2026-07-07T18:00:00.000Z",
+        displayCosmetics: { avatar: "default_avatar", title: "Initiate" }
+      }
+    ]
+  };
+  const calls = [];
+  const hidden = [];
+  const returnCalls = [];
+  let recentClickHandler = null;
+  const recentButton = {
+    getAttribute: (name) => (name === "data-recent-opponent-index" ? "0" : null),
+    addEventListener: (type, handler) => {
+      if (type === "click") {
+        recentClickHandler = handler;
+      }
+    }
+  };
+
+  global.document = {
+    querySelectorAll: (selector) => (selector === "[data-recent-opponent-index]" ? [recentButton] : [])
+  };
+
+  try {
+    const controller = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager: { show: () => {}, hide: () => hidden.push("hide") },
+      toastManager: { show: () => {} }
+    });
+    controller.profile = profile;
+    controller.profileSearchQuery = "previous search";
+    controller.profileSearchError = "previous error";
+    controller.openViewedProfile = async (username, options) => {
+      calls.push({ username, options });
+    };
+    controller.showProfile = async (options) => {
+      returnCalls.push(["showProfile", options]);
+    };
+    controller.showRecentOpponentsModal = () => {
+      returnCalls.push(["showRecentOpponentsModal"]);
+    };
+
+    controller.bindRecentOpponentsModalControls();
+
+    await recentClickHandler?.();
+    await calls[0]?.options?.onClose?.();
+  } finally {
+    global.document = previousDocument;
+  }
+
+  assert.deepEqual(hidden, ["hide"]);
+  assert.equal(calls[0]?.username, "StableOpponentProfileKey");
+  assert.equal(calls[0]?.options?.preserveAchievementVisibility, true);
+  assert.equal(returnCalls[0]?.[0], "showProfile");
+  assert.equal(returnCalls[0]?.[1]?.preserveModal, true);
+  assert.deepEqual(returnCalls[1], ["showRecentOpponentsModal"]);
+});
+
 test("ui: own profile omits Trophy Shelf and keeps Showcase, Reward Chests, and profile stats", () => {
   const profile = {
     ...createProfileScreenContext().profile,
@@ -31059,7 +31374,10 @@ test("ui: own profile omits Trophy Shelf and keeps Showcase, Reward Chests, and 
   assert.match(html, /Overall Record/);
   assert.match(html, /Battle Stats/);
   assert.match(html, /Battle Report/);
+  assert.match(html, /data-profile-activity-card="true"/);
+  assert.match(html, /View recent Online players you faced\./);
   assert.ok(html.indexOf('data-profile-overview="true"') < html.indexOf('data-profile-showcase="true"'));
+  assert.ok(html.indexOf('data-profile-activity-card="true"') < html.indexOf('data-profile-showcase="true"'));
   assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
 });
 

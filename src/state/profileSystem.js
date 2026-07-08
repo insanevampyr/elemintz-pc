@@ -320,6 +320,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("legendaryChestGrantedLevels", defaults.legendaryChestGrantedLevels);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
   repairArraySection("cosmeticLoadouts", defaults.cosmeticLoadouts);
+  repairArraySection("recentOpponents", defaults.recentOpponents);
 
   const normalizedLongestMatch = normalizeLongestMatchRecord(repairedProfile.longestMatch);
   if (JSON.stringify(normalizedLongestMatch) !== JSON.stringify(repairedProfile.longestMatch ?? null)) {
@@ -343,6 +344,16 @@ function validateAndRepairProfile(profile) {
     const previousValue = repairedProfile.recentBattles;
     repairedProfile.recentBattles = normalizedRecentBattles;
     logFieldRepair("recentBattles", previousValue, normalizedRecentBattles);
+  }
+
+  const normalizedRecentOpponents = normalizeRecentOpponents(
+    repairedProfile.recentOpponents,
+    repairedProfile.username
+  );
+  if (JSON.stringify(normalizedRecentOpponents) !== JSON.stringify(repairedProfile.recentOpponents ?? [])) {
+    const previousValue = repairedProfile.recentOpponents;
+    repairedProfile.recentOpponents = normalizedRecentOpponents;
+    logFieldRepair("recentOpponents", previousValue, normalizedRecentOpponents);
   }
 
   const synchronizedLatestBattle = normalizedRecentBattles[0] ?? normalizedLatestBattle;
@@ -542,6 +553,7 @@ const VALID_LATEST_BATTLE_MODES = new Set([
 ]);
 const VALID_LATEST_BATTLE_RESULTS = new Set(["win", "loss", "draw"]);
 const RECENT_BATTLES_LIMIT = 5;
+const RECENT_OPPONENTS_LIMIT = 15;
 
 function normalizeLatestBattleSummary(entry) {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -671,6 +683,96 @@ function normalizeRecentBattles(entries, fallbackLatestBattle = null) {
     .map((item) => item.entry);
 }
 
+function normalizeRecentOpponentDisplayCosmetics(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      avatar: null,
+      title: null
+    };
+  }
+
+  const normalizeOptionalId = (id) => {
+    const normalized = String(id ?? "").trim();
+    return normalized.length > 0 ? normalized : null;
+  };
+
+  return {
+    avatar: normalizeOptionalId(value.avatar),
+    title: normalizeOptionalId(value.title)
+  };
+}
+
+function normalizeRecentOpponentEntry(entry, ownerProfileKey = null) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+
+  const opponentProfileKey = String(entry.opponentProfileKey ?? "").trim();
+  if (!opponentProfileKey) {
+    return null;
+  }
+
+  const normalizedOwnerProfileKey = String(ownerProfileKey ?? "").trim();
+  if (normalizedOwnerProfileKey && opponentProfileKey === normalizedOwnerProfileKey) {
+    return null;
+  }
+
+  const latestResult = String(entry.latestResult ?? "").trim();
+  if (!VALID_LATEST_BATTLE_RESULTS.has(latestResult)) {
+    return null;
+  }
+
+  const parsedCompletedAt = Date.parse(String(entry.lastCompletedAt ?? "").trim());
+  if (!Number.isFinite(parsedCompletedAt)) {
+    return null;
+  }
+
+  const normalizeDisplayText = (value, fallback = null) => {
+    const normalized = String(value ?? "").trim();
+    return normalized.length > 0 ? normalized : fallback;
+  };
+
+  return {
+    opponentProfileKey,
+    opponentUsername: normalizeDisplayText(entry.opponentUsername, opponentProfileKey),
+    displayName: normalizeDisplayText(entry.displayName, opponentProfileKey),
+    latestResult,
+    lastCompletedAt: new Date(parsedCompletedAt).toISOString(),
+    lastSettlementKey: normalizeDisplayText(entry.lastSettlementKey),
+    displayCosmetics: normalizeRecentOpponentDisplayCosmetics(entry.displayCosmetics)
+  };
+}
+
+export function normalizeRecentOpponents(entries, ownerProfileKey = null) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const normalizedEntries = entries
+    .map((entry, index) => ({ entry: normalizeRecentOpponentEntry(entry, ownerProfileKey), index }))
+    .filter((item) => item.entry);
+  const sortedEntries = normalizedEntries.sort((a, b) => {
+    const timeA = Date.parse(a.entry.lastCompletedAt);
+    const timeB = Date.parse(b.entry.lastCompletedAt);
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+    return a.index - b.index;
+  });
+  const dedupedEntries = [];
+  const seenProfileKeys = new Set();
+  for (const item of sortedEntries) {
+    const key = item.entry.opponentProfileKey;
+    if (seenProfileKeys.has(key)) {
+      continue;
+    }
+    seenProfileKeys.add(key);
+    dedupedEntries.push(item.entry);
+  }
+
+  return dedupedEntries.slice(0, RECENT_OPPONENTS_LIMIT);
+}
+
 export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   // Always migrate first so older records keep their existing data and only
   // receive the minimum schema changes needed before default filling happens.
@@ -759,6 +861,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
     ...normalized,
     latestBattle: validatedProfile.latestBattle ?? null,
     recentBattles: Array.isArray(validatedProfile.recentBattles) ? validatedProfile.recentBattles : [],
+    recentOpponents: normalizeRecentOpponents(validatedProfile.recentOpponents, validatedProfile.username),
     // Persist the current schema marker after migration/default filling so
     // upgraded records are written back in their latest supported shape.
     schemaVersion: CURRENT_PROFILE_SCHEMA_VERSION,

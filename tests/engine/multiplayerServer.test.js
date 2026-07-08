@@ -10075,7 +10075,11 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
   const coordinator = new StateCoordinator({ dataDir });
   const settleCalls = [];
   const rewardPersister = async (payload) => {
-    settleCalls.push({ roomCode: payload.room.roomCode, winner: payload.summary.winner });
+    settleCalls.push({
+      roomCode: payload.room.roomCode,
+      winner: payload.summary.winner,
+      participants: { ...(payload.decision?.participants ?? {}) }
+    });
     if (payload.decision?.participants?.hostUsername) {
       await coordinator.applyOnlineRewardSettlementDecision({
         username: payload.decision.participants.hostUsername,
@@ -10159,6 +10163,24 @@ test("multiplayer rewards: completed match grants winner and loser rewards once 
       }
     });
     assert.equal(settleCalls.length, 1);
+    assert.deepEqual(settleCalls[0], {
+      roomCode: room.roomCode,
+      winner: "host",
+      participants: {
+        hostUsername: "HostRewardUser",
+        guestUsername: "GuestRewardUser",
+        hostProfileKey: "HostRewardUser",
+        guestProfileKey: "GuestRewardUser",
+        hostDisplayCosmetics: {
+          avatar: "default_avatar",
+          title: "Initiate"
+        },
+        guestDisplayCosmetics: {
+          avatar: "default_avatar",
+          title: "Initiate"
+        }
+      }
+    });
 
     const hostProfile = await coordinator.profiles.getProfile("HostRewardUser");
     const guestProfile = await coordinator.profiles.getProfile("GuestRewardUser");
@@ -10715,6 +10737,20 @@ test("multiplayer rewards: reward decision payload is derived from authoritative
       matchSequence: 3,
       matchComplete: true,
       winner: "guest",
+      host: {
+        profileKey: "StableHostDecisionProfile",
+        equippedCosmetics: {
+          avatar: "default_avatar",
+          title: "Initiate"
+        }
+      },
+      guest: {
+        profileKey: "StableGuestDecisionProfile",
+        equippedCosmetics: {
+          avatar: "avatar_water_sage",
+          title: "Arena Founder"
+        }
+      },
       serverMatchState: {
         matchId: "AAA111:match:3"
       }
@@ -10745,7 +10781,17 @@ test("multiplayer rewards: reward decision payload is derived from authoritative
     },
     participants: {
       hostUsername: "HostDecisionUser",
-      guestUsername: "GuestDecisionUser"
+      guestUsername: "GuestDecisionUser",
+      hostProfileKey: "StableHostDecisionProfile",
+      guestProfileKey: "StableGuestDecisionProfile",
+      hostDisplayCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate"
+      },
+      guestDisplayCosmetics: {
+        avatar: "avatar_water_sage",
+        title: "Arena Founder"
+      }
     },
     decidedAt: "2026-03-29T18:00:00.000Z"
   });
@@ -11529,6 +11575,203 @@ test("multiplayer online stats: completed match persists winner and loser core s
     assert.equal(savesAfterDuplicate.filter((entry) => entry.mode === "online_pvp").length, 2);
     assert.equal((await coordinator.profiles.getProfile("OnlineWinner")).wins, 1);
     assert.equal((await coordinator.profiles.getProfile("OnlineLoser")).losses, 1);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer rewards: authenticated online completion records recent opponents on stable profile keys", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    dataDir,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  await profileAuthority.coordinator.profiles.ensureProfile("StableHostProfileKey");
+  await profileAuthority.coordinator.profiles.ensureProfile("StableGuestProfileKey");
+  await accountStore.register({
+    email: "recent-host@example.com",
+    password: "password123",
+    username: "VisibleHostName",
+    profileKey: "StableHostProfileKey"
+  });
+  await accountStore.register({
+    email: "recent-guest@example.com",
+    password: "password123",
+    username: "VisibleGuestName",
+    profileKey: "StableGuestProfileKey"
+  });
+
+  const persistedDecisions = [];
+  const rewardPersister = async ({ room, summary, decision, settlementKey }) => {
+    persistedDecisions.push(decision);
+    const rewardDecision = decision ?? room?.rewardSettlement?.decision ?? null;
+    const onlineMatchState = buildOnlineMatchStateFromRoom(room);
+    const hostUsername =
+      rewardDecision?.participants?.hostProfileKey ??
+      rewardDecision?.participants?.hostUsername ??
+      summary?.settledHostUsername ??
+      null;
+    const guestUsername =
+      rewardDecision?.participants?.guestProfileKey ??
+      rewardDecision?.participants?.guestUsername ??
+      summary?.settledGuestUsername ??
+      null;
+
+    if (hostUsername) {
+      await profileAuthority.applyMatchResult({
+        username: hostUsername,
+        perspective: "p1",
+        result: onlineMatchState,
+        settlementKey,
+        rewardDecision,
+        participantRole: "host"
+      });
+    }
+
+    if (guestUsername) {
+      await profileAuthority.applyMatchResult({
+        username: guestUsername,
+        perspective: "p2",
+        result: onlineMatchState,
+        settlementKey,
+        rewardDecision,
+        participantRole: "guest"
+      });
+    }
+  };
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    roundResetDelayMs: 20,
+    accountStore,
+    profileAuthority,
+    rewardPersister,
+    random: () => 0.99
+  });
+  let host = null;
+  let guest = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const hostLogin = await loginAccount(host, {
+      email: "recent-host@example.com",
+      password: "password123"
+    });
+    const guestLogin = await loginAccount(guest, {
+      email: "recent-guest@example.com",
+      password: "password123"
+    });
+    assert.equal(hostLogin?.ok, true);
+    assert.equal(hostLogin?.session?.username, "VisibleHostName");
+    assert.equal(hostLogin?.session?.profileKey, "StableHostProfileKey");
+    assert.equal(guestLogin?.ok, true);
+    assert.equal(guestLogin?.session?.username, "VisibleGuestName");
+    assert.equal(guestLogin?.session?.profileKey, "StableGuestProfileKey");
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", { username: "ForgedHostNameIgnored" });
+    const room = await createdPromise;
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostJoinUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", { roomCode: room.roomCode, username: "ForgedGuestNameIgnored" });
+    await joinedPromise;
+    await hostJoinUpdatePromise;
+
+    const exhaustionSequence = [
+      ...OPENING_WIN_SEQUENCE,
+      ["earth", "wind"],
+      ["wind", "water"],
+      ["water", "fire"]
+    ];
+
+    for (let index = 0; index < exhaustionSequence.length; index += 1) {
+      const [hostMove, guestMove] = exhaustionSequence[index];
+      await submitRoundPair(host, guest, hostMove, guestMove, index === exhaustionSequence.length - 1 ? 1 : 2);
+    }
+
+    assert.equal(persistedDecisions.length, 1);
+    assert.equal(persistedDecisions[0].participants.hostUsername, "VisibleHostName");
+    assert.equal(persistedDecisions[0].participants.guestUsername, "VisibleGuestName");
+    assert.equal(persistedDecisions[0].participants.hostProfileKey, "StableHostProfileKey");
+    assert.equal(persistedDecisions[0].participants.guestProfileKey, "StableGuestProfileKey");
+
+    const hostSnapshot = await profileAuthority.getProfile("StableHostProfileKey");
+    const guestSnapshot = await profileAuthority.getProfile("StableGuestProfileKey");
+    assert.deepEqual(hostSnapshot.profile.recentOpponents, [
+      {
+        opponentProfileKey: "StableGuestProfileKey",
+        opponentUsername: "VisibleGuestName",
+        displayName: "VisibleGuestName",
+        latestResult: "win",
+        lastCompletedAt: hostSnapshot.profile.latestBattle.completedAt,
+        lastSettlementKey: persistedDecisions[0].settlementKey,
+        displayCosmetics: {
+          avatar: "default_avatar",
+          title: "Initiate"
+        }
+      }
+    ]);
+    assert.deepEqual(guestSnapshot.profile.recentOpponents, [
+      {
+        opponentProfileKey: "StableHostProfileKey",
+        opponentUsername: "VisibleHostName",
+        displayName: "VisibleHostName",
+        latestResult: "loss",
+        lastCompletedAt: guestSnapshot.profile.latestBattle.completedAt,
+        lastSettlementKey: persistedDecisions[0].settlementKey,
+        displayCosmetics: {
+          avatar: "default_avatar",
+          title: "Initiate"
+        }
+      }
+    ]);
+
+    const ownerProfileRead = await emitWithAck(host, "profile:get", {});
+    assert.equal(ownerProfileRead?.ok, true);
+    assert.equal(ownerProfileRead?.profile?.profile?.username, "StableHostProfileKey");
+    assert.equal(ownerProfileRead?.profile?.profile?.recentOpponents?.[0]?.opponentProfileKey, "StableGuestProfileKey");
+
+    const publicViewedProfile = await emitWithAck(guest, "profile:view", {
+      username: "VisibleHostName"
+    });
+    assert.equal(publicViewedProfile?.ok, true);
+    assert.equal(publicViewedProfile?.profile?.profile?.username, "StableHostProfileKey");
+    assert.equal("recentOpponents" in (publicViewedProfile?.profile?.profile ?? {}), false);
+
+    const duplicate = await profileAuthority.applyMatchResult({
+      username: "StableHostProfileKey",
+      perspective: "p1",
+      settlementKey: persistedDecisions[0].settlementKey,
+      result: {
+        status: "completed",
+        winner: "p1",
+        endReason: null,
+        mode: "online_pvp",
+        round: 8,
+        history: [{ result: "p1", warClashes: 0, capturedOpponentCards: 8 }],
+        players: { p1: { hand: [] }, p2: { hand: [] } },
+        meta: { totalCards: 16 }
+      },
+      rewardDecision: persistedDecisions[0],
+      participantRole: "host"
+    });
+    assert.equal(duplicate.duplicate, true);
+    assert.deepEqual(
+      duplicate.snapshot.profile.recentOpponents,
+      hostSnapshot.profile.recentOpponents
+    );
   } finally {
     host?.disconnect();
     guest?.disconnect();

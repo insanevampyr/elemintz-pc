@@ -282,6 +282,7 @@ export function createDefaultProfile(username) {
     longestMatch: null,
     latestBattle: null,
     recentBattles: [],
+    recentOpponents: [],
     vampyrLeeLongestMatchBackfillApplied: false,
     matchesUsingAllElements: 0,
     playerXP: 0,

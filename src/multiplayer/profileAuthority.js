@@ -67,15 +67,32 @@ function buildOnlineLatestBattleContext(rewardDecision, participantRole = "host"
       ? participants.hostUserId ?? participants.hostAccountId ?? ""
       : participants.guestUserId ?? participants.guestAccountId ?? ""
   ).trim();
+  const opponentProfileKey = String(
+    normalizedRole === "guest"
+      ? participants.hostProfileKey ?? ""
+      : participants.guestProfileKey ?? ""
+  ).trim();
+  const displayCosmetics =
+    normalizedRole === "guest"
+      ? participants.hostDisplayCosmetics
+      : participants.guestDisplayCosmetics;
 
-  if (!opponentUsername && !opponentUserId) {
+  if (!opponentUsername && !opponentUserId && !opponentProfileKey) {
     return null;
   }
 
   return {
     opponentName: opponentUsername || null,
     opponentUsername: opponentUsername || null,
-    opponentUserId: opponentUserId || null
+    opponentUserId: opponentUserId || null,
+    opponentProfileKey: opponentProfileKey || null,
+    opponentDisplayCosmetics:
+      displayCosmetics && typeof displayCosmetics === "object" && !Array.isArray(displayCosmetics)
+        ? {
+            avatar: String(displayCosmetics.avatar ?? "").trim() || null,
+            title: String(displayCosmetics.title ?? "").trim() || null
+          }
+        : null
   };
 }
 

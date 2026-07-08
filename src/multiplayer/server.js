@@ -80,8 +80,16 @@ const shopRotationStore = new ShopRotationStore({
 
 async function rewardPersister({ room, summary, decision, settlementKey }) {
   const rewardDecision = decision ?? room?.rewardSettlement?.decision ?? null;
-  const hostUsername = rewardDecision?.participants?.hostUsername ?? summary?.settledHostUsername ?? null;
-  const guestUsername = rewardDecision?.participants?.guestUsername ?? summary?.settledGuestUsername ?? null;
+  const hostUsername =
+    rewardDecision?.participants?.hostProfileKey ??
+    rewardDecision?.participants?.hostUsername ??
+    summary?.settledHostUsername ??
+    null;
+  const guestUsername =
+    rewardDecision?.participants?.guestProfileKey ??
+    rewardDecision?.participants?.guestUsername ??
+    summary?.settledGuestUsername ??
+    null;
   const onlineMatchState = buildOnlineMatchStateFromRoom(room);
 
   if (hostUsername) {

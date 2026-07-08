@@ -1987,7 +1987,7 @@ code.online-active-meta-value {
   font-size: 1rem;
 }
 
-.profile-dashboard-grid .profile-battle-report-card,
+.profile-dashboard-grid .profile-activity-card,
 .profile-dashboard-grid .profile-search-card {
   display: grid;
   align-content: start;
@@ -1999,19 +1999,46 @@ code.online-active-meta-value {
   margin: 0;
 }
 
-.profile-dashboard-grid .profile-battle-report-card > .section-title,
+.profile-dashboard-grid .profile-activity-card > .section-title,
 .profile-dashboard-grid .profile-search-card > .section-title {
   margin-bottom: 0;
 }
 
-.profile-dashboard-grid .profile-battle-report-card > .text-muted,
 .profile-dashboard-grid .profile-search-card > .text-muted {
   min-height: 2.4em;
 }
 
-.profile-dashboard-grid .profile-battle-report-card .btn,
+.profile-dashboard-grid .profile-activity-card .btn,
 .profile-dashboard-grid .profile-search-card .btn {
   justify-self: start;
+}
+
+.profile-activity-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-activity-action {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(130, 170, 199, 0.16);
+}
+
+.profile-activity-action:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.profile-activity-action-title {
+  color: #f3fbff;
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.profile-activity-action .text-muted {
+  margin: 0;
 }
 
 .profile-search-card {
@@ -2244,6 +2271,101 @@ code.online-active-meta-value {
 
 .profile-showcase-panel {
   margin: 12px 0;
+}
+
+.profile-recent-opponents-panel {
+  margin: 12px 0;
+}
+
+.profile-recent-opponents-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.profile-recent-opponent-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(130, 170, 199, 0.16);
+  background: rgba(6, 18, 29, 0.34);
+  color: #f3fbff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-recent-opponent-row:hover,
+.profile-recent-opponent-row:focus-visible {
+  border-color: rgba(140, 193, 230, 0.52);
+  background: rgba(13, 39, 58, 0.58);
+  outline: none;
+}
+
+.profile-recent-opponent-avatar-wrap,
+.profile-recent-opponent-avatar,
+.profile-recent-opponent-avatar-fallback {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.profile-recent-opponent-avatar {
+  display: block;
+  object-fit: cover;
+  border: 1px solid rgba(140, 193, 230, 0.28);
+  background: rgba(14, 37, 54, 0.92);
+}
+
+.profile-recent-opponent-avatar-fallback {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(140, 193, 230, 0.28);
+  background: rgba(14, 37, 54, 0.92);
+  color: #f3fbff;
+  font-weight: 800;
+}
+
+.profile-recent-opponent-copy,
+.profile-recent-opponent-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-recent-opponent-name,
+.profile-recent-opponent-title,
+.profile-recent-opponent-result,
+.profile-recent-opponent-time {
+  overflow-wrap: anywhere;
+}
+
+.profile-recent-opponent-name {
+  color: #f3fbff;
+  line-height: 1.25;
+}
+
+.profile-recent-opponent-title,
+.profile-recent-opponent-time,
+.profile-recent-opponents-empty {
+  color: rgba(219, 236, 251, 0.78);
+}
+
+.profile-recent-opponent-meta {
+  justify-items: end;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.profile-recent-opponent-result {
+  font-weight: 800;
 }
 
 .profile-showcase-grid {
@@ -2512,6 +2634,15 @@ code.online-active-meta-value {
 
   .profile-showcase-grid {
     grid-template-columns: 1fr;
+  }
+
+  .profile-recent-opponent-row {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .profile-recent-opponent-meta {
+    grid-column: 2;
+    justify-items: start;
   }
 }
 

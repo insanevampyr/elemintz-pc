@@ -493,6 +493,133 @@ function selectPublicShowcaseItems(profile = {}) {
   );
 }
 
+const RECENT_OPPONENTS_UI_LIMIT = 15;
+
+function formatRecentOpponentRelativeTime(lastCompletedAt, nowMs = Date.now()) {
+  const completedMs = Date.parse(String(lastCompletedAt ?? "").trim());
+  const safeNowMs = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+  if (!Number.isFinite(completedMs)) {
+    return "Recently";
+  }
+
+  const elapsedMs = Math.max(0, safeNowMs - completedMs);
+  const elapsedMinutes = Math.floor(elapsedMs / 60000);
+  if (elapsedMinutes < 1) {
+    return "Just now";
+  }
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes}m ago`;
+  }
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) {
+    return `${elapsedHours}h ago`;
+  }
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays === 1) {
+    return "Yesterday";
+  }
+
+  return `${elapsedDays}d ago`;
+}
+
+function formatRecentOpponentResult(result) {
+  if (result === "win") {
+    return "Won";
+  }
+  if (result === "loss") {
+    return "Lost";
+  }
+  if (result === "draw") {
+    return "Draw";
+  }
+  return "Result unknown";
+}
+
+function normalizeRecentOpponentDisplayEntry(entry = {}) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+
+  const opponentProfileKey = String(entry.opponentProfileKey ?? "").trim();
+  if (!opponentProfileKey) {
+    return null;
+  }
+
+  const displayName =
+    String(entry.displayName ?? entry.opponentUsername ?? "").trim() || "Unknown opponent";
+  const avatarId = String(entry.displayCosmetics?.avatar ?? "").trim() || "default_avatar";
+  const titleId = String(entry.displayCosmetics?.title ?? "").trim();
+  const title = titleId ? getCosmeticDisplayName("title", titleId, titleId) : "No title shown";
+
+  return {
+    opponentProfileKey,
+    displayName,
+    avatarSrc: getAvatarImage(avatarId),
+    title,
+    latestResult: formatRecentOpponentResult(entry.latestResult),
+    lastCompletedAt: entry.lastCompletedAt
+  };
+}
+
+function getRecentOpponentRows(profile = {}) {
+  const entries = Array.isArray(profile?.recentOpponents) ? profile.recentOpponents : [];
+  return entries
+    .slice(0, RECENT_OPPONENTS_UI_LIMIT)
+    .map((entry) => normalizeRecentOpponentDisplayEntry(entry))
+    .filter(Boolean);
+}
+
+function renderRecentOpponentRows(profile = {}, options = {}) {
+  const rows = getRecentOpponentRows(profile);
+  const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
+
+  if (!rows.length) {
+    return `<p class="text-muted profile-recent-opponents-empty" data-recent-opponents-empty="true">No recent online opponents yet.</p>`;
+  }
+
+  return `
+    <div class="profile-recent-opponents-list" data-profile-recent-opponents-list="true">
+      ${rows
+        .map(
+          (row, index) => `
+            <button class="profile-recent-opponent-row" type="button" data-recent-opponent-index="${index}">
+              <span class="profile-recent-opponent-avatar-wrap">
+                ${
+                  row.avatarSrc
+                    ? `<img class="profile-recent-opponent-avatar" src="${row.avatarSrc}" alt="${escapeProfileText(row.displayName)} avatar" />`
+                    : `<span class="profile-recent-opponent-avatar-fallback" aria-hidden="true">${escapeProfileText(row.displayName.slice(0, 1).toUpperCase() || "?")}</span>`
+                }
+              </span>
+              <span class="profile-recent-opponent-copy">
+                <strong class="profile-recent-opponent-name">${escapeProfileText(row.displayName)}</strong>
+                <span class="profile-recent-opponent-title">${escapeProfileText(row.title)}</span>
+              </span>
+              <span class="profile-recent-opponent-meta">
+                <span class="profile-recent-opponent-result">${escapeProfileText(row.latestResult)}</span>
+                <span class="profile-recent-opponent-time">${escapeProfileText(formatRecentOpponentRelativeTime(row.lastCompletedAt, nowMs))}</span>
+              </span>
+            </button>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderRecentOpponentsModalBody(profile = {}, options = {}) {
+  return `
+    <div class="recent-opponents-modal-content stack-sm" data-recent-opponents-modal="true">
+      <p class="text-muted battle-report-modal-intro">Recent Online players you faced</p>
+      <section class="profile-summary-card stack-sm profile-recent-opponents-panel" data-profile-recent-opponents="true">
+        <h3 class="section-title">Recent Opponents</h3>
+        ${renderRecentOpponentRows(profile, options)}
+      </section>
+    </div>
+  `;
+}
+
 function renderProfileShowcase(profile = {}, options = {}) {
   const items = options.publicView
     ? selectPublicShowcaseItems(profile)
@@ -1144,17 +1271,32 @@ function renderBattleReportModalBody(profile = {}, options = {}) {
   `;
 }
 
-function renderBattleReportButton() {
+function renderActivityToolsCard() {
   return `
-    <section class="profile-summary-card stack-sm profile-battle-report-card profile-dashboard-card">
-      <h3 class="section-title">BATTLE REPORT</h3>
-      <p class="text-muted">View your 5 most recent completed battles.</p>
-      <button
-        id="profile-battle-report-btn"
-        class="btn btn-secondary"
-        type="button"
-        data-profile-battle-report-btn="true"
-      >Battle Report</button>
+    <section class="profile-summary-card stack-sm profile-activity-card profile-dashboard-card" data-profile-activity-card="true">
+      <h3 class="section-title">Activity</h3>
+      <div class="profile-activity-actions">
+        <div class="profile-activity-action" data-profile-activity-action="battle-report">
+          <strong class="profile-activity-action-title">Battle Report</strong>
+          <p class="text-muted">View your 5 most recent completed battles.</p>
+          <button
+            id="profile-battle-report-btn"
+            class="btn btn-secondary"
+            type="button"
+            data-profile-battle-report-btn="true"
+          >Battle Report</button>
+        </div>
+        <div class="profile-activity-action" data-profile-activity-action="recent-opponents">
+          <strong class="profile-activity-action-title">Recent Opponents</strong>
+          <p class="text-muted">View recent Online players you faced.</p>
+          <button
+            id="profile-recent-opponents-btn"
+            class="btn btn-secondary"
+            type="button"
+            data-profile-recent-opponents-btn="true"
+          >Recent Opponents</button>
+        </div>
+      </div>
     </section>
   `;
 }
@@ -1685,7 +1827,7 @@ export const profileScreen = {
               searchError: context.searchError ?? "",
               searchResults
             })}
-            ${renderBattleReportButton()}
+            ${renderActivityToolsCard()}
           </div>
           ${renderProfileFlexPanels(profile, {
             titleIcon: profileTitleIcon
@@ -1779,9 +1921,24 @@ export const profileScreen = {
         context.actions.updateShowcaseSlot?.(slotIndex, null);
       });
     });
+    const recentOpponentRows = getRecentOpponentRows(context.profile);
+    document.querySelectorAll("[data-recent-opponent-index]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const index = Number(button.getAttribute("data-recent-opponent-index"));
+        const opponentProfileKey = recentOpponentRows[index]?.opponentProfileKey;
+        if (!opponentProfileKey || typeof context.actions.viewProfile !== "function") {
+          return;
+        }
+        await context.actions.viewProfile(opponentProfileKey);
+      });
+    });
     const battleReportButton = document.getElementById("profile-battle-report-btn");
     if (battleReportButton && context.actions.openBattleReport) {
       battleReportButton.addEventListener("click", context.actions.openBattleReport);
+    }
+    const recentOpponentsButton = document.getElementById("profile-recent-opponents-btn");
+    if (recentOpponentsButton && context.actions.openRecentOpponents) {
+      recentOpponentsButton.addEventListener("click", context.actions.openRecentOpponents);
     }
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {
@@ -1823,6 +1980,9 @@ export const profileScreen = {
 profileScreen.renderViewedProfileModalBody = renderViewedProfileModalBody;
 profileScreen.renderShowcasePickerBody = renderProfileShowcasePickerBody;
 profileScreen.renderBattleReportModalBody = renderBattleReportModalBody;
+profileScreen.renderRecentOpponentsModalBody = renderRecentOpponentsModalBody;
+profileScreen.getRecentOpponentRows = getRecentOpponentRows;
+profileScreen.formatRecentOpponentRelativeTime = formatRecentOpponentRelativeTime;
 
 
 

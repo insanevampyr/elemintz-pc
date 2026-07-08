@@ -10490,6 +10490,9 @@ export class AppController {
           this.battleReportSelectedIndex = null;
           this.showBattleReportModal();
         },
+        openRecentOpponents: async () => {
+          this.showRecentOpponentsModal();
+        },
         back: () => this.showMenu()
       }
     });
@@ -10656,6 +10659,53 @@ export class AppController {
     }
   }
 
+  bindRecentOpponentsModalControls() {
+    const recentOpponentRows =
+      typeof profileScreen.getRecentOpponentRows === "function"
+        ? profileScreen.getRecentOpponentRows(this.profile ?? {})
+        : [];
+    const recentOpponentButtons = Array.from(
+      globalThis.document?.querySelectorAll?.("[data-recent-opponent-index]") ?? []
+    );
+
+    for (const recentOpponentButton of recentOpponentButtons) {
+      recentOpponentButton.addEventListener("click", async () => {
+        const selectedIndex = Number.parseInt(
+          String(recentOpponentButton.getAttribute("data-recent-opponent-index") ?? ""),
+          10
+        );
+        if (!Number.isInteger(selectedIndex) || selectedIndex < 0) {
+          return;
+        }
+
+        const opponentProfileKey = String(
+          recentOpponentRows[selectedIndex]?.opponentProfileKey ?? ""
+        ).trim();
+        if (!opponentProfileKey) {
+          return;
+        }
+
+        const previousSearchQuery = this.profileSearchQuery;
+        const previousSearchError = this.profileSearchError;
+        this.modalManager.hide();
+        await this.openViewedProfile(opponentProfileKey, {
+          preserveAchievementVisibility: true,
+          onClose: async () => {
+            this.profileSearchQuery = previousSearchQuery;
+            this.profileSearchError = previousSearchError;
+            await this.showProfile({
+              preserveAchievementVisibility: true,
+              preserveModal: true,
+              profileOverride: this.profile,
+              skipAuthoritativeProfileRefresh: true
+            });
+            this.showRecentOpponentsModal();
+          }
+        });
+      });
+    }
+  }
+
   showViewedProfileModal(viewedProfile) {
     if (!viewedProfile) {
       return;
@@ -10699,6 +10749,17 @@ export class AppController {
       actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
     });
     this.bindBattleReportModalControls();
+  }
+
+  showRecentOpponentsModal() {
+    this.modalManager.show({
+      title: "Recent Opponents",
+      bodyHtml: profileScreen.renderRecentOpponentsModalBody(this.profile ?? {}),
+      modalClassName: "battle-report-modal recent-opponents-modal",
+      bodyClassName: "battle-report-modal-body recent-opponents-modal-body",
+      actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
+    });
+    this.bindRecentOpponentsModalControls();
   }
 
   async showDailyChallenges() {

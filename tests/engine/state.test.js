@@ -3880,6 +3880,233 @@ test("state: completed online match stores latest battle with opponent lookup in
   });
   assert.match(result.snapshot.profile.latestBattle.completedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual(result.snapshot.profile.recentBattles, [result.snapshot.profile.latestBattle]);
+  assert.deepEqual(result.snapshot.profile.recentOpponents, []);
+});
+
+test("state: completed authoritative online matches record private recent opponents by profile key", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({ dataDir });
+  const authority = new MultiplayerProfileAuthority({ dataDir, accountStore });
+  const matchState = {
+    status: "completed",
+    winner: "p1",
+    endReason: null,
+    mode: "online_pvp",
+    round: 8,
+    history: [{ result: "p1", warClashes: 1, capturedOpponentCards: 2 }],
+    players: { p1: { hand: [] }, p2: { hand: [] } },
+    meta: { totalCards: 16 }
+  };
+  const rewardDecision = {
+    participants: {
+      hostUsername: "StableHostProfile",
+      guestUsername: "StableGuestProfile",
+      hostProfileKey: "StableHostProfile",
+      guestProfileKey: "StableGuestProfile",
+      hostDisplayCosmetics: { avatar: "avatar_fire_mage", title: "title_initiate" },
+      guestDisplayCosmetics: { avatar: "avatar_water_sage", title: "title_initiate" }
+    },
+    rewards: {
+      host: { tokens: 12, xp: 10, basicChests: 0 },
+      guest: { tokens: 2, xp: 2, basicChests: 0 }
+    }
+  };
+
+  const host = await authority.applyMatchResult({
+    username: "StableHostProfile",
+    perspective: "p1",
+    settlementKey: "ROOM-RECENT-1",
+    result: matchState,
+    rewardDecision,
+    participantRole: "host"
+  });
+  const guest = await authority.applyMatchResult({
+    username: "StableGuestProfile",
+    perspective: "p2",
+    settlementKey: "ROOM-RECENT-1",
+    result: matchState,
+    rewardDecision,
+    participantRole: "guest"
+  });
+
+  assert.deepEqual(host.snapshot.profile.recentOpponents, [
+    {
+      opponentProfileKey: "StableGuestProfile",
+      opponentUsername: "StableGuestProfile",
+      displayName: "StableGuestProfile",
+      latestResult: "win",
+      lastCompletedAt: host.snapshot.profile.latestBattle.completedAt,
+      lastSettlementKey: "ROOM-RECENT-1",
+      displayCosmetics: {
+        avatar: "avatar_water_sage",
+        title: "title_initiate"
+      }
+    }
+  ]);
+  assert.deepEqual(guest.snapshot.profile.recentOpponents, [
+    {
+      opponentProfileKey: "StableHostProfile",
+      opponentUsername: "StableHostProfile",
+      displayName: "StableHostProfile",
+      latestResult: "loss",
+      lastCompletedAt: guest.snapshot.profile.latestBattle.completedAt,
+      lastSettlementKey: "ROOM-RECENT-1",
+      displayCosmetics: {
+        avatar: "avatar_fire_mage",
+        title: "title_initiate"
+      }
+    }
+  ]);
+  assert.equal(host.snapshot.profile.latestBattle.opponentUsername, "StableGuestProfile");
+  assert.equal(guest.snapshot.profile.latestBattle.opponentUsername, "StableHostProfile");
+});
+
+test("state: recent opponents handle draw, duplicate settlement, rematch update, and missing stable identity", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const baseMatchState = {
+    status: "completed",
+    winner: "draw",
+    endReason: null,
+    mode: "online_pvp",
+    round: 6,
+    history: [{ result: "draw", warClashes: 0, capturedOpponentCards: 0 }],
+    players: { p1: { hand: [] }, p2: { hand: [] } },
+    meta: { totalCards: 16 }
+  };
+
+  const first = await state.recordOnlineMatchResult({
+    username: "RecentOwner",
+    perspective: "p1",
+    settlementKey: "ROOM-DRAW-1",
+    matchState: baseMatchState,
+    latestBattleContext: {
+      opponentName: "Opponent Display",
+      opponentUsername: "Opponent Display",
+      opponentProfileKey: "StableOpponent",
+      opponentDisplayCosmetics: { avatar: "avatar_air_nomad", title: "title_initiate" }
+    },
+    nowMs: Date.UTC(2026, 6, 1, 12, 0, 0)
+  });
+  assert.equal(first.profile.recentOpponents.length, 1);
+  assert.equal(first.profile.recentOpponents[0].latestResult, "draw");
+  assert.equal(first.profile.recentOpponents[0].opponentProfileKey, "StableOpponent");
+
+  const duplicate = await state.recordOnlineMatchResult({
+    username: "RecentOwner",
+    perspective: "p1",
+    settlementKey: "ROOM-DRAW-1",
+    matchState: {
+      ...baseMatchState,
+      winner: "p1"
+    },
+    latestBattleContext: {
+      opponentName: "Changed Display",
+      opponentUsername: "Changed Display",
+      opponentProfileKey: "StableOpponent"
+    },
+    nowMs: Date.UTC(2026, 6, 1, 12, 30, 0)
+  });
+  assert.equal(duplicate.duplicate, true);
+  assert.deepEqual(duplicate.profile.recentOpponents, first.profile.recentOpponents);
+
+  const rematch = await state.recordOnlineMatchResult({
+    username: "RecentOwner",
+    perspective: "p1",
+    settlementKey: "ROOM-DRAW-2",
+    matchState: {
+      ...baseMatchState,
+      winner: "p2"
+    },
+    latestBattleContext: {
+      opponentName: "Opponent Renamed",
+      opponentUsername: "Opponent Renamed",
+      opponentProfileKey: "StableOpponent"
+    },
+    nowMs: Date.UTC(2026, 6, 1, 13, 0, 0)
+  });
+  assert.equal(rematch.profile.recentOpponents.length, 1);
+  assert.equal(rematch.profile.recentOpponents[0].latestResult, "loss");
+  assert.equal(rematch.profile.recentOpponents[0].lastSettlementKey, "ROOM-DRAW-2");
+  assert.equal(rematch.profile.recentOpponents[0].opponentUsername, "Opponent Renamed");
+
+  const missingStableIdentity = await state.recordOnlineMatchResult({
+    username: "RecentOwner",
+    perspective: "p1",
+    settlementKey: "ROOM-MISSING-STABLE-1",
+    matchState: {
+      ...baseMatchState,
+      winner: "p1"
+    },
+    latestBattleContext: {
+      opponentName: "Display Only",
+      opponentUsername: "Display Only"
+    },
+    nowMs: Date.UTC(2026, 6, 1, 13, 30, 0)
+  });
+  assert.deepEqual(missingStableIdentity.profile.recentOpponents, rematch.profile.recentOpponents);
+});
+
+test("state: recent opponents normalize safely, dedupe by profile key, and cap at fifteen", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+  const profile = await state.profiles.ensureProfile("RecentNormalizeOwner");
+  const validEntries = Array.from({ length: 16 }, (_, index) => ({
+    opponentProfileKey: `StableOpponent${index}`,
+    opponentUsername: `Opponent ${index}`,
+    displayName: `Opponent ${index}`,
+    latestResult: index % 2 === 0 ? "win" : "loss",
+    lastCompletedAt: new Date(Date.UTC(2026, 6, 1, 12, index, 0)).toISOString(),
+    lastSettlementKey: `ROOM-NORMALIZE-${index}`,
+    displayCosmetics: {
+      avatar: index === 0 ? "avatar_fire_mage" : "",
+      title: "title_initiate"
+    }
+  }));
+  await state.profiles.updateProfile("RecentNormalizeOwner", {
+    ...profile,
+    recentOpponents: [
+      "bad",
+      {
+        opponentProfileKey: "RecentNormalizeOwner",
+        opponentUsername: "Self",
+        displayName: "Self",
+        latestResult: "win",
+        lastCompletedAt: "2026-07-01T12:30:00.000Z"
+      },
+      {
+        opponentProfileKey: "InvalidResult",
+        opponentUsername: "Invalid",
+        displayName: "Invalid",
+        latestResult: "maybe",
+        lastCompletedAt: "2026-07-01T12:31:00.000Z"
+      },
+      {
+        opponentProfileKey: "InvalidTimestamp",
+        opponentUsername: "Invalid",
+        displayName: "Invalid",
+        latestResult: "win",
+        lastCompletedAt: "not-a-date"
+      },
+      {
+        ...validEntries[0],
+        lastCompletedAt: "2026-07-01T12:59:00.000Z",
+        latestResult: "draw"
+      },
+      ...validEntries
+    ]
+  });
+
+  const normalized = await state.profiles.getProfile("RecentNormalizeOwner");
+  assert.equal(normalized.recentOpponents.length, 15);
+  assert.equal(normalized.recentOpponents[0].opponentProfileKey, "StableOpponent0");
+  assert.equal(normalized.recentOpponents[0].latestResult, "draw");
+  assert.equal(normalized.recentOpponents[0].displayCosmetics.avatar, "avatar_fire_mage");
+  assert.equal(normalized.recentOpponents.at(-1).opponentProfileKey, "StableOpponent2");
+  assert.equal(
+    normalized.recentOpponents.some((entry) => entry.opponentProfileKey === "RecentNormalizeOwner"),
+    false
+  );
 });
 
 test("state: completed PvE, local hotseat, gauntlet, and featured rival matches store latest battle names without online lookup fields", async () => {
@@ -3901,6 +4128,7 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     warsEntered: 3
   });
   assert.deepEqual(pve.profile.recentBattles, [pve.profile.latestBattle]);
+  assert.deepEqual(pve.profile.recentOpponents, []);
   assert.equal("opponentUsername" in pve.profile.latestBattle, false);
   assert.equal("opponentUsername" in pve.profile.recentBattles[0], false);
 
@@ -3921,6 +4149,7 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     warsEntered: 3
   });
   assert.deepEqual(local.profile.recentBattles, [local.profile.latestBattle]);
+  assert.deepEqual(local.profile.recentOpponents, []);
 
   const gauntlet = await state.recordMatchResult({
     username: "GauntletLatestUser",
@@ -3941,6 +4170,7 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     warsEntered: 3
   });
   assert.deepEqual(gauntlet.profile.recentBattles, [gauntlet.profile.latestBattle]);
+  assert.deepEqual(gauntlet.profile.recentOpponents, []);
 
   const featured = await state.recordMatchResult({
     username: "FeaturedLatestUser",
@@ -3960,6 +4190,7 @@ test("state: completed PvE, local hotseat, gauntlet, and featured rival matches 
     warsEntered: 3
   });
   assert.deepEqual(featured.profile.recentBattles, [featured.profile.latestBattle]);
+  assert.deepEqual(featured.profile.recentOpponents, []);
 });
 
 test("state: recent battles insert newest first and duplicate settlement does not rewrite them", async () => {
@@ -4437,6 +4668,35 @@ test("state: public profile snapshot includes sanitized longestMatch", async () 
     capturedAgainst: 40,
     achievedAt: "2026-06-01T12:34:56.000Z"
   });
+});
+
+test("state: public profile snapshots do not expose private recent opponents", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.updateProfile("PrivateRecentOpponentUser", (current) => ({
+    ...current,
+    recentOpponents: [
+      {
+        opponentProfileKey: "StablePrivateOpponent",
+        opponentUsername: "VisibleOpponent",
+        displayName: "VisibleOpponent",
+        latestResult: "win",
+        lastCompletedAt: "2026-07-01T12:00:00.000Z",
+        lastSettlementKey: "PRIVATE-SETTLEMENT-KEY",
+        displayCosmetics: {
+          avatar: "avatar_fire_mage",
+          title: "title_initiate"
+        }
+      }
+    ]
+  }));
+
+  const viewed = await authority.viewProfile("PrivateRecentOpponentUser");
+  assert.equal("recentOpponents" in viewed, false);
+  assert.equal("recentOpponents" in viewed.profile, false);
+  assert.equal(JSON.stringify(viewed).includes("PRIVATE-SETTLEMENT-KEY"), false);
+  assert.equal(JSON.stringify(viewed).includes("StablePrivateOpponent"), false);
 });
 
 test("state: public profile snapshot exposes permitted Blood Match public stats", async () => {
