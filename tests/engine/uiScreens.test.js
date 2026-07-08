@@ -31626,6 +31626,118 @@ test("ui: Collections modal lists all albums with progress states and opens deta
             label: "150 Tokens",
             rewardId: "collection_album_elemental_street_complete_tokens"
           }
+        },
+        {
+          albumId: "celestial",
+          name: "Celestial",
+          description: "Starbound avatars, titles, and cosmic backdrops.",
+          ownedCount: 0,
+          totalCount: 7,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 200,
+            label: "200 Tokens",
+            rewardId: "collection_album_celestial_complete_tokens"
+          }
+        },
+        {
+          albumId: "cutesy",
+          name: "Cutesy",
+          description: "Bright, playful cosmetics and cheerful elemental variants.",
+          ownedCount: 0,
+          totalCount: 12,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 150,
+            label: "150 Tokens",
+            rewardId: "collection_album_cutesy_complete_tokens"
+          }
+        },
+        {
+          albumId: "ember",
+          name: "Ember",
+          description: "Smoldering fire-themed cosmetics and molten variants.",
+          ownedCount: 0,
+          totalCount: 5,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 100,
+            label: "100 Tokens",
+            rewardId: "collection_album_ember_complete_tokens"
+          }
+        },
+        {
+          albumId: "gothic_corruption",
+          name: "Gothic Corruption",
+          description: "Dark gothic cosmetics with corrupted elemental styling.",
+          ownedCount: 0,
+          totalCount: 4,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 100,
+            label: "100 Tokens",
+            rewardId: "collection_album_gothic_corruption_complete_tokens"
+          }
+        },
+        {
+          albumId: "lucky",
+          name: "Lucky",
+          description: "Chance-touched avatars and card backs.",
+          ownedCount: 0,
+          totalCount: 4,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 100,
+            label: "100 Tokens",
+            rewardId: "collection_album_lucky_complete_tokens"
+          }
+        },
+        {
+          albumId: "void",
+          name: "Void",
+          description: "Abyssal cosmetics from the edge of the elements.",
+          ownedCount: 0,
+          totalCount: 5,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 150,
+            label: "150 Tokens",
+            rewardId: "collection_album_void_complete_tokens"
+          }
+        },
+        {
+          albumId: "velvet_rose",
+          name: "Velvet & Rose",
+          description: "Elegant rose-themed profile cosmetics.",
+          ownedCount: 0,
+          totalCount: 2,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 75,
+            label: "75 Tokens",
+            rewardId: "collection_album_velvet_rose_complete_tokens"
+          }
         }
       ]
     }
@@ -31636,7 +31748,7 @@ test("ui: Collections modal lists all albums with progress states and opens deta
   });
 
   assert.match(listHtml, /data-collection-albums-modal="true"/);
-  assert.equal((listHtml.match(/data-collection-album-row="/g) ?? []).length, 7);
+  assert.equal((listHtml.match(/data-collection-album-row="/g) ?? []).length, 14);
   assert.match(listHtml, /Vampire Elegance/);
   assert.match(listHtml, /Lycan Power/);
   assert.match(listHtml, /Goldbound Relics/);
@@ -31644,6 +31756,13 @@ test("ui: Collections modal lists all albums with progress states and opens deta
   assert.match(listHtml, /Neon Arcana/);
   assert.match(listHtml, /Crownfire/);
   assert.match(listHtml, /Elemental Street/);
+  assert.match(listHtml, /Celestial/);
+  assert.match(listHtml, /Cutesy/);
+  assert.match(listHtml, /Ember/);
+  assert.match(listHtml, /Gothic Corruption/);
+  assert.match(listHtml, /Lucky/);
+  assert.match(listHtml, /Void/);
+  assert.match(listHtml, /Velvet &amp; Rose/);
   assert.match(listHtml, /1 \/ 8/);
   assert.match(listHtml, /13%/);
   assert.match(listHtml, /In Progress/);
@@ -31692,8 +31811,10 @@ test("ui: Collections modal can render computed own album summaries and detail s
     selectedAlbumId: "vampire_elegance"
   });
 
-  assert.equal((html.match(/data-collection-album-row="/g) ?? []).length, 7);
+  assert.equal((html.match(/data-collection-album-row="/g) ?? []).length, 14);
   assert.match(html, /Vampire Elegance/);
+  assert.match(html, /Celestial/);
+  assert.match(html, /Velvet &amp; Rose/);
   assert.match(detailHtml, /data-collection-album-item-grid="true"/);
   assert.match(detailHtml, /Owned/);
   assert.match(detailHtml, /Missing/);

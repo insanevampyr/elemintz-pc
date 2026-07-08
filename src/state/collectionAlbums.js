@@ -43,7 +43,14 @@ const COLLECTION_ALBUM_REWARD_TOKENS = Object.freeze({
   frostveil_court: 200,
   neon_arcana: 200,
   crownfire: 250,
-  elemental_street: 150
+  elemental_street: 150,
+  celestial: 200,
+  cutesy: 150,
+  ember: 100,
+  gothic_corruption: 100,
+  lucky: 100,
+  void: 150,
+  velvet_rose: 75
 });
 
 function createTokenRewardPreview(albumId) {
@@ -113,6 +120,62 @@ export const COLLECTION_ALBUM_DEFINITIONS = Object.freeze([
     description: "Street-duelist cosmetics for all four elements.",
     items: ELEMENTAL_STREET_ITEMS,
     rewardPreview: createTokenRewardPreview("elemental_street"),
+    eligibility: DEFAULT_ALBUM_ELIGIBILITY
+  }),
+  Object.freeze({
+    albumId: "celestial",
+    name: "Celestial",
+    description: "Starbound avatars, titles, and cosmic backdrops.",
+    collectionKey: "Celestial",
+    rewardPreview: createTokenRewardPreview("celestial"),
+    eligibility: DEFAULT_ALBUM_ELIGIBILITY
+  }),
+  Object.freeze({
+    albumId: "cutesy",
+    name: "Cutesy",
+    description: "Bright, playful cosmetics and cheerful elemental variants.",
+    collectionKey: "Cutesy",
+    rewardPreview: createTokenRewardPreview("cutesy"),
+    eligibility: DEFAULT_ALBUM_ELIGIBILITY
+  }),
+  Object.freeze({
+    albumId: "ember",
+    name: "Ember",
+    description: "Smoldering fire-themed cosmetics and molten variants.",
+    collectionKey: "Ember",
+    rewardPreview: createTokenRewardPreview("ember"),
+    eligibility: DEFAULT_ALBUM_ELIGIBILITY
+  }),
+  Object.freeze({
+    albumId: "gothic_corruption",
+    name: "Gothic Corruption",
+    description: "Dark gothic cosmetics with corrupted elemental styling.",
+    collectionKey: "Gothic Corruption",
+    rewardPreview: createTokenRewardPreview("gothic_corruption"),
+    eligibility: DEFAULT_ALBUM_ELIGIBILITY
+  }),
+  Object.freeze({
+    albumId: "lucky",
+    name: "Lucky",
+    description: "Chance-touched avatars and card backs.",
+    collectionKey: "Lucky",
+    rewardPreview: createTokenRewardPreview("lucky"),
+    eligibility: DEFAULT_ALBUM_ELIGIBILITY
+  }),
+  Object.freeze({
+    albumId: "void",
+    name: "Void",
+    description: "Abyssal cosmetics from the edge of the elements.",
+    collectionKey: "Void",
+    rewardPreview: createTokenRewardPreview("void"),
+    eligibility: DEFAULT_ALBUM_ELIGIBILITY
+  }),
+  Object.freeze({
+    albumId: "velvet_rose",
+    name: "Velvet & Rose",
+    description: "Elegant rose-themed profile cosmetics.",
+    collectionKey: "Velvet & Rose",
+    rewardPreview: createTokenRewardPreview("velvet_rose"),
     eligibility: DEFAULT_ALBUM_ELIGIBILITY
   })
 ]);

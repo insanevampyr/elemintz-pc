@@ -1376,25 +1376,102 @@ test("cosmetics: Elemental Street collectionless entries use matched Common and 
 test("collection albums: initial player-facing album definitions exist", () => {
   const definitions = getCollectionAlbumDefinitions();
   const byId = new Map(definitions.map((definition) => [definition.albumId, definition]));
+  const expectedRewardTokens = {
+    vampire_elegance: 150,
+    lycan_power: 150,
+    goldbound_relics: 200,
+    frostveil_court: 200,
+    neon_arcana: 200,
+    crownfire: 250,
+    elemental_street: 150,
+    celestial: 200,
+    cutesy: 150,
+    ember: 100,
+    gothic_corruption: 100,
+    lucky: 100,
+    void: 150,
+    velvet_rose: 75
+  };
 
-  for (const albumId of [
-    "vampire_elegance",
-    "lycan_power",
-    "goldbound_relics",
-    "frostveil_court",
-    "neon_arcana",
-    "crownfire",
-    "elemental_street"
-  ]) {
+  for (const [albumId, tokens] of Object.entries(expectedRewardTokens)) {
     assert.ok(byId.has(albumId), `missing album ${albumId}`);
     assert.equal(byId.get(albumId).rewardPreview?.type, "tokens");
-    assert.ok(byId.get(albumId).rewardPreview?.amount > 0);
+    assert.equal(byId.get(albumId).rewardPreview?.amount, tokens);
+    assert.equal(
+      byId.get(albumId).rewardPreview?.rewardId,
+      `collection_album_${albumId}_complete_tokens`
+    );
   }
 
   assert.equal(byId.get("vampire_elegance").collectionKey, "Vampire Elegance");
   assert.equal(byId.get("crownfire").collectionKey, "Flame King");
+  assert.equal(byId.get("celestial").collectionKey, "Celestial");
+  assert.equal(byId.get("cutesy").collectionKey, "Cutesy");
+  assert.equal(byId.get("ember").collectionKey, "Ember");
+  assert.equal(byId.get("gothic_corruption").collectionKey, "Gothic Corruption");
+  assert.equal(byId.get("lucky").collectionKey, "Lucky");
+  assert.equal(byId.get("void").collectionKey, "Void");
+  assert.equal(byId.get("velvet_rose").collectionKey, "Velvet & Rose");
   assert.equal(Array.isArray(byId.get("elemental_street").items), true);
   assert.equal(byId.has("(none)"), false);
+});
+
+test("collection albums: expanded safe themed albums compute progress and reward states", () => {
+  const expected = {
+    celestial: { totalCount: 7, reward: 200 },
+    cutesy: { totalCount: 12, reward: 150 },
+    ember: { totalCount: 5, reward: 100 },
+    gothic_corruption: { totalCount: 4, reward: 100 },
+    lucky: { totalCount: 4, reward: 100 },
+    void: { totalCount: 5, reward: 150 },
+    velvet_rose: { totalCount: 2, reward: 75 }
+  };
+
+  for (const [albumId, config] of Object.entries(expected)) {
+    const detail = buildCollectionAlbumDetail({}, albumId);
+    assert.equal(detail.totalCount, config.totalCount, `${albumId} total`);
+    assert.equal(detail.ownedCount, 0, `${albumId} empty owned count`);
+    assert.equal(detail.percentComplete, 0, `${albumId} empty percent`);
+    assert.equal(detail.completed, false, `${albumId} empty completion`);
+    assert.equal(detail.rewardState, "locked", `${albumId} locked state`);
+    assert.deepEqual(detail.rewardPreview, {
+      type: "tokens",
+      amount: config.reward,
+      label: `${config.reward} Tokens`,
+      rewardId: `collection_album_${albumId}_complete_tokens`
+    });
+
+    const ownedCosmetics = {
+      avatar: [],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      badge: [],
+      title: []
+    };
+    for (const item of detail.items) {
+      ownedCosmetics[item.type].push(item.id);
+    }
+
+    const completed = buildCollectionAlbumSummaries({ ownedCosmetics })
+      .find((album) => album.albumId === albumId);
+    assert.equal(completed.ownedCount, config.totalCount, `${albumId} completed owned count`);
+    assert.equal(completed.totalCount, config.totalCount, `${albumId} completed total`);
+    assert.equal(completed.percentComplete, 100, `${albumId} completed percent`);
+    assert.equal(completed.completed, true, `${albumId} completed flag`);
+    assert.equal(completed.rewardState, "claimable", `${albumId} claimable state`);
+
+    const claimed = buildCollectionAlbumSummaries({
+      ownedCosmetics,
+      collectionAlbumRewardClaims: {
+        [albumId]: {
+          claimedAt: "2026-07-01T00:00:00.000Z",
+          rewardId: `collection_album_${albumId}_complete_tokens`
+        }
+      }
+    }).find((album) => album.albumId === albumId);
+    assert.equal(claimed.rewardState, "claimed", `${albumId} claimed state`);
+  }
 });
 
 test("collection albums: summaries compute owned totals, percent, completion, and reward state", () => {
