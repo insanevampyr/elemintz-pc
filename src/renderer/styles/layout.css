@@ -2687,6 +2687,20 @@ code.online-active-meta-value {
   line-height: 1.1;
 }
 
+.profile-collection-summary-card {
+  margin: 0 0 12px;
+}
+
+.profile-collection-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.profile-collection-chip-empty {
+  margin: 0;
+}
+
 .profile-trophy-empty {
   margin: 0;
 }

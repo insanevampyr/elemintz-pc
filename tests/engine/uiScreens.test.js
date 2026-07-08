@@ -12762,9 +12762,9 @@ test("ui: profile achievements toggle keeps search and chest controls visible", 
   });
 
   assert.match(html, /Search Player Profile/);
-  assert.match(html, /Find another player profile\./);
+  assert.doesNotMatch(html, /Find another player profile\./);
   assert.match(html, /placeholder="Enter username"/);
-  assert.match(html, />View Profile</);
+  assert.doesNotMatch(html, />View Profile</);
   assert.match(html, /Reward Chests/);
   assert.match(html, /View Rival/);
   assert.match(html, /Show Achievements/);
@@ -31306,7 +31306,8 @@ test("ui: owner profile groups Search and Recent Opponents separately from Battl
   assert.match(html, /data-profile-activity-action="battle-report"/);
   assert.match(html, /data-profile-activity-action="collections"/);
   assert.match(html, /Search Player Profile/);
-  assert.match(html, /Find another player profile\./);
+  assert.doesNotMatch(html, /Find another player profile\./);
+  assert.doesNotMatch(html, />View Profile</);
   assert.match(html, /profile-search-input/);
   assert.match(html, /data-profile-recent-opponents-btn="true"/);
   assert.match(html, /data-profile-collections-btn="true"/);
@@ -31328,6 +31329,56 @@ test("ui: owner profile groups Search and Recent Opponents separately from Battl
   assert.ok(html.indexOf('data-profile-social-card="true"') < html.indexOf('data-profile-activity-card="true"'));
   assert.ok(html.indexOf('data-profile-battle-report-btn="true"') < html.indexOf('data-profile-collections-btn="true"'));
   assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
+});
+
+test("ui: own profile renders compact completed Collection chips without inline album grid", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    collectionAlbums: {
+      summaries: [
+        {
+          albumId: "vampire_elegance",
+          name: "Vampire Elegance",
+          ownedCount: 8,
+          totalCount: 8,
+          percentComplete: 100,
+          completed: true,
+          rewardState: "claimed",
+          rewardPreview: { type: "tokens", amount: 150, label: "150 Tokens" }
+        },
+        {
+          albumId: "neon_arcana",
+          name: "Neon Arcana",
+          ownedCount: 9,
+          totalCount: 9,
+          percentComplete: 100,
+          completed: true,
+          rewardState: "claimable",
+          rewardPreview: { type: "tokens", amount: 200, label: "200 Tokens" }
+        },
+        {
+          albumId: "crownfire",
+          name: "Crownfire",
+          ownedCount: 1,
+          totalCount: 6,
+          percentComplete: 17,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: { type: "tokens", amount: 250, label: "250 Tokens" }
+        }
+      ]
+    }
+  };
+  const html = profileScreen.render(createProfileScreenContext({ profile }));
+
+  assert.match(html, /data-profile-collection-summary="own"/);
+  assert.match(html, /Collections Completed: 2 \/ 3/);
+  assert.match(html, /data-profile-collection-chip="vampire_elegance"[^>]*>Vampire Elegance</);
+  assert.match(html, /data-profile-collection-chip="neon_arcana"[^>]*>Neon Arcana</);
+  assert.doesNotMatch(html, /data-profile-collection-chip="crownfire"/);
+  assert.doesNotMatch(html, /data-collection-albums-modal|data-collection-album-row|data-collection-album-item-grid/);
+  assert.doesNotMatch(html, /Claim Reward|data-collection-album-claim/);
+  assert.match(html, /data-profile-collections-btn="true"/);
 });
 
 test("ui: Recent Opponents modal renders empty state exactly", () => {
@@ -31356,8 +31407,17 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
   let recentCardClick = null;
   let collectionsClick = null;
   let searchSubmit = null;
+  let resultButtonClick = null;
   const calls = [];
   const searchForm = {};
+  const resultButton = {
+    getAttribute: (name) => (name === "data-view-profile" ? "ResultRival" : null),
+    addEventListener: (type, handler) => {
+      if (type === "click") {
+        resultButtonClick = handler;
+      }
+    }
+  };
 
   global.document = {
     getElementById: (id) => {
@@ -31406,7 +31466,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
       return null;
     },
     querySelector: () => null,
-    querySelectorAll: () => []
+    querySelectorAll: (selector) => (selector === "[data-view-profile]" ? [resultButton] : [])
   };
 
   class FakeFormData {
@@ -31433,6 +31493,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
     );
 
     await searchSubmit?.({ preventDefault: () => {}, currentTarget: searchForm });
+    await resultButtonClick?.();
     await battleReportClick?.();
     await recentCardClick?.();
     await collectionsClick?.();
@@ -31444,6 +31505,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
   assert.deepEqual(calls, [
     "searchProfiles:RivalSearch",
     "viewProfile:RivalSearch",
+    "viewProfile:ResultRival",
     "openBattleReport",
     "openRecentOpponents",
     "openCollections"
@@ -31949,6 +32011,10 @@ test("ui: viewed profile and Battle Report do not render Recent Opponents or ful
   assert.doesNotMatch(viewedHtml, /data-profile-recent-opponents="true"/);
   assert.doesNotMatch(viewedHtml, /Recent Opponents/);
   assert.doesNotMatch(viewedHtml, /data-profile-collections-btn|data-collection-albums-modal|data-collection-album-row|View Album/);
+  assert.match(viewedHtml, /data-profile-collection-summary="public"/);
+  assert.match(viewedHtml, /Completed Collections/);
+  assert.match(viewedHtml, /data-profile-collection-chip="vampire_elegance"[^>]*>Vampire Elegance</);
+  assert.doesNotMatch(viewedHtml, /1 \/ 7|Reward Ready|Claimed|rewardState|rewardPreview|collectionAlbumRewardClaims|ownedCosmetics|uniqueCosmeticAcquisitions|account-secret|profile-secret|session-secret|socket-secret|settlement-secret/);
   assert.doesNotMatch(viewedHtml, /Private Viewed Opponent|PRIVATE_VIEWED_KEY/);
   assert.doesNotMatch(reportHtml, /data-profile-recent-opponents="true"/);
   assert.doesNotMatch(reportHtml, /Recent Opponents/);

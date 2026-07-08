@@ -644,6 +644,54 @@ function getCollectionAlbumSummaries(profile = {}) {
     : [];
 }
 
+function renderCollectionChipList(items = [], { emptyText = "" } = {}) {
+  const safeItems = Array.isArray(items) ? items : [];
+  if (!safeItems.length) {
+    return emptyText ? `<p class="text-muted profile-collection-chip-empty">${escapeProfileText(emptyText)}</p>` : "";
+  }
+  return `
+    <div class="profile-collection-chip-row" data-profile-collection-chip-row="true">
+      ${safeItems
+        .map((item) => {
+          const albumId = String(item?.albumId ?? "").trim();
+          const name = String(item?.name ?? albumId).trim();
+          return name
+            ? `<span class="profile-trophy-chip profile-collection-chip" data-profile-collection-chip="${escapeProfileText(albumId)}">${escapeProfileText(name)}</span>`
+            : "";
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderOwnCollectionCompletedSummary(profile = {}) {
+  const summaries = getCollectionAlbumSummaries(profile);
+  if (!summaries.length) {
+    return "";
+  }
+  const completed = summaries.filter((summary) => Boolean(summary?.completed));
+  return `
+    <section class="profile-summary-card stack-sm profile-collection-summary-card" data-profile-collection-summary="own">
+      <h3 class="section-title">Collections Completed: ${completed.length} / ${summaries.length}</h3>
+      ${renderCollectionChipList(completed)}
+    </section>
+  `;
+}
+
+function renderPublicCollectionCompletedSummary(profile = {}) {
+  const collectionAlbums = profile?.collectionAlbums;
+  if (!collectionAlbums || typeof collectionAlbums !== "object" || Array.isArray(collectionAlbums)) {
+    return "";
+  }
+  const completed = Array.isArray(collectionAlbums.completed) ? collectionAlbums.completed : [];
+  return `
+    <section class="profile-summary-card stack-sm profile-collection-summary-card" data-profile-collection-summary="public">
+      <h3 class="section-title">Completed Collections</h3>
+      ${renderCollectionChipList(completed, { emptyText: "No completed collections yet." })}
+    </section>
+  `;
+}
+
 function renderCollectionAlbumRows(profile = {}) {
   const summaries = getCollectionAlbumSummaries(profile);
   if (!summaries.length) {
@@ -1787,7 +1835,6 @@ function renderProfileSocialToolsCard({ searchQuery = "", searchResults = [], se
       <div class="profile-social-actions">
         <div class="profile-social-action profile-search-card" data-profile-social-action="search-player">
           <strong class="profile-activity-action-title">Search Player Profile</strong>
-          <p class="text-muted profile-search-helper">Find another player profile.</p>
           <form id="profile-search-form" class="stack-sm">
             <label for="profile-search-input">Username</label>
             <input
@@ -1797,7 +1844,6 @@ function renderProfileSocialToolsCard({ searchQuery = "", searchResults = [], se
               value="${searchQuery}"
               placeholder="Enter username"
             />
-            <button type="submit" class="btn">View Profile</button>
           </form>
           ${searchError ? `<p class="text-muted">${searchError}</p>` : ""}
           ${
@@ -1890,6 +1936,7 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
         ${renderProfileShowcase(viewedProfile, {
           publicView: true
         })}
+        ${renderPublicCollectionCompletedSummary(viewedProfile)}
         <div class="profile-summary-grid profile-summary-grid-viewed">
           <section class="profile-summary-card stack-sm">
             <h3 class="section-title">Overall Record</h3>
@@ -2020,6 +2067,7 @@ export const profileScreen = {
             catalog: cosmetics?.catalog ?? null,
             editable: true
           })}
+          ${renderOwnCollectionCompletedSummary(profile)}
           ${renderChestPanel(profile, context.basicChestVisualState, {
             openingInFlight: context.profileChestOpenInFlight
           })}
