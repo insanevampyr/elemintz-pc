@@ -30929,6 +30929,249 @@ test("ui: Showcase selection refreshes the owner profile with controls still ava
   assert.match(reopenedHtml, /data-profile-showcase-choose="1"[^>]*>Replace<\/button>/);
 });
 
+test("ui: authenticated Showcase selection uses multiplayer authority without local fallback", async () => {
+  const previousWindow = global.window;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    username: "ShowcaseOwner",
+    profileShowcaseSlots: [null, null, null]
+  };
+  const updatedProfile = {
+    ...profile,
+    profileShowcaseSlots: [{ type: "avatar", id: "default_avatar" }, null, null]
+  };
+  const controller = createRendererController();
+  const multiplayerCalls = [];
+  let localCalls = 0;
+  let showProfileArgs = null;
+
+  controller.username = "ShowcaseOwner";
+  controller.profile = profile;
+  controller.onlinePlayState = {
+    connectionStatus: "disconnected",
+    session: {
+      authenticated: true,
+      username: "ShowcaseOwner"
+    }
+  };
+  controller.showProfile = async (args) => {
+    showProfileArgs = args;
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        updateProfileShowcaseSlot: async () => {
+          localCalls += 1;
+          throw new Error("local Showcase update should not be called for authenticated profiles");
+        }
+      },
+      multiplayer: {
+        updateProfileShowcaseSlot: async (payload) => {
+          multiplayerCalls.push(payload);
+          return { snapshot: { profile: updatedProfile, cosmetics: { snapshot: null } } };
+        }
+      }
+    }
+  };
+
+  try {
+    await controller.updateProfileShowcaseSlot(0, { type: "avatar", id: "default_avatar" });
+  } finally {
+    global.window = previousWindow;
+  }
+
+  assert.equal(localCalls, 0);
+  assert.deepEqual(multiplayerCalls, [
+    {
+      username: "ShowcaseOwner",
+      slotIndex: 0,
+      cosmetic: { type: "avatar", id: "default_avatar" }
+    }
+  ]);
+  assert.deepEqual(controller.profile.profileShowcaseSlots, updatedProfile.profileShowcaseSlots);
+  assert.equal(showProfileArgs?.skipAuthoritativeProfileRefresh, true);
+  assert.equal(showProfileArgs?.preserveAchievementVisibility, true);
+});
+
+test("ui: authenticated Showcase Use Automatic uses multiplayer authority", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    username: "ShowcaseOwner",
+    profileShowcaseSlots: [{ type: "avatar", id: "default_avatar" }, null, null],
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  const updatedProfile = {
+    ...profile,
+    profileShowcaseSlots: [null, null, null]
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(profile)
+  };
+  const controller = createRendererController();
+  const multiplayerCalls = [];
+  let localCalls = 0;
+  let modalConfig = null;
+  let hideCalls = 0;
+
+  controller.username = "ShowcaseOwner";
+  controller.profile = profile;
+  controller.onlinePlayState = {
+    connectionStatus: "disconnected",
+    session: {
+      authenticated: true,
+      username: "ShowcaseOwner"
+    }
+  };
+  controller.showProfile = async () => {};
+  controller.modalManager = {
+    show: (config) => {
+      modalConfig = config;
+    },
+    hide: () => {
+      hideCalls += 1;
+    }
+  };
+  global.document = {
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        updateProfileShowcaseSlot: async () => {
+          localCalls += 1;
+          throw new Error("local Showcase update should not be called for authenticated profiles");
+        }
+      },
+      multiplayer: {
+        updateProfileShowcaseSlot: async (payload) => {
+          multiplayerCalls.push(payload);
+          return { snapshot: { profile: updatedProfile, cosmetics: { snapshot: cosmetics } } };
+        }
+      }
+    }
+  };
+
+  try {
+    controller.showProfileShowcasePicker(0, { cosmetics });
+    assert.equal(modalConfig?.actions?.[0]?.label, "Use Automatic");
+    await modalConfig.actions[0].onClick();
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+
+  assert.equal(localCalls, 0);
+  assert.deepEqual(multiplayerCalls, [
+    {
+      username: "ShowcaseOwner",
+      slotIndex: 0,
+      cosmetic: null
+    }
+  ]);
+  assert.equal(hideCalls, 1);
+  assert.deepEqual(controller.profile.profileShowcaseSlots, [null, null, null]);
+});
+
+test("ui: authenticated Showcase authority failures show a clean update failure modal", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const profile = {
+    ...createProfileScreenContext().profile,
+    username: "ShowcaseOwner",
+    profileShowcaseSlots: [null, null, null],
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  const cosmetics = {
+    ...createProfileScreenContext().cosmetics,
+    catalog: getCosmeticCatalogForProfile(profile)
+  };
+  const controller = createRendererController();
+  const modalCalls = [];
+  let selectHandler = null;
+  const selectButton = {
+    disabled: false,
+    getAttribute: (name) => {
+      if (name === "aria-disabled") {
+        return "false";
+      }
+      if (name === "data-showcase-picker-type") {
+        return "avatar";
+      }
+      if (name === "data-showcase-picker-id") {
+        return "default_avatar";
+      }
+      return null;
+    },
+    addEventListener: (_event, handler) => {
+      selectHandler = handler;
+    }
+  };
+
+  controller.username = "ShowcaseOwner";
+  controller.profile = profile;
+  controller.onlinePlayState = {
+    connectionStatus: "disconnected",
+    session: {
+      authenticated: true,
+      username: "ShowcaseOwner"
+    }
+  };
+  controller.modalManager = {
+    show: (config) => {
+      modalCalls.push(config);
+    },
+    hide: () => {}
+  };
+  global.document = {
+    querySelector: () => null,
+    querySelectorAll: (selector) => (selector === "[data-showcase-picker-select]" ? [selectButton] : [])
+  };
+  global.window = {
+    elemintz: {
+      state: {
+        updateProfileShowcaseSlot: async () => {
+          throw new Error("local Showcase update should not be called for authenticated profiles");
+        }
+      },
+      multiplayer: {
+        updateProfileShowcaseSlot: async () => {
+          throw new Error("authoritative Showcase update unavailable");
+        }
+      }
+    }
+  };
+
+  try {
+    controller.showProfileShowcasePicker(0, { cosmetics });
+    assert.equal(typeof selectHandler, "function");
+    await selectHandler();
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
+
+  assert.equal(modalCalls.at(-1)?.title, "Showcase Update Failed");
+  assert.match(modalCalls.at(-1)?.body ?? "", /authoritative Showcase update unavailable/);
+});
+
 test("ui: viewed profile stays read-only after rendering an editable owner Showcase", () => {
   const ownProfile = {
     ...createProfileScreenContext().profile,

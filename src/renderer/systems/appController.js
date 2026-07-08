@@ -5770,12 +5770,17 @@ export class AppController {
     }
 
   async updateProfileShowcaseSlot(slotIndex, cosmetic = null, { preserveModal = false } = {}) {
+    const multiplayerUpdate = globalThis.window?.elemintz?.multiplayer?.updateProfileShowcaseSlot;
+    const localUpdate = globalThis.window?.elemintz?.state?.updateProfileShowcaseSlot;
+    const hasAuthenticatedOwnerSession = this.hasAuthenticatedMultiplayerSessionForUsername(this.username);
     const updateWithMultiplayer =
-      this.hasMultiplayerProfileAccess() &&
-      typeof globalThis.window?.elemintz?.multiplayer?.updateProfileShowcaseSlot === "function";
+      typeof multiplayerUpdate === "function" &&
+      (this.hasMultiplayerProfileAccess() || hasAuthenticatedOwnerSession);
     const updateAuthority = updateWithMultiplayer
-      ? globalThis.window.elemintz.multiplayer.updateProfileShowcaseSlot
-      : globalThis.window?.elemintz?.state?.updateProfileShowcaseSlot;
+      ? multiplayerUpdate
+      : hasAuthenticatedOwnerSession
+        ? null
+        : localUpdate;
 
     if (typeof updateAuthority !== "function") {
       this.modalManager.show({
