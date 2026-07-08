@@ -17,6 +17,7 @@ import {
 } from "../shared/cosmeticHoverPreview.js";
 import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import { getLevelProgress, MAX_LEVEL } from "../../../state/levelRewardsSystem.js";
+import { buildCollectionAlbumDetail } from "../../../state/collectionAlbums.js";
 
 function escapeProfileText(value) {
   return String(value ?? "")
@@ -615,6 +616,174 @@ function renderRecentOpponentsModalBody(profile = {}, options = {}) {
       <section class="profile-summary-card stack-sm profile-recent-opponents-panel" data-profile-recent-opponents="true">
         <h3 class="section-title">Recent Opponents</h3>
         ${renderRecentOpponentRows(profile, options)}
+      </section>
+    </div>
+  `;
+}
+
+function formatCollectionAlbumState(summary = {}) {
+  const rewardState = String(summary?.rewardState ?? "").trim();
+  if (rewardState === "claimable") {
+    return "Reward Ready";
+  }
+  if (rewardState === "claimed") {
+    return "Claimed";
+  }
+  if (summary?.completed) {
+    return "Complete";
+  }
+  if (Number(summary?.ownedCount ?? 0) > 0) {
+    return "In Progress";
+  }
+  return "Not Started";
+}
+
+function getCollectionAlbumSummaries(profile = {}) {
+  return Array.isArray(profile?.collectionAlbums?.summaries)
+    ? profile.collectionAlbums.summaries
+    : [];
+}
+
+function renderCollectionAlbumRows(profile = {}) {
+  const summaries = getCollectionAlbumSummaries(profile);
+  if (!summaries.length) {
+    return `<p class="text-muted" data-collection-albums-empty="true">No collection albums available.</p>`;
+  }
+
+  return `
+    <div class="collection-albums-list" data-collection-albums-list="true">
+      ${summaries
+        .map((summary) => {
+          const ownedCount = Math.max(0, Number(summary?.ownedCount ?? 0) || 0);
+          const totalCount = Math.max(0, Number(summary?.totalCount ?? 0) || 0);
+          const percentComplete = Math.max(0, Math.min(100, Number(summary?.percentComplete ?? 0) || 0));
+          const stateLabel = formatCollectionAlbumState(summary);
+          const albumId = String(summary?.albumId ?? "").trim();
+
+          return `
+            <article class="collection-album-row" data-collection-album-row="${escapeProfileText(albumId)}">
+              <div class="collection-album-row-copy">
+                <strong class="collection-album-row-title">${escapeProfileText(summary?.name ?? albumId)}</strong>
+                ${summary?.description ? `<p class="text-muted">${escapeProfileText(summary.description)}</p>` : ""}
+              </div>
+              <div class="collection-album-row-progress">
+                <span class="collection-album-count" data-collection-album-count="true">${ownedCount} / ${totalCount}</span>
+                <span class="collection-album-percent" data-collection-album-percent="true">${percentComplete}%</span>
+                <span class="profile-trophy-chip" data-collection-album-state="true">${escapeProfileText(stateLabel)}</span>
+              </div>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-collection-album-view="${escapeProfileText(albumId)}"
+              >View Album</button>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderCollectionAlbumDetail(profile = {}, albumId) {
+  const detail = buildCollectionAlbumDetail(profile, albumId);
+  if (!detail) {
+    return `
+      <div class="collection-albums-modal-content stack-sm" data-collection-albums-modal="true" data-collection-album-detail="true">
+        <button type="button" class="btn btn-secondary" data-collection-albums-back="true">Back</button>
+        <p class="text-muted" data-collection-albums-detail-empty="true">Collection album unavailable.</p>
+      </div>
+    `;
+  }
+  const rewardPreview = detail.rewardPreview;
+  const rewardLabel = rewardPreview?.label ?? null;
+  const rewardState = String(detail.rewardState ?? "none");
+  const canClaimReward = rewardState === "claimable";
+  const rewardClaimed = rewardState === "claimed";
+
+  return `
+    <div class="collection-albums-modal-content stack-sm" data-collection-albums-modal="true" data-collection-album-detail="true" data-collection-album-id="${escapeProfileText(detail.albumId)}">
+      <div class="battle-report-detail-header">
+        <button type="button" class="btn btn-secondary" data-collection-albums-back="true">Back</button>
+        <h3 class="section-title">${escapeProfileText(detail.name)}</h3>
+      </div>
+      ${detail.description ? `<p class="text-muted battle-report-modal-intro">${escapeProfileText(detail.description)}</p>` : ""}
+      <section class="profile-summary-card stack-sm">
+        <div class="collection-album-detail-summary">
+          <strong data-collection-album-detail-count="true">${detail.ownedCount} / ${detail.totalCount} owned</strong>
+          <span data-collection-album-detail-percent="true">${detail.percentComplete}% complete</span>
+          <span class="profile-trophy-chip" data-collection-album-detail-state="true">${escapeProfileText(formatCollectionAlbumState(detail))}</span>
+        </div>
+        <div class="collection-album-item-grid" data-collection-album-item-grid="true">
+          ${detail.items
+            .map((item) => {
+              const imageSrc = resolveImagePath(item.image);
+              const hasImage = item.owned && hasRenderablePreviewSource(imageSrc, {
+                previewName: item.name,
+                previewVisualText: item.name
+              });
+              const hoverAttributes = item.owned
+                ? buildTrophyHoverAttributes({
+                    ...item,
+                    typeLabel: titleCase(item.type)
+                  })
+                : "";
+
+              return `
+                <article
+                  class="collection-album-item${item.owned ? " is-owned" : " is-missing"}"
+                  data-collection-album-item="${escapeProfileText(item.type)}:${escapeProfileText(item.id)}"
+                  data-collection-album-item-state="${item.owned ? "owned" : "missing"}"
+                >
+                  ${
+                    hasImage
+                      ? `<img class="collection-album-item-image" src="${imageSrc}" alt="${escapeProfileText(item.name)}" ${hoverAttributes} />`
+                      : `<div class="collection-album-item-fallback" data-collection-album-item-fallback="true">${item.owned ? escapeProfileText(item.name) : "Locked"}</div>`
+                  }
+                  <div class="collection-album-item-copy">
+                    <strong>${escapeProfileText(item.name)}</strong>
+                    <div class="profile-trophy-chip-row">
+                      <span class="cosmetic-rarity-label rarity-${String(item.rarity ?? "Common").toLowerCase()}">${escapeProfileText(item.rarity ?? "Common")}</span>
+                      <span class="profile-trophy-chip">${escapeProfileText(titleCase(item.type) || "Cosmetic")}</span>
+                      ${item.element ? `<span class="profile-trophy-chip">${escapeProfileText(item.element)}</span>` : ""}
+                    </div>
+                    <span class="text-muted" data-collection-album-owned-label="true">${item.owned ? "Owned" : "Missing"}</span>
+                  </div>
+                </article>
+              `;
+            })
+            .join("")}
+        </div>
+      </section>
+      <section class="profile-summary-card stack-sm" data-collection-album-reward-static="true">
+        <h3 class="section-title">Completion Reward</h3>
+        ${
+          rewardPreview
+            ? `<p class="text-muted" data-collection-album-reward-preview="true">${escapeProfileText(rewardLabel)}</p>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-collection-album-claim="${escapeProfileText(detail.albumId)}"
+                ${canClaimReward ? "" : "disabled"}
+              >${rewardClaimed ? "Claimed" : "Claim Reward"}</button>`
+            : '<p class="text-muted">Coming in a future update.</p>'
+        }
+      </section>
+    </div>
+  `;
+}
+
+function renderCollectionAlbumsModalBody(profile = {}, options = {}) {
+  const selectedAlbumId = String(options?.selectedAlbumId ?? "").trim();
+  if (selectedAlbumId) {
+    return renderCollectionAlbumDetail(profile, selectedAlbumId);
+  }
+
+  return `
+    <div class="collection-albums-modal-content stack-sm" data-collection-albums-modal="true">
+      <p class="text-muted battle-report-modal-intro">Track your cosmetic collection progress.</p>
+      <section class="profile-summary-card stack-sm">
+        <h3 class="section-title">Collection Albums</h3>
+        ${renderCollectionAlbumRows(profile)}
       </section>
     </div>
   `;
@@ -1296,6 +1465,16 @@ function renderActivityToolsCard() {
             data-profile-recent-opponents-btn="true"
           >Recent Opponents</button>
         </div>
+        <div class="profile-activity-action" data-profile-activity-action="collections">
+          <strong class="profile-activity-action-title">Collections</strong>
+          <p class="text-muted">Track cosmetic set progress.</p>
+          <button
+            id="profile-collections-btn"
+            class="btn btn-secondary"
+            type="button"
+            data-profile-collections-btn="true"
+          >Collections</button>
+        </div>
       </div>
     </section>
   `;
@@ -1940,6 +2119,10 @@ export const profileScreen = {
     if (recentOpponentsButton && context.actions.openRecentOpponents) {
       recentOpponentsButton.addEventListener("click", context.actions.openRecentOpponents);
     }
+    const collectionsButton = document.getElementById("profile-collections-btn");
+    if (collectionsButton && context.actions.openCollections) {
+      collectionsButton.addEventListener("click", context.actions.openCollections);
+    }
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {
       openBasicChestButton.addEventListener("click", context.actions.openBasicChest);
@@ -1981,6 +2164,7 @@ profileScreen.renderViewedProfileModalBody = renderViewedProfileModalBody;
 profileScreen.renderShowcasePickerBody = renderProfileShowcasePickerBody;
 profileScreen.renderBattleReportModalBody = renderBattleReportModalBody;
 profileScreen.renderRecentOpponentsModalBody = renderRecentOpponentsModalBody;
+profileScreen.renderCollectionAlbumsModalBody = renderCollectionAlbumsModalBody;
 profileScreen.getRecentOpponentRows = getRecentOpponentRows;
 profileScreen.formatRecentOpponentRelativeTime = formatRecentOpponentRelativeTime;
 

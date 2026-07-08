@@ -514,6 +514,58 @@ test("profile validation: seenAnnouncements preserves valid announcement flags",
   });
 });
 
+test("profile validation: Collection Album reward claim ledger defaults and normalizes safely", () => {
+  const missing = normalizeProfile({ username: "AlbumClaimsDefaultUser" });
+  assert.deepEqual(missing.collectionAlbumRewardClaims, {});
+
+  const malformed = normalizeProfile({
+    username: "AlbumClaimsMalformedUser",
+    collectionAlbumRewardClaims: [
+      {
+        albumId: "vampire_elegance",
+        claimedAt: "2026-07-01T00:00:00.000Z",
+        rewardId: "future_reward"
+      }
+    ]
+  });
+  assert.deepEqual(malformed.collectionAlbumRewardClaims, {});
+
+  const mixed = normalizeProfile({
+    username: "AlbumClaimsMixedUser",
+    collectionAlbumRewardClaims: {
+      vampire_elegance: {
+        claimedAt: "2026-07-01T00:00:00.000Z",
+        rewardId: "future_vampire_reward"
+      },
+      unknown_legacy_album: {
+        claimedAt: "2026-07-02T03:04:05.000Z",
+        rewardId: "legacy_reward"
+      },
+      malformed_missing_date: {
+        rewardId: "bad"
+      },
+      malformed_missing_reward: {
+        claimedAt: "2026-07-03T00:00:00.000Z"
+      }
+    }
+  });
+
+  assert.deepEqual(mixed.collectionAlbumRewardClaims, {
+    vampire_elegance: {
+      claimedAt: "2026-07-01T00:00:00.000Z",
+      rewardId: "future_vampire_reward"
+    },
+    unknown_legacy_album: {
+      claimedAt: "2026-07-02T03:04:05.000Z",
+      rewardId: "legacy_reward"
+    }
+  });
+  assert.deepEqual(
+    normalizeProfile(mixed).collectionAlbumRewardClaims,
+    mixed.collectionAlbumRewardClaims
+  );
+});
+
 test("profile validation: default profiles receive exactly three empty Showcase slots", () => {
   const normalized = normalizeProfile({ username: "ShowcaseDefaultUser" });
 

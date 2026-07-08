@@ -5812,6 +5812,43 @@ export class AppController {
     return result;
   }
 
+  async claimCollectionAlbumReward(albumId) {
+    const multiplayerClaim = globalThis.window?.elemintz?.multiplayer?.claimCollectionAlbumReward;
+    const localClaim = globalThis.window?.elemintz?.state?.claimCollectionAlbumReward;
+    const hasAuthenticatedOwnerSession = this.hasAuthenticatedMultiplayerSessionForUsername(this.username);
+    const claimWithMultiplayer =
+      typeof multiplayerClaim === "function" &&
+      (this.hasMultiplayerProfileAccess() || hasAuthenticatedOwnerSession);
+    const claimAuthority = claimWithMultiplayer
+      ? multiplayerClaim
+      : hasAuthenticatedOwnerSession
+        ? null
+        : localClaim;
+
+    if (typeof claimAuthority !== "function") {
+      throw new Error("Collection Album rewards are unavailable right now.");
+    }
+
+    const result = await claimAuthority({
+      username: this.username,
+      albumId
+    });
+
+    this.profile = result?.snapshot
+      ? this.buildProfileFromServerSnapshot(result.snapshot)
+      : result?.profile ?? this.profile;
+
+    await this.showProfile({
+      preserveAchievementVisibility: true,
+      preserveModal: true,
+      profileOverride: this.profile,
+      cosmeticsOverride: this.buildSafeCosmeticsPayload(result?.cosmetics ?? null, this.profile),
+      skipAuthoritativeProfileRefresh: true
+    });
+
+    return result;
+  }
+
   showProfileShowcasePicker(slotIndex, { cosmetics = null } = {}) {
     const safeSlotIndex = Math.max(0, Math.min(2, Number(slotIndex) || 0));
     this.modalManager.show({
@@ -10498,6 +10535,9 @@ export class AppController {
         openRecentOpponents: async () => {
           this.showRecentOpponentsModal();
         },
+        openCollections: async () => {
+          this.showCollectionAlbumsModal();
+        },
         back: () => this.showMenu()
       }
     });
@@ -10765,6 +10805,62 @@ export class AppController {
       actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
     });
     this.bindRecentOpponentsModalControls();
+  }
+
+  showCollectionAlbumsModal(selectedAlbumId = null) {
+    this.modalManager.show({
+      title: "Collection Albums",
+      bodyHtml: profileScreen.renderCollectionAlbumsModalBody(this.profile ?? {}, {
+        selectedAlbumId
+      }),
+      modalClassName: "battle-report-modal collection-albums-modal",
+      bodyClassName: "battle-report-modal-body collection-albums-modal-body",
+      actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
+    });
+    this.bindCollectionAlbumsModalControls();
+  }
+
+  bindCollectionAlbumsModalControls() {
+    const modalRoot =
+      globalThis.document?.querySelector?.("[data-collection-albums-modal='true']") ??
+      globalThis.document;
+    modalRoot?.querySelectorAll?.("[data-collection-album-view]")?.forEach((button) => {
+      button.addEventListener("click", () => {
+        this.showCollectionAlbumsModal(button.getAttribute("data-collection-album-view"));
+      });
+    });
+    modalRoot?.querySelectorAll?.("[data-collection-albums-back]")?.forEach((button) => {
+      button.addEventListener("click", () => {
+        this.showCollectionAlbumsModal();
+      });
+    });
+    modalRoot?.querySelectorAll?.("[data-collection-album-claim]")?.forEach((button) => {
+      button.addEventListener("click", async () => {
+        const albumId = button.getAttribute("data-collection-album-claim");
+        try {
+          const result = await this.claimCollectionAlbumReward(albumId);
+          this.showCollectionAlbumsModal(albumId);
+          if (result?.reward?.type === "tokens" && result.reward.amount > 0) {
+            this.toastManager?.showTokenReward?.({
+              amount: result.reward.amount,
+              label: "Collection Reward Claimed"
+            });
+          } else {
+            this.modalManager.show({
+              title: "Collection Reward Claimed",
+              body: "Collection reward already claimed.",
+              actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+            });
+          }
+        } catch (error) {
+          this.modalManager.show({
+            title: "Collection Reward Failed",
+            body: String(error?.message ?? "Unable to claim Collection Album reward."),
+            actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+          });
+        }
+      });
+    });
   }
 
   async showDailyChallenges() {

@@ -302,6 +302,7 @@ export function createDefaultProfile(username) {
         lastDailyWinRewardDate: null
       }
     },
+    collectionAlbumRewardClaims: {},
     onlineRewardSettlements: {
       appliedSettlementKeys: []
     },

@@ -49,6 +49,7 @@ import {
   getCosmeticCatalogForProfile,
   getCosmeticLoadoutsForProfile
 } from "../../src/state/cosmeticSystem.js";
+import { buildCollectionAlbumDetail, buildOwnCollectionAlbumsView } from "../../src/state/collectionAlbums.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 
 function createClassList() {
@@ -1773,6 +1774,28 @@ function createProfileScreenContext(overrides = {}) {
     },
     ...overrides
   };
+}
+
+function addUiAlbumItemsToOwnedCosmetics(profile, albumId) {
+  const detail = buildCollectionAlbumDetail(profile, albumId);
+  assert.ok(detail, `expected album detail for ${albumId}`);
+  const ownedCosmetics = Object.fromEntries(
+    Object.entries(profile.ownedCosmetics ?? {}).map(([type, ids]) => [
+      type,
+      Array.isArray(ids) ? [...ids] : []
+    ])
+  );
+
+  for (const item of detail.items) {
+    ownedCosmetics[item.type] = Array.isArray(ownedCosmetics[item.type])
+      ? ownedCosmetics[item.type]
+      : [];
+    if (!ownedCosmetics[item.type].includes(item.id)) {
+      ownedCosmetics[item.type].push(item.id);
+    }
+  }
+
+  return ownedCosmetics;
 }
 
 function createFakeCheckbox({ checked = false, attributeMap = {} } = {}) {
@@ -31279,18 +31302,24 @@ test("ui: owner profile renders Battle Report and Recent Opponents inside one ac
   assert.match(html, /data-profile-activity-card="true"/);
   assert.match(html, /data-profile-activity-action="battle-report"/);
   assert.match(html, /data-profile-activity-action="recent-opponents"/);
+  assert.match(html, /data-profile-activity-action="collections"/);
   assert.match(html, /data-profile-recent-opponents-btn="true"/);
+  assert.match(html, /data-profile-collections-btn="true"/);
   assert.match(html, /<h3 class="section-title">Activity<\/h3>/);
   assert.match(html, /Recent Opponents/);
   assert.match(html, /View recent Online players you faced\./);
+  assert.match(html, /Collections/);
+  assert.match(html, /Track cosmetic set progress\./);
   assert.doesNotMatch(html, /Visible Rival/);
   assert.doesNotMatch(html, /data-recent-opponent-index="0"/);
   assert.match(html, /data-profile-battle-report-btn="true"/);
   assert.match(html, />Battle Report</);
+  assert.match(html, />Collections</);
   assert.doesNotMatch(html, /PRIVATE_PROFILE_KEY_ALPHA/);
   assert.doesNotMatch(html, /SETTLEMENT_KEY_SHOULD_NOT_RENDER/);
   assert.equal((html.match(/data-profile-activity-card="true"/g) ?? []).length, 1);
   assert.ok(html.indexOf('data-profile-battle-report-btn="true"') < html.indexOf('data-profile-recent-opponents-btn="true"'));
+  assert.ok(html.indexOf('data-profile-recent-opponents-btn="true"') < html.indexOf('data-profile-collections-btn="true"'));
   assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
 });
 
@@ -31313,10 +31342,11 @@ test("ui: Recent Opponents modal renders empty state exactly", () => {
   assert.match(modalHtml, /data-recent-opponents-empty="true">No recent online opponents yet\.<\/p>/);
 });
 
-test("ui: Activity card binds Battle Report and Recent Opponents modal actions", async () => {
+test("ui: Activity card binds Battle Report, Recent Opponents, and Collections modal actions", async () => {
   const previousDocument = global.document;
   let battleReportClick = null;
   let recentCardClick = null;
+  let collectionsClick = null;
   const calls = [];
 
   global.document = {
@@ -31329,6 +31359,15 @@ test("ui: Activity card binds Battle Report and Recent Opponents modal actions",
           addEventListener: (type, handler) => {
             if (type === "click") {
               recentCardClick = handler;
+            }
+          }
+        };
+      }
+      if (id === "profile-collections-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              collectionsClick = handler;
             }
           }
         };
@@ -31354,21 +31393,472 @@ test("ui: Activity card binds Battle Report and Recent Opponents modal actions",
         actions: {
           ...createProfileScreenContext().actions,
           openBattleReport: () => calls.push("openBattleReport"),
-          openRecentOpponents: () => calls.push("openRecentOpponents")
+          openRecentOpponents: () => calls.push("openRecentOpponents"),
+          openCollections: () => calls.push("openCollections")
         }
       })
     );
 
     await battleReportClick?.();
     await recentCardClick?.();
+    await collectionsClick?.();
   } finally {
     global.document = previousDocument;
   }
 
-  assert.deepEqual(calls, ["openBattleReport", "openRecentOpponents"]);
+  assert.deepEqual(calls, ["openBattleReport", "openRecentOpponents", "openCollections"]);
 });
 
-test("ui: viewed profile and Battle Report do not render Recent Opponents", () => {
+test("ui: Collections modal lists all albums with progress states and opens detail view", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_vampire_female"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card"
+      ],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    collectionAlbums: {
+      summaries: [
+        {
+          albumId: "vampire_elegance",
+          name: "Vampire Elegance",
+          description: "Blood-gem card backs and winged elemental variants.",
+          ownedCount: 1,
+          totalCount: 8,
+          percentComplete: 13,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 150,
+            label: "150 Tokens",
+            rewardId: "collection_album_vampire_elegance_complete_tokens"
+          }
+        },
+        {
+          albumId: "lycan_power",
+          name: "Lycan Power",
+          description: "Pack-themed avatars, arena art, and elemental wolf variants.",
+          ownedCount: 0,
+          totalCount: 7,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: {
+            type: "tokens",
+            amount: 150,
+            label: "150 Tokens",
+            rewardId: "collection_album_lycan_power_complete_tokens"
+          }
+        },
+        {
+          albumId: "goldbound_relics",
+          name: "Goldbound Relics",
+          description: "Aurelian cosmetics and gilded elemental variants.",
+          ownedCount: 7,
+          totalCount: 7,
+          percentComplete: 100,
+          completed: true,
+          rewardState: "claimable",
+          rewardPreview: {
+            type: "tokens",
+            amount: 200,
+            label: "200 Tokens",
+            rewardId: "collection_album_goldbound_relics_complete_tokens"
+          }
+        },
+        {
+          albumId: "frostveil_court",
+          name: "Frostveil Court",
+          description: "Frostveil court cosmetics and aurora elemental variants.",
+          ownedCount: 0,
+          totalCount: 6,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: null
+        },
+        {
+          albumId: "neon_arcana",
+          name: "Neon Arcana",
+          description: "Neon entities, spellwired styling, and arcane variants.",
+          ownedCount: 0,
+          totalCount: 6,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: null
+        },
+        {
+          albumId: "crownfire",
+          name: "Crownfire",
+          description: "Featured Rival cosmetics from the Flame King collection.",
+          ownedCount: 0,
+          totalCount: 7,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "locked",
+          rewardPreview: null
+        },
+        {
+          albumId: "elemental_street",
+          name: "Elemental Street",
+          description: "Street-duelist cosmetics for all four elements.",
+          ownedCount: 0,
+          totalCount: 13,
+          percentComplete: 0,
+          completed: false,
+          rewardState: "claimed",
+          rewardPreview: {
+            type: "tokens",
+            amount: 150,
+            label: "150 Tokens",
+            rewardId: "collection_album_elemental_street_complete_tokens"
+          }
+        }
+      ]
+    }
+  };
+  const listHtml = profileScreen.renderCollectionAlbumsModalBody(profile);
+  const detailHtml = profileScreen.renderCollectionAlbumsModalBody(profile, {
+    selectedAlbumId: "vampire_elegance"
+  });
+
+  assert.match(listHtml, /data-collection-albums-modal="true"/);
+  assert.equal((listHtml.match(/data-collection-album-row="/g) ?? []).length, 7);
+  assert.match(listHtml, /Vampire Elegance/);
+  assert.match(listHtml, /Lycan Power/);
+  assert.match(listHtml, /Goldbound Relics/);
+  assert.match(listHtml, /Frostveil Court/);
+  assert.match(listHtml, /Neon Arcana/);
+  assert.match(listHtml, /Crownfire/);
+  assert.match(listHtml, /Elemental Street/);
+  assert.match(listHtml, /1 \/ 8/);
+  assert.match(listHtml, /13%/);
+  assert.match(listHtml, /In Progress/);
+  assert.match(listHtml, /0 \/ 7/);
+  assert.match(listHtml, /Not Started/);
+  assert.match(listHtml, /7 \/ 7/);
+  assert.match(listHtml, /Reward Ready/);
+  assert.match(listHtml, /Claimed/);
+  assert.match(listHtml, /data-collection-album-view="vampire_elegance"/);
+
+  assert.match(detailHtml, /data-collection-album-detail="true"/);
+  assert.match(detailHtml, /Vampire Elegance/);
+  assert.match(detailHtml, /1 \/ 8 owned/);
+  assert.match(detailHtml, /13% complete/);
+  assert.match(detailHtml, /avatar_vampire_female/);
+  assert.match(detailHtml, /data-collection-album-item-state="owned"/);
+  assert.match(detailHtml, /data-collection-album-item-state="missing"/);
+  assert.match(detailHtml, />Missing</);
+  assert.match(detailHtml, /Completion Reward/);
+  assert.match(detailHtml, /150 Tokens/);
+  assert.match(detailHtml, /data-collection-album-claim="vampire_elegance"[\s\S]*disabled/);
+  assert.doesNotMatch(detailHtml, /ownedCosmetics|collectionAlbumRewardClaims|uniqueCosmeticAcquisitions|account-secret|profile-secret|session-secret|socket-secret|settlement-secret/);
+});
+
+test("ui: Collections modal can render computed own album summaries and detail safely", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_vampire_female"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card"
+      ],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  profile.collectionAlbums = buildOwnCollectionAlbumsView(profile);
+
+  const html = profileScreen.renderCollectionAlbumsModalBody(profile);
+  const detailHtml = profileScreen.renderCollectionAlbumsModalBody(profile, {
+    selectedAlbumId: "vampire_elegance"
+  });
+
+  assert.equal((html.match(/data-collection-album-row="/g) ?? []).length, 7);
+  assert.match(html, /Vampire Elegance/);
+  assert.match(detailHtml, /data-collection-album-item-grid="true"/);
+  assert.match(detailHtml, /Owned/);
+  assert.match(detailHtml, /Missing/);
+});
+
+test("ui: appController opens Collections modal and binds list/detail navigation", () => {
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const viewListeners = [];
+  const backListeners = [];
+  const controller = createRendererController();
+  controller.profile = {
+    ...createProfileScreenContext().profile,
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_vampire_female"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: [
+        "default_fire_card",
+        "default_water_card",
+        "default_earth_card",
+        "default_wind_card"
+      ],
+      badge: ["none"],
+      title: ["Initiate"]
+    }
+  };
+  controller.profile.collectionAlbums = buildOwnCollectionAlbumsView(controller.profile);
+  controller.modalManager = {
+    show: (payload) => modalCalls.push(payload),
+    hide: () => {}
+  };
+
+  const modalRoot = {
+    querySelectorAll: (selector) => {
+      if (selector === "[data-collection-album-view]") {
+        return [
+          {
+            getAttribute: () => "vampire_elegance",
+            addEventListener: (type, handler) => {
+              if (type === "click") {
+                viewListeners.push(handler);
+              }
+            }
+          }
+        ];
+      }
+      if (selector === "[data-collection-albums-back]") {
+        return [
+          {
+            addEventListener: (type, handler) => {
+              if (type === "click") {
+                backListeners.push(handler);
+              }
+            }
+          }
+        ];
+      }
+      return [];
+    }
+  };
+
+  global.document = {
+    querySelector: () => modalRoot
+  };
+
+  try {
+    controller.showCollectionAlbumsModal();
+    assert.equal(modalCalls.at(-1)?.title, "Collection Albums");
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-collection-albums-modal="true"/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-collection-album-view="vampire_elegance"/);
+
+    viewListeners[0]?.();
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-collection-album-detail="true"/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Vampire Elegance/);
+
+    backListeners.at(-1)?.();
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-collection-albums-list="true"/);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: completed Collection Album detail renders active claim action and claimed state after reward", () => {
+  const profile = {
+    ...createProfileScreenContext().profile,
+    ownedCosmetics: {}
+  };
+  profile.ownedCosmetics = addUiAlbumItemsToOwnedCosmetics(profile, "vampire_elegance");
+  profile.collectionAlbums = buildOwnCollectionAlbumsView(profile);
+
+  const claimableHtml = profileScreen.renderCollectionAlbumsModalBody(profile, {
+    selectedAlbumId: "vampire_elegance"
+  });
+
+  assert.match(claimableHtml, /Reward Ready/);
+  assert.match(claimableHtml, /150 Tokens/);
+  assert.match(claimableHtml, /data-collection-album-claim="vampire_elegance"/);
+  assert.doesNotMatch(claimableHtml, /data-collection-album-claim="vampire_elegance"[\s\S]{0,120}disabled/);
+
+  const claimedProfile = {
+    ...profile,
+    collectionAlbumRewardClaims: {
+      vampire_elegance: {
+        claimedAt: "2026-07-01T00:00:00.000Z",
+        rewardId: "collection_album_vampire_elegance_complete_tokens"
+      }
+    }
+  };
+  claimedProfile.collectionAlbums = buildOwnCollectionAlbumsView(claimedProfile);
+  const claimedHtml = profileScreen.renderCollectionAlbumsModalBody(claimedProfile, {
+    selectedAlbumId: "vampire_elegance"
+  });
+
+  assert.match(claimedHtml, /Claimed/);
+  assert.match(claimedHtml, /data-collection-album-claim="vampire_elegance"[\s\S]*disabled/);
+});
+
+test("ui: Collection Album reward claim uses local authority only for offline profiles", async () => {
+  const previousWindow = global.window;
+  const controller = createRendererController();
+  const localCalls = [];
+  const multiplayerCalls = [];
+  const modalCalls = [];
+  let showProfileArgs = null;
+
+  controller.username = "OfflineAlbumUser";
+  controller.profile = {
+    ...createProfileScreenContext().profile,
+    tokens: 0,
+    collectionAlbums: { summaries: [] }
+  };
+  controller.hasMultiplayerProfileAccess = () => false;
+  controller.hasAuthenticatedMultiplayerSessionForUsername = () => false;
+  controller.showProfile = async (args) => {
+    showProfileArgs = args;
+  };
+  controller.modalManager = { show: (payload) => modalCalls.push(payload), hide: () => {} };
+  global.window = {
+    elemintz: {
+      state: {
+        claimCollectionAlbumReward: async (payload) => {
+          localCalls.push(payload);
+          return {
+            profile: {
+              ...controller.profile,
+              tokens: 150,
+              collectionAlbums: {
+                summaries: [{ albumId: "vampire_elegance", rewardState: "claimed" }]
+              }
+            },
+            reward: { type: "tokens", amount: 150 }
+          };
+        }
+      },
+      multiplayer: {
+        claimCollectionAlbumReward: async (payload) => {
+          multiplayerCalls.push(payload);
+          return null;
+        }
+      }
+    }
+  };
+
+  try {
+    const result = await controller.claimCollectionAlbumReward("vampire_elegance");
+    assert.equal(result.reward.amount, 150);
+  } finally {
+    global.window = previousWindow;
+  }
+
+  assert.deepEqual(localCalls, [{ username: "OfflineAlbumUser", albumId: "vampire_elegance" }]);
+  assert.deepEqual(multiplayerCalls, []);
+  assert.equal(controller.profile.tokens, 150);
+  assert.equal(showProfileArgs?.skipAuthoritativeProfileRefresh, true);
+  assert.equal(showProfileArgs?.preserveModal, true);
+  assert.equal(modalCalls.length, 0);
+});
+
+test("ui: authenticated Collection Album reward claim uses multiplayer authority without local fallback", async () => {
+  const previousWindow = global.window;
+  const controller = createRendererController();
+  const localCalls = [];
+  const multiplayerCalls = [];
+
+  controller.username = "OnlineAlbumUser";
+  controller.profile = {
+    ...createProfileScreenContext().profile,
+    tokens: 0,
+    collectionAlbums: { summaries: [] }
+  };
+  controller.hasMultiplayerProfileAccess = () => true;
+  controller.hasAuthenticatedMultiplayerSessionForUsername = () => true;
+  controller.showProfile = async () => {};
+  global.window = {
+    elemintz: {
+      state: {
+        claimCollectionAlbumReward: async (payload) => {
+          localCalls.push(payload);
+          throw new Error("local should not be used");
+        }
+      },
+      multiplayer: {
+        claimCollectionAlbumReward: async (payload) => {
+          multiplayerCalls.push(payload);
+          return {
+            snapshot: {
+              profile: {
+                ...controller.profile,
+                tokens: 200,
+                collectionAlbums: {
+                  summaries: [{ albumId: "goldbound_relics", rewardState: "claimed" }]
+                }
+              },
+              cosmetics: { equipped: {}, owned: {}, loadouts: [], preferences: {} }
+            },
+            reward: { type: "tokens", amount: 200 }
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    const result = await controller.claimCollectionAlbumReward("goldbound_relics");
+    assert.equal(result.reward.amount, 200);
+  } finally {
+    global.window = previousWindow;
+  }
+
+  assert.deepEqual(multiplayerCalls, [{ username: "OnlineAlbumUser", albumId: "goldbound_relics" }]);
+  assert.deepEqual(localCalls, []);
+  assert.equal(controller.profile.tokens, 200);
+});
+
+test("ui: authenticated Collection Album reward claim fails cleanly without multiplayer authority", async () => {
+  const previousWindow = global.window;
+  const controller = createRendererController();
+  const localCalls = [];
+
+  controller.username = "OnlineAlbumUnavailableUser";
+  controller.hasMultiplayerProfileAccess = () => false;
+  controller.hasAuthenticatedMultiplayerSessionForUsername = () => true;
+  global.window = {
+    elemintz: {
+      state: {
+        claimCollectionAlbumReward: async (payload) => {
+          localCalls.push(payload);
+          return null;
+        }
+      },
+      multiplayer: {}
+    }
+  };
+
+  try {
+    await assert.rejects(
+      controller.claimCollectionAlbumReward("vampire_elegance"),
+      /Collection Album rewards are unavailable/
+    );
+  } finally {
+    global.window = previousWindow;
+  }
+
+  assert.deepEqual(localCalls, []);
+});
+
+test("ui: viewed profile and Battle Report do not render Recent Opponents or full Collections UI", () => {
   const viewedHtml = profileScreen.renderViewedProfileModalBody({
     username: "ViewedRecentRival",
     title: "Initiate",
@@ -31388,7 +31878,12 @@ test("ui: viewed profile and Battle Report do not render Recent Opponents", () =
         latestResult: "loss",
         lastCompletedAt: "2026-07-07T18:00:00.000Z"
       }
-    ]
+    ],
+    collectionAlbums: {
+      completedCount: 1,
+      totalCount: 7,
+      completed: [{ albumId: "vampire_elegance", name: "Vampire Elegance", completed: true }]
+    }
   });
   const reportHtml = profileScreen.renderBattleReportModalBody({
     ...createProfileScreenContext().profile,
@@ -31412,9 +31907,11 @@ test("ui: viewed profile and Battle Report do not render Recent Opponents", () =
 
   assert.doesNotMatch(viewedHtml, /data-profile-recent-opponents="true"/);
   assert.doesNotMatch(viewedHtml, /Recent Opponents/);
+  assert.doesNotMatch(viewedHtml, /data-profile-collections-btn|data-collection-albums-modal|data-collection-album-row|View Album/);
   assert.doesNotMatch(viewedHtml, /Private Viewed Opponent|PRIVATE_VIEWED_KEY/);
   assert.doesNotMatch(reportHtml, /data-profile-recent-opponents="true"/);
   assert.doesNotMatch(reportHtml, /Recent Opponents/);
+  assert.doesNotMatch(reportHtml, /data-profile-collections-btn|data-collection-albums-modal|data-collection-album-row|View Album/);
   assert.doesNotMatch(reportHtml, /Private Report Opponent|PRIVATE_REPORT_KEY/);
 });
 

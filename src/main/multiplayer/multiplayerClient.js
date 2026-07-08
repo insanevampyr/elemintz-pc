@@ -2872,6 +2872,19 @@ export class MultiplayerClient {
     return response.result ?? null;
   }
 
+  async claimCollectionAlbumReward({ username, albumId, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:claimCollectionAlbumReward",
+      { username, albumId },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to claim Collection Album reward.");
+    }
+
+    return response.result ?? null;
+  }
+
   async applyCosmeticLoadout({ username, slotIndex, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:applyCosmeticLoadout",

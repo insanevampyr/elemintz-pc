@@ -5,6 +5,10 @@ import {
   getCosmeticDisplayName,
   resolveProfileShowcaseSlots
 } from "../state/cosmeticSystem.js";
+import {
+  buildOwnCollectionAlbumsView,
+  buildPublicCollectionAlbumsSummary
+} from "../state/collectionAlbums.js";
 import { getLevelProgress } from "../state/levelRewardsSystem.js";
 
 function normalizeAuthorityUsername(username) {
@@ -333,11 +337,13 @@ function buildPublicBloodMatchStats(profile = {}) {
 function buildProfileSnapshot({ profile, challenges }) {
   const cosmetics = buildSnapshotCosmetics(profile);
   const stats = buildSnapshotStats(profile);
+  const collectionAlbums = buildOwnCollectionAlbumsView(profile);
   const currency = {
     tokens: Number(profile?.tokens ?? 0)
   };
   const {
     uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
+    collectionAlbums: _collectionAlbums,
     ...clientProfile
   } = profile ?? {};
 
@@ -353,7 +359,8 @@ function buildProfileSnapshot({ profile, challenges }) {
       ownedCosmetics: cosmetics.owned,
       cosmeticLoadouts: cosmetics.loadouts,
       cosmeticRandomizeAfterMatch: cosmetics.preferences,
-      modeStats: stats.modes
+      modeStats: stats.modes,
+      collectionAlbums
     },
     cosmetics,
     stats,
@@ -370,6 +377,7 @@ function buildProfileSnapshot({ profile, challenges }) {
 function buildPublicProfileSnapshot({ profile, specialRecords = [] }) {
   const cosmetics = buildPublicSnapshotCosmetics(profile, specialRecords);
   const stats = buildSnapshotStats(profile);
+  const collectionAlbums = buildPublicCollectionAlbumsSummary(profile);
   const currency = {
     tokens: Number(profile?.tokens ?? 0)
   };
@@ -410,7 +418,8 @@ function buildPublicProfileSnapshot({ profile, specialRecords = [] }) {
       modeStats: stats.modes,
       equippedCosmetics: cosmetics.equipped,
       trophyShelf: cosmetics.trophyShelf,
-      showcaseSlots: cosmetics.showcaseSlots
+      showcaseSlots: cosmetics.showcaseSlots,
+      collectionAlbums
     },
     cosmetics,
     stats,
@@ -1214,6 +1223,23 @@ export class MultiplayerProfileAuthority {
       username: safeUsername,
       slotIndex,
       cosmetic
+    });
+    return {
+      ...sanitizeProfileResult(result),
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async claimCollectionAlbumReward({ username, albumId }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Collection Album rewards.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] claimCollectionAlbumReward -> ${safeUsername} (${albumId ?? "unknown"})`);
+    const result = await this.coordinator.claimCollectionAlbumReward({
+      username: safeUsername,
+      albumId
     });
     return {
       ...sanitizeProfileResult(result),

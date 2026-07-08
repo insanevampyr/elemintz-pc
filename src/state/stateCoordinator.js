@@ -13,6 +13,7 @@ import {
   CollectionPackStore,
   listEligibleCollectionPackCosmetics
 } from "./collectionPackStore.js";
+import { claimCollectionAlbumReward } from "./collectionAlbums.js";
 import { SaveSystem } from "./saveSystem.js";
 import { SettingsService } from "./settingsService.js";
 import {
@@ -4040,6 +4041,22 @@ export class StateCoordinator {
 
     return {
       profile,
+      cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
+    };
+  }
+
+  async claimCollectionAlbumReward({ username, albumId }) {
+    let claimResult = null;
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      claimResult = claimCollectionAlbumReward(current, albumId);
+      return claimResult.profile;
+    });
+
+    return {
+      profile,
+      reward: claimResult?.reward ?? null,
+      duplicate: Boolean(claimResult?.duplicate),
+      album: claimResult?.album ?? null,
       cosmetics: await this.buildCosmeticsViewWithSpecialMetadata(profile)
     };
   }

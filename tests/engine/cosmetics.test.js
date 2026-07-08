@@ -15,6 +15,12 @@ import {
   normalizeCosmeticMetadata,
   normalizeCosmeticRarity
 } from "../../src/state/cosmeticSystem.js";
+import {
+  buildCollectionAlbumDetail,
+  buildCollectionAlbumSummaries,
+  claimCollectionAlbumReward,
+  getCollectionAlbumDefinitions
+} from "../../src/state/collectionAlbums.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 
 const PERSONALITY_DROP_TITLE_DEFINITIONS = Object.freeze([
@@ -1365,6 +1371,372 @@ test("cosmetics: Elemental Street collectionless entries use matched Common and 
     assert.equal(item.releaseTag, "elemental_street_2026_06");
     assert.equal("collection" in item, false);
   }
+});
+
+test("collection albums: initial player-facing album definitions exist", () => {
+  const definitions = getCollectionAlbumDefinitions();
+  const byId = new Map(definitions.map((definition) => [definition.albumId, definition]));
+
+  for (const albumId of [
+    "vampire_elegance",
+    "lycan_power",
+    "goldbound_relics",
+    "frostveil_court",
+    "neon_arcana",
+    "crownfire",
+    "elemental_street"
+  ]) {
+    assert.ok(byId.has(albumId), `missing album ${albumId}`);
+    assert.equal(byId.get(albumId).rewardPreview?.type, "tokens");
+    assert.ok(byId.get(albumId).rewardPreview?.amount > 0);
+  }
+
+  assert.equal(byId.get("vampire_elegance").collectionKey, "Vampire Elegance");
+  assert.equal(byId.get("crownfire").collectionKey, "Flame King");
+  assert.equal(Array.isArray(byId.get("elemental_street").items), true);
+  assert.equal(byId.has("(none)"), false);
+});
+
+test("collection albums: summaries compute owned totals, percent, completion, and reward state", () => {
+  const ownedCosmetics = {
+    avatar: ["avatar_vampire_female", "avatar_vampire_male"],
+    cardBack: ["cardback_blood_gem"],
+    background: [],
+    elementCardVariant: ["earth_variant_stone_graves"],
+    badge: [],
+    title: []
+  };
+
+  const summaries = buildCollectionAlbumSummaries({ ownedCosmetics });
+  const vampire = summaries.find((album) => album.albumId === "vampire_elegance");
+
+  assert.equal(vampire.totalCount, 8);
+  assert.equal(vampire.ownedCount, 4);
+  assert.equal(vampire.percentComplete, 50);
+  assert.equal(vampire.completed, false);
+  assert.equal(vampire.rewardState, "locked");
+  assert.deepEqual(vampire.rewardPreview, {
+    type: "tokens",
+    amount: 150,
+    label: "150 Tokens",
+    rewardId: "collection_album_vampire_elegance_complete_tokens"
+  });
+
+  const completed = buildCollectionAlbumSummaries({
+    ownedCosmetics: {
+      avatar: ["avatar_vampire_female", "avatar_vampire_male"],
+      cardBack: ["cardback_blood_gem", "cardback_winged_coffin"],
+      background: [],
+      elementCardVariant: [
+        "earth_variant_stone_graves",
+        "fire_variant_flame_wings",
+        "water_variant_blood_wings",
+        "wind_variant_wings_wind"
+      ],
+      badge: [],
+      title: []
+    }
+  }).find((album) => album.albumId === "vampire_elegance");
+
+  assert.equal(completed.ownedCount, 8);
+  assert.equal(completed.totalCount, 8);
+  assert.equal(completed.percentComplete, 100);
+  assert.equal(completed.completed, true);
+  assert.equal(completed.rewardState, "claimable");
+
+  const claimed = buildCollectionAlbumSummaries({
+    ownedCosmetics: {
+      avatar: ["avatar_vampire_female", "avatar_vampire_male"],
+      cardBack: ["cardback_blood_gem", "cardback_winged_coffin"],
+      background: [],
+      elementCardVariant: [
+        "earth_variant_stone_graves",
+        "fire_variant_flame_wings",
+        "water_variant_blood_wings",
+        "wind_variant_wings_wind"
+      ],
+      badge: [],
+      title: []
+    },
+    collectionAlbumRewardClaims: {
+      vampire_elegance: {
+        claimedAt: "2026-07-01T00:00:00.000Z",
+        rewardId: "collection_album_vampire_elegance_complete_tokens"
+      }
+    }
+  }).find((album) => album.albumId === "vampire_elegance");
+
+  assert.equal(claimed.rewardState, "claimed");
+});
+
+test("collection albums: all supported cosmetic types can count when album definitions include them", () => {
+  const definitions = [
+    {
+      albumId: "all_types",
+      name: "All Types",
+      description: "Fixture album.",
+      collectionKey: "All Types",
+      rewardPreview: null
+    }
+  ];
+  const catalog = {
+    avatar: [{ id: "avatar_a", name: "Avatar A", rarity: "Common", collection: "All Types" }],
+    cardBack: [{ id: "cardback_a", name: "Card Back A", rarity: "Rare", collection: "All Types" }],
+    background: [{ id: "background_a", name: "Background A", rarity: "Epic", collection: "All Types" }],
+    elementCardVariant: [
+      { id: "variant_a", name: "Variant A", rarity: "Legendary", collection: "All Types", element: "fire" }
+    ],
+    badge: [{ id: "badge_a", name: "Badge A", rarity: "Common", collection: "All Types" }],
+    title: [{ id: "title_a", name: "Title A", rarity: "Rare", collection: "All Types" }]
+  };
+  const detail = buildCollectionAlbumDetail(
+    {
+      ownedCosmetics: {
+        avatar: ["avatar_a"],
+        cardBack: ["cardback_a"],
+        background: ["background_a"],
+        elementCardVariant: ["variant_a"],
+        badge: ["badge_a"],
+        title: ["title_a"]
+      }
+    },
+    "all_types",
+    { definitions, catalog }
+  );
+
+  assert.equal(detail.totalCount, 6);
+  assert.equal(detail.ownedCount, 6);
+  assert.equal(detail.completed, true);
+  assert.deepEqual(
+    detail.items.map((item) => item.type).sort(),
+    ["avatar", "background", "badge", "cardBack", "elementCardVariant", "title"].sort()
+  );
+});
+
+test("collection albums: eligibility excludes Unique grant-only hidden unsupported and malformed entries", () => {
+  const definitions = [
+    {
+      albumId: "eligibility_fixture",
+      name: "Eligibility Fixture",
+      description: "Fixture album.",
+      items: [
+        { type: "avatar", id: "normal_avatar" },
+        { type: "avatar", id: "unique_avatar" },
+        { type: "avatar", id: "grant_avatar" },
+        { type: "avatar", id: "hidden_avatar" },
+        { type: "avatar", id: "rotating_avatar" },
+        { type: "menuTile", id: "menu_tile" },
+        { type: "avatar", id: "missing_avatar" },
+        null
+      ],
+      rewardPreview: null
+    }
+  ];
+  const catalog = {
+    avatar: [
+      { id: "normal_avatar", name: "Normal Avatar", rarity: "Common", collection: "Fixture" },
+      { id: "unique_avatar", name: "Unique Avatar", rarity: "Unique", collection: "Fixture" },
+      { id: "grant_avatar", name: "Grant Avatar", rarity: "Epic", grantOnly: true, collection: "Fixture" },
+      { id: "hidden_avatar", name: "Hidden Avatar", rarity: "Epic", storeHidden: true, collection: "Fixture" },
+      {
+        id: "rotating_avatar",
+        name: "Rotating Avatar",
+        rarity: "Legendary",
+        rotationOnly: true,
+        collection: "Fixture"
+      }
+    ],
+    cardBack: [],
+    background: [],
+    elementCardVariant: [],
+    badge: [],
+    title: [],
+    menuTile: [{ id: "menu_tile", name: "Menu Tile", rarity: "Common", collection: "Fixture" }]
+  };
+
+  const detail = buildCollectionAlbumDetail({}, "eligibility_fixture", { definitions, catalog });
+
+  assert.equal(detail.totalCount, 2);
+  assert.deepEqual(
+    detail.items.map((item) => item.id),
+    ["normal_avatar", "rotating_avatar"]
+  );
+  assert.equal(detail.items.some((item) => item.id === "unique_avatar"), false);
+  assert.equal(detail.items.some((item) => item.id === "grant_avatar"), false);
+  assert.equal(detail.items.some((item) => item.id === "hidden_avatar"), false);
+  assert.equal(detail.items.some((item) => item.type === "menuTile"), false);
+});
+
+test("collection albums: rotationOnly catalog entries count when otherwise valid", () => {
+  const detail = buildCollectionAlbumDetail({}, "goldbound_relics");
+
+  assert.ok(detail.items.some((item) => item.id === "cardback_goldbound_relic"));
+  assert.equal(detail.totalCount, 7);
+});
+
+test("collection albums: detail marks missing and owned items with safe catalog metadata", () => {
+  const detail = buildCollectionAlbumDetail(
+    {
+      ownedCosmetics: {
+        avatar: ["avatar_neon_pyre_entity"],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    "neon_arcana"
+  );
+  const owned = detail.items.find((item) => item.id === "avatar_neon_pyre_entity");
+  const missing = detail.items.find((item) => item.id === "cardback_neon_arcana");
+
+  assert.equal(owned.owned, true);
+  assert.equal(owned.missing, false);
+  assert.equal(owned.name, "Neon Pyre Entity");
+  assert.equal(owned.rarity, "Epic");
+  assert.equal(owned.collection, "Neon Arcana");
+  assert.equal(owned.image, "avatars/avatar_neon_pyre_entity.png");
+
+  assert.equal(missing.owned, false);
+  assert.equal(missing.missing, true);
+  assert.equal(missing.name, "Neon Arcana Card Back");
+  assert.equal(missing.rarity, "Legendary");
+  assert.equal(missing.collection, "Neon Arcana");
+  assert.equal(missing.image, "card_backs/cardback_neon_arcana.png");
+});
+
+test("collection albums: completion reward claim grants tokens once and validates completion", () => {
+  const completedProfile = {
+    tokens: 25,
+    ownedCosmetics: {
+      avatar: ["avatar_vampire_female", "avatar_vampire_male"],
+      cardBack: ["cardback_blood_gem", "cardback_winged_coffin"],
+      background: [],
+      elementCardVariant: [
+        "earth_variant_stone_graves",
+        "fire_variant_flame_wings",
+        "water_variant_blood_wings",
+        "wind_variant_wings_wind"
+      ],
+      badge: [],
+      title: []
+    },
+    collectionAlbumRewardClaims: {}
+  };
+
+  const claimed = claimCollectionAlbumReward(completedProfile, "vampire_elegance", {
+    now: new Date("2026-07-01T00:00:00.000Z")
+  });
+
+  assert.equal(claimed.duplicate, false);
+  assert.deepEqual(claimed.reward, {
+    type: "tokens",
+    amount: 150,
+    rewardId: "collection_album_vampire_elegance_complete_tokens",
+    claimedAt: "2026-07-01T00:00:00.000Z"
+  });
+  assert.equal(claimed.profile.tokens, 175);
+  assert.deepEqual(claimed.profile.collectionAlbumRewardClaims.vampire_elegance, {
+    claimedAt: "2026-07-01T00:00:00.000Z",
+    rewardId: "collection_album_vampire_elegance_complete_tokens"
+  });
+  assert.equal(claimed.album.rewardState, "claimed");
+
+  const duplicate = claimCollectionAlbumReward(claimed.profile, "vampire_elegance", {
+    now: new Date("2026-07-02T00:00:00.000Z")
+  });
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.reward, null);
+  assert.equal(duplicate.profile.tokens, 175);
+  assert.deepEqual(
+    duplicate.profile.collectionAlbumRewardClaims,
+    claimed.profile.collectionAlbumRewardClaims
+  );
+
+  assert.throws(
+    () => claimCollectionAlbumReward(completedProfile, "missing_album"),
+    /Unknown Collection Album/
+  );
+  assert.throws(
+    () =>
+      claimCollectionAlbumReward(
+        {
+          tokens: 0,
+          ownedCosmetics: {
+            avatar: ["avatar_vampire_female"],
+            cardBack: [],
+            background: [],
+            elementCardVariant: [],
+            badge: [],
+            title: []
+          }
+        },
+        "vampire_elegance"
+      ),
+    /Complete this Collection Album/
+  );
+});
+
+test("collection albums: unknown album ids fail closed", () => {
+  assert.equal(buildCollectionAlbumDetail({}, "missing_album"), null);
+});
+
+test("collection albums: read models omit private profile and acquisition fields", () => {
+  const detail = buildCollectionAlbumDetail(
+    {
+      accountId: "acct-secret",
+      profileKey: "profile-secret",
+      sessionToken: "session-secret",
+      socketId: "socket-secret",
+      settlementKey: "settlement-secret",
+      uniqueCosmeticAcquisitions: {
+        "avatar:avatar_neon_pyre_entity": { source: "granted" }
+      },
+      ownedCosmetics: {
+        avatar: ["avatar_neon_pyre_entity"],
+        cardBack: [],
+        background: [],
+        elementCardVariant: [],
+        badge: [],
+        title: []
+      }
+    },
+    "neon_arcana"
+  );
+  const serialized = JSON.stringify(detail);
+
+  assert.equal(serialized.includes("ownedCosmetics"), false);
+  assert.equal(serialized.includes("uniqueCosmeticAcquisitions"), false);
+  assert.equal(serialized.includes("acquisition"), false);
+  assert.equal(serialized.includes("acct-secret"), false);
+  assert.equal(serialized.includes("profile-secret"), false);
+  assert.equal(serialized.includes("session-secret"), false);
+  assert.equal(serialized.includes("socket-secret"), false);
+  assert.equal(serialized.includes("settlement-secret"), false);
+});
+
+test("collection albums: read model computation does not mutate profile input", () => {
+  const profile = {
+    username: "AlbumReadUser",
+    ownedCosmetics: {
+      avatar: ["avatar_neon_pyre_entity"],
+      cardBack: [],
+      background: [],
+      elementCardVariant: [],
+      badge: [],
+      title: []
+    },
+    uniqueCosmeticAcquisitions: {
+      "avatar:avatar_neon_pyre_entity": { source: "granted" }
+    }
+  };
+  const before = JSON.stringify(profile);
+
+  buildCollectionAlbumSummaries(profile);
+  buildCollectionAlbumDetail(profile, "neon_arcana");
+
+  assert.equal(JSON.stringify(profile), before);
 });
 
 test("cosmetics: Vampire Elegance store purchases succeed for all approved items", async () => {

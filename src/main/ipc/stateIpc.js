@@ -166,6 +166,10 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
     coordinator.updateProfileShowcaseSlot(payload)
   );
 
+  registerGuardedMutation("state:claimCollectionAlbumReward", async (payload) =>
+    coordinator.claimCollectionAlbumReward(payload)
+  );
+
   registerGuardedMutation("state:acknowledgeLoadoutUnlocks", async (username) =>
     coordinator.acknowledgeLoadoutUnlocks(username)
   );

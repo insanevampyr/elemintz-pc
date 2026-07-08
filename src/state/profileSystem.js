@@ -29,6 +29,7 @@ import {
   getMaxLevelXpThreshold,
   normalizeProfileLevelRewards
 } from "./levelRewardsSystem.js";
+import { normalizeCollectionAlbumRewardClaims } from "./collectionAlbums.js";
 
 // Bump this constant whenever persisted profile structure needs a new on-disk
 // schema step. The migration pipeline below upgrades older records to match it.
@@ -304,6 +305,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("cosmetics", defaults.cosmetics);
   repairObjectSection("seenAnnouncements", defaults.seenAnnouncements);
   repairObjectSection("featuredRivalRewards", defaults.featuredRivalRewards);
+  repairObjectSection("collectionAlbumRewardClaims", defaults.collectionAlbumRewardClaims);
   repairObjectSection("levelRewardsClaimed", defaults.levelRewardsClaimed);
   repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
   repairObjectSection("uniqueCosmeticAcquisitions", defaults.uniqueCosmeticAcquisitions);
@@ -817,6 +819,9 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
           .slice(-100)
       : []
   };
+  const normalizedCollectionAlbumRewardClaims = normalizeCollectionAlbumRewardClaims(
+    validatedProfile.collectionAlbumRewardClaims
+  );
 
   let normalized = normalizeProfileDailyChallenges(
     normalizeProfileLevelRewards(
@@ -828,6 +833,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
             achievements: normalizeAchievementProgressMap(validatedProfile?.achievements),
             onlineDisconnectTracking: normalizedDisconnectTracking,
             onlineRewardSettlements: normalizedOnlineRewardSettlements,
+            collectionAlbumRewardClaims: normalizedCollectionAlbumRewardClaims,
             storeRoyaltyPayouts: normalizedStoreRoyaltyPayouts
           })
         )

@@ -25,6 +25,7 @@ import {
   getCosmeticCatalogForProfile,
   resolveProfileShowcaseSlots
 } from "../../src/state/cosmeticSystem.js";
+import { buildCollectionAlbumDetail } from "../../src/state/collectionAlbums.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import {
   applyLevelRewardsForLevelChange,
@@ -91,6 +92,28 @@ function markAllChallengeRewardsConsumed(challenges) {
   }
   challenges.weekly.completionChestGranted = true;
   return challenges;
+}
+
+function addAlbumItemsToOwnedCosmetics(profile, albumId) {
+  const detail = buildCollectionAlbumDetail(profile, albumId);
+  assert.ok(detail, `expected album detail for ${albumId}`);
+  const ownedCosmetics = Object.fromEntries(
+    Object.entries(profile.ownedCosmetics ?? {}).map(([type, ids]) => [
+      type,
+      Array.isArray(ids) ? [...ids] : []
+    ])
+  );
+
+  for (const item of detail.items) {
+    ownedCosmetics[item.type] = Array.isArray(ownedCosmetics[item.type])
+      ? ownedCosmetics[item.type]
+      : [];
+    if (!ownedCosmetics[item.type].includes(item.id)) {
+      ownedCosmetics[item.type].push(item.id);
+    }
+  }
+
+  return ownedCosmetics;
 }
 
 function withSelectedBonusChallenges(challenges, { daily = null, weekly = null } = {}) {
@@ -5270,6 +5293,241 @@ test("state: public Showcase shaping exposes Unique cosmetics without private ac
   assert.equal("storeHidden" in item, false);
   assert.equal("grantOnly" in item, false);
   assert.equal(JSON.stringify(viewed).includes("uniqueCosmeticAcquisitions"), false);
+});
+
+test("state: own profile snapshot exposes computed Collection Album summaries without storing progress", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("CollectionAlbumOwnerUser");
+  await authority.coordinator.profiles.updateProfile("CollectionAlbumOwnerUser", (current) => ({
+    ...current,
+    ownedCosmetics: addAlbumItemsToOwnedCosmetics(current, "vampire_elegance"),
+    collectionAlbumRewardClaims: {
+      unknown_legacy_album: {
+        claimedAt: "2026-07-01T00:00:00.000Z",
+        rewardId: "legacy_reward"
+      }
+    }
+  }));
+
+  const own = await authority.getProfile("CollectionAlbumOwnerUser");
+  const persisted = await authority.coordinator.profiles.getProfile("CollectionAlbumOwnerUser");
+  const vampire = own.profile.collectionAlbums.summaries.find(
+    (summary) => summary.albumId === "vampire_elegance"
+  );
+  const lycan = own.profile.collectionAlbums.summaries.find(
+    (summary) => summary.albumId === "lycan_power"
+  );
+
+  assert.ok(vampire);
+  assert.equal(vampire.completed, true);
+  assert.equal(vampire.ownedCount, vampire.totalCount);
+  assert.equal(vampire.percentComplete, 100);
+  assert.equal(vampire.rewardState, "claimable");
+  assert.deepEqual(vampire.rewardPreview, {
+    type: "tokens",
+    amount: 150,
+    label: "150 Tokens",
+    rewardId: "collection_album_vampire_elegance_complete_tokens"
+  });
+  assert.ok(lycan);
+  assert.equal(lycan.completed, false);
+  assert.equal("items" in vampire, false);
+  assert.deepEqual(persisted.collectionAlbumRewardClaims, {
+    unknown_legacy_album: {
+      claimedAt: "2026-07-01T00:00:00.000Z",
+      rewardId: "legacy_reward"
+    }
+  });
+  assert.equal("collectionAlbums" in persisted, false);
+});
+
+test("state: public profile Collection Album shape exposes completed chips only", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("CollectionAlbumPublicUser");
+  await authority.coordinator.profiles.updateProfile("CollectionAlbumPublicUser", (current) => ({
+    ...current,
+    ownedCosmetics: addAlbumItemsToOwnedCosmetics(current, "vampire_elegance"),
+    collectionAlbumRewardClaims: {
+      vampire_elegance: {
+        claimedAt: "2026-07-01T00:00:00.000Z",
+        rewardId: "private_future_reward"
+      },
+      unknown_legacy_album: {
+        claimedAt: "2026-07-02T00:00:00.000Z",
+        rewardId: "legacy_private_reward"
+      }
+    },
+    uniqueCosmeticAcquisitions: {
+      "avatar:private_unique": {
+        accountId: "acct-secret",
+        profileKey: "profile-secret",
+        sessionKey: "session-secret"
+      }
+    },
+    accountId: "acct-secret",
+    profileKey: "profile-secret",
+    sessionKey: "session-secret",
+    socketKey: "socket-secret",
+    settlementKey: "settlement-secret"
+  }));
+
+  const viewed = await authority.viewProfile("CollectionAlbumPublicUser");
+  const albums = viewed.profile.collectionAlbums;
+  const serialized = JSON.stringify(viewed);
+
+  assert.equal(Number.isInteger(albums.completedCount), true);
+  assert.equal(albums.totalCount >= albums.completedCount, true);
+  assert.deepEqual(albums.completed, [
+    {
+      albumId: "vampire_elegance",
+      name: "Vampire Elegance",
+      completed: true
+    }
+  ]);
+  assert.equal(albums.completed.some((album) => album.albumId === "lycan_power"), false);
+  assert.equal("ownedCosmetics" in viewed.profile, false);
+  assert.equal("collectionAlbumRewardClaims" in viewed.profile, false);
+  assert.equal("rewardState" in albums, false);
+  assert.equal("rewardPreview" in albums, false);
+  assert.equal("items" in albums, false);
+  assert.equal("uniqueCosmeticAcquisitions" in viewed.profile, false);
+  assert.equal(serialized.includes("private_future_reward"), false);
+  assert.equal(serialized.includes("legacy_private_reward"), false);
+  assert.equal(serialized.includes("acct-secret"), false);
+  assert.equal(serialized.includes("profile-secret"), false);
+  assert.equal(serialized.includes("session-secret"), false);
+  assert.equal(serialized.includes("socket-secret"), false);
+  assert.equal(serialized.includes("settlement-secret"), false);
+  assert.equal(serialized.includes("acquisition"), false);
+});
+
+test("state: public and own Collection Album shaping tolerates unknown legacy claim ids", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("CollectionAlbumLegacyClaimUser");
+  await authority.coordinator.profiles.updateProfile("CollectionAlbumLegacyClaimUser", (current) => ({
+    ...current,
+    collectionAlbumRewardClaims: {
+      old_album_that_no_longer_exists: {
+        claimedAt: "2026-07-01T00:00:00.000Z",
+        rewardId: "old_reward"
+      }
+    }
+  }));
+
+  const own = await authority.getProfile("CollectionAlbumLegacyClaimUser");
+  const viewed = await authority.viewProfile("CollectionAlbumLegacyClaimUser");
+
+  assert.equal(Array.isArray(own.profile.collectionAlbums.summaries), true);
+  assert.equal(Number.isInteger(viewed.profile.collectionAlbums.completedCount), true);
+  assert.equal(JSON.stringify(viewed).includes("old_reward"), false);
+});
+
+test("state: local Collection Album reward claim grants tokens once and validates album state", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+
+  await state.profiles.ensureProfile("CollectionClaimLocalUser");
+  await state.profiles.updateProfile("CollectionClaimLocalUser", (current) => ({
+    ...current,
+    tokens: 10,
+    ownedCosmetics: addAlbumItemsToOwnedCosmetics(current, "vampire_elegance")
+  }));
+
+  const claimed = await state.claimCollectionAlbumReward({
+    username: "CollectionClaimLocalUser",
+    albumId: "vampire_elegance"
+  });
+  assert.equal(claimed.reward.amount, 150);
+  assert.equal(claimed.profile.tokens, 160);
+  assert.equal(claimed.profile.collectionAlbumRewardClaims.vampire_elegance.rewardId, "collection_album_vampire_elegance_complete_tokens");
+  assert.match(claimed.profile.collectionAlbumRewardClaims.vampire_elegance.claimedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(
+    claimed.profile.collectionAlbums?.summaries,
+    undefined,
+    "computed album progress must not be stored on profile"
+  );
+
+  const repeated = await state.claimCollectionAlbumReward({
+    username: "CollectionClaimLocalUser",
+    albumId: "vampire_elegance"
+  });
+  assert.equal(repeated.duplicate, true);
+  assert.equal(repeated.reward, null);
+  assert.equal(repeated.profile.tokens, 160);
+
+  await assert.rejects(
+    state.claimCollectionAlbumReward({
+      username: "CollectionClaimLocalUser",
+      albumId: "missing_album"
+    }),
+    /Unknown Collection Album/
+  );
+
+  await state.profiles.ensureProfile("CollectionClaimIncompleteUser");
+  await assert.rejects(
+    state.claimCollectionAlbumReward({
+      username: "CollectionClaimIncompleteUser",
+      albumId: "vampire_elegance"
+    }),
+    /Complete this Collection Album/
+  );
+  const incomplete = await state.profiles.getProfile("CollectionClaimIncompleteUser");
+  assert.equal(incomplete.tokens, 400);
+  assert.deepEqual(incomplete.collectionAlbumRewardClaims, {});
+});
+
+test("state: multiplayer Collection Album reward claim recomputes completion server-side and redacts public claim data", async () => {
+  const dataDir = await createTempDataDir();
+  const authority = new MultiplayerProfileAuthority({ dataDir, logger: { info() {} } });
+
+  await authority.coordinator.profiles.ensureProfile("CollectionClaimServerUser");
+  await authority.coordinator.profiles.updateProfile("CollectionClaimServerUser", (current) => ({
+    ...current,
+    tokens: 20,
+    ownedCosmetics: addAlbumItemsToOwnedCosmetics(current, "crownfire")
+  }));
+
+  const claimed = await authority.claimCollectionAlbumReward({
+    username: "CollectionClaimServerUser",
+    albumId: "crownfire"
+  });
+  assert.equal(claimed.reward.amount, 250);
+  assert.equal(claimed.profile.tokens, 270);
+  assert.equal(claimed.snapshot.profile.tokens, 270);
+  const crownfire = claimed.snapshot.profile.collectionAlbums.summaries.find(
+    (summary) => summary.albumId === "crownfire"
+  );
+  assert.equal(crownfire.rewardState, "claimed");
+  assert.equal(crownfire.rewardPreview.amount, 250);
+
+  const repeated = await authority.claimCollectionAlbumReward({
+    username: "CollectionClaimServerUser",
+    albumId: "crownfire"
+  });
+  assert.equal(repeated.duplicate, true);
+  assert.equal(repeated.reward, null);
+  assert.equal(repeated.snapshot.profile.tokens, 270);
+
+  const viewed = await authority.viewProfile("CollectionClaimServerUser");
+  assert.equal(viewed.profile.collectionAlbums.completed.some((album) => album.albumId === "crownfire"), true);
+  assert.equal(JSON.stringify(viewed).includes("collectionAlbumRewardClaims"), false);
+  assert.equal(JSON.stringify(viewed).includes("rewardState"), false);
+  assert.equal(JSON.stringify(viewed).includes("rewardPreview"), false);
+
+  await authority.coordinator.profiles.ensureProfile("CollectionClaimServerIncompleteUser");
+  await assert.rejects(
+    authority.claimCollectionAlbumReward({
+      username: "CollectionClaimServerIncompleteUser",
+      albumId: "vampire_elegance"
+    }),
+    /Complete this Collection Album/
+  );
 });
 
 test("state: authoritative viewed-profile reads resolve account usernames through profileKey without creating defaults", async () => {
