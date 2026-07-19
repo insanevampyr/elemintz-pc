@@ -28800,6 +28800,44 @@ test("ui: match complete payload renders polished PvE winner, stats, and actions
   assert.ok(payload.bodyHtml.indexOf("match-complete-rewards") < payload.bodyHtml.indexOf("match-complete-actions"));
 });
 
+test("ui: post-match reward toasts do not invent level-up or basic chest from stale baselines", () => {
+  const chestCalls = [];
+  const levelUpCalls = [];
+  const tokenCalls = [];
+  const controller = createRendererController({
+    toastManager: {
+      showAchievement: () => {},
+      showChestGrant: (payload) => chestCalls.push(payload),
+      showLevelUp: (payload) => levelUpCalls.push(payload),
+      showTokenReward: (payload) => tokenCalls.push(payload)
+    }
+  });
+
+  controller.emitRewardToastsForResult(
+    {
+      profile: {
+        username: "Prototype Huggy",
+        playerXP: 2300,
+        playerLevel: 24,
+        chests: { basic: 0, milestone: 0, epic: 0, legendary: 0 }
+      },
+      xpDelta: 18,
+      tokenDelta: 0,
+      levelBefore: 3,
+      levelAfter: 4,
+      levelRewards: [{ kind: "chest", chestType: "basic", amount: 1, label: "Level 4 Reward" }],
+      chestGrants: [],
+      xpBreakdown: { lines: [{ label: "Match Reward", amount: 18 }], total: 18 }
+    },
+    "Prototype Huggy",
+    null
+  );
+
+  assert.deepEqual(chestCalls, []);
+  assert.deepEqual(levelUpCalls, []);
+  assert.deepEqual(tokenCalls, []);
+});
+
 test("ui: Training Complete payload renders local result and required actions without rewards", () => {
   const controller = createRendererController();
   controller.username = "TrainingUser";

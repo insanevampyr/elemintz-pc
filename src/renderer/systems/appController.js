@@ -5645,6 +5645,12 @@ export class AppController {
     return normalizeName(result?.profile?.username, fallbackName);
   }
 
+  profilesBelongToSamePlayer(leftProfile, rightProfile) {
+    const leftUsername = String(leftProfile?.username ?? "").trim().toLowerCase();
+    const rightUsername = String(rightProfile?.username ?? "").trim().toLowerCase();
+    return Boolean(leftUsername && rightUsername && leftUsername === rightUsername);
+  }
+
   getChestCount(profile, chestType = "basic") {
     return Math.max(0, Number(profile?.chests?.[chestType] ?? 0) || 0);
   }
@@ -7337,17 +7343,33 @@ export class AppController {
       });
     }
 
-    for (const chestType of ["basic", "milestone", "epic", "legendary"]) {
-      const chestDelta = Math.max(
-        0,
-        this.getChestCount(result.profile, chestType) - this.getChestCount(previousProfile, chestType)
-      );
-      if (chestDelta > 0) {
+    const explicitChestGrants = Array.isArray(result.chestGrants) ? result.chestGrants : null;
+    if (explicitChestGrants) {
+      for (const grant of explicitChestGrants) {
+        const chestType = String(grant?.chestType ?? "basic").trim() || "basic";
+        const amount = Math.max(0, Math.floor(Number(grant?.amount ?? 0) || 0));
+        if (amount <= 0) {
+          continue;
+        }
         this.toastManager.showChestGrant?.({
-          amount: chestDelta,
+          amount,
           chestLabel: this.getChestLabel(chestType),
           chestType
         });
+      }
+    } else if (this.profilesBelongToSamePlayer(previousProfile, result.profile)) {
+      for (const chestType of ["basic", "milestone", "epic", "legendary"]) {
+        const chestDelta = Math.max(
+          0,
+          this.getChestCount(result.profile, chestType) - this.getChestCount(previousProfile, chestType)
+        );
+        if (chestDelta > 0) {
+          this.toastManager.showChestGrant?.({
+            amount: chestDelta,
+            chestLabel: this.getChestLabel(chestType),
+            chestType
+          });
+        }
       }
     }
 
@@ -7357,12 +7379,34 @@ export class AppController {
       label: `${playerName} XP`
     });
 
-    this.toastManager.showLevelUp?.({
-      fromLevel: result.levelBefore ?? result.profile?.playerLevel ?? 1,
-      toLevel: result.levelAfter ?? result.profile?.playerLevel ?? 1,
-      rewards: result.levelRewards ?? [],
-      playerName
-    });
+    const profileLevel = Math.max(1, Number(result.profile?.playerLevel ?? 0) || 0);
+    const explicitLevelBefore = Number(result.levelBefore);
+    const explicitLevelAfter = Number(result.levelAfter);
+    const hasExplicitLevelChange =
+      Number.isFinite(explicitLevelBefore) &&
+      Number.isFinite(explicitLevelAfter) &&
+      explicitLevelAfter > explicitLevelBefore &&
+      (!profileLevel || profileLevel === explicitLevelAfter);
+    const hasProfileLevelChange =
+      !hasExplicitLevelChange &&
+      this.profilesBelongToSamePlayer(previousProfile, result.profile) &&
+      Math.max(1, Number(result.profile?.playerLevel ?? 1) || 1) >
+        Math.max(1, Number(previousProfile?.playerLevel ?? 1) || 1);
+
+    if (hasExplicitLevelChange || hasProfileLevelChange) {
+      const fromLevel = hasExplicitLevelChange
+        ? Math.max(1, explicitLevelBefore)
+        : Math.max(1, Number(previousProfile?.playerLevel ?? 1) || 1);
+      const toLevel = hasExplicitLevelChange
+        ? Math.max(1, explicitLevelAfter)
+        : Math.max(1, Number(result.profile?.playerLevel ?? fromLevel) || fromLevel);
+      this.toastManager.showLevelUp?.({
+        fromLevel,
+        toLevel,
+        rewards: result.levelRewards ?? [],
+        playerName
+      });
+    }
   }
 
   getLastRoundSummary() {
