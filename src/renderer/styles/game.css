@@ -227,7 +227,7 @@ input[type="number"] {
 }
 
 .screen-game .arena-board {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .arena-board::before {
@@ -382,7 +382,7 @@ input[type="number"] {
 
 .screen-game .arena-board {
   min-height: calc(100vh - 190px);
-  max-height: calc(100vh - 190px);
+  max-height: none;
 }
 
 .match-taunt-shell {

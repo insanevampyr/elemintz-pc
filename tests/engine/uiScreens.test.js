@@ -9877,6 +9877,8 @@ test("ui: non-online battle header stays sticky without a clipping screen ancest
 
   assert.match(css, /\.screen-game\s*>\s*\.hud\s*\{[^}]*position:\s*sticky;[^}]*top:\s*12px;[^}]*z-index:\s*20;/s);
   assert.match(css, /\.screen-game\s*\{[^}]*overflow:\s*visible;[^}]*position:\s*relative;/s);
+  assert.match(css, /\.screen-game\s+\.arena-board\s*\{[^}]*overflow:\s*visible;/s);
+  assert.match(css, /\.screen-game\s+\.arena-board\s*\{[^}]*min-height:\s*calc\(100vh\s*-\s*190px\);[^}]*max-height:\s*none;/s);
   assert.doesNotMatch(css, /\.screen-online-play\s*\{[^}]*position:\s*sticky;/s);
 });
 
