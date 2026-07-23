@@ -581,7 +581,7 @@ export class MultiplayerAccountStore {
     return sanitizeAccount(account);
   }
 
-  async requestEmailVerification({ email, accountId, username } = {}) {
+  async requestEmailVerification({ email, accountId, username, deliverVerification = null } = {}) {
     const safeEmail = normalizeEmail(email);
     const safeAccountId = String(accountId ?? "").trim();
     const safeUsername = normalizeUsername(username);
@@ -619,6 +619,12 @@ export class MultiplayerAccountStore {
     }
 
     const pendingVerification = this.buildPendingEmailVerification(nowMs);
+    if (typeof deliverVerification === "function") {
+      await deliverVerification({
+        email: account.email,
+        token: pendingVerification.token
+      });
+    }
     account.emailVerification = {
       ...pendingVerification.emailVerification,
       resendCount: Math.max(0, Number(account.emailVerification?.resendCount ?? 0) || 0) + 1

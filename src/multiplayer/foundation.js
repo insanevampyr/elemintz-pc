@@ -19,6 +19,7 @@ import { queryUniqueCosmeticHistory } from "../state/uniqueCosmeticHistory.js";
 import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js";
 import { AI_DIFFICULTY } from "../engine/ai.js";
 import { getGauntletRivalById } from "../engine/index.js";
+import { createEmailVerificationMailer } from "./emailVerificationMailer.js";
 
 const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
@@ -769,6 +770,7 @@ export function createMultiplayerFoundation({
   rewardPersister = null,
   profileAuthority = null,
   accountStore = null,
+  emailVerificationMailer = createEmailVerificationMailer(),
   adminGrantStore = null,
   storePurchaseLedgerStore = null,
   specialCosmeticRegistryStore = null,
@@ -1535,10 +1537,7 @@ export function createMultiplayerFoundation({
   }
 
   function emailDeliveryConfigured() {
-    return Boolean(
-      String(process.env.SMTP_USER ?? "").trim() &&
-        String(process.env.SMTP_PASS ?? "").trim()
-    );
+    return Boolean(emailVerificationMailer?.isConfigured?.());
   }
 
   function buildEmailVerificationDelivery(result = null) {
@@ -2216,7 +2215,23 @@ export function createMultiplayerFoundation({
       try {
         const result = await accountStore.requestEmailVerification({
           accountId: sessionResult.session.accountId,
-          username: sessionResult.session.username
+          username: sessionResult.session.username,
+          deliverVerification: emailDeliveryConfigured()
+            ? async ({ email, token }) => {
+                try {
+                  await emailVerificationMailer.sendVerificationEmail({
+                    to: email,
+                    code: token
+                  });
+                } catch {
+                  const deliveryError = new Error(
+                    "Unable to send verification email. Please try again."
+                  );
+                  deliveryError.code = "EMAIL_VERIFICATION_DELIVERY_FAILED";
+                  throw deliveryError;
+                }
+              }
+            : null
         });
         sessionResult.session.emailVerified = Boolean(result?.account?.emailVerified);
         respond({

@@ -19,6 +19,7 @@ import { MultiplayerAccountStore } from "../../src/multiplayer/accountStore.js";
 import { AnnouncementStore } from "../../src/multiplayer/announcementStore.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
 import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
+import { createEmailVerificationMailer } from "../../src/multiplayer/emailVerificationMailer.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { createSessionStore } from "../../src/multiplayer/sessionStore.js";
 import { ShopRotationStore } from "../../src/multiplayer/shopRotationStore.js";
@@ -7680,6 +7681,151 @@ test("multiplayer foundation: email verification auth routes expose safe status 
     } else {
       process.env.SMTP_PASS = previousSmtpPass;
     }
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: configured SMTP sends verification safely and failed delivery does not consume the request", async () => {
+  const dataDir = await createTempDataDir();
+  const smtpPassword = "local-test-app-password";
+  const sentMessages = [];
+  let failDelivery = false;
+  const mailer = createEmailVerificationMailer({
+    env: {
+      EMAIL_FROM: "EleMintz <elemintz.game@gmail.com>",
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_PORT: "587",
+      SMTP_SECURE: "false",
+      SMTP_USER: "elemintz.game@gmail.com",
+      SMTP_PASS: smtpPassword
+    },
+    transportFactory: (options) => ({
+      sendMail: async (message) => {
+        assert.equal(options.host, "smtp.gmail.com");
+        assert.equal(options.port, 587);
+        assert.equal(options.secure, false);
+        assert.equal(options.auth.user, "elemintz.game@gmail.com");
+        assert.equal(options.auth.pass, smtpPassword);
+        if (failDelivery) {
+          throw new Error(`private SMTP failure ${smtpPassword}`);
+        }
+        sentMessages.push(message);
+      }
+    })
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    emailVerificationMailer: mailer,
+    profileAuthority: {
+      assertProfileClaimAvailable: async () => null,
+      linkProfileToAccount: async ({ username, accountId }) => ({
+        username,
+        profile: { username, linkedAccountId: accountId }
+      }),
+      getProfile: async (username) => ({
+        username,
+        profile: { username, equippedCosmetics: {} },
+        progression: {
+          xp: { playerXP: 0, playerLevel: 1 },
+          dailyChallenges: { challenges: [] },
+          weeklyChallenges: { challenges: [] },
+          dailyLogin: { eligible: false }
+        }
+      })
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+    const registered = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: "smtp-verify@example.com",
+          password: "password123",
+          username: "SmtpVerifyUser"
+        },
+        resolve
+      );
+    });
+    assert.equal(registered?.ok, true);
+    assert.equal(registered?.emailVerification?.delivery, "smtp_configured");
+    assert.equal(registered?.emailVerification?.devVerificationToken, undefined);
+
+    const requested = await new Promise((resolve) => {
+      client.emit("auth:requestEmailVerification", {}, resolve);
+    });
+    assert.equal(requested?.ok, true);
+    assert.equal(requested?.status?.delivery, "smtp_configured");
+    assert.equal(requested?.status?.emailVerificationPending, true);
+    assert.equal(requested?.status?.devVerificationToken, undefined);
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].from, "EleMintz <elemintz.game@gmail.com>");
+    assert.equal(sentMessages[0].to, "smtp-verify@example.com");
+    assert.equal(sentMessages[0].subject, "Verify your EleMintz account");
+    assert.match(sentMessages[0].text, /Your EleMintz verification code is:/);
+    assert.match(sentMessages[0].text, /Enter this code in EleMintz to verify your email\./);
+    assert.match(sentMessages[0].html, /Verify your EleMintz account/);
+    assert.doesNotMatch(JSON.stringify(sentMessages[0]), /tokenHash|passwordHash/);
+    const emailedCode = sentMessages[0].text.match(/\b[a-f0-9]{48}\b/)?.[0] ?? null;
+    assert.equal(typeof emailedCode, "string");
+
+    const verified = await new Promise((resolve) => {
+      client.emit("auth:verifyEmail", { token: emailedCode }, resolve);
+    });
+    assert.equal(verified?.ok, true);
+    assert.equal(verified?.status?.emailVerified, true);
+
+    const failedRegistration = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: "smtp-failure@example.com",
+          password: "password123",
+          username: "SmtpFailureUser"
+        },
+        resolve
+      );
+    });
+    assert.equal(failedRegistration?.ok, true);
+    const accountsPath = path.join(dataDir, "accounts.json");
+    const beforeFailure = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    const beforeFailureAccount = beforeFailure.accounts.find(
+      (entry) => entry.username === "SmtpFailureUser"
+    );
+
+    failDelivery = true;
+    const failedRequest = await new Promise((resolve) => {
+      client.emit("auth:requestEmailVerification", {}, resolve);
+    });
+    assert.equal(failedRequest?.ok, false);
+    assert.equal(failedRequest?.error?.code, "EMAIL_VERIFICATION_DELIVERY_FAILED");
+    assert.equal(
+      failedRequest?.error?.message,
+      "Unable to send verification email. Please try again."
+    );
+    assert.doesNotMatch(JSON.stringify(failedRequest), new RegExp(smtpPassword));
+
+    const afterFailure = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    const afterFailureAccount = afterFailure.accounts.find(
+      (entry) => entry.username === "SmtpFailureUser"
+    );
+    assert.deepEqual(
+      afterFailureAccount.emailVerification,
+      beforeFailureAccount.emailVerification
+    );
+    assert.equal(afterFailureAccount.emailVerified, false);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

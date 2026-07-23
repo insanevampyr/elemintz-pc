@@ -31495,6 +31495,30 @@ test("ui: own Profile renders safe email verification states while viewed profil
   assert.match(devFallbackHtml, /Please wait before requesting another verification email\./);
   assert.doesNotMatch(devFallbackHtml, /tokenHash|requestedAt|expiresAt|lastSentAt|SMTP_PASS/);
 
+  const smtpHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: false
+      },
+      emailVerification: {
+        authenticated: true,
+        status: "requested",
+        emailVerified: false,
+        emailVerificationPending: true,
+        delivery: "smtp_configured",
+        devVerificationToken: null,
+        message: "Verification email sent. Check your inbox."
+      }
+    })
+  );
+  assert.match(smtpHtml, /Verification email sent\. Check your inbox\./);
+  assert.match(smtpHtml, /id="profile-email-verification-form"/);
+  assert.doesNotMatch(
+    smtpHtml,
+    /data-email-verification-dev-code|Dev verification code generated/
+  );
+
   const verifiedHtml = profileScreen.render(
     createProfileScreenContext({
       referral: {
