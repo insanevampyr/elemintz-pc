@@ -14,6 +14,17 @@ const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 1000 * 60;
 const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const REFERRAL_CODE_PATTERN = /^ELM-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
 const REFERRAL_CODE_GENERATION_ATTEMPTS = 64;
+const REFERRAL_QUALIFYING_MATCH_TARGET = 3;
+const REFERRAL_COUNTED_MATCH_ID_LIMIT = 3;
+const REFERRAL_QUALIFYING_MODES = new Set(["pve", "gauntlet", "featured_rival", "online_pvp"]);
+const REFERRAL_DISQUALIFYING_END_REASONS = new Set([
+  "abandoned",
+  "cancelled",
+  "forfeit",
+  "invalid",
+  "no_contest",
+  "quit_forfeit"
+]);
 
 function buildAccountError(code, message) {
   const error = new Error(message);
@@ -80,6 +91,18 @@ function normalizeReferralClaim(value) {
   };
 }
 
+function normalizeCountedReferralMatchIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(
+    value
+      .map((entry) => String(entry ?? "").trim().slice(0, 200))
+      .filter(Boolean)
+  )].slice(-REFERRAL_COUNTED_MATCH_ID_LIMIT);
+}
+
 function normalizeReferral(value) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   const qualification =
@@ -98,17 +121,83 @@ function normalizeReferral(value) {
       referrerClaims[safeClaimKey] = normalizedClaim;
     }
   }
+  const countedMatchIds = normalizeCountedReferralMatchIds(qualification.countedMatchIds);
+  const qualifyingMatchCount = Math.min(
+    REFERRAL_QUALIFYING_MATCH_TARGET,
+    Math.max(
+      countedMatchIds.length,
+      Math.max(0, Math.floor(Number(qualification.qualifyingMatchCount ?? 0) || 0))
+    )
+  );
 
   return {
     code: normalizeReferralCode(source.code),
     referredBy: normalizeReferralCode(source.referredBy),
+    referredAt: normalizeIsoTimestamp(source.referredAt),
     qualification: {
-      qualifyingMatchCount: Math.max(0, Math.floor(Number(qualification.qualifyingMatchCount ?? 0) || 0)),
+      qualifyingMatchCount,
       level2Reached: Boolean(qualification.level2Reached),
-      qualifiedAt: normalizeIsoTimestamp(qualification.qualifiedAt)
+      qualifiedAt: normalizeIsoTimestamp(qualification.qualifiedAt),
+      countedMatchIds
     },
     referredReward: normalizeReferralClaim(source.referredReward),
     referrerClaims
+  };
+}
+
+function buildSafeReferralStatus(account, playerLevel = 1) {
+  const referral = normalizeReferral(account?.referral);
+  const level2Reached = referral.qualification.level2Reached || Number(playerLevel ?? 1) >= 2;
+  const qualifyingMatchesCompleted = Math.min(
+    REFERRAL_QUALIFYING_MATCH_TARGET,
+    referral.qualification.qualifyingMatchCount
+  );
+  const hasActivatedReferral = Boolean(referral.referredBy);
+
+  return {
+    emailVerified: Boolean(account?.emailVerified),
+    hasActivatedReferral,
+    referredByLinked: hasActivatedReferral,
+    level2Reached: hasActivatedReferral && level2Reached,
+    qualifyingMatchesCompleted: hasActivatedReferral ? qualifyingMatchesCompleted : 0,
+    qualified: hasActivatedReferral && level2Reached && qualifyingMatchesCompleted >= REFERRAL_QUALIFYING_MATCH_TARGET,
+    qualifiedAt: hasActivatedReferral ? referral.qualification.qualifiedAt : null
+  };
+}
+
+function isQualifyingReferralMatch({ mode, difficulty, status, endReason, winner, trainingMode } = {}) {
+  const safeMode = String(mode ?? "").trim().toLowerCase();
+  const safeDifficulty = String(difficulty ?? "").trim().toLowerCase();
+  const safeEndReason = String(endReason ?? "").trim().toLowerCase();
+  const safeWinner = String(winner ?? "").trim().toLowerCase();
+
+  return (
+    String(status ?? "").trim().toLowerCase() === "completed" &&
+    REFERRAL_QUALIFYING_MODES.has(safeMode) &&
+    !REFERRAL_DISQUALIFYING_END_REASONS.has(safeEndReason) &&
+    ["p1", "p2", "draw"].includes(safeWinner) &&
+    trainingMode !== true &&
+    !(safeMode === "pve" && safeDifficulty === "easy")
+  );
+}
+
+function syncReferralQualificationLevel(referralValue, playerLevel, nowMs) {
+  const referral = normalizeReferral(referralValue);
+  if (!referral.referredBy) {
+    return referral;
+  }
+
+  const level2Reached = referral.qualification.level2Reached || Number(playerLevel ?? 1) >= 2;
+  const qualified =
+    level2Reached && referral.qualification.qualifyingMatchCount >= REFERRAL_QUALIFYING_MATCH_TARGET;
+  return {
+    ...referral,
+    qualification: {
+      ...referral.qualification,
+      level2Reached,
+      qualifiedAt:
+        referral.qualification.qualifiedAt ?? (qualified ? new Date(nowMs).toISOString() : null)
+    }
   };
 }
 
@@ -508,7 +597,7 @@ export class MultiplayerAccountStore {
     return sanitizeAccount(account);
   }
 
-  async getOrCreateReferralCode({ accountId, username } = {}) {
+  async getOrCreateReferralCode({ accountId, username, playerLevel = 1 } = {}) {
     const operation = async () => {
       const safeAccountId = String(accountId ?? "").trim();
       const safeUsername = normalizeUsername(username);
@@ -523,12 +612,20 @@ export class MultiplayerAccountStore {
         throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
       }
 
-      const existingCode = normalizeReferralCode(account.referral?.code);
+      const currentReferral = normalizeReferral(account.referral);
+      const referral = syncReferralQualificationLevel(currentReferral, playerLevel, this.now());
+      const referralChanged = JSON.stringify(referral) !== JSON.stringify(currentReferral);
+      account.referral = referral;
+      const existingCode = referral.code;
       if (existingCode) {
+        if (referralChanged) {
+          account.updatedAt = new Date(this.now()).toISOString();
+          await this.writeState(state);
+        }
         return {
           referralCode: existingCode,
-          emailVerified: Boolean(account.emailVerified),
-          referralLinked: Boolean(normalizeReferralCode(account.referral?.referredBy))
+          referralLinked: Boolean(referral.referredBy),
+          ...buildSafeReferralStatus(account, playerLevel)
         };
       }
 
@@ -548,15 +645,15 @@ export class MultiplayerAccountStore {
       }
 
       account.referral = {
-        ...normalizeReferral(account.referral),
+        ...referral,
         code: referralCode
       };
       account.updatedAt = new Date(this.now()).toISOString();
       await this.writeState(state);
       return {
         referralCode,
-        emailVerified: Boolean(account.emailVerified),
-        referralLinked: Boolean(normalizeReferralCode(account.referral?.referredBy))
+        referralLinked: Boolean(account.referral.referredBy),
+        ...buildSafeReferralStatus(account, playerLevel)
       };
     };
 
@@ -565,7 +662,7 @@ export class MultiplayerAccountStore {
     return pending;
   }
 
-  async activateReferralCode({ accountId, username, referralCode } = {}) {
+  async activateReferralCode({ accountId, username, referralCode, playerLevel = 1 } = {}) {
     const operation = async () => {
       const safeAccountId = String(accountId ?? "").trim();
       const safeUsername = normalizeUsername(username);
@@ -590,12 +687,17 @@ export class MultiplayerAccountStore {
         throw buildAccountError("REFERRAL_CODE_INVALID", "Enter a valid referral code.");
       }
 
-      const referral = normalizeReferral(account.referral);
+      let referral = syncReferralQualificationLevel(account.referral, playerLevel, this.now());
       if (referral.referredBy === safeReferralCode) {
+        if (JSON.stringify(referral) !== JSON.stringify(normalizeReferral(account.referral))) {
+          account.referral = referral;
+          account.updatedAt = new Date(this.now()).toISOString();
+          await this.writeState(state);
+        }
         return {
           referralLinked: true,
           alreadyLinked: true,
-          emailVerified: true
+          ...buildSafeReferralStatus(account, playerLevel)
         };
       }
       if (referral.referredBy) {
@@ -632,15 +734,104 @@ export class MultiplayerAccountStore {
 
       account.referral = {
         ...referral,
-        referredBy: safeReferralCode
+        referredBy: safeReferralCode,
+        referredAt: new Date(this.now()).toISOString(),
+        qualification: {
+          ...referral.qualification,
+          level2Reached: Number(playerLevel ?? 1) >= 2
+        }
       };
       account.updatedAt = new Date(this.now()).toISOString();
       await this.writeState(state);
       return {
         referralLinked: true,
         alreadyLinked: false,
-        emailVerified: true
+        ...buildSafeReferralStatus(account, playerLevel)
       };
+    };
+
+    const pending = this.referralMutationQueue.then(operation, operation);
+    this.referralMutationQueue = pending.catch(() => undefined);
+    return pending;
+  }
+
+  async recordReferralQualificationMatch({
+    accountId,
+    username,
+    profileKey,
+    settlementId,
+    mode,
+    difficulty,
+    status,
+    endReason,
+    winner,
+    trainingMode = false,
+    playerLevel = 1
+  } = {}) {
+    const operation = async () => {
+      const safeAccountId = String(accountId ?? "").trim();
+      const safeUsername = normalizeUsername(username);
+      const safeProfileKey = normalizeUsername(profileKey);
+      const safeSettlementId = String(settlementId ?? "").trim().slice(0, 200);
+      const state = await this.readState();
+      const account =
+        state.accounts.find(
+          (entry) =>
+            (safeAccountId && entry?.accountId === safeAccountId) ||
+            (safeProfileKey && normalizeUsername(entry?.profileKey) === safeProfileKey) ||
+            (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+        ) ?? null;
+      if (!account) {
+        return null;
+      }
+
+      const currentReferral = normalizeReferral(account.referral);
+      if (!currentReferral.referredBy) {
+        return buildSafeReferralStatus(account, playerLevel);
+      }
+
+      let referral = syncReferralQualificationLevel(currentReferral, playerLevel, this.now());
+      const qualification = referral.qualification;
+      const eligible =
+        safeSettlementId &&
+        isQualifyingReferralMatch({
+          mode,
+          difficulty,
+          status,
+          endReason,
+          winner,
+          trainingMode
+        });
+      const alreadyCounted = qualification.countedMatchIds.includes(safeSettlementId);
+      if (
+        eligible &&
+        !alreadyCounted &&
+        qualification.qualifyingMatchCount < REFERRAL_QUALIFYING_MATCH_TARGET
+      ) {
+        const qualifyingMatchCount = qualification.qualifyingMatchCount + 1;
+        const qualified = qualification.level2Reached && qualifyingMatchCount >= REFERRAL_QUALIFYING_MATCH_TARGET;
+        referral = {
+          ...referral,
+          qualification: {
+            ...qualification,
+            qualifyingMatchCount,
+            qualifiedAt:
+              qualification.qualifiedAt ?? (qualified ? new Date(this.now()).toISOString() : null),
+            countedMatchIds: normalizeCountedReferralMatchIds([
+              ...qualification.countedMatchIds,
+              safeSettlementId
+            ])
+          }
+        };
+      }
+
+      if (JSON.stringify(referral) !== JSON.stringify(currentReferral)) {
+        account.referral = referral;
+        account.updatedAt = new Date(this.now()).toISOString();
+        await this.writeState(state);
+      }
+
+      return buildSafeReferralStatus({ ...account, referral }, playerLevel);
     };
 
     const pending = this.referralMutationQueue.then(operation, operation);

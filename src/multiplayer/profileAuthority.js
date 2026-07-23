@@ -113,6 +113,18 @@ function summarizeMatchOutcome(result, perspective) {
   return "loss";
 }
 
+function classifyReferralQualificationMode(result = {}) {
+  if (String(result?.gauntletRivalId ?? "").trim() || result?.gauntletMode === true) {
+    return "gauntlet";
+  }
+  if (String(result?.featuredRivalId ?? "").trim()) {
+    return "featured_rival";
+  }
+
+  const mode = String(result?.mode ?? "").trim().toLowerCase();
+  return ["pve", "online_pvp"].includes(mode) ? mode : null;
+}
+
 function buildSnapshotCosmetics(profile) {
   const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
 
@@ -458,6 +470,38 @@ export class MultiplayerProfileAuthority {
     return buildProfileSnapshot({ profile, challenges });
   }
 
+  async recordReferralQualificationForMatch({ username, result, settlementKey, snapshot }) {
+    if (typeof this.accountStore?.recordReferralQualificationMatch !== "function") {
+      return null;
+    }
+
+    const mode = classifyReferralQualificationMode(result);
+    if (!mode) {
+      return null;
+    }
+
+    try {
+      return await this.accountStore.recordReferralQualificationMatch({
+        profileKey: username,
+        settlementId: settlementKey,
+        mode,
+        difficulty: result?.difficulty,
+        status: result?.status,
+        endReason: result?.endReason,
+        winner: result?.winner,
+        trainingMode: result?.trainingMode === true,
+        playerLevel: snapshot?.profile?.playerLevel ?? 1
+      });
+    } catch (error) {
+      this.logger.error?.("[ProfileAuthority] referral qualification update failed", {
+        username,
+        mode,
+        message: error?.message ?? String(error)
+      });
+      return null;
+    }
+  }
+
   async viewProfile(username) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {
@@ -780,11 +824,20 @@ export class MultiplayerProfileAuthority {
       `[ProfileAuthority] applyMatchResult <- ${safeUsername} (${matchResult?.duplicate ? "duplicate" : "success"})`
     );
 
+    const snapshot = await this.getProfile(safeUsername);
+    const referralQualification = await this.recordReferralQualificationForMatch({
+      username: safeUsername,
+      result,
+      settlementKey,
+      snapshot
+    });
+
     return {
       duplicate: Boolean(matchResult?.duplicate),
       matchResult,
       rewardGrant,
-      snapshot: await this.getProfile(safeUsername)
+      referralQualification,
+      snapshot
     };
   }
 
@@ -811,10 +864,19 @@ export class MultiplayerProfileAuthority {
       latestBattleContext
     });
 
+    const snapshot = await this.getProfile(safeUsername);
+    const referralQualification = await this.recordReferralQualificationForMatch({
+      username: safeUsername,
+      result,
+      settlementKey,
+      snapshot
+    });
+
     return {
       duplicate: Boolean(matchResult?.duplicate),
       matchResult,
-      snapshot: await this.getProfile(safeUsername)
+      referralQualification,
+      snapshot
     };
   }
 

@@ -2109,7 +2109,16 @@ export class MultiplayerClient {
     return {
       referralCode: String(response.referralCode ?? "").trim(),
       emailVerified: Boolean(response.emailVerified),
-      referralLinked: Boolean(response.referralLinked)
+      referralLinked: Boolean(response.referralLinked),
+      hasActivatedReferral: Boolean(response.hasActivatedReferral),
+      referredByLinked: Boolean(response.referredByLinked),
+      level2Reached: Boolean(response.level2Reached),
+      qualifyingMatchesCompleted: Math.min(
+        3,
+        Math.max(0, Number(response.qualifyingMatchesCompleted ?? 0))
+      ),
+      qualified: Boolean(response.qualified),
+      qualifiedAt: response.qualifiedAt ?? null
     };
   }
 
@@ -2126,7 +2135,16 @@ export class MultiplayerClient {
     return {
       referralLinked: Boolean(response.referralLinked),
       alreadyLinked: Boolean(response.alreadyLinked),
-      emailVerified: Boolean(response.emailVerified)
+      emailVerified: Boolean(response.emailVerified),
+      hasActivatedReferral: Boolean(response.hasActivatedReferral),
+      referredByLinked: Boolean(response.referredByLinked),
+      level2Reached: Boolean(response.level2Reached),
+      qualifyingMatchesCompleted: Math.min(
+        3,
+        Math.max(0, Number(response.qualifyingMatchesCompleted ?? 0))
+      ),
+      qualified: Boolean(response.qualified),
+      qualifiedAt: response.qualifiedAt ?? null
     };
   }
 

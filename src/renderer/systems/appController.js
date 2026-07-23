@@ -309,7 +309,11 @@ export class AppController {
       status: "idle",
       referralCode: null,
       emailVerified: false,
-      referralLinked: false
+      referralLinked: false,
+      level2Reached: false,
+      qualifyingMatchesCompleted: 0,
+      qualified: false,
+      qualifiedAt: null
     };
     this.referralCodeRequestPromise = null;
     this.referralActivationState = {
@@ -4151,7 +4155,11 @@ export class AppController {
         status: "idle",
         referralCode: null,
         emailVerified: false,
-        referralLinked: false
+        referralLinked: false,
+        level2Reached: false,
+        qualifyingMatchesCompleted: 0,
+        qualified: false,
+        qualifiedAt: null
       };
       return this.referralCodeState;
     }
@@ -4159,7 +4167,8 @@ export class AppController {
     if (
       this.referralCodeState.username === usernameKey &&
       this.referralCodeState.status === "ready" &&
-      this.referralCodeState.referralCode
+      this.referralCodeState.referralCode &&
+      !this.referralCodeState.referralLinked
     ) {
       return this.referralCodeState;
     }
@@ -4178,7 +4187,11 @@ export class AppController {
       status: "loading",
       referralCode: null,
       emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified),
-      referralLinked: false
+      referralLinked: false,
+      level2Reached: false,
+      qualifyingMatchesCompleted: 0,
+      qualified: false,
+      qualifiedAt: null
     };
     this.referralCodeRequestPromise = (async () => {
       try {
@@ -4196,7 +4209,14 @@ export class AppController {
           status: "ready",
           referralCode,
           emailVerified: Boolean(result?.emailVerified),
-          referralLinked: Boolean(result?.referralLinked)
+          referralLinked: Boolean(result?.referralLinked),
+          level2Reached: Boolean(result?.level2Reached),
+          qualifyingMatchesCompleted: Math.min(
+            3,
+            Math.max(0, Number(result?.qualifyingMatchesCompleted ?? 0))
+          ),
+          qualified: Boolean(result?.qualified),
+          qualifiedAt: result?.qualifiedAt ?? null
         };
       } catch {
         this.referralCodeState = {
@@ -4205,7 +4225,11 @@ export class AppController {
           status: "error",
           referralCode: null,
           emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified),
-          referralLinked: false
+          referralLinked: false,
+          level2Reached: false,
+          qualifyingMatchesCompleted: 0,
+          qualified: false,
+          qualifiedAt: null
         };
       } finally {
         this.referralCodeRequestPromise = null;
@@ -4272,7 +4296,14 @@ export class AppController {
         }
         this.referralCodeState = {
           ...this.referralCodeState,
-          referralLinked: true
+          referralLinked: true,
+          level2Reached: Boolean(result?.level2Reached),
+          qualifyingMatchesCompleted: Math.min(
+            3,
+            Math.max(0, Number(result?.qualifyingMatchesCompleted ?? 0))
+          ),
+          qualified: Boolean(result?.qualified),
+          qualifiedAt: result?.qualifiedAt ?? null
         };
         this.referralActivationState = {
           username: usernameKey,

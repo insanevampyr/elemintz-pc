@@ -2275,15 +2275,27 @@ export function createMultiplayerFoundation({
       }
 
       try {
+        const profileUsername = sessionResult.session.profileKey ?? sessionResult.session.username;
+        const snapshot =
+          typeof profileAuthority?.getProfile === "function"
+            ? await profileAuthority.getProfile(profileUsername)
+            : null;
         const result = await accountStore.getOrCreateReferralCode({
           accountId: sessionResult.session.accountId,
-          username: sessionResult.session.username
+          username: sessionResult.session.username,
+          playerLevel: snapshot?.profile?.playerLevel ?? 1
         });
         respond({
           ok: true,
           referralCode: result.referralCode,
           emailVerified: Boolean(result.emailVerified),
-          referralLinked: Boolean(result.referralLinked)
+          referralLinked: Boolean(result.referralLinked),
+          hasActivatedReferral: Boolean(result.hasActivatedReferral),
+          referredByLinked: Boolean(result.referredByLinked),
+          level2Reached: Boolean(result.level2Reached),
+          qualifyingMatchesCompleted: Math.min(3, Math.max(0, Number(result.qualifyingMatchesCompleted ?? 0))),
+          qualified: Boolean(result.qualified),
+          qualifiedAt: result.qualifiedAt ?? null
         });
       } catch (error) {
         respond(buildAccountError(error, "REFERRAL_CODE_FAILED"));
@@ -2306,16 +2318,28 @@ export function createMultiplayerFoundation({
       }
 
       try {
+        const profileUsername = sessionResult.session.profileKey ?? sessionResult.session.username;
+        const snapshot =
+          typeof profileAuthority?.getProfile === "function"
+            ? await profileAuthority.getProfile(profileUsername)
+            : null;
         const result = await accountStore.activateReferralCode({
           accountId: sessionResult.session.accountId,
           username: sessionResult.session.username,
-          referralCode: payload?.referralCode
+          referralCode: payload?.referralCode,
+          playerLevel: snapshot?.profile?.playerLevel ?? 1
         });
         respond({
           ok: true,
           referralLinked: Boolean(result.referralLinked),
           alreadyLinked: Boolean(result.alreadyLinked),
-          emailVerified: Boolean(result.emailVerified)
+          emailVerified: Boolean(result.emailVerified),
+          hasActivatedReferral: Boolean(result.hasActivatedReferral),
+          referredByLinked: Boolean(result.referredByLinked),
+          level2Reached: Boolean(result.level2Reached),
+          qualifyingMatchesCompleted: Math.min(3, Math.max(0, Number(result.qualifyingMatchesCompleted ?? 0))),
+          qualified: Boolean(result.qualified),
+          qualifiedAt: result.qualifiedAt ?? null
         });
       } catch (error) {
         respond(buildAccountError(error, "REFERRAL_ACTIVATION_FAILED"));

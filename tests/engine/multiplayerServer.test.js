@@ -7693,10 +7693,12 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
     assert.deepEqual(registeredState.accounts[0].referral, {
       code: null,
       referredBy: null,
+      referredAt: null,
       qualification: {
         qualifyingMatchCount: 0,
         level2Reached: false,
-        qualifiedAt: null
+        qualifiedAt: null,
+        countedMatchIds: []
       },
       referredReward: {
         claimedAt: null,
@@ -7730,10 +7732,12 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
     assert.deepEqual(normalizedAccount.referral, {
       code: null,
       referredBy: null,
+      referredAt: null,
       qualification: {
         qualifyingMatchCount: 0,
         level2Reached: false,
-        qualifiedAt: null
+        qualifiedAt: null,
+        countedMatchIds: []
       },
       referredReward: {
         claimedAt: null,
@@ -7826,7 +7830,13 @@ test("multiplayer foundation: referral code route requires authentication and ex
       ok: true,
       referralCode: "ELM-RUTE-E222",
       emailVerified: false,
-      referralLinked: false
+      referralLinked: false,
+      hasActivatedReferral: false,
+      referredByLinked: false,
+      level2Reached: false,
+      qualifyingMatchesCompleted: 0,
+      qualified: false,
+      qualifiedAt: null
     });
     assert.deepEqual(repeated, created);
     assert.equal("referral" in created, false);
@@ -7945,7 +7955,13 @@ test("multiplayer foundation: verified referral activation links once without qu
       ok: true,
       referralLinked: true,
       alreadyLinked: false,
-      emailVerified: true
+      emailVerified: true,
+      hasActivatedReferral: true,
+      referredByLinked: true,
+      level2Reached: false,
+      qualifyingMatchesCompleted: 0,
+      qualified: false,
+      qualifiedAt: null
     });
     const referredCode = await createCode(referredClient);
     assert.equal(referredCode?.referralCode, "ELM-USER-C444");
@@ -7975,7 +7991,13 @@ test("multiplayer foundation: verified referral activation links once without qu
       ok: true,
       referralLinked: true,
       alreadyLinked: true,
-      emailVerified: true
+      emailVerified: true,
+      hasActivatedReferral: true,
+      referredByLinked: true,
+      level2Reached: false,
+      qualifyingMatchesCompleted: 0,
+      qualified: false,
+      qualifiedAt: null
     });
     const differentCode = await activate(referredClient, otherCode.referralCode);
     assert.equal(differentCode?.ok, false);
@@ -8001,7 +8023,8 @@ test("multiplayer foundation: verified referral activation links once without qu
     assert.deepEqual(storedReferred.referral.qualification, {
       qualifyingMatchCount: 0,
       level2Reached: false,
-      qualifiedAt: null
+      qualifiedAt: null,
+      countedMatchIds: []
     });
     assert.deepEqual(storedReferred.referral.referredReward, {
       claimedAt: null,
@@ -8015,6 +8038,194 @@ test("multiplayer foundation: verified referral activation links once without qu
     referredClient?.disconnect();
     otherClient?.disconnect();
     await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: referral qualification tracks authoritative completed matches without rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const generatedCodes = ["ELM-QRFR-A222", "ELM-QREF-B333", "ELM-QNAN-C444"];
+  const nowMs = Date.parse("2026-07-23T12:00:00.000Z");
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    now: () => nowMs,
+    referralCodeGenerator: () => generatedCodes.shift()
+  });
+  const coordinator = new StateCoordinator({ dataDir, random: () => 1 });
+  const authority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+
+  try {
+    const referrer = await accountStore.register({
+      email: "qualification-referrer@example.com",
+      password: "password123",
+      username: "QualificationReferrer"
+    });
+    const referred = await accountStore.register({
+      email: "qualification-referred@example.com",
+      password: "password123",
+      username: "QualificationReferred"
+    });
+    const unlinked = await accountStore.register({
+      email: "qualification-unlinked@example.com",
+      password: "password123",
+      username: "QualificationUnlinked"
+    });
+    await accountStore.verifyEmail({ accountId: referrer.accountId, token: referrer.devVerificationToken });
+    await accountStore.verifyEmail({ accountId: referred.accountId, token: referred.devVerificationToken });
+    await coordinator.profiles.ensureProfile("QualificationReferrer");
+    await coordinator.profiles.ensureProfile("QualificationReferred");
+    await coordinator.profiles.ensureProfile("QualificationUnlinked");
+
+    const referrerCode = await accountStore.getOrCreateReferralCode({ accountId: referrer.accountId });
+    await accountStore.getOrCreateReferralCode({ accountId: referred.accountId });
+    await accountStore.getOrCreateReferralCode({ accountId: unlinked.accountId });
+    await accountStore.activateReferralCode({
+      accountId: referred.accountId,
+      referralCode: referrerCode.referralCode,
+      playerLevel: 1
+    });
+
+    const initialStatus = await accountStore.getOrCreateReferralCode({
+      accountId: referred.accountId,
+      playerLevel: 1
+    });
+    assert.equal(initialStatus.level2Reached, false);
+    assert.equal(initialStatus.qualifyingMatchesCompleted, 0);
+    assert.equal(initialStatus.qualified, false);
+
+    const first = await authority.applyLocalMatchResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({ mode: "pve", difficulty: "normal" }),
+      settlementKey: "referral-qualification-pve-1"
+    });
+    assert.equal(first.referralQualification.qualifyingMatchesCompleted, 1);
+    assert.equal(first.referralQualification.level2Reached, false);
+
+    const duplicate = await authority.applyLocalMatchResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({ mode: "pve", difficulty: "normal" }),
+      settlementKey: "referral-qualification-pve-1"
+    });
+    assert.equal(duplicate.duplicate, true);
+    assert.equal(duplicate.referralQualification.qualifyingMatchesCompleted, 1);
+
+    await authority.applyLocalMatchResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({ mode: "pve", difficulty: "easy" }),
+      settlementKey: "referral-qualification-easy"
+    });
+    await authority.applyLocalMatchResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({
+        mode: "pve",
+        difficulty: "normal",
+        endReason: "quit_forfeit"
+      }),
+      settlementKey: "referral-qualification-forfeit"
+    });
+    await authority.applyLocalHotseatResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({ mode: "local_pvp", difficulty: "normal" }),
+      settlementKey: "referral-qualification-hotseat"
+    });
+    await assert.rejects(
+      authority.applyLocalMatchResult({
+        username: "QualificationReferred",
+        result: { status: "active", mode: "pve", winner: null },
+        settlementKey: "referral-qualification-incomplete"
+      }),
+      /must be completed/
+    );
+
+    let status = await accountStore.getOrCreateReferralCode({
+      accountId: referred.accountId,
+      playerLevel: 1
+    });
+    assert.equal(status.qualifyingMatchesCompleted, 1);
+
+    const level2Xp = getXpThresholds()[1];
+    await coordinator.profiles.updateProfile("QualificationReferred", (profile) => ({
+      ...profile,
+      playerXP: level2Xp,
+      playerLevel: 2
+    }));
+    const second = await authority.applyLocalMatchResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({
+        mode: "pve",
+        difficulty: "hard",
+        featuredRivalId: "crownfire_duelist"
+      }),
+      settlementKey: "referral-qualification-featured-2"
+    });
+    assert.equal(second.referralQualification.level2Reached, true);
+    assert.equal(second.referralQualification.qualifyingMatchesCompleted, 2);
+
+    const third = await authority.applyMatchResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({ mode: "online_pvp", difficulty: "normal" }),
+      settlementKey: "referral-qualification-online-3"
+    });
+    assert.equal(third.referralQualification.qualifyingMatchesCompleted, 3);
+    assert.equal(third.referralQualification.qualified, true);
+    assert.equal(third.referralQualification.qualifiedAt, "2026-07-23T12:00:00.000Z");
+
+    await authority.applyLocalMatchResult({
+      username: "QualificationReferred",
+      result: createCompletedLocalMatchState({
+        mode: "pve",
+        difficulty: "hard",
+        gauntletRivalId: "pyro_maniac"
+      }),
+      settlementKey: "referral-qualification-gauntlet-extra"
+    });
+    status = await accountStore.getOrCreateReferralCode({
+      accountId: referred.accountId,
+      playerLevel: 2
+    });
+    assert.equal(status.qualifyingMatchesCompleted, 3);
+    assert.equal(status.qualified, true);
+
+    const unlinkedBefore = JSON.parse(await fs.readFile(path.join(dataDir, "accounts.json"), "utf8"));
+    await accountStore.recordReferralQualificationMatch({
+      accountId: unlinked.accountId,
+      settlementId: "referral-qualification-unlinked",
+      mode: "pve",
+      difficulty: "normal",
+      status: "completed",
+      winner: "p1",
+      playerLevel: 2
+    });
+    const stored = JSON.parse(await fs.readFile(path.join(dataDir, "accounts.json"), "utf8"));
+    const unlinkedBeforeAccount = unlinkedBefore.accounts.find((account) => account.accountId === unlinked.accountId);
+    const unlinkedAfterAccount = stored.accounts.find((account) => account.accountId === unlinked.accountId);
+    assert.deepEqual(unlinkedAfterAccount, unlinkedBeforeAccount);
+
+    const referredStored = stored.accounts.find((account) => account.accountId === referred.accountId);
+    assert.equal(referredStored.referral.qualification.qualifyingMatchCount, 3);
+    assert.deepEqual(referredStored.referral.qualification.countedMatchIds, [
+      "referral-qualification-pve-1",
+      "referral-qualification-featured-2",
+      "referral-qualification-online-3"
+    ]);
+    assert.deepEqual(referredStored.referral.referredReward, { claimedAt: null, claimId: null });
+    assert.deepEqual(referredStored.referral.referrerClaims, {});
+    assert.equal("tokens" in referredStored, false);
+    assert.equal("chests" in referredStored, false);
+    assert.equal("countedMatchIds" in status, false);
+    assert.equal("referredBy" in status, false);
+    const publicProfile = await authority.viewProfile("QualificationReferred");
+    const publicPayload = JSON.stringify(publicProfile);
+    assert.doesNotMatch(
+      publicPayload,
+      /referredBy|referredAt|qualifyingMatchCount|countedMatchIds|referrerClaims|qualifiedAt/
+    );
+  } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

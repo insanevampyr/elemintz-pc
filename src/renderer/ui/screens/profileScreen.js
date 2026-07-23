@@ -1904,7 +1904,18 @@ function renderProfileSocialToolsCard({
   if (!referral?.authenticated) {
     referralEntryBody = '<p class="text-muted" data-referral-activation-signed-out="true">Sign in to activate a referral code.</p>';
   } else if (linked) {
-    referralEntryBody = '<p class="text-muted" data-referral-activation-linked="true">Referral linked. Progress unlocks after Level 2 and 3 qualifying matches.</p>';
+    const qualifyingMatchesCompleted = Math.min(
+      3,
+      Math.max(0, Math.floor(Number(referral?.qualifyingMatchesCompleted ?? 0) || 0))
+    );
+    const level2Label = referral?.level2Reached ? "complete" : "not complete";
+    referralEntryBody = `
+      <div data-referral-activation-linked="true">
+        <p class="text-muted">Referral linked.</p>
+        <p class="text-muted" data-referral-qualification-progress="true">Progress: Level 2 ${level2Label}. Qualifying matches ${qualifyingMatchesCompleted}/3.</p>
+        <p class="text-muted" data-referral-qualified="${referral?.qualified ? "true" : "false"}">${referral?.qualified ? "Referral qualification complete. Rewards are not available yet." : "Rewards unlock after qualification."}</p>
+      </div>
+    `;
   } else if (!referral.emailVerified) {
     referralEntryBody = `
       <p class="text-muted" data-referral-activation-locked="true">Verify your email before activating a referral code.</p>

@@ -31444,10 +31444,19 @@ test("ui: authenticated own Profile identity renders referral controls while Soc
     referral: {
       code: "ELM-LEAK-M222",
       referredBy: "ELM-AAAA-2222",
+      qualification: {
+        level2Reached: true,
+        qualifyingMatchCount: 3,
+        qualifiedAt: "2026-07-23T12:00:00.000Z",
+        countedMatchIds: ["private-settlement-id"]
+      },
       referrerClaims: { private: true }
     }
   });
-  assert.doesNotMatch(viewedHtml, /My Referral Code|ELM-LEAK-M222|ELM-AAAA-2222|referrerClaims/);
+  assert.doesNotMatch(
+    viewedHtml,
+    /My Referral Code|ELM-LEAK-M222|ELM-AAAA-2222|referrerClaims|private-settlement-id|qualifyingMatchCount|qualifiedAt/
+  );
 });
 
 test("ui: referral activation entry gates verified, pending, linked, and viewed-profile states", () => {
@@ -31499,13 +31508,34 @@ test("ui: referral activation entry gates verified, pending, linked, and viewed-
         authenticated: true,
         emailVerified: true,
         referralCode: "ELM-K7QX-M9PD",
-        referralLinked: true
+        referralLinked: true,
+        level2Reached: false,
+        qualifyingMatchesCompleted: 1,
+        qualified: false
       }
     })
   );
   assert.match(linkedHtml, /data-referral-activation-linked="true"/);
-  assert.match(linkedHtml, /Referral linked\. Progress unlocks after Level 2 and 3 qualifying matches\./);
+  assert.match(linkedHtml, /Referral linked\./);
+  assert.match(linkedHtml, /Progress: Level 2 not complete\. Qualifying matches 1\/3\./);
+  assert.match(linkedHtml, /Rewards unlock after qualification\./);
   assert.doesNotMatch(linkedHtml, /profile-referral-activation-form|profile-activate-referral-btn/);
+
+  const qualifiedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: true,
+        referralCode: "ELM-K7QX-M9PD",
+        referralLinked: true,
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true
+      }
+    })
+  );
+  assert.match(qualifiedHtml, /Progress: Level 2 complete\. Qualifying matches 3\/3\./);
+  assert.match(qualifiedHtml, /Referral qualification complete\. Rewards are not available yet\./);
 
   const guestHtml = profileScreen.render(createProfileScreenContext());
   assert.match(guestHtml, /data-referral-activation-signed-out="true"/);
@@ -31823,7 +31853,11 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
             referralCalls += 1;
             return {
               referralCode: "ELM-K7QX-M9PD",
-              emailVerified: false
+              emailVerified: false,
+              referralLinked: true,
+              level2Reached: true,
+              qualifyingMatchesCompleted: 2,
+              qualified: false
             };
           }
         }
@@ -31842,6 +31876,9 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
     assert.equal(first.referralCode, "ELM-K7QX-M9PD");
     assert.equal(second.referralCode, "ELM-K7QX-M9PD");
     assert.equal(first.authenticated, true);
+    assert.equal(first.level2Reached, true);
+    assert.equal(first.qualifyingMatchesCompleted, 2);
+    assert.equal(first.qualified, false);
 
     controller.referralCodeState.status = "idle";
     global.window.elemintz.multiplayer.getOrCreateReferralCode = async () => {
