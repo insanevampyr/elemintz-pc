@@ -317,6 +317,7 @@ export class AppController {
     };
     this.referralCodeRequestPromise = null;
     this.referralDashboardRequestPromise = null;
+    this.referralRewardClaimPromise = null;
     this.referralActivationState = {
       username: null,
       status: "idle",
@@ -4391,11 +4392,84 @@ export class AppController {
         );
       });
     }
+    const claimButtons = Array.from(
+      globalThis.document?.querySelectorAll?.(
+        "[data-referral-claim-own], [data-referral-claim-referrer]"
+      ) ?? []
+    );
+    for (const button of claimButtons) {
+      button.addEventListener("click", async () => {
+        if (button.disabled) {
+          return;
+        }
+        button.disabled = true;
+        button.setAttribute?.("aria-busy", "true");
+        const refereeUsername = String(
+          button.getAttribute?.("data-referral-claim-referrer") ?? ""
+        ).trim();
+        try {
+          await this.claimReferralReward({
+            claimType: refereeUsername ? "referrer" : "own",
+            refereeUsername: refereeUsername || null
+          });
+        } catch (error) {
+          this.modalManager.show({
+            title: "Referral Reward Claim Failed",
+            body: String(error?.message ?? "Unable to claim referral reward."),
+            actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+          });
+        } finally {
+          button.disabled = false;
+          button.removeAttribute?.("aria-busy");
+        }
+      });
+    }
   }
 
-  async showReferralDashboardModal() {
+  async claimReferralReward({ claimType, refereeUsername = null } = {}) {
+    if (this.referralRewardClaimPromise) {
+      return this.referralRewardClaimPromise;
+    }
+    const claimAuthority = window.elemintz?.multiplayer?.claimReferralReward;
+    if (
+      !this.hasAuthenticatedMultiplayerSessionForUsername(this.username, this.onlinePlayState) ||
+      typeof claimAuthority !== "function"
+    ) {
+      throw new Error("Referral rewards are unavailable right now.");
+    }
+
+    this.referralRewardClaimPromise = (async () => {
+      const result = await claimAuthority({ claimType, refereeUsername });
+      if (this.profile && Number.isFinite(Number(result?.tokenBalance))) {
+        this.profile = {
+          ...this.profile,
+          tokens: Math.max(0, Number(result.tokenBalance))
+        };
+        await this.showProfile({
+          preserveAchievementVisibility: true,
+          preserveModal: true,
+          profileOverride: this.profile,
+          skipAuthoritativeProfileRefresh: true
+        });
+      }
+      await this.showReferralDashboardModal(result?.dashboard ?? null);
+      if (!result?.claim?.duplicate && Number(result?.claim?.amount ?? 0) === 100) {
+        this.toastManager?.showTokenReward?.({
+          amount: 100,
+          label: "Referral Reward Claimed"
+        });
+      }
+      return result;
+    })().finally(() => {
+      this.referralRewardClaimPromise = null;
+    });
+
+    return this.referralRewardClaimPromise;
+  }
+
+  async showReferralDashboardModal(dashboardOverride = null) {
     try {
-      const dashboard = await this.loadOwnReferralDashboard();
+      const dashboard = dashboardOverride ?? (await this.loadOwnReferralDashboard());
       this.modalManager.show({
         title: "Referral Dashboard",
         bodyHtml: profileScreen.renderReferralDashboardModalBody(dashboard),

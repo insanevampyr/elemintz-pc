@@ -303,6 +303,7 @@ export function createDefaultProfile(username) {
       }
     },
     collectionAlbumRewardClaims: {},
+    referralRewardGrantIds: [],
     onlineRewardSettlements: {
       appliedSettlementKeys: []
     },

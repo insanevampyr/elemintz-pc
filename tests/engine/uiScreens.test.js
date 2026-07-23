@@ -31455,7 +31455,8 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
       level2Reached: true,
       qualifyingMatchesCompleted: 3,
       qualified: true,
-      qualifiedAt: "2026-07-23T12:00:00.000Z"
+      qualifiedAt: "2026-07-23T12:00:00.000Z",
+      rewardStatus: "claimable"
     },
     referees: [
       {
@@ -31463,6 +31464,7 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
         level2Reached: true,
         qualifyingMatchesCompleted: 2,
         qualified: false,
+        rewardStatus: "locked",
         accountId: "PRIVATE_ACCOUNT",
         countedMatchIds: ["PRIVATE_MATCH"]
       },
@@ -31470,7 +31472,22 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
         username: "QualifiedReferee",
         level2Reached: true,
         qualifyingMatchesCompleted: 3,
-        qualified: true
+        qualified: true,
+        rewardStatus: "claimable"
+      },
+      {
+        username: "ClaimedReferee",
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "claimed"
+      },
+      {
+        username: "CappedReferee",
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "daily_cap_reached"
       }
     ]
   });
@@ -31483,27 +31500,79 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
   assert.match(verifiedHtml, /Referral linked\./);
   assert.match(verifiedHtml, /Level 2: Complete/);
   assert.match(verifiedHtml, /Qualifying matches: 3 \/ 3/);
-  assert.match(verifiedHtml, /Referral qualification complete\. Rewards are not available yet\./);
+  assert.match(verifiedHtml, /Referral qualification complete\./);
+  assert.match(verifiedHtml, /data-referral-claim-own="true">Claim 100 Tokens</);
   assert.match(verifiedHtml, /People I Referred/);
   assert.match(verifiedHtml, /SafeReferee/);
   assert.match(verifiedHtml, /Qualifying matches: 2 \/ 3/);
   assert.match(verifiedHtml, /Status: In Progress/);
   assert.match(verifiedHtml, /QualifiedReferee/);
-  assert.match(verifiedHtml, /Status: Qualified - rewards not available yet/);
+  assert.match(verifiedHtml, /Status: Qualified/);
+  assert.match(
+    verifiedHtml,
+    /data-referral-claim-referrer="QualifiedReferee">Claim 100 Tokens</
+  );
+  assert.match(verifiedHtml, /ClaimedReferee/);
+  assert.match(verifiedHtml, /data-referral-referrer-reward-claimed="true">Reward claimed\./);
+  assert.match(verifiedHtml, /CappedReferee/);
+  assert.match(
+    verifiedHtml,
+    /data-referral-claim-referrer="CappedReferee" disabled>Claim 100 Tokens</
+  );
+  assert.match(
+    verifiedHtml,
+    /Daily referral claim limit reached\. Come back tomorrow\./
+  );
+  const safeRefereeStart = verifiedHtml.indexOf("SafeReferee");
+  const qualifiedRefereeStart = verifiedHtml.indexOf("QualifiedReferee");
+  assert.doesNotMatch(
+    verifiedHtml.slice(safeRefereeStart, qualifiedRefereeStart),
+    /Claim 100 Tokens|data-referral-claim-referrer/
+  );
   assert.doesNotMatch(verifiedHtml, /Claim Reward|claim-referral|PRIVATE_ACCOUNT|PRIVATE_MATCH|accountId|countedMatchIds/);
 
   const unverifiedHtml = profileScreen.renderReferralDashboardModalBody({
     emailVerified: false,
     referralCode: "ELM-HIDE-M222",
-    ownProgress: { referralLinked: false },
-    referees: []
+    ownProgress: {
+      referralLinked: true,
+      level2Reached: true,
+      qualifyingMatchesCompleted: 3,
+      qualified: true,
+      rewardStatus: "claimable"
+    },
+    referees: [
+      {
+        username: "HiddenClaim",
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "claimable"
+      }
+    ]
   });
   assert.match(unverifiedHtml, /Referral Rewards Locked/);
   assert.match(unverifiedHtml, /Verify your email to unlock your personal referral code and invite link\./);
   assert.match(unverifiedHtml, /href="https:\/\/vampyrlee\.itch\.io\/elemintz"/);
-  assert.match(unverifiedHtml, /No referral linked yet\./);
-  assert.match(unverifiedHtml, /data-referral-dashboard-empty="true">No referred players yet\./);
-  assert.doesNotMatch(unverifiedHtml, /ELM-HIDE-M222|\?ref=|referral-dashboard-copy-code-btn|referral-dashboard-copy-link-btn/);
+  assert.doesNotMatch(
+    unverifiedHtml,
+    /ELM-HIDE-M222|\?ref=|referral-dashboard-copy-code-btn|referral-dashboard-copy-link-btn|Claim 100 Tokens|data-referral-claim/
+  );
+
+  const claimedHtml = profileScreen.renderReferralDashboardModalBody({
+    emailVerified: true,
+    referralCode: "ELM-K7QX-M9PD",
+    ownProgress: {
+      referralLinked: true,
+      level2Reached: true,
+      qualifyingMatchesCompleted: 3,
+      qualified: true,
+      rewardStatus: "claimed"
+    },
+    referees: []
+  });
+  assert.match(claimedHtml, /data-referral-own-reward-claimed="true">Reward claimed\./);
+  assert.doesNotMatch(claimedHtml, /data-referral-claim-own/);
 });
 
 test("ui: referral activation entry gates verified, pending, linked, and viewed-profile states", () => {
@@ -31694,6 +31763,91 @@ test("ui: Referral Dashboard loads through authenticated authority and closes cl
   } finally {
     global.window = previousWindow;
     global.document = previousDocument;
+  }
+});
+
+test("ui: referral reward claim is single-flight and refreshes tokens plus claimed dashboard state", async () => {
+  const previousWindow = global.window;
+  let claimCalls = 0;
+  let resolveClaim = null;
+  let profileRefreshes = 0;
+  const dashboardRefreshes = [];
+  const tokenToasts = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: {
+      showTokenReward: (payload) => tokenToasts.push(payload)
+    }
+  });
+  controller.username = "ReferralOwner";
+  controller.profile = {
+    ...createProfileScreenContext().profile,
+    username: "ReferralOwner",
+    tokens: 400
+  };
+  controller.onlinePlayState = {
+    session: { authenticated: true, username: "ReferralOwner", emailVerified: true }
+  };
+  controller.showProfile = async () => {
+    profileRefreshes += 1;
+  };
+  controller.showReferralDashboardModal = async (dashboard) => {
+    dashboardRefreshes.push(dashboard);
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        claimReferralReward: async (payload) => {
+          claimCalls += 1;
+          assert.deepEqual(payload, { claimType: "own", refereeUsername: null });
+          return new Promise((resolve) => {
+            resolveClaim = () =>
+              resolve({
+                claim: {
+                  claimType: "own",
+                  refereeUsername: null,
+                  amount: 100,
+                  duplicate: false
+                },
+                tokenBalance: 500,
+                dashboard: {
+                  emailVerified: true,
+                  ownProgress: {
+                    referralLinked: true,
+                    level2Reached: true,
+                    qualifyingMatchesCompleted: 3,
+                    qualified: true,
+                    rewardStatus: "claimed"
+                  },
+                  referees: []
+                }
+              });
+          });
+        }
+      }
+    }
+  };
+
+  try {
+    const first = controller.claimReferralReward({ claimType: "own" });
+    const second = controller.claimReferralReward({ claimType: "own" });
+    await Promise.resolve();
+    assert.equal(claimCalls, 1);
+    resolveClaim();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.deepEqual(secondResult, firstResult);
+    assert.equal(controller.profile.tokens, 500);
+    assert.equal(profileRefreshes, 1);
+    assert.equal(dashboardRefreshes.length, 1);
+    assert.equal(dashboardRefreshes[0].ownProgress.rewardStatus, "claimed");
+    assert.deepEqual(tokenToasts, [
+      { amount: 100, label: "Referral Reward Claimed" }
+    ]);
+    assert.equal(controller.referralRewardClaimPromise, null);
+  } finally {
+    global.window = previousWindow;
   }
 });
 

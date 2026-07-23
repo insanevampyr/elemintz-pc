@@ -2337,6 +2337,61 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("profile:claimReferralReward", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+      if (
+        !sessionResult.session?.authenticated ||
+        typeof accountStore?.claimReferralReward !== "function" ||
+        typeof profileAuthority?.grantReferralRewardTokens !== "function"
+      ) {
+        respond(buildAccountError({
+          code: "AUTH_REQUIRED",
+          message: "An authenticated EleMintz account session is required."
+        }));
+        return;
+      }
+
+      try {
+        const profileUsername = sessionResult.session.profileKey ?? sessionResult.session.username;
+        const snapshot =
+          typeof profileAuthority?.getProfile === "function"
+            ? await profileAuthority.getProfile(profileUsername)
+            : null;
+        const claim = await accountStore.claimReferralReward({
+          accountId: sessionResult.session.accountId,
+          username: sessionResult.session.username,
+          claimType: payload?.claimType,
+          refereeUsername: payload?.refereeUsername,
+          playerLevel: snapshot?.profile?.playerLevel ?? 1,
+          grantTokens: ({ username, claimId, amount }) =>
+            profileAuthority.grantReferralRewardTokens({ username, claimId, amount })
+        });
+        const updatedSnapshot =
+          claim.grantResult?.snapshot ??
+          (typeof profileAuthority?.getProfile === "function"
+            ? await profileAuthority.getProfile(profileUsername)
+            : snapshot);
+        respond({
+          ok: true,
+          claim: {
+            claimType: claim.claimType,
+            refereeUsername: claim.refereeUsername,
+            amount: claim.amount,
+            duplicate: Boolean(claim.duplicate)
+          },
+          dashboard: claim.dashboard,
+          tokenBalance: Math.max(0, Number(updatedSnapshot?.profile?.tokens ?? 0))
+        });
+      } catch (error) {
+        respond(buildAccountError(error, "REFERRAL_REWARD_CLAIM_FAILED"));
+      }
+    });
+
     socket.on("profile:activateReferralCode", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });

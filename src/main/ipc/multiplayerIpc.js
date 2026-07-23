@@ -74,6 +74,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getReferralDashboard(payload);
   });
 
+  ipcMain.handle("multiplayer:claimReferralReward", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.claimReferralReward(payload);
+  });
+
   ipcMain.handle("multiplayer:activateReferralCode", async (event, payload) => {
     subscribers.add(event.sender);
     return client.activateReferralCode(payload);

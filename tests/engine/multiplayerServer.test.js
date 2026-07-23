@@ -7702,6 +7702,7 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
       },
       referredReward: {
         claimedAt: null,
+        amount: null,
         claimId: null
       },
       referrerClaims: {}
@@ -7741,6 +7742,7 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
       },
       referredReward: {
         claimedAt: null,
+        amount: null,
         claimId: null
       },
       referrerClaims: {}
@@ -8028,6 +8030,7 @@ test("multiplayer foundation: verified referral activation links once without qu
     });
     assert.deepEqual(storedReferred.referral.referredReward, {
       claimedAt: null,
+      amount: null,
       claimId: null
     });
     assert.deepEqual(storedReferrer.referral.referrerClaims, {});
@@ -8213,7 +8216,11 @@ test("multiplayer foundation: referral qualification tracks authoritative comple
       "referral-qualification-featured-2",
       "referral-qualification-online-3"
     ]);
-    assert.deepEqual(referredStored.referral.referredReward, { claimedAt: null, claimId: null });
+    assert.deepEqual(referredStored.referral.referredReward, {
+      claimedAt: null,
+      amount: null,
+      claimId: null
+    });
     assert.deepEqual(referredStored.referral.referrerClaims, {});
     assert.equal("tokens" in referredStored, false);
     assert.equal("chests" in referredStored, false);
@@ -8356,14 +8363,18 @@ test("multiplayer foundation: referral dashboard is authenticated, read-only, an
           level2Reached: false,
           qualifyingMatchesCompleted: 0,
           qualified: false,
-          qualifiedAt: null
+          qualifiedAt: null,
+          rewardStatus: "unavailable"
         },
+        referrerDailyCapReached: false,
+        referrerClaimsPaidToday: 0,
         referees: [
           {
             username: "DashboardReferred",
             level2Reached: true,
             qualifyingMatchesCompleted: 2,
-            qualified: false
+            qualified: false,
+            rewardStatus: "locked"
           }
         ]
       }
@@ -8381,8 +8392,11 @@ test("multiplayer foundation: referral dashboard is authenticated, read-only, an
           level2Reached: false,
           qualifyingMatchesCompleted: 0,
           qualified: false,
-          qualifiedAt: null
+          qualifiedAt: null,
+          rewardStatus: "unavailable"
         },
+        referrerDailyCapReached: false,
+        referrerClaimsPaidToday: 0,
         referees: []
       }
     });
@@ -8390,11 +8404,309 @@ test("multiplayer foundation: referral dashboard is authenticated, read-only, an
     const safePayload = JSON.stringify(referrerDashboard);
     assert.doesNotMatch(
       safePayload,
-      /accountId|profileKey|"email":|sessionId|socketId|settlementId|countedMatchIds|referredBy|referrerClaims/
+      /"accountId":|"profileKey":|"email":|"sessionId":|"socketId":|"settlementId":|countedMatchIds|referredBy|"referrerClaims":/
     );
     assert.equal("tokens" in referrerDashboard.dashboard, false);
     assert.equal("rewards" in referrerDashboard.dashboard, false);
     assert.equal(unverifiedDashboard.dashboard.referralCode, null);
+  } finally {
+    guestClient?.disconnect();
+    referrerClient?.disconnect();
+    referredClient?.disconnect();
+    unverifiedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: referral reward claims grant 100 tokens once with daily referrer cap", async () => {
+  const dataDir = await createTempDataDir();
+  let nowMs = Date.parse("2026-07-24T12:00:00.000Z");
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    now: () => nowMs,
+    referralCodeGenerator: () => "ELM-RWRD-A222"
+  });
+  const coordinator = new StateCoordinator({ dataDir, random: () => 1 });
+  const authority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: authority
+  });
+  const accountSpecs = [
+    ["RewardReferrer", "reward-referrer@example.com"],
+    ["RewardReferredOne", "reward-referred-one@example.com"],
+    ["RewardReferredTwo", "reward-referred-two@example.com"],
+    ["RewardReferredThree", "reward-referred-three@example.com"],
+    ["RewardReferredFour", "reward-referred-four@example.com"],
+    ["RewardReferredPending", "reward-referred-pending@example.com"],
+    ["RewardUnrelated", "reward-unrelated@example.com"],
+    ["RewardUnverified", "reward-unverified@example.com"]
+  ];
+  const accounts = {};
+  let guestClient = null;
+  let referrerClient = null;
+  let referredClient = null;
+  let unverifiedClient = null;
+
+  const claim = (client, payload) =>
+    new Promise((resolve) => client.emit("profile:claimReferralReward", payload, resolve));
+  const dashboard = (client) =>
+    new Promise((resolve) => client.emit("profile:getReferralDashboard", {}, resolve));
+  const qualify = async (account) => {
+    for (let index = 1; index <= 3; index += 1) {
+      await accountStore.recordReferralQualificationMatch({
+        accountId: account.accountId,
+        settlementId: `reward-qualification-${account.username}-${index}`,
+        mode: "pve",
+        difficulty: "normal",
+        status: "completed",
+        winner: "p1",
+        playerLevel: 2
+      });
+    }
+  };
+
+  try {
+    for (const [username, email] of accountSpecs) {
+      const account = await accountStore.register({
+        username,
+        email,
+        password: "password123"
+      });
+      accounts[username] = account;
+      await coordinator.profiles.ensureProfile(username);
+      if (username !== "RewardUnverified") {
+        await accountStore.verifyEmail({
+          accountId: account.accountId,
+          token: account.devVerificationToken
+        });
+      }
+    }
+
+    const referrerCode = await accountStore.getOrCreateReferralCode({
+      accountId: accounts.RewardReferrer.accountId
+    });
+    for (const username of [
+      "RewardReferredOne",
+      "RewardReferredTwo",
+      "RewardReferredThree",
+      "RewardReferredFour",
+      "RewardReferredPending"
+    ]) {
+      await accountStore.activateReferralCode({
+        accountId: accounts[username].accountId,
+        referralCode: referrerCode.referralCode,
+        playerLevel: 2
+      });
+    }
+    for (const username of [
+      "RewardReferredOne",
+      "RewardReferredTwo",
+      "RewardReferredThree",
+      "RewardReferredFour"
+    ]) {
+      await qualify(accounts[username]);
+    }
+
+    const referredBefore = await coordinator.profiles.getProfile("RewardReferredOne");
+    const referrerBefore = await coordinator.profiles.getProfile("RewardReferrer");
+    const referredNonTokenState = {
+      playerXP: referredBefore.playerXP,
+      playerLevel: referredBefore.playerLevel,
+      chests: referredBefore.chests,
+      ownedCosmetics: referredBefore.ownedCosmetics,
+      qualification: JSON.parse(
+        JSON.stringify(
+          (await accountStore.readState()).accounts.find(
+            (entry) => entry.accountId === accounts.RewardReferredOne.accountId
+          ).referral.qualification
+        )
+      )
+    };
+
+    const port = await foundation.start();
+    guestClient = await connectClient(port);
+    referrerClient = await connectClient(port);
+    referredClient = await connectClient(port);
+    unverifiedClient = await connectClient(port);
+    await bootstrapSession(guestClient, "RewardGuest");
+    assert.equal(
+      (await loginAccount(referrerClient, {
+        email: "reward-referrer@example.com",
+        password: "password123"
+      }))?.ok,
+      true
+    );
+    assert.equal(
+      (await loginAccount(referredClient, {
+        email: "reward-referred-one@example.com",
+        password: "password123"
+      }))?.ok,
+      true
+    );
+    assert.equal(
+      (await loginAccount(unverifiedClient, {
+        email: "reward-unverified@example.com",
+        password: "password123"
+      }))?.ok,
+      true
+    );
+
+    const guestRejected = await claim(guestClient, { claimType: "own" });
+    assert.equal(guestRejected?.ok, false);
+    assert.equal(guestRejected?.error?.code, "AUTH_REQUIRED");
+    const unverifiedRejected = await claim(unverifiedClient, { claimType: "own" });
+    assert.equal(unverifiedRejected?.ok, false);
+    assert.equal(unverifiedRejected?.error?.code, "EMAIL_VERIFICATION_REQUIRED");
+
+    const pendingOwnClient = await connectClient(port);
+    try {
+      assert.equal(
+        (await loginAccount(pendingOwnClient, {
+          email: "reward-referred-pending@example.com",
+          password: "password123"
+        }))?.ok,
+        true
+      );
+      const pendingOwn = await claim(pendingOwnClient, { claimType: "own" });
+      assert.equal(pendingOwn?.ok, false);
+      assert.equal(pendingOwn?.error?.code, "REFERRAL_NOT_QUALIFIED");
+    } finally {
+      pendingOwnClient.disconnect();
+    }
+
+    const ownClaim = await claim(referredClient, { claimType: "own" });
+    assert.equal(ownClaim?.ok, true);
+    assert.equal(ownClaim?.claim?.amount, 100);
+    assert.equal(ownClaim?.claim?.duplicate, false);
+    assert.equal(ownClaim?.dashboard?.ownProgress?.rewardStatus, "claimed");
+    assert.equal(ownClaim?.tokenBalance, referredBefore.tokens + 100);
+    const ownRetry = await claim(referredClient, { claimType: "own" });
+    assert.equal(ownRetry?.ok, true);
+    assert.equal(ownRetry?.claim?.amount, 0);
+    assert.equal(ownRetry?.claim?.duplicate, true);
+    assert.equal(ownRetry?.tokenBalance, referredBefore.tokens + 100);
+
+    const beforePendingReferrer = await coordinator.profiles.getProfile("RewardReferrer");
+    const pendingReferrer = await claim(referrerClient, {
+      claimType: "referrer",
+      refereeUsername: "RewardReferredPending"
+    });
+    assert.equal(pendingReferrer?.ok, false);
+    assert.equal(pendingReferrer?.error?.code, "REFERRAL_REFEREE_NOT_QUALIFIED");
+    const malformedClaim = await claim(referrerClient, { claimType: "unknown" });
+    assert.equal(malformedClaim?.ok, false);
+    assert.equal(malformedClaim?.error?.code, "REFERRAL_CLAIM_TYPE_INVALID");
+    const unknownReferee = await claim(referrerClient, {
+      claimType: "referrer",
+      refereeUsername: "MissingRewardPlayer"
+    });
+    assert.equal(unknownReferee?.ok, false);
+    assert.equal(unknownReferee?.error?.code, "REFERRAL_REFEREE_UNKNOWN");
+    const unrelated = await claim(referrerClient, {
+      claimType: "referrer",
+      refereeUsername: "RewardUnrelated"
+    });
+    assert.equal(unrelated?.ok, false);
+    assert.equal(unrelated?.error?.code, "REFERRAL_REFEREE_UNRELATED");
+    assert.equal(
+      (await coordinator.profiles.getProfile("RewardReferrer")).tokens,
+      beforePendingReferrer.tokens
+    );
+
+    for (const username of [
+      "RewardReferredOne",
+      "RewardReferredTwo",
+      "RewardReferredThree"
+    ]) {
+      const paid = await claim(referrerClient, {
+        claimType: "referrer",
+        refereeUsername: username
+      });
+      assert.equal(paid?.ok, true);
+      assert.equal(paid?.claim?.amount, 100);
+      assert.equal(paid?.claim?.duplicate, false);
+    }
+    const referrerAfterThree = await coordinator.profiles.getProfile("RewardReferrer");
+    assert.equal(referrerAfterThree.tokens, referrerBefore.tokens + 300);
+    const firstReferrerRetry = await claim(referrerClient, {
+      claimType: "referrer",
+      refereeUsername: "RewardReferredOne"
+    });
+    assert.equal(firstReferrerRetry?.ok, true);
+    assert.equal(firstReferrerRetry?.claim?.amount, 0);
+    assert.equal(firstReferrerRetry?.claim?.duplicate, true);
+    assert.equal(firstReferrerRetry?.tokenBalance, referrerBefore.tokens + 300);
+
+    const capped = await claim(referrerClient, {
+      claimType: "referrer",
+      refereeUsername: "RewardReferredFour"
+    });
+    assert.equal(capped?.ok, false);
+    assert.equal(capped?.error?.code, "REFERRAL_DAILY_CAP_REACHED");
+    const cappedDashboard = await dashboard(referrerClient);
+    const fourthRow = cappedDashboard.dashboard.referees.find(
+      (entry) => entry.username === "RewardReferredFour"
+    );
+    assert.equal(cappedDashboard.dashboard.referrerClaimsPaidToday, 3);
+    assert.equal(cappedDashboard.dashboard.referrerDailyCapReached, true);
+    assert.equal(fourthRow.rewardStatus, "daily_cap_reached");
+
+    nowMs = Date.parse("2026-07-25T00:01:00.000Z");
+    const nextDay = await claim(referrerClient, {
+      claimType: "referrer",
+      refereeUsername: "RewardReferredFour"
+    });
+    assert.equal(nextDay?.ok, true);
+    assert.equal(nextDay?.claim?.amount, 100);
+    assert.equal(
+      (await coordinator.profiles.getProfile("RewardReferrer")).tokens,
+      referrerBefore.tokens + 400
+    );
+
+    const referredAfter = await coordinator.profiles.getProfile("RewardReferredOne");
+    const storedAfter = await accountStore.readState();
+    const referredAccountAfter = storedAfter.accounts.find(
+      (entry) => entry.accountId === accounts.RewardReferredOne.accountId
+    );
+    assert.equal(referredAfter.playerXP, referredNonTokenState.playerXP);
+    assert.equal(referredAfter.playerLevel, referredNonTokenState.playerLevel);
+    assert.deepEqual(referredAfter.chests, referredNonTokenState.chests);
+    assert.deepEqual(referredAfter.ownedCosmetics, referredNonTokenState.ownedCosmetics);
+    assert.deepEqual(
+      referredAccountAfter.referral.qualification,
+      referredNonTokenState.qualification
+    );
+    assert.equal(referredAccountAfter.referral.referredReward.amount, 100);
+    assert.ok(referredAccountAfter.referral.referredReward.claimedAt);
+    assert.ok(referredAccountAfter.referral.referredReward.claimId);
+    const referrerAccountAfter = storedAfter.accounts.find(
+      (entry) => entry.accountId === accounts.RewardReferrer.accountId
+    );
+    assert.equal(Object.keys(referrerAccountAfter.referral.referrerClaims).length, 4);
+    assert.ok(
+      Object.keys(referrerAccountAfter.referral.referrerClaims).every(
+        (key) => key !== "RewardReferredOne"
+      )
+    );
+
+    const publicProfile = await authority.viewProfile("RewardReferredOne");
+    assert.doesNotMatch(
+      JSON.stringify(publicProfile),
+      /referralRewardGrantIds|referredReward|referrerClaims|claimId|claimedAt/
+    );
+    assert.doesNotMatch(
+      JSON.stringify(ownClaim),
+      /"accountId":|"profileKey":|"email":|"sessionId":|"socketId":|"settlementId":|countedMatchIds|claimId|"referrerClaims":/
+    );
   } finally {
     guestClient?.disconnect();
     referrerClient?.disconnect();

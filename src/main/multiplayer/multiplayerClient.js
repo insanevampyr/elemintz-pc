@@ -2130,6 +2130,12 @@ export class MultiplayerClient {
 
     const dashboard = response.dashboard ?? {};
     const ownProgress = dashboard.ownProgress ?? {};
+    const normalizeRewardStatus = (value, fallback = "locked") => {
+      const status = String(value ?? "").trim().toLowerCase();
+      return ["unavailable", "locked", "claimable", "claimed", "daily_cap_reached"].includes(status)
+        ? status
+        : fallback;
+    };
     return {
       emailVerified: Boolean(dashboard.emailVerified),
       referralCode: String(dashboard.referralCode ?? "").trim(),
@@ -2141,8 +2147,17 @@ export class MultiplayerClient {
           Math.max(0, Number(ownProgress.qualifyingMatchesCompleted ?? 0))
         ),
         qualified: Boolean(ownProgress.qualified),
-        qualifiedAt: ownProgress.qualifiedAt ?? null
+        qualifiedAt: ownProgress.qualifiedAt ?? null,
+        rewardStatus: normalizeRewardStatus(
+          ownProgress.rewardStatus,
+          ownProgress.referralLinked ? "locked" : "unavailable"
+        )
       },
+      referrerDailyCapReached: Boolean(dashboard.referrerDailyCapReached),
+      referrerClaimsPaidToday: Math.min(
+        3,
+        Math.max(0, Number(dashboard.referrerClaimsPaidToday ?? 0))
+      ),
       referees: (Array.isArray(dashboard.referees) ? dashboard.referees : []).map((entry) => ({
         username: String(entry?.username ?? "").trim() || "Player",
         level2Reached: Boolean(entry?.level2Reached),
@@ -2150,8 +2165,34 @@ export class MultiplayerClient {
           3,
           Math.max(0, Number(entry?.qualifyingMatchesCompleted ?? 0))
         ),
-        qualified: Boolean(entry?.qualified)
+        qualified: Boolean(entry?.qualified),
+        rewardStatus: normalizeRewardStatus(
+          entry?.rewardStatus,
+          entry?.qualified ? "claimable" : "locked"
+        )
       }))
+    };
+  }
+
+  async claimReferralReward({ claimType, refereeUsername, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:claimReferralReward",
+      { claimType, refereeUsername },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to claim referral reward.");
+    }
+
+    return {
+      claim: {
+        claimType: String(response.claim?.claimType ?? "").trim(),
+        refereeUsername: String(response.claim?.refereeUsername ?? "").trim() || null,
+        amount: Math.max(0, Number(response.claim?.amount ?? 0)),
+        duplicate: Boolean(response.claim?.duplicate)
+      },
+      dashboard: response.dashboard ?? null,
+      tokenBalance: Math.max(0, Number(response.tokenBalance ?? 0))
     };
   }
 

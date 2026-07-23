@@ -4061,6 +4061,41 @@ export class StateCoordinator {
     };
   }
 
+  async grantReferralRewardTokens({ username, claimId, amount }) {
+    const safeClaimId = String(claimId ?? "").trim();
+    const safeAmount = Math.floor(Number(amount ?? 0));
+    if (!safeClaimId) {
+      throw new Error("Referral reward claimId is required.");
+    }
+    if (safeAmount !== 100) {
+      throw new Error("Referral reward amount must be exactly 100 tokens.");
+    }
+
+    let duplicate = false;
+    const profile = await this.profiles.updateProfile(username, (current) => {
+      const appliedClaimIds = Array.isArray(current.referralRewardGrantIds)
+        ? current.referralRewardGrantIds
+        : [];
+      if (appliedClaimIds.includes(safeClaimId)) {
+        duplicate = true;
+        return current;
+      }
+
+      return {
+        ...current,
+        tokens: Math.max(0, Number(current.tokens ?? 0)) + safeAmount,
+        referralRewardGrantIds: [...appliedClaimIds, safeClaimId]
+      };
+    });
+
+    return {
+      profile,
+      duplicate,
+      tokensAdded: duplicate ? 0 : safeAmount,
+      tokenBalance: Math.max(0, Number(profile.tokens ?? 0))
+    };
+  }
+
   async acknowledgeLoadoutUnlocks(username) {
     let noticeResult = null;
     const profile = await this.profiles.updateProfile(username, (current) => {

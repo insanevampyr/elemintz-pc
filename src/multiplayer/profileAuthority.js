@@ -27,6 +27,7 @@ function sanitizeProfileResult(result) {
   }
   const {
     uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
+    referralRewardGrantIds: _referralRewardGrantIds,
     ...publicProfile
   } = result.profile;
   return {
@@ -356,6 +357,7 @@ function buildProfileSnapshot({ profile, challenges }) {
   const {
     uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
     collectionAlbums: _collectionAlbums,
+    referralRewardGrantIds: _referralRewardGrantIds,
     ...clientProfile
   } = profile ?? {};
 
@@ -1302,6 +1304,23 @@ export class MultiplayerProfileAuthority {
     const result = await this.coordinator.claimCollectionAlbumReward({
       username: safeUsername,
       albumId
+    });
+    return {
+      ...sanitizeProfileResult(result),
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async grantReferralRewardTokens({ username, claimId, amount }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative referral rewards.");
+    }
+
+    const result = await this.coordinator.grantReferralRewardTokens({
+      username: safeUsername,
+      claimId,
+      amount
     });
     return {
       ...sanitizeProfileResult(result),

@@ -1887,7 +1887,16 @@ function renderReferralDashboardModalBody(dashboard = {}) {
       <p>Referral linked.</p>
       <p class="text-muted">Level 2: ${ownProgress.level2Reached ? "Complete" : "Incomplete"}</p>
       <p class="text-muted">Qualifying matches: ${qualifyingMatchesCompleted} / 3</p>
-      <p class="text-muted">${ownProgress.qualified ? "Referral qualification complete. Rewards are not available yet." : "Rewards unlock after qualification."}</p>
+      <p class="text-muted">${ownProgress.qualified ? "Referral qualification complete." : "Rewards unlock after qualification."}</p>
+      ${
+        !emailVerified
+          ? ""
+          : ownProgress.rewardStatus === "claimable"
+            ? '<button class="btn btn-secondary" type="button" data-referral-claim-own="true">Claim 100 Tokens</button>'
+            : ownProgress.rewardStatus === "claimed"
+              ? '<p class="text-muted" data-referral-own-reward-claimed="true">Reward claimed.</p>'
+              : ""
+      }
     `
     : '<p class="text-muted">No referral linked yet.</p>';
   const refereeContent =
@@ -1898,12 +1907,25 @@ function renderReferralDashboardModalBody(dashboard = {}) {
               3,
               Math.max(0, Math.floor(Number(entry?.qualifyingMatchesCompleted ?? 0) || 0))
             );
+            const rewardStatus = String(entry?.rewardStatus ?? "").trim().toLowerCase();
+            const rewardContent =
+              !emailVerified || !entry?.qualified
+                ? ""
+                : rewardStatus === "claimable"
+                  ? `<button class="btn btn-secondary" type="button" data-referral-claim-referrer="${escapeProfileText(String(entry?.username ?? ""))}">Claim 100 Tokens</button>`
+                  : rewardStatus === "claimed"
+                    ? '<span class="text-muted" data-referral-referrer-reward-claimed="true">Reward claimed.</span>'
+                    : rewardStatus === "daily_cap_reached"
+                      ? `<button class="btn btn-secondary" type="button" data-referral-claim-referrer="${escapeProfileText(String(entry?.username ?? ""))}" disabled>Claim 100 Tokens</button>
+                         <span class="text-muted" data-referral-daily-cap="true">Daily referral claim limit reached. Come back tomorrow.</span>`
+                      : "";
             return `
               <article class="referral-dashboard-referee" data-referral-dashboard-referee="true">
                 <strong>${escapeProfileText(String(entry?.username ?? "Player"))}</strong>
                 <span class="text-muted">Level 2: ${entry?.level2Reached ? "Complete" : "Incomplete"}</span>
                 <span class="text-muted">Qualifying matches: ${matchCount} / 3</span>
-                <span class="text-muted">Status: ${entry?.qualified ? "Qualified - rewards not available yet" : "In Progress"}</span>
+                <span class="text-muted">Status: ${entry?.qualified ? "Qualified" : "In Progress"}</span>
+                ${rewardContent}
               </article>
             `;
           })

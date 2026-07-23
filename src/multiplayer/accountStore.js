@@ -16,6 +16,8 @@ const REFERRAL_CODE_PATTERN = /^ELM-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
 const REFERRAL_CODE_GENERATION_ATTEMPTS = 64;
 const REFERRAL_QUALIFYING_MATCH_TARGET = 3;
 const REFERRAL_COUNTED_MATCH_ID_LIMIT = 3;
+const REFERRAL_REWARD_TOKENS = 100;
+const REFERRER_DAILY_CLAIM_LIMIT = 3;
 const REFERRAL_QUALIFYING_MODES = new Set(["pve", "gauntlet", "featured_rival", "online_pvp"]);
 const REFERRAL_DISQUALIFYING_END_REASONS = new Set([
   "abandoned",
@@ -82,13 +84,41 @@ function normalizeReferralCode(value) {
 
 function normalizeReferralClaim(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { claimedAt: null, claimId: null };
+    return { claimedAt: null, amount: null, claimId: null };
   }
 
+  const claimedAt = normalizeIsoTimestamp(value.claimedAt);
+  const claimId = String(value.claimId ?? "").trim() || null;
   return {
-    claimedAt: normalizeIsoTimestamp(value.claimedAt),
-    claimId: String(value.claimId ?? "").trim() || null
+    claimedAt,
+    amount:
+      claimedAt && claimId
+        ? Math.max(0, Math.floor(Number(value.amount ?? REFERRAL_REWARD_TOKENS) || 0))
+        : null,
+    claimId
   };
+}
+
+function buildReferralRewardClaimId(type, accountId, refereeAccountId = "") {
+  const digest = crypto
+    .createHash("sha256")
+    .update(`${type}:${String(accountId ?? "")}:${String(refereeAccountId ?? "")}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `referral-${type}-${digest}`;
+}
+
+function getUtcDateKey(value) {
+  const timestamp = normalizeIsoTimestamp(value);
+  return timestamp ? timestamp.slice(0, 10) : null;
+}
+
+function isReferralQualified(referral) {
+  const normalized = normalizeReferral(referral);
+  return (
+    normalized.qualification.level2Reached &&
+    normalized.qualification.qualifyingMatchCount >= REFERRAL_QUALIFYING_MATCH_TARGET
+  );
 }
 
 function normalizeCountedReferralMatchIds(value) {
@@ -165,9 +195,14 @@ function buildSafeReferralStatus(account, playerLevel = 1) {
   };
 }
 
-function buildSafeReferralDashboard(account, accounts, playerLevel = 1) {
+function buildSafeReferralDashboard(account, accounts, playerLevel = 1, nowMs = Date.now()) {
   const referral = normalizeReferral(account?.referral);
   const ownProgress = buildSafeReferralStatus(account, playerLevel);
+  const todayKey = new Date(nowMs).toISOString().slice(0, 10);
+  const referrerClaimsPaidToday = Object.values(referral.referrerClaims).filter(
+    (claim) => getUtcDateKey(claim?.claimedAt) === todayKey
+  ).length;
+  const referrerDailyCapReached = referrerClaimsPaidToday >= REFERRER_DAILY_CLAIM_LIMIT;
   const refereeProgress = (Array.isArray(accounts) ? accounts : [])
     .filter(
       (entry) =>
@@ -177,11 +212,19 @@ function buildSafeReferralDashboard(account, accounts, playerLevel = 1) {
     )
     .map((entry) => {
       const status = buildSafeReferralStatus(entry);
+      const rewardClaimed = Boolean(referral.referrerClaims[entry.accountId]?.claimedAt);
       return {
         username: normalizeUsername(entry?.username) ?? "Player",
         level2Reached: status.level2Reached,
         qualifyingMatchesCompleted: status.qualifyingMatchesCompleted,
-        qualified: status.qualified
+        qualified: status.qualified,
+        rewardStatus: rewardClaimed
+          ? "claimed"
+          : !status.qualified
+            ? "locked"
+            : referrerDailyCapReached
+              ? "daily_cap_reached"
+              : "claimable"
       };
     })
     .sort((left, right) => left.username.localeCompare(right.username));
@@ -194,8 +237,17 @@ function buildSafeReferralDashboard(account, accounts, playerLevel = 1) {
       level2Reached: ownProgress.level2Reached,
       qualifyingMatchesCompleted: ownProgress.qualifyingMatchesCompleted,
       qualified: ownProgress.qualified,
-      qualifiedAt: ownProgress.qualifiedAt
+      qualifiedAt: ownProgress.qualifiedAt,
+      rewardStatus: referral.referredReward.claimedAt
+        ? "claimed"
+        : !ownProgress.referredByLinked
+          ? "unavailable"
+          : !ownProgress.qualified
+            ? "locked"
+            : "claimable"
     },
+    referrerDailyCapReached,
+    referrerClaimsPaidToday,
     referees: refereeProgress
   };
 }
@@ -711,7 +763,172 @@ export class MultiplayerAccountStore {
       throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
     }
 
-    return buildSafeReferralDashboard(account, state.accounts, playerLevel);
+    return buildSafeReferralDashboard(account, state.accounts, playerLevel, this.now());
+  }
+
+  async claimReferralReward({
+    accountId,
+    username,
+    claimType,
+    refereeUsername,
+    playerLevel = 1,
+    grantTokens
+  } = {}) {
+    const operation = async () => {
+      const safeAccountId = String(accountId ?? "").trim();
+      const safeUsername = normalizeUsername(username);
+      const safeClaimType = String(claimType ?? "").trim().toLowerCase();
+      const state = await this.readState();
+      const account =
+        state.accounts.find(
+          (entry) =>
+            (safeAccountId && entry?.accountId === safeAccountId) ||
+            (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+        ) ?? null;
+      if (!account) {
+        throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+      }
+      if (!account.emailVerified) {
+        throw buildAccountError(
+          "EMAIL_VERIFICATION_REQUIRED",
+          "Verify your email before claiming referral rewards."
+        );
+      }
+      if (typeof grantTokens !== "function") {
+        throw buildAccountError(
+          "REFERRAL_REWARD_AUTHORITY_UNAVAILABLE",
+          "Referral rewards are unavailable right now."
+        );
+      }
+
+      const referral = syncReferralQualificationLevel(account.referral, playerLevel, this.now());
+      account.referral = referral;
+      let claimId = null;
+      let claimTarget = null;
+      let duplicate = false;
+
+      if (safeClaimType === "own") {
+        if (!referral.referredBy) {
+          throw buildAccountError("REFERRAL_NOT_LINKED", "No referral is linked to this account.");
+        }
+        if (!isReferralQualified(referral)) {
+          throw buildAccountError(
+            "REFERRAL_NOT_QUALIFIED",
+            "Complete referral qualification before claiming this reward."
+          );
+        }
+        claimId = buildReferralRewardClaimId("own", account.accountId);
+        duplicate = Boolean(referral.referredReward.claimedAt);
+        claimTarget = {
+          account,
+          applyClaim: (claimedAt) => {
+            account.referral = {
+              ...referral,
+              referredReward: {
+                claimedAt,
+                amount: REFERRAL_REWARD_TOKENS,
+                claimId
+              }
+            };
+          }
+        };
+      } else if (safeClaimType === "referrer") {
+        const safeRefereeUsername = normalizeUsername(refereeUsername);
+        if (!safeRefereeUsername) {
+          throw buildAccountError(
+            "REFERRAL_REFEREE_INVALID",
+            "Choose a valid referred player reward."
+          );
+        }
+        const referee =
+          state.accounts.find(
+            (entry) =>
+              normalizeUsername(entry?.username)?.toLowerCase() ===
+              safeRefereeUsername.toLowerCase()
+          ) ?? null;
+        if (!referee) {
+          throw buildAccountError(
+            "REFERRAL_REFEREE_UNKNOWN",
+            "The referred player could not be found."
+          );
+        }
+        const refereeReferral = normalizeReferral(referee.referral);
+        if (!referral.code || refereeReferral.referredBy !== referral.code) {
+          throw buildAccountError(
+            "REFERRAL_REFEREE_UNRELATED",
+            "That player is not linked to your referral code."
+          );
+        }
+        if (!referee.emailVerified || !isReferralQualified(refereeReferral)) {
+          throw buildAccountError(
+            "REFERRAL_REFEREE_NOT_QUALIFIED",
+            "That referred player has not completed qualification yet."
+          );
+        }
+        claimId = buildReferralRewardClaimId("referrer", account.accountId, referee.accountId);
+        duplicate = Boolean(referral.referrerClaims[referee.accountId]?.claimedAt);
+        if (!duplicate) {
+          const todayKey = new Date(this.now()).toISOString().slice(0, 10);
+          const claimsPaidToday = Object.values(referral.referrerClaims).filter(
+            (claim) => getUtcDateKey(claim?.claimedAt) === todayKey
+          ).length;
+          if (claimsPaidToday >= REFERRER_DAILY_CLAIM_LIMIT) {
+            throw buildAccountError(
+              "REFERRAL_DAILY_CAP_REACHED",
+              "Daily referral claim limit reached. Come back tomorrow."
+            );
+          }
+        }
+        claimTarget = {
+          account,
+          refereeUsername: normalizeUsername(referee.username),
+          applyClaim: (claimedAt) => {
+            account.referral = {
+              ...referral,
+              referrerClaims: {
+                ...referral.referrerClaims,
+                [referee.accountId]: {
+                  claimedAt,
+                  amount: REFERRAL_REWARD_TOKENS,
+                  claimId
+                }
+              }
+            };
+          }
+        };
+      } else {
+        throw buildAccountError(
+          "REFERRAL_CLAIM_TYPE_INVALID",
+          "Choose a valid referral reward."
+        );
+      }
+
+      let grantResult = null;
+      if (!duplicate) {
+        grantResult = await grantTokens({
+          username: account.profileKey ?? account.username,
+          claimId,
+          amount: REFERRAL_REWARD_TOKENS
+        });
+        const claimedAt = new Date(this.now()).toISOString();
+        claimTarget.applyClaim(claimedAt);
+        account.updatedAt = claimedAt;
+        await this.writeState(state);
+      }
+
+      return {
+        claimType: safeClaimType,
+        refereeUsername: claimTarget.refereeUsername ?? null,
+        amount: duplicate ? 0 : REFERRAL_REWARD_TOKENS,
+        duplicate,
+        grantResult,
+        dashboard: buildSafeReferralDashboard(account, state.accounts, playerLevel, this.now())
+      };
+    };
+
+    const pending = this.referralMutationQueue.then(operation, operation);
+    this.referralMutationQueue = pending.catch(() => undefined);
+    return pending;
   }
 
   async activateReferralCode({ accountId, username, referralCode, playerLevel = 1 } = {}) {

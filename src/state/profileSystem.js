@@ -306,6 +306,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("seenAnnouncements", defaults.seenAnnouncements);
   repairObjectSection("featuredRivalRewards", defaults.featuredRivalRewards);
   repairObjectSection("collectionAlbumRewardClaims", defaults.collectionAlbumRewardClaims);
+  repairArraySection("referralRewardGrantIds", defaults.referralRewardGrantIds);
   repairObjectSection("levelRewardsClaimed", defaults.levelRewardsClaimed);
   repairObjectSection("cosmeticUnlockTracking", defaults.cosmeticUnlockTracking);
   repairObjectSection("uniqueCosmeticAcquisitions", defaults.uniqueCosmeticAcquisitions);
@@ -822,6 +823,16 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   const normalizedCollectionAlbumRewardClaims = normalizeCollectionAlbumRewardClaims(
     validatedProfile.collectionAlbumRewardClaims
   );
+  const normalizedReferralRewardGrantIds = [
+    ...new Set(
+      (Array.isArray(validatedProfile.referralRewardGrantIds)
+        ? validatedProfile.referralRewardGrantIds
+        : []
+      )
+        .map((entry) => String(entry ?? "").trim())
+        .filter(Boolean)
+    )
+  ];
 
   let normalized = normalizeProfileDailyChallenges(
     normalizeProfileLevelRewards(
@@ -834,6 +845,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
             onlineDisconnectTracking: normalizedDisconnectTracking,
             onlineRewardSettlements: normalizedOnlineRewardSettlements,
             collectionAlbumRewardClaims: normalizedCollectionAlbumRewardClaims,
+            referralRewardGrantIds: normalizedReferralRewardGrantIds,
             storeRoyaltyPayouts: normalizedStoreRoyaltyPayouts
           })
         )
