@@ -7664,6 +7664,172 @@ test("multiplayer foundation: email verification auth routes expose safe status 
   }
 });
 
+test("multiplayer foundation: referral schema normalizes privately and codes are stable and unique", async () => {
+  const dataDir = await createTempDataDir();
+  const generatedCodes = ["ELM-AAAA-2222", "ELM-AAAA-2222", "ELM-BBBB-3333"];
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    referralCodeGenerator: () => generatedCodes.shift()
+  });
+
+  try {
+    const firstAccount = await accountStore.register({
+      email: "referral-one@example.com",
+      password: "password123",
+      username: "ReferralOne"
+    });
+    const secondAccount = await accountStore.register({
+      email: "referral-two@example.com",
+      password: "password123",
+      username: "ReferralTwo"
+    });
+
+    assert.equal("referral" in firstAccount, false);
+    assert.equal("referral" in secondAccount, false);
+
+    const accountsPath = path.join(dataDir, "accounts.json");
+    const registeredState = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    assert.deepEqual(registeredState.accounts[0].referral, {
+      code: null,
+      referredBy: null,
+      qualification: {
+        qualifyingMatchCount: 0,
+        level2Reached: false,
+        qualifiedAt: null
+      },
+      referredReward: {
+        claimedAt: null,
+        claimId: null
+      },
+      referrerClaims: {}
+    });
+
+    const firstCode = await accountStore.getOrCreateReferralCode({ accountId: firstAccount.accountId });
+    const firstCodeAgain = await accountStore.getOrCreateReferralCode({ accountId: firstAccount.accountId });
+    const secondCode = await accountStore.getOrCreateReferralCode({ accountId: secondAccount.accountId });
+    assert.equal(firstCode.referralCode, "ELM-AAAA-2222");
+    assert.equal(firstCodeAgain.referralCode, firstCode.referralCode);
+    assert.equal(secondCode.referralCode, "ELM-BBBB-3333");
+    assert.notEqual(secondCode.referralCode, firstCode.referralCode);
+
+    const malformedState = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    const legacyAccount = malformedState.accounts.find((account) => account.accountId === secondAccount.accountId);
+    legacyAccount.referral = {
+      code: firstCode.referralCode,
+      referredBy: { unsafe: true },
+      qualification: "broken",
+      referredReward: [],
+      referrerClaims: "broken"
+    };
+    await fs.writeFile(accountsPath, JSON.stringify(malformedState, null, 2));
+
+    await accountStore.login({ email: "referral-two@example.com", password: "password123" });
+    const normalizedState = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    const normalizedAccount = normalizedState.accounts.find((account) => account.accountId === secondAccount.accountId);
+    assert.deepEqual(normalizedAccount.referral, {
+      code: null,
+      referredBy: null,
+      qualification: {
+        qualifyingMatchCount: 0,
+        level2Reached: false,
+        qualifiedAt: null
+      },
+      referredReward: {
+        claimedAt: null,
+        claimId: null
+      },
+      referrerClaims: {}
+    });
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: referral code route requires authentication and exposes no private ledger", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    referralCodeGenerator: () => "ELM-RUTE-E222"
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: {
+      assertProfileClaimAvailable: async () => null,
+      linkProfileToAccount: async ({ username, accountId }) => ({
+        username,
+        profile: { username, linkedAccountId: accountId }
+      }),
+      getProfile: async (username) => ({
+        username,
+        profile: { username, equippedCosmetics: {} },
+        progression: {
+          xp: { playerXP: 0, playerLevel: 1 },
+          dailyChallenges: { challenges: [] },
+          weeklyChallenges: { challenges: [] },
+          dailyLogin: { eligible: false }
+        }
+      })
+    }
+  });
+  let authenticatedClient = null;
+  let unauthenticatedClient = null;
+
+  try {
+    const port = await foundation.start();
+    unauthenticatedClient = await connectClient(port);
+    const guestSession = await new Promise((resolve) => {
+      unauthenticatedClient.emit("session:bootstrap", { username: "ReferralGuest" }, resolve);
+    });
+    assert.equal(guestSession?.ok, true);
+    assert.equal(guestSession?.session?.authenticated, false);
+    const rejected = await new Promise((resolve) => {
+      unauthenticatedClient.emit("profile:getOrCreateReferralCode", {}, resolve);
+    });
+    assert.equal(rejected?.ok, false);
+    assert.equal(rejected?.error?.code, "AUTH_REQUIRED");
+
+    authenticatedClient = await connectClient(port);
+    const registered = await new Promise((resolve) => {
+      authenticatedClient.emit(
+        "auth:register",
+        {
+          email: "referral-route@example.com",
+          password: "password123",
+          username: "ReferralRoute"
+        },
+        resolve
+      );
+    });
+    assert.equal(registered?.ok, true);
+    assert.equal(registered?.account?.emailVerified, false);
+
+    const created = await new Promise((resolve) => {
+      authenticatedClient.emit("profile:getOrCreateReferralCode", {}, resolve);
+    });
+    const repeated = await new Promise((resolve) => {
+      authenticatedClient.emit("profile:getOrCreateReferralCode", {}, resolve);
+    });
+    assert.deepEqual(created, {
+      ok: true,
+      referralCode: "ELM-RUTE-E222",
+      emailVerified: false
+    });
+    assert.deepEqual(repeated, created);
+    assert.equal("referral" in created, false);
+    assert.equal("qualification" in created, false);
+    assert.equal("referrerClaims" in created, false);
+  } finally {
+    authenticatedClient?.disconnect();
+    unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: auth register links an existing username profile instead of duplicating it", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

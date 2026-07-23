@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 import { JsonStore } from "../state/storage/jsonStore.js";
 
-const ACCOUNTS_SCHEMA_VERSION = 2;
+const ACCOUNTS_SCHEMA_VERSION = 3;
 const MAX_EMAIL_LENGTH = 160;
 const MAX_USERNAME_LENGTH = 32;
 const MIN_PASSWORD_LENGTH = 8;
@@ -11,6 +11,9 @@ const SCRYPT_SALT_BYTES = 16;
 const EMAIL_VERIFICATION_TOKEN_BYTES = 24;
 const EMAIL_VERIFICATION_TOKEN_TTL_MS = 1000 * 60 * 60 * 24;
 const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 1000 * 60;
+const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const REFERRAL_CODE_PATTERN = /^ELM-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
+const REFERRAL_CODE_GENERATION_ATTEMPTS = 64;
 
 function buildAccountError(code, message) {
   const error = new Error(message);
@@ -55,6 +58,60 @@ function createEmailVerificationToken() {
   return crypto.randomBytes(EMAIL_VERIFICATION_TOKEN_BYTES).toString("hex");
 }
 
+function createReferralCodeCandidate() {
+  const bytes = crypto.randomBytes(8);
+  const characters = Array.from(bytes, (byte) => REFERRAL_CODE_ALPHABET[byte & 31]);
+  return `ELM-${characters.slice(0, 4).join("")}-${characters.slice(4).join("")}`;
+}
+
+function normalizeReferralCode(value) {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return REFERRAL_CODE_PATTERN.test(normalized) ? normalized : null;
+}
+
+function normalizeReferralClaim(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { claimedAt: null, claimId: null };
+  }
+
+  return {
+    claimedAt: normalizeIsoTimestamp(value.claimedAt),
+    claimId: String(value.claimId ?? "").trim() || null
+  };
+}
+
+function normalizeReferral(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const qualification =
+    source.qualification && typeof source.qualification === "object" && !Array.isArray(source.qualification)
+      ? source.qualification
+      : {};
+  const rawReferrerClaims =
+    source.referrerClaims && typeof source.referrerClaims === "object" && !Array.isArray(source.referrerClaims)
+      ? source.referrerClaims
+      : {};
+  const referrerClaims = {};
+  for (const [claimKey, claimValue] of Object.entries(rawReferrerClaims)) {
+    const safeClaimKey = String(claimKey ?? "").trim();
+    const normalizedClaim = normalizeReferralClaim(claimValue);
+    if (safeClaimKey && normalizedClaim.claimedAt && normalizedClaim.claimId) {
+      referrerClaims[safeClaimKey] = normalizedClaim;
+    }
+  }
+
+  return {
+    code: normalizeReferralCode(source.code),
+    referredBy: normalizeReferralCode(source.referredBy),
+    qualification: {
+      qualifyingMatchCount: Math.max(0, Math.floor(Number(qualification.qualifyingMatchCount ?? 0) || 0)),
+      level2Reached: Boolean(qualification.level2Reached),
+      qualifiedAt: normalizeIsoTimestamp(qualification.qualifiedAt)
+    },
+    referredReward: normalizeReferralClaim(source.referredReward),
+    referrerClaims
+  };
+}
+
 function normalizeEmailVerification(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -92,8 +149,33 @@ function normalizeAccount(account) {
     profileKey: normalizeUsername(account.profileKey) ?? normalizeUsername(account.username) ?? account.profileKey,
     emailVerified,
     emailVerifiedAt,
-    emailVerification: emailVerified ? null : normalizeEmailVerification(account.emailVerification)
+    emailVerification: emailVerified ? null : normalizeEmailVerification(account.emailVerification),
+    referral: normalizeReferral(account.referral)
   };
+}
+
+function normalizeAccounts(accounts) {
+  const seenReferralCodes = new Set();
+  return (Array.isArray(accounts) ? accounts : [])
+    .map((account) => normalizeAccount(account))
+    .filter(Boolean)
+    .map((account) => {
+      const referralCode = account.referral.code;
+      if (!referralCode || !seenReferralCodes.has(referralCode)) {
+        if (referralCode) {
+          seenReferralCodes.add(referralCode);
+        }
+        return account;
+      }
+
+      return {
+        ...account,
+        referral: {
+          ...account.referral,
+          code: null
+        }
+      };
+    });
 }
 
 function sanitizeAccount(account) {
@@ -150,9 +232,16 @@ function verifyScryptHash(password, storedHash) {
 }
 
 export class MultiplayerAccountStore {
-  constructor({ dataDir, logger = console, now = () => Date.now() } = {}) {
+  constructor({
+    dataDir,
+    logger = console,
+    now = () => Date.now(),
+    referralCodeGenerator = createReferralCodeCandidate
+  } = {}) {
     this.logger = logger;
     this.now = now;
+    this.referralCodeGenerator = referralCodeGenerator;
+    this.referralMutationQueue = Promise.resolve();
     this.store = new JsonStore("accounts.json", { dataDir });
   }
 
@@ -162,9 +251,7 @@ export class MultiplayerAccountStore {
       return buildEmptyState();
     }
 
-    const accounts = Array.isArray(state.accounts)
-      ? state.accounts.map((account) => normalizeAccount(account)).filter(Boolean)
-      : [];
+    const accounts = normalizeAccounts(state.accounts);
 
     return {
       schemaVersion: Number(state.schemaVersion ?? ACCOUNTS_SCHEMA_VERSION),
@@ -175,9 +262,7 @@ export class MultiplayerAccountStore {
   async writeState(state) {
     const safeState = {
       schemaVersion: ACCOUNTS_SCHEMA_VERSION,
-      accounts: Array.isArray(state?.accounts)
-        ? state.accounts.map((account) => normalizeAccount(account)).filter(Boolean)
-        : []
+      accounts: normalizeAccounts(state?.accounts)
     };
     await this.store.write(safeState);
     return safeState;
@@ -240,6 +325,7 @@ export class MultiplayerAccountStore {
       emailVerified: false,
       emailVerifiedAt: null,
       emailVerification: pendingVerification.emailVerification,
+      referral: normalizeReferral(null),
       createdAt: now,
       updatedAt: now
     };
@@ -409,6 +495,61 @@ export class MultiplayerAccountStore {
     }
 
     return sanitizeAccount(account);
+  }
+
+  async getOrCreateReferralCode({ accountId, username } = {}) {
+    const operation = async () => {
+      const safeAccountId = String(accountId ?? "").trim();
+      const safeUsername = normalizeUsername(username);
+      const state = await this.readState();
+      const account =
+        state.accounts.find(
+          (entry) =>
+            (safeAccountId && entry?.accountId === safeAccountId) ||
+            (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+        ) ?? null;
+      if (!account) {
+        throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+      }
+
+      const existingCode = normalizeReferralCode(account.referral?.code);
+      if (existingCode) {
+        return {
+          referralCode: existingCode,
+          emailVerified: Boolean(account.emailVerified)
+        };
+      }
+
+      const usedCodes = new Set(
+        state.accounts.map((entry) => normalizeReferralCode(entry?.referral?.code)).filter(Boolean)
+      );
+      let referralCode = null;
+      for (let attempt = 0; attempt < REFERRAL_CODE_GENERATION_ATTEMPTS; attempt += 1) {
+        const candidate = normalizeReferralCode(this.referralCodeGenerator());
+        if (candidate && !usedCodes.has(candidate)) {
+          referralCode = candidate;
+          break;
+        }
+      }
+      if (!referralCode) {
+        throw buildAccountError("REFERRAL_CODE_UNAVAILABLE", "Unable to create a unique referral code.");
+      }
+
+      account.referral = {
+        ...normalizeReferral(account.referral),
+        code: referralCode
+      };
+      account.updatedAt = new Date(this.now()).toISOString();
+      await this.writeState(state);
+      return {
+        referralCode,
+        emailVerified: Boolean(account.emailVerified)
+      };
+    };
+
+    const pending = this.referralMutationQueue.then(operation, operation);
+    this.referralMutationQueue = pending.catch(() => undefined);
+    return pending;
   }
 
   async getAccountById(accountId) {
