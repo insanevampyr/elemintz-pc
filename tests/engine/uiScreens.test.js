@@ -39,6 +39,12 @@ import {
 } from "../../src/renderer/ui/shared/roundResultPresentation.js";
 import { renderWarPileSummaryPresentation } from "../../src/renderer/ui/shared/warPileSummaryPresentation.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
+import {
+  capturePendingReferralCode,
+  clearPendingReferralCode,
+  extractPendingReferralCode,
+  getPendingReferralCode
+} from "../../src/renderer/systems/pendingReferralCode.js";
 import { MATCH_MODE } from "../../src/renderer/systems/gameController.js";
 import { ModalManager } from "../../src/renderer/systems/modalManager.js";
 import { ScreenManager } from "../../src/renderer/systems/screenManager.js";
@@ -31714,6 +31720,102 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
   } finally {
     global.window = previousWindow;
   }
+});
+
+test("ui: pending referral capture normalizes valid codes and rejects unsafe input", () => {
+  assert.equal(
+    extractPendingReferralCode("https://vampyrlee.itch.io/elemintz?ref=ELM-ZQKT-385D"),
+    "ELM-ZQKT-385D"
+  );
+  assert.equal(extractPendingReferralCode("  elm-zqkt-385d  "), "ELM-ZQKT-385D");
+  assert.equal(
+    extractPendingReferralCode("https://vampyrlee.itch.io/elemintz?ref=elm-zqkt-385d"),
+    "ELM-ZQKT-385D"
+  );
+  assert.equal(extractPendingReferralCode("ELM-AAAA-1111"), null);
+  assert.equal(extractPendingReferralCode("ELM-ZQKT-385D<script>"), null);
+  assert.equal(
+    extractPendingReferralCode(
+      "https://vampyrlee.itch.io/elemintz?ref=ELM-ZQKT-385D&ref=ELM-K7QX-M9PD"
+    ),
+    null
+  );
+  assert.equal(extractPendingReferralCode(`ELM-${"Z".repeat(2100)}`), null);
+  assert.equal(extractPendingReferralCode("not a referral link"), null);
+  assert.equal(extractPendingReferralCode(null), null);
+});
+
+test("ui: pending referral capture persists locally, clears, and does not activate referrals", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key)
+  };
+  let activationCalls = 0;
+  const previousWindow = global.window;
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        activateReferralCode: () => {
+          activationCalls += 1;
+        }
+      }
+    }
+  };
+
+  try {
+    const captured = capturePendingReferralCode(
+      "https://vampyrlee.itch.io/elemintz?ref=elm-zqkt-385d",
+      {
+        storage,
+        now: () => Date.parse("2026-07-22T15:30:00.000Z")
+      }
+    );
+    assert.deepEqual(captured, {
+      code: "ELM-ZQKT-385D",
+      capturedAt: "2026-07-22T15:30:00.000Z",
+      source: "invite_link"
+    });
+    assert.deepEqual(getPendingReferralCode({ storage }), captured);
+
+    const controller = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+      toastManager: { enqueueToast: () => {} },
+      pendingReferralStorage: storage,
+      pendingReferralNow: () => Date.parse("2026-07-22T16:00:00.000Z")
+    });
+    assert.deepEqual(controller.getPendingReferralCode(), captured);
+    assert.deepEqual(controller.capturePendingReferralCode("ELM-K7QX-M9PD"), {
+      code: "ELM-K7QX-M9PD",
+      capturedAt: "2026-07-22T16:00:00.000Z",
+      source: "invite_link"
+    });
+    assert.equal(activationCalls, 0);
+    assert.equal(controller.clearPendingReferralCode(), true);
+    assert.equal(controller.getPendingReferralCode(), null);
+    assert.equal(clearPendingReferralCode({ storage }), true);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: viewed profiles do not render pending referral internals", () => {
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    ...createProfileScreenContext().profile,
+    pendingReferralCode: "ELM-ZQKT-385D",
+    pendingReferral: {
+      code: "ELM-ZQKT-385D",
+      capturedAt: "2026-07-22T15:30:00.000Z",
+      source: "invite_link"
+    }
+  });
+
+  assert.doesNotMatch(
+    viewedHtml,
+    /pendingReferral|ELM-ZQKT-385D|invite_link|2026-07-22T15:30:00\.000Z/
+  );
 });
 
 test("ui: referral copy actions use the clipboard and existing toast queue", async () => {

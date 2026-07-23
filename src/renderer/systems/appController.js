@@ -61,6 +61,11 @@ import {
   refreshUpdateCoordinatorState as loadUpdateCoordinatorState
 } from "./updateCoordinator.js";
 import { getDailyResetWindow } from "../../state/dailyChallengesSystem.js";
+import {
+  capturePendingReferralCode as persistPendingReferralCode,
+  clearPendingReferralCode as removePendingReferralCode,
+  getPendingReferralCode as readPendingReferralCode
+} from "./pendingReferralCode.js";
 
 const FALLBACK_SETTINGS = {
   audio: { enabled: true },
@@ -260,7 +265,13 @@ function shuffleList(items = [], random = Math.random) {
 }
 
 export class AppController {
-  constructor({ screenManager, modalManager, toastManager }) {
+  constructor({
+    screenManager,
+    modalManager,
+    toastManager,
+    pendingReferralStorage,
+    pendingReferralNow = Date.now
+  }) {
     this.screenManager = screenManager;
     this.modalManager = modalManager;
     this.toastManager = toastManager;
@@ -287,6 +298,8 @@ export class AppController {
       emailVerified: false
     };
     this.referralCodeRequestPromise = null;
+    this.pendingReferralStorage = pendingReferralStorage;
+    this.pendingReferralNow = pendingReferralNow;
     this.battleReportSelectedIndex = null;
     this.passTimerId = null;
     this.passKeyHandler = null;
@@ -4175,6 +4188,21 @@ export class AppController {
     })();
 
     return this.referralCodeRequestPromise;
+  }
+
+  capturePendingReferralCode(codeOrUrl) {
+    return persistPendingReferralCode(codeOrUrl, {
+      storage: this.pendingReferralStorage,
+      now: this.pendingReferralNow
+    });
+  }
+
+  getPendingReferralCode() {
+    return readPendingReferralCode({ storage: this.pendingReferralStorage });
+  }
+
+  clearPendingReferralCode() {
+    return removePendingReferralCode({ storage: this.pendingReferralStorage });
   }
 
   async copyReferralText(value, successLabel) {
@@ -8923,6 +8951,7 @@ export class AppController {
 
     console.info("[Renderer] AppController.init() entered");
     this.initPromise = (async () => {
+      this.capturePendingReferralCode(globalThis.location?.href);
       let restoreResult = null;
       try {
         if (!window.elemintz?.state) {
