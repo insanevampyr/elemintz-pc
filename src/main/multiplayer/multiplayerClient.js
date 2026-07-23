@@ -697,6 +697,7 @@ function cloneIpcSafeSession(session) {
     accountId: session?.accountId ?? null,
     profileKey: session?.profileKey ?? null,
     authenticated: Boolean(session?.authenticated),
+    emailVerified: Boolean(session?.emailVerified),
     rememberSession: Boolean(session?.rememberSession),
     expiresAt: session?.expiresAt ?? null
   };
@@ -2070,6 +2071,33 @@ export class MultiplayerClient {
       { email, password, rememberSession },
       { serverUrl, rememberSession }
     );
+  }
+
+  async getEmailVerificationStatus({ serverUrl } = {}) {
+    const response = await this.runServerRequest("auth:getVerificationStatus", {}, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load email verification status.");
+    }
+
+    return response.status ?? null;
+  }
+
+  async requestEmailVerification({ serverUrl } = {}) {
+    const response = await this.runServerRequest("auth:requestEmailVerification", {}, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to request email verification.");
+    }
+
+    return response.status ?? null;
+  }
+
+  async verifyEmail({ token, serverUrl } = {}) {
+    const response = await this.runServerRequest("auth:verifyEmail", { token }, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to verify email.");
+    }
+
+    return response.status ?? null;
   }
 
   async joinRoom({ roomCode, serverUrl, username, equippedCosmetics } = {}) {

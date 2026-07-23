@@ -7416,7 +7416,13 @@ test("multiplayer foundation: auth register persists a hashed account record and
     assert.equal(response?.ok, true);
     assert.equal(response?.account?.email, "founder@example.com");
     assert.equal(response?.account?.username, "FounderUser");
+    assert.equal(response?.account?.emailVerified, false);
+    assert.equal(response?.account?.emailVerificationPending, true);
+    assert.equal(response?.emailVerification?.emailVerified, false);
+    assert.equal(response?.emailVerification?.emailVerificationPending, true);
+    assert.equal(typeof response?.emailVerification?.devVerificationToken, "string");
     assert.equal(response?.session?.authenticated, true);
+    assert.equal(response?.session?.emailVerified, false);
     assert.equal(typeof response?.session?.accountId, "string");
     assert.equal(response?.session?.profileKey, "FounderUser");
     assert.deepEqual(linkedAccount, {
@@ -7428,6 +7434,12 @@ test("multiplayer foundation: auth register persists a hashed account record and
     const stored = JSON.parse(await fs.readFile(accountsPath, "utf8"));
     assert.equal(stored.accounts.length, 1);
     assert.equal(stored.accounts[0].email, "founder@example.com");
+    assert.equal(stored.accounts[0].emailVerified, false);
+    assert.equal(stored.accounts[0].emailVerifiedAt, null);
+    assert.equal(typeof stored.accounts[0].emailVerification?.tokenHash, "string");
+    assert.equal(stored.accounts[0].emailVerification.tokenHash.startsWith("sha256$"), true);
+    assert.equal(stored.accounts[0].emailVerification.devVerificationToken, undefined);
+    assert.equal(JSON.stringify(stored).includes(response.emailVerification.devVerificationToken), false);
     assert.equal(stored.accounts[0].passwordHash === "password123", false);
     assert.equal(stored.accounts[0].passwordHash.startsWith("scrypt$"), true);
 
@@ -7452,6 +7464,202 @@ test("multiplayer foundation: auth register persists a hashed account record and
   } finally {
     client?.disconnect();
     await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: account email verification schema normalizes legacy accounts and verifies hashed tokens", async () => {
+  const dataDir = await createTempDataDir();
+  let nowMs = Date.parse("2026-07-22T12:00:00.000Z");
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    now: () => nowMs
+  });
+
+  try {
+    const registered = await accountStore.register({
+      email: "verify@example.com",
+      password: "password123",
+      username: "VerifyUser"
+    });
+    assert.equal(registered.emailVerified, false);
+    assert.equal(registered.emailVerificationPending, true);
+    assert.equal(typeof registered.devVerificationToken, "string");
+
+    const invalid = await accountStore
+      .verifyEmail({ email: "verify@example.com", token: "not-the-token" })
+      .then(
+        () => null,
+        (error) => error
+      );
+    assert.equal(invalid?.code, "EMAIL_VERIFICATION_INVALID");
+
+    const verified = await accountStore.verifyEmail({
+      email: "verify@example.com",
+      token: registered.devVerificationToken
+    });
+    assert.equal(verified.emailVerified, true);
+    assert.equal(verified.account?.emailVerified, true);
+    assert.equal(verified.account?.emailVerificationPending, false);
+
+    const idempotent = await accountStore.verifyEmail({
+      email: "verify@example.com",
+      token: "already-verified-does-not-matter"
+    });
+    assert.equal(idempotent.alreadyVerified, true);
+    assert.equal(idempotent.account?.emailVerified, true);
+
+    const accountsPath = path.join(dataDir, "accounts.json");
+    const storedAfterVerify = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    assert.equal(storedAfterVerify.accounts[0].emailVerification, null);
+    assert.equal(JSON.stringify(storedAfterVerify).includes(registered.devVerificationToken), false);
+
+    const expiring = await accountStore.register({
+      email: "expired@example.com",
+      password: "password123",
+      username: "ExpiredUser"
+    });
+    nowMs += 1000 * 60 * 60 * 25;
+    const expired = await accountStore
+      .verifyEmail({ email: "expired@example.com", token: expiring.devVerificationToken })
+      .then(
+        () => null,
+        (error) => error
+      );
+    assert.equal(expired?.code, "EMAIL_VERIFICATION_EXPIRED");
+
+    const rawState = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    const legacy = rawState.accounts.find((account) => account.email === "expired@example.com");
+    delete legacy.emailVerified;
+    delete legacy.emailVerifiedAt;
+    delete legacy.emailVerification;
+    await fs.writeFile(accountsPath, JSON.stringify(rawState, null, 2));
+
+    const legacyLogin = await accountStore.login({
+      email: "expired@example.com",
+      password: "password123"
+    });
+    assert.equal(legacyLogin.emailVerified, false);
+    assert.equal(legacyLogin.emailVerifiedAt, null);
+    assert.equal(legacyLogin.emailVerificationPending, false);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: email verification auth routes expose safe status and do not block login", async () => {
+  const dataDir = await createTempDataDir();
+  const previousSmtpUser = process.env.SMTP_USER;
+  const previousSmtpPass = process.env.SMTP_PASS;
+  delete process.env.SMTP_USER;
+  delete process.env.SMTP_PASS;
+
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: {
+      assertProfileClaimAvailable: async () => null,
+      linkProfileToAccount: async ({ username, accountId }) => ({
+        username,
+        profile: { username, linkedAccountId: accountId }
+      }),
+      getProfile: async (username) => ({
+        username,
+        profile: { username, equippedCosmetics: {} },
+        progression: {
+          xp: { playerXP: 0, playerLevel: 1 },
+          dailyChallenges: { challenges: [] },
+          weeklyChallenges: { challenges: [] },
+          dailyLogin: { eligible: false }
+        }
+      })
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+    const registered = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: "route-verify@example.com",
+          password: "password123",
+          username: "RouteVerifyUser"
+        },
+        resolve
+      );
+    });
+    assert.equal(registered?.ok, true);
+    assert.equal(registered?.account?.emailVerified, false);
+    assert.equal(registered?.session?.authenticated, true);
+    assert.equal(registered?.session?.emailVerified, false);
+    assert.equal(typeof registered?.emailVerification?.devVerificationToken, "string");
+
+    const loginStillWorks = await new Promise((resolve) => {
+      client.emit(
+        "auth:login",
+        {
+          email: "route-verify@example.com",
+          password: "password123"
+        },
+        resolve
+      );
+    });
+    assert.equal(loginStillWorks?.ok, true);
+    assert.equal(loginStillWorks?.session?.authenticated, true);
+    assert.equal(loginStillWorks?.session?.emailVerified, false);
+
+    const statusBefore = await new Promise((resolve) => {
+      client.emit("auth:getVerificationStatus", {}, resolve);
+    });
+    assert.equal(statusBefore?.ok, true);
+    assert.equal(statusBefore?.status?.emailVerified, false);
+    assert.equal(statusBefore?.status?.emailVerificationPending, true);
+    assert.equal(statusBefore?.status?.devVerificationToken, undefined);
+
+    const invalid = await new Promise((resolve) => {
+      client.emit("auth:verifyEmail", { token: "bad-token" }, resolve);
+    });
+    assert.equal(invalid?.ok, false);
+    assert.equal(invalid?.error?.code, "EMAIL_VERIFICATION_INVALID");
+
+    const verified = await new Promise((resolve) => {
+      client.emit("auth:verifyEmail", { token: registered.emailVerification.devVerificationToken }, resolve);
+    });
+    assert.equal(verified?.ok, true);
+    assert.equal(verified?.status?.emailVerified, true);
+    assert.equal(verified?.status?.emailVerificationPending, false);
+
+    const verifiedAgain = await new Promise((resolve) => {
+      client.emit("auth:verifyEmail", { token: "already-verified" }, resolve);
+    });
+    assert.equal(verifiedAgain?.ok, true);
+    assert.equal(verifiedAgain?.status?.emailVerified, true);
+
+    const accountsPath = path.join(dataDir, "accounts.json");
+    const stored = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    assert.equal(JSON.stringify(stored).includes(registered.emailVerification.devVerificationToken), false);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    if (previousSmtpUser === undefined) {
+      delete process.env.SMTP_USER;
+    } else {
+      process.env.SMTP_USER = previousSmtpUser;
+    }
+    if (previousSmtpPass === undefined) {
+      delete process.env.SMTP_PASS;
+    } else {
+      process.env.SMTP_PASS = previousSmtpPass;
+    }
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });

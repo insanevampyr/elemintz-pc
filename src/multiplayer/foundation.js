@@ -1526,11 +1526,39 @@ export function createMultiplayerFoundation({
       profileKey: account?.profileKey ?? account?.username,
       accountId: account?.accountId ?? null,
       email: account?.email ?? null,
+      emailVerified: Boolean(account?.emailVerified),
       authenticated: true,
       rememberSession,
       replaceDisconnected: true,
       socketId: socket.id
     });
+  }
+
+  function emailDeliveryConfigured() {
+    return Boolean(
+      String(process.env.SMTP_USER ?? "").trim() &&
+        String(process.env.SMTP_PASS ?? "").trim()
+    );
+  }
+
+  function buildEmailVerificationDelivery(result = null) {
+    const delivery = {
+      emailVerified: Boolean(result?.account?.emailVerified),
+      emailVerificationPending: Boolean(result?.account?.emailVerificationPending),
+      delivery: emailDeliveryConfigured() ? "smtp_configured" : "dev_token"
+    };
+    if (!emailDeliveryConfigured() && result?.devVerificationToken) {
+      delivery.devVerificationToken = result.devVerificationToken;
+    }
+    return delivery;
+  }
+
+  function sanitizeAuthAccountResult(account = null) {
+    if (!account || typeof account !== "object") {
+      return account;
+    }
+    const { devVerificationToken: _devVerificationToken, ...safeAccount } = account;
+    return safeAccount;
   }
 
   async function validateAuthenticatedSession(session) {
@@ -1554,6 +1582,7 @@ export function createMultiplayerFoundation({
             }
           };
         }
+        session.emailVerified = Boolean(account.emailVerified);
       }
 
       if (typeof profileAuthority?.getProfile === "function") {
@@ -2093,7 +2122,11 @@ export function createMultiplayerFoundation({
 
         respond({
           ok: true,
-          account,
+          account: sanitizeAuthAccountResult(account),
+          emailVerification: buildEmailVerificationDelivery({
+            account,
+            devVerificationToken: account?.devVerificationToken
+          }),
           session: sessionStore.toPublicSession(sessionResult.session)
         });
       } catch (error) {
@@ -2132,6 +2165,97 @@ export function createMultiplayerFoundation({
         void deliverPendingAdminNoticesForSession(sessionResult.session, socket.id);
       } catch (error) {
         respond(buildAccountError(error, "ACCOUNT_LOGIN_FAILED"));
+      }
+    });
+
+    socket.on("auth:getVerificationStatus", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+      if (!sessionResult.session?.authenticated || typeof accountStore?.getEmailVerificationStatus !== "function") {
+        respond(buildAccountError({
+          code: "AUTH_REQUIRED",
+          message: "An authenticated EleMintz account session is required."
+        }));
+        return;
+      }
+
+      try {
+        const account = await accountStore.getEmailVerificationStatus({
+          accountId: sessionResult.session.accountId,
+          username: sessionResult.session.username
+        });
+        sessionResult.session.emailVerified = Boolean(account?.emailVerified);
+        respond({
+          ok: true,
+          status: buildEmailVerificationDelivery({ account })
+        });
+      } catch (error) {
+        respond(buildAccountError(error, "EMAIL_VERIFICATION_STATUS_FAILED"));
+      }
+    });
+
+    socket.on("auth:requestEmailVerification", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+      if (!sessionResult.session?.authenticated || typeof accountStore?.requestEmailVerification !== "function") {
+        respond(buildAccountError({
+          code: "AUTH_REQUIRED",
+          message: "An authenticated EleMintz account session is required."
+        }));
+        return;
+      }
+
+      try {
+        const result = await accountStore.requestEmailVerification({
+          accountId: sessionResult.session.accountId,
+          username: sessionResult.session.username
+        });
+        sessionResult.session.emailVerified = Boolean(result?.account?.emailVerified);
+        respond({
+          ok: true,
+          status: buildEmailVerificationDelivery(result)
+        });
+      } catch (error) {
+        respond(buildAccountError(error, "EMAIL_VERIFICATION_REQUEST_FAILED"));
+      }
+    });
+
+    socket.on("auth:verifyEmail", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+      if (!sessionResult.session?.authenticated || typeof accountStore?.verifyEmail !== "function") {
+        respond(buildAccountError({
+          code: "AUTH_REQUIRED",
+          message: "An authenticated EleMintz account session is required."
+        }));
+        return;
+      }
+
+      try {
+        const result = await accountStore.verifyEmail({
+          accountId: sessionResult.session.accountId,
+          username: sessionResult.session.username,
+          token: payload?.token
+        });
+        sessionResult.session.emailVerified = Boolean(result?.account?.emailVerified);
+        respond({
+          ok: true,
+          status: buildEmailVerificationDelivery(result)
+        });
+      } catch (error) {
+        respond(buildAccountError(error, "EMAIL_VERIFICATION_FAILED"));
       }
     });
 

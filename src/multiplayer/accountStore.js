@@ -2,12 +2,15 @@ import crypto from "node:crypto";
 
 import { JsonStore } from "../state/storage/jsonStore.js";
 
-const ACCOUNTS_SCHEMA_VERSION = 1;
+const ACCOUNTS_SCHEMA_VERSION = 2;
 const MAX_EMAIL_LENGTH = 160;
 const MAX_USERNAME_LENGTH = 32;
 const MIN_PASSWORD_LENGTH = 8;
 const SCRYPT_KEY_LENGTH = 64;
 const SCRYPT_SALT_BYTES = 16;
+const EMAIL_VERIFICATION_TOKEN_BYTES = 24;
+const EMAIL_VERIFICATION_TOKEN_TTL_MS = 1000 * 60 * 60 * 24;
+const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 1000 * 60;
 
 function buildAccountError(code, message) {
   const error = new Error(message);
@@ -39,6 +42,60 @@ function buildEmptyState() {
   };
 }
 
+function normalizeIsoTimestamp(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized && Number.isFinite(Date.parse(normalized)) ? normalized : null;
+}
+
+function hashEmailVerificationToken(token) {
+  return `sha256$${crypto.createHash("sha256").update(String(token ?? "")).digest("hex")}`;
+}
+
+function createEmailVerificationToken() {
+  return crypto.randomBytes(EMAIL_VERIFICATION_TOKEN_BYTES).toString("hex");
+}
+
+function normalizeEmailVerification(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const tokenHash = String(value.tokenHash ?? "").trim();
+  const requestedAt = normalizeIsoTimestamp(value.requestedAt);
+  const expiresAt = normalizeIsoTimestamp(value.expiresAt);
+  const lastSentAt = normalizeIsoTimestamp(value.lastSentAt);
+  const resendCount = Math.max(0, Math.floor(Number(value.resendCount ?? 0) || 0));
+  if (!tokenHash || !requestedAt || !expiresAt) {
+    return null;
+  }
+
+  return {
+    tokenHash,
+    requestedAt,
+    expiresAt,
+    lastSentAt: lastSentAt ?? requestedAt,
+    resendCount
+  };
+}
+
+function normalizeAccount(account) {
+  if (!account || typeof account !== "object" || Array.isArray(account)) {
+    return null;
+  }
+
+  const emailVerified = Boolean(account.emailVerified);
+  const emailVerifiedAt = emailVerified ? normalizeIsoTimestamp(account.emailVerifiedAt) : null;
+  return {
+    ...account,
+    email: normalizeEmail(account.email) ?? account.email,
+    username: normalizeUsername(account.username) ?? account.username,
+    profileKey: normalizeUsername(account.profileKey) ?? normalizeUsername(account.username) ?? account.profileKey,
+    emailVerified,
+    emailVerifiedAt,
+    emailVerification: emailVerified ? null : normalizeEmailVerification(account.emailVerification)
+  };
+}
+
 function sanitizeAccount(account) {
   if (!account) {
     return null;
@@ -49,6 +106,9 @@ function sanitizeAccount(account) {
     email: account.email,
     username: account.username,
     profileKey: account.profileKey,
+    emailVerified: Boolean(account.emailVerified),
+    emailVerifiedAt: account.emailVerifiedAt ?? null,
+    emailVerificationPending: Boolean(!account.emailVerified && account.emailVerification?.tokenHash),
     createdAt: account.createdAt,
     updatedAt: account.updatedAt
   };
@@ -90,8 +150,9 @@ function verifyScryptHash(password, storedHash) {
 }
 
 export class MultiplayerAccountStore {
-  constructor({ dataDir, logger = console } = {}) {
+  constructor({ dataDir, logger = console, now = () => Date.now() } = {}) {
     this.logger = logger;
+    this.now = now;
     this.store = new JsonStore("accounts.json", { dataDir });
   }
 
@@ -101,19 +162,40 @@ export class MultiplayerAccountStore {
       return buildEmptyState();
     }
 
+    const accounts = Array.isArray(state.accounts)
+      ? state.accounts.map((account) => normalizeAccount(account)).filter(Boolean)
+      : [];
+
     return {
       schemaVersion: Number(state.schemaVersion ?? ACCOUNTS_SCHEMA_VERSION),
-      accounts: Array.isArray(state.accounts) ? state.accounts : []
+      accounts
     };
   }
 
   async writeState(state) {
     const safeState = {
       schemaVersion: ACCOUNTS_SCHEMA_VERSION,
-      accounts: Array.isArray(state?.accounts) ? state.accounts : []
+      accounts: Array.isArray(state?.accounts)
+        ? state.accounts.map((account) => normalizeAccount(account)).filter(Boolean)
+        : []
     };
     await this.store.write(safeState);
     return safeState;
+  }
+
+  buildPendingEmailVerification(nowMs = this.now()) {
+    const token = createEmailVerificationToken();
+    const requestedAt = new Date(nowMs).toISOString();
+    return {
+      token,
+      emailVerification: {
+        tokenHash: hashEmailVerificationToken(token),
+        requestedAt,
+        expiresAt: new Date(nowMs + EMAIL_VERIFICATION_TOKEN_TTL_MS).toISOString(),
+        lastSentAt: requestedAt,
+        resendCount: 0
+      }
+    };
   }
 
   async register({ email, password, username, profileKey = username } = {}) {
@@ -146,13 +228,18 @@ export class MultiplayerAccountStore {
       throw buildAccountError("ACCOUNT_USERNAME_IN_USE", "This username is already linked to an account.");
     }
 
-    const now = new Date().toISOString();
+    const nowMs = this.now();
+    const now = new Date(nowMs).toISOString();
+    const pendingVerification = this.buildPendingEmailVerification(nowMs);
     const account = {
       accountId: crypto.randomUUID(),
       email: safeEmail,
       passwordHash: await createScryptHash(safePassword),
       username: safeUsername,
       profileKey: safeProfileKey,
+      emailVerified: false,
+      emailVerifiedAt: null,
+      emailVerification: pendingVerification.emailVerification,
       createdAt: now,
       updatedAt: now
     };
@@ -164,7 +251,10 @@ export class MultiplayerAccountStore {
       email: account.email,
       username: account.username
     });
-    return sanitizeAccount(account);
+    return {
+      ...sanitizeAccount(account),
+      devVerificationToken: pendingVerification.token
+    };
   }
 
   async login({ email, password } = {}) {
@@ -193,6 +283,131 @@ export class MultiplayerAccountStore {
       email: account.email,
       username: account.username
     });
+    return sanitizeAccount(account);
+  }
+
+  async requestEmailVerification({ email, accountId, username } = {}) {
+    const safeEmail = normalizeEmail(email);
+    const safeAccountId = String(accountId ?? "").trim();
+    const safeUsername = normalizeUsername(username);
+    const state = await this.readState();
+    const account =
+      state.accounts.find(
+        (entry) =>
+          (safeAccountId && entry?.accountId === safeAccountId) ||
+          (safeEmail && normalizeEmail(entry?.email) === safeEmail) ||
+          (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+      ) ?? null;
+    if (!account) {
+      throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+    }
+
+    if (account.emailVerified) {
+      return {
+        account: sanitizeAccount(account),
+        alreadyVerified: true,
+        emailVerificationPending: false
+      };
+    }
+
+    const nowMs = this.now();
+    const lastSentAtMs = Date.parse(account.emailVerification?.lastSentAt ?? "");
+    if (
+      Number.isFinite(lastSentAtMs) &&
+      nowMs - lastSentAtMs >= 0 &&
+      nowMs - lastSentAtMs < EMAIL_VERIFICATION_RESEND_COOLDOWN_MS
+    ) {
+      throw buildAccountError("EMAIL_VERIFICATION_COOLDOWN", "Please wait before requesting another verification email.");
+    }
+
+    const pendingVerification = this.buildPendingEmailVerification(nowMs);
+    account.emailVerification = {
+      ...pendingVerification.emailVerification,
+      resendCount: Math.max(0, Number(account.emailVerification?.resendCount ?? 0) || 0) + 1
+    };
+    account.updatedAt = new Date(nowMs).toISOString();
+    await this.writeState(state);
+
+    return {
+      account: sanitizeAccount(account),
+      alreadyVerified: false,
+      emailVerificationPending: true,
+      devVerificationToken: pendingVerification.token
+    };
+  }
+
+  async verifyEmail({ email, accountId, username, token } = {}) {
+    const safeEmail = normalizeEmail(email);
+    const safeAccountId = String(accountId ?? "").trim();
+    const safeUsername = normalizeUsername(username);
+    const safeToken = String(token ?? "").trim();
+    const state = await this.readState();
+    const account =
+      state.accounts.find(
+        (entry) =>
+          (safeAccountId && entry?.accountId === safeAccountId) ||
+          (safeEmail && normalizeEmail(entry?.email) === safeEmail) ||
+          (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+      ) ?? null;
+    if (!account) {
+      throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+    }
+
+    if (account.emailVerified) {
+      return {
+        account: sanitizeAccount(account),
+        alreadyVerified: true,
+        emailVerified: true
+      };
+    }
+
+    if (!safeToken) {
+      throw buildAccountError("EMAIL_VERIFICATION_TOKEN_REQUIRED", "Verification token is required.");
+    }
+
+    const verification = normalizeEmailVerification(account.emailVerification);
+    if (!verification) {
+      throw buildAccountError("EMAIL_VERIFICATION_NOT_REQUESTED", "Email verification has not been requested.");
+    }
+
+    if (this.now() > Date.parse(verification.expiresAt)) {
+      throw buildAccountError("EMAIL_VERIFICATION_EXPIRED", "Email verification token has expired.");
+    }
+
+    if (hashEmailVerificationToken(safeToken) !== verification.tokenHash) {
+      throw buildAccountError("EMAIL_VERIFICATION_INVALID", "Email verification token is invalid.");
+    }
+
+    const verifiedAt = new Date(this.now()).toISOString();
+    account.emailVerified = true;
+    account.emailVerifiedAt = verifiedAt;
+    account.emailVerification = null;
+    account.updatedAt = verifiedAt;
+    await this.writeState(state);
+
+    return {
+      account: sanitizeAccount(account),
+      alreadyVerified: false,
+      emailVerified: true
+    };
+  }
+
+  async getEmailVerificationStatus({ email, accountId, username } = {}) {
+    const safeEmail = normalizeEmail(email);
+    const safeAccountId = String(accountId ?? "").trim();
+    const safeUsername = normalizeUsername(username);
+    const state = await this.readState();
+    const account =
+      state.accounts.find(
+        (entry) =>
+          (safeAccountId && entry?.accountId === safeAccountId) ||
+          (safeEmail && normalizeEmail(entry?.email) === safeEmail) ||
+          (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+      ) ?? null;
+    if (!account) {
+      throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+    }
+
     return sanitizeAccount(account);
   }
 

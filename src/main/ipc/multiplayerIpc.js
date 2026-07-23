@@ -49,6 +49,21 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.login(payload);
   });
 
+  ipcMain.handle("multiplayer:getEmailVerificationStatus", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.getEmailVerificationStatus(payload);
+  });
+
+  ipcMain.handle("multiplayer:requestEmailVerification", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.requestEmailVerification(payload);
+  });
+
+  ipcMain.handle("multiplayer:verifyEmail", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.verifyEmail(payload);
+  });
+
   ipcMain.handle("multiplayer:authenticateHotseatIdentity", async (event, payload) => {
     subscribers.add(event.sender);
     return client.authenticateHotseatIdentity(payload);
