@@ -7947,6 +7947,29 @@ test("multiplayer foundation: verified referral activation links once without qu
       alreadyLinked: false,
       emailVerified: true
     });
+    const referredCode = await createCode(referredClient);
+    assert.equal(referredCode?.referralCode, "ELM-USER-C444");
+    const beforeReciprocalAttempt = JSON.parse(
+      await fs.readFile(path.join(dataDir, "accounts.json"), "utf8")
+    );
+    const reciprocal = await activate(referrerClient, referredCode.referralCode);
+    assert.deepEqual(reciprocal, {
+      ok: false,
+      error: {
+        code: "REFERRAL_RECIPROCAL_LINK",
+        message: "You cannot use a referral code from someone you already referred."
+      }
+    });
+    const afterReciprocalAttempt = JSON.parse(
+      await fs.readFile(path.join(dataDir, "accounts.json"), "utf8")
+    );
+    assert.deepEqual(afterReciprocalAttempt, beforeReciprocalAttempt);
+    assert.equal("tokens" in afterReciprocalAttempt.accounts.find(
+      (account) => account.accountId === referrer.account.accountId
+    ), false);
+    assert.equal("tokens" in afterReciprocalAttempt.accounts.find(
+      (account) => account.accountId === referred.account.accountId
+    ), false);
     const linkedAgain = await activate(referredClient, referrerCode.referralCode);
     assert.deepEqual(linkedAgain, {
       ok: true,

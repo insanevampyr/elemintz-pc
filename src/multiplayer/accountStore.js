@@ -621,6 +621,14 @@ export class MultiplayerAccountStore {
       if (referrerAccount.accountId === account.accountId) {
         throw buildAccountError("REFERRAL_SELF_LINK", "You cannot use your own referral code.");
       }
+      const accountReferralCode = normalizeReferralCode(account.referral?.code);
+      const referrerReferral = normalizeReferral(referrerAccount.referral);
+      if (accountReferralCode && referrerReferral.referredBy === accountReferralCode) {
+        throw buildAccountError(
+          "REFERRAL_RECIPROCAL_LINK",
+          "You cannot use a referral code from someone you already referred."
+        );
+      }
 
       account.referral = {
         ...referral,

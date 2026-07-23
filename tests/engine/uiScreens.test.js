@@ -32022,7 +32022,7 @@ test("ui: failed referral activation preserves pending code and entered value", 
     elemintz: {
       multiplayer: {
         activateReferralCode: async () => {
-          throw new Error("Referral code was not found.");
+          throw new Error("You cannot use a referral code from someone you already referred.");
         }
       }
     }
@@ -32052,6 +32052,10 @@ test("ui: failed referral activation preserves pending code and entered value", 
     const result = await controller.activateOwnReferralCode("ELM-ZQKT-385D");
     assert.equal(result.ok, false);
     assert.equal(controller.referralActivationState.status, "error");
+    assert.equal(
+      controller.referralActivationState.message,
+      "You cannot use a referral code from someone you already referred."
+    );
     assert.equal(controller.referralActivationState.inputValue, "ELM-ZQKT-385D");
     assert.equal(controller.getPendingReferralCode()?.code, "ELM-ZQKT-385D");
   } finally {

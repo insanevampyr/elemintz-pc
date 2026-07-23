@@ -103,6 +103,7 @@ const SAFE_REFERRAL_ACTIVATION_MESSAGES = new Set([
   "Unable to link this referral code.",
   "Referral code was not found.",
   "You cannot use your own referral code.",
+  "You cannot use a referral code from someone you already referred.",
   "A referral code is already linked to this account.",
   "This account's referral state cannot be changed."
 ]);
