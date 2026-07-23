@@ -2083,6 +2083,10 @@ code.online-active-meta-value {
   line-height: 1.35;
 }
 
+.profile-referral-game-link {
+  overflow-wrap: anywhere;
+}
+
 .collection-albums-modal-body {
   max-height: min(calc(100vh - 190px), 640px);
   overflow-y: auto;

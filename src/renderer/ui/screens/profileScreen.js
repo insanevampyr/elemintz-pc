@@ -1848,6 +1848,20 @@ function renderProfileReferralAction(referral = {}) {
     `;
   }
 
+  if (!referral.emailVerified) {
+    return `
+      <div class="profile-identity-referral profile-referral-action" data-profile-identity-referral="true" data-profile-referral-locked="true">
+        <strong class="profile-activity-action-title">Referral Rewards Locked</strong>
+        <p class="text-muted">Verify your email to unlock your personal referral code and invite link.</p>
+        <p class="text-muted profile-referral-help">You only earn referral rewards from your verified referral link after your friend verifies email, reaches Level 2, and completes 3 qualifying matches.</p>
+        <p class="text-muted profile-referral-game-link">
+          Game page:
+          <a href="${REFERRAL_INVITE_URL}" target="_blank" rel="noopener noreferrer">${REFERRAL_INVITE_URL}</a>
+        </p>
+      </div>
+    `;
+  }
+
   const referralCode = normalizeReferralCodeForDisplay(referral.referralCode);
   if (!referralCode) {
     return `
@@ -1866,9 +1880,7 @@ function renderProfileReferralAction(referral = {}) {
         <button id="profile-copy-referral-code-btn" class="btn btn-secondary" type="button">Copy Code</button>
         <button id="profile-copy-referral-link-btn" class="btn btn-secondary" type="button">Copy Invite Link</button>
       </div>
-      <p class="text-muted profile-referral-status" data-profile-referral-email-status="${referral.emailVerified ? "verified" : "unverified"}">
-        ${referral.emailVerified ? "Email verified." : "Email verification is required for future referral rewards."}
-      </p>
+      <p class="text-muted profile-referral-status" data-profile-referral-email-status="verified">Email verified.</p>
       <p class="text-muted profile-referral-help">Rewards unlock later after verified email and real play qualification.</p>
     </div>
   `;

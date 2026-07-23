@@ -31400,7 +31400,24 @@ test("ui: authenticated own Profile identity renders referral controls while Soc
 
   const guestHtml = profileScreen.render(createProfileScreenContext());
   assert.match(guestHtml, /Sign in to get your referral code\./);
-  assert.doesNotMatch(guestHtml, /profile-copy-referral-code-btn|profile-copy-referral-link-btn/);
+  assert.doesNotMatch(guestHtml, /ELM-[A-Z2-9-]+|\?ref=|profile-copy-referral-code-btn|profile-copy-referral-link-btn/);
+
+  const unverifiedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        status: "ready",
+        referralCode: "ELM-HIDE-M222",
+        emailVerified: false
+      }
+    })
+  );
+  assert.match(unverifiedHtml, /data-profile-referral-locked="true"/);
+  assert.match(unverifiedHtml, /Referral Rewards Locked/);
+  assert.match(unverifiedHtml, /Verify your email to unlock your personal referral code and invite link\./);
+  assert.match(unverifiedHtml, /reaches Level 2, and completes 3 qualifying matches\./);
+  assert.match(unverifiedHtml, /href="https:\/\/vampyrlee\.itch\.io\/elemintz"/);
+  assert.doesNotMatch(unverifiedHtml, /ELM-HIDE-M222|\?ref=|profile-copy-referral-code-btn|profile-copy-referral-link-btn/);
 
   const failureHtml = profileScreen.render(
     createProfileScreenContext({
@@ -31408,7 +31425,7 @@ test("ui: authenticated own Profile identity renders referral controls while Soc
         authenticated: true,
         status: "error",
         referralCode: null,
-        emailVerified: false
+        emailVerified: true
       }
     })
   );
@@ -31601,7 +31618,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
           authenticated: true,
           status: "ready",
           referralCode: "ELM-K7QX-M9PD",
-          emailVerified: false
+          emailVerified: true
         },
         actions: {
           ...createProfileScreenContext().actions,
