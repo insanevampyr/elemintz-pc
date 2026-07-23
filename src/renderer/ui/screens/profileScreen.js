@@ -19,6 +19,9 @@ import { buildThemedSurfaceClassName } from "../shared/themedSurfaceShared.js";
 import { getLevelProgress, MAX_LEVEL } from "../../../state/levelRewardsSystem.js";
 import { buildCollectionAlbumDetail } from "../../../state/collectionAlbums.js";
 
+const REFERRAL_CODE_PATTERN = /^ELM-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
+const REFERRAL_INVITE_URL = "https://vampyrlee.itch.io/elemintz";
+
 function escapeProfileText(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -26,6 +29,11 @@ function escapeProfileText(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function normalizeReferralCodeForDisplay(value) {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return REFERRAL_CODE_PATTERN.test(normalized) ? normalized : null;
 }
 
 function resolveImagePath(image) {
@@ -1527,10 +1535,11 @@ function renderProfileIdentityCard({
   titleId,
   titleIcon,
   badgeId,
-  badgeSrc
+  badgeSrc,
+  referral = {}
 }) {
   return `
-    <section class="profile-summary-card profile-dashboard-card profile-identity-card">
+    <section class="profile-summary-card profile-dashboard-card profile-identity-card" data-profile-identity-card="true">
       ${renderProfileIdentityHeader({
         username,
         avatarId,
@@ -1542,6 +1551,7 @@ function renderProfileIdentityCard({
         badgeId,
         badgeSrc
       })}
+      ${renderProfileReferralAction(referral)}
     </section>
   `;
 }
@@ -1828,7 +1838,47 @@ function renderProfileIdentityHeader({
   `;
 }
 
-function renderProfileSocialToolsCard({ searchQuery = "", searchResults = [], searchError = "" } = {}) {
+function renderProfileReferralAction(referral = {}) {
+  if (!referral?.authenticated) {
+    return `
+      <div class="profile-identity-referral" data-profile-identity-referral="true">
+        <strong class="profile-activity-action-title">My Referral Code</strong>
+        <p class="text-muted" data-profile-referral-signed-out="true">Sign in to get your referral code.</p>
+      </div>
+    `;
+  }
+
+  const referralCode = normalizeReferralCodeForDisplay(referral.referralCode);
+  if (!referralCode) {
+    return `
+      <div class="profile-identity-referral" data-profile-identity-referral="true">
+        <strong class="profile-activity-action-title">My Referral Code</strong>
+        <p class="text-muted" data-profile-referral-unavailable="true">Referral code unavailable. Try again later.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="profile-identity-referral profile-referral-action" data-profile-identity-referral="true">
+      <strong class="profile-activity-action-title">My Referral Code</strong>
+      <code class="profile-referral-code" data-profile-referral-code="true">${escapeProfileText(referralCode)}</code>
+      <div class="profile-referral-actions">
+        <button id="profile-copy-referral-code-btn" class="btn btn-secondary" type="button">Copy Code</button>
+        <button id="profile-copy-referral-link-btn" class="btn btn-secondary" type="button">Copy Invite Link</button>
+      </div>
+      <p class="text-muted profile-referral-status" data-profile-referral-email-status="${referral.emailVerified ? "verified" : "unverified"}">
+        ${referral.emailVerified ? "Email verified." : "Email verification is required for future referral rewards."}
+      </p>
+      <p class="text-muted profile-referral-help">Rewards unlock later after verified email and real play qualification.</p>
+    </div>
+  `;
+}
+
+function renderProfileSocialToolsCard({
+  searchQuery = "",
+  searchResults = [],
+  searchError = ""
+} = {}) {
   return `
     <section class="profile-summary-card stack-sm profile-social-card profile-dashboard-card" data-profile-social-card="true">
       <h3 class="section-title">Social</h3>
@@ -2051,7 +2101,8 @@ export const profileScreen = {
               titleId: profile.equippedCosmetics?.title ?? profile.title,
               titleIcon: profileTitleIcon,
               badgeId: profile.equippedCosmetics?.badge ?? "none",
-              badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none")
+              badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none"),
+              referral: context.referral ?? {}
             })}
             ${renderProfileSocialToolsCard({
               searchQuery: context.searchQuery ?? "",
@@ -2175,6 +2226,26 @@ export const profileScreen = {
     const collectionsButton = document.getElementById("profile-collections-btn");
     if (collectionsButton && context.actions.openCollections) {
       collectionsButton.addEventListener("click", context.actions.openCollections);
+    }
+    const copyReferralCodeButton = document.getElementById("profile-copy-referral-code-btn");
+    if (copyReferralCodeButton && context.actions.copyReferralCode) {
+      copyReferralCodeButton.addEventListener("click", () => {
+        const referralCode = normalizeReferralCodeForDisplay(context.referral?.referralCode);
+        if (referralCode) {
+          context.actions.copyReferralCode(referralCode);
+        }
+      });
+    }
+    const copyReferralLinkButton = document.getElementById("profile-copy-referral-link-btn");
+    if (copyReferralLinkButton && context.actions.copyReferralInviteLink) {
+      copyReferralLinkButton.addEventListener("click", () => {
+        const referralCode = normalizeReferralCodeForDisplay(context.referral?.referralCode);
+        if (referralCode) {
+          context.actions.copyReferralInviteLink(
+            `${REFERRAL_INVITE_URL}?ref=${encodeURIComponent(referralCode)}`
+          );
+        }
+      });
     }
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {

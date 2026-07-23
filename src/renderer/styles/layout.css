@@ -1945,8 +1945,10 @@ code.online-active-meta-value {
 
 .profile-identity-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
   padding: 18px 16px;
   text-align: center;
 }
@@ -2039,6 +2041,46 @@ code.online-active-meta-value {
 .profile-activity-action .text-muted,
 .profile-social-action .text-muted {
   margin: 0;
+}
+
+.profile-referral-code {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(130, 170, 199, 0.24);
+  border-radius: 6px;
+  background: rgba(4, 15, 26, 0.58);
+  color: #f3fbff;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.profile-identity-referral {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(130, 170, 199, 0.16);
+}
+
+.profile-identity-referral .text-muted {
+  margin: 0;
+}
+
+.profile-referral-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.profile-referral-status,
+.profile-referral-help {
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .collection-albums-modal-body {

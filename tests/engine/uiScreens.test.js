@@ -31371,6 +31371,62 @@ test("ui: owner profile groups Search and Recent Opponents separately from Battl
   assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
 });
 
+test("ui: authenticated own Profile identity renders referral controls while Social stays focused", () => {
+  const html = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        status: "ready",
+        referralCode: "ELM-K7QX-M9PD",
+        emailVerified: true
+      }
+    })
+  );
+  assert.match(html, /data-profile-identity-card="true"/);
+  assert.match(html, /data-profile-identity-referral="true"/);
+  assert.match(html, /My Referral Code/);
+  assert.match(html, /data-profile-referral-code="true">ELM-K7QX-M9PD</);
+  assert.match(html, /id="profile-copy-referral-code-btn"[^>]*>Copy Code</);
+  assert.match(html, /id="profile-copy-referral-link-btn"[^>]*>Copy Invite Link</);
+  assert.match(html, /data-profile-referral-email-status="verified"/);
+  const identityIndex = html.indexOf('data-profile-identity-card="true"');
+  const referralIndex = html.indexOf('data-profile-identity-referral="true"');
+  const socialIndex = html.indexOf('data-profile-social-card="true"');
+  const activityIndex = html.indexOf('data-profile-activity-card="true"');
+  assert.ok(identityIndex >= 0 && referralIndex > identityIndex && referralIndex < socialIndex);
+  assert.doesNotMatch(html.slice(socialIndex, activityIndex), /My Referral Code|data-profile-identity-referral/);
+  assert.match(html.slice(socialIndex, activityIndex), /Search Player Profile/);
+  assert.match(html.slice(socialIndex, activityIndex), /Recent Opponents/);
+
+  const guestHtml = profileScreen.render(createProfileScreenContext());
+  assert.match(guestHtml, /Sign in to get your referral code\./);
+  assert.doesNotMatch(guestHtml, /profile-copy-referral-code-btn|profile-copy-referral-link-btn/);
+
+  const failureHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        status: "error",
+        referralCode: null,
+        emailVerified: false
+      }
+    })
+  );
+  assert.match(failureHtml, /Referral code unavailable\. Try again later\./);
+  assert.doesNotMatch(failureHtml, /private referral authority failure/i);
+
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    ...createProfileScreenContext().profile,
+    referralCode: "ELM-LEAK-M222",
+    referral: {
+      code: "ELM-LEAK-M222",
+      referredBy: "ELM-AAAA-2222",
+      referrerClaims: { private: true }
+    }
+  });
+  assert.doesNotMatch(viewedHtml, /My Referral Code|ELM-LEAK-M222|ELM-AAAA-2222|referrerClaims/);
+});
+
 test("ui: own profile renders compact completed Collection chips without inline album grid", () => {
   const profile = {
     ...createProfileScreenContext().profile,
@@ -31441,13 +31497,15 @@ test("ui: Recent Opponents modal renders empty state exactly", () => {
   assert.match(modalHtml, /data-recent-opponents-empty="true">No recent online opponents yet\.<\/p>/);
 });
 
-test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Collections actions", async () => {
+test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collections, and referral copy actions", async () => {
   const previousDocument = global.document;
   let battleReportClick = null;
   let recentCardClick = null;
   let collectionsClick = null;
   let searchSubmit = null;
   let resultButtonClick = null;
+  let copyReferralCodeClick = null;
+  let copyReferralLinkClick = null;
   const calls = [];
   const searchForm = {};
   const resultButton = {
@@ -31503,6 +31561,24 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
           }
         };
       }
+      if (id === "profile-copy-referral-code-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              copyReferralCodeClick = handler;
+            }
+          }
+        };
+      }
+      if (id === "profile-copy-referral-link-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              copyReferralLinkClick = handler;
+            }
+          }
+        };
+      }
       return null;
     },
     querySelector: () => null,
@@ -31521,13 +31597,21 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
   try {
     profileScreen.bind(
       createProfileScreenContext({
+        referral: {
+          authenticated: true,
+          status: "ready",
+          referralCode: "ELM-K7QX-M9PD",
+          emailVerified: false
+        },
         actions: {
           ...createProfileScreenContext().actions,
           searchProfiles: async (username) => calls.push(`searchProfiles:${username}`),
           viewProfile: async (username) => calls.push(`viewProfile:${username}`),
           openBattleReport: () => calls.push("openBattleReport"),
           openRecentOpponents: () => calls.push("openRecentOpponents"),
-          openCollections: () => calls.push("openCollections")
+          openCollections: () => calls.push("openCollections"),
+          copyReferralCode: (value) => calls.push(`copyReferralCode:${value}`),
+          copyReferralInviteLink: (value) => calls.push(`copyReferralInviteLink:${value}`)
         }
       })
     );
@@ -31537,6 +31621,8 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
     await battleReportClick?.();
     await recentCardClick?.();
     await collectionsClick?.();
+    await copyReferralCodeClick?.();
+    await copyReferralLinkClick?.();
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;
@@ -31548,8 +31634,113 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, and Col
     "viewProfile:ResultRival",
     "openBattleReport",
     "openRecentOpponents",
-    "openCollections"
+    "openCollections",
+    "copyReferralCode:ELM-K7QX-M9PD",
+    "copyReferralInviteLink:https://vampyrlee.itch.io/elemintz?ref=ELM-K7QX-M9PD"
   ]);
+});
+
+test("ui: referral code loading is authenticated-only, single-flight, and fails closed", async () => {
+  const previousWindow = global.window;
+  let referralCalls = 0;
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: { enqueueToast: () => {} }
+  });
+
+  try {
+    global.window = {
+      elemintz: {
+        multiplayer: {
+          getOrCreateReferralCode: async () => {
+            referralCalls += 1;
+            return {
+              referralCode: "ELM-K7QX-M9PD",
+              emailVerified: false
+            };
+          }
+        }
+      }
+    };
+    controller.username = "ReferralOwner";
+    controller.onlinePlayState = {
+      session: { authenticated: true, username: "ReferralOwner", emailVerified: false }
+    };
+
+    const [first, second] = await Promise.all([
+      controller.loadOwnReferralCodeState(),
+      controller.loadOwnReferralCodeState()
+    ]);
+    assert.equal(referralCalls, 1);
+    assert.equal(first.referralCode, "ELM-K7QX-M9PD");
+    assert.equal(second.referralCode, "ELM-K7QX-M9PD");
+    assert.equal(first.authenticated, true);
+
+    controller.referralCodeState.status = "idle";
+    global.window.elemintz.multiplayer.getOrCreateReferralCode = async () => {
+      referralCalls += 1;
+      throw new Error("private referral authority failure");
+    };
+    const failed = await controller.loadOwnReferralCodeState();
+    assert.equal(failed.status, "error");
+    assert.equal(failed.referralCode, null);
+    assert.doesNotThrow(() =>
+      profileScreen.render(createProfileScreenContext({ referral: failed }))
+    );
+
+    controller.onlinePlayState = { session: { authenticated: false, username: "ReferralOwner" } };
+    const guest = await controller.loadOwnReferralCodeState();
+    assert.equal(guest.authenticated, false);
+    assert.equal(guest.referralCode, null);
+    assert.equal(referralCalls, 2);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: referral copy actions use the clipboard and existing toast queue", async () => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const copied = [];
+  const toasts = [];
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      clipboard: {
+        writeText: async (value) => copied.push(value)
+      }
+    }
+  });
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: { enqueueToast: (payload) => toasts.push(payload) }
+  });
+
+  try {
+    assert.equal(await controller.copyReferralText("ELM-K7QX-M9PD", "Referral Code Copied"), true);
+    assert.equal(
+      await controller.copyReferralText(
+        "https://vampyrlee.itch.io/elemintz?ref=ELM-K7QX-M9PD",
+        "Invite Link Copied"
+      ),
+      true
+    );
+  } finally {
+    if (navigatorDescriptor) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+
+  assert.deepEqual(copied, [
+    "ELM-K7QX-M9PD",
+    "https://vampyrlee.itch.io/elemintz?ref=ELM-K7QX-M9PD"
+  ]);
+  assert.equal(toasts.length, 2);
+  assert.match(toasts[0].html, /Referral Code Copied/);
+  assert.match(toasts[1].html, /Invite Link Copied/);
 });
 
 test("ui: Collections modal lists all albums with progress states and opens detail view", () => {

@@ -2100,6 +2100,18 @@ export class MultiplayerClient {
     return response.status ?? null;
   }
 
+  async getOrCreateReferralCode({ serverUrl } = {}) {
+    const response = await this.runServerRequest("profile:getOrCreateReferralCode", {}, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load referral code.");
+    }
+
+    return {
+      referralCode: String(response.referralCode ?? "").trim(),
+      emailVerified: Boolean(response.emailVerified)
+    };
+  }
+
   async joinRoom({ roomCode, serverUrl, username, equippedCosmetics } = {}) {
     return this.runRoomAction(
       "room:join",

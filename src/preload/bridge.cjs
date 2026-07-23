@@ -80,6 +80,7 @@ function buildElemintzBridge(ipcRenderer, { appVersion = "unknown" } = {}) {
       getEmailVerificationStatus: (payload) => ipcRenderer.invoke("multiplayer:getEmailVerificationStatus", payload),
       requestEmailVerification: (payload) => ipcRenderer.invoke("multiplayer:requestEmailVerification", payload),
       verifyEmail: (payload) => ipcRenderer.invoke("multiplayer:verifyEmail", payload),
+      getOrCreateReferralCode: (payload) => ipcRenderer.invoke("multiplayer:getOrCreateReferralCode", payload),
       authenticateHotseatIdentity: (payload) => ipcRenderer.invoke("multiplayer:authenticateHotseatIdentity", payload),
       createRoom: (payload) => ipcRenderer.invoke("multiplayer:createRoom", payload),
       joinRoom: (payload) => ipcRenderer.invoke("multiplayer:joinRoom", payload),

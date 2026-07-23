@@ -190,6 +190,42 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function writeTextToClipboard(value) {
+  const text = String(value ?? "");
+  if (!text) {
+    throw new Error("Nothing to copy.");
+  }
+
+  if (typeof globalThis.navigator?.clipboard?.writeText === "function") {
+    await globalThis.navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (
+    typeof globalThis.document?.createElement !== "function" ||
+    typeof globalThis.document?.execCommand !== "function"
+  ) {
+    throw new Error("Clipboard is unavailable.");
+  }
+
+  const textArea = globalThis.document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  globalThis.document.body.appendChild(textArea);
+  textArea.select();
+  let copied = false;
+  try {
+    copied = globalThis.document.execCommand("copy");
+  } finally {
+    textArea.remove();
+  }
+  if (!copied) {
+    throw new Error("Clipboard is unavailable.");
+  }
+}
+
 function normalizeName(value, fallback) {
   const normalized = String(value ?? "").trim();
   return normalized.length > 0 ? normalized : fallback;
@@ -243,6 +279,14 @@ export class AppController {
     this.viewedProfileCloseAction = null;
     this.profileAchievementsExpanded = false;
     this.viewedProfileAchievementsExpanded = false;
+    this.referralCodeState = {
+      username: null,
+      authenticated: false,
+      status: "idle",
+      referralCode: null,
+      emailVerified: false
+    };
+    this.referralCodeRequestPromise = null;
     this.battleReportSelectedIndex = null;
     this.passTimerId = null;
     this.passKeyHandler = null;
@@ -4056,6 +4100,100 @@ export class AppController {
     const requestedUsername = String(username ?? "").trim();
     const sessionUsername = String(onlineState?.session?.username ?? "").trim();
     return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
+  }
+
+  async loadOwnReferralCodeState() {
+    const username = String(this.username ?? "").trim();
+    const usernameKey = username.toLowerCase();
+    const authenticated = this.hasAuthenticatedMultiplayerSessionForUsername(
+      username,
+      this.onlinePlayState
+    );
+    if (!authenticated) {
+      this.referralCodeState = {
+        username: usernameKey || null,
+        authenticated: false,
+        status: "idle",
+        referralCode: null,
+        emailVerified: false
+      };
+      return this.referralCodeState;
+    }
+
+    if (
+      this.referralCodeState.username === usernameKey &&
+      this.referralCodeState.status === "ready" &&
+      this.referralCodeState.referralCode
+    ) {
+      return this.referralCodeState;
+    }
+
+    if (this.referralCodeRequestPromise) {
+      const pendingState = await this.referralCodeRequestPromise;
+      if (pendingState?.username === usernameKey) {
+        return pendingState;
+      }
+      return this.loadOwnReferralCodeState();
+    }
+
+    this.referralCodeState = {
+      username: usernameKey,
+      authenticated: true,
+      status: "loading",
+      referralCode: null,
+      emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified)
+    };
+    this.referralCodeRequestPromise = (async () => {
+      try {
+        if (typeof window.elemintz?.multiplayer?.getOrCreateReferralCode !== "function") {
+          throw new Error("Referral authority is unavailable.");
+        }
+        const result = await window.elemintz.multiplayer.getOrCreateReferralCode({});
+        const referralCode = String(result?.referralCode ?? "").trim().toUpperCase();
+        if (!/^ELM-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(referralCode)) {
+          throw new Error("Referral authority returned an invalid code.");
+        }
+        this.referralCodeState = {
+          username: usernameKey,
+          authenticated: true,
+          status: "ready",
+          referralCode,
+          emailVerified: Boolean(result?.emailVerified)
+        };
+      } catch {
+        this.referralCodeState = {
+          username: usernameKey,
+          authenticated: true,
+          status: "error",
+          referralCode: null,
+          emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified)
+        };
+      } finally {
+        this.referralCodeRequestPromise = null;
+      }
+      return this.referralCodeState;
+    })();
+
+    return this.referralCodeRequestPromise;
+  }
+
+  async copyReferralText(value, successLabel) {
+    try {
+      await writeTextToClipboard(value);
+      this.toastManager?.enqueueToast?.({
+        className: "reward-toast",
+        durationMs: 1800,
+        html: `<div><h4>${successLabel}</h4></div>`
+      });
+      return true;
+    } catch {
+      this.modalManager.show({
+        title: "Copy Failed",
+        body: "Unable to copy to the clipboard. Please try again.",
+        actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
+      return false;
+    }
   }
 
   setOwnProfileHydrationState(status, { username = this.username, message = "" } = {}) {
@@ -10453,6 +10591,7 @@ export class AppController {
         : this.viewedProfileUsername
           ? await this.loadViewedProfile(this.viewedProfileUsername)
           : null;
+    const referral = await this.loadOwnReferralCodeState();
 
     this.screenManager.show("profile", {
       profile: this.profile,
@@ -10467,6 +10606,7 @@ export class AppController {
         searchQuery: this.profileSearchQuery,
         searchError: this.profileSearchError,
         searchResults,
+        referral,
         viewedProfile,
         profileAchievementsExpanded: this.profileAchievementsExpanded,
         viewedProfileAchievementsExpanded: this.viewedProfileAchievementsExpanded,
@@ -10581,6 +10721,12 @@ export class AppController {
         },
         openCollections: async () => {
           this.showCollectionAlbumsModal();
+        },
+        copyReferralCode: async (referralCode) => {
+          await this.copyReferralText(referralCode, "Referral Code Copied");
+        },
+        copyReferralInviteLink: async (inviteLink) => {
+          await this.copyReferralText(inviteLink, "Invite Link Copied");
         },
         back: () => this.showMenu()
       }
