@@ -20,6 +20,7 @@ import { applyBoostEventToBaseMatchRewards } from "../shared/boostEventRules.js"
 import { AI_DIFFICULTY } from "../engine/ai.js";
 import { getGauntletRivalById } from "../engine/index.js";
 import { createEmailVerificationMailer } from "./emailVerificationMailer.js";
+import { createReferralAbuseSignalHasher } from "./referralAbuseSignals.js";
 
 const DEFAULT_PORT = 3001;
 const ROUND_RESET_DELAY_MS = 1700;
@@ -771,6 +772,7 @@ export function createMultiplayerFoundation({
   profileAuthority = null,
   accountStore = null,
   emailVerificationMailer = createEmailVerificationMailer(),
+  referralAbuseSignalHasher = createReferralAbuseSignalHasher(),
   adminGrantStore = null,
   storePurchaseLedgerStore = null,
   specialCosmeticRegistryStore = null,
@@ -2105,7 +2107,8 @@ export function createMultiplayerFoundation({
           email: payload?.email,
           password: payload?.password,
           username: resolvedUsername,
-          profileKey: resolvedUsername
+          profileKey: resolvedUsername,
+          requestSignals: referralAbuseSignalHasher.buildRequestSignals(socket)
         });
         await profileAuthority.linkProfileToAccount({
           username: account.username,
@@ -2383,6 +2386,12 @@ export function createMultiplayerFoundation({
           claimType: payload?.claimType,
           refereeUsername: payload?.refereeUsername,
           playerLevel: snapshot?.profile?.playerLevel ?? 1,
+          requestSignals: referralAbuseSignalHasher.buildRequestSignals(socket, {
+            targetIdentity:
+              String(payload?.claimType ?? "").trim().toLowerCase() === "referrer"
+                ? payload?.refereeUsername
+                : sessionResult.session.accountId
+          }),
           grantTokens: ({ username, claimId, amount }) =>
             profileAuthority.grantReferralRewardTokens({ username, claimId, amount })
         });
@@ -2432,7 +2441,10 @@ export function createMultiplayerFoundation({
           accountId: sessionResult.session.accountId,
           username: sessionResult.session.username,
           referralCode: payload?.referralCode,
-          playerLevel: snapshot?.profile?.playerLevel ?? 1
+          playerLevel: snapshot?.profile?.playerLevel ?? 1,
+          requestSignals: referralAbuseSignalHasher.buildRequestSignals(socket, {
+            targetIdentity: payload?.referralCode
+          })
         });
         respond({
           ok: true,

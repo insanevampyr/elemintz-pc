@@ -20,6 +20,15 @@ import { AnnouncementStore } from "../../src/multiplayer/announcementStore.js";
 import { BoostEventStore } from "../../src/multiplayer/boostEventStore.js";
 import { FeedbackStore } from "../../src/multiplayer/feedbackStore.js";
 import { createEmailVerificationMailer } from "../../src/multiplayer/emailVerificationMailer.js";
+import { createReferralAbuseSignalHasher } from "../../src/multiplayer/referralAbuseSignals.js";
+import {
+  REFERRAL_RISK_DECISIONS,
+  REFERRAL_RISK_REASONS,
+  appendReferralRiskRecord,
+  classifyReferralActivationRisk,
+  classifyReferralQualificationRisk,
+  classifyReferralRewardClaimRisk
+} from "../../src/multiplayer/referralRiskClassifier.js";
 import { MultiplayerProfileAuthority } from "../../src/multiplayer/profileAuthority.js";
 import { createSessionStore } from "../../src/multiplayer/sessionStore.js";
 import { ShopRotationStore } from "../../src/multiplayer/shopRotationStore.js";
@@ -109,12 +118,13 @@ test("multiplayer rooms: standard and Gauntlet server bot contexts use the cumul
   assert.deepEqual(gauntletContext.recentPlayerMoves, ["fire"]);
 });
 
-function connectClient(port) {
+function connectClient(port, options = {}) {
   return new Promise((resolve, reject) => {
     const client = createClient(`http://127.0.0.1:${port}`, {
       transports: ["websocket"],
       forceNew: true,
-      reconnection: false
+      reconnection: false,
+      ...options
     });
 
     client.once("connect", () => resolve(client));
@@ -149,6 +159,17 @@ function wait(ms) {
 
 function createStoreSocket(id) {
   return { id };
+}
+
+function createEmptyReferralRisk() {
+  return {
+    schemaVersion: 1,
+    latestActivationRisk: null,
+    latestQualificationRisk: null,
+    latestOwnClaimRisk: null,
+    referrerClaimRisks: [],
+    riskHistory: []
+  };
 }
 
 test("multiplayer rooms: featured rival join seeds an asymmetric 8 vs 12 boss hand", () => {
@@ -7871,7 +7892,21 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
         amount: null,
         claimId: null
       },
-      referrerClaims: {}
+      referrerClaims: {},
+      abuseSignals: {
+        schemaVersion: 1,
+        accountCreatedAt: registeredState.accounts[0].createdAt,
+        signupIpHash: null,
+        signupUserAgentHash: null,
+        emailVerifiedAt: null,
+        referralActivatedAt: null,
+        referralActivationIpHash: null,
+        referralActivationUserAgentHash: null,
+        referralQualifiedAt: null,
+        rewardClaimSignals: [],
+        failedReferralActivationAttempts: []
+      },
+      risk: createEmptyReferralRisk()
     });
 
     const firstCode = await accountStore.getOrCreateReferralCode({ accountId: firstAccount.accountId });
@@ -7911,9 +7946,422 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
         amount: null,
         claimId: null
       },
-      referrerClaims: {}
+      referrerClaims: {},
+      abuseSignals: {
+        schemaVersion: 1,
+        accountCreatedAt: normalizedAccount.createdAt,
+        signupIpHash: null,
+        signupUserAgentHash: null,
+        emailVerifiedAt: null,
+        referralActivatedAt: null,
+        referralActivationIpHash: null,
+        referralActivationUserAgentHash: null,
+        referralQualifiedAt: null,
+        rewardClaimSignals: [],
+        failedReferralActivationAttempts: []
+      },
+      risk: createEmptyReferralRisk()
     });
   } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: referral risk classifier applies conservative deterministic decisions", () => {
+  const hashA = `hmac-sha256$${"a".repeat(64)}`;
+  const hashB = `hmac-sha256$${"b".repeat(64)}`;
+  const userAgentHash = `hmac-sha256$${"c".repeat(64)}`;
+  const normalActivation = classifyReferralActivationRisk({
+    actorSignals: {
+      accountCreatedAt: "2026-07-23T12:00:00.000Z",
+      signupIpHash: hashA,
+      signupUserAgentHash: userAgentHash
+    },
+    relatedSignals: {
+      signupIpHash: hashB,
+      signupUserAgentHash: hashB
+    },
+    requestSignals: {
+      ipHash: hashA,
+      userAgentHash
+    },
+    evaluatedAt: "2026-07-23T12:05:00.000Z"
+  });
+  assert.deepEqual(normalActivation, {
+    decision: REFERRAL_RISK_DECISIONS.ELIGIBLE,
+    reasons: [],
+    signalPresence: {
+      requestIp: true,
+      requestUserAgent: true,
+      actorSignupIp: true,
+      actorSignupUserAgent: true,
+      relatedSignupIp: true,
+      relatedSignupUserAgent: true,
+      activationTimestamp: false,
+      qualificationTimestamp: false
+    }
+  });
+
+  const suspiciousActivation = classifyReferralActivationRisk({
+    actorSignals: {
+      accountCreatedAt: "2026-07-23T12:00:00.000Z",
+      signupIpHash: hashA,
+      signupUserAgentHash: userAgentHash
+    },
+    relatedSignals: {
+      signupIpHash: hashA,
+      signupUserAgentHash: userAgentHash
+    },
+    requestSignals: {
+      ipHash: hashA,
+      userAgentHash
+    },
+    evaluatedAt: "2026-07-23T12:01:00.000Z",
+    failedActivationAttemptCount: 5
+  });
+  assert.equal(
+    suspiciousActivation.decision,
+    REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW
+  );
+  assert.deepEqual(suspiciousActivation.reasons, [
+    REFERRAL_RISK_REASONS.RAPID_ACTIVATION_AFTER_SIGNUP,
+    REFERRAL_RISK_REASONS.SAME_SIGNUP_IP_HASH,
+    REFERRAL_RISK_REASONS.SAME_ACTIVATION_IP_HASH,
+    REFERRAL_RISK_REASONS.EXCESSIVE_FAILED_ACTIVATION_ATTEMPTS,
+    REFERRAL_RISK_REASONS.SAME_USER_AGENT_HASH
+  ]);
+
+  for (const [hardBlockReason, expectedReason] of [
+    ["REFERRAL_CODE_INVALID", REFERRAL_RISK_REASONS.EXISTING_HARD_BLOCK_MALFORMED_CODE],
+    ["REFERRAL_SELF_LINK", REFERRAL_RISK_REASONS.EXISTING_HARD_BLOCK_SELF_REFERRAL],
+    [
+      "REFERRAL_RECIPROCAL_LINK",
+      REFERRAL_RISK_REASONS.EXISTING_HARD_BLOCK_RECIPROCAL_REFERRAL
+    ],
+    [
+      "REFERRAL_DUPLICATE_ACTIVATION",
+      REFERRAL_RISK_REASONS.EXISTING_HARD_BLOCK_DUPLICATE_ACTIVATION
+    ]
+  ]) {
+    const blocked = classifyReferralActivationRisk({
+      evaluatedAt: "2026-07-23T12:05:00.000Z",
+      hardBlockReason
+    });
+    assert.equal(blocked.decision, REFERRAL_RISK_DECISIONS.BLOCKED);
+    assert.ok(blocked.reasons.includes(expectedReason));
+  }
+
+  const rapidQualification = classifyReferralQualificationRisk({
+    actorSignals: {
+      referralActivatedAt: "2026-07-23T12:00:00.000Z",
+      signupIpHash: hashA
+    },
+    relatedSignals: {
+      signupIpHash: hashA
+    },
+    evaluatedAt: "2026-07-23T12:09:59.000Z"
+  });
+  assert.equal(
+    rapidQualification.decision,
+    REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW
+  );
+  assert.ok(
+    rapidQualification.reasons.includes(
+      REFERRAL_RISK_REASONS.RAPID_QUALIFICATION_AFTER_ACTIVATION
+    )
+  );
+
+  const duplicateClaim = classifyReferralRewardClaimRisk({
+    stage: "own_claim",
+    actorSignals: {
+      referralQualifiedAt: "2026-07-23T12:10:00.000Z",
+      signupIpHash: hashA,
+      signupUserAgentHash: userAgentHash
+    },
+    relatedSignals: {
+      signupIpHash: hashB,
+      signupUserAgentHash: hashB
+    },
+    requestSignals: {
+      ipHash: hashA,
+      userAgentHash
+    },
+    evaluatedAt: "2026-07-23T12:10:30.000Z",
+    duplicate: true
+  });
+  assert.equal(duplicateClaim.decision, REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW);
+  assert.ok(
+    duplicateClaim.reasons.includes(
+      REFERRAL_RISK_REASONS.RAPID_CLAIM_AFTER_QUALIFICATION
+    )
+  );
+  assert.ok(
+    duplicateClaim.reasons.includes(REFERRAL_RISK_REASONS.DUPLICATE_CLAIM_OBSERVED)
+  );
+
+  let boundedRisk = null;
+  for (let index = 0; index < 55; index += 1) {
+    boundedRisk = appendReferralRiskRecord(boundedRisk, {
+      decision: REFERRAL_RISK_DECISIONS.ELIGIBLE,
+      reasons: [],
+      evaluatedAt: new Date(Date.parse("2026-07-23T13:00:00.000Z") + index).toISOString(),
+      stage: "referrer_claim",
+      signalPresence: {}
+    });
+  }
+  assert.equal(boundedRisk.riskHistory.length, 50);
+  assert.equal(boundedRisk.referrerClaimRisks.length, 50);
+});
+
+test("multiplayer foundation: referral abuse signals stay private, bounded, and behavior-neutral", async () => {
+  const dataDir = await createTempDataDir();
+  let nowMs = Date.parse("2026-07-23T15:00:00.000Z");
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    now: () => nowMs,
+    referralCodeGenerator: () => "ELM-SGNL-A222"
+  });
+  const coordinator = new StateCoordinator({ dataDir, random: () => 1 });
+  const authority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: authority,
+    referralAbuseSignalHasher: createReferralAbuseSignalHasher({
+      salt: "referral-abuse-test-salt"
+    })
+  });
+  let referrerClient = null;
+  let referredClient = null;
+  const referrerHeaders = {
+    "x-forwarded-for": "203.0.113.40",
+    "user-agent": "EleMintz Test Referrer/1.0"
+  };
+  const referredHeaders = {
+    "x-forwarded-for": "203.0.113.40",
+    "user-agent": "EleMintz Test Referred/1.0"
+  };
+
+  try {
+    const port = await foundation.start();
+    referrerClient = await connectClient(port, { extraHeaders: referrerHeaders });
+    referredClient = await connectClient(port, { extraHeaders: referredHeaders });
+
+    const referrer = await registerAccount(referrerClient, {
+      username: "SignalReferrer",
+      email: "signal-referrer@example.com",
+      password: "password123"
+    });
+    const referred = await registerAccount(referredClient, {
+      username: "SignalReferred",
+      email: "signal-referred@example.com",
+      password: "password123"
+    });
+    assert.equal(referrer?.ok, true);
+    assert.equal(referred?.ok, true);
+    assert.doesNotMatch(JSON.stringify(referrer), /abuseSignals|IpHash|UserAgentHash/);
+    assert.doesNotMatch(JSON.stringify(referred), /abuseSignals|IpHash|UserAgentHash/);
+
+    assert.equal(
+      (await emitWithAck(referrerClient, "auth:verifyEmail", {
+        token: referrer.emailVerification.devVerificationToken
+      }))?.ok,
+      true
+    );
+    assert.equal(
+      (await emitWithAck(referredClient, "auth:verifyEmail", {
+        token: referred.emailVerification.devVerificationToken
+      }))?.ok,
+      true
+    );
+    const referrerCode = await emitWithAck(
+      referrerClient,
+      "profile:getOrCreateReferralCode"
+    );
+    assert.equal(referrerCode?.referralCode, "ELM-SGNL-A222");
+
+    for (let index = 0; index < 27; index += 1) {
+      nowMs += 1_000;
+      const failed = await emitWithAck(referredClient, "profile:activateReferralCode", {
+        referralCode: "ELM-ZZZZ-9999"
+      });
+      assert.equal(failed?.ok, false);
+      assert.equal(failed?.error?.code, "REFERRAL_CODE_UNKNOWN");
+      assert.doesNotMatch(JSON.stringify(failed), /abuseSignals|IpHash|UserAgentHash/);
+    }
+
+    nowMs += 1_000;
+    const activated = await emitWithAck(referredClient, "profile:activateReferralCode", {
+      referralCode: referrerCode.referralCode
+    });
+    assert.equal(activated?.ok, true);
+    assert.equal(activated?.alreadyLinked, false);
+    assert.doesNotMatch(JSON.stringify(activated), /abuseSignals|IpHash|UserAgentHash/);
+
+    for (let index = 1; index <= 3; index += 1) {
+      nowMs += 1_000;
+      await accountStore.recordReferralQualificationMatch({
+        accountId: referred.account.accountId,
+        settlementId: `abuse-signal-qualification-${index}`,
+        mode: "pve",
+        difficulty: "normal",
+        status: "completed",
+        winner: "p1",
+        playerLevel: 2
+      });
+    }
+
+    const tokensBefore = (await coordinator.profiles.getProfile("SignalReferred")).tokens;
+    nowMs += 1_000;
+    const firstClaim = await emitWithAck(referredClient, "profile:claimReferralReward", {
+      claimType: "own"
+    });
+    assert.equal(firstClaim?.ok, true);
+    assert.equal(firstClaim?.claim?.amount, 100);
+    assert.equal(firstClaim?.claim?.duplicate, false);
+    assert.doesNotMatch(JSON.stringify(firstClaim), /abuseSignals|IpHash|UserAgentHash/);
+
+    let state = await accountStore.readState();
+    let storedReferred = state.accounts.find(
+      (entry) => entry.accountId === referred.account.accountId
+    );
+    assert.equal(storedReferred.referral.abuseSignals.rewardClaimSignals.length, 1);
+    assert.equal(
+      storedReferred.referral.abuseSignals.rewardClaimSignals[0].outcome,
+      "granted"
+    );
+
+    for (let index = 0; index < 51; index += 1) {
+      nowMs += 1_000;
+      const duplicate = await emitWithAck(referredClient, "profile:claimReferralReward", {
+        claimType: "own"
+      });
+      assert.equal(duplicate?.ok, true);
+      assert.equal(duplicate?.claim?.amount, 0);
+      assert.equal(duplicate?.claim?.duplicate, true);
+    }
+
+    state = await accountStore.readState();
+    const storedReferrer = state.accounts.find(
+      (entry) => entry.accountId === referrer.account.accountId
+    );
+    storedReferred = state.accounts.find(
+      (entry) => entry.accountId === referred.account.accountId
+    );
+    const signupSignals = storedReferred.referral.abuseSignals;
+    const referrerSignupSignals = storedReferrer.referral.abuseSignals;
+    assert.equal(signupSignals.schemaVersion, 1);
+    assert.equal(signupSignals.accountCreatedAt, referred.account.createdAt);
+    assert.ok(signupSignals.signupIpHash);
+    assert.ok(signupSignals.signupUserAgentHash);
+    assert.equal(signupSignals.signupIpHash, referrerSignupSignals.signupIpHash);
+    assert.equal(signupSignals.emailVerifiedAt, storedReferred.emailVerifiedAt);
+    assert.equal(signupSignals.referralActivatedAt, storedReferred.referral.referredAt);
+    assert.equal(signupSignals.referralActivationIpHash, signupSignals.signupIpHash);
+    assert.equal(
+      signupSignals.referralActivationUserAgentHash,
+      signupSignals.signupUserAgentHash
+    );
+    assert.equal(
+      signupSignals.referralQualifiedAt,
+      storedReferred.referral.qualification.qualifiedAt
+    );
+    assert.equal(signupSignals.failedReferralActivationAttempts.length, 25);
+    assert.ok(
+      signupSignals.failedReferralActivationAttempts.every(
+        (entry) =>
+          entry.reason === "REFERRAL_CODE_UNKNOWN" &&
+          entry.ipHash === signupSignals.signupIpHash &&
+          entry.userAgentHash === signupSignals.signupUserAgentHash
+      )
+    );
+    assert.equal(signupSignals.rewardClaimSignals.length, 50);
+    assert.ok(
+      signupSignals.rewardClaimSignals.every(
+        (entry) =>
+          entry.claimType === "own" &&
+          entry.targetUsernameHashOrKey &&
+          entry.ipHash === signupSignals.signupIpHash &&
+          entry.userAgentHash === signupSignals.signupUserAgentHash
+      )
+    );
+    const risk = storedReferred.referral.risk;
+    assert.equal(
+      risk.latestActivationRisk.decision,
+      REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW
+    );
+    assert.ok(
+      risk.latestActivationRisk.reasons.includes(
+        REFERRAL_RISK_REASONS.SAME_SIGNUP_IP_HASH
+      )
+    );
+    assert.ok(
+      risk.latestActivationRisk.reasons.includes(
+        REFERRAL_RISK_REASONS.RAPID_ACTIVATION_AFTER_SIGNUP
+      )
+    );
+    assert.ok(
+      risk.latestActivationRisk.reasons.includes(
+        REFERRAL_RISK_REASONS.EXCESSIVE_FAILED_ACTIVATION_ATTEMPTS
+      )
+    );
+    assert.equal(
+      risk.latestQualificationRisk.decision,
+      REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW
+    );
+    assert.ok(
+      risk.latestQualificationRisk.reasons.includes(
+        REFERRAL_RISK_REASONS.RAPID_QUALIFICATION_AFTER_ACTIVATION
+      )
+    );
+    assert.equal(
+      risk.latestOwnClaimRisk.decision,
+      REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW
+    );
+    assert.ok(
+      risk.latestOwnClaimRisk.reasons.includes(
+        REFERRAL_RISK_REASONS.DUPLICATE_CLAIM_OBSERVED
+      )
+    );
+    assert.equal(risk.riskHistory.length, 50);
+    assert.equal(risk.referrerClaimRisks.length, 0);
+    assert.equal(
+      (await coordinator.profiles.getProfile("SignalReferred")).tokens,
+      tokensBefore + 100
+    );
+
+    const dashboard = await emitWithAck(referredClient, "profile:getReferralDashboard");
+    const ownProfile = await emitWithAck(referredClient, "profile:get");
+    const viewedProfile = await emitWithAck(referredClient, "profile:view", {
+      username: "SignalReferrer"
+    });
+    const publicProfile = await authority.viewProfile("SignalReferred");
+    for (const clientSafeValue of [
+      dashboard,
+      ownProfile,
+      viewedProfile,
+      publicProfile
+    ]) {
+      assert.doesNotMatch(
+        JSON.stringify(clientSafeValue),
+        /abuseSignals|signupIpHash|userAgentHash|failedReferralActivationAttempts|rewardClaimSignals|latestActivationRisk|latestQualificationRisk|latestOwnClaimRisk|referrerClaimRisks|riskHistory|held_for_review|same_signup_ip_hash/
+      );
+    }
+    assert.equal(storedReferrer.referral.abuseSignals.rewardClaimSignals.length, 0);
+
+    const rawAccounts = await fs.readFile(path.join(dataDir, "accounts.json"), "utf8");
+    assert.doesNotMatch(rawAccounts, /203\.0\.113\.4[01]/);
+    assert.doesNotMatch(rawAccounts, /EleMintz Test (?:Referrer|Referred)/i);
+  } finally {
+    referrerClient?.disconnect();
+    referredClient?.disconnect();
+    await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -8165,6 +8613,29 @@ test("multiplayer foundation: verified referral activation links once without qu
     const afterReciprocalAttempt = JSON.parse(
       await fs.readFile(path.join(dataDir, "accounts.json"), "utf8")
     );
+    const beforeReciprocalReferrer = beforeReciprocalAttempt.accounts.find(
+      (account) => account.accountId === referrer.account.accountId
+    );
+    const afterReciprocalReferrer = afterReciprocalAttempt.accounts.find(
+      (account) => account.accountId === referrer.account.accountId
+    );
+    assert.equal(
+      afterReciprocalReferrer.referral.abuseSignals.failedReferralActivationAttempts.at(-1)?.reason,
+      "REFERRAL_RECIPROCAL_LINK"
+    );
+    assert.equal(
+      afterReciprocalReferrer.referral.risk.latestActivationRisk?.decision,
+      REFERRAL_RISK_DECISIONS.BLOCKED
+    );
+    assert.ok(
+      afterReciprocalReferrer.referral.risk.latestActivationRisk?.reasons.includes(
+        REFERRAL_RISK_REASONS.EXISTING_HARD_BLOCK_RECIPROCAL_REFERRAL
+      )
+    );
+    afterReciprocalReferrer.referral.abuseSignals.failedReferralActivationAttempts =
+      beforeReciprocalReferrer.referral.abuseSignals.failedReferralActivationAttempts;
+    afterReciprocalReferrer.referral.risk = beforeReciprocalReferrer.referral.risk;
+    afterReciprocalReferrer.updatedAt = beforeReciprocalReferrer.updatedAt;
     assert.deepEqual(afterReciprocalAttempt, beforeReciprocalAttempt);
     assert.equal("tokens" in afterReciprocalAttempt.accounts.find(
       (account) => account.accountId === referrer.account.accountId
@@ -8218,6 +8689,24 @@ test("multiplayer foundation: verified referral activation links once without qu
       claimId: null
     });
     assert.deepEqual(storedReferrer.referral.referrerClaims, {});
+    assert.ok(
+      storedReferred.referral.risk.riskHistory.some(
+        (record) =>
+          record.decision === REFERRAL_RISK_DECISIONS.BLOCKED &&
+          record.reasons.includes(
+            REFERRAL_RISK_REASONS.EXISTING_HARD_BLOCK_MALFORMED_CODE
+          )
+      )
+    );
+    assert.ok(
+      storedReferred.referral.risk.riskHistory.some(
+        (record) =>
+          record.decision === REFERRAL_RISK_DECISIONS.BLOCKED &&
+          record.reasons.includes(
+            REFERRAL_RISK_REASONS.EXISTING_HARD_BLOCK_DUPLICATE_ACTIVATION
+          )
+      )
+    );
     assert.equal("tokens" in storedReferred, false);
     assert.equal("tokens" in storedReferrer, false);
   } finally {
@@ -8966,11 +9455,32 @@ test("multiplayer foundation: referral reward claims grant 100 tokens once with 
         (key) => key !== "RewardReferredOne"
       )
     );
+    assert.equal(
+      referredAccountAfter.referral.risk.latestOwnClaimRisk?.stage,
+      "own_claim"
+    );
+    assert.ok(referrerAccountAfter.referral.risk.referrerClaimRisks.length >= 5);
+    assert.ok(
+      referrerAccountAfter.referral.risk.referrerClaimRisks.some((record) =>
+        record.reasons.includes(REFERRAL_RISK_REASONS.DUPLICATE_CLAIM_OBSERVED)
+      )
+    );
+    assert.ok(
+      referrerAccountAfter.referral.risk.referrerClaimRisks.some((record) =>
+        record.reasons.includes(
+          REFERRAL_RISK_REASONS.RAPID_CLAIM_AFTER_QUALIFICATION
+        )
+      )
+    );
+    assert.equal(
+      referrerAccountAfter.referral.risk.referrerClaimRisks.at(-1)?.stage,
+      "referrer_claim"
+    );
 
     const publicProfile = await authority.viewProfile("RewardReferredOne");
     assert.doesNotMatch(
       JSON.stringify(publicProfile),
-      /referralRewardGrantIds|referredReward|referrerClaims|claimId|claimedAt/
+      /referralRewardGrantIds|referredReward|referrerClaims|claimId|claimedAt|latestOwnClaimRisk|referrerClaimRisks|riskHistory/
     );
     assert.doesNotMatch(
       JSON.stringify(ownClaim),
