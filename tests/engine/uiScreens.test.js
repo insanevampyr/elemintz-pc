@@ -31627,14 +31627,18 @@ test("ui: referral activation entry gates verified, pending, linked, and viewed-
         referralLinked: true,
         level2Reached: false,
         qualifyingMatchesCompleted: 1,
-        qualified: false
+        qualified: false,
+        rewardStatus: "locked"
       }
     })
   );
   assert.match(linkedHtml, /data-referral-activation-linked="true"/);
   assert.match(linkedHtml, /Referral linked\./);
   assert.match(linkedHtml, /Progress: Level 2 not complete\. Qualifying matches 1\/3\./);
-  assert.match(linkedHtml, /Rewards unlock after qualification\./);
+  assert.doesNotMatch(
+    linkedHtml,
+    /Rewards are not available yet|Rewards unlock after qualification|Reward ready to claim|Reward claimed/
+  );
   assert.doesNotMatch(linkedHtml, /profile-referral-activation-form|profile-activate-referral-btn/);
 
   const qualifiedHtml = profileScreen.render(
@@ -31646,12 +31650,31 @@ test("ui: referral activation entry gates verified, pending, linked, and viewed-
         referralLinked: true,
         level2Reached: true,
         qualifyingMatchesCompleted: 3,
-        qualified: true
+        qualified: true,
+        rewardStatus: "claimable"
       }
     })
   );
   assert.match(qualifiedHtml, /Progress: Level 2 complete\. Qualifying matches 3\/3\./);
-  assert.match(qualifiedHtml, /Referral qualification complete\. Rewards are not available yet\./);
+  assert.match(qualifiedHtml, /Reward ready to claim in Referral Dashboard\./);
+  assert.doesNotMatch(qualifiedHtml, /Rewards are not available yet/);
+
+  const claimedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: true,
+        referralCode: "ELM-K7QX-M9PD",
+        referralLinked: true,
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "claimed"
+      }
+    })
+  );
+  assert.match(claimedHtml, /Reward claimed\./);
+  assert.doesNotMatch(claimedHtml, /Reward ready to claim in Referral Dashboard\./);
 
   const guestHtml = profileScreen.render(createProfileScreenContext());
   assert.match(guestHtml, /data-referral-activation-signed-out="true"/);
@@ -32125,6 +32148,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
 test("ui: referral code loading is authenticated-only, single-flight, and fails closed", async () => {
   const previousWindow = global.window;
   let referralCalls = 0;
+  let dashboardCalls = 0;
   const controller = new AppController({
     screenManager: { register: () => {}, show: () => {} },
     modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
@@ -32144,6 +32168,14 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
               level2Reached: true,
               qualifyingMatchesCompleted: 2,
               qualified: false
+            };
+          },
+          getReferralDashboard: async () => {
+            dashboardCalls += 1;
+            return {
+              ownProgress: {
+                rewardStatus: "locked"
+              }
             };
           }
         }
@@ -32165,6 +32197,8 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
     assert.equal(first.level2Reached, true);
     assert.equal(first.qualifyingMatchesCompleted, 2);
     assert.equal(first.qualified, false);
+    assert.equal(first.rewardStatus, "locked");
+    assert.equal(dashboardCalls, 1);
 
     controller.referralCodeState.status = "idle";
     global.window.elemintz.multiplayer.getOrCreateReferralCode = async () => {

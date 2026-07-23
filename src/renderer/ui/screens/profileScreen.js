@@ -1975,11 +1975,19 @@ function renderProfileSocialToolsCard({
       Math.max(0, Math.floor(Number(referral?.qualifyingMatchesCompleted ?? 0) || 0))
     );
     const level2Label = referral?.level2Reached ? "complete" : "not complete";
+    const rewardStatus = String(referral?.rewardStatus ?? "").trim().toLowerCase();
+    const rewardStatusContent = referral?.qualified
+      ? `<p class="text-muted" data-referral-qualified="true">${
+          rewardStatus === "claimed"
+            ? "Reward claimed."
+            : "Reward ready to claim in Referral Dashboard."
+        }</p>`
+      : "";
     referralEntryBody = `
       <div data-referral-activation-linked="true">
         <p class="text-muted">Referral linked.</p>
         <p class="text-muted" data-referral-qualification-progress="true">Progress: Level 2 ${level2Label}. Qualifying matches ${qualifyingMatchesCompleted}/3.</p>
-        <p class="text-muted" data-referral-qualified="${referral?.qualified ? "true" : "false"}">${referral?.qualified ? "Referral qualification complete. Rewards are not available yet." : "Rewards unlock after qualification."}</p>
+        ${rewardStatusContent}
       </div>
     `;
   } else if (!referral.emailVerified) {

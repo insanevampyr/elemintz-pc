@@ -313,7 +313,8 @@ export class AppController {
       level2Reached: false,
       qualifyingMatchesCompleted: 0,
       qualified: false,
-      qualifiedAt: null
+      qualifiedAt: null,
+      rewardStatus: "unavailable"
     };
     this.referralCodeRequestPromise = null;
     this.referralDashboardRequestPromise = null;
@@ -4161,7 +4162,8 @@ export class AppController {
         level2Reached: false,
         qualifyingMatchesCompleted: 0,
         qualified: false,
-        qualifiedAt: null
+        qualifiedAt: null,
+        rewardStatus: "unavailable"
       };
       return this.referralCodeState;
     }
@@ -4193,7 +4195,8 @@ export class AppController {
       level2Reached: false,
       qualifyingMatchesCompleted: 0,
       qualified: false,
-      qualifiedAt: null
+      qualifiedAt: null,
+      rewardStatus: "unavailable"
     };
     this.referralCodeRequestPromise = (async () => {
       try {
@@ -4205,20 +4208,37 @@ export class AppController {
         if (!/^ELM-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(referralCode)) {
           throw new Error("Referral authority returned an invalid code.");
         }
+        const referralLinked = Boolean(result?.referralLinked);
+        const qualified = Boolean(result?.qualified);
+        let rewardStatus = !referralLinked ? "unavailable" : qualified ? "claimable" : "locked";
+        if (referralLinked && typeof window.elemintz?.multiplayer?.getReferralDashboard === "function") {
+          try {
+            const dashboard = await window.elemintz.multiplayer.getReferralDashboard({});
+            const dashboardRewardStatus = String(
+              dashboard?.ownProgress?.rewardStatus ?? ""
+            ).trim().toLowerCase();
+            if (["locked", "claimable", "claimed"].includes(dashboardRewardStatus)) {
+              rewardStatus = dashboardRewardStatus;
+            }
+          } catch {
+            // Keep the referral progress usable if the supplemental dashboard read fails.
+          }
+        }
         this.referralCodeState = {
           username: usernameKey,
           authenticated: true,
           status: "ready",
           referralCode,
           emailVerified: Boolean(result?.emailVerified),
-          referralLinked: Boolean(result?.referralLinked),
+          referralLinked,
           level2Reached: Boolean(result?.level2Reached),
           qualifyingMatchesCompleted: Math.min(
             3,
             Math.max(0, Number(result?.qualifyingMatchesCompleted ?? 0))
           ),
-          qualified: Boolean(result?.qualified),
-          qualifiedAt: result?.qualifiedAt ?? null
+          qualified,
+          qualifiedAt: result?.qualifiedAt ?? null,
+          rewardStatus
         };
       } catch {
         this.referralCodeState = {
@@ -4231,7 +4251,8 @@ export class AppController {
           level2Reached: false,
           qualifyingMatchesCompleted: 0,
           qualified: false,
-          qualifiedAt: null
+          qualifiedAt: null,
+          rewardStatus: "unavailable"
         };
       } finally {
         this.referralCodeRequestPromise = null;
@@ -4305,7 +4326,8 @@ export class AppController {
             Math.max(0, Number(result?.qualifyingMatchesCompleted ?? 0))
           ),
           qualified: Boolean(result?.qualified),
-          qualifiedAt: result?.qualifiedAt ?? null
+          qualifiedAt: result?.qualifiedAt ?? null,
+          rewardStatus: result?.qualified ? "claimable" : "locked"
         };
         this.referralActivationState = {
           username: usernameKey,
