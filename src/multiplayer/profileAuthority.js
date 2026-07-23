@@ -123,7 +123,22 @@ function classifyReferralQualificationMode(result = {}) {
   }
 
   const mode = String(result?.mode ?? "").trim().toLowerCase();
-  return ["pve", "online_pvp"].includes(mode) ? mode : null;
+  return ["pve", "online_pvp", "blood_match"].includes(mode) ? mode : null;
+}
+
+function buildBloodMatchReferralQualificationResult(summary = {}) {
+  const terminalResult = String(summary?.terminalResult?.result ?? "").trim().toLowerCase();
+  return {
+    mode: "blood_match",
+    status: summary?.status,
+    endReason: summary?.endReason,
+    winner:
+      terminalResult === "player_win"
+        ? "p1"
+        : terminalResult === "player_loss"
+          ? "p2"
+          : "draw"
+  };
 }
 
 function buildSnapshotCosmetics(profile) {
@@ -898,11 +913,21 @@ export class MultiplayerProfileAuthority {
       summary,
       settlementKey
     });
+    const snapshot = await this.getProfile(safeUsername);
+    const referralQualification = matchResult?.duplicate
+      ? null
+      : await this.recordReferralQualificationForMatch({
+          username: safeUsername,
+          result: buildBloodMatchReferralQualificationResult(summary),
+          settlementKey,
+          snapshot
+        });
 
     return {
       duplicate: Boolean(matchResult?.duplicate),
       matchResult: sanitizeProfileResult(matchResult),
-      snapshot: await this.getProfile(safeUsername)
+      referralQualification,
+      snapshot
     };
   }
 

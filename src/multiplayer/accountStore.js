@@ -35,7 +35,20 @@ const REFERRAL_HELD_REWARD_LIMIT = 100;
 const REFERRAL_BLOCKED_REWARD_LIMIT = 100;
 const REFERRAL_LATEST_REFERRER_REVIEW_LIMIT = 50;
 const REFERRAL_ADMIN_RESTRICTION_SCHEMA_VERSION = 1;
-const REFERRAL_QUALIFYING_MODES = new Set(["pve", "gauntlet", "featured_rival", "online_pvp"]);
+const REFERRAL_QUALIFYING_MODES = new Set([
+  "pve",
+  "gauntlet",
+  "featured_rival",
+  "online_pvp",
+  "blood_match"
+]);
+const REFERRAL_QUALIFYING_BLOOD_MATCH_END_REASONS = new Set([
+  "all_ai_required_play_unavailable",
+  "both_rivals_eliminated",
+  "player_required_play_unavailable",
+  "timeout_lead",
+  "timeout_tie_or_deficit"
+]);
 const REFERRAL_DISQUALIFYING_END_REASONS = new Set([
   "abandoned",
   "cancelled",
@@ -783,6 +796,8 @@ function isQualifyingReferralMatch({ mode, difficulty, status, endReason, winner
     String(status ?? "").trim().toLowerCase() === "completed" &&
     REFERRAL_QUALIFYING_MODES.has(safeMode) &&
     !REFERRAL_DISQUALIFYING_END_REASONS.has(safeEndReason) &&
+    (safeMode !== "blood_match" ||
+      REFERRAL_QUALIFYING_BLOOD_MATCH_END_REASONS.has(safeEndReason)) &&
     ["p1", "p2", "draw"].includes(safeWinner) &&
     trainingMode !== true &&
     !(safeMode === "pve" && safeDifficulty === "easy")
