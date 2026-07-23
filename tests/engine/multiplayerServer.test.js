@@ -7896,6 +7896,8 @@ test("multiplayer foundation: verified referral activation links once without qu
     new Promise((resolve) =>
       client.emit("profile:activateReferralCode", { referralCode }, resolve)
     );
+  const activatePayload = (client, payload) =>
+    new Promise((resolve) => client.emit("profile:activateReferralCode", payload, resolve));
 
   try {
     const port = await foundation.start();
@@ -7939,6 +7941,22 @@ test("multiplayer foundation: verified referral activation links once without qu
       (await verify(referredClient, referred.emailVerification.devVerificationToken))?.ok,
       true
     );
+
+    for (const payload of [
+      {},
+      null,
+      "ELM-RFRR-A222",
+      { referralCode: null },
+      { referralCode: {} },
+      { referralCode: [] },
+      { referralCode: "ELM-RFRR-A222!" },
+      { referralCode: "X".repeat(1_000) }
+    ]) {
+      const rejected = await activatePayload(referredClient, payload);
+      assert.equal(rejected?.ok, false);
+      assert.equal(rejected?.error?.code, "REFERRAL_CODE_INVALID");
+      assert.equal(rejected?.error?.message, "Enter a valid referral code.");
+    }
 
     const malformed = await activate(referredClient, "not-a-code");
     assert.equal(malformed?.ok, false);
@@ -8100,6 +8118,19 @@ test("multiplayer foundation: referral qualification tracks authoritative comple
     assert.equal(initialStatus.level2Reached, false);
     assert.equal(initialStatus.qualifyingMatchesCompleted, 0);
     assert.equal(initialStatus.qualified, false);
+
+    for (const settlementId of [null, {}, [], "X".repeat(201)]) {
+      const malformedSettlement = await accountStore.recordReferralQualificationMatch({
+        accountId: referred.accountId,
+        settlementId,
+        mode: "pve",
+        difficulty: "normal",
+        status: "completed",
+        winner: "p1",
+        playerLevel: 1
+      });
+      assert.equal(malformedSettlement.qualifyingMatchesCompleted, 0);
+    }
 
     const first = await authority.applyLocalMatchResult({
       username: "QualificationReferred",
@@ -8595,6 +8626,69 @@ test("multiplayer foundation: referral reward claims grant 100 tokens once with 
     assert.equal(ownRetry?.claim?.duplicate, true);
     assert.equal(ownRetry?.tokenBalance, referredBefore.tokens + 100);
 
+    const referredAfterOwnClaim = await coordinator.profiles.getProfile("RewardReferredOne");
+    const ownGrantId = referredAfterOwnClaim.referralRewardGrantIds[0];
+    await coordinator.profiles.updateProfile("RewardReferredOne", (profile) => ({
+      ...profile,
+      tokens: profile.tokens - 100,
+      referralRewardGrantIds: profile.referralRewardGrantIds.filter(
+        (grantId) => grantId !== ownGrantId
+      )
+    }));
+    const missingTokenRepair = await claim(referredClient, { claimType: "own" });
+    assert.equal(missingTokenRepair?.ok, true);
+    assert.equal(missingTokenRepair?.claim?.amount, 100);
+    assert.equal(missingTokenRepair?.claim?.duplicate, false);
+    assert.equal(missingTokenRepair?.tokenBalance, referredBefore.tokens + 100);
+
+    const referredTwoBeforePartial = await coordinator.profiles.getProfile("RewardReferredTwo");
+    const originalWriteState = accountStore.writeState.bind(accountStore);
+    let failNextAccountWrite = true;
+    accountStore.writeState = async (state) => {
+      if (failNextAccountWrite) {
+        failNextAccountWrite = false;
+        throw new Error("simulated referral ledger write failure");
+      }
+      return originalWriteState(state);
+    };
+    try {
+      await assert.rejects(
+        accountStore.claimReferralReward({
+          accountId: accounts.RewardReferredTwo.accountId,
+          claimType: "own",
+          playerLevel: 2,
+          grantTokens: ({ username, claimId, amount }) =>
+            authority.grantReferralRewardTokens({ username, claimId, amount })
+        }),
+        /simulated referral ledger write failure/
+      );
+    } finally {
+      accountStore.writeState = originalWriteState;
+    }
+    assert.equal(
+      (await coordinator.profiles.getProfile("RewardReferredTwo")).tokens,
+      referredTwoBeforePartial.tokens + 100
+    );
+    const missingLedgerRepair = await accountStore.claimReferralReward({
+      accountId: accounts.RewardReferredTwo.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens: ({ username, claimId, amount }) =>
+        authority.grantReferralRewardTokens({ username, claimId, amount })
+    });
+    assert.equal(missingLedgerRepair.amount, 0);
+    assert.equal(missingLedgerRepair.duplicate, true);
+    assert.equal(
+      (await coordinator.profiles.getProfile("RewardReferredTwo")).tokens,
+      referredTwoBeforePartial.tokens + 100
+    );
+    const repairedAccountState = await accountStore.readState();
+    assert.ok(
+      repairedAccountState.accounts.find(
+        (entry) => entry.accountId === accounts.RewardReferredTwo.accountId
+      ).referral.referredReward.claimedAt
+    );
+
     const beforePendingReferrer = await coordinator.profiles.getProfile("RewardReferrer");
     const pendingReferrer = await claim(referrerClient, {
       claimType: "referrer",
@@ -8605,6 +8699,15 @@ test("multiplayer foundation: referral reward claims grant 100 tokens once with 
     const malformedClaim = await claim(referrerClient, { claimType: "unknown" });
     assert.equal(malformedClaim?.ok, false);
     assert.equal(malformedClaim?.error?.code, "REFERRAL_CLAIM_TYPE_INVALID");
+    for (const refereeUsername of [{}, [], "X".repeat(100)]) {
+      const malformedReferee = await claim(referrerClient, {
+        claimType: "referrer",
+        refereeUsername
+      });
+      assert.equal(malformedReferee?.ok, false);
+      assert.equal(malformedReferee?.error?.code, "REFERRAL_REFEREE_INVALID");
+      assert.equal(malformedReferee?.error?.message, "Choose a valid referred player reward.");
+    }
     const unknownReferee = await claim(referrerClient, {
       claimType: "referrer",
       refereeUsername: "MissingRewardPlayer"

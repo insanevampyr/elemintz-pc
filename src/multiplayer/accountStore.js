@@ -16,6 +16,7 @@ const REFERRAL_CODE_PATTERN = /^ELM-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
 const REFERRAL_CODE_GENERATION_ATTEMPTS = 64;
 const REFERRAL_QUALIFYING_MATCH_TARGET = 3;
 const REFERRAL_COUNTED_MATCH_ID_LIMIT = 3;
+const REFERRAL_SETTLEMENT_ID_MAX_LENGTH = 200;
 const REFERRAL_REWARD_TOKENS = 100;
 const REFERRER_DAILY_CLAIM_LIMIT = 3;
 const REFERRAL_QUALIFYING_MODES = new Set(["pve", "gauntlet", "featured_rival", "online_pvp"]);
@@ -80,6 +81,27 @@ function createReferralCodeCandidate() {
 function normalizeReferralCode(value) {
   const normalized = String(value ?? "").trim().toUpperCase();
   return REFERRAL_CODE_PATTERN.test(normalized) ? normalized : null;
+}
+
+function normalizeSubmittedReferralCode(value) {
+  return typeof value === "string" ? normalizeReferralCode(value) : null;
+}
+
+function normalizeReferralTargetUsername(value) {
+  if (typeof value !== "string" || value.length > MAX_USERNAME_LENGTH) {
+    return null;
+  }
+  return normalizeUsername(value);
+}
+
+function normalizeReferralSettlementId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized && normalized.length <= REFERRAL_SETTLEMENT_ID_MAX_LENGTH
+    ? normalized
+    : null;
 }
 
 function normalizeReferralClaim(value) {
@@ -805,7 +827,7 @@ export class MultiplayerAccountStore {
       account.referral = referral;
       let claimId = null;
       let claimTarget = null;
-      let duplicate = false;
+      let ledgerClaimed = false;
 
       if (safeClaimType === "own") {
         if (!referral.referredBy) {
@@ -818,7 +840,7 @@ export class MultiplayerAccountStore {
           );
         }
         claimId = buildReferralRewardClaimId("own", account.accountId);
-        duplicate = Boolean(referral.referredReward.claimedAt);
+        ledgerClaimed = Boolean(referral.referredReward.claimedAt);
         claimTarget = {
           account,
           applyClaim: (claimedAt) => {
@@ -833,7 +855,7 @@ export class MultiplayerAccountStore {
           }
         };
       } else if (safeClaimType === "referrer") {
-        const safeRefereeUsername = normalizeUsername(refereeUsername);
+        const safeRefereeUsername = normalizeReferralTargetUsername(refereeUsername);
         if (!safeRefereeUsername) {
           throw buildAccountError(
             "REFERRAL_REFEREE_INVALID",
@@ -866,8 +888,8 @@ export class MultiplayerAccountStore {
           );
         }
         claimId = buildReferralRewardClaimId("referrer", account.accountId, referee.accountId);
-        duplicate = Boolean(referral.referrerClaims[referee.accountId]?.claimedAt);
-        if (!duplicate) {
+        ledgerClaimed = Boolean(referral.referrerClaims[referee.accountId]?.claimedAt);
+        if (!ledgerClaimed) {
           const todayKey = new Date(this.now()).toISOString().slice(0, 10);
           const claimsPaidToday = Object.values(referral.referrerClaims).filter(
             (claim) => getUtcDateKey(claim?.claimedAt) === todayKey
@@ -903,24 +925,29 @@ export class MultiplayerAccountStore {
         );
       }
 
-      let grantResult = null;
-      if (!duplicate) {
-        grantResult = await grantTokens({
-          username: account.profileKey ?? account.username,
-          claimId,
-          amount: REFERRAL_REWARD_TOKENS
-        });
+      const grantResult = await grantTokens({
+        username: account.profileKey ?? account.username,
+        claimId,
+        amount: REFERRAL_REWARD_TOKENS
+      });
+      if (!ledgerClaimed) {
         const claimedAt = new Date(this.now()).toISOString();
         claimTarget.applyClaim(claimedAt);
         account.updatedAt = claimedAt;
         await this.writeState(state);
       }
+      const reportedTokensAdded = Number(grantResult?.tokensAdded);
+      const amount = Number.isFinite(reportedTokensAdded)
+        ? Math.min(REFERRAL_REWARD_TOKENS, Math.max(0, Math.floor(reportedTokensAdded)))
+        : grantResult?.duplicate || ledgerClaimed
+          ? 0
+          : REFERRAL_REWARD_TOKENS;
 
       return {
         claimType: safeClaimType,
         refereeUsername: claimTarget.refereeUsername ?? null,
-        amount: duplicate ? 0 : REFERRAL_REWARD_TOKENS,
-        duplicate,
+        amount,
+        duplicate: amount === 0,
         grantResult,
         dashboard: buildSafeReferralDashboard(account, state.accounts, playerLevel, this.now())
       };
@@ -951,7 +978,7 @@ export class MultiplayerAccountStore {
           "Verify your email before activating a referral code."
         );
       }
-      const safeReferralCode = normalizeReferralCode(referralCode);
+      const safeReferralCode = normalizeSubmittedReferralCode(referralCode);
       if (!safeReferralCode) {
         throw buildAccountError("REFERRAL_CODE_INVALID", "Enter a valid referral code.");
       }
@@ -1041,7 +1068,7 @@ export class MultiplayerAccountStore {
       const safeAccountId = String(accountId ?? "").trim();
       const safeUsername = normalizeUsername(username);
       const safeProfileKey = normalizeUsername(profileKey);
-      const safeSettlementId = String(settlementId ?? "").trim().slice(0, 200);
+      const safeSettlementId = normalizeReferralSettlementId(settlementId);
       const state = await this.readState();
       const account =
         state.accounts.find(
