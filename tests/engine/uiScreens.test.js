@@ -31377,7 +31377,7 @@ test("ui: owner profile groups Search and Recent Opponents separately from Battl
   assert.ok(html.indexOf('data-profile-showcase="true"') < html.indexOf("Reward Chests"));
 });
 
-test("ui: authenticated own Profile identity renders referral controls while Social stays focused", () => {
+test("ui: authenticated own Profile identity shows only Referral Dashboard while Social stays focused", () => {
   const html = profileScreen.render(
     createProfileScreenContext({
       referral: {
@@ -31389,24 +31389,25 @@ test("ui: authenticated own Profile identity renders referral controls while Soc
     })
   );
   assert.match(html, /data-profile-identity-card="true"/);
-  assert.match(html, /data-profile-identity-referral="true"/);
-  assert.match(html, /My Referral Code/);
-  assert.match(html, /data-profile-referral-code="true">ELM-K7QX-M9PD</);
-  assert.match(html, /id="profile-copy-referral-code-btn"[^>]*>Copy Code</);
-  assert.match(html, /id="profile-copy-referral-link-btn"[^>]*>Copy Invite Link</);
-  assert.match(html, /data-profile-referral-email-status="verified"/);
+  assert.match(html, /data-profile-referral-dashboard-btn="true"/);
+  assert.doesNotMatch(
+    html,
+    /data-profile-identity-referral|My Referral Code|ELM-K7QX-M9PD|profile-copy-referral-code-btn|profile-copy-referral-link-btn|Email verified\.|Referral Rewards Locked|vampyrlee\.itch\.io\/elemintz/
+  );
   const identityIndex = html.indexOf('data-profile-identity-card="true"');
-  const referralIndex = html.indexOf('data-profile-identity-referral="true"');
+  const dashboardIndex = html.indexOf('data-profile-referral-dashboard-btn="true"');
   const socialIndex = html.indexOf('data-profile-social-card="true"');
   const activityIndex = html.indexOf('data-profile-activity-card="true"');
-  assert.ok(identityIndex >= 0 && referralIndex > identityIndex && referralIndex < socialIndex);
-  assert.doesNotMatch(html.slice(socialIndex, activityIndex), /My Referral Code|data-profile-identity-referral/);
+  assert.ok(identityIndex >= 0 && dashboardIndex > identityIndex && dashboardIndex < socialIndex);
   assert.match(html.slice(socialIndex, activityIndex), /Search Player Profile/);
   assert.match(html.slice(socialIndex, activityIndex), /Recent Opponents/);
+  assert.match(html.slice(socialIndex, activityIndex), /Have a referral code\?/);
 
   const guestHtml = profileScreen.render(createProfileScreenContext());
-  assert.match(guestHtml, /Sign in to get your referral code\./);
-  assert.doesNotMatch(guestHtml, /ELM-[A-Z2-9-]+|\?ref=|profile-copy-referral-code-btn|profile-copy-referral-link-btn/);
+  assert.doesNotMatch(
+    guestHtml,
+    /My Referral Code|ELM-[A-Z2-9-]+|\?ref=|profile-copy-referral-code-btn|profile-copy-referral-link-btn|profile-referral-dashboard-btn/
+  );
 
   const unverifiedHtml = profileScreen.render(
     createProfileScreenContext({
@@ -31418,25 +31419,11 @@ test("ui: authenticated own Profile identity renders referral controls while Soc
       }
     })
   );
-  assert.match(unverifiedHtml, /data-profile-referral-locked="true"/);
-  assert.match(unverifiedHtml, /Referral Rewards Locked/);
-  assert.match(unverifiedHtml, /Verify your email to unlock your personal referral code and invite link\./);
-  assert.match(unverifiedHtml, /reaches Level 2, and completes 3 qualifying matches\./);
-  assert.match(unverifiedHtml, /href="https:\/\/vampyrlee\.itch\.io\/elemintz"/);
-  assert.doesNotMatch(unverifiedHtml, /ELM-HIDE-M222|\?ref=|profile-copy-referral-code-btn|profile-copy-referral-link-btn/);
-
-  const failureHtml = profileScreen.render(
-    createProfileScreenContext({
-      referral: {
-        authenticated: true,
-        status: "error",
-        referralCode: null,
-        emailVerified: true
-      }
-    })
+  assert.match(unverifiedHtml, /data-profile-referral-dashboard-btn="true"/);
+  assert.doesNotMatch(
+    unverifiedHtml,
+    /data-profile-identity-referral|Referral Rewards Locked|ELM-HIDE-M222|\?ref=|profile-copy-referral-code-btn|profile-copy-referral-link-btn|vampyrlee\.itch\.io\/elemintz/
   );
-  assert.match(failureHtml, /Referral code unavailable\. Try again later\./);
-  assert.doesNotMatch(failureHtml, /private referral authority failure/i);
 
   const viewedHtml = profileScreen.renderViewedProfileModalBody({
     ...createProfileScreenContext().profile,
@@ -31455,8 +31442,68 @@ test("ui: authenticated own Profile identity renders referral controls while Soc
   });
   assert.doesNotMatch(
     viewedHtml,
-    /My Referral Code|ELM-LEAK-M222|ELM-AAAA-2222|referrerClaims|private-settlement-id|qualifyingMatchCount|qualifiedAt/
+    /My Referral Code|Referral Dashboard|ELM-LEAK-M222|ELM-AAAA-2222|referrerClaims|private-settlement-id|qualifyingMatchCount|qualifiedAt|profile-copy-referral/
   );
+});
+
+test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty states", () => {
+  const verifiedHtml = profileScreen.renderReferralDashboardModalBody({
+    emailVerified: true,
+    referralCode: "ELM-K7QX-M9PD",
+    ownProgress: {
+      referralLinked: true,
+      level2Reached: true,
+      qualifyingMatchesCompleted: 3,
+      qualified: true,
+      qualifiedAt: "2026-07-23T12:00:00.000Z"
+    },
+    referees: [
+      {
+        username: "SafeReferee",
+        level2Reached: true,
+        qualifyingMatchesCompleted: 2,
+        qualified: false,
+        accountId: "PRIVATE_ACCOUNT",
+        countedMatchIds: ["PRIVATE_MATCH"]
+      },
+      {
+        username: "QualifiedReferee",
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true
+      }
+    ]
+  });
+  assert.match(verifiedHtml, /data-referral-dashboard-modal="true"/);
+  assert.match(verifiedHtml, /Referral Sharing/);
+  assert.match(verifiedHtml, /data-referral-dashboard-code="true">ELM-K7QX-M9PD</);
+  assert.match(verifiedHtml, /id="referral-dashboard-copy-code-btn"/);
+  assert.match(verifiedHtml, /id="referral-dashboard-copy-link-btn"/);
+  assert.match(verifiedHtml, /My Referral Progress/);
+  assert.match(verifiedHtml, /Referral linked\./);
+  assert.match(verifiedHtml, /Level 2: Complete/);
+  assert.match(verifiedHtml, /Qualifying matches: 3 \/ 3/);
+  assert.match(verifiedHtml, /Referral qualification complete\. Rewards are not available yet\./);
+  assert.match(verifiedHtml, /People I Referred/);
+  assert.match(verifiedHtml, /SafeReferee/);
+  assert.match(verifiedHtml, /Qualifying matches: 2 \/ 3/);
+  assert.match(verifiedHtml, /Status: In Progress/);
+  assert.match(verifiedHtml, /QualifiedReferee/);
+  assert.match(verifiedHtml, /Status: Qualified - rewards not available yet/);
+  assert.doesNotMatch(verifiedHtml, /Claim Reward|claim-referral|PRIVATE_ACCOUNT|PRIVATE_MATCH|accountId|countedMatchIds/);
+
+  const unverifiedHtml = profileScreen.renderReferralDashboardModalBody({
+    emailVerified: false,
+    referralCode: "ELM-HIDE-M222",
+    ownProgress: { referralLinked: false },
+    referees: []
+  });
+  assert.match(unverifiedHtml, /Referral Rewards Locked/);
+  assert.match(unverifiedHtml, /Verify your email to unlock your personal referral code and invite link\./);
+  assert.match(unverifiedHtml, /href="https:\/\/vampyrlee\.itch\.io\/elemintz"/);
+  assert.match(unverifiedHtml, /No referral linked yet\./);
+  assert.match(unverifiedHtml, /data-referral-dashboard-empty="true">No referred players yet\./);
+  assert.doesNotMatch(unverifiedHtml, /ELM-HIDE-M222|\?ref=|referral-dashboard-copy-code-btn|referral-dashboard-copy-link-btn/);
 });
 
 test("ui: referral activation entry gates verified, pending, linked, and viewed-profile states", () => {
@@ -31550,6 +31597,104 @@ test("ui: referral activation entry gates verified, pending, linked, and viewed-
     viewedHtml,
     /Have a referral code|profile-activate-referral|ELM-ZQKT-385D|referralLinked|pendingReferral/
   );
+});
+
+test("ui: Referral Dashboard loads through authenticated authority and closes cleanly", async () => {
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const copyCalls = [];
+  let hideCalls = 0;
+  let dashboardCalls = 0;
+  let codeClick = null;
+  let linkClick = null;
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {
+        hideCalls += 1;
+      },
+      clearStaleOverlay: () => false
+    },
+    toastManager: { enqueueToast: () => {} }
+  });
+  controller.username = "ReferralOwner";
+  controller.onlinePlayState = {
+    session: { authenticated: true, username: "ReferralOwner", emailVerified: true }
+  };
+  controller.copyReferralText = async (value, label) => {
+    copyCalls.push({ value, label });
+    return true;
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getReferralDashboard: async () => {
+          dashboardCalls += 1;
+          return {
+            emailVerified: true,
+            referralCode: "ELM-K7QX-M9PD",
+            ownProgress: {
+              referralLinked: true,
+              level2Reached: true,
+              qualifyingMatchesCompleted: 2,
+              qualified: false,
+              qualifiedAt: null
+            },
+            referees: []
+          };
+        }
+      }
+    }
+  };
+  global.document = {
+    getElementById: (id) => {
+      if (id === "referral-dashboard-copy-code-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              codeClick = handler;
+            }
+          }
+        };
+      }
+      if (id === "referral-dashboard-copy-link-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              linkClick = handler;
+            }
+          }
+        };
+      }
+      return null;
+    }
+  };
+
+  try {
+    await controller.showReferralDashboardModal();
+    assert.equal(dashboardCalls, 1);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Referral Dashboard");
+    assert.match(modalCalls[0].bodyHtml, /Qualifying matches: 2 \/ 3/);
+    assert.match(modalCalls[0].bodyHtml, /No referred players yet\./);
+    await codeClick?.();
+    await linkClick?.();
+    assert.deepEqual(copyCalls, [
+      { value: "ELM-K7QX-M9PD", label: "Referral Code Copied" },
+      {
+        value: "https://vampyrlee.itch.io/elemintz?ref=ELM-K7QX-M9PD",
+        label: "Invite Link Copied"
+      }
+    ]);
+    await modalCalls[0].actions[0].onClick();
+    assert.equal(hideCalls, 1);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+  }
 });
 
 test("ui: referral activation form and pending clear bind to owner actions", async () => {
@@ -31693,15 +31838,14 @@ test("ui: Recent Opponents modal renders empty state exactly", () => {
   assert.match(modalHtml, /data-recent-opponents-empty="true">No recent online opponents yet\.<\/p>/);
 });
 
-test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collections, and referral copy actions", async () => {
+test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collections, and Referral Dashboard", async () => {
   const previousDocument = global.document;
   let battleReportClick = null;
   let recentCardClick = null;
   let collectionsClick = null;
   let searchSubmit = null;
   let resultButtonClick = null;
-  let copyReferralCodeClick = null;
-  let copyReferralLinkClick = null;
+  let referralDashboardClick = null;
   const calls = [];
   const searchForm = {};
   const resultButton = {
@@ -31757,20 +31901,11 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
           }
         };
       }
-      if (id === "profile-copy-referral-code-btn") {
+      if (id === "profile-referral-dashboard-btn") {
         return {
           addEventListener: (type, handler) => {
             if (type === "click") {
-              copyReferralCodeClick = handler;
-            }
-          }
-        };
-      }
-      if (id === "profile-copy-referral-link-btn") {
-        return {
-          addEventListener: (type, handler) => {
-            if (type === "click") {
-              copyReferralLinkClick = handler;
+              referralDashboardClick = handler;
             }
           }
         };
@@ -31806,8 +31941,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
           openBattleReport: () => calls.push("openBattleReport"),
           openRecentOpponents: () => calls.push("openRecentOpponents"),
           openCollections: () => calls.push("openCollections"),
-          copyReferralCode: (value) => calls.push(`copyReferralCode:${value}`),
-          copyReferralInviteLink: (value) => calls.push(`copyReferralInviteLink:${value}`)
+          openReferralDashboard: () => calls.push("openReferralDashboard")
         }
       })
     );
@@ -31817,8 +31951,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
     await battleReportClick?.();
     await recentCardClick?.();
     await collectionsClick?.();
-    await copyReferralCodeClick?.();
-    await copyReferralLinkClick?.();
+    await referralDashboardClick?.();
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;
@@ -31831,8 +31964,7 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
     "openBattleReport",
     "openRecentOpponents",
     "openCollections",
-    "copyReferralCode:ELM-K7QX-M9PD",
-    "copyReferralInviteLink:https://vampyrlee.itch.io/elemintz?ref=ELM-K7QX-M9PD"
+    "openReferralDashboard"
   ]);
 });
 

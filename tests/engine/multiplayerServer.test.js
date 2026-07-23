@@ -8230,6 +8230,181 @@ test("multiplayer foundation: referral qualification tracks authoritative comple
   }
 });
 
+test("multiplayer foundation: referral dashboard is authenticated, read-only, and safely shaped", async () => {
+  const dataDir = await createTempDataDir();
+  const generatedCodes = ["ELM-DSHA-A222", "ELM-DSHB-B333", "ELM-DSHC-C444"];
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    referralCodeGenerator: () => generatedCodes.shift()
+  });
+  const profileAuthority = {
+    assertProfileClaimAvailable: async () => null,
+    linkProfileToAccount: async ({ username, accountId }) => ({
+      username,
+      profile: { username, linkedAccountId: accountId }
+    }),
+    getProfile: async (username) => ({
+      username,
+      profile: {
+        username,
+        playerLevel: username === "DashboardReferred" ? 2 : 1,
+        equippedCosmetics: {}
+      },
+      progression: {
+        xp: { playerXP: 0, playerLevel: username === "DashboardReferred" ? 2 : 1 },
+        dailyChallenges: { challenges: [] },
+        weeklyChallenges: { challenges: [] },
+        dailyLogin: { eligible: false }
+      }
+    })
+  };
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority
+  });
+  let guestClient = null;
+  let referrerClient = null;
+  let referredClient = null;
+  let unverifiedClient = null;
+
+  const register = (client, payload) =>
+    new Promise((resolve) => client.emit("auth:register", payload, resolve));
+  const verify = (client, token) =>
+    new Promise((resolve) => client.emit("auth:verifyEmail", { token }, resolve));
+  const createCode = (client) =>
+    new Promise((resolve) => client.emit("profile:getOrCreateReferralCode", {}, resolve));
+  const activate = (client, referralCode) =>
+    new Promise((resolve) =>
+      client.emit("profile:activateReferralCode", { referralCode }, resolve)
+    );
+  const getDashboard = (client) =>
+    new Promise((resolve) => client.emit("profile:getReferralDashboard", {}, resolve));
+
+  try {
+    const port = await foundation.start();
+    guestClient = await connectClient(port);
+    referrerClient = await connectClient(port);
+    referredClient = await connectClient(port);
+    unverifiedClient = await connectClient(port);
+
+    await new Promise((resolve) => {
+      guestClient.emit("session:bootstrap", { username: "DashboardGuest" }, resolve);
+    });
+    const guestDashboard = await getDashboard(guestClient);
+    assert.equal(guestDashboard?.ok, false);
+    assert.equal(guestDashboard?.error?.code, "AUTH_REQUIRED");
+
+    const referrer = await register(referrerClient, {
+      email: "dashboard-referrer@example.com",
+      password: "password123",
+      username: "DashboardReferrer"
+    });
+    const referred = await register(referredClient, {
+      email: "dashboard-referred@example.com",
+      password: "password123",
+      username: "DashboardReferred"
+    });
+    const unverified = await register(unverifiedClient, {
+      email: "dashboard-unverified@example.com",
+      password: "password123",
+      username: "DashboardUnverified"
+    });
+    await verify(referrerClient, referrer.emailVerification.devVerificationToken);
+    await verify(referredClient, referred.emailVerification.devVerificationToken);
+
+    const referrerCode = await createCode(referrerClient);
+    await createCode(referredClient);
+    await createCode(unverifiedClient);
+    await activate(referredClient, referrerCode.referralCode);
+    await accountStore.recordReferralQualificationMatch({
+      accountId: referred.account.accountId,
+      settlementId: "dashboard-match-1",
+      mode: "pve",
+      difficulty: "normal",
+      status: "completed",
+      winner: "p1",
+      playerLevel: 2
+    });
+    await accountStore.recordReferralQualificationMatch({
+      accountId: referred.account.accountId,
+      settlementId: "dashboard-match-2",
+      mode: "online_pvp",
+      difficulty: "normal",
+      status: "completed",
+      winner: "p2",
+      playerLevel: 2
+    });
+
+    const accountsPath = path.join(dataDir, "accounts.json");
+    const beforeRead = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    const referrerDashboard = await getDashboard(referrerClient);
+    const referredDashboard = await getDashboard(referredClient);
+    const unverifiedDashboard = await getDashboard(unverifiedClient);
+    const afterRead = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+
+    assert.deepEqual(afterRead, beforeRead);
+    assert.deepEqual(referrerDashboard, {
+      ok: true,
+      dashboard: {
+        emailVerified: true,
+        referralCode: "ELM-DSHA-A222",
+        ownProgress: {
+          referralLinked: false,
+          level2Reached: false,
+          qualifyingMatchesCompleted: 0,
+          qualified: false,
+          qualifiedAt: null
+        },
+        referees: [
+          {
+            username: "DashboardReferred",
+            level2Reached: true,
+            qualifyingMatchesCompleted: 2,
+            qualified: false
+          }
+        ]
+      }
+    });
+    assert.equal(referredDashboard?.dashboard?.ownProgress?.referralLinked, true);
+    assert.equal(referredDashboard?.dashboard?.ownProgress?.level2Reached, true);
+    assert.equal(referredDashboard?.dashboard?.ownProgress?.qualifyingMatchesCompleted, 2);
+    assert.deepEqual(unverifiedDashboard, {
+      ok: true,
+      dashboard: {
+        emailVerified: false,
+        referralCode: null,
+        ownProgress: {
+          referralLinked: false,
+          level2Reached: false,
+          qualifyingMatchesCompleted: 0,
+          qualified: false,
+          qualifiedAt: null
+        },
+        referees: []
+      }
+    });
+
+    const safePayload = JSON.stringify(referrerDashboard);
+    assert.doesNotMatch(
+      safePayload,
+      /accountId|profileKey|"email":|sessionId|socketId|settlementId|countedMatchIds|referredBy|referrerClaims/
+    );
+    assert.equal("tokens" in referrerDashboard.dashboard, false);
+    assert.equal("rewards" in referrerDashboard.dashboard, false);
+    assert.equal(unverifiedDashboard.dashboard.referralCode, null);
+  } finally {
+    guestClient?.disconnect();
+    referrerClient?.disconnect();
+    referredClient?.disconnect();
+    unverifiedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: auth register links an existing username profile instead of duplicating it", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

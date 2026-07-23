@@ -2122,6 +2122,39 @@ export class MultiplayerClient {
     };
   }
 
+  async getReferralDashboard({ serverUrl } = {}) {
+    const response = await this.runServerRequest("profile:getReferralDashboard", {}, { serverUrl });
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to load referral dashboard.");
+    }
+
+    const dashboard = response.dashboard ?? {};
+    const ownProgress = dashboard.ownProgress ?? {};
+    return {
+      emailVerified: Boolean(dashboard.emailVerified),
+      referralCode: String(dashboard.referralCode ?? "").trim(),
+      ownProgress: {
+        referralLinked: Boolean(ownProgress.referralLinked),
+        level2Reached: Boolean(ownProgress.level2Reached),
+        qualifyingMatchesCompleted: Math.min(
+          3,
+          Math.max(0, Number(ownProgress.qualifyingMatchesCompleted ?? 0))
+        ),
+        qualified: Boolean(ownProgress.qualified),
+        qualifiedAt: ownProgress.qualifiedAt ?? null
+      },
+      referees: (Array.isArray(dashboard.referees) ? dashboard.referees : []).map((entry) => ({
+        username: String(entry?.username ?? "").trim() || "Player",
+        level2Reached: Boolean(entry?.level2Reached),
+        qualifyingMatchesCompleted: Math.min(
+          3,
+          Math.max(0, Number(entry?.qualifyingMatchesCompleted ?? 0))
+        ),
+        qualified: Boolean(entry?.qualified)
+      }))
+    };
+  }
+
   async activateReferralCode({ referralCode, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:activateReferralCode",

@@ -316,6 +316,7 @@ export class AppController {
       qualifiedAt: null
     };
     this.referralCodeRequestPromise = null;
+    this.referralDashboardRequestPromise = null;
     this.referralActivationState = {
       username: null,
       status: "idle",
@@ -4349,6 +4350,66 @@ export class AppController {
         actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
       });
       return false;
+    }
+  }
+
+  async loadOwnReferralDashboard() {
+    if (!this.hasAuthenticatedMultiplayerSessionForUsername(this.username, this.onlinePlayState)) {
+      throw new Error("Sign in to open Referral Dashboard.");
+    }
+    if (typeof window.elemintz?.multiplayer?.getReferralDashboard !== "function") {
+      throw new Error("Referral Dashboard is unavailable.");
+    }
+    if (this.referralDashboardRequestPromise) {
+      return this.referralDashboardRequestPromise;
+    }
+
+    this.referralDashboardRequestPromise = window.elemintz.multiplayer
+      .getReferralDashboard({})
+      .finally(() => {
+        this.referralDashboardRequestPromise = null;
+      });
+    return this.referralDashboardRequestPromise;
+  }
+
+  bindReferralDashboardModalControls(dashboard = {}) {
+    const referralCode = String(dashboard?.referralCode ?? "").trim().toUpperCase();
+    const copyCodeButton =
+      globalThis.document?.getElementById?.("referral-dashboard-copy-code-btn") ?? null;
+    if (copyCodeButton && referralCode) {
+      copyCodeButton.addEventListener("click", () => {
+        this.copyReferralText(referralCode, "Referral Code Copied");
+      });
+    }
+    const copyLinkButton =
+      globalThis.document?.getElementById?.("referral-dashboard-copy-link-btn") ?? null;
+    if (copyLinkButton && referralCode) {
+      copyLinkButton.addEventListener("click", () => {
+        this.copyReferralText(
+          `https://vampyrlee.itch.io/elemintz?ref=${encodeURIComponent(referralCode)}`,
+          "Invite Link Copied"
+        );
+      });
+    }
+  }
+
+  async showReferralDashboardModal() {
+    try {
+      const dashboard = await this.loadOwnReferralDashboard();
+      this.modalManager.show({
+        title: "Referral Dashboard",
+        bodyHtml: profileScreen.renderReferralDashboardModalBody(dashboard),
+        modalClassName: "battle-report-modal referral-dashboard-modal",
+        bodyClassName: "battle-report-modal-body referral-dashboard-modal-body",
+        actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
+      });
+      this.bindReferralDashboardModalControls(dashboard);
+    } catch (error) {
+      this.modalManager.show({
+        title: "Referral Dashboard Unavailable",
+        body: String(error?.message ?? "Unable to load Referral Dashboard."),
+        actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
     }
   }
 
@@ -10897,11 +10958,8 @@ export class AppController {
         openCollections: async () => {
           this.showCollectionAlbumsModal();
         },
-        copyReferralCode: async (referralCode) => {
-          await this.copyReferralText(referralCode, "Referral Code Copied");
-        },
-        copyReferralInviteLink: async (inviteLink) => {
-          await this.copyReferralText(inviteLink, "Invite Link Copied");
+        openReferralDashboard: async () => {
+          await this.showReferralDashboardModal();
         },
         activateReferralCode: async (referralCode) => {
           await this.activateOwnReferralCode(referralCode);

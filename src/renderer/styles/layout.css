@@ -2077,6 +2077,10 @@ code.online-active-meta-value {
   gap: 8px;
 }
 
+.profile-referral-dashboard-launch {
+  align-self: center;
+}
+
 .profile-referral-status,
 .profile-referral-help {
   font-size: 0.82rem;
@@ -2107,6 +2111,25 @@ code.online-active-meta-value {
 
 .profile-referral-entry-body code {
   overflow-wrap: anywhere;
+}
+
+.referral-dashboard-modal-body {
+  max-height: min(calc(100vh - 190px), 640px);
+  overflow-y: auto;
+}
+
+.referral-dashboard-referee-list {
+  display: grid;
+  gap: 8px;
+}
+
+.referral-dashboard-referee {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(130, 170, 199, 0.2);
+  border-radius: 8px;
+  background: rgba(7, 18, 31, 0.42);
 }
 
 .collection-albums-modal-body {

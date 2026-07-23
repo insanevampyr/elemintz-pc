@@ -1551,7 +1551,7 @@ function renderProfileIdentityCard({
         badgeId,
         badgeSrc
       })}
-      ${renderProfileReferralAction(referral)}
+      ${renderReferralDashboardLaunch(referral)}
     </section>
   `;
 }
@@ -1838,50 +1838,94 @@ function renderProfileIdentityHeader({
   `;
 }
 
-function renderProfileReferralAction(referral = {}) {
+function renderReferralDashboardLaunch(referral = {}) {
   if (!referral?.authenticated) {
-    return `
-      <div class="profile-identity-referral" data-profile-identity-referral="true">
-        <strong class="profile-activity-action-title">My Referral Code</strong>
-        <p class="text-muted" data-profile-referral-signed-out="true">Sign in to get your referral code.</p>
-      </div>
-    `;
-  }
-
-  if (!referral.emailVerified) {
-    return `
-      <div class="profile-identity-referral profile-referral-action" data-profile-identity-referral="true" data-profile-referral-locked="true">
-        <strong class="profile-activity-action-title">Referral Rewards Locked</strong>
-        <p class="text-muted">Verify your email to unlock your personal referral code and invite link.</p>
-        <p class="text-muted profile-referral-help">You only earn referral rewards from your verified referral link after your friend verifies email, reaches Level 2, and completes 3 qualifying matches.</p>
-        <p class="text-muted profile-referral-game-link">
-          Game page:
-          <a href="${REFERRAL_INVITE_URL}" target="_blank" rel="noopener noreferrer">${REFERRAL_INVITE_URL}</a>
-        </p>
-      </div>
-    `;
-  }
-
-  const referralCode = normalizeReferralCodeForDisplay(referral.referralCode);
-  if (!referralCode) {
-    return `
-      <div class="profile-identity-referral" data-profile-identity-referral="true">
-        <strong class="profile-activity-action-title">My Referral Code</strong>
-        <p class="text-muted" data-profile-referral-unavailable="true">Referral code unavailable. Try again later.</p>
-      </div>
-    `;
+    return "";
   }
 
   return `
-    <div class="profile-identity-referral profile-referral-action" data-profile-identity-referral="true">
-      <strong class="profile-activity-action-title">My Referral Code</strong>
-      <code class="profile-referral-code" data-profile-referral-code="true">${escapeProfileText(referralCode)}</code>
-      <div class="profile-referral-actions">
-        <button id="profile-copy-referral-code-btn" class="btn btn-secondary" type="button">Copy Code</button>
-        <button id="profile-copy-referral-link-btn" class="btn btn-secondary" type="button">Copy Invite Link</button>
-      </div>
-      <p class="text-muted profile-referral-status" data-profile-referral-email-status="verified">Email verified.</p>
-      <p class="text-muted profile-referral-help">Rewards unlock later after verified email and real play qualification.</p>
+    <button
+      id="profile-referral-dashboard-btn"
+      class="btn btn-secondary profile-referral-dashboard-launch"
+      type="button"
+      data-profile-referral-dashboard-btn="true"
+    >Referral Dashboard</button>
+  `;
+}
+
+function renderReferralDashboardModalBody(dashboard = {}) {
+  const emailVerified = Boolean(dashboard?.emailVerified);
+  const referralCode = normalizeReferralCodeForDisplay(dashboard?.referralCode);
+  const ownProgress = dashboard?.ownProgress ?? {};
+  const qualifyingMatchesCompleted = Math.min(
+    3,
+    Math.max(0, Math.floor(Number(ownProgress.qualifyingMatchesCompleted ?? 0) || 0))
+  );
+  const referees = Array.isArray(dashboard?.referees) ? dashboard.referees : [];
+  const sharingContent =
+    emailVerified && referralCode
+      ? `
+        <p class="text-muted">Share your verified invite link. Rewards unlock only after your friend verifies email, reaches Level 2, and completes 3 qualifying matches.</p>
+        <code class="profile-referral-code" data-referral-dashboard-code="true">${escapeProfileText(referralCode)}</code>
+        <div class="profile-referral-actions">
+          <button id="referral-dashboard-copy-code-btn" class="btn btn-secondary" type="button">Copy Code</button>
+          <button id="referral-dashboard-copy-link-btn" class="btn btn-secondary" type="button">Copy Invite Link</button>
+        </div>
+      `
+      : emailVerified
+        ? '<p class="text-muted">Referral code unavailable. Try again later.</p>'
+        : `
+          <strong>Referral Rewards Locked</strong>
+          <p class="text-muted">Verify your email to unlock your personal referral code and invite link.</p>
+          <p class="text-muted profile-referral-game-link">
+            Game page:
+            <a href="${REFERRAL_INVITE_URL}" target="_blank" rel="noopener noreferrer">${REFERRAL_INVITE_URL}</a>
+          </p>
+        `;
+  const ownProgressContent = ownProgress.referralLinked
+    ? `
+      <p>Referral linked.</p>
+      <p class="text-muted">Level 2: ${ownProgress.level2Reached ? "Complete" : "Incomplete"}</p>
+      <p class="text-muted">Qualifying matches: ${qualifyingMatchesCompleted} / 3</p>
+      <p class="text-muted">${ownProgress.qualified ? "Referral qualification complete. Rewards are not available yet." : "Rewards unlock after qualification."}</p>
+    `
+    : '<p class="text-muted">No referral linked yet.</p>';
+  const refereeContent =
+    referees.length > 0
+      ? referees
+          .map((entry) => {
+            const matchCount = Math.min(
+              3,
+              Math.max(0, Math.floor(Number(entry?.qualifyingMatchesCompleted ?? 0) || 0))
+            );
+            return `
+              <article class="referral-dashboard-referee" data-referral-dashboard-referee="true">
+                <strong>${escapeProfileText(String(entry?.username ?? "Player"))}</strong>
+                <span class="text-muted">Level 2: ${entry?.level2Reached ? "Complete" : "Incomplete"}</span>
+                <span class="text-muted">Qualifying matches: ${matchCount} / 3</span>
+                <span class="text-muted">Status: ${entry?.qualified ? "Qualified - rewards not available yet" : "In Progress"}</span>
+              </article>
+            `;
+          })
+          .join("")
+      : '<p class="text-muted" data-referral-dashboard-empty="true">No referred players yet.</p>';
+
+  return `
+    <div class="referral-dashboard-modal-content stack-sm" data-referral-dashboard-modal="true">
+      <section class="profile-summary-card stack-sm" data-referral-dashboard-sharing="true">
+        <h3 class="section-title">Referral Sharing</h3>
+        ${sharingContent}
+      </section>
+      <section class="profile-summary-card stack-sm" data-referral-dashboard-own-progress="true">
+        <h3 class="section-title">My Referral Progress</h3>
+        ${ownProgressContent}
+      </section>
+      <section class="profile-summary-card stack-sm" data-referral-dashboard-referees="true">
+        <h3 class="section-title">People I Referred</h3>
+        <div class="referral-dashboard-referee-list">
+          ${refereeContent}
+        </div>
+      </section>
     </div>
   `;
 }
@@ -2303,23 +2347,19 @@ export const profileScreen = {
     if (collectionsButton && context.actions.openCollections) {
       collectionsButton.addEventListener("click", context.actions.openCollections);
     }
-    const copyReferralCodeButton = document.getElementById("profile-copy-referral-code-btn");
-    if (copyReferralCodeButton && context.actions.copyReferralCode) {
-      copyReferralCodeButton.addEventListener("click", () => {
-        const referralCode = normalizeReferralCodeForDisplay(context.referral?.referralCode);
-        if (referralCode) {
-          context.actions.copyReferralCode(referralCode);
+    const referralDashboardButton = document.getElementById("profile-referral-dashboard-btn");
+    if (referralDashboardButton && context.actions.openReferralDashboard) {
+      referralDashboardButton.addEventListener("click", async () => {
+        if (referralDashboardButton.disabled) {
+          return;
         }
-      });
-    }
-    const copyReferralLinkButton = document.getElementById("profile-copy-referral-link-btn");
-    if (copyReferralLinkButton && context.actions.copyReferralInviteLink) {
-      copyReferralLinkButton.addEventListener("click", () => {
-        const referralCode = normalizeReferralCodeForDisplay(context.referral?.referralCode);
-        if (referralCode) {
-          context.actions.copyReferralInviteLink(
-            `${REFERRAL_INVITE_URL}?ref=${encodeURIComponent(referralCode)}`
-          );
+        referralDashboardButton.disabled = true;
+        referralDashboardButton.setAttribute?.("aria-busy", "true");
+        try {
+          await context.actions.openReferralDashboard();
+        } finally {
+          referralDashboardButton.disabled = false;
+          referralDashboardButton.removeAttribute?.("aria-busy");
         }
       });
     }
@@ -2387,6 +2427,7 @@ profileScreen.renderShowcasePickerBody = renderProfileShowcasePickerBody;
 profileScreen.renderBattleReportModalBody = renderBattleReportModalBody;
 profileScreen.renderRecentOpponentsModalBody = renderRecentOpponentsModalBody;
 profileScreen.renderCollectionAlbumsModalBody = renderCollectionAlbumsModalBody;
+profileScreen.renderReferralDashboardModalBody = renderReferralDashboardModalBody;
 profileScreen.getRecentOpponentRows = getRecentOpponentRows;
 profileScreen.formatRecentOpponentRelativeTime = formatRecentOpponentRelativeTime;
 

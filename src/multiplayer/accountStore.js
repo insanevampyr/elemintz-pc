@@ -165,6 +165,41 @@ function buildSafeReferralStatus(account, playerLevel = 1) {
   };
 }
 
+function buildSafeReferralDashboard(account, accounts, playerLevel = 1) {
+  const referral = normalizeReferral(account?.referral);
+  const ownProgress = buildSafeReferralStatus(account, playerLevel);
+  const refereeProgress = (Array.isArray(accounts) ? accounts : [])
+    .filter(
+      (entry) =>
+        entry?.accountId !== account?.accountId &&
+        referral.code &&
+        normalizeReferral(entry?.referral).referredBy === referral.code
+    )
+    .map((entry) => {
+      const status = buildSafeReferralStatus(entry);
+      return {
+        username: normalizeUsername(entry?.username) ?? "Player",
+        level2Reached: status.level2Reached,
+        qualifyingMatchesCompleted: status.qualifyingMatchesCompleted,
+        qualified: status.qualified
+      };
+    })
+    .sort((left, right) => left.username.localeCompare(right.username));
+
+  return {
+    emailVerified: Boolean(account?.emailVerified),
+    referralCode: account?.emailVerified ? referral.code : null,
+    ownProgress: {
+      referralLinked: ownProgress.referredByLinked,
+      level2Reached: ownProgress.level2Reached,
+      qualifyingMatchesCompleted: ownProgress.qualifyingMatchesCompleted,
+      qualified: ownProgress.qualified,
+      qualifiedAt: ownProgress.qualifiedAt
+    },
+    referees: refereeProgress
+  };
+}
+
 function isQualifyingReferralMatch({ mode, difficulty, status, endReason, winner, trainingMode } = {}) {
   const safeMode = String(mode ?? "").trim().toLowerCase();
   const safeDifficulty = String(difficulty ?? "").trim().toLowerCase();
@@ -660,6 +695,23 @@ export class MultiplayerAccountStore {
     const pending = this.referralMutationQueue.then(operation, operation);
     this.referralMutationQueue = pending.catch(() => undefined);
     return pending;
+  }
+
+  async getReferralDashboard({ accountId, username, playerLevel = 1 } = {}) {
+    const safeAccountId = String(accountId ?? "").trim();
+    const safeUsername = normalizeUsername(username);
+    const state = await this.readState();
+    const account =
+      state.accounts.find(
+        (entry) =>
+          (safeAccountId && entry?.accountId === safeAccountId) ||
+          (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+      ) ?? null;
+    if (!account) {
+      throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+    }
+
+    return buildSafeReferralDashboard(account, state.accounts, playerLevel);
   }
 
   async activateReferralCode({ accountId, username, referralCode, playerLevel = 1 } = {}) {
