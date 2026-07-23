@@ -31450,6 +31450,149 @@ test("ui: authenticated own Profile identity renders referral controls while Soc
   assert.doesNotMatch(viewedHtml, /My Referral Code|ELM-LEAK-M222|ELM-AAAA-2222|referrerClaims/);
 });
 
+test("ui: referral activation entry gates verified, pending, linked, and viewed-profile states", () => {
+  const pendingReferral = {
+    code: "ELM-ZQKT-385D",
+    capturedAt: "2026-07-22T15:30:00.000Z",
+    source: "invite_link"
+  };
+  const verifiedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: true,
+        referralCode: "ELM-K7QX-M9PD",
+        referralLinked: false
+      },
+      referralEntry: {
+        status: "idle",
+        inputValue: pendingReferral.code,
+        pendingReferral
+      }
+    })
+  );
+  assert.match(verifiedHtml, /data-profile-social-action="referral-entry"/);
+  assert.match(verifiedHtml, /<summary>Have a referral code\?<\/summary>/);
+  assert.match(verifiedHtml, /Invite code detected: <code>ELM-ZQKT-385D<\/code>/);
+  assert.match(verifiedHtml, /id="profile-referral-code-input"[^>]*[\s\S]*value="ELM-ZQKT-385D"/);
+  assert.match(verifiedHtml, /id="profile-activate-referral-btn"/);
+  assert.match(verifiedHtml, /id="profile-clear-pending-referral-btn"/);
+
+  const unverifiedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: false,
+        referralCode: null,
+        referralLinked: false
+      },
+      referralEntry: { pendingReferral }
+    })
+  );
+  assert.match(unverifiedHtml, /Verify your email before activating a referral code\./);
+  assert.match(unverifiedHtml, /Invite code detected: <code>ELM-ZQKT-385D<\/code>/);
+  assert.doesNotMatch(unverifiedHtml, /profile-referral-activation-form|profile-activate-referral-btn/);
+
+  const linkedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: true,
+        referralCode: "ELM-K7QX-M9PD",
+        referralLinked: true
+      }
+    })
+  );
+  assert.match(linkedHtml, /data-referral-activation-linked="true"/);
+  assert.match(linkedHtml, /Referral linked\. Progress unlocks after Level 2 and 3 qualifying matches\./);
+  assert.doesNotMatch(linkedHtml, /profile-referral-activation-form|profile-activate-referral-btn/);
+
+  const guestHtml = profileScreen.render(createProfileScreenContext());
+  assert.match(guestHtml, /data-referral-activation-signed-out="true"/);
+  assert.doesNotMatch(guestHtml, /profile-referral-activation-form|profile-activate-referral-btn/);
+
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    ...createProfileScreenContext().profile,
+    referralLinked: true,
+    pendingReferral
+  });
+  assert.doesNotMatch(
+    viewedHtml,
+    /Have a referral code|profile-activate-referral|ELM-ZQKT-385D|referralLinked|pendingReferral/
+  );
+});
+
+test("ui: referral activation form and pending clear bind to owner actions", async () => {
+  const previousDocument = global.document;
+  const previousFormData = global.FormData;
+  let activationSubmit = null;
+  let clearClick = null;
+  const calls = [];
+  const submitButton = {
+    disabled: false,
+    setAttribute: () => {}
+  };
+  global.document = {
+    getElementById: (id) => {
+      if (id === "profile-back-btn") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "profile-search-form") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "profile-referral-activation-form") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "submit") {
+              activationSubmit = handler;
+            }
+          }
+        };
+      }
+      if (id === "profile-activate-referral-btn") {
+        return submitButton;
+      }
+      if (id === "profile-clear-pending-referral-btn") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              clearClick = handler;
+            }
+          }
+        };
+      }
+      return null;
+    },
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  global.FormData = class {
+    get(name) {
+      return name === "referralCode" ? "elm-zqkt-385d" : "";
+    }
+  };
+
+  try {
+    profileScreen.bind(
+      createProfileScreenContext({
+        actions: {
+          ...createProfileScreenContext().actions,
+          activateReferralCode: async (value) => calls.push(`activate:${value}`),
+          clearPendingReferralCode: () => calls.push("clear")
+        }
+      })
+    );
+    await activationSubmit?.({ preventDefault: () => {}, currentTarget: {} });
+    await clearClick?.();
+  } finally {
+    global.document = previousDocument;
+    global.FormData = previousFormData;
+  }
+
+  assert.equal(submitButton.disabled, true);
+  assert.deepEqual(calls, ["activate:elm-zqkt-385d", "clear"]);
+});
+
 test("ui: own profile renders compact completed Collection chips without inline album grid", () => {
   const profile = {
     ...createProfileScreenContext().profile,
@@ -31796,6 +31939,121 @@ test("ui: pending referral capture persists locally, clears, and does not activa
     assert.equal(controller.clearPendingReferralCode(), true);
     assert.equal(controller.getPendingReferralCode(), null);
     assert.equal(clearPendingReferralCode({ storage }), true);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: successful referral activation is single-flight and clears only matching pending code", async () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key)
+  };
+  let activationCalls = 0;
+  let resolveActivation;
+  const previousWindow = global.window;
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        activateReferralCode: async ({ referralCode }) => {
+          activationCalls += 1;
+          assert.equal(referralCode, "ELM-ZQKT-385D");
+          return new Promise((resolve) => {
+            resolveActivation = () => resolve({
+              referralLinked: true,
+              alreadyLinked: false,
+              emailVerified: true
+            });
+          });
+        }
+      }
+    }
+  };
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: { enqueueToast: () => {} },
+    pendingReferralStorage: storage,
+    pendingReferralNow: () => Date.parse("2026-07-22T15:30:00.000Z")
+  });
+  controller.username = "ReferralOwner";
+  controller.onlinePlayState = {
+    session: { authenticated: true, username: "ReferralOwner", emailVerified: true }
+  };
+  controller.referralCodeState = {
+    username: "referralowner",
+    authenticated: true,
+    status: "ready",
+    referralCode: "ELM-K7QX-M9PD",
+    emailVerified: true,
+    referralLinked: false
+  };
+  controller.capturePendingReferralCode("ELM-ZQKT-385D");
+
+  try {
+    const first = controller.activateOwnReferralCode("elm-zqkt-385d");
+    const second = controller.activateOwnReferralCode("ELM-ZQKT-385D");
+    await Promise.resolve();
+    assert.equal(activationCalls, 1);
+    assert.equal(controller.referralActivationState.inFlight, true);
+    resolveActivation();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.equal(firstResult.ok, true);
+    assert.deepEqual(secondResult, firstResult);
+    assert.equal(controller.getPendingReferralCode(), null);
+    assert.equal(controller.referralCodeState.referralLinked, true);
+    assert.equal(controller.referralActivationState.status, "linked");
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: failed referral activation preserves pending code and entered value", async () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key)
+  };
+  const previousWindow = global.window;
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        activateReferralCode: async () => {
+          throw new Error("Referral code was not found.");
+        }
+      }
+    }
+  };
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: { enqueueToast: () => {} },
+    pendingReferralStorage: storage,
+    pendingReferralNow: () => Date.parse("2026-07-22T15:30:00.000Z")
+  });
+  controller.username = "ReferralOwner";
+  controller.onlinePlayState = {
+    session: { authenticated: true, username: "ReferralOwner", emailVerified: true }
+  };
+  controller.referralCodeState = {
+    username: "referralowner",
+    authenticated: true,
+    status: "ready",
+    referralCode: "ELM-K7QX-M9PD",
+    emailVerified: true,
+    referralLinked: false
+  };
+  controller.capturePendingReferralCode("ELM-ZQKT-385D");
+
+  try {
+    const result = await controller.activateOwnReferralCode("ELM-ZQKT-385D");
+    assert.equal(result.ok, false);
+    assert.equal(controller.referralActivationState.status, "error");
+    assert.equal(controller.referralActivationState.inputValue, "ELM-ZQKT-385D");
+    assert.equal(controller.getPendingReferralCode()?.code, "ELM-ZQKT-385D");
   } finally {
     global.window = previousWindow;
   }

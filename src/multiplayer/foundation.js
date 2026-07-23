@@ -2282,10 +2282,43 @@ export function createMultiplayerFoundation({
         respond({
           ok: true,
           referralCode: result.referralCode,
-          emailVerified: Boolean(result.emailVerified)
+          emailVerified: Boolean(result.emailVerified),
+          referralLinked: Boolean(result.referralLinked)
         });
       } catch (error) {
         respond(buildAccountError(error, "REFERRAL_CODE_FAILED"));
+      }
+    });
+
+    socket.on("profile:activateReferralCode", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureSocketSession(socket, payload, { allowBootstrap: false });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+      if (!sessionResult.session?.authenticated || typeof accountStore?.activateReferralCode !== "function") {
+        respond(buildAccountError({
+          code: "AUTH_REQUIRED",
+          message: "An authenticated EleMintz account session is required."
+        }));
+        return;
+      }
+
+      try {
+        const result = await accountStore.activateReferralCode({
+          accountId: sessionResult.session.accountId,
+          username: sessionResult.session.username,
+          referralCode: payload?.referralCode
+        });
+        respond({
+          ok: true,
+          referralLinked: Boolean(result.referralLinked),
+          alreadyLinked: Boolean(result.alreadyLinked),
+          emailVerified: Boolean(result.emailVerified)
+        });
+      } catch (error) {
+        respond(buildAccountError(error, "REFERRAL_ACTIVATION_FAILED"));
       }
     });
 

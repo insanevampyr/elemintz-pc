@@ -64,7 +64,8 @@ import { getDailyResetWindow } from "../../state/dailyChallengesSystem.js";
 import {
   capturePendingReferralCode as persistPendingReferralCode,
   clearPendingReferralCode as removePendingReferralCode,
-  getPendingReferralCode as readPendingReferralCode
+  getPendingReferralCode as readPendingReferralCode,
+  normalizePendingReferralCode
 } from "./pendingReferralCode.js";
 
 const FALLBACK_SETTINGS = {
@@ -94,6 +95,17 @@ const TITLE_ICON_MAP = Object.freeze({
   "Last Card Legend": "badges/badge_comeback_win_25.png"
 });
 const ONLINE_RECONNECT_TIMEOUT_MS = 60000;
+const SAFE_REFERRAL_ACTIVATION_MESSAGES = new Set([
+  "Sign in before activating a referral code.",
+  "Verify your email before activating a referral code.",
+  "Enter a valid referral code.",
+  "Referral activation is unavailable.",
+  "Unable to link this referral code.",
+  "Referral code was not found.",
+  "You cannot use your own referral code.",
+  "A referral code is already linked to this account.",
+  "This account's referral state cannot be changed."
+]);
 
 function createStorePurchaseTransactionId() {
   const randomUuid = globalThis.crypto?.randomUUID?.();
@@ -295,9 +307,18 @@ export class AppController {
       authenticated: false,
       status: "idle",
       referralCode: null,
-      emailVerified: false
+      emailVerified: false,
+      referralLinked: false
     };
     this.referralCodeRequestPromise = null;
+    this.referralActivationState = {
+      username: null,
+      status: "idle",
+      inputValue: "",
+      message: "",
+      inFlight: false
+    };
+    this.referralActivationPromise = null;
     this.pendingReferralStorage = pendingReferralStorage;
     this.pendingReferralNow = pendingReferralNow;
     this.battleReportSelectedIndex = null;
@@ -4128,7 +4149,8 @@ export class AppController {
         authenticated: false,
         status: "idle",
         referralCode: null,
-        emailVerified: false
+        emailVerified: false,
+        referralLinked: false
       };
       return this.referralCodeState;
     }
@@ -4154,7 +4176,8 @@ export class AppController {
       authenticated: true,
       status: "loading",
       referralCode: null,
-      emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified)
+      emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified),
+      referralLinked: false
     };
     this.referralCodeRequestPromise = (async () => {
       try {
@@ -4171,7 +4194,8 @@ export class AppController {
           authenticated: true,
           status: "ready",
           referralCode,
-          emailVerified: Boolean(result?.emailVerified)
+          emailVerified: Boolean(result?.emailVerified),
+          referralLinked: Boolean(result?.referralLinked)
         };
       } catch {
         this.referralCodeState = {
@@ -4179,7 +4203,8 @@ export class AppController {
           authenticated: true,
           status: "error",
           referralCode: null,
-          emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified)
+          emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified),
+          referralLinked: false
         };
       } finally {
         this.referralCodeRequestPromise = null;
@@ -4203,6 +4228,77 @@ export class AppController {
 
   clearPendingReferralCode() {
     return removePendingReferralCode({ storage: this.pendingReferralStorage });
+  }
+
+  async activateOwnReferralCode(value) {
+    if (this.referralActivationPromise) {
+      return this.referralActivationPromise;
+    }
+
+    const usernameKey = String(this.username ?? "").trim().toLowerCase();
+    const referralCode = normalizePendingReferralCode(value);
+    this.referralActivationState = {
+      username: usernameKey || null,
+      status: "submitting",
+      inputValue: referralCode ?? String(value ?? "").trim().toUpperCase(),
+      message: "",
+      inFlight: true
+    };
+
+    this.referralActivationPromise = (async () => {
+      try {
+        if (!this.hasAuthenticatedMultiplayerSessionForUsername()) {
+          throw new Error("Sign in before activating a referral code.");
+        }
+        if (!this.referralCodeState.emailVerified) {
+          throw new Error("Verify your email before activating a referral code.");
+        }
+        if (!referralCode) {
+          throw new Error("Enter a valid referral code.");
+        }
+        if (typeof window.elemintz?.multiplayer?.activateReferralCode !== "function") {
+          throw new Error("Referral activation is unavailable.");
+        }
+
+        const result = await window.elemintz.multiplayer.activateReferralCode({ referralCode });
+        if (!result?.referralLinked) {
+          throw new Error("Unable to link this referral code.");
+        }
+
+        const pendingReferral = this.getPendingReferralCode();
+        if (pendingReferral?.code === referralCode) {
+          this.clearPendingReferralCode();
+        }
+        this.referralCodeState = {
+          ...this.referralCodeState,
+          referralLinked: true
+        };
+        this.referralActivationState = {
+          username: usernameKey,
+          status: "linked",
+          inputValue: "",
+          message: "Referral linked. Progress unlocks after Level 2 and 3 qualifying matches.",
+          inFlight: false
+        };
+        return { ok: true, ...result };
+      } catch (error) {
+        const rawMessage = String(error?.message ?? "").trim();
+        const message = SAFE_REFERRAL_ACTIVATION_MESSAGES.has(rawMessage)
+          ? rawMessage
+          : "Unable to activate referral code.";
+        this.referralActivationState = {
+          ...this.referralActivationState,
+          status: "error",
+          message: message || "Unable to activate referral code.",
+          inFlight: false
+        };
+        return { ok: false, message: this.referralActivationState.message };
+      } finally {
+        this.referralActivationPromise = null;
+      }
+    })();
+
+    return this.referralActivationPromise;
   }
 
   async copyReferralText(value, successLabel) {
@@ -10621,6 +10717,23 @@ export class AppController {
           ? await this.loadViewedProfile(this.viewedProfileUsername)
           : null;
     const referral = await this.loadOwnReferralCodeState();
+    const pendingReferral = this.getPendingReferralCode();
+    const referralUsernameKey = String(this.username ?? "").trim().toLowerCase();
+    if (this.referralActivationState.username !== referralUsernameKey) {
+      this.referralActivationState = {
+        username: referralUsernameKey || null,
+        status: "idle",
+        inputValue: pendingReferral?.code ?? "",
+        message: "",
+        inFlight: false
+      };
+    } else if (!this.referralActivationState.inputValue && pendingReferral?.code) {
+      this.referralActivationState.inputValue = pendingReferral.code;
+    }
+    const referralEntry = {
+      ...this.referralActivationState,
+      pendingReferral
+    };
 
     this.screenManager.show("profile", {
       profile: this.profile,
@@ -10636,6 +10749,7 @@ export class AppController {
         searchError: this.profileSearchError,
         searchResults,
         referral,
+        referralEntry,
         viewedProfile,
         profileAchievementsExpanded: this.profileAchievementsExpanded,
         viewedProfileAchievementsExpanded: this.viewedProfileAchievementsExpanded,
@@ -10756,6 +10870,35 @@ export class AppController {
         },
         copyReferralInviteLink: async (inviteLink) => {
           await this.copyReferralText(inviteLink, "Invite Link Copied");
+        },
+        activateReferralCode: async (referralCode) => {
+          await this.activateOwnReferralCode(referralCode);
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: this.profile,
+            cosmeticsOverride: cosmetics,
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: viewedProfile,
+            skipAuthoritativeProfileRefresh: true
+          });
+        },
+        clearPendingReferralCode: async () => {
+          this.clearPendingReferralCode();
+          this.referralActivationState = {
+            ...this.referralActivationState,
+            status: "idle",
+            inputValue: "",
+            message: "",
+            inFlight: false
+          };
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: this.profile,
+            cosmeticsOverride: cosmetics,
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: viewedProfile,
+            skipAuthoritativeProfileRefresh: true
+          });
         },
         back: () => this.showMenu()
       }

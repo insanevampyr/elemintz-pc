@@ -112,6 +112,17 @@ function normalizeReferral(value) {
   };
 }
 
+function hasLockedReferredReferralState(referral) {
+  const normalized = normalizeReferral(referral);
+  return Boolean(
+    normalized.qualification.qualifyingMatchCount > 0 ||
+    normalized.qualification.level2Reached ||
+    normalized.qualification.qualifiedAt ||
+    normalized.referredReward.claimedAt ||
+    normalized.referredReward.claimId
+  );
+}
+
 function normalizeEmailVerification(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -516,7 +527,8 @@ export class MultiplayerAccountStore {
       if (existingCode) {
         return {
           referralCode: existingCode,
-          emailVerified: Boolean(account.emailVerified)
+          emailVerified: Boolean(account.emailVerified),
+          referralLinked: Boolean(normalizeReferralCode(account.referral?.referredBy))
         };
       }
 
@@ -543,7 +555,83 @@ export class MultiplayerAccountStore {
       await this.writeState(state);
       return {
         referralCode,
-        emailVerified: Boolean(account.emailVerified)
+        emailVerified: Boolean(account.emailVerified),
+        referralLinked: Boolean(normalizeReferralCode(account.referral?.referredBy))
+      };
+    };
+
+    const pending = this.referralMutationQueue.then(operation, operation);
+    this.referralMutationQueue = pending.catch(() => undefined);
+    return pending;
+  }
+
+  async activateReferralCode({ accountId, username, referralCode } = {}) {
+    const operation = async () => {
+      const safeAccountId = String(accountId ?? "").trim();
+      const safeUsername = normalizeUsername(username);
+      const state = await this.readState();
+      const account =
+        state.accounts.find(
+          (entry) =>
+            (safeAccountId && entry?.accountId === safeAccountId) ||
+            (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+        ) ?? null;
+      if (!account) {
+        throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+      }
+      if (!account.emailVerified) {
+        throw buildAccountError(
+          "EMAIL_VERIFICATION_REQUIRED",
+          "Verify your email before activating a referral code."
+        );
+      }
+      const safeReferralCode = normalizeReferralCode(referralCode);
+      if (!safeReferralCode) {
+        throw buildAccountError("REFERRAL_CODE_INVALID", "Enter a valid referral code.");
+      }
+
+      const referral = normalizeReferral(account.referral);
+      if (referral.referredBy === safeReferralCode) {
+        return {
+          referralLinked: true,
+          alreadyLinked: true,
+          emailVerified: true
+        };
+      }
+      if (referral.referredBy) {
+        throw buildAccountError(
+          "REFERRAL_ALREADY_LINKED",
+          "A referral code is already linked to this account."
+        );
+      }
+      if (hasLockedReferredReferralState(referral)) {
+        throw buildAccountError(
+          "REFERRAL_STATE_LOCKED",
+          "This account's referral state cannot be changed."
+        );
+      }
+
+      const referrerAccount =
+        state.accounts.find(
+          (entry) => normalizeReferralCode(entry?.referral?.code) === safeReferralCode
+        ) ?? null;
+      if (!referrerAccount) {
+        throw buildAccountError("REFERRAL_CODE_UNKNOWN", "Referral code was not found.");
+      }
+      if (referrerAccount.accountId === account.accountId) {
+        throw buildAccountError("REFERRAL_SELF_LINK", "You cannot use your own referral code.");
+      }
+
+      account.referral = {
+        ...referral,
+        referredBy: safeReferralCode
+      };
+      account.updatedAt = new Date(this.now()).toISOString();
+      await this.writeState(state);
+      return {
+        referralLinked: true,
+        alreadyLinked: false,
+        emailVerified: true
       };
     };
 

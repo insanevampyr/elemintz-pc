@@ -7791,6 +7791,15 @@ test("multiplayer foundation: referral code route requires authentication and ex
     });
     assert.equal(rejected?.ok, false);
     assert.equal(rejected?.error?.code, "AUTH_REQUIRED");
+    const activationRejected = await new Promise((resolve) => {
+      unauthenticatedClient.emit(
+        "profile:activateReferralCode",
+        { referralCode: "ELM-RUTE-E222" },
+        resolve
+      );
+    });
+    assert.equal(activationRejected?.ok, false);
+    assert.equal(activationRejected?.error?.code, "AUTH_REQUIRED");
 
     authenticatedClient = await connectClient(port);
     const registered = await new Promise((resolve) => {
@@ -7816,7 +7825,8 @@ test("multiplayer foundation: referral code route requires authentication and ex
     assert.deepEqual(created, {
       ok: true,
       referralCode: "ELM-RUTE-E222",
-      emailVerified: false
+      emailVerified: false,
+      referralLinked: false
     });
     assert.deepEqual(repeated, created);
     assert.equal("referral" in created, false);
@@ -7825,6 +7835,162 @@ test("multiplayer foundation: referral code route requires authentication and ex
   } finally {
     authenticatedClient?.disconnect();
     unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: verified referral activation links once without qualification or rewards", async () => {
+  const dataDir = await createTempDataDir();
+  const generatedCodes = ["ELM-RFRR-A222", "ELM-MTHR-B333", "ELM-USER-C444"];
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    referralCodeGenerator: () => generatedCodes.shift()
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: {
+      assertProfileClaimAvailable: async () => null,
+      linkProfileToAccount: async ({ username, accountId }) => ({
+        username,
+        profile: { username, linkedAccountId: accountId }
+      }),
+      getProfile: async (username) => ({
+        username,
+        profile: { username, equippedCosmetics: {} },
+        progression: {
+          xp: { playerXP: 0, playerLevel: 1 },
+          dailyChallenges: { challenges: [] },
+          weeklyChallenges: { challenges: [] },
+          dailyLogin: { eligible: false }
+        }
+      })
+    }
+  });
+  let referrerClient = null;
+  let referredClient = null;
+  let otherClient = null;
+
+  const register = (client, payload) =>
+    new Promise((resolve) => client.emit("auth:register", payload, resolve));
+  const verify = (client, token) =>
+    new Promise((resolve) => client.emit("auth:verifyEmail", { token }, resolve));
+  const createCode = (client) =>
+    new Promise((resolve) => client.emit("profile:getOrCreateReferralCode", {}, resolve));
+  const activate = (client, referralCode) =>
+    new Promise((resolve) =>
+      client.emit("profile:activateReferralCode", { referralCode }, resolve)
+    );
+
+  try {
+    const port = await foundation.start();
+    referrerClient = await connectClient(port);
+    referredClient = await connectClient(port);
+    otherClient = await connectClient(port);
+
+    const referrer = await register(referrerClient, {
+      email: "activation-referrer@example.com",
+      password: "password123",
+      username: "ActivationReferrer"
+    });
+    const referred = await register(referredClient, {
+      email: "activation-referred@example.com",
+      password: "password123",
+      username: "ActivationReferred"
+    });
+    const other = await register(otherClient, {
+      email: "activation-other@example.com",
+      password: "password123",
+      username: "ActivationOther"
+    });
+    assert.equal(referrer?.ok, true);
+    assert.equal(referred?.ok, true);
+    assert.equal(other?.ok, true);
+
+    const referrerCode = await createCode(referrerClient);
+    const otherCode = await createCode(otherClient);
+    assert.equal(referrerCode?.referralCode, "ELM-RFRR-A222");
+    assert.equal(otherCode?.referralCode, "ELM-MTHR-B333");
+
+    const unverified = await activate(referredClient, referrerCode.referralCode);
+    assert.equal(unverified?.ok, false);
+    assert.equal(unverified?.error?.code, "EMAIL_VERIFICATION_REQUIRED");
+
+    assert.equal(
+      (await verify(referrerClient, referrer.emailVerification.devVerificationToken))?.ok,
+      true
+    );
+    assert.equal(
+      (await verify(referredClient, referred.emailVerification.devVerificationToken))?.ok,
+      true
+    );
+
+    const malformed = await activate(referredClient, "not-a-code");
+    assert.equal(malformed?.ok, false);
+    assert.equal(malformed?.error?.code, "REFERRAL_CODE_INVALID");
+
+    const unknown = await activate(referredClient, "ELM-ZZZZ-9999");
+    assert.equal(unknown?.ok, false);
+    assert.equal(unknown?.error?.code, "REFERRAL_CODE_UNKNOWN");
+
+    const selfReferral = await activate(referrerClient, referrerCode.referralCode);
+    assert.equal(selfReferral?.ok, false);
+    assert.equal(selfReferral?.error?.code, "REFERRAL_SELF_LINK");
+
+    const linked = await activate(referredClient, referrerCode.referralCode.toLowerCase());
+    assert.deepEqual(linked, {
+      ok: true,
+      referralLinked: true,
+      alreadyLinked: false,
+      emailVerified: true
+    });
+    const linkedAgain = await activate(referredClient, referrerCode.referralCode);
+    assert.deepEqual(linkedAgain, {
+      ok: true,
+      referralLinked: true,
+      alreadyLinked: true,
+      emailVerified: true
+    });
+    const differentCode = await activate(referredClient, otherCode.referralCode);
+    assert.equal(differentCode?.ok, false);
+    assert.equal(differentCode?.error?.code, "REFERRAL_ALREADY_LINKED");
+
+    const ownStatus = await createCode(referredClient);
+    assert.equal(ownStatus?.referralLinked, true);
+    assert.equal("referredBy" in ownStatus, false);
+    assert.equal("qualification" in linked, false);
+    assert.equal("referredReward" in linked, false);
+    assert.equal("referrerClaims" in linked, false);
+
+    const stored = JSON.parse(
+      await fs.readFile(path.join(dataDir, "accounts.json"), "utf8")
+    );
+    const storedReferred = stored.accounts.find(
+      (account) => account.accountId === referred.account.accountId
+    );
+    const storedReferrer = stored.accounts.find(
+      (account) => account.accountId === referrer.account.accountId
+    );
+    assert.equal(storedReferred.referral.referredBy, referrerCode.referralCode);
+    assert.deepEqual(storedReferred.referral.qualification, {
+      qualifyingMatchCount: 0,
+      level2Reached: false,
+      qualifiedAt: null
+    });
+    assert.deepEqual(storedReferred.referral.referredReward, {
+      claimedAt: null,
+      claimId: null
+    });
+    assert.deepEqual(storedReferrer.referral.referrerClaims, {});
+    assert.equal("tokens" in storedReferred, false);
+    assert.equal("tokens" in storedReferrer, false);
+  } finally {
+    referrerClient?.disconnect();
+    referredClient?.disconnect();
+    otherClient?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }

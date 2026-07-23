@@ -1889,8 +1889,51 @@ function renderProfileReferralAction(referral = {}) {
 function renderProfileSocialToolsCard({
   searchQuery = "",
   searchResults = [],
-  searchError = ""
+  searchError = "",
+  referral = {},
+  referralEntry = {}
 } = {}) {
+  const pendingCode = normalizeReferralCodeForDisplay(referralEntry?.pendingReferral?.code);
+  const inputValue = String(referralEntry?.inputValue ?? "").trim().toUpperCase().slice(0, 13);
+  const linked = Boolean(referral?.referralLinked || referralEntry?.status === "linked");
+  const statusMessage = String(referralEntry?.message ?? "").trim();
+  const detailsOpen = Boolean(
+    pendingCode || statusMessage || referralEntry?.inFlight || linked || !referral?.emailVerified
+  );
+  let referralEntryBody = "";
+  if (!referral?.authenticated) {
+    referralEntryBody = '<p class="text-muted" data-referral-activation-signed-out="true">Sign in to activate a referral code.</p>';
+  } else if (linked) {
+    referralEntryBody = '<p class="text-muted" data-referral-activation-linked="true">Referral linked. Progress unlocks after Level 2 and 3 qualifying matches.</p>';
+  } else if (!referral.emailVerified) {
+    referralEntryBody = `
+      <p class="text-muted" data-referral-activation-locked="true">Verify your email before activating a referral code.</p>
+      ${pendingCode ? `<p class="text-muted" data-pending-referral-code="true">Invite code detected: <code>${escapeProfileText(pendingCode)}</code></p>` : ""}
+      ${pendingCode ? '<button id="profile-clear-pending-referral-btn" class="btn btn-secondary" type="button">Clear Invite Code</button>' : ""}
+    `;
+  } else {
+    referralEntryBody = `
+      <p class="text-muted">Enter the referral code from the player who invited you. Linking does not grant rewards yet.</p>
+      ${pendingCode ? `<p class="text-muted" data-pending-referral-code="true">Invite code detected: <code>${escapeProfileText(pendingCode)}</code></p>` : ""}
+      <form id="profile-referral-activation-form" class="stack-sm">
+        <label for="profile-referral-code-input">Referral Code</label>
+        <input
+          id="profile-referral-code-input"
+          name="referralCode"
+          type="text"
+          maxlength="13"
+          autocomplete="off"
+          value="${escapeProfileText(inputValue || pendingCode || "")}"
+          placeholder="ELM-XXXX-XXXX"
+          ${referralEntry?.inFlight ? "disabled" : ""}
+        />
+        <button id="profile-activate-referral-btn" class="btn btn-secondary" type="submit" ${referralEntry?.inFlight ? "disabled aria-busy=\"true\"" : ""}>${referralEntry?.inFlight ? "Activating..." : "Activate Referral Code"}</button>
+      </form>
+      ${pendingCode ? '<button id="profile-clear-pending-referral-btn" class="btn btn-secondary" type="button">Clear Invite Code</button>' : ""}
+      ${statusMessage ? `<p class="text-muted" data-referral-activation-status="${referralEntry?.status === "error" ? "error" : "ready"}">${escapeProfileText(statusMessage)}</p>` : ""}
+    `;
+  }
+
   return `
     <section class="profile-summary-card stack-sm profile-social-card profile-dashboard-card" data-profile-social-card="true">
       <h3 class="section-title">Social</h3>
@@ -1925,6 +1968,14 @@ function renderProfileSocialToolsCard({
             type="button"
             data-profile-recent-opponents-btn="true"
           >Recent Opponents</button>
+        </div>
+        <div class="profile-social-action profile-referral-entry" data-profile-social-action="referral-entry">
+          <details data-profile-referral-entry="true" ${detailsOpen ? "open" : ""}>
+            <summary>Have a referral code?</summary>
+            <div class="profile-referral-entry-body">
+              ${referralEntryBody}
+            </div>
+          </details>
         </div>
       </div>
     </section>
@@ -2119,7 +2170,9 @@ export const profileScreen = {
             ${renderProfileSocialToolsCard({
               searchQuery: context.searchQuery ?? "",
               searchError: context.searchError ?? "",
-              searchResults
+              searchResults,
+              referral: context.referral ?? {},
+              referralEntry: context.referralEntry ?? {}
             })}
             ${renderActivityToolsCard()}
           </div>
@@ -2258,6 +2311,28 @@ export const profileScreen = {
           );
         }
       });
+    }
+    const referralActivationForm = document.getElementById("profile-referral-activation-form");
+    if (referralActivationForm && context.actions.activateReferralCode) {
+      referralActivationForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitButton = document.getElementById("profile-activate-referral-btn");
+        if (submitButton?.disabled) {
+          return;
+        }
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.setAttribute?.("aria-busy", "true");
+        }
+        const formData = new FormData(event.currentTarget);
+        await context.actions.activateReferralCode(
+          String(formData.get("referralCode") ?? "").trim()
+        );
+      });
+    }
+    const clearPendingReferralButton = document.getElementById("profile-clear-pending-referral-btn");
+    if (clearPendingReferralButton && context.actions.clearPendingReferralCode) {
+      clearPendingReferralButton.addEventListener("click", context.actions.clearPendingReferralCode);
     }
     const openBasicChestButton = document.getElementById("open-basic-chest-btn");
     if (openBasicChestButton && context.actions.openBasicChest) {

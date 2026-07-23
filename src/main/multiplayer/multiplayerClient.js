@@ -2108,6 +2108,24 @@ export class MultiplayerClient {
 
     return {
       referralCode: String(response.referralCode ?? "").trim(),
+      emailVerified: Boolean(response.emailVerified),
+      referralLinked: Boolean(response.referralLinked)
+    };
+  }
+
+  async activateReferralCode({ referralCode, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:activateReferralCode",
+      { referralCode },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to activate referral code.");
+    }
+
+    return {
+      referralLinked: Boolean(response.referralLinked),
+      alreadyLinked: Boolean(response.alreadyLinked),
       emailVerified: Boolean(response.emailVerified)
     };
   }

@@ -2087,6 +2087,28 @@ code.online-active-meta-value {
   overflow-wrap: anywhere;
 }
 
+.profile-referral-entry details,
+.profile-referral-entry-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-referral-entry summary {
+  color: #f3fbff;
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.profile-referral-entry-body {
+  padding-top: 8px;
+}
+
+.profile-referral-entry-body code {
+  overflow-wrap: anywhere;
+}
+
 .collection-albums-modal-body {
   max-height: min(calc(100vh - 190px), 640px);
   overflow-y: auto;
