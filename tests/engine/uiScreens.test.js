@@ -5576,6 +5576,161 @@ test("ui: appController starts Blood Match with BloodMatchController instead of 
   }
 });
 
+test("ui: authenticated Blood Match waits for server session and settles without local fallback", async () => {
+  const previousWindow = global.window;
+  let resolveStart;
+  const startCalls = [];
+  const serverSettlementCalls = [];
+  const localSettlementCalls = [];
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => null,
+        startBloodMatch: (payload) => {
+          startCalls.push(payload);
+          return new Promise((resolve) => {
+            resolveStart = resolve;
+          });
+        },
+        applyBloodMatchResult: async (payload) => {
+          serverSettlementCalls.push(payload);
+          return {
+            matchXpDelta: 10,
+            matchTokenDelta: 10,
+            chestGrants: [],
+            unlockedAchievements: [],
+            bloodMatchSession: {
+              sessionId: "local-blood-authority-1",
+              mode: "blood_match",
+              status: "completed"
+            }
+          };
+        }
+      },
+      state: {
+        recordBloodMatchResult: async (payload) => {
+          localSettlementCalls.push(payload);
+          throw new Error("Authenticated Blood Match must not use local settlement.");
+        }
+      }
+    }
+  };
+
+  try {
+    const controller = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: { show: () => {} }
+    });
+    controller.requireOwnProfileHydratedForAction = () => true;
+    controller.username = "VampyrLee";
+    controller.profile = { username: "VampyrLee" };
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: { authenticated: true, username: "VampyrLee" }
+    };
+
+    const startPromise = controller.startBloodMatch();
+    assert.equal(controller.bloodMatchController, null);
+    assert.deepEqual(startCalls, [{ username: "VampyrLee" }]);
+
+    resolveStart({
+      sessionId: "local-blood-authority-1",
+      mode: "blood_match",
+      status: "active"
+    });
+    assert.equal(await startPromise, true);
+    assert.equal(typeof controller.bloodMatchController?.playPlayerCard, "function");
+
+    const summary = {
+      mode: "bloodMatch",
+      status: "completed",
+      round: 3,
+      winnerId: "player",
+      endReason: "all_ai_required_play_unavailable",
+      terminalResult: {
+        terminal: true,
+        result: "player_win",
+        winnerId: "player",
+        endReason: "all_ai_required_play_unavailable"
+      },
+      combatants: {
+        player: { handCount: 5, capturedCount: 8, eliminated: false },
+        vampire: { handCount: 0, capturedCount: 0, eliminated: true },
+        lycan: { handCount: 0, capturedCount: 0, eliminated: true }
+      },
+      history: []
+    };
+    const result = await controller.persistBloodMatchResult(null, {
+      settlementSummary: summary
+    });
+
+    assert.equal(result.matchXpDelta, 10);
+    assert.equal(serverSettlementCalls.length, 1);
+    assert.deepEqual(serverSettlementCalls[0], {
+      username: "VampyrLee",
+      localMatchSessionId: "local-blood-authority-1",
+      summary
+    });
+    assert.equal(localSettlementCalls.length, 0);
+    controller.bloodMatchController?.stopTimers?.();
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: authenticated Blood Match settlement failure does not fall back to local IPC", async () => {
+  const previousWindow = global.window;
+  const localCalls = [];
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getProfile: async () => null,
+        applyBloodMatchResult: async () => {
+          throw new Error("Server settlement unavailable.");
+        }
+      },
+      state: {
+        recordBloodMatchResult: async (payload) => {
+          localCalls.push(payload);
+          return {};
+        }
+      }
+    }
+  };
+
+  try {
+    const controller = new AppController({
+      screenManager: { register: () => {}, show: () => {} },
+      modalManager: { show: () => {}, hide: () => {} },
+      toastManager: { show: () => {} }
+    });
+    controller.username = "VampyrLee";
+    controller.onlinePlayState = {
+      connectionStatus: "connected",
+      session: { authenticated: true, username: "VampyrLee" }
+    };
+    controller.currentBloodMatchLocalSession = {
+      sessionId: "local-blood-authority-failure",
+      mode: "blood_match",
+      status: "active"
+    };
+    const result = await controller.persistBloodMatchResult(null, {
+      settlementSummary: {
+        mode: "bloodMatch",
+        status: "completed"
+      }
+    });
+
+    assert.equal(result, null);
+    assert.equal(localCalls.length, 0);
+    assert.equal(controller.bloodMatchSettlementResult.status, "error");
+    assert.match(controller.bloodMatchSettlementResult.message, /Server settlement unavailable/);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: appController persists completed Blood Match through the local state bridge once", async () => {
   const previousWindow = global.window;
   const calls = [];

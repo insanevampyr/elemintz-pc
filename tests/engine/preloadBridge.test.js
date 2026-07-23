@@ -99,6 +99,8 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.multiplayer.getOnlineCount, "function");
   assert.equal(typeof bridge.multiplayer.acknowledgeMilestoneChestReward, "function");
   assert.equal(typeof bridge.multiplayer.submitFeedback, "function");
+  assert.equal(typeof bridge.multiplayer.startBloodMatch, "function");
+  assert.equal(typeof bridge.multiplayer.applyBloodMatchResult, "function");
 
   await bridge.state.getSettings();
   await bridge.updates.getState();
@@ -118,6 +120,12 @@ test("preload bridge remains available when version falls back", async () => {
     transactionId: "bridge-pack-transaction-1"
   });
   await bridge.multiplayer.submitFeedback({ category: "Bug / Error", message: "Hello" });
+  await bridge.multiplayer.startBloodMatch({ username: "BloodBridgeUser" });
+  await bridge.multiplayer.applyBloodMatchResult({
+    username: "BloodBridgeUser",
+    localMatchSessionId: "local-blood-bridge",
+    summary: { mode: "bloodMatch", status: "completed" }
+  });
 
   assert.deepEqual(ipcRenderer.invocations.slice(0, 14), [
     { channel: "state:getSettings", payload: undefined },
@@ -144,6 +152,20 @@ test("preload bridge remains available when version falls back", async () => {
       }
     },
     { channel: "multiplayer:submitFeedback", payload: { category: "Bug / Error", message: "Hello" } }
+  ]);
+  assert.deepEqual(ipcRenderer.invocations.slice(14), [
+    {
+      channel: "multiplayer:startBloodMatch",
+      payload: { username: "BloodBridgeUser" }
+    },
+    {
+      channel: "multiplayer:applyBloodMatchResult",
+      payload: {
+        username: "BloodBridgeUser",
+        localMatchSessionId: "local-blood-bridge",
+        summary: { mode: "bloodMatch", status: "completed" }
+      }
+    }
   ]);
 });
 

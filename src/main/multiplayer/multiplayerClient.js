@@ -2602,6 +2602,19 @@ export class MultiplayerClient {
     return response.result?.session ?? null;
   }
 
+  async startBloodMatch({ username, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:startBloodMatch",
+      { username },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to start a protected Blood Match session.");
+    }
+
+    return response.result?.session ?? null;
+  }
+
   async startFeaturedRivalMatch({ username, aiDifficulty, featuredRivalId, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:startFeaturedRivalMatch",
@@ -2717,6 +2730,40 @@ export class MultiplayerClient {
       ...(result.matchResult ?? {}),
       duplicate: Boolean(result.duplicate),
       snapshot: result.snapshot ?? null
+    };
+  }
+
+  async applyBloodMatchResult({
+    username,
+    localMatchSessionId,
+    summary,
+    serverUrl
+  } = {}) {
+    const response = await this.runServerRequest(
+      "profile:applyBloodMatchResult",
+      {
+        username,
+        localMatchSessionId,
+        summary
+      },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(
+        response?.error?.message ?? "Unable to apply authoritative Blood Match result."
+      );
+    }
+
+    const result = response.result ?? null;
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ...(result.matchResult ?? {}),
+      duplicate: Boolean(result.duplicate),
+      snapshot: result.snapshot ?? null,
+      bloodMatchSession: result.bloodMatchSession ?? null
     };
   }
 

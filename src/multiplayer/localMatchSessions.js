@@ -14,6 +14,9 @@ function toPublicSession(session) {
     return null;
   }
 
+  const metadata = cloneMetadata(session.metadata);
+  delete metadata.summaryFingerprint;
+
   return {
     sessionId: session.sessionId,
     username: session.username,
@@ -24,7 +27,7 @@ function toPublicSession(session) {
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     status: session.status,
-    metadata: cloneMetadata(session.metadata)
+    metadata
   };
 }
 
@@ -42,6 +45,7 @@ export function createLocalMatchSessionStore({ now = () => new Date() } = {}) {
     aiDifficulty = null,
     featuredRivalId = null,
     gauntletRivalId = null,
+    settlementIdPrefix = null,
     metadata = {}
   } = {}) {
     const safeUsername = normalizeSessionString(username);
@@ -54,13 +58,16 @@ export function createLocalMatchSessionStore({ now = () => new Date() } = {}) {
     }
 
     const timestamp = buildTimestamp();
+    const sessionId = `local-${randomUUID()}`;
+    const safeSettlementIdPrefix = normalizeSessionString(settlementIdPrefix);
     const session = {
-      sessionId: `local-${randomUUID()}`,
+      sessionId,
       username: safeUsername,
       mode: safeMode,
       aiDifficulty: normalizeSessionString(aiDifficulty),
       featuredRivalId: normalizeSessionString(featuredRivalId),
       gauntletRivalId: normalizeSessionString(gauntletRivalId),
+      settlementId: safeSettlementIdPrefix ? `${safeSettlementIdPrefix}:${sessionId}` : null,
       createdAt: timestamp,
       updatedAt: timestamp,
       status: "active",

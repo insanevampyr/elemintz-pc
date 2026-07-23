@@ -109,6 +109,7 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
       claimDailyLoginReward: (payload) => ipcRendererRef.invoke("multiplayer:claimDailyLoginReward", payload),
       getDailyElementChestStatus: (payload) =>
         ipcRendererRef.invoke("multiplayer:getDailyElementChestStatus", payload),
+      startBloodMatch: (payload) => ipcRendererRef.invoke("multiplayer:startBloodMatch", payload),
       startLocalPveMatch: (payload) => ipcRendererRef.invoke("multiplayer:startLocalPveMatch", payload),
       startFeaturedRivalMatch: (payload) =>
         ipcRendererRef.invoke("multiplayer:startFeaturedRivalMatch", payload),
@@ -119,6 +120,8 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
       abandonLocalMatchSession: (payload) =>
         ipcRendererRef.invoke("multiplayer:abandonLocalMatchSession", payload),
       applyLocalMatchResult: (payload) => ipcRendererRef.invoke("multiplayer:applyLocalMatchResult", payload),
+      applyBloodMatchResult: (payload) =>
+        ipcRendererRef.invoke("multiplayer:applyBloodMatchResult", payload),
       applyLocalHotseatResult: (payload) => ipcRendererRef.invoke("multiplayer:applyLocalHotseatResult", payload),
       recordGauntletStats: (payload) => ipcRendererRef.invoke("multiplayer:recordGauntletStats", payload),
       buyStoreItem: (payload) => ipcRendererRef.invoke("multiplayer:buyStoreItem", payload),

@@ -313,6 +313,46 @@ function createCompletedLocalMatchState({
   };
 }
 
+function createCompletedBloodMatchSummary({
+  result = "player_win",
+  winnerId = "player",
+  endReason = "all_ai_required_play_unavailable",
+  round = 7,
+  playerEliminated = false,
+  vampireEliminated = true,
+  lycanEliminated = true
+} = {}) {
+  return {
+    mode: "bloodMatch",
+    status: "completed",
+    round,
+    winnerId,
+    endReason,
+    terminalResult: {
+      terminal: true,
+      winnerId,
+      loserId: result === "player_loss" ? "player" : null,
+      result,
+      endReason,
+      reason: endReason
+    },
+    combatants: {
+      player: { handCount: result === "player_win" ? 6 : 0, capturedCount: 9, eliminated: playerEliminated },
+      vampire: { handCount: vampireEliminated ? 0 : 4, capturedCount: 2, eliminated: vampireEliminated },
+      lycan: { handCount: lycanEliminated ? 0 : 4, capturedCount: 1, eliminated: lycanEliminated }
+    },
+    history: [
+      {
+        type: "three_way_war",
+        classificationId: "three_way_war",
+        winnerId: "player",
+        activeCombatantIds: ["player", "vampire", "lycan"],
+        excludedCombatantIds: []
+      }
+    ]
+  };
+}
+
 async function createFullRoom(host, guest) {
   const createdPromise = waitForEvent(host, "room:created");
   host.emit("room:create");
@@ -6065,7 +6105,266 @@ test("multiplayer foundation: authenticated claimed-profile sessions keep legiti
   }
 });
 
-test("multiplayer foundation: authenticated claimed user can start local PvE, Featured Rival, and Gauntlet sessions", async () => {
+test("multiplayer foundation: authenticated Blood Match uses a server-owned session and settles once without referral progress", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    referralCodeGenerator: (() => {
+      const codes = ["ELM-BLDA-A111", "ELM-BLDB-B222"];
+      return () => codes.shift();
+    })()
+  });
+  const coordinator = new StateCoordinator({ dataDir, random: () => 0.99 });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    profileAuthority,
+    accountStore
+  });
+  let client = null;
+  let unauthenticated = null;
+
+  try {
+    const referrer = await accountStore.register({
+      username: "BloodAuthorityReferrer",
+      email: "blood-authority-referrer@example.com",
+      password: "PlayerPass123"
+    });
+    const referred = await accountStore.register({
+      username: "BloodAuthorityPlayer",
+      email: "blood-authority-player@example.com",
+      password: "PlayerPass123"
+    });
+    await accountStore.verifyEmail({
+      accountId: referrer.accountId,
+      token: referrer.devVerificationToken
+    });
+    await accountStore.verifyEmail({
+      accountId: referred.accountId,
+      token: referred.devVerificationToken
+    });
+    const referrerCode = await accountStore.getOrCreateReferralCode({
+      accountId: referrer.accountId
+    });
+    await accountStore.activateReferralCode({
+      accountId: referred.accountId,
+      referralCode: referrerCode.referralCode,
+      playerLevel: 1
+    });
+    await coordinator.profiles.ensureProfile("BloodAuthorityPlayer");
+
+    const port = await foundation.start();
+    client = await connectClient(port);
+    unauthenticated = await connectClient(port);
+    const login = await loginAccount(client, {
+      email: "blood-authority-player@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(login?.ok, true);
+
+    const sessionStart = await emitWithAck(client, "profile:startBloodMatch");
+    assert.equal(sessionStart?.ok, true);
+    assert.equal(sessionStart?.result?.session?.mode, "blood_match");
+    assert.equal(sessionStart?.result?.session?.status, "active");
+    assert.equal("settlementId" in sessionStart.result.session, false);
+    const sessionId = sessionStart.result.session.sessionId;
+    const summary = createCompletedBloodMatchSummary();
+
+    const unauthenticatedApply = await emitWithAck(
+      unauthenticated,
+      "profile:applyBloodMatchResult",
+      { localMatchSessionId: sessionId, summary }
+    );
+    assert.equal(unauthenticatedApply?.ok, false);
+    assert.equal(unauthenticatedApply?.error?.code, "SESSION_REQUIRED");
+    assert.equal(
+      (await loginAccount(unauthenticated, {
+        email: "blood-authority-referrer@example.com",
+        password: "PlayerPass123"
+      }))?.ok,
+      true
+    );
+    const foreignApply = await emitWithAck(
+      unauthenticated,
+      "profile:applyBloodMatchResult",
+      { localMatchSessionId: sessionId, summary }
+    );
+    assert.equal(foreignApply?.ok, false);
+    assert.equal(foreignApply?.error?.code, "LOCAL_MATCH_SESSION_ACCESS_DENIED");
+
+    const missingSession = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      summary
+    });
+    assert.equal(missingSession?.ok, false);
+    assert.equal(missingSession?.error?.code, "LOCAL_MATCH_SESSION_REQUIRED");
+
+    const clientSettlementKey = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: sessionId,
+      settlementKey: "blood-match:client-forged",
+      summary
+    });
+    assert.equal(clientSettlementKey?.ok, false);
+    assert.equal(
+      clientSettlementKey?.error?.code,
+      "BLOOD_MATCH_CLIENT_SETTLEMENT_KEY_REJECTED"
+    );
+
+    const incomplete = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: sessionId,
+      summary: { ...summary, status: "active" }
+    });
+    assert.equal(incomplete?.ok, false);
+    assert.equal(incomplete?.error?.code, "BLOOD_MATCH_INCOMPLETE");
+    const malformed = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: sessionId,
+      summary: {
+        ...summary,
+        combatants: {
+          ...summary.combatants,
+          player: { ...summary.combatants.player, handCount: "6" }
+        }
+      }
+    });
+    assert.equal(malformed?.ok, false);
+    assert.equal(malformed?.error?.code, "BLOOD_MATCH_INVALID_SUMMARY");
+
+    const first = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: sessionId,
+      summary
+    });
+    const duplicate = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: sessionId,
+      summary
+    });
+    const mismatchedReplay = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: sessionId,
+      summary: { ...summary, round: summary.round + 1 }
+    });
+    const sessionState = await emitWithAck(client, "profile:getLocalMatchSessionState", {
+      sessionId
+    });
+    const profile = await coordinator.profiles.getProfile("BloodAuthorityPlayer");
+    const saves = await coordinator.saves.listMatchResults();
+    const accountsState = JSON.parse(
+      await fs.readFile(path.join(dataDir, "accounts.json"), "utf8")
+    );
+    const storedAccount = accountsState.accounts.find(
+      (account) => account.accountId === referred.accountId
+    );
+
+    assert.equal(first?.ok, true);
+    assert.equal(first?.result?.duplicate, false);
+    assert.equal(first?.result?.matchResult?.matchXpDelta, 10);
+    assert.equal(first?.result?.matchResult?.matchTokenDelta, 10);
+    assert.equal(duplicate?.ok, true);
+    assert.equal(duplicate?.result?.duplicate, true);
+    assert.equal(mismatchedReplay?.ok, false);
+    assert.equal(mismatchedReplay?.error?.code, "BLOOD_MATCH_SETTLEMENT_MISMATCH");
+    assert.equal(sessionState?.result?.session?.status, "completed");
+    assert.equal(profile.bloodMatchMatchesPlayed, 1);
+    assert.equal(profile.bloodMatchWins, 1);
+    assert.equal(profile.playerXP, 10);
+    assert.equal(profile.tokens, DEFAULT_STARTING_TOKENS + 10);
+    assert.equal(profile.recentBattles.length, 1);
+    assert.equal(profile.latestBattle.mode, "bloodMatch");
+    assert.equal(saves.length, 1);
+    assert.equal(saves[0].settlementKey, `blood-match:${sessionId}`);
+    assert.equal(storedAccount.referral.qualification.qualifyingMatchCount, 0);
+    assert.deepEqual(storedAccount.referral.qualification.countedMatchIds, []);
+  } finally {
+    client?.disconnect();
+    unauthenticated?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: Blood Match authority rejects wrong sessions and settles quit-forfeit as a distinct loss", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir, random: () => 0.99 });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    profileAuthority: new MultiplayerProfileAuthority({
+      coordinator,
+      logger: { info: () => {}, error: () => {} }
+    }),
+    accountStore: new MultiplayerAccountStore({
+      dataDir,
+      logger: { info: () => {} }
+    })
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+    assert.equal(
+      (await registerAccount(client, {
+        username: "BloodForfeitAuthority",
+        email: "blood-forfeit-authority@example.com",
+        password: "PlayerPass123"
+      }))?.ok,
+      true
+    );
+
+    const pveSession = await emitWithAck(client, "profile:startLocalPveMatch", {
+      aiDifficulty: "normal"
+    });
+    const wrongMode = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: pveSession.result.session.sessionId,
+      summary: createCompletedBloodMatchSummary()
+    });
+    assert.equal(wrongMode?.ok, false);
+    assert.equal(wrongMode?.error?.code, "LOCAL_MATCH_SESSION_MODE_MISMATCH");
+
+    const bloodSession = await emitWithAck(client, "profile:startBloodMatch");
+    const summary = createCompletedBloodMatchSummary({
+      result: "player_loss",
+      winnerId: null,
+      endReason: "quit_forfeit",
+      round: 2,
+      playerEliminated: false,
+      vampireEliminated: false,
+      lycanEliminated: false
+    });
+    const settled = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: bloodSession.result.session.sessionId,
+      summary
+    });
+    const profile = await coordinator.profiles.getProfile("BloodForfeitAuthority");
+
+    assert.equal(settled?.ok, true);
+    assert.equal(settled?.result?.duplicate, false);
+    assert.equal(settled?.result?.matchResult?.matchTokenDelta, 1);
+    assert.equal(profile.bloodMatchMatchesPlayed, 1);
+    assert.equal(profile.bloodMatchLosses, 1);
+    assert.equal(profile.latestBattle.endReason, "quit_forfeit");
+
+    const abandonedSession = await emitWithAck(client, "profile:startBloodMatch");
+    await emitWithAck(client, "profile:abandonLocalMatchSession", {
+      sessionId: abandonedSession.result.session.sessionId
+    });
+    const abandonedApply = await emitWithAck(client, "profile:applyBloodMatchResult", {
+      localMatchSessionId: abandonedSession.result.session.sessionId,
+      summary
+    });
+    assert.equal(abandonedApply?.ok, false);
+    assert.equal(abandonedApply?.error?.code, "LOCAL_MATCH_SESSION_INACTIVE");
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: authenticated claimed user can start local PvE, Featured Rival, Gauntlet, and Blood Match sessions", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
   const foundation = createMultiplayerFoundation({
@@ -6104,6 +6403,7 @@ test("multiplayer foundation: authenticated claimed user can start local PvE, Fe
       aiDifficulty: "normal",
       gauntletRivalId: "pyro_maniac"
     });
+    const bloodMatch = await emitWithAck(client, "profile:startBloodMatch");
 
     assert.equal(pve?.ok, true);
     assert.equal(pve?.result?.session?.mode, "pve");
@@ -6117,6 +6417,9 @@ test("multiplayer foundation: authenticated claimed user can start local PvE, Fe
     assert.equal(gauntlet?.ok, true);
     assert.equal(gauntlet?.result?.session?.mode, "gauntlet");
     assert.equal(gauntlet?.result?.session?.gauntletRivalId, "pyro_maniac");
+    assert.equal(bloodMatch?.ok, true);
+    assert.equal(bloodMatch?.result?.session?.mode, "blood_match");
+    assert.equal(bloodMatch?.result?.session?.status, "active");
   } finally {
     client?.disconnect();
     await foundation.stop();

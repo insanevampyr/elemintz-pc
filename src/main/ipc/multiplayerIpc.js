@@ -179,6 +179,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.startLocalPveMatch(payload);
   });
 
+  ipcMain.handle("multiplayer:startBloodMatch", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.startBloodMatch(payload);
+  });
+
   ipcMain.handle("multiplayer:startFeaturedRivalMatch", async (event, payload) => {
     subscribers.add(event.sender);
     return client.startFeaturedRivalMatch(payload);
@@ -202,6 +207,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
   ipcMain.handle("multiplayer:applyLocalMatchResult", async (event, payload) => {
     subscribers.add(event.sender);
     return client.applyLocalMatchResult(payload);
+  });
+
+  ipcMain.handle("multiplayer:applyBloodMatchResult", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.applyBloodMatchResult(payload);
   });
 
   ipcMain.handle("multiplayer:applyLocalHotseatResult", async (event, payload) => {

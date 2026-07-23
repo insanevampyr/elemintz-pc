@@ -446,6 +446,8 @@ export class AppController {
     this.bloodMatchSettlementKey = null;
     this.bloodMatchSettlementInFlight = false;
     this.bloodMatchSettlementResult = null;
+    this.currentBloodMatchLocalSession = null;
+    this.bloodMatchStartPromise = null;
     this.storeViewState = this.createDefaultStoreViewState();
     this.storePurchaseInFlight = false;
     this.storePurchaseInFlightKey = null;
@@ -1889,7 +1891,7 @@ export class AppController {
       actions: {
         start: async ({ aiDifficulty, featuredRivalId, gauntletMode, bloodMatch, trainingMode } = {}) => {
           if (bloodMatch === true) {
-            this.startBloodMatch();
+            await this.startBloodMatch();
             return;
           }
           this.startGame(MATCH_MODE.PVE, { aiDifficulty, featuredRivalId, gauntletMode, trainingMode });
@@ -1899,9 +1901,63 @@ export class AppController {
     });
   }
 
-  startBloodMatch() {
+  async requestBloodMatchAuthoritySession() {
+    const starter = globalThis.window?.elemintz?.multiplayer?.startBloodMatch;
+    if (typeof starter !== "function") {
+      throw new Error("Authenticated Blood Match authority is unavailable.");
+    }
+
+    const session = await starter({ username: this.username });
+    if (!String(session?.sessionId ?? "").trim() || session?.mode !== "blood_match") {
+      throw new Error("The server did not create a valid Blood Match session.");
+    }
+    return session;
+  }
+
+  async startBloodMatch() {
+    if (this.bloodMatchStartPromise) {
+      return this.bloodMatchStartPromise;
+    }
+
+    const operation = this.startBloodMatchInternal();
+    this.bloodMatchStartPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.bloodMatchStartPromise === operation) {
+        this.bloodMatchStartPromise = null;
+      }
+    }
+  }
+
+  async startBloodMatchInternal() {
     if (!this.requireOwnProfileHydratedForAction("start_blood_match")) {
-      return;
+      return false;
+    }
+
+    const authenticated =
+      Boolean(String(this.currentBloodMatchLocalSession?.sessionId ?? "").trim()) ||
+      this.hasAuthenticatedMultiplayerSessionForUsername(
+        this.username,
+        this.onlinePlayState
+      );
+    if (authenticated) {
+      try {
+        this.currentBloodMatchLocalSession = await this.requestBloodMatchAuthoritySession();
+      } catch (error) {
+        this.currentBloodMatchLocalSession = null;
+        this.modalManager.show({
+          title: "Blood Match Unavailable",
+          body: this.formatPlayerFacingMessage(
+            error?.message,
+            "Unable to start an authoritative Blood Match."
+          ),
+          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+        });
+        return false;
+      }
+    } else {
+      this.currentBloodMatchLocalSession = null;
     }
 
     this.clearPassTimer();
@@ -1916,7 +1972,7 @@ export class AppController {
     this.clearGauntletRunState();
     this.pveFeaturedRivalId = null;
     this.pveOpponentStyle = null;
-    this.bloodMatchSettlementKey = this.createBloodMatchSettlementKey();
+    this.bloodMatchSettlementKey = authenticated ? null : this.createBloodMatchSettlementKey();
     this.bloodMatchSettlementInFlight = false;
     this.bloodMatchSettlementResult = null;
     this.roundPresentation = {
@@ -1946,6 +2002,7 @@ export class AppController {
     this.bloodMatchController.startMatch();
     this.screenFlow = "bloodMatch";
     this.showBloodMatch();
+    return true;
   }
 
   createBloodMatchSettlementKey() {
@@ -1994,20 +2051,54 @@ export class AppController {
     if (!settlementSummary || settlementSummary.status !== "completed") {
       return null;
     }
-    if (!window.elemintz?.state?.recordBloodMatchResult || !this.username) {
+    if (!this.username) {
       return null;
     }
 
+    const authenticated =
+      Boolean(String(this.currentBloodMatchLocalSession?.sessionId ?? "").trim()) ||
+      this.hasAuthenticatedMultiplayerSessionForUsername(
+        this.username,
+        this.onlinePlayState
+      );
+    const serverRecorder = globalThis.window?.elemintz?.multiplayer?.applyBloodMatchResult;
+    const localRecorder = globalThis.window?.elemintz?.state?.recordBloodMatchResult;
     this.bloodMatchSettlementInFlight = true;
     this.bloodMatchSettlementResult = { status: "pending" };
     this.showBloodMatch();
     try {
-      const result = await window.elemintz.state.recordBloodMatchResult({
-        username: this.username,
-        settlementKey: this.bloodMatchSettlementKey ?? this.createBloodMatchSettlementKey(),
-        summary: settlementSummary
-      });
-      if (result?.profile) {
+      let result;
+      if (authenticated) {
+        const localMatchSessionId = String(
+          this.currentBloodMatchLocalSession?.sessionId ?? ""
+        ).trim();
+        if (typeof serverRecorder !== "function" || !localMatchSessionId) {
+          throw new Error("Authenticated Blood Match settlement authority is unavailable.");
+        }
+        result = await serverRecorder({
+          username: this.username,
+          localMatchSessionId,
+          summary: settlementSummary
+        });
+        if (result?.snapshot) {
+          this.applyServerProfileSnapshot(result.snapshot, {
+            fallbackProfile: this.profile ?? null
+          });
+        }
+        if (result?.bloodMatchSession) {
+          this.currentBloodMatchLocalSession = result.bloodMatchSession;
+        }
+      } else {
+        if (typeof localRecorder !== "function") {
+          throw new Error("Local Blood Match settlement is unavailable.");
+        }
+        result = await localRecorder({
+          username: this.username,
+          settlementKey: this.bloodMatchSettlementKey ?? this.createBloodMatchSettlementKey(),
+          summary: settlementSummary
+        });
+      }
+      if (!result?.snapshot && result?.profile) {
         this.profile = result.profile;
         if (result.cosmetics) {
           this.cosmetics = result.cosmetics;
@@ -2069,7 +2160,30 @@ export class AppController {
           this.showBloodMatch();
         },
         rematch: async () => {
-          this.bloodMatchSettlementKey = this.createBloodMatchSettlementKey();
+          const authenticated =
+            Boolean(String(this.currentBloodMatchLocalSession?.sessionId ?? "").trim()) ||
+            this.hasAuthenticatedMultiplayerSessionForUsername(
+              this.username,
+              this.onlinePlayState
+            );
+          if (authenticated) {
+            try {
+              this.currentBloodMatchLocalSession = await this.requestBloodMatchAuthoritySession();
+            } catch (error) {
+              this.bloodMatchSettlementResult = {
+                status: "error",
+                message: this.formatPlayerFacingMessage(
+                  error?.message,
+                  "Unable to start an authoritative Blood Match rematch."
+                )
+              };
+              this.showBloodMatch();
+              return;
+            }
+          } else {
+            this.currentBloodMatchLocalSession = null;
+          }
+          this.bloodMatchSettlementKey = authenticated ? null : this.createBloodMatchSettlementKey();
           this.bloodMatchSettlementInFlight = false;
           this.bloodMatchSettlementResult = null;
           this.bloodMatchController?.rematch?.();
@@ -2080,6 +2194,7 @@ export class AppController {
           this.bloodMatchController?.dispose?.();
           this.bloodMatchController = null;
           this.bloodMatchSettlementKey = null;
+          this.currentBloodMatchLocalSession = null;
           this.bloodMatchSettlementInFlight = false;
           this.bloodMatchSettlementResult = null;
           this.showMenu();
@@ -10048,6 +10163,7 @@ export class AppController {
     this.gameController?.stopMatchClock();
     this.bloodMatchController?.dispose?.();
     this.bloodMatchController = null;
+    this.currentBloodMatchLocalSession = null;
     this.pendingMatchCompletePayload = null;
     this.pendingGauntletVictoryPayload = null;
     this.pendingGauntletContinuation = null;

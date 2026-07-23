@@ -882,6 +882,30 @@ export class MultiplayerProfileAuthority {
     };
   }
 
+  async applyBloodMatchResult({
+    username,
+    summary,
+    settlementKey
+  } = {}) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative Blood Match settlement.");
+    }
+
+    this.logger.info?.(`[ProfileAuthority] applyBloodMatchResult -> ${safeUsername} (server)`);
+    const matchResult = await this.coordinator.recordBloodMatchResult({
+      username: safeUsername,
+      summary,
+      settlementKey
+    });
+
+    return {
+      duplicate: Boolean(matchResult?.duplicate),
+      matchResult: sanitizeProfileResult(matchResult),
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
   async applyLocalHotseatResult({
     username,
     result,

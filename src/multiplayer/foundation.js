@@ -1,4 +1,5 @@
 import http from "node:http";
+import { createHash } from "node:crypto";
 
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
@@ -37,8 +38,18 @@ const LOCAL_MATCH_MODES = Object.freeze({
   PVE: "pve",
   LOCAL_PVP: "local_pvp",
   FEATURED_RIVAL: "featured_rival",
-  GAUNTLET: "gauntlet"
+  GAUNTLET: "gauntlet",
+  BLOOD_MATCH: "blood_match"
 });
+const BLOOD_MATCH_COMBATANT_IDS = Object.freeze(["player", "vampire", "lycan"]);
+const BLOOD_MATCH_END_REASONS = new Set([
+  "all_ai_required_play_unavailable",
+  "both_rivals_eliminated",
+  "player_required_play_unavailable",
+  "timeout_lead",
+  "timeout_tie_or_deficit",
+  "quit_forfeit"
+]);
 
 function logRoomEvent(logger, message, details = {}) {
   logger.info("[Multiplayer] " + message, details);
@@ -50,6 +61,199 @@ function logMatchEvent(logger, message, details = {}) {
 
 function toAckCallback(respond) {
   return typeof respond === "function" ? respond : () => {};
+}
+
+function createBloodMatchSettlementError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function normalizeBloodMatchCount(value, fieldName) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 10000) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_SUMMARY",
+      `Blood Match ${fieldName} must be a non-negative integer.`
+    );
+  }
+  return value;
+}
+
+function normalizeBloodMatchCombatant(summary, combatantId) {
+  const combatant = summary?.combatants?.[combatantId];
+  if (!combatant || typeof combatant !== "object" || Array.isArray(combatant)) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_SUMMARY",
+      `Blood Match summary is missing ${combatantId} state.`
+    );
+  }
+  if (typeof combatant.eliminated !== "boolean") {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_SUMMARY",
+      `Blood Match ${combatantId} eliminated state must be boolean.`
+    );
+  }
+
+  return {
+    handCount: normalizeBloodMatchCount(combatant.handCount, `${combatantId} handCount`),
+    capturedCount: normalizeBloodMatchCount(combatant.capturedCount, `${combatantId} capturedCount`),
+    eliminated: combatant.eliminated
+  };
+}
+
+function normalizeBloodMatchHistory(summary) {
+  if (!Array.isArray(summary?.history)) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_SUMMARY",
+      "Blood Match history must be an array."
+    );
+  }
+  if (summary.history.length > 500) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_SUMMARY",
+      "Blood Match history is too large."
+    );
+  }
+
+  return summary.history.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw createBloodMatchSettlementError(
+        "BLOOD_MATCH_INVALID_SUMMARY",
+        "Blood Match history contains an invalid entry."
+      );
+    }
+    const normalizeIds = (values) => {
+      if (values !== undefined && !Array.isArray(values)) {
+        throw createBloodMatchSettlementError(
+          "BLOOD_MATCH_INVALID_SUMMARY",
+          "Blood Match history combatant IDs must be arrays."
+        );
+      }
+      const normalized = (Array.isArray(values) ? values : [])
+        .map((value) => String(value ?? "").trim());
+      if (normalized.some((value) => !BLOOD_MATCH_COMBATANT_IDS.includes(value))) {
+        throw createBloodMatchSettlementError(
+          "BLOOD_MATCH_INVALID_SUMMARY",
+          "Blood Match history contains an unknown combatant."
+        );
+      }
+      return normalized;
+    };
+    const winnerId = String(entry.winnerId ?? "").trim() || null;
+    if (winnerId && !BLOOD_MATCH_COMBATANT_IDS.includes(winnerId)) {
+      throw createBloodMatchSettlementError(
+        "BLOOD_MATCH_INVALID_SUMMARY",
+        "Blood Match history contains an unknown winner."
+      );
+    }
+    return {
+      type: String(entry.type ?? "").trim() || null,
+      classificationId: String(entry.classificationId ?? "").trim() || null,
+      reason: String(entry.reason ?? "").trim() || null,
+      winnerId,
+      activeCombatantIds: normalizeIds(entry.activeCombatantIds),
+      excludedCombatantIds: normalizeIds(entry.excludedCombatantIds)
+    };
+  });
+}
+
+function validateBloodMatchSettlementSummary(summary) {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_SUMMARY",
+      "A completed Blood Match summary is required."
+    );
+  }
+
+  const mode = String(summary.mode ?? "").trim().toLowerCase().replace(/[_-]/g, "");
+  if (mode !== "bloodmatch" || String(summary.status ?? "").trim().toLowerCase() !== "completed") {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INCOMPLETE",
+      "Blood Match settlement requires a completed Blood Match."
+    );
+  }
+
+  const terminal = summary.terminalResult;
+  if (!terminal || typeof terminal !== "object" || Array.isArray(terminal) || terminal.terminal !== true) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_SUMMARY",
+      "Blood Match settlement requires a terminal result."
+    );
+  }
+
+  const endReason = String(summary.endReason ?? terminal.endReason ?? terminal.reason ?? "")
+    .trim()
+    .toLowerCase();
+  const terminalEndReason = String(terminal.endReason ?? terminal.reason ?? "").trim().toLowerCase();
+  if (!terminalEndReason || terminalEndReason !== endReason) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_RESULT",
+      "Blood Match end reason is inconsistent."
+    );
+  }
+  if (!BLOOD_MATCH_END_REASONS.has(endReason)) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_END_REASON",
+      "Blood Match settlement contains an unsupported end reason."
+    );
+  }
+
+  const result = String(terminal.result ?? "").trim().toLowerCase();
+  const winnerId = String(summary.winnerId ?? terminal.winnerId ?? "").trim().toLowerCase() || null;
+  const terminalWinnerId = String(terminal.winnerId ?? "").trim().toLowerCase() || null;
+  if (!["player_win", "player_loss"].includes(result) || winnerId !== terminalWinnerId) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_RESULT",
+      "Blood Match terminal result is inconsistent."
+    );
+  }
+
+  const combatants = Object.fromEntries(
+    BLOOD_MATCH_COMBATANT_IDS.map((combatantId) => [
+      combatantId,
+      normalizeBloodMatchCombatant(summary, combatantId)
+    ])
+  );
+  const winReason = ["all_ai_required_play_unavailable", "both_rivals_eliminated", "timeout_lead"]
+    .includes(endReason);
+  const validWin =
+    result === "player_win" &&
+    winnerId === "player" &&
+    (endReason === "timeout_lead" ||
+      (combatants.vampire.eliminated && combatants.lycan.eliminated));
+  const validLoss =
+    result === "player_loss" &&
+    winnerId === null &&
+    !winReason &&
+    (endReason !== "player_required_play_unavailable" || combatants.player.eliminated);
+  if (!validWin && !validLoss) {
+    throw createBloodMatchSettlementError(
+      "BLOOD_MATCH_INVALID_RESULT",
+      "Blood Match result does not match its terminal state."
+    );
+  }
+
+  return {
+    mode: "bloodMatch",
+    status: "completed",
+    round: normalizeBloodMatchCount(summary.round, "round"),
+    winnerId,
+    endReason,
+    terminalResult: {
+      terminal: true,
+      winnerId,
+      loserId: result === "player_loss" ? "player" : null,
+      result,
+      endReason,
+      reason: endReason
+    },
+    combatants,
+    history: normalizeBloodMatchHistory(summary)
+  };
+}
+
+function fingerprintBloodMatchSummary(summary) {
+  return createHash("sha256").update(JSON.stringify(summary)).digest("hex");
 }
 
 function cloneAuthoritativeEquippedCosmetics(equippedCosmetics) {
@@ -2777,6 +2981,128 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("profile:applyBloodMatchResult", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (typeof profileAuthority?.applyBloodMatchResult !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        if (
+          String(payload?.settlementKey ?? payload?.settlementId ?? "").trim()
+        ) {
+          throw createBloodMatchSettlementError(
+            "BLOOD_MATCH_CLIENT_SETTLEMENT_KEY_REJECTED",
+            "Blood Match settlement IDs are assigned by the server."
+          );
+        }
+
+        const localMatchSessionId = normalizeProtectedSettlementSessionId(payload);
+        if (!localMatchSessionId) {
+          throw createBloodMatchSettlementError(
+            "LOCAL_MATCH_SESSION_REQUIRED",
+            "Blood Match settlement requires a server-owned Blood Match session."
+          );
+        }
+
+        const bloodMatchSession = getLocalMatchSessionForOwnerOrThrow(
+          sessionResult.session,
+          localMatchSessionId
+        );
+        if (bloodMatchSession.mode !== LOCAL_MATCH_MODES.BLOOD_MATCH) {
+          throw createBloodMatchSettlementError(
+            "LOCAL_MATCH_SESSION_MODE_MISMATCH",
+            "This local match session is not a Blood Match session."
+          );
+        }
+        if (bloodMatchSession.status === "abandoned") {
+          throw createBloodMatchSettlementError(
+            "LOCAL_MATCH_SESSION_INACTIVE",
+            "This Blood Match session has been abandoned."
+          );
+        }
+        if (!["active", "completed"].includes(bloodMatchSession.status)) {
+          throw createBloodMatchSettlementError(
+            "LOCAL_MATCH_SESSION_INACTIVE",
+            "This Blood Match session is no longer active."
+          );
+        }
+        if (!bloodMatchSession.settlementId) {
+          throw createBloodMatchSettlementError(
+            "BLOOD_MATCH_SETTLEMENT_ID_MISSING",
+            "The Blood Match session has no server settlement ID."
+          );
+        }
+
+        const summary = validateBloodMatchSettlementSummary(payload?.summary);
+        const summaryFingerprint = fingerprintBloodMatchSummary(summary);
+        const completedFingerprint = String(
+          bloodMatchSession.metadata?.summaryFingerprint ?? ""
+        ).trim();
+        if (
+          bloodMatchSession.status === "completed" &&
+          (!completedFingerprint || completedFingerprint !== summaryFingerprint)
+        ) {
+          throw createBloodMatchSettlementError(
+            "BLOOD_MATCH_SETTLEMENT_MISMATCH",
+            "This Blood Match session was already settled with a different result."
+          );
+        }
+
+        const result = await profileAuthority.applyBloodMatchResult({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          summary,
+          settlementKey: bloodMatchSession.settlementId
+        });
+        const updatedSession =
+          bloodMatchSession.status === "completed"
+            ? localMatchSessions.toPublicSession(bloodMatchSession)
+            : localMatchSessions.completeSession({
+                sessionId: bloodMatchSession.sessionId,
+                username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+                metadata: {
+                  authority: "server-local-session",
+                  sessionType: LOCAL_MATCH_MODES.BLOOD_MATCH,
+                  summaryFingerprint,
+                  endReason: summary.endReason,
+                  result: summary.terminalResult.result
+                }
+              });
+
+        respond({
+          ok: true,
+          result: {
+            ...result,
+            bloodMatchSession: updatedSession
+          }
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: error?.code ?? "PROFILE_BLOOD_MATCH_WRITE_FAILED",
+            message: String(error?.message ?? "Unable to complete authoritative Blood Match settlement.")
+          }
+        });
+      }
+    });
+
     socket.on("profile:applyLocalMatchResult", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
@@ -2918,6 +3244,49 @@ export function createMultiplayerFoundation({
             )
           }
         });
+      }
+    });
+
+    socket.on("profile:startBloodMatch", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      try {
+        assertSessionUsernameMatch(sessionResult.session, payload?.username);
+        const requestedMode = payload?.mode;
+        if (
+          requestedMode !== undefined &&
+          normalizeLocalMatchMode(requestedMode) !== LOCAL_MATCH_MODES.BLOOD_MATCH
+        ) {
+          const error = new Error("profile:startBloodMatch only accepts Blood Match mode.");
+          error.code = "LOCAL_MATCH_INVALID_MODE";
+          throw error;
+        }
+
+        const session = localMatchSessions.createSession({
+          username: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          mode: LOCAL_MATCH_MODES.BLOOD_MATCH,
+          settlementIdPrefix: "blood-match",
+          metadata: {
+            authority: "server-local-session",
+            sessionType: LOCAL_MATCH_MODES.BLOOD_MATCH
+          }
+        });
+
+        respond({
+          ok: true,
+          result: {
+            session
+          }
+        });
+      } catch (error) {
+        respond(buildLocalMatchSessionError(error, "LOCAL_MATCH_START_FAILED"));
       }
     });
 
