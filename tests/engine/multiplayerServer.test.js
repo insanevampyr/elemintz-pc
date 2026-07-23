@@ -8656,6 +8656,66 @@ test("multiplayer foundation: referral risk classifier applies conservative dete
   assert.equal(boundedRisk.referrerClaimRisks.length, 50);
 });
 
+test("multiplayer foundation: referral abuse signal salt fallback warns safely and configured hashes stay stable", () => {
+  const warnings = [];
+  const logger = {
+    warn: (message) => warnings.push(String(message))
+  };
+  const socket = {
+    handshake: {
+      headers: {
+        "x-forwarded-for": "203.0.113.90",
+        "user-agent": "EleMintz Salt Test/1.0"
+      }
+    }
+  };
+  const fallbackHasher = createReferralAbuseSignalHasher({
+    salt: "",
+    fallbackSalt: Buffer.alloc(32, 7),
+    logger
+  });
+  const firstFallbackSignals = fallbackHasher.buildRequestSignals(socket);
+  const repeatedFallbackSignals = fallbackHasher.buildRequestSignals(socket);
+  const nextFallbackHasher = createReferralAbuseSignalHasher({
+    salt: "",
+    fallbackSalt: Buffer.alloc(32, 8),
+    logger
+  });
+
+  assert.equal(fallbackHasher.isPersistentlyConfigured, false);
+  assert.deepEqual(repeatedFallbackSignals, firstFallbackSignals);
+  assert.notDeepEqual(
+    nextFallbackHasher.buildRequestSignals(socket),
+    firstFallbackSignals
+  );
+  assert.equal(warnings.length, 1);
+  assert.equal(
+    warnings[0],
+    "[Referral Abuse Signals] REFERRAL_ABUSE_SIGNAL_SALT is not set; using dev-only process-local fallback."
+  );
+  assert.doesNotMatch(warnings[0], /203\.0\.113\.90|EleMintz Salt Test|07070707/);
+
+  const configuredWarnings = [];
+  const configuredLogger = {
+    warn: (message) => configuredWarnings.push(String(message))
+  };
+  const configuredHasher = createReferralAbuseSignalHasher({
+    salt: "configured-test-only-salt",
+    logger: configuredLogger
+  });
+  const restartedHasher = createReferralAbuseSignalHasher({
+    salt: "configured-test-only-salt",
+    logger: configuredLogger
+  });
+
+  assert.equal(configuredHasher.isPersistentlyConfigured, true);
+  assert.deepEqual(
+    configuredHasher.buildRequestSignals(socket),
+    restartedHasher.buildRequestSignals(socket)
+  );
+  assert.deepEqual(configuredWarnings, []);
+});
+
 test("multiplayer foundation: referral abuse signals stay private, bounded, and behavior-neutral", async () => {
   const dataDir = await createTempDataDir();
   let nowMs = Date.parse("2026-07-23T15:00:00.000Z");

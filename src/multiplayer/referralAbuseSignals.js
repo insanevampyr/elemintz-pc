@@ -2,6 +2,22 @@ import crypto from "node:crypto";
 
 const HASH_PREFIX = "hmac-sha256$";
 const MAX_USER_AGENT_LENGTH = 512;
+const fallbackWarningLoggers = new WeakSet();
+
+function warnAboutProcessLocalFallback(logger) {
+  const safeLogger =
+    logger && typeof logger === "object" && typeof logger.warn === "function"
+      ? logger
+      : console;
+  if (fallbackWarningLoggers.has(safeLogger)) {
+    return;
+  }
+
+  fallbackWarningLoggers.add(safeLogger);
+  safeLogger.warn(
+    "[Referral Abuse Signals] REFERRAL_ABUSE_SIGNAL_SALT is not set; using dev-only process-local fallback."
+  );
+}
 
 function normalizeIpAddress(value) {
   let normalized = String(value ?? "")
@@ -33,10 +49,14 @@ function normalizeUserAgent(value) {
 
 export function createReferralAbuseSignalHasher({
   salt = process.env.REFERRAL_ABUSE_SIGNAL_SALT,
-  fallbackSalt = crypto.randomBytes(32)
+  fallbackSalt = crypto.randomBytes(32),
+  logger = console
 } = {}) {
   const configuredSalt = String(salt ?? "").trim();
   const secret = configuredSalt || Buffer.from(fallbackSalt).toString("hex");
+  if (!configuredSalt) {
+    warnAboutProcessLocalFallback(logger);
+  }
 
   function hashValue(namespace, value) {
     const normalized = String(value ?? "").trim();

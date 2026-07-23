@@ -3,6 +3,8 @@ dist/
 out/
 *.log
 .env
+.env.*
+!.env.example
 Thumbs.db
 .DS_Store
 EleMintz_PC_Codex_Build_Plan.zip

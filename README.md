@@ -16,6 +16,10 @@ Engine-first desktop card game scaffold based on the build specification.
 - `npm test`
 - `npm start`
 
+## Server configuration
+
+- [Referral abuse signal salt](docs/REFERRAL_ABUSE_SIGNAL_SALT.md)
+
 ## Current status
 
 - Project scaffold created
