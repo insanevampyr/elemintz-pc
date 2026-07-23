@@ -607,7 +607,10 @@ export class MultiplayerAccountStore {
 
     const nowMs = this.now();
     const lastSentAtMs = Date.parse(account.emailVerification?.lastSentAt ?? "");
+    const hasExplicitVerificationRequest =
+      Math.max(0, Number(account.emailVerification?.resendCount ?? 0) || 0) > 0;
     if (
+      hasExplicitVerificationRequest &&
       Number.isFinite(lastSentAtMs) &&
       nowMs - lastSentAtMs >= 0 &&
       nowMs - lastSentAtMs < EMAIL_VERIFICATION_RESEND_COOLDOWN_MS

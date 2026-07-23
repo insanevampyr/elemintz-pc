@@ -317,6 +317,21 @@ export class AppController {
       rewardStatus: "unavailable"
     };
     this.referralCodeRequestPromise = null;
+    this.emailVerificationState = {
+      username: null,
+      authenticated: false,
+      status: "idle",
+      emailVerified: false,
+      emailVerificationPending: false,
+      delivery: null,
+      devVerificationToken: null,
+      message: "",
+      inputValue: "",
+      inFlight: false
+    };
+    this.emailVerificationStatusPromise = null;
+    this.emailVerificationRequestPromise = null;
+    this.emailVerificationSubmitPromise = null;
     this.referralDashboardRequestPromise = null;
     this.referralRewardClaimPromise = null;
     this.referralActivationState = {
@@ -4142,6 +4157,223 @@ export class AppController {
     const requestedUsername = String(username ?? "").trim();
     const sessionUsername = String(onlineState?.session?.username ?? "").trim();
     return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
+  }
+
+  async loadOwnEmailVerificationState() {
+    const usernameKey = String(this.username ?? "").trim().toLowerCase();
+    const authenticated = this.hasAuthenticatedMultiplayerSessionForUsername(
+      this.username,
+      this.onlinePlayState
+    );
+    if (!authenticated) {
+      this.emailVerificationState = {
+        username: usernameKey || null,
+        authenticated: false,
+        status: "idle",
+        emailVerified: false,
+        emailVerificationPending: false,
+        delivery: null,
+        devVerificationToken: null,
+        message: "",
+        inputValue: "",
+        inFlight: false
+      };
+      return this.emailVerificationState;
+    }
+
+    if (this.emailVerificationStatusPromise) {
+      return this.emailVerificationStatusPromise;
+    }
+
+    const previous =
+      this.emailVerificationState.username === usernameKey
+        ? this.emailVerificationState
+        : null;
+    this.emailVerificationStatusPromise = (async () => {
+      try {
+        if (typeof window.elemintz?.multiplayer?.getEmailVerificationStatus !== "function") {
+          throw new Error("Email verification is unavailable.");
+        }
+        const result = await window.elemintz.multiplayer.getEmailVerificationStatus({});
+        const emailVerified = Boolean(result?.emailVerified);
+        const emailVerificationPending = Boolean(result?.emailVerificationPending);
+        this.emailVerificationState = {
+          username: usernameKey,
+          authenticated: true,
+          status: emailVerified
+            ? "verified"
+            : ["request_error", "verification_error"].includes(previous?.status)
+              ? previous.status
+              : previous?.status === "requested" && emailVerificationPending
+                ? "requested"
+                : "ready",
+          emailVerified,
+          emailVerificationPending,
+          delivery: result?.delivery ?? previous?.delivery ?? null,
+          devVerificationToken:
+            !emailVerified && emailVerificationPending
+              ? previous?.devVerificationToken ?? null
+              : null,
+          message: !emailVerified ? previous?.message ?? "" : "",
+          inputValue: !emailVerified ? previous?.inputValue ?? "" : "",
+          inFlight: false
+        };
+      } catch (error) {
+        this.emailVerificationState = {
+          username: usernameKey,
+          authenticated: true,
+          status:
+            previous?.status === "requested" || previous?.status === "verification_error"
+              ? previous.status
+              : "request_error",
+          emailVerified: Boolean(this.onlinePlayState?.session?.emailVerified),
+          emailVerificationPending: Boolean(previous?.emailVerificationPending),
+          delivery: previous?.delivery ?? null,
+          devVerificationToken: previous?.devVerificationToken ?? null,
+          message: String(error?.message ?? "Unable to load email verification status."),
+          inputValue: previous?.inputValue ?? "",
+          inFlight: false
+        };
+      } finally {
+        this.emailVerificationStatusPromise = null;
+      }
+      return this.emailVerificationState;
+    })();
+
+    return this.emailVerificationStatusPromise;
+  }
+
+  async requestOwnEmailVerification() {
+    if (this.emailVerificationRequestPromise) {
+      return this.emailVerificationRequestPromise;
+    }
+
+    this.emailVerificationRequestPromise = (async () => {
+      const usernameKey = String(this.username ?? "").trim().toLowerCase();
+      const previous = this.emailVerificationState;
+      this.emailVerificationState = {
+        ...previous,
+        username: usernameKey,
+        authenticated: true,
+        inFlight: true,
+        message: ""
+      };
+      try {
+        if (!this.hasAuthenticatedMultiplayerSessionForUsername()) {
+          throw new Error("Sign in before requesting email verification.");
+        }
+        if (typeof window.elemintz?.multiplayer?.requestEmailVerification !== "function") {
+          throw new Error("Email verification is unavailable.");
+        }
+        const result = await window.elemintz.multiplayer.requestEmailVerification({});
+        const emailVerified = Boolean(result?.emailVerified);
+        const delivery = result?.delivery ?? null;
+        this.emailVerificationState = {
+          username: usernameKey,
+          authenticated: true,
+          status: emailVerified ? "verified" : "requested",
+          emailVerified,
+          emailVerificationPending: Boolean(result?.emailVerificationPending),
+          delivery,
+          devVerificationToken: emailVerified ? null : result?.devVerificationToken ?? null,
+          message:
+            emailVerified
+              ? ""
+              : delivery === "smtp_configured"
+                ? "Verification email sent. Check your inbox."
+                : "",
+          inputValue: "",
+          inFlight: false
+        };
+      } catch (error) {
+        this.emailVerificationState = {
+          ...previous,
+          username: usernameKey,
+          authenticated: true,
+          status:
+            previous?.status === "requested" || previous?.status === "verification_error"
+              ? previous.status
+              : "request_error",
+          message: String(error?.message ?? "Unable to request email verification."),
+          inFlight: false
+        };
+      } finally {
+        this.emailVerificationRequestPromise = null;
+      }
+      return this.emailVerificationState;
+    })();
+
+    return this.emailVerificationRequestPromise;
+  }
+
+  async verifyOwnEmail(token) {
+    if (this.emailVerificationSubmitPromise) {
+      return this.emailVerificationSubmitPromise;
+    }
+
+    const inputValue = String(token ?? "").trim();
+    const usernameKey = String(this.username ?? "").trim().toLowerCase();
+    const previous = {
+      ...this.emailVerificationState,
+      inputValue
+    };
+    this.emailVerificationSubmitPromise = (async () => {
+      this.emailVerificationState = {
+        ...previous,
+        username: usernameKey,
+        authenticated: true,
+        inFlight: true,
+        message: ""
+      };
+      try {
+        if (!this.hasAuthenticatedMultiplayerSessionForUsername()) {
+          throw new Error("Sign in before verifying your email.");
+        }
+        if (!inputValue) {
+          throw new Error("Enter your verification code.");
+        }
+        if (typeof window.elemintz?.multiplayer?.verifyEmail !== "function") {
+          throw new Error("Email verification is unavailable.");
+        }
+        const result = await window.elemintz.multiplayer.verifyEmail({ token: inputValue });
+        if (!result?.emailVerified) {
+          throw new Error("Unable to verify email.");
+        }
+        if (this.onlinePlayState?.session) {
+          this.onlinePlayState.session.emailVerified = true;
+        }
+        this.referralCodeState = {
+          ...this.referralCodeState,
+          emailVerified: true
+        };
+        this.emailVerificationState = {
+          username: usernameKey,
+          authenticated: true,
+          status: "verified",
+          emailVerified: true,
+          emailVerificationPending: false,
+          delivery: result?.delivery ?? previous.delivery ?? null,
+          devVerificationToken: null,
+          message: "",
+          inputValue: "",
+          inFlight: false
+        };
+      } catch (error) {
+        this.emailVerificationState = {
+          ...previous,
+          username: usernameKey,
+          authenticated: true,
+          status: "verification_error",
+          message: String(error?.message ?? "Unable to verify email."),
+          inFlight: false
+        };
+      } finally {
+        this.emailVerificationSubmitPromise = null;
+      }
+      return this.emailVerificationState;
+    })();
+
+    return this.emailVerificationSubmitPromise;
   }
 
   async loadOwnReferralCodeState() {
@@ -9368,6 +9600,18 @@ export class AppController {
                 authResult?.session?.username ??
                 authResult?.account?.username ??
                 username;
+              this.emailVerificationState = {
+                username: String(this.username ?? "").trim().toLowerCase() || null,
+                authenticated: true,
+                status: authResult?.session?.emailVerified ? "verified" : "idle",
+                emailVerified: Boolean(authResult?.session?.emailVerified),
+                emailVerificationPending: false,
+                delivery: null,
+                devVerificationToken: null,
+                message: "",
+                inputValue: "",
+                inFlight: false
+              };
             } else {
               throw new Error("Authenticated account login is required.");
             }
@@ -10905,6 +11149,7 @@ export class AppController {
         : this.viewedProfileUsername
           ? await this.loadViewedProfile(this.viewedProfileUsername)
           : null;
+    const emailVerification = await this.loadOwnEmailVerificationState();
     const referral = await this.loadOwnReferralCodeState();
     const pendingReferral = this.getPendingReferralCode();
     const referralUsernameKey = String(this.username ?? "").trim().toLowerCase();
@@ -10938,6 +11183,7 @@ export class AppController {
         searchError: this.profileSearchError,
         searchResults,
         referral,
+        emailVerification,
         referralEntry,
         viewedProfile,
         profileAchievementsExpanded: this.profileAchievementsExpanded,
@@ -11056,6 +11302,28 @@ export class AppController {
         },
         openReferralDashboard: async () => {
           await this.showReferralDashboardModal();
+        },
+        requestEmailVerification: async () => {
+          await this.requestOwnEmailVerification();
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: this.profile,
+            cosmeticsOverride: cosmetics,
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: viewedProfile,
+            skipAuthoritativeProfileRefresh: true
+          });
+        },
+        verifyEmail: async (token) => {
+          const result = await this.verifyOwnEmail(token);
+          await this.showProfile({
+            preserveAchievementVisibility: true,
+            profileOverride: result?.emailVerified ? null : this.profile,
+            cosmeticsOverride: result?.emailVerified ? null : cosmetics,
+            searchResultsOverride: searchResults,
+            viewedProfileOverride: viewedProfile,
+            skipAuthoritativeProfileRefresh: !result?.emailVerified
+          });
         },
         activateReferralCode: async (referralCode) => {
           await this.activateOwnReferralCode(referralCode);

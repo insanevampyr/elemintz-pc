@@ -7550,6 +7550,7 @@ test("multiplayer foundation: account email verification schema normalizes legac
 
 test("multiplayer foundation: email verification auth routes expose safe status and do not block login", async () => {
   const dataDir = await createTempDataDir();
+  let nowMs = Date.parse("2026-07-23T12:00:00.000Z");
   const previousSmtpUser = process.env.SMTP_USER;
   const previousSmtpPass = process.env.SMTP_PASS;
   delete process.env.SMTP_USER;
@@ -7557,7 +7558,8 @@ test("multiplayer foundation: email verification auth routes expose safe status 
 
   const accountStore = new MultiplayerAccountStore({
     dataDir,
-    logger: { info: () => {} }
+    logger: { info: () => {} },
+    now: () => nowMs
   });
   const foundation = createMultiplayerFoundation({
     port: 0,
@@ -7625,6 +7627,23 @@ test("multiplayer foundation: email verification auth routes expose safe status 
     assert.equal(statusBefore?.status?.emailVerificationPending, true);
     assert.equal(statusBefore?.status?.devVerificationToken, undefined);
 
+    const requested = await new Promise((resolve) => {
+      client.emit("auth:requestEmailVerification", {}, resolve);
+    });
+    assert.equal(requested?.ok, true);
+    assert.equal(requested?.status?.emailVerified, false);
+    assert.equal(requested?.status?.emailVerificationPending, true);
+    assert.equal(requested?.status?.delivery, "dev_token");
+    assert.equal(typeof requested?.status?.devVerificationToken, "string");
+
+    const cooldown = await new Promise((resolve) => {
+      client.emit("auth:requestEmailVerification", {}, resolve);
+    });
+    assert.equal(cooldown?.ok, false);
+    assert.equal(cooldown?.error?.code, "EMAIL_VERIFICATION_COOLDOWN");
+
+    nowMs += 61_000;
+
     const invalid = await new Promise((resolve) => {
       client.emit("auth:verifyEmail", { token: "bad-token" }, resolve);
     });
@@ -7632,7 +7651,7 @@ test("multiplayer foundation: email verification auth routes expose safe status 
     assert.equal(invalid?.error?.code, "EMAIL_VERIFICATION_INVALID");
 
     const verified = await new Promise((resolve) => {
-      client.emit("auth:verifyEmail", { token: registered.emailVerification.devVerificationToken }, resolve);
+      client.emit("auth:verifyEmail", { token: requested.status.devVerificationToken }, resolve);
     });
     assert.equal(verified?.ok, true);
     assert.equal(verified?.status?.emailVerified, true);
@@ -7647,6 +7666,7 @@ test("multiplayer foundation: email verification auth routes expose safe status 
     const accountsPath = path.join(dataDir, "accounts.json");
     const stored = JSON.parse(await fs.readFile(accountsPath, "utf8"));
     assert.equal(JSON.stringify(stored).includes(registered.emailVerification.devVerificationToken), false);
+    assert.equal(JSON.stringify(stored).includes(requested.status.devVerificationToken), false);
   } finally {
     client?.disconnect();
     await foundation.stop();

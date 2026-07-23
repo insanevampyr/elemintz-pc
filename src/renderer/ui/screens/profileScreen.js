@@ -1536,7 +1536,8 @@ function renderProfileIdentityCard({
   titleIcon,
   badgeId,
   badgeSrc,
-  referral = {}
+  referral = {},
+  emailVerification = {}
 }) {
   return `
     <section class="profile-summary-card profile-dashboard-card profile-identity-card" data-profile-identity-card="true">
@@ -1552,6 +1553,7 @@ function renderProfileIdentityCard({
         badgeSrc
       })}
       ${renderReferralDashboardLaunch(referral)}
+      ${renderEmailVerificationStatus(emailVerification)}
     </section>
   `;
 }
@@ -1850,6 +1852,74 @@ function renderReferralDashboardLaunch(referral = {}) {
       type="button"
       data-profile-referral-dashboard-btn="true"
     >Referral Dashboard</button>
+  `;
+}
+
+function renderEmailVerificationStatus(verification = {}) {
+  if (!verification?.authenticated) {
+    return "";
+  }
+
+  if (verification.emailVerified) {
+    return `
+      <section class="profile-email-verification" data-profile-email-verification="verified">
+        <strong>Email verified.</strong>
+      </section>
+    `;
+  }
+
+  const pending = Boolean(verification.emailVerificationPending);
+  const inFlight = Boolean(verification.inFlight);
+  const message = String(verification.message ?? "").trim();
+  const inputValue = String(verification.inputValue ?? "");
+  const requestWasExplicit = ["requested", "verification_error"].includes(verification.status);
+  const devVerificationToken = requestWasExplicit
+    ? String(verification.devVerificationToken ?? "").trim()
+    : "";
+  const showCodeEntry = requestWasExplicit && (pending || Boolean(devVerificationToken));
+  const requestLabel = requestWasExplicit && pending ? "Resend Verification" : "Verify Email";
+
+  return `
+    <section class="profile-email-verification stack-sm" data-profile-email-verification="unverified">
+      <strong>Email not verified.</strong>
+      <p class="text-muted">Verify your email to unlock referrals, friend rewards, giveaways, and future high-value claims.</p>
+      <button
+        id="profile-request-email-verification-btn"
+        class="btn btn-secondary"
+        type="button"
+        ${inFlight ? "disabled aria-busy=\"true\"" : ""}
+      >${requestLabel}</button>
+      ${
+        devVerificationToken
+          ? `<p class="text-muted" data-email-verification-dev-instruction="true">Dev verification code generated. Enter the code below.</p>
+             <code class="profile-email-verification-code" data-email-verification-dev-code="true">${escapeProfileText(devVerificationToken)}</code>`
+          : ""
+      }
+      ${message ? `<p class="text-muted" data-email-verification-message="true">${escapeProfileText(message)}</p>` : ""}
+      ${
+        showCodeEntry
+          ? `
+            <form id="profile-email-verification-form" class="stack-sm">
+              <label for="profile-email-verification-code">Verification code</label>
+              <input
+                id="profile-email-verification-code"
+                name="verificationCode"
+                type="text"
+                value="${escapeProfileText(inputValue)}"
+                autocomplete="one-time-code"
+                required
+              />
+              <button
+                id="profile-submit-email-verification-btn"
+                class="btn btn-secondary"
+                type="submit"
+                ${inFlight ? "disabled aria-busy=\"true\"" : ""}
+              >Submit Code</button>
+            </form>
+          `
+          : ""
+      }
+    </section>
   `;
 }
 
@@ -2250,7 +2320,8 @@ export const profileScreen = {
               titleIcon: profileTitleIcon,
               badgeId: profile.equippedCosmetics?.badge ?? "none",
               badgeSrc: getBadgeImage(profile.equippedCosmetics?.badge ?? "none"),
-              referral: context.referral ?? {}
+              referral: context.referral ?? {},
+              emailVerification: context.emailVerification ?? {}
             })}
             ${renderProfileSocialToolsCard({
               searchQuery: context.searchQuery ?? "",
@@ -2391,6 +2462,33 @@ export const profileScreen = {
           referralDashboardButton.disabled = false;
           referralDashboardButton.removeAttribute?.("aria-busy");
         }
+      });
+    }
+    const requestEmailVerificationButton = document.getElementById("profile-request-email-verification-btn");
+    if (requestEmailVerificationButton && context.actions.requestEmailVerification) {
+      requestEmailVerificationButton.addEventListener("click", async () => {
+        if (requestEmailVerificationButton.disabled) {
+          return;
+        }
+        requestEmailVerificationButton.disabled = true;
+        requestEmailVerificationButton.setAttribute?.("aria-busy", "true");
+        await context.actions.requestEmailVerification();
+      });
+    }
+    const emailVerificationForm = document.getElementById("profile-email-verification-form");
+    if (emailVerificationForm && context.actions.verifyEmail) {
+      emailVerificationForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitButton = document.getElementById("profile-submit-email-verification-btn");
+        if (submitButton?.disabled) {
+          return;
+        }
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.setAttribute?.("aria-busy", "true");
+        }
+        const formData = new FormData(event.currentTarget);
+        await context.actions.verifyEmail(String(formData.get("verificationCode") ?? ""));
       });
     }
     const referralActivationForm = document.getElementById("profile-referral-activation-form");

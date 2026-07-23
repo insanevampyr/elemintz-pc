@@ -31446,6 +31446,182 @@ test("ui: authenticated own Profile identity shows only Referral Dashboard while
   );
 });
 
+test("ui: own Profile renders safe email verification states while viewed profiles remain private", () => {
+  const unverifiedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: false
+      },
+      emailVerification: {
+        authenticated: true,
+        status: "ready",
+        emailVerified: false,
+        emailVerificationPending: true,
+        delivery: "dev_token",
+        devVerificationToken: "passive-registration-token"
+      }
+    })
+  );
+  assert.match(unverifiedHtml, /data-profile-email-verification="unverified"/);
+  assert.match(unverifiedHtml, /Email not verified\./);
+  assert.match(unverifiedHtml, /Verify your email to unlock referrals, friend rewards, giveaways, and future high-value claims\./);
+  assert.match(unverifiedHtml, /id="profile-request-email-verification-btn"/);
+  assert.doesNotMatch(unverifiedHtml, /id="profile-email-verification-form"/);
+  assert.doesNotMatch(unverifiedHtml, /passive-registration-token|data-email-verification-dev-code/);
+
+  const devFallbackHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: false
+      },
+      emailVerification: {
+        authenticated: true,
+        status: "requested",
+        emailVerified: false,
+        emailVerificationPending: true,
+        delivery: "dev_token",
+        devVerificationToken: "safe-dev-verification-token",
+        message: "Please wait before requesting another verification email.",
+        inputValue: "kept-input"
+      }
+    })
+  );
+  assert.match(devFallbackHtml, /Dev verification code generated\. Enter the code below\./);
+  assert.match(devFallbackHtml, /data-email-verification-dev-code="true">safe-dev-verification-token/);
+  assert.match(devFallbackHtml, /id="profile-email-verification-form"/);
+  assert.match(devFallbackHtml, /value="kept-input"/);
+  assert.match(devFallbackHtml, /Please wait before requesting another verification email\./);
+  assert.doesNotMatch(devFallbackHtml, /tokenHash|requestedAt|expiresAt|lastSentAt|SMTP_PASS/);
+
+  const verifiedHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: true
+      },
+      emailVerification: {
+        authenticated: true,
+        status: "verified",
+        emailVerified: true
+      }
+    })
+  );
+  assert.match(verifiedHtml, /data-profile-email-verification="verified"/);
+  assert.match(verifiedHtml, /Email verified\./);
+  assert.doesNotMatch(
+    verifiedHtml,
+    /profile-request-email-verification-btn|profile-email-verification-form|Submit Code/
+  );
+
+  const guestHtml = profileScreen.render(createProfileScreenContext());
+  assert.doesNotMatch(guestHtml, /profile-email-verification|Verify Email|Email verified\./);
+
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    ...createProfileScreenContext().profile,
+    emailVerified: true,
+    emailVerifiedAt: "2026-07-23T12:00:00.000Z",
+    emailVerification: {
+      tokenHash: "private-hash",
+      requestedAt: "private-request-time",
+      expiresAt: "private-expiry"
+    }
+  });
+  assert.doesNotMatch(
+    viewedHtml,
+    /profile-email-verification|Verify Email|Email verified\.|private-hash|private-request-time|private-expiry/
+  );
+});
+
+test("ui: email verification actions use authenticated bridge, preserve failures, and unlock referral gates", async () => {
+  const previousWindow = global.window;
+  const calls = [];
+  let verifyShouldFail = true;
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: { enqueueToast: () => {} }
+  });
+  controller.username = "VerifyOwner";
+  controller.onlinePlayState = {
+    session: { authenticated: true, username: "VerifyOwner", emailVerified: false }
+  };
+  controller.referralCodeState = {
+    ...controller.referralCodeState,
+    username: "verifyowner",
+    authenticated: true,
+    emailVerified: false
+  };
+
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        getEmailVerificationStatus: async () => {
+          calls.push("status");
+          return {
+            emailVerified: false,
+            emailVerificationPending: false,
+            delivery: "dev_token"
+          };
+        },
+        requestEmailVerification: async () => {
+          calls.push("request");
+          return {
+            emailVerified: false,
+            emailVerificationPending: true,
+            delivery: "dev_token",
+            devVerificationToken: "dev-token-123"
+          };
+        },
+        verifyEmail: async ({ token }) => {
+          calls.push(`verify:${token}`);
+          if (verifyShouldFail) {
+            throw new Error("Verification code is invalid or expired.");
+          }
+          return {
+            emailVerified: true,
+            emailVerificationPending: false,
+            delivery: "dev_token"
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    await controller.loadOwnEmailVerificationState();
+    assert.equal(controller.emailVerificationState.emailVerified, false);
+
+    await controller.requestOwnEmailVerification();
+    assert.equal(controller.emailVerificationState.status, "requested");
+    assert.equal(controller.emailVerificationState.devVerificationToken, "dev-token-123");
+    assert.equal(controller.emailVerificationState.emailVerificationPending, true);
+
+    await controller.verifyOwnEmail("bad-code");
+    assert.equal(controller.emailVerificationState.status, "verification_error");
+    assert.equal(controller.emailVerificationState.inputValue, "bad-code");
+    assert.equal(controller.emailVerificationState.message, "Verification code is invalid or expired.");
+    assert.equal(controller.onlinePlayState.session.emailVerified, false);
+
+    verifyShouldFail = false;
+    await controller.verifyOwnEmail("dev-token-123");
+    assert.equal(controller.emailVerificationState.status, "verified");
+    assert.equal(controller.emailVerificationState.emailVerified, true);
+    assert.equal(controller.emailVerificationState.devVerificationToken, null);
+    assert.equal(controller.onlinePlayState.session.emailVerified, true);
+    assert.equal(controller.referralCodeState.emailVerified, true);
+    assert.deepEqual(calls, [
+      "status",
+      "request",
+      "verify:bad-code",
+      "verify:dev-token-123"
+    ]);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
 test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty states", () => {
   const verifiedHtml = profileScreen.renderReferralDashboardModalBody({
     emailVerified: true,
@@ -32015,7 +32191,7 @@ test("ui: Recent Opponents modal renders empty state exactly", () => {
   assert.match(modalHtml, /data-recent-opponents-empty="true">No recent online opponents yet\.<\/p>/);
 });
 
-test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collections, and Referral Dashboard", async () => {
+test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collections, Referral Dashboard, and verification", async () => {
   const previousDocument = global.document;
   let battleReportClick = null;
   let recentCardClick = null;
@@ -32023,6 +32199,8 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
   let searchSubmit = null;
   let resultButtonClick = null;
   let referralDashboardClick = null;
+  let requestVerificationClick = null;
+  let submitVerification = null;
   const calls = [];
   const searchForm = {};
   const resultButton = {
@@ -32087,6 +32265,32 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
           }
         };
       }
+      if (id === "profile-request-email-verification-btn") {
+        return {
+          disabled: false,
+          addEventListener: (type, handler) => {
+            if (type === "click") {
+              requestVerificationClick = handler;
+            }
+          },
+          setAttribute: () => {}
+        };
+      }
+      if (id === "profile-email-verification-form") {
+        return {
+          addEventListener: (type, handler) => {
+            if (type === "submit") {
+              submitVerification = handler;
+            }
+          }
+        };
+      }
+      if (id === "profile-submit-email-verification-btn") {
+        return {
+          disabled: false,
+          setAttribute: () => {}
+        };
+      }
       return null;
     },
     querySelector: () => null,
@@ -32095,7 +32299,10 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
 
   class FakeFormData {
     get(name) {
-      return name === "profileSearch" ? "RivalSearch" : "";
+      if (name === "profileSearch") {
+        return "RivalSearch";
+      }
+      return name === "verificationCode" ? "dev-code-456" : "";
     }
   }
 
@@ -32118,7 +32325,9 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
           openBattleReport: () => calls.push("openBattleReport"),
           openRecentOpponents: () => calls.push("openRecentOpponents"),
           openCollections: () => calls.push("openCollections"),
-          openReferralDashboard: () => calls.push("openReferralDashboard")
+          openReferralDashboard: () => calls.push("openReferralDashboard"),
+          requestEmailVerification: () => calls.push("requestEmailVerification"),
+          verifyEmail: (token) => calls.push(`verifyEmail:${token}`)
         }
       })
     );
@@ -32129,6 +32338,8 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
     await recentCardClick?.();
     await collectionsClick?.();
     await referralDashboardClick?.();
+    await requestVerificationClick?.();
+    await submitVerification?.({ preventDefault: () => {}, currentTarget: {} });
   } finally {
     global.document = previousDocument;
     global.FormData = previousFormData;
@@ -32141,7 +32352,9 @@ test("ui: top action cards bind Search, Battle Report, Recent Opponents, Collect
     "openBattleReport",
     "openRecentOpponents",
     "openCollections",
-    "openReferralDashboard"
+    "openReferralDashboard",
+    "requestEmailVerification",
+    "verifyEmail:dev-code-456"
   ]);
 });
 
