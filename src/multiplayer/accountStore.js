@@ -10,7 +10,7 @@ import {
   normalizeReferralRisk
 } from "./referralRiskClassifier.js";
 
-const ACCOUNTS_SCHEMA_VERSION = 5;
+const ACCOUNTS_SCHEMA_VERSION = 6;
 const MAX_EMAIL_LENGTH = 160;
 const MAX_USERNAME_LENGTH = 32;
 const MIN_PASSWORD_LENGTH = 8;
@@ -30,6 +30,11 @@ const REFERRER_DAILY_CLAIM_LIMIT = 3;
 const REFERRAL_FAILED_ACTIVATION_SIGNAL_LIMIT = 25;
 const REFERRAL_REWARD_CLAIM_SIGNAL_LIMIT = 50;
 const REFERRAL_ABUSE_SIGNAL_SCHEMA_VERSION = 1;
+const REFERRAL_REWARD_REVIEW_SCHEMA_VERSION = 1;
+const REFERRAL_HELD_REWARD_LIMIT = 100;
+const REFERRAL_BLOCKED_REWARD_LIMIT = 100;
+const REFERRAL_LATEST_REFERRER_REVIEW_LIMIT = 50;
+const REFERRAL_ADMIN_RESTRICTION_SCHEMA_VERSION = 1;
 const REFERRAL_QUALIFYING_MODES = new Set(["pve", "gauntlet", "featured_rival", "online_pvp"]);
 const REFERRAL_DISQUALIFYING_END_REASONS = new Set([
   "abandoned",
@@ -188,7 +193,7 @@ function normalizeReferralRewardClaimSignals(value) {
       if (
         !["own", "referrer"].includes(claimType) ||
         !claimedAt ||
-        !["granted", "duplicate"].includes(outcome)
+        !["granted", "duplicate", "held_for_review", "blocked"].includes(outcome)
       ) {
         return null;
       }
@@ -203,6 +208,218 @@ function normalizeReferralRewardClaimSignals(value) {
     })
     .filter(Boolean)
     .slice(-REFERRAL_REWARD_CLAIM_SIGNAL_LIMIT);
+}
+
+function normalizeReferralRewardReviewRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const claimType = String(value.claimType ?? "").trim().toLowerCase();
+  const status = String(value.status ?? "").trim().toLowerCase();
+  const reviewId = String(value.reviewId ?? "").trim();
+  const deterministicGrantId = String(value.deterministicGrantId ?? "").trim();
+  const createdAt = normalizeIsoTimestamp(value.createdAt);
+  const updatedAt = normalizeIsoTimestamp(value.updatedAt) ?? createdAt;
+  const riskDecision = String(value.riskDecision ?? "").trim().toLowerCase();
+  if (
+    !["own", "referrer"].includes(claimType) ||
+    !["held_for_review", "blocked", "approved", "denied"].includes(status) ||
+    !reviewId ||
+    !deterministicGrantId ||
+    !createdAt ||
+    !["held_for_review", "blocked"].includes(riskDecision)
+  ) {
+    return null;
+  }
+  const riskReasons = [...new Set(
+    (Array.isArray(value.riskReasons) ? value.riskReasons : [])
+      .map((reason) => String(reason ?? "").trim())
+      .filter((reason) => /^[a-z0-9_]{1,80}$/.test(reason))
+  )];
+  const stage = claimType === "referrer" ? "referrer_claim" : "own_claim";
+  const signalPresence = {};
+  for (const [key, present] of Object.entries(value.claimContext?.signalPresence ?? {})) {
+    if (/^[a-zA-Z][a-zA-Z0-9]{0,48}$/.test(key)) {
+      signalPresence[key] = Boolean(present);
+    }
+  }
+  return {
+    schemaVersion: REFERRAL_REWARD_REVIEW_SCHEMA_VERSION,
+    reviewId,
+    claimType,
+    status,
+    createdAt,
+    updatedAt,
+    targetAccountId: String(value.targetAccountId ?? "").trim() || null,
+    targetUsernameHashOrKey: normalizePrivateSignalHash(value.targetUsernameHashOrKey),
+    riskDecision,
+    riskReasons,
+    riskRecordId: String(value.riskRecordId ?? "").trim() || null,
+    deterministicGrantId,
+    rewardAmount: REFERRAL_REWARD_TOKENS,
+    approvedAt: status === "approved" ? normalizeIsoTimestamp(value.approvedAt) : null,
+    approvedBy:
+      status === "approved" ? normalizeUsername(value.approvedBy) : null,
+    deniedAt: status === "denied" ? normalizeIsoTimestamp(value.deniedAt) : null,
+    deniedBy: status === "denied" ? normalizeUsername(value.deniedBy) : null,
+    resolutionReasonCode:
+      ["approved", "denied"].includes(status)
+        ? normalizeReferralAdminReasonCode(value.resolutionReasonCode)
+        : null,
+    claimContext: {
+      stage,
+      signalPresence
+    }
+  };
+}
+
+function normalizeReferralAdminReasonCode(value) {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return /^[A-Z][A-Z0-9_]{0,63}$/.test(normalized) ? normalized : null;
+}
+
+function normalizeReferralAdminRestrictions(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const suspended = source.referralRewardsSuspended === true;
+  const createdAt = suspended ? normalizeIsoTimestamp(source.createdAt) : null;
+  return {
+    schemaVersion: REFERRAL_ADMIN_RESTRICTION_SCHEMA_VERSION,
+    referralRewardsSuspended: suspended,
+    reasonCode: suspended
+      ? normalizeReferralAdminReasonCode(source.reasonCode) ?? "ADMIN_REFERRAL_REVIEW"
+      : null,
+    createdAt,
+    updatedAt: suspended
+      ? normalizeIsoTimestamp(source.updatedAt) ?? createdAt
+      : null,
+    createdBy: suspended ? normalizeUsername(source.createdBy) : null
+  };
+}
+
+function normalizeReferralRewardReview(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const normalizeRecords = (records, limit) =>
+    (Array.isArray(records) ? records : [])
+      .map((record) => normalizeReferralRewardReviewRecord(record))
+      .filter(Boolean)
+      .slice(-limit);
+  return {
+    schemaVersion: REFERRAL_REWARD_REVIEW_SCHEMA_VERSION,
+    heldRewards: normalizeRecords(source.heldRewards, REFERRAL_HELD_REWARD_LIMIT),
+    blockedRewards: normalizeRecords(source.blockedRewards, REFERRAL_BLOCKED_REWARD_LIMIT),
+    latestOwnRewardReview: normalizeReferralRewardReviewRecord(
+      source.latestOwnRewardReview
+    ),
+    latestReferrerRewardReviews: normalizeRecords(
+      source.latestReferrerRewardReviews,
+      REFERRAL_LATEST_REFERRER_REVIEW_LIMIT
+    )
+  };
+}
+
+function buildReferralRewardReviewId(claimId) {
+  return `referral-review-${crypto
+    .createHash("sha256")
+    .update(`reward-review:${String(claimId ?? "")}`)
+    .digest("hex")
+    .slice(0, 24)}`;
+}
+
+function findReferralRewardReview(reviewValue, claimId) {
+  const review = normalizeReferralRewardReview(reviewValue);
+  return [...review.heldRewards, ...review.blockedRewards].find(
+    (record) => record.deterministicGrantId === claimId
+  ) ?? null;
+}
+
+function updateReferralRewardReviewRecord(reviewValue, nextRecordValue) {
+  const review = normalizeReferralRewardReview(reviewValue);
+  const nextRecord = normalizeReferralRewardReviewRecord(nextRecordValue);
+  if (!nextRecord) {
+    return review;
+  }
+  const replace = (record) =>
+    record.reviewId === nextRecord.reviewId ? nextRecord : record;
+  return normalizeReferralRewardReview({
+    ...review,
+    heldRewards: review.heldRewards.map(replace),
+    blockedRewards: review.blockedRewards.map(replace),
+    latestOwnRewardReview:
+      review.latestOwnRewardReview?.reviewId === nextRecord.reviewId
+        ? nextRecord
+        : review.latestOwnRewardReview,
+    latestReferrerRewardReviews: review.latestReferrerRewardReviews.map(replace)
+  });
+}
+
+function appendReferralRewardReview(referralValue, {
+  claimId,
+  claimType,
+  classification,
+  createdAt,
+  requestSignals,
+  targetAccountId
+} = {}) {
+  const referral = normalizeReferral(referralValue);
+  const status = String(classification?.decision ?? "").trim().toLowerCase();
+  if (!["held_for_review", "blocked"].includes(status)) {
+    return referral;
+  }
+  const existing = findReferralRewardReview(referral.rewardReview, claimId);
+  if (existing) {
+    return referral;
+  }
+  const signals = normalizeReferralRequestSignals(requestSignals);
+  const stage = claimType === "referrer" ? "referrer_claim" : "own_claim";
+  const riskRecordId = crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        claimId,
+        stage,
+        decision: status,
+        reasons: classification?.reasons ?? [],
+        evaluatedAt: createdAt
+      })
+    )
+    .digest("hex")
+    .slice(0, 24);
+  const record = normalizeReferralRewardReviewRecord({
+    reviewId: buildReferralRewardReviewId(claimId),
+    claimType,
+    status,
+    createdAt,
+    updatedAt: createdAt,
+    targetAccountId,
+    targetUsernameHashOrKey: signals.targetUsernameHashOrKey,
+    riskDecision: status,
+    riskReasons: classification?.reasons,
+    riskRecordId,
+    deterministicGrantId: claimId,
+    rewardAmount: REFERRAL_REWARD_TOKENS,
+    claimContext: {
+      stage,
+      signalPresence: classification?.signalPresence
+    }
+  });
+  const review = normalizeReferralRewardReview(referral.rewardReview);
+  const nextReview = {
+    ...review,
+    [status === "held_for_review" ? "heldRewards" : "blockedRewards"]: [
+      ...review[status === "held_for_review" ? "heldRewards" : "blockedRewards"],
+      record
+    ],
+    latestOwnRewardReview:
+      claimType === "own" ? record : review.latestOwnRewardReview,
+    latestReferrerRewardReviews:
+      claimType === "referrer"
+        ? [...review.latestReferrerRewardReviews, record]
+        : review.latestReferrerRewardReviews
+  };
+  return {
+    ...referral,
+    rewardReview: normalizeReferralRewardReview(nextReview)
+  };
 }
 
 function normalizeReferralAbuseSignals(value) {
@@ -392,7 +609,9 @@ function normalizeReferral(value) {
       referralActivatedAt: abuseSignals.referralActivatedAt ?? referredAt,
       referralQualifiedAt: abuseSignals.referralQualifiedAt ?? qualifiedAt
     },
-    risk: normalizeReferralRisk(source.risk)
+    risk: normalizeReferralRisk(source.risk),
+    rewardReview: normalizeReferralRewardReview(source.rewardReview),
+    adminRestrictions: normalizeReferralAdminRestrictions(source.adminRestrictions)
   };
 }
 
@@ -418,6 +637,8 @@ function buildSafeReferralStatus(account, playerLevel = 1) {
 
 function buildSafeReferralDashboard(account, accounts, playerLevel = 1, nowMs = Date.now()) {
   const referral = normalizeReferral(account?.referral);
+  const referralRewardsSuspended =
+    referral.adminRestrictions.referralRewardsSuspended;
   const ownProgress = buildSafeReferralStatus(account, playerLevel);
   const todayKey = new Date(nowMs).toISOString().slice(0, 10);
   const referrerClaimsPaidToday = Object.values(referral.referrerClaims).filter(
@@ -434,6 +655,10 @@ function buildSafeReferralDashboard(account, accounts, playerLevel = 1, nowMs = 
     .map((entry) => {
       const status = buildSafeReferralStatus(entry);
       const rewardClaimed = Boolean(referral.referrerClaims[entry.accountId]?.claimedAt);
+      const rewardReview = findReferralRewardReview(
+        referral.rewardReview,
+        buildReferralRewardClaimId("referrer", account.accountId, entry.accountId)
+      );
       return {
         username: normalizeUsername(entry?.username) ?? "Player",
         level2Reached: status.level2Reached,
@@ -441,6 +666,12 @@ function buildSafeReferralDashboard(account, accounts, playerLevel = 1, nowMs = 
         qualified: status.qualified,
         rewardStatus: rewardClaimed
           ? "claimed"
+          : referralRewardsSuspended
+            ? "could_not_claim"
+          : rewardReview?.status === "held_for_review"
+            ? "pending_review"
+            : ["blocked", "denied"].includes(rewardReview?.status)
+              ? "could_not_claim"
           : !status.qualified
             ? "locked"
             : referrerDailyCapReached
@@ -461,6 +692,20 @@ function buildSafeReferralDashboard(account, accounts, playerLevel = 1, nowMs = 
       qualifiedAt: ownProgress.qualifiedAt,
       rewardStatus: referral.referredReward.claimedAt
         ? "claimed"
+        : referralRewardsSuspended
+          ? "could_not_claim"
+        : findReferralRewardReview(
+              referral.rewardReview,
+              buildReferralRewardClaimId("own", account.accountId)
+            )?.status === "held_for_review"
+          ? "pending_review"
+          : ["blocked", "denied"].includes(
+                findReferralRewardReview(
+                  referral.rewardReview,
+                  buildReferralRewardClaimId("own", account.accountId)
+                )?.status
+              )
+            ? "could_not_claim"
         : !ownProgress.referredByLinked
           ? "unavailable"
           : !ownProgress.qualified
@@ -470,6 +715,61 @@ function buildSafeReferralDashboard(account, accounts, playerLevel = 1, nowMs = 
     referrerDailyCapReached,
     referrerClaimsPaidToday,
     referees: refereeProgress
+  };
+}
+
+function findReferralRewardReviewLocation(accounts, reviewId) {
+  const safeReviewId = String(reviewId ?? "").trim();
+  if (!safeReviewId) {
+    return null;
+  }
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    const referral = normalizeReferral(account?.referral);
+    const record = [...referral.rewardReview.heldRewards, ...referral.rewardReview.blockedRewards]
+      .find((entry) => entry.reviewId === safeReviewId);
+    if (record) {
+      return { account, referral, record };
+    }
+  }
+  return null;
+}
+
+function buildSafeAdminReferralReview(record, account, accounts) {
+  const targetAccount =
+    (Array.isArray(accounts) ? accounts : []).find(
+      (entry) => entry?.accountId === record?.targetAccountId
+    ) ?? null;
+  const referral = normalizeReferral(account?.referral);
+  return {
+    reviewId: record.reviewId,
+    status: record.status,
+    claimType: record.claimType,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    account: {
+      accountId: account?.accountId ?? null,
+      username: normalizeUsername(account?.username) ?? "Player"
+    },
+    target: targetAccount
+      ? {
+          accountId: targetAccount.accountId,
+          username: normalizeUsername(targetAccount.username) ?? "Player"
+        }
+      : null,
+    riskDecision: record.riskDecision,
+    riskReasons: [...record.riskReasons],
+    riskStage: record.claimContext.stage,
+    claimStatus: record.status,
+    rewardAmount: record.rewardAmount,
+    approvalPossible:
+      record.status === "held_for_review" &&
+      !referral.adminRestrictions.referralRewardsSuspended,
+    referralRewardsSuspended:
+      referral.adminRestrictions.referralRewardsSuspended,
+    approvedAt: record.approvedAt,
+    approvedBy: record.approvedBy,
+    deniedAt: record.deniedAt,
+    deniedBy: record.deniedBy
   };
 }
 
@@ -653,11 +953,13 @@ export class MultiplayerAccountStore {
     dataDir,
     logger = console,
     now = () => Date.now(),
-    referralCodeGenerator = createReferralCodeCandidate
+    referralCodeGenerator = createReferralCodeCandidate,
+    referralRewardRiskClassifier = classifyReferralRewardClaimRisk
   } = {}) {
     this.logger = logger;
     this.now = now;
     this.referralCodeGenerator = referralCodeGenerator;
+    this.referralRewardRiskClassifier = referralRewardRiskClassifier;
     this.referralMutationQueue = Promise.resolve();
     this.store = new JsonStore("accounts.json", { dataDir });
   }
@@ -1072,6 +1374,8 @@ export class MultiplayerAccountStore {
       let ledgerClaimed = false;
       let relatedReferral = null;
       let referrerClaimsPaidToday = 0;
+      let dailyCapReached = false;
+      let reviewTargetAccountId = account.accountId;
 
       if (safeClaimType === "own") {
         if (!referral.referredBy) {
@@ -1093,8 +1397,9 @@ export class MultiplayerAccountStore {
         claimTarget = {
           account,
           applyClaim: (claimedAt) => {
+            const currentReferral = normalizeReferral(account.referral);
             account.referral = {
-              ...referral,
+              ...currentReferral,
               referredReward: {
                 claimedAt,
                 amount: REFERRAL_REWARD_TOKENS,
@@ -1124,6 +1429,7 @@ export class MultiplayerAccountStore {
           );
         }
         const refereeReferral = normalizeReferral(referee.referral);
+        reviewTargetAccountId = referee.accountId;
         relatedReferral = refereeReferral;
         if (!referral.code || refereeReferral.referredBy !== referral.code) {
           throw buildAccountError(
@@ -1143,22 +1449,17 @@ export class MultiplayerAccountStore {
         referrerClaimsPaidToday = Object.values(referral.referrerClaims).filter(
           (claim) => getUtcDateKey(claim?.claimedAt) === todayKey
         ).length;
-        if (!ledgerClaimed) {
-          if (referrerClaimsPaidToday >= REFERRER_DAILY_CLAIM_LIMIT) {
-            throw buildAccountError(
-              "REFERRAL_DAILY_CAP_REACHED",
-              "Daily referral claim limit reached. Come back tomorrow."
-            );
-          }
-        }
+        dailyCapReached =
+          !ledgerClaimed && referrerClaimsPaidToday >= REFERRER_DAILY_CLAIM_LIMIT;
         claimTarget = {
           account,
           refereeUsername: normalizeUsername(referee.username),
           applyClaim: (claimedAt) => {
+            const currentReferral = normalizeReferral(account.referral);
             account.referral = {
-              ...referral,
+              ...currentReferral,
               referrerClaims: {
-                ...referral.referrerClaims,
+                ...currentReferral.referrerClaims,
                 [referee.accountId]: {
                   claimedAt,
                   amount: REFERRAL_REWARD_TOKENS,
@@ -1175,38 +1476,37 @@ export class MultiplayerAccountStore {
         );
       }
 
-      const grantResult = await grantTokens({
-        username: account.profileKey ?? account.username,
-        claimId,
-        amount: REFERRAL_REWARD_TOKENS
-      });
-      if (!ledgerClaimed) {
-        const claimedAt = new Date(this.now()).toISOString();
-        claimTarget.applyClaim(claimedAt);
-        account.updatedAt = claimedAt;
-      }
-      const reportedTokensAdded = Number(grantResult?.tokensAdded);
-      const amount = Number.isFinite(reportedTokensAdded)
-        ? Math.min(REFERRAL_REWARD_TOKENS, Math.max(0, Math.floor(reportedTokensAdded)))
-        : grantResult?.duplicate || ledgerClaimed
-          ? 0
-          : REFERRAL_REWARD_TOKENS;
       const claimSignalAt = new Date(this.now()).toISOString();
-      account.referral = appendReferralRewardClaimSignal(account.referral, {
-        claimType: safeClaimType,
-        claimedAt: claimSignalAt,
-        outcome: amount === 0 ? "duplicate" : "granted",
-        requestSignals
-      });
+      if (
+        !ledgerClaimed &&
+        referral.adminRestrictions.referralRewardsSuspended
+      ) {
+        return {
+          claimType: safeClaimType,
+          refereeUsername: claimTarget.refereeUsername ?? null,
+          status: "could_not_claim",
+          message: "Referral reward could not be claimed.",
+          amount: 0,
+          duplicate: false,
+          grantResult: null,
+          dashboard: buildSafeReferralDashboard(
+            account,
+            state.accounts,
+            playerLevel,
+            this.now()
+          )
+        };
+      }
       const normalizedSignals = normalizeReferralRequestSignals(requestSignals);
       const stage = safeClaimType === "referrer" ? "referrer_claim" : "own_claim";
-      const classification = classifyReferralRewardClaimRisk({
+      const existingReview = findReferralRewardReview(referral.rewardReview, claimId);
+      const classification = this.referralRewardRiskClassifier({
         stage,
         actorSignals: account.referral.abuseSignals,
         relatedSignals: relatedReferral?.abuseSignals,
         requestSignals,
         evaluatedAt: claimSignalAt,
-        duplicate: amount === 0,
+        duplicate: ledgerClaimed || Boolean(existingReview),
         referralsFromIpHash:
           safeClaimType === "referrer"
             ? countReferredAccountsBySignal(
@@ -1227,22 +1527,419 @@ export class MultiplayerAccountStore {
             : 0,
         referrerClaimsPaidToday
       });
+      const enforcementDecision = existingReview?.status ?? classification?.decision;
       account.referral = appendClassifiedReferralRisk(account.referral, {
         classification,
         evaluatedAt: claimSignalAt,
         stage,
         requestSignals
       });
+
+      if (
+        !ledgerClaimed &&
+        ["held_for_review", "blocked"].includes(enforcementDecision)
+      ) {
+        const enforcementClassification = {
+          ...classification,
+          decision: enforcementDecision,
+          reasons: existingReview?.riskReasons ?? classification?.reasons
+        };
+        account.referral = appendReferralRewardReview(account.referral, {
+          claimId,
+          claimType: safeClaimType,
+          classification: enforcementClassification,
+          createdAt: claimSignalAt,
+          requestSignals,
+          targetAccountId: reviewTargetAccountId
+        });
+        account.referral = appendReferralRewardClaimSignal(account.referral, {
+          claimType: safeClaimType,
+          claimedAt: claimSignalAt,
+          outcome: enforcementDecision,
+          requestSignals
+        });
+        account.updatedAt = claimSignalAt;
+        await this.writeState(state);
+        const held = enforcementDecision === "held_for_review";
+        return {
+          claimType: safeClaimType,
+          refereeUsername: claimTarget.refereeUsername ?? null,
+          status: held ? "pending_review" : "could_not_claim",
+          message: held
+            ? "Referral reward pending review."
+            : "Referral reward could not be claimed.",
+          amount: 0,
+          duplicate: Boolean(existingReview),
+          grantResult: null,
+          dashboard: buildSafeReferralDashboard(
+            account,
+            state.accounts,
+            playerLevel,
+            this.now()
+          )
+        };
+      }
+
+      if (dailyCapReached) {
+        throw buildAccountError(
+          "REFERRAL_DAILY_CAP_REACHED",
+          "Daily referral claim limit reached. Come back tomorrow."
+        );
+      }
+
+      const grantResult = await grantTokens({
+        username: account.profileKey ?? account.username,
+        claimId,
+        amount: REFERRAL_REWARD_TOKENS
+      });
+      if (!ledgerClaimed) {
+        const claimedAt = new Date(this.now()).toISOString();
+        claimTarget.applyClaim(claimedAt);
+        account.updatedAt = claimedAt;
+      }
+      const reportedTokensAdded = Number(grantResult?.tokensAdded);
+      const amount = Number.isFinite(reportedTokensAdded)
+        ? Math.min(REFERRAL_REWARD_TOKENS, Math.max(0, Math.floor(reportedTokensAdded)))
+        : grantResult?.duplicate || ledgerClaimed
+          ? 0
+          : REFERRAL_REWARD_TOKENS;
+      account.referral = appendReferralRewardClaimSignal(account.referral, {
+        claimType: safeClaimType,
+        claimedAt: claimSignalAt,
+        outcome: amount === 0 ? "duplicate" : "granted",
+        requestSignals
+      });
+      if (amount === 0 && !ledgerClaimed) {
+        const duplicateClassification = this.referralRewardRiskClassifier({
+          stage,
+          actorSignals: account.referral.abuseSignals,
+          relatedSignals: relatedReferral?.abuseSignals,
+          requestSignals,
+          evaluatedAt: claimSignalAt,
+          duplicate: true,
+          referralsFromIpHash: 0,
+          referralsFromUserAgentHash: 0,
+          referrerClaimsPaidToday
+        });
+        account.referral = appendClassifiedReferralRisk(account.referral, {
+          classification: duplicateClassification,
+          evaluatedAt: claimSignalAt,
+          stage,
+          requestSignals
+        });
+      }
       account.updatedAt = claimSignalAt;
       await this.writeState(state);
 
       return {
         claimType: safeClaimType,
         refereeUsername: claimTarget.refereeUsername ?? null,
+        status: "claimed",
+        message: "Reward claimed.",
         amount,
         duplicate: amount === 0,
         grantResult,
         dashboard: buildSafeReferralDashboard(account, state.accounts, playerLevel, this.now())
+      };
+    };
+
+    const pending = this.referralMutationQueue.then(operation, operation);
+    this.referralMutationQueue = pending.catch(() => undefined);
+    return pending;
+  }
+
+  async listReferralRewardReviews({ status = "all" } = {}) {
+    const safeStatus = String(status ?? "all").trim().toLowerCase();
+    const statusMap = {
+      all: null,
+      held: "held_for_review",
+      held_for_review: "held_for_review",
+      blocked: "blocked",
+      approved: "approved",
+      denied: "denied"
+    };
+    if (!(safeStatus in statusMap)) {
+      throw buildAccountError(
+        "ADMIN_REFERRAL_REVIEW_FILTER_INVALID",
+        "Choose a valid referral review filter."
+      );
+    }
+    const state = await this.readState();
+    const reviews = [];
+    for (const account of state.accounts) {
+      const referral = normalizeReferral(account.referral);
+      for (const record of [
+        ...referral.rewardReview.heldRewards,
+        ...referral.rewardReview.blockedRewards
+      ]) {
+        if (statusMap[safeStatus] && record.status !== statusMap[safeStatus]) {
+          continue;
+        }
+        reviews.push(buildSafeAdminReferralReview(record, account, state.accounts));
+      }
+    }
+    reviews.sort(
+      (left, right) =>
+        Date.parse(right.createdAt ?? "") - Date.parse(left.createdAt ?? "")
+    );
+    return {
+      filter: safeStatus,
+      reviews
+    };
+  }
+
+  async resolveReferralRewardReview({
+    reviewId,
+    action,
+    adminIdentifier,
+    reasonCode = null,
+    grantTokens
+  } = {}) {
+    const operation = async () => {
+      const safeReviewId = String(reviewId ?? "").trim();
+      const safeAction = String(action ?? "").trim().toLowerCase();
+      const safeAdminIdentifier = normalizeUsername(adminIdentifier);
+      if (!safeReviewId) {
+        throw buildAccountError(
+          "ADMIN_REFERRAL_REVIEW_ID_REQUIRED",
+          "reviewId is required."
+        );
+      }
+      if (!["approve", "deny"].includes(safeAction)) {
+        throw buildAccountError(
+          "ADMIN_REFERRAL_REVIEW_ACTION_INVALID",
+          "Choose approve or deny."
+        );
+      }
+      if (!safeAdminIdentifier) {
+        throw buildAccountError(
+          "ADMIN_AUTH_REQUIRED",
+          "An authenticated admin identity is required."
+        );
+      }
+
+      const state = await this.readState();
+      const location = findReferralRewardReviewLocation(state.accounts, safeReviewId);
+      if (!location) {
+        throw buildAccountError(
+          "ADMIN_REFERRAL_REVIEW_NOT_FOUND",
+          "Referral reward review was not found."
+        );
+      }
+      const { account, record } = location;
+      let referral = normalizeReferral(account.referral);
+
+      if (safeAction === "approve") {
+        if (record.status === "approved") {
+          return {
+            action: "approve",
+            duplicate: true,
+            tokensAdded: 0,
+            review: buildSafeAdminReferralReview(record, account, state.accounts)
+          };
+        }
+        if (record.status !== "held_for_review") {
+          throw buildAccountError(
+            "ADMIN_REFERRAL_REVIEW_NOT_APPROVABLE",
+            "Only a pending referral reward can be approved."
+          );
+        }
+        if (referral.adminRestrictions.referralRewardsSuspended) {
+          throw buildAccountError(
+            "ADMIN_REFERRAL_REWARDS_SUSPENDED",
+            "Referral rewards are suspended for this account."
+          );
+        }
+        if (typeof grantTokens !== "function") {
+          throw buildAccountError(
+            "REFERRAL_REWARD_AUTHORITY_UNAVAILABLE",
+            "Referral rewards are unavailable right now."
+          );
+        }
+        if (
+          record.claimType === "referrer" &&
+          !state.accounts.some((entry) => entry.accountId === record.targetAccountId)
+        ) {
+          throw buildAccountError(
+            "ADMIN_REFERRAL_REVIEW_TARGET_MISSING",
+            "The referral reward target could not be found."
+          );
+        }
+
+        const grantResult = await grantTokens({
+          username: account.profileKey ?? account.username,
+          claimId: record.deterministicGrantId,
+          amount: record.rewardAmount
+        });
+        const approvedAt = new Date(this.now()).toISOString();
+        const approvedRecord = {
+          ...record,
+          status: "approved",
+          updatedAt: approvedAt,
+          approvedAt,
+          approvedBy: safeAdminIdentifier,
+          resolutionReasonCode:
+            normalizeReferralAdminReasonCode(reasonCode) ?? "ADMIN_APPROVED"
+        };
+        referral =
+          record.claimType === "own"
+            ? {
+                ...referral,
+                referredReward: {
+                  claimedAt: approvedAt,
+                  amount: record.rewardAmount,
+                  claimId: record.deterministicGrantId
+                }
+              }
+            : {
+                ...referral,
+                referrerClaims: {
+                  ...referral.referrerClaims,
+                  [record.targetAccountId]: {
+                    claimedAt: approvedAt,
+                    amount: record.rewardAmount,
+                    claimId: record.deterministicGrantId
+                  }
+                }
+              };
+        account.referral = {
+          ...referral,
+          rewardReview: updateReferralRewardReviewRecord(
+            referral.rewardReview,
+            approvedRecord
+          )
+        };
+        account.updatedAt = approvedAt;
+        await this.writeState(state);
+        const reportedTokensAdded = Number(grantResult?.tokensAdded);
+        return {
+          action: "approve",
+          duplicate: Boolean(grantResult?.duplicate),
+          tokensAdded: Number.isFinite(reportedTokensAdded)
+            ? Math.min(
+                record.rewardAmount,
+                Math.max(0, Math.floor(reportedTokensAdded))
+              )
+            : grantResult?.duplicate
+              ? 0
+              : record.rewardAmount,
+          review: buildSafeAdminReferralReview(
+            normalizeReferralRewardReviewRecord(approvedRecord),
+            account,
+            state.accounts
+          )
+        };
+      }
+
+      if (record.status === "denied" || record.status === "blocked") {
+        return {
+          action: "deny",
+          duplicate: true,
+          tokensAdded: 0,
+          review: buildSafeAdminReferralReview(record, account, state.accounts)
+        };
+      }
+      if (record.status !== "held_for_review") {
+        throw buildAccountError(
+          "ADMIN_REFERRAL_REVIEW_NOT_DENIABLE",
+          "Only a pending referral reward can be denied."
+        );
+      }
+      const deniedAt = new Date(this.now()).toISOString();
+      const deniedRecord = {
+        ...record,
+        status: "denied",
+        updatedAt: deniedAt,
+        deniedAt,
+        deniedBy: safeAdminIdentifier,
+        resolutionReasonCode:
+          normalizeReferralAdminReasonCode(reasonCode) ?? "ADMIN_DENIED"
+      };
+      account.referral = {
+        ...referral,
+        rewardReview: updateReferralRewardReviewRecord(
+          referral.rewardReview,
+          deniedRecord
+        )
+      };
+      account.updatedAt = deniedAt;
+      await this.writeState(state);
+      return {
+        action: "deny",
+        duplicate: false,
+        tokensAdded: 0,
+        review: buildSafeAdminReferralReview(
+          normalizeReferralRewardReviewRecord(deniedRecord),
+          account,
+          state.accounts
+        )
+      };
+    };
+
+    const pending = this.referralMutationQueue.then(operation, operation);
+    this.referralMutationQueue = pending.catch(() => undefined);
+    return pending;
+  }
+
+  async suspendReferralRewards({
+    accountId,
+    reasonCode,
+    adminIdentifier
+  } = {}) {
+    const operation = async () => {
+      const safeAccountId = String(accountId ?? "").trim();
+      const safeReasonCode =
+        normalizeReferralAdminReasonCode(reasonCode) ?? "ADMIN_REFERRAL_REVIEW";
+      const safeAdminIdentifier = normalizeUsername(adminIdentifier);
+      if (!safeAccountId) {
+        throw buildAccountError(
+          "ADMIN_TARGET_ACCOUNT_REQUIRED",
+          "accountId is required."
+        );
+      }
+      if (!safeAdminIdentifier) {
+        throw buildAccountError(
+          "ADMIN_AUTH_REQUIRED",
+          "An authenticated admin identity is required."
+        );
+      }
+      const state = await this.readState();
+      const account =
+        state.accounts.find((entry) => entry.accountId === safeAccountId) ?? null;
+      if (!account) {
+        throw buildAccountError(
+          "ACCOUNT_NOT_FOUND",
+          "Account was not found."
+        );
+      }
+      const referral = normalizeReferral(account.referral);
+      if (referral.adminRestrictions.referralRewardsSuspended) {
+        return {
+          duplicate: true,
+          accountId: account.accountId,
+          username: normalizeUsername(account.username) ?? "Player",
+          referralRewardsSuspended: true
+        };
+      }
+      const now = new Date(this.now()).toISOString();
+      account.referral = {
+        ...referral,
+        adminRestrictions: {
+          schemaVersion: REFERRAL_ADMIN_RESTRICTION_SCHEMA_VERSION,
+          referralRewardsSuspended: true,
+          reasonCode: safeReasonCode,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: safeAdminIdentifier
+        }
+      };
+      account.updatedAt = now;
+      await this.writeState(state);
+      return {
+        duplicate: false,
+        accountId: account.accountId,
+        username: normalizeUsername(account.username) ?? "Player",
+        referralRewardsSuspended: true
       };
     };
 

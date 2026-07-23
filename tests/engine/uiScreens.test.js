@@ -31688,6 +31688,20 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
         qualifyingMatchesCompleted: 3,
         qualified: true,
         rewardStatus: "daily_cap_reached"
+      },
+      {
+        username: "PendingReviewReferee",
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "pending_review"
+      },
+      {
+        username: "UnableReferee",
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "could_not_claim"
       }
     ]
   });
@@ -31722,6 +31736,16 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
   assert.match(
     verifiedHtml,
     /Daily referral claim limit reached\. Come back tomorrow\./
+  );
+  assert.match(verifiedHtml, /PendingReviewReferee/);
+  assert.match(
+    verifiedHtml,
+    /data-referral-referrer-reward-pending="true">Referral reward pending review\./
+  );
+  assert.match(verifiedHtml, /UnableReferee/);
+  assert.match(
+    verifiedHtml,
+    /data-referral-referrer-reward-blocked="true">Referral reward could not be claimed\./
   );
   const safeRefereeStart = verifiedHtml.indexOf("SafeReferee");
   const qualifiedRefereeStart = verifiedHtml.indexOf("QualifiedReferee");
@@ -31773,6 +31797,42 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
   });
   assert.match(claimedHtml, /data-referral-own-reward-claimed="true">Reward claimed\./);
   assert.doesNotMatch(claimedHtml, /data-referral-claim-own/);
+
+  const pendingReviewHtml = profileScreen.renderReferralDashboardModalBody({
+    emailVerified: true,
+    referralCode: "ELM-K7QX-M9PD",
+    ownProgress: {
+      referralLinked: true,
+      level2Reached: true,
+      qualifyingMatchesCompleted: 3,
+      qualified: true,
+      rewardStatus: "pending_review"
+    },
+    referees: []
+  });
+  assert.match(
+    pendingReviewHtml,
+    /data-referral-own-reward-pending="true">Referral reward pending review\./
+  );
+  assert.doesNotMatch(pendingReviewHtml, /data-referral-claim-own|same IP|risk|abuse/i);
+
+  const blockedReviewHtml = profileScreen.renderReferralDashboardModalBody({
+    emailVerified: true,
+    referralCode: "ELM-K7QX-M9PD",
+    ownProgress: {
+      referralLinked: true,
+      level2Reached: true,
+      qualifyingMatchesCompleted: 3,
+      qualified: true,
+      rewardStatus: "could_not_claim"
+    },
+    referees: []
+  });
+  assert.match(
+    blockedReviewHtml,
+    /data-referral-own-reward-blocked="true">Referral reward could not be claimed\./
+  );
+  assert.doesNotMatch(blockedReviewHtml, /data-referral-claim-own|same IP|risk|abuse/i);
 });
 
 test("ui: referral activation entry gates verified, pending, linked, and viewed-profile states", () => {
@@ -31875,6 +31935,40 @@ test("ui: referral activation entry gates verified, pending, linked, and viewed-
   );
   assert.match(claimedHtml, /Reward claimed\./);
   assert.doesNotMatch(claimedHtml, /Reward ready to claim in Referral Dashboard\./);
+
+  const pendingReviewInlineHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: true,
+        referralCode: "ELM-K7QX-M9PD",
+        referralLinked: true,
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "pending_review"
+      }
+    })
+  );
+  assert.match(pendingReviewInlineHtml, /Referral reward pending review\./);
+  assert.doesNotMatch(pendingReviewInlineHtml, /same IP|risk|abuse/i);
+
+  const blockedInlineHtml = profileScreen.render(
+    createProfileScreenContext({
+      referral: {
+        authenticated: true,
+        emailVerified: true,
+        referralCode: "ELM-K7QX-M9PD",
+        referralLinked: true,
+        level2Reached: true,
+        qualifyingMatchesCompleted: 3,
+        qualified: true,
+        rewardStatus: "could_not_claim"
+      }
+    })
+  );
+  assert.match(blockedInlineHtml, /Referral reward could not be claimed\./);
+  assert.doesNotMatch(blockedInlineHtml, /same IP|risk|abuse/i);
 
   const guestHtml = profileScreen.render(createProfileScreenContext());
   assert.match(guestHtml, /data-referral-activation-signed-out="true"/);
@@ -32069,6 +32163,79 @@ test("ui: referral reward claim is single-flight and refreshes tokens plus claim
       { amount: 100, label: "Referral Reward Claimed" }
     ]);
     assert.equal(controller.referralRewardClaimPromise, null);
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test("ui: held and blocked referral claims refresh safe status without token toasts", async () => {
+  const previousWindow = global.window;
+  const dashboards = [];
+  const tokenToasts = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
+    toastManager: {
+      showTokenReward: (payload) => tokenToasts.push(payload)
+    }
+  });
+  controller.username = "ReviewOwner";
+  controller.profile = {
+    ...createProfileScreenContext().profile,
+    username: "ReviewOwner",
+    tokens: 400
+  };
+  controller.onlinePlayState = {
+    session: { authenticated: true, username: "ReviewOwner", emailVerified: true }
+  };
+  controller.showProfile = async () => {};
+  controller.showReferralDashboardModal = async (dashboard) => {
+    dashboards.push(dashboard);
+  };
+  global.window = {
+    elemintz: {
+      multiplayer: {
+        claimReferralReward: async ({ claimType }) => ({
+          claim: {
+            claimType,
+            amount: 0,
+            duplicate: false,
+            status: claimType === "own" ? "pending_review" : "could_not_claim",
+            message:
+              claimType === "own"
+                ? "Referral reward pending review."
+                : "Referral reward could not be claimed."
+          },
+          tokenBalance: 400,
+          dashboard: {
+            emailVerified: true,
+            ownProgress: {
+              referralLinked: true,
+              qualified: true,
+              rewardStatus:
+                claimType === "own" ? "pending_review" : "could_not_claim"
+            },
+            referees: []
+          }
+        })
+      }
+    }
+  };
+
+  try {
+    const held = await controller.claimReferralReward({ claimType: "own" });
+    const blocked = await controller.claimReferralReward({
+      claimType: "referrer",
+      refereeUsername: "ReviewTarget"
+    });
+    assert.equal(held.claim.status, "pending_review");
+    assert.equal(blocked.claim.status, "could_not_claim");
+    assert.equal(controller.profile.tokens, 400);
+    assert.deepEqual(tokenToasts, []);
+    assert.deepEqual(
+      dashboards.map((dashboard) => dashboard.ownProgress.rewardStatus),
+      ["pending_review", "could_not_claim"]
+    );
   } finally {
     global.window = previousWindow;
   }

@@ -4449,7 +4449,11 @@ export class AppController {
             const dashboardRewardStatus = String(
               dashboard?.ownProgress?.rewardStatus ?? ""
             ).trim().toLowerCase();
-            if (["locked", "claimable", "claimed"].includes(dashboardRewardStatus)) {
+            if (
+              ["locked", "claimable", "claimed", "pending_review", "could_not_claim"].includes(
+                dashboardRewardStatus
+              )
+            ) {
               rewardStatus = dashboardRewardStatus;
             }
           } catch {

@@ -2405,6 +2405,8 @@ export function createMultiplayerFoundation({
           claim: {
             claimType: claim.claimType,
             refereeUsername: claim.refereeUsername,
+            status: claim.status,
+            message: claim.message,
             amount: claim.amount,
             duplicate: Boolean(claim.duplicate)
           },
@@ -3334,6 +3336,85 @@ export function createMultiplayerFoundation({
         });
       } catch (error) {
         respond(buildAdminError(error, "ADMIN_LOOKUP_FAILED"));
+      }
+    });
+
+    socket.on("admin:listReferralRewardReviews", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof accountStore?.listReferralRewardReviews !== "function") {
+          throw Object.assign(new Error("Referral review authority is unavailable."), {
+            code: "ADMIN_REFERRAL_REVIEW_UNAVAILABLE"
+          });
+        }
+        const queue = await accountStore.listReferralRewardReviews({
+          status: payload?.status
+        });
+        respond({ ok: true, queue });
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_REFERRAL_REVIEW_LIST_FAILED"));
+      }
+    });
+
+    socket.on("admin:resolveReferralRewardReview", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (
+          typeof accountStore?.resolveReferralRewardReview !== "function" ||
+          typeof profileAuthority?.grantReferralRewardTokens !== "function"
+        ) {
+          throw Object.assign(new Error("Referral review authority is unavailable."), {
+            code: "ADMIN_REFERRAL_REVIEW_UNAVAILABLE"
+          });
+        }
+        const result = await accountStore.resolveReferralRewardReview({
+          reviewId: payload?.reviewId,
+          action: payload?.action,
+          reasonCode: payload?.reasonCode,
+          adminIdentifier: adminAccess.adminIdentifier,
+          grantTokens: ({ username, claimId, amount }) =>
+            profileAuthority.grantReferralRewardTokens({ username, claimId, amount })
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_REFERRAL_REVIEW_ACTION_FAILED"));
+      }
+    });
+
+    socket.on("admin:suspendReferralRewards", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof accountStore?.suspendReferralRewards !== "function") {
+          throw Object.assign(new Error("Referral review authority is unavailable."), {
+            code: "ADMIN_REFERRAL_REVIEW_UNAVAILABLE"
+          });
+        }
+        const result = await accountStore.suspendReferralRewards({
+          accountId: payload?.accountId,
+          reasonCode: payload?.reasonCode,
+          adminIdentifier: adminAccess.adminIdentifier
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "ADMIN_REFERRAL_SUSPEND_FAILED"));
       }
     });
 

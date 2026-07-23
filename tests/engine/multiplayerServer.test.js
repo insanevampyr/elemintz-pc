@@ -172,6 +172,27 @@ function createEmptyReferralRisk() {
   };
 }
 
+function createEmptyReferralRewardReview() {
+  return {
+    schemaVersion: 1,
+    heldRewards: [],
+    blockedRewards: [],
+    latestOwnRewardReview: null,
+    latestReferrerRewardReviews: []
+  };
+}
+
+function createEmptyReferralAdminRestrictions() {
+  return {
+    schemaVersion: 1,
+    referralRewardsSuspended: false,
+    reasonCode: null,
+    createdAt: null,
+    updatedAt: null,
+    createdBy: null
+  };
+}
+
 test("multiplayer rooms: featured rival join seeds an asymmetric 8 vs 12 boss hand", () => {
   const store = createRoomStore({ random: () => 0 });
   const host = createStoreSocket("host-featured");
@@ -7906,7 +7927,9 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
         rewardClaimSignals: [],
         failedReferralActivationAttempts: []
       },
-      risk: createEmptyReferralRisk()
+      risk: createEmptyReferralRisk(),
+      rewardReview: createEmptyReferralRewardReview(),
+      adminRestrictions: createEmptyReferralAdminRestrictions()
     });
 
     const firstCode = await accountStore.getOrCreateReferralCode({ accountId: firstAccount.accountId });
@@ -7960,7 +7983,9 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
         rewardClaimSignals: [],
         failedReferralActivationAttempts: []
       },
-      risk: createEmptyReferralRisk()
+      risk: createEmptyReferralRisk(),
+      rewardReview: createEmptyReferralRewardReview(),
+      adminRestrictions: createEmptyReferralAdminRestrictions()
     });
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
@@ -8223,9 +8248,15 @@ test("multiplayer foundation: referral abuse signals stay private, bounded, and 
       claimType: "own"
     });
     assert.equal(firstClaim?.ok, true);
-    assert.equal(firstClaim?.claim?.amount, 100);
+    assert.equal(firstClaim?.claim?.amount, 0);
     assert.equal(firstClaim?.claim?.duplicate, false);
-    assert.doesNotMatch(JSON.stringify(firstClaim), /abuseSignals|IpHash|UserAgentHash/);
+    assert.equal(firstClaim?.claim?.status, "pending_review");
+    assert.equal(firstClaim?.claim?.message, "Referral reward pending review.");
+    assert.equal(firstClaim?.dashboard?.ownProgress?.rewardStatus, "pending_review");
+    assert.doesNotMatch(
+      JSON.stringify(firstClaim),
+      /abuseSignals|IpHash|UserAgentHash|riskReasons|same_signup_ip_hash/
+    );
 
     let state = await accountStore.readState();
     let storedReferred = state.accounts.find(
@@ -8234,8 +8265,11 @@ test("multiplayer foundation: referral abuse signals stay private, bounded, and 
     assert.equal(storedReferred.referral.abuseSignals.rewardClaimSignals.length, 1);
     assert.equal(
       storedReferred.referral.abuseSignals.rewardClaimSignals[0].outcome,
-      "granted"
+      "held_for_review"
     );
+    assert.equal(storedReferred.referral.rewardReview.heldRewards.length, 1);
+    assert.equal(storedReferred.referral.rewardReview.blockedRewards.length, 0);
+    assert.equal(storedReferred.referral.referredReward.claimedAt, null);
 
     for (let index = 0; index < 51; index += 1) {
       nowMs += 1_000;
@@ -8333,7 +8367,7 @@ test("multiplayer foundation: referral abuse signals stay private, bounded, and 
     assert.equal(risk.referrerClaimRisks.length, 0);
     assert.equal(
       (await coordinator.profiles.getProfile("SignalReferred")).tokens,
-      tokensBefore + 100
+      tokensBefore
     );
 
     const dashboard = await emitWithAck(referredClient, "profile:getReferralDashboard");
@@ -8350,7 +8384,7 @@ test("multiplayer foundation: referral abuse signals stay private, bounded, and 
     ]) {
       assert.doesNotMatch(
         JSON.stringify(clientSafeValue),
-        /abuseSignals|signupIpHash|userAgentHash|failedReferralActivationAttempts|rewardClaimSignals|latestActivationRisk|latestQualificationRisk|latestOwnClaimRisk|referrerClaimRisks|riskHistory|held_for_review|same_signup_ip_hash/
+        /abuseSignals|signupIpHash|userAgentHash|failedReferralActivationAttempts|rewardClaimSignals|latestActivationRisk|latestQualificationRisk|latestOwnClaimRisk|referrerClaimRisks|riskHistory|heldRewards|blockedRewards|rewardReview|riskReasons|held_for_review|same_signup_ip_hash/
       );
     }
     assert.equal(storedReferrer.referral.abuseSignals.rewardClaimSignals.length, 0);
@@ -8361,6 +8395,682 @@ test("multiplayer foundation: referral abuse signals stay private, bounded, and 
   } finally {
     referrerClient?.disconnect();
     referredClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: referral claim review holds and blocks privately without payout", async () => {
+  const dataDir = await createTempDataDir();
+  let nowMs = Date.parse("2026-07-23T18:00:00.000Z");
+  let riskDecision = REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW;
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    now: () => nowMs,
+    referralCodeGenerator: () => "ELM-HQLD-A222",
+    referralRewardRiskClassifier: ({ stage = "own_claim", duplicate = false } = {}) => ({
+      decision: riskDecision,
+      reasons: [
+        duplicate
+          ? REFERRAL_RISK_REASONS.DUPLICATE_CLAIM_OBSERVED
+          : REFERRAL_RISK_REASONS.SAME_SIGNUP_IP_HASH
+      ],
+      signalPresence: {
+        requestIp: true,
+        requestUserAgent: true,
+        actorSignupIp: true,
+        actorSignupUserAgent: true,
+        relatedSignupIp: true,
+        relatedSignupUserAgent: true,
+        activationTimestamp: true,
+        qualificationTimestamp: ["own_claim", "referrer_claim"].includes(stage)
+      }
+    })
+  });
+  let grantCalls = 0;
+  const grantTokens = async () => {
+    grantCalls += 1;
+    return { tokensAdded: 100, duplicate: false };
+  };
+
+  try {
+    const referrer = await accountStore.register({
+      email: "hold-referrer@example.com",
+      password: "password123",
+      username: "HoldReferrer"
+    });
+    const heldReferred = await accountStore.register({
+      email: "hold-referred@example.com",
+      password: "password123",
+      username: "HoldReferred"
+    });
+    const blockedReferred = await accountStore.register({
+      email: "blocked-referred@example.com",
+      password: "password123",
+      username: "BlockedReferred"
+    });
+    for (const account of [referrer, heldReferred, blockedReferred]) {
+      await accountStore.verifyEmail({
+        accountId: account.accountId,
+        token: account.devVerificationToken
+      });
+    }
+    const code = await accountStore.getOrCreateReferralCode({
+      accountId: referrer.accountId
+    });
+    for (const account of [heldReferred, blockedReferred]) {
+      await accountStore.activateReferralCode({
+        accountId: account.accountId,
+        referralCode: code.referralCode,
+        playerLevel: 2
+      });
+      for (let index = 1; index <= 3; index += 1) {
+        nowMs += 1_000;
+        await accountStore.recordReferralQualificationMatch({
+          accountId: account.accountId,
+          settlementId: `review-${account.username}-${index}`,
+          mode: "pve",
+          difficulty: "normal",
+          status: "completed",
+          winner: "p1",
+          playerLevel: 2
+        });
+      }
+    }
+
+    const heldOwn = await accountStore.claimReferralReward({
+      accountId: heldReferred.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    const heldOwnRetry = await accountStore.claimReferralReward({
+      accountId: heldReferred.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    assert.equal(heldOwn.amount, 0);
+    assert.equal(heldOwn.status, "pending_review");
+    assert.equal(heldOwn.message, "Referral reward pending review.");
+    assert.equal(heldOwn.duplicate, false);
+    assert.equal(heldOwnRetry.duplicate, true);
+    assert.equal(heldOwnRetry.status, "pending_review");
+
+    const heldReferrer = await accountStore.claimReferralReward({
+      accountId: referrer.accountId,
+      claimType: "referrer",
+      refereeUsername: heldReferred.username,
+      playerLevel: 2,
+      grantTokens
+    });
+    const heldReferrerRetry = await accountStore.claimReferralReward({
+      accountId: referrer.accountId,
+      claimType: "referrer",
+      refereeUsername: heldReferred.username,
+      playerLevel: 2,
+      grantTokens
+    });
+    assert.equal(heldReferrer.status, "pending_review");
+    assert.equal(heldReferrer.amount, 0);
+    assert.equal(heldReferrerRetry.duplicate, true);
+
+    riskDecision = REFERRAL_RISK_DECISIONS.BLOCKED;
+    const blockedOwn = await accountStore.claimReferralReward({
+      accountId: blockedReferred.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    const blockedOwnRetry = await accountStore.claimReferralReward({
+      accountId: blockedReferred.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    assert.equal(blockedOwn.amount, 0);
+    assert.equal(blockedOwn.status, "could_not_claim");
+    assert.equal(blockedOwn.message, "Referral reward could not be claimed.");
+    assert.equal(blockedOwnRetry.duplicate, true);
+    assert.equal(grantCalls, 0);
+
+    const state = await accountStore.readState();
+    const storedReferrer = state.accounts.find(
+      (entry) => entry.accountId === referrer.accountId
+    );
+    const storedHeld = state.accounts.find(
+      (entry) => entry.accountId === heldReferred.accountId
+    );
+    const storedBlocked = state.accounts.find(
+      (entry) => entry.accountId === blockedReferred.accountId
+    );
+    assert.equal(storedHeld.referral.rewardReview.heldRewards.length, 1);
+    assert.equal(storedHeld.referral.rewardReview.blockedRewards.length, 0);
+    assert.equal(storedHeld.referral.referredReward.claimedAt, null);
+    assert.ok(
+      storedHeld.referral.rewardReview.heldRewards[0].deterministicGrantId
+    );
+    assert.equal(
+      storedHeld.referral.rewardReview.heldRewards[0].targetAccountId,
+      heldReferred.accountId
+    );
+    assert.equal(storedReferrer.referral.rewardReview.heldRewards.length, 1);
+    assert.equal(Object.keys(storedReferrer.referral.referrerClaims).length, 0);
+    assert.equal(storedBlocked.referral.rewardReview.blockedRewards.length, 1);
+    assert.equal(storedBlocked.referral.referredReward.claimedAt, null);
+
+    const referrerDashboard = await accountStore.getReferralDashboard({
+      accountId: referrer.accountId,
+      playerLevel: 2
+    });
+    const heldRow = referrerDashboard.referees.find(
+      (entry) => entry.username === heldReferred.username
+    );
+    assert.equal(referrerDashboard.referrerClaimsPaidToday, 0);
+    assert.equal(referrerDashboard.referrerDailyCapReached, false);
+    assert.equal(heldRow.rewardStatus, "pending_review");
+    assert.doesNotMatch(
+      JSON.stringify(referrerDashboard),
+      /rewardReview|heldRewards|blockedRewards|riskReasons|same_signup_ip_hash|targetAccountId|deterministicGrantId/
+    );
+    assert.doesNotMatch(
+      JSON.stringify(blockedOwn),
+      /rewardReview|heldRewards|blockedRewards|riskReasons|same_signup_ip_hash|targetAccountId|deterministicGrantId/
+    );
+
+    const accountsPath = path.join(dataDir, "accounts.json");
+    const rawState = JSON.parse(await fs.readFile(accountsPath, "utf8"));
+    const rawReferrer = rawState.accounts.find(
+      (entry) => entry.accountId === referrer.accountId
+    );
+    const createReviewRecord = (index) => ({
+      schemaVersion: 1,
+      reviewId: `bounded-review-${index}`,
+      claimType: "referrer",
+      status: "held_for_review",
+      createdAt: new Date(nowMs + index).toISOString(),
+      updatedAt: new Date(nowMs + index).toISOString(),
+      targetAccountId: `private-target-${index}`,
+      targetUsernameHashOrKey: null,
+      riskDecision: "held_for_review",
+      riskReasons: ["same_signup_ip_hash"],
+      riskRecordId: `risk-${index}`,
+      deterministicGrantId: `grant-${index}`,
+      claimContext: { stage: "referrer_claim", signalPresence: {} }
+    });
+    rawReferrer.referral.rewardReview.heldRewards = Array.from(
+      { length: 105 },
+      (_, index) => createReviewRecord(index)
+    );
+    rawReferrer.referral.rewardReview.latestReferrerRewardReviews = Array.from(
+      { length: 55 },
+      (_, index) => createReviewRecord(index)
+    );
+    await fs.writeFile(accountsPath, JSON.stringify(rawState, null, 2));
+    const boundedState = await accountStore.readState();
+    const boundedReferrer = boundedState.accounts.find(
+      (entry) => entry.accountId === referrer.accountId
+    );
+    assert.equal(boundedReferrer.referral.rewardReview.heldRewards.length, 100);
+    assert.equal(
+      boundedReferrer.referral.rewardReview.latestReferrerRewardReviews.length,
+      50
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin referral review queue secures approve deny and suspend actions", async () => {
+  const dataDir = await createTempDataDir();
+  let nowMs = Date.parse("2026-07-24T18:00:00.000Z");
+  let riskDecision = REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW;
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} },
+    now: () => nowMs,
+    referralCodeGenerator: () => "ELM-ADMN-A222",
+    referralRewardRiskClassifier: ({ stage = "own_claim" } = {}) => ({
+      decision: riskDecision,
+      reasons:
+        riskDecision === REFERRAL_RISK_DECISIONS.ELIGIBLE
+          ? []
+          : [REFERRAL_RISK_REASONS.SAME_SIGNUP_IP_HASH],
+      signalPresence: {
+        requestIp: true,
+        requestUserAgent: true,
+        actorSignupIp: true,
+        actorSignupUserAgent: true,
+        relatedSignupIp: true,
+        relatedSignupUserAgent: true,
+        activationTimestamp: true,
+        qualificationTimestamp: ["own_claim", "referrer_claim"].includes(stage)
+      }
+    })
+  });
+  const coordinator = new StateCoordinator({ dataDir, random: () => 1 });
+  const authority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: { info: () => {}, error: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: authority
+  });
+  const specs = [
+    ["VampyrLee", "insanevampyr@gmail.com"],
+    ["AdminHeldOwn", "admin-held-own@example.com"],
+    ["AdminDeniedOwn", "admin-denied-own@example.com"],
+    ["AdminBlockedOwn", "admin-blocked-own@example.com"],
+    ["AdminSuspendedOwn", "admin-suspended-own@example.com"],
+    ["AdminEligibleOwn", "admin-eligible-own@example.com"]
+  ];
+  const accounts = {};
+  let adminClient = null;
+  let regularClient = null;
+  let suspendedClient = null;
+  let unauthenticatedClient = null;
+
+  const qualify = async (account) => {
+    for (let index = 1; index <= 3; index += 1) {
+      nowMs += 1_000;
+      await accountStore.recordReferralQualificationMatch({
+        accountId: account.accountId,
+        settlementId: `admin-review-${account.username}-${index}`,
+        mode: "pve",
+        difficulty: "normal",
+        status: "completed",
+        winner: "p1",
+        playerLevel: 2
+      });
+    }
+  };
+  const grantTokens = ({ username, claimId, amount }) =>
+    authority.grantReferralRewardTokens({ username, claimId, amount });
+
+  try {
+    for (const [username, email] of specs) {
+      const account = await accountStore.register({
+        username,
+        email,
+        password: "password123"
+      });
+      accounts[username] = account;
+      await accountStore.verifyEmail({
+        accountId: account.accountId,
+        token: account.devVerificationToken
+      });
+      await coordinator.profiles.ensureProfile(username);
+    }
+    const referrerCode = await accountStore.getOrCreateReferralCode({
+      accountId: accounts.VampyrLee.accountId
+    });
+    for (const username of specs.slice(1).map(([name]) => name)) {
+      await accountStore.activateReferralCode({
+        accountId: accounts[username].accountId,
+        referralCode: referrerCode.referralCode,
+        playerLevel: 2
+      });
+      await qualify(accounts[username]);
+    }
+
+    const heldOwn = await accountStore.claimReferralReward({
+      accountId: accounts.AdminHeldOwn.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    const deniedOwn = await accountStore.claimReferralReward({
+      accountId: accounts.AdminDeniedOwn.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    const heldReferrer = await accountStore.claimReferralReward({
+      accountId: accounts.VampyrLee.accountId,
+      claimType: "referrer",
+      refereeUsername: "AdminHeldOwn",
+      playerLevel: 2,
+      grantTokens
+    });
+    const deniedReferrer = await accountStore.claimReferralReward({
+      accountId: accounts.VampyrLee.accountId,
+      claimType: "referrer",
+      refereeUsername: "AdminDeniedOwn",
+      playerLevel: 2,
+      grantTokens
+    });
+    riskDecision = REFERRAL_RISK_DECISIONS.BLOCKED;
+    const blockedOwn = await accountStore.claimReferralReward({
+      accountId: accounts.AdminBlockedOwn.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    riskDecision = REFERRAL_RISK_DECISIONS.ELIGIBLE;
+    const eligibleBefore = await coordinator.profiles.getProfile("AdminEligibleOwn");
+    const eligibleOwn = await accountStore.claimReferralReward({
+      accountId: accounts.AdminEligibleOwn.accountId,
+      claimType: "own",
+      playerLevel: 2,
+      grantTokens
+    });
+    assert.equal(heldOwn.status, "pending_review");
+    assert.equal(deniedOwn.status, "pending_review");
+    assert.equal(heldReferrer.status, "pending_review");
+    assert.equal(deniedReferrer.status, "pending_review");
+    assert.equal(blockedOwn.status, "could_not_claim");
+    assert.equal(eligibleOwn.amount, 100);
+    assert.equal(
+      (await coordinator.profiles.getProfile("AdminEligibleOwn")).tokens,
+      eligibleBefore.tokens + 100
+    );
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    regularClient = await connectClient(port);
+    suspendedClient = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+    assert.equal(
+      (await loginAccount(adminClient, {
+        email: "insanevampyr@gmail.com",
+        password: "password123"
+      }))?.ok,
+      true
+    );
+    assert.equal(
+      (await loginAccount(regularClient, {
+        email: "admin-held-own@example.com",
+        password: "password123"
+      }))?.ok,
+      true
+    );
+    assert.equal(
+      (await loginAccount(suspendedClient, {
+        email: "admin-suspended-own@example.com",
+        password: "password123"
+      }))?.ok,
+      true
+    );
+
+    for (const [eventName, payload] of [
+      ["admin:listReferralRewardReviews", { status: "all" }],
+      [
+        "admin:resolveReferralRewardReview",
+        { reviewId: "private-review", action: "approve" }
+      ],
+      [
+        "admin:suspendReferralRewards",
+        { accountId: accounts.AdminSuspendedOwn.accountId }
+      ]
+    ]) {
+      const unauthenticated = await emitWithAck(
+        unauthenticatedClient,
+        eventName,
+        payload
+      );
+      assert.equal(unauthenticated?.ok, false);
+      assert.ok(
+        ["SESSION_REQUIRED", "ADMIN_AUTH_REQUIRED"].includes(
+          unauthenticated?.error?.code
+        )
+      );
+      const nonAdmin = await emitWithAck(regularClient, eventName, payload);
+      assert.equal(nonAdmin?.ok, false);
+      assert.equal(nonAdmin?.error?.code, "ADMIN_ACCESS_DENIED");
+    }
+
+    const listed = await emitWithAck(
+      adminClient,
+      "admin:listReferralRewardReviews",
+      { status: "all" }
+    );
+    assert.equal(listed?.ok, true);
+    assert.equal(listed.queue.reviews.length, 5);
+    const findReview = (username, claimType) =>
+      listed.queue.reviews.find(
+        (entry) =>
+          entry.account.username === username && entry.claimType === claimType
+      );
+    const heldOwnReview = findReview("AdminHeldOwn", "own");
+    const deniedOwnReview = findReview("AdminDeniedOwn", "own");
+    const heldReferrerReview = listed.queue.reviews.find(
+      (entry) =>
+        entry.account.username === "VampyrLee" &&
+        entry.claimType === "referrer" &&
+        entry.target?.username === "AdminHeldOwn"
+    );
+    const deniedReferrerReview = listed.queue.reviews.find(
+      (entry) =>
+        entry.account.username === "VampyrLee" &&
+        entry.claimType === "referrer" &&
+        entry.target?.username === "AdminDeniedOwn"
+    );
+    const blockedReview = findReview("AdminBlockedOwn", "own");
+    assert.equal(heldOwnReview.status, "held_for_review");
+    assert.equal(heldOwnReview.approvalPossible, true);
+    assert.equal(heldOwnReview.rewardAmount, 100);
+    assert.deepEqual(heldOwnReview.riskReasons, [
+      REFERRAL_RISK_REASONS.SAME_SIGNUP_IP_HASH
+    ]);
+    assert.equal(blockedReview.status, "blocked");
+    assert.equal(blockedReview.approvalPossible, false);
+    assert.equal(
+      listed.queue.reviews.some(
+        (entry) => entry.account.username === "AdminEligibleOwn"
+      ),
+      false
+    );
+    assert.doesNotMatch(
+      JSON.stringify(listed),
+      /ipHash|userAgent|password|verificationToken|tokenHash|sessionToken|deterministicGrantId|targetUsernameHashOrKey/
+    );
+
+    const heldOwnBefore = await coordinator.profiles.getProfile("AdminHeldOwn");
+    const approveOwn = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      {
+        reviewId: heldOwnReview.reviewId,
+        action: "approve",
+        amount: 999_999
+      }
+    );
+    assert.equal(approveOwn?.ok, true);
+    assert.equal(approveOwn.result.tokensAdded, 100);
+    assert.equal(approveOwn.result.review.status, "approved");
+    assert.equal(
+      (await coordinator.profiles.getProfile("AdminHeldOwn")).tokens,
+      heldOwnBefore.tokens + 100
+    );
+    const approveOwnRetry = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: heldOwnReview.reviewId, action: "approve", amount: 999_999 }
+    );
+    assert.equal(approveOwnRetry?.ok, true);
+    assert.equal(approveOwnRetry.result.tokensAdded, 0);
+    assert.equal(approveOwnRetry.result.duplicate, true);
+    assert.equal(
+      (await coordinator.profiles.getProfile("AdminHeldOwn")).tokens,
+      heldOwnBefore.tokens + 100
+    );
+
+    const referrerBefore = await coordinator.profiles.getProfile("VampyrLee");
+    const approveReferrer = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: heldReferrerReview.reviewId, action: "approve" }
+    );
+    assert.equal(approveReferrer?.ok, true);
+    assert.equal(approveReferrer.result.tokensAdded, 100);
+    assert.equal(
+      (await coordinator.profiles.getProfile("VampyrLee")).tokens,
+      referrerBefore.tokens + 100
+    );
+    const approveReferrerRetry = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: heldReferrerReview.reviewId, action: "approve" }
+    );
+    assert.equal(approveReferrerRetry.result.tokensAdded, 0);
+    assert.equal(
+      (await coordinator.profiles.getProfile("VampyrLee")).tokens,
+      referrerBefore.tokens + 100
+    );
+
+    const deniedOwnBefore = await coordinator.profiles.getProfile("AdminDeniedOwn");
+    const denyOwn = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: deniedOwnReview.reviewId, action: "deny" }
+    );
+    const denyOwnRetry = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: deniedOwnReview.reviewId, action: "deny" }
+    );
+    assert.equal(denyOwn?.ok, true);
+    assert.equal(denyOwn.result.tokensAdded, 0);
+    assert.equal(denyOwn.result.review.status, "denied");
+    assert.equal(denyOwnRetry.result.duplicate, true);
+    assert.equal(
+      (await coordinator.profiles.getProfile("AdminDeniedOwn")).tokens,
+      deniedOwnBefore.tokens
+    );
+
+    const denyReferrerBefore = await coordinator.profiles.getProfile("VampyrLee");
+    const denyReferrer = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: deniedReferrerReview.reviewId, action: "deny" }
+    );
+    const denyReferrerRetry = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: deniedReferrerReview.reviewId, action: "deny" }
+    );
+    assert.equal(denyReferrer.result.tokensAdded, 0);
+    assert.equal(denyReferrerRetry.result.duplicate, true);
+    assert.equal(
+      (await coordinator.profiles.getProfile("VampyrLee")).tokens,
+      denyReferrerBefore.tokens
+    );
+
+    const blockedApproval = await emitWithAck(
+      adminClient,
+      "admin:resolveReferralRewardReview",
+      { reviewId: blockedReview.reviewId, action: "approve" }
+    );
+    assert.equal(blockedApproval?.ok, false);
+    assert.equal(
+      blockedApproval?.error?.code,
+      "ADMIN_REFERRAL_REVIEW_NOT_APPROVABLE"
+    );
+
+    const heldFilter = await emitWithAck(
+      adminClient,
+      "admin:listReferralRewardReviews",
+      { status: "held" }
+    );
+    const approvedFilter = await emitWithAck(
+      adminClient,
+      "admin:listReferralRewardReviews",
+      { status: "approved" }
+    );
+    const deniedFilter = await emitWithAck(
+      adminClient,
+      "admin:listReferralRewardReviews",
+      { status: "denied" }
+    );
+    const blockedFilter = await emitWithAck(
+      adminClient,
+      "admin:listReferralRewardReviews",
+      { status: "blocked" }
+    );
+    assert.equal(heldFilter.queue.reviews.length, 0);
+    assert.equal(approvedFilter.queue.reviews.length, 2);
+    assert.equal(deniedFilter.queue.reviews.length, 2);
+    assert.equal(blockedFilter.queue.reviews.length, 1);
+
+    const approvedOwnDashboard = await accountStore.getReferralDashboard({
+      accountId: accounts.AdminHeldOwn.accountId,
+      playerLevel: 2
+    });
+    const deniedOwnDashboard = await accountStore.getReferralDashboard({
+      accountId: accounts.AdminDeniedOwn.accountId,
+      playerLevel: 2
+    });
+    assert.equal(approvedOwnDashboard.ownProgress.rewardStatus, "claimed");
+    assert.equal(deniedOwnDashboard.ownProgress.rewardStatus, "could_not_claim");
+
+    const suspended = await emitWithAck(
+      adminClient,
+      "admin:suspendReferralRewards",
+      {
+        accountId: accounts.AdminSuspendedOwn.accountId,
+        reasonCode: "REVIEW_POLICY"
+      }
+    );
+    const suspendedRetry = await emitWithAck(
+      adminClient,
+      "admin:suspendReferralRewards",
+      {
+        accountId: accounts.AdminSuspendedOwn.accountId,
+        reasonCode: "SHOULD_NOT_REPLACE"
+      }
+    );
+    assert.equal(suspended?.ok, true);
+    assert.equal(suspended.result.referralRewardsSuspended, true);
+    assert.equal(suspendedRetry.result.duplicate, true);
+    const suspendedBefore = await coordinator.profiles.getProfile("AdminSuspendedOwn");
+    const suspendedClaim = await emitWithAck(
+      suspendedClient,
+      "profile:claimReferralReward",
+      { claimType: "own" }
+    );
+    assert.equal(suspendedClaim?.ok, true);
+    assert.equal(suspendedClaim.claim.amount, 0);
+    assert.equal(suspendedClaim.claim.status, "could_not_claim");
+    assert.equal(
+      suspendedClaim.claim.message,
+      "Referral reward could not be claimed."
+    );
+    assert.equal(
+      (await coordinator.profiles.getProfile("AdminSuspendedOwn")).tokens,
+      suspendedBefore.tokens
+    );
+    assert.doesNotMatch(
+      JSON.stringify(suspendedClaim),
+      /adminRestrictions|reasonCode|REVIEW_POLICY|createdBy|riskReasons/
+    );
+
+    const publicProfile = await authority.viewProfile("AdminSuspendedOwn");
+    assert.doesNotMatch(
+      JSON.stringify(publicProfile),
+      /adminRestrictions|referralRewardsSuspended|rewardReview|riskReasons/
+    );
+    const rawState = await accountStore.readState();
+    const storedSuspended = rawState.accounts.find(
+      (entry) => entry.accountId === accounts.AdminSuspendedOwn.accountId
+    );
+    assert.equal(
+      storedSuspended.referral.adminRestrictions.referralRewardsSuspended,
+      true
+    );
+    assert.equal(
+      storedSuspended.referral.adminRestrictions.reasonCode,
+      "REVIEW_POLICY"
+    );
+  } finally {
+    adminClient?.disconnect();
+    regularClient?.disconnect();
+    suspendedClient?.disconnect();
+    unauthenticatedClient?.disconnect();
     await foundation.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
   }
@@ -9112,7 +9822,23 @@ test("multiplayer foundation: referral reward claims grant 100 tokens once with 
     dataDir,
     logger: { info: () => {} },
     now: () => nowMs,
-    referralCodeGenerator: () => "ELM-RWRD-A222"
+    referralCodeGenerator: () => "ELM-RWRD-A222",
+    referralRewardRiskClassifier: ({ duplicate = false, stage = "own_claim" } = {}) => ({
+      decision: duplicate
+        ? REFERRAL_RISK_DECISIONS.HELD_FOR_REVIEW
+        : REFERRAL_RISK_DECISIONS.ELIGIBLE,
+      reasons: duplicate ? [REFERRAL_RISK_REASONS.DUPLICATE_CLAIM_OBSERVED] : [],
+      signalPresence: {
+        requestIp: false,
+        requestUserAgent: false,
+        actorSignupIp: false,
+        actorSignupUserAgent: false,
+        relatedSignupIp: false,
+        relatedSignupUserAgent: false,
+        activationTimestamp: false,
+        qualificationTimestamp: stage === "own_claim" || stage === "referrer_claim"
+      }
+    })
   });
   const coordinator = new StateCoordinator({ dataDir, random: () => 1 });
   const authority = new MultiplayerProfileAuthority({
@@ -9463,13 +10189,6 @@ test("multiplayer foundation: referral reward claims grant 100 tokens once with 
     assert.ok(
       referrerAccountAfter.referral.risk.referrerClaimRisks.some((record) =>
         record.reasons.includes(REFERRAL_RISK_REASONS.DUPLICATE_CLAIM_OBSERVED)
-      )
-    );
-    assert.ok(
-      referrerAccountAfter.referral.risk.referrerClaimRisks.some((record) =>
-        record.reasons.includes(
-          REFERRAL_RISK_REASONS.RAPID_CLAIM_AFTER_QUALIFICATION
-        )
       )
     );
     assert.equal(

@@ -1965,6 +1965,10 @@ function renderReferralDashboardModalBody(dashboard = {}) {
             ? '<button class="btn btn-secondary" type="button" data-referral-claim-own="true">Claim 100 Tokens</button>'
             : ownProgress.rewardStatus === "claimed"
               ? '<p class="text-muted" data-referral-own-reward-claimed="true">Reward claimed.</p>'
+              : ownProgress.rewardStatus === "pending_review"
+                ? '<p class="text-muted" data-referral-own-reward-pending="true">Referral reward pending review.</p>'
+                : ownProgress.rewardStatus === "could_not_claim"
+                  ? '<p class="text-muted" data-referral-own-reward-blocked="true">Referral reward could not be claimed.</p>'
               : ""
       }
     `
@@ -1985,6 +1989,10 @@ function renderReferralDashboardModalBody(dashboard = {}) {
                   ? `<button class="btn btn-secondary" type="button" data-referral-claim-referrer="${escapeProfileText(String(entry?.username ?? ""))}">Claim 100 Tokens</button>`
                   : rewardStatus === "claimed"
                     ? '<span class="text-muted" data-referral-referrer-reward-claimed="true">Reward claimed.</span>'
+                    : rewardStatus === "pending_review"
+                      ? '<span class="text-muted" data-referral-referrer-reward-pending="true">Referral reward pending review.</span>'
+                      : rewardStatus === "could_not_claim"
+                        ? '<span class="text-muted" data-referral-referrer-reward-blocked="true">Referral reward could not be claimed.</span>'
                     : rewardStatus === "daily_cap_reached"
                       ? `<button class="btn btn-secondary" type="button" data-referral-claim-referrer="${escapeProfileText(String(entry?.username ?? ""))}" disabled>Claim 100 Tokens</button>
                          <span class="text-muted" data-referral-daily-cap="true">Daily referral claim limit reached. Come back tomorrow.</span>`
@@ -2050,6 +2058,10 @@ function renderProfileSocialToolsCard({
       ? `<p class="text-muted" data-referral-qualified="true">${
           rewardStatus === "claimed"
             ? "Reward claimed."
+            : rewardStatus === "pending_review"
+              ? "Referral reward pending review."
+              : rewardStatus === "could_not_claim"
+                ? "Referral reward could not be claimed."
             : "Reward ready to claim in Referral Dashboard."
         }</p>`
       : "";
