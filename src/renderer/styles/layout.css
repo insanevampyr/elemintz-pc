@@ -2081,6 +2081,31 @@ code.online-active-meta-value {
   align-self: center;
 }
 
+.profile-email-verification {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(130, 170, 199, 0.16);
+}
+
+.profile-email-verification .text-muted {
+  margin: 0;
+}
+
+.profile-email-verification form {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.profile-email-verification-code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .profile-referral-status,
 .profile-referral-help {
   font-size: 0.82rem;
