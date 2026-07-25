@@ -15248,6 +15248,258 @@ test("multiplayer rewards: authenticated online completion records recent oppone
   }
 });
 
+test("multiplayer online WAR exhaustion: authenticated draw settles, refreshes profiles, and reconnects without reopening", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    dataDir,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  await profileAuthority.coordinator.profiles.ensureProfile("WarDrawHostProfileKey");
+  await profileAuthority.coordinator.profiles.ensureProfile("WarDrawGuestProfileKey");
+  await accountStore.register({
+    email: "war-draw-host@example.com",
+    password: "password123",
+    username: "WarDrawHostVisible",
+    profileKey: "WarDrawHostProfileKey"
+  });
+  await accountStore.register({
+    email: "war-draw-guest@example.com",
+    password: "password123",
+    username: "WarDrawGuestVisible",
+    profileKey: "WarDrawGuestProfileKey"
+  });
+
+  const persistedDecisions = [];
+  const rewardPersister = async ({ room, summary, decision, settlementKey }) => {
+    persistedDecisions.push(decision);
+    const rewardDecision = decision ?? room?.rewardSettlement?.decision ?? null;
+    const onlineMatchState = buildOnlineMatchStateFromRoom(room);
+    const hostUsername =
+      rewardDecision?.participants?.hostProfileKey ??
+      rewardDecision?.participants?.hostUsername ??
+      summary?.settledHostUsername ??
+      null;
+    const guestUsername =
+      rewardDecision?.participants?.guestProfileKey ??
+      rewardDecision?.participants?.guestUsername ??
+      summary?.settledGuestUsername ??
+      null;
+
+    if (hostUsername) {
+      await profileAuthority.applyMatchResult({
+        username: hostUsername,
+        perspective: "p1",
+        result: onlineMatchState,
+        settlementKey,
+        rewardDecision,
+        participantRole: "host"
+      });
+    }
+
+    if (guestUsername) {
+      await profileAuthority.applyMatchResult({
+        username: guestUsername,
+        perspective: "p2",
+        result: onlineMatchState,
+        settlementKey,
+        rewardDecision,
+        participantRole: "guest"
+      });
+    }
+  };
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    roundResetDelayMs: 20,
+    roomCleanupDelayMs: 200,
+    accountStore,
+    profileAuthority,
+    rewardPersister,
+    disconnectTracker: createOnlineDisconnectTracker(profileAuthority.coordinator),
+    random: () => 0.99
+  });
+  let host = null;
+  let guest = null;
+  let reconnectHost = null;
+
+  try {
+    const port = await foundation.start();
+    host = await connectClient(port);
+    guest = await connectClient(port);
+
+    const hostLogin = await loginAccount(host, {
+      email: "war-draw-host@example.com",
+      password: "password123"
+    });
+    const guestLogin = await loginAccount(guest, {
+      email: "war-draw-guest@example.com",
+      password: "password123"
+    });
+    assert.equal(hostLogin?.ok, true);
+    assert.equal(hostLogin?.session?.profileKey, "WarDrawHostProfileKey");
+    assert.equal(guestLogin?.ok, true);
+    assert.equal(guestLogin?.session?.profileKey, "WarDrawGuestProfileKey");
+
+    const createdPromise = waitForEvent(host, "room:created");
+    host.emit("room:create", { username: "ForgedWarHostIgnored" });
+    const room = await createdPromise;
+
+    const joinedPromise = waitForEvent(guest, "room:joined");
+    const hostJoinUpdatePromise = waitForEvent(host, "room:update");
+    guest.emit("room:join", { roomCode: room.roomCode, username: "ForgedWarGuestIgnored" });
+    await joinedPromise;
+    await hostJoinUpdatePromise;
+
+    const terminalWarDrawSequence = [
+      ["fire", "fire"],
+      ["fire", "fire"],
+      ["water", "water"],
+      ["water", "water"],
+      ["earth", "earth"],
+      ["earth", "earth"],
+      ["wind", "wind"],
+      ["wind", "wind"]
+    ];
+
+    let finalRound = null;
+    for (let index = 0; index < terminalWarDrawSequence.length; index += 1) {
+      const [hostMove, guestMove] = terminalWarDrawSequence[index];
+      const round = await submitRoundPair(
+        host,
+        guest,
+        hostMove,
+        guestMove,
+        index === terminalWarDrawSequence.length - 1 ? 1 : 2
+      );
+      finalRound = round.hostRoundResult;
+    }
+
+    const finalRoom = foundation.roomStore.getRoom(room.roomCode);
+    assert.equal(finalRound.matchComplete, true);
+    assert.equal(finalRound.winner, "draw");
+    assert.equal(finalRound.winReason, "hand_exhaustion");
+    assert.equal(finalRound.outcomeType, "war");
+    assert.equal(finalRound.rewardSettlement?.settlementKey, `${room.roomCode}:match:1`);
+    assert.equal(finalRoom.matchComplete, true);
+    assert.equal(finalRoom.winner, "draw");
+    assert.equal(finalRoom.winReason, "hand_exhaustion");
+    assert.equal(finalRoom.status, "full");
+    assert.equal(finalRoom.disconnectState.active, false);
+    assert.equal(persistedDecisions.length, 1);
+    assert.deepEqual(persistedDecisions[0].participants, {
+      hostUsername: "WarDrawHostVisible",
+      guestUsername: "WarDrawGuestVisible",
+      hostProfileKey: "WarDrawHostProfileKey",
+      guestProfileKey: "WarDrawGuestProfileKey",
+      hostDisplayCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate"
+      },
+      guestDisplayCosmetics: {
+        avatar: "default_avatar",
+        title: "Initiate"
+      }
+    });
+
+    const hostProfileRead = await emitWithAck(host, "profile:get", {});
+    const guestProfileRead = await emitWithAck(guest, "profile:get", {});
+    assert.equal(hostProfileRead?.ok, true);
+    assert.equal(guestProfileRead?.ok, true);
+    assert.equal(hostProfileRead?.profile?.profile?.username, "WarDrawHostProfileKey");
+    assert.equal(guestProfileRead?.profile?.profile?.username, "WarDrawGuestProfileKey");
+    assert.equal(hostProfileRead?.profile?.profile?.gamesPlayed, 1);
+    assert.equal(guestProfileRead?.profile?.profile?.gamesPlayed, 1);
+    assert.equal(hostProfileRead?.profile?.profile?.wins, 0);
+    assert.equal(guestProfileRead?.profile?.profile?.wins, 0);
+    assert.equal(hostProfileRead?.profile?.profile?.losses, 0);
+    assert.equal(guestProfileRead?.profile?.profile?.losses, 0);
+    assert.equal(finalRound.rewardSettlement.decision.rewards.host.tokens, 5);
+    assert.equal(finalRound.rewardSettlement.decision.rewards.guest.tokens, 5);
+    assert.equal(finalRound.rewardSettlement.decision.rewards.host.xp, 5);
+    assert.equal(finalRound.rewardSettlement.decision.rewards.guest.xp, 5);
+    assert.ok(hostProfileRead?.profile?.profile?.tokens >= DEFAULT_STARTING_TOKENS + 5);
+    assert.ok(guestProfileRead?.profile?.profile?.tokens >= DEFAULT_STARTING_TOKENS + 5);
+    assert.ok(hostProfileRead?.profile?.profile?.playerXP >= 5);
+    assert.ok(guestProfileRead?.profile?.profile?.playerXP >= 5);
+    assert.equal(hostProfileRead?.profile?.profile?.recentOpponents?.[0]?.opponentProfileKey, "WarDrawGuestProfileKey");
+    assert.equal(hostProfileRead?.profile?.profile?.recentOpponents?.[0]?.latestResult, "draw");
+    assert.equal(guestProfileRead?.profile?.profile?.recentOpponents?.[0]?.opponentProfileKey, "WarDrawHostProfileKey");
+    assert.equal(guestProfileRead?.profile?.profile?.recentOpponents?.[0]?.latestResult, "draw");
+    assert.deepEqual(hostProfileRead?.profile?.profile?.onlineRewardSettlements?.appliedSettlementKeys, [
+      `${room.roomCode}:match:1`
+    ]);
+    assert.deepEqual(guestProfileRead?.profile?.profile?.onlineRewardSettlements?.appliedSettlementKeys, [
+      `${room.roomCode}:match:1`
+    ]);
+
+    const savesBeforeReconnect = await profileAuthority.coordinator.saves.listMatchResults();
+    const hostTokensBeforeReconnect = hostProfileRead.profile.profile.tokens;
+    const guestTokensBeforeReconnect = guestProfileRead.profile.profile.tokens;
+    const hostXpBeforeReconnect = hostProfileRead.profile.profile.playerXP;
+    const guestXpBeforeReconnect = guestProfileRead.profile.profile.playerXP;
+    const guestClosingUpdate = waitForEvent(guest, "room:update");
+    host.disconnect();
+    const closingRoom = await guestClosingUpdate;
+    assert.equal(closingRoom.status, "closing");
+    assert.equal(closingRoom.matchComplete, true);
+    assert.equal(closingRoom.winner, "draw");
+    assert.equal(closingRoom.winReason, "hand_exhaustion");
+    assert.equal(closingRoom.disconnectState.active, true);
+    assert.equal(closingRoom.disconnectState.disconnectedRole, "host");
+    assert.equal(closingRoom.disconnectState.disconnectedUsername, "WarDrawHostVisible");
+    assert.equal(closingRoom.disconnectState.remainingUsername, "WarDrawGuestVisible");
+    assert.equal(closingRoom.disconnectState.reason, "post_match_disconnect");
+    assert.equal(closingRoom.rewardSettlement?.settlementKey, `${room.roomCode}:match:1`);
+
+    reconnectHost = await connectClient(port);
+    const resumedHostSession = await resumeSession(reconnectHost, hostLogin.session.token);
+    assert.equal(resumedHostSession?.ok, true);
+    const reconnectJoined = waitForEvent(reconnectHost, "room:joined");
+    reconnectHost.emit("room:join", { roomCode: room.roomCode });
+    const resumedRoom = await reconnectJoined;
+    const savesAfterReconnect = await profileAuthority.coordinator.saves.listMatchResults();
+
+    assert.equal(resumedRoom.status, "closing");
+    assert.equal(resumedRoom.matchComplete, true);
+    assert.equal(resumedRoom.winner, "draw");
+    assert.equal(resumedRoom.winReason, "hand_exhaustion");
+    assert.equal(resumedRoom.disconnectState.active, false);
+    assert.equal(resumedRoom.disconnectState.reason, "match_resumed");
+    assert.equal(resumedRoom.rewardSettlement?.settlementKey, `${room.roomCode}:match:1`);
+    assert.equal(savesAfterReconnect.filter((entry) => entry.mode === "online_pvp").length, savesBeforeReconnect.filter((entry) => entry.mode === "online_pvp").length);
+    assert.equal(persistedDecisions.length, 1);
+
+    const duplicateError = waitForEvent(reconnectHost, "room:error");
+    reconnectHost.emit("room:submitMove", { move: "fire" });
+    assert.deepEqual(await duplicateError, {
+      code: "MATCH_COMPLETE",
+      message: "Match is complete. Both players must ready a rematch first."
+    });
+    const hostProfileAfterDuplicate = await profileAuthority.getProfile("WarDrawHostProfileKey");
+    const guestProfileAfterDuplicate = await profileAuthority.getProfile("WarDrawGuestProfileKey");
+    assert.equal(hostProfileAfterDuplicate.profile.gamesPlayed, 1);
+    assert.equal(guestProfileAfterDuplicate.profile.gamesPlayed, 1);
+    assert.equal(hostProfileAfterDuplicate.profile.tokens, hostTokensBeforeReconnect);
+    assert.equal(guestProfileAfterDuplicate.profile.tokens, guestTokensBeforeReconnect);
+    assert.equal(hostProfileAfterDuplicate.profile.playerXP, hostXpBeforeReconnect);
+    assert.equal(guestProfileAfterDuplicate.profile.playerXP, guestXpBeforeReconnect);
+    assert.equal(hostProfileAfterDuplicate.profile.onlineDisconnectTracking.totalLiveMatchDisconnects, 0);
+    assert.equal(guestProfileAfterDuplicate.profile.onlineDisconnectTracking.totalLiveMatchDisconnects, 0);
+  } finally {
+    host?.disconnect();
+    guest?.disconnect();
+    reconnectHost?.disconnect();
+    await foundation.stop();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer online stats: post-match disconnect after settlement does not corrupt settled results or duplicate them", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

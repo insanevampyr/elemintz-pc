@@ -2959,6 +2959,16 @@ export function createRoomStore({ random = Math.random } = {}) {
         };
       }
 
+      if (room.matchComplete) {
+        return {
+          ok: false,
+          error: {
+            code: "MATCH_COMPLETE",
+            message: "Match is complete. Both players must ready a rematch first."
+          }
+        };
+      }
+
       if (room.status !== "full" || !room.host || !room.guest) {
         if (room.status === "paused") {
           return {
@@ -2995,16 +3005,6 @@ export function createRoomStore({ random = Math.random } = {}) {
           error: {
             code: "ROOM_CLOSING",
             message: "This room is closing and can no longer accept moves."
-          }
-        };
-      }
-
-      if (room.matchComplete) {
-        return {
-          ok: false,
-          error: {
-            code: "MATCH_COMPLETE",
-            message: "Match is complete. Both players must ready a rematch first."
           }
         };
       }
