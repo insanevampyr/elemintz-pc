@@ -32019,6 +32019,13 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
         qualifyingMatchesCompleted: 3,
         qualified: true,
         rewardStatus: "could_not_claim"
+      },
+      {
+        username: "   ",
+        level2Reached: false,
+        qualifyingMatchesCompleted: 0,
+        qualified: false,
+        rewardStatus: "locked"
       }
     ]
   });
@@ -32035,9 +32042,11 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
   assert.match(verifiedHtml, /data-referral-claim-own="true">Claim 100 Tokens</);
   assert.match(verifiedHtml, /People I Referred/);
   assert.match(verifiedHtml, /SafeReferee/);
+  assert.match(verifiedHtml, /data-referral-view-profile="SafeReferee">View Profile</);
   assert.match(verifiedHtml, /Qualifying matches: 2 \/ 3/);
   assert.match(verifiedHtml, /Status: In Progress/);
   assert.match(verifiedHtml, /QualifiedReferee/);
+  assert.match(verifiedHtml, /data-referral-view-profile="QualifiedReferee">View Profile</);
   assert.match(verifiedHtml, /Status: Qualified/);
   assert.match(
     verifiedHtml,
@@ -32064,6 +32073,8 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
     verifiedHtml,
     /data-referral-referrer-reward-blocked="true">Referral reward could not be claimed\./
   );
+  assert.match(verifiedHtml, /<strong>Player<\/strong>/);
+  assert.doesNotMatch(verifiedHtml, /data-referral-view-profile=""/);
   const safeRefereeStart = verifiedHtml.indexOf("SafeReferee");
   const qualifiedRefereeStart = verifiedHtml.indexOf("QualifiedReferee");
   assert.doesNotMatch(
@@ -32150,6 +32161,75 @@ test("ui: Referral Dashboard renders safe sharing, progress, referee, and empty 
     /data-referral-own-reward-blocked="true">Referral reward could not be claimed\./
   );
   assert.doesNotMatch(blockedReviewHtml, /data-referral-claim-own|same IP|risk|abuse/i);
+});
+
+test("ui: Referral Dashboard referee View Profile opens the existing viewed-profile path", async () => {
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const hideCalls = [];
+  const viewedProfileCalls = [];
+  const viewProfileButton = {
+    disabled: false,
+    getAttribute: (name) => (name === "data-referral-view-profile" ? "SafeReferee" : null),
+    addEventListener: (type, handler) => {
+      if (type === "click") {
+        viewProfileButton.click = handler;
+      }
+    }
+  };
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => hideCalls.push("hide"),
+      clearStaleOverlay: () => false
+    },
+    toastManager: { enqueueToast: () => {} }
+  });
+  controller.profile = {
+    ...createProfileScreenContext().profile,
+    username: "ReferralOwner"
+  };
+  controller.profileSearchQuery = "previous search";
+  controller.profileSearchError = "previous error";
+  let showProfileCalls = 0;
+  controller.showProfile = async () => {
+    showProfileCalls += 1;
+  };
+  controller.openViewedProfile = async (username, options) => {
+    viewedProfileCalls.push({ username, options });
+  };
+  global.document = {
+    getElementById: () => null,
+    querySelectorAll: (selector) =>
+      selector === "[data-referral-view-profile]" ? [viewProfileButton] : []
+  };
+
+  try {
+    controller.bindReferralDashboardModalControls({
+      emailVerified: true,
+      referralCode: "ELM-K7QX-M9PD",
+      referees: [{ username: "SafeReferee" }]
+    });
+    await viewProfileButton.click();
+    assert.deepEqual(hideCalls, ["hide"]);
+    assert.equal(viewedProfileCalls.length, 1);
+    assert.equal(viewedProfileCalls[0].username, "SafeReferee");
+    assert.equal(viewedProfileCalls[0].options.preserveAchievementVisibility, true);
+    assert.equal(typeof viewedProfileCalls[0].options.onClose, "function");
+
+    controller.profileSearchQuery = "changed";
+    controller.profileSearchError = "changed";
+    await viewedProfileCalls[0].options.onClose();
+    assert.equal(controller.profileSearchQuery, "previous search");
+    assert.equal(controller.profileSearchError, "previous error");
+    assert.equal(showProfileCalls, 1);
+    assert.equal(modalCalls.length, 1);
+    assert.equal(modalCalls[0].title, "Referral Dashboard");
+    assert.match(modalCalls[0].bodyHtml, /SafeReferee/);
+  } finally {
+    global.document = previousDocument;
+  }
 });
 
 test("ui: referral activation entry gates verified, pending, linked, and viewed-profile states", () => {

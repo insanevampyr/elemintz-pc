@@ -4798,6 +4798,34 @@ export class AppController {
         }
       });
     }
+    const viewProfileButtons = Array.from(
+      globalThis.document?.querySelectorAll?.("[data-referral-view-profile]") ?? []
+    );
+    for (const button of viewProfileButtons) {
+      button.addEventListener("click", async () => {
+        const username = String(button.getAttribute?.("data-referral-view-profile") ?? "").trim();
+        if (!username) {
+          return;
+        }
+        const previousSearchQuery = this.profileSearchQuery;
+        const previousSearchError = this.profileSearchError;
+        this.modalManager.hide();
+        await this.openViewedProfile(username, {
+          preserveAchievementVisibility: true,
+          onClose: async () => {
+            this.profileSearchQuery = previousSearchQuery;
+            this.profileSearchError = previousSearchError;
+            await this.showProfile({
+              preserveAchievementVisibility: true,
+              preserveModal: true,
+              profileOverride: this.profile,
+              skipAuthoritativeProfileRefresh: true
+            });
+            await this.showReferralDashboardModal(dashboard);
+          }
+        });
+      });
+    }
   }
 
   async claimReferralReward({ claimType, refereeUsername = null } = {}) {

@@ -1977,6 +1977,10 @@ function renderReferralDashboardModalBody(dashboard = {}) {
     referees.length > 0
       ? referees
           .map((entry) => {
+            const username = String(entry?.username ?? "").trim();
+            const viewProfileAction = username
+              ? `<button class="btn btn-secondary" type="button" data-referral-view-profile="${escapeProfileText(username)}">View Profile</button>`
+              : "";
             const matchCount = Math.min(
               3,
               Math.max(0, Math.floor(Number(entry?.qualifyingMatchesCompleted ?? 0) || 0))
@@ -1999,10 +2003,11 @@ function renderReferralDashboardModalBody(dashboard = {}) {
                       : "";
             return `
               <article class="referral-dashboard-referee" data-referral-dashboard-referee="true">
-                <strong>${escapeProfileText(String(entry?.username ?? "Player"))}</strong>
+                <strong>${escapeProfileText(username || "Player")}</strong>
                 <span class="text-muted">Level 2: ${entry?.level2Reached ? "Complete" : "Incomplete"}</span>
                 <span class="text-muted">Qualifying matches: ${matchCount} / 3</span>
                 <span class="text-muted">Status: ${entry?.qualified ? "Qualified" : "In Progress"}</span>
+                ${viewProfileAction}
                 ${rewardContent}
               </article>
             `;
