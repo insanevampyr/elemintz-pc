@@ -69,6 +69,25 @@ function normalizeEmail(email) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function isValidRegistrationEmail(email) {
+  const safeEmail = normalizeEmail(email);
+  if (!safeEmail || /\s/.test(safeEmail)) {
+    return false;
+  }
+
+  const parts = safeEmail.split("@");
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  const [localPart, domain] = parts;
+  if (!localPart || !domain || !domain.includes(".")) {
+    return false;
+  }
+
+  return domain.split(".").every((part) => part.length > 0);
+}
+
 function normalizeUsername(username) {
   const normalized = String(username ?? "")
     .replace(/\s+/g, " ")
@@ -1029,7 +1048,7 @@ export class MultiplayerAccountStore {
     const safeProfileKey = normalizeUsername(profileKey) ?? safeUsername;
     const safePassword = normalizePassword(password);
 
-    if (!safeEmail || !safeEmail.includes("@")) {
+    if (!isValidRegistrationEmail(safeEmail)) {
       throw buildAccountError("ACCOUNT_EMAIL_INVALID", "A valid email address is required.");
     }
 

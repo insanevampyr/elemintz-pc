@@ -8029,6 +8029,90 @@ test("multiplayer foundation: auth register persists a hashed account record and
   }
 });
 
+test("multiplayer foundation: auth register rejects malformed email and still accepts valid email", async () => {
+  const dataDir = await createTempDataDir();
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    accountStore,
+    profileAuthority: {
+      assertProfileClaimAvailable: async () => null,
+      linkProfileToAccount: async ({ username, accountId }) => ({
+        username,
+        profile: {
+          username,
+          linkedAccountId: accountId
+        }
+      }),
+      getProfile: async (username) => ({
+        username,
+        profile: { username }
+      })
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+    const malformedEmails = [
+      "missing-domain@",
+      "@missing-local.com",
+      "missing-dot@example",
+      "too@many@example.com",
+      "has space@example.com",
+      "dot-edge@example."
+    ];
+
+    for (const [index, email] of malformedEmails.entries()) {
+      const response = await new Promise((resolve) => {
+        client.emit(
+          "auth:register",
+          {
+            email,
+            password: "password123",
+            username: `BadEmail${index}`
+          },
+          resolve
+        );
+      });
+
+      assert.deepEqual(response, {
+        ok: false,
+        error: {
+          code: "ACCOUNT_EMAIL_INVALID",
+          message: "A valid email address is required."
+        }
+      });
+    }
+
+    const valid = await new Promise((resolve) => {
+      client.emit(
+        "auth:register",
+        {
+          email: " Valid.User@example.com ",
+          password: "password123",
+          username: "ValidEmailUser"
+        },
+        resolve
+      );
+    });
+
+    assert.equal(valid?.ok, true);
+    assert.equal(valid?.account?.email, "valid.user@example.com");
+    assert.equal(valid?.account?.username, "ValidEmailUser");
+    assert.equal(valid?.session?.authenticated, true);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: account email verification schema normalizes legacy accounts and verifies hashed tokens", async () => {
   const dataDir = await createTempDataDir();
   let nowMs = Date.parse("2026-07-22T12:00:00.000Z");

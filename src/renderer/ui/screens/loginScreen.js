@@ -26,6 +26,27 @@ function formatVersionLabel(value) {
   return normalized.startsWith("v") ? normalized : `v${normalized}`;
 }
 
+function isBasicEmailAddress(value) {
+  const email = String(value ?? "").trim();
+  if (!email || /\s/.test(email)) {
+    return false;
+  }
+
+  const parts = email.split("@");
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  const [localPart, domain] = parts;
+  if (!localPart || !domain || !domain.includes(".")) {
+    return false;
+  }
+
+  return domain
+    .split(".")
+    .every((part) => part.length > 0);
+}
+
 function renderVersionBadge(versionLabel) {
   return versionLabel
     ? `<span class="login-version-badge" aria-hidden="true">${escapeAttribute(versionLabel)}</span>`
@@ -127,6 +148,19 @@ function renderCreateAccountForm(defaults) {
           maxlength="128"
           autocomplete="new-password"
         />
+        <button id="password-toggle-btn" type="button" class="btn btn-secondary auth-password-toggle" aria-controls="password-input" aria-pressed="false">Show Password</button>
+      </div>
+      <div class="login-form-field">
+        <label for="confirm-password-input">Confirm Password</label>
+        <input
+          id="confirm-password-input"
+          name="confirmPassword"
+          type="password"
+          minlength="8"
+          maxlength="128"
+          autocomplete="new-password"
+        />
+        <button id="confirm-password-toggle-btn" type="button" class="btn btn-secondary auth-password-toggle" aria-controls="confirm-password-input" aria-pressed="false">Show Password</button>
       </div>
       ${renderRememberSessionField(defaults)}
       <div class="button-row">
@@ -209,12 +243,33 @@ export const loginScreen = {
     const usernameInput = document.getElementById("username-input");
     const emailInput = document.getElementById("email-input");
     const passwordInput = document.getElementById("password-input");
+    const confirmPasswordInput = document.getElementById("confirm-password-input");
+    const passwordToggleButton = document.getElementById("password-toggle-btn");
+    const confirmPasswordToggleButton = document.getElementById("confirm-password-toggle-btn");
     const rememberSessionInput = document.getElementById("remember-session-input");
     const backButton = document.getElementById(mode === "register" ? "register-back-btn" : "login-back-btn");
 
     if (!form || !emailInput || !passwordInput || !backButton) {
       console.error("Login screen failed to bind form/input.");
       return;
+    }
+
+    const bindPasswordToggle = (button, input) => {
+      if (!button || !input || typeof button.addEventListener !== "function") {
+        return;
+      }
+
+      button.addEventListener("click", () => {
+        const showPassword = input.type === "password";
+        input.type = showPassword ? "text" : "password";
+        button.setAttribute?.("aria-pressed", showPassword ? "true" : "false");
+        button.textContent = showPassword ? "Hide Password" : "Show Password";
+      });
+    };
+
+    if (mode === "register") {
+      bindPasswordToggle(passwordToggleButton, passwordInput);
+      bindPasswordToggle(confirmPasswordToggleButton, confirmPasswordInput);
     }
 
     requestAnimationFrame(() => {
@@ -230,6 +285,7 @@ export const loginScreen = {
       const username = String(usernameInput?.value ?? "").trim();
       const email = String(emailInput.value ?? "").trim();
       const password = String(passwordInput.value ?? "");
+      const confirmPassword = String(confirmPasswordInput?.value ?? "");
       const rememberSession = rememberSessionInput?.checked !== false;
 
       if (mode === "login") {
@@ -242,10 +298,19 @@ export const loginScreen = {
           return;
         }
       } else {
-        if (!username || !email || !password) {
+        if (!username || !email || !password || !confirmPassword) {
           context.actions.showMode({
             mode: "register",
-            errorMessage: "Username, email, and password are required to create an account.",
+            errorMessage: "Username, email, password, and confirmation are required to create an account.",
+            defaults: { username, email, rememberSession }
+          });
+          return;
+        }
+
+        if (!isBasicEmailAddress(email)) {
+          context.actions.showMode({
+            mode: "register",
+            errorMessage: "Enter a valid email address.",
             defaults: { username, email, rememberSession }
           });
           return;
@@ -255,6 +320,15 @@ export const loginScreen = {
           context.actions.showMode({
             mode: "register",
             errorMessage: "Username must be at least 2 characters long.",
+            defaults: { username, email, rememberSession }
+          });
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          context.actions.showMode({
+            mode: "register",
+            errorMessage: "Passwords do not match.",
             defaults: { username, email, rememberSession }
           });
           return;

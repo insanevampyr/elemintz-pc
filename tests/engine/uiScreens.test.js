@@ -5960,7 +5960,7 @@ test("ui: sign in screen renders Email, Password, and the keep-signed-in control
   assert.match(html, /arena-board screen-themed-surface default-themed-surface auth-themed-surface/);
 });
 
-test("ui: create account screen renders Username, Email, and Password", () => {
+test("ui: create account screen renders Username, Email, Password confirmation, and password toggles", () => {
   const html = loginScreen.render({
     mode: "register",
     defaults: { username: "PlayerOne", email: "player@example.com" },
@@ -5972,6 +5972,9 @@ test("ui: create account screen renders Username, Email, and Password", () => {
   assert.match(html, /Username/);
   assert.match(html, /Email/);
   assert.match(html, /Password/);
+  assert.match(html, /Confirm Password/);
+  assert.match(html, /id="confirm-password-input"/);
+  assert.equal((html.match(/Show Password/g) ?? []).length, 2);
   assert.match(html, /Keep me signed in for 30 days/);
   assert.match(html, /arena-board screen-themed-surface default-themed-surface auth-themed-surface/);
 });
@@ -6039,6 +6042,12 @@ test("ui: auth forms submit the remember-session preference", async () => {
         }
         if (id === "password-input") {
           return { value: "password123" };
+        }
+        if (id === "confirm-password-input") {
+          return { value: "password123" };
+        }
+        if (id === "password-toggle-btn" || id === "confirm-password-toggle-btn") {
+          return { addEventListener: () => {} };
         }
         if (id === "remember-session-input") {
           return { checked: false };
@@ -6209,6 +6218,12 @@ test("ui: sign in and create account validation show clear inline errors", async
         if (id === "password-input") {
           return { value: "password123" };
         }
+        if (id === "confirm-password-input") {
+          return { value: "password123" };
+        }
+        if (id === "password-toggle-btn" || id === "confirm-password-toggle-btn") {
+          return { addEventListener: () => {} };
+        }
         if (id === "register-back-btn") {
           return { addEventListener: () => {} };
         }
@@ -6259,12 +6274,18 @@ test("ui: create account validation shows a clear inline error when required fie
       if (id === "email-input") {
         return { value: "" };
       }
-      if (id === "password-input") {
-        return { value: "" };
-      }
-      if (id === "register-back-btn") {
-        return { addEventListener: () => {} };
-      }
+        if (id === "password-input") {
+          return { value: "" };
+        }
+        if (id === "confirm-password-input") {
+          return { value: "" };
+        }
+        if (id === "password-toggle-btn" || id === "confirm-password-toggle-btn") {
+          return { addEventListener: () => {} };
+        }
+        if (id === "register-back-btn") {
+          return { addEventListener: () => {} };
+        }
       return null;
     }
   };
@@ -6281,7 +6302,148 @@ test("ui: create account validation shows a clear inline error when required fie
 
     await registerSubmit({ preventDefault: () => {} });
 
-    assert.deepEqual(errors, ["Username, email, and password are required to create an account."]);
+    assert.deepEqual(errors, ["Username, email, password, and confirmation are required to create an account."]);
+  } finally {
+    global.document = previousDocument;
+    global.requestAnimationFrame = previousAnimationFrame;
+  }
+});
+
+test("ui: create account validation blocks malformed email and mismatched passwords before backend call", async () => {
+  const previousDocument = global.document;
+  const previousAnimationFrame = global.requestAnimationFrame;
+  const errors = [];
+  const backendCalls = [];
+  let registerSubmit = null;
+  const values = {
+    username: "NewPlayer",
+    email: "new@invalid",
+    password: "password123",
+    confirmPassword: "password123"
+  };
+
+  global.requestAnimationFrame = (handler) => handler();
+  global.document = {
+    getElementById: (id) => {
+      if (id === "login-form") {
+        return {
+          addEventListener: (_type, handler) => {
+            registerSubmit = handler;
+          }
+        };
+      }
+      if (id === "username-input") {
+        return { get value() { return values.username; }, focus: () => {}, select: () => {} };
+      }
+      if (id === "email-input") {
+        return { get value() { return values.email; } };
+      }
+      if (id === "password-input") {
+        return { get value() { return values.password; } };
+      }
+      if (id === "confirm-password-input") {
+        return { get value() { return values.confirmPassword; } };
+      }
+      if (id === "password-toggle-btn" || id === "confirm-password-toggle-btn") {
+        return { addEventListener: () => {} };
+      }
+      if (id === "register-back-btn") {
+        return { addEventListener: () => {} };
+      }
+      return null;
+    }
+  };
+
+  try {
+    loginScreen.bind({
+      mode: "register",
+      actions: {
+        back: () => {},
+        showMode: ({ errorMessage }) => errors.push(errorMessage),
+        login: async (payload) => backendCalls.push(payload)
+      }
+    });
+
+    await registerSubmit({ preventDefault: () => {} });
+    values.email = "new@example.com";
+    values.confirmPassword = "different123";
+    await registerSubmit({ preventDefault: () => {} });
+
+    assert.deepEqual(errors, ["Enter a valid email address.", "Passwords do not match."]);
+    assert.deepEqual(backendCalls, []);
+  } finally {
+    global.document = previousDocument;
+    global.requestAnimationFrame = previousAnimationFrame;
+  }
+});
+
+test("ui: create account password toggles both password fields", () => {
+  const previousDocument = global.document;
+  const previousAnimationFrame = global.requestAnimationFrame;
+  const elements = new Map();
+  const createInput = (value = "") => ({ value, type: "password", focus: () => {}, select: () => {} });
+  const passwordInput = createInput("password123");
+  const confirmPasswordInput = createInput("password123");
+  const passwordToggle = {
+    textContent: "Show Password",
+    attributes: {},
+    addEventListener: (_type, handler) => {
+      passwordToggle.click = handler;
+    },
+    setAttribute(name, value) {
+      passwordToggle.attributes[name] = value;
+    }
+  };
+  const confirmPasswordToggle = {
+    textContent: "Show Password",
+    attributes: {},
+    addEventListener: (_type, handler) => {
+      confirmPasswordToggle.click = handler;
+    },
+    setAttribute(name, value) {
+      confirmPasswordToggle.attributes[name] = value;
+    }
+  };
+
+  elements.set("login-form", { addEventListener: () => {} });
+  elements.set("username-input", createInput("NewPlayer"));
+  elements.set("email-input", createInput("new@example.com"));
+  elements.set("password-input", passwordInput);
+  elements.set("confirm-password-input", confirmPasswordInput);
+  elements.set("password-toggle-btn", passwordToggle);
+  elements.set("confirm-password-toggle-btn", confirmPasswordToggle);
+  elements.set("register-back-btn", { addEventListener: () => {} });
+
+  global.requestAnimationFrame = (handler) => handler();
+  global.document = {
+    getElementById: (id) => elements.get(id) ?? null
+  };
+
+  try {
+    loginScreen.bind({
+      mode: "register",
+      actions: {
+        back: () => {},
+        showMode: () => {},
+        login: async () => {}
+      }
+    });
+
+    passwordToggle.click();
+    confirmPasswordToggle.click();
+    assert.equal(passwordInput.type, "text");
+    assert.equal(confirmPasswordInput.type, "text");
+    assert.equal(passwordToggle.textContent, "Hide Password");
+    assert.equal(confirmPasswordToggle.textContent, "Hide Password");
+    assert.equal(passwordToggle.attributes["aria-pressed"], "true");
+    assert.equal(confirmPasswordToggle.attributes["aria-pressed"], "true");
+
+    passwordToggle.click();
+    confirmPasswordToggle.click();
+    assert.equal(passwordInput.type, "password");
+    assert.equal(confirmPasswordInput.type, "password");
+    assert.equal(passwordToggle.textContent, "Show Password");
+    assert.equal(confirmPasswordToggle.textContent, "Show Password");
   } finally {
     global.document = previousDocument;
     global.requestAnimationFrame = previousAnimationFrame;
