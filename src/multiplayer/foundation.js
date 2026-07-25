@@ -2548,7 +2548,8 @@ export function createMultiplayerFoundation({
         const dashboard = await accountStore.getReferralDashboard({
           accountId: sessionResult.session.accountId,
           username: sessionResult.session.username,
-          playerLevel: snapshot?.profile?.playerLevel ?? 1
+          playerLevel: snapshot?.profile?.playerLevel ?? 1,
+          consumeApprovalNotices: true
         });
         respond({
           ok: true,

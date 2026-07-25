@@ -193,6 +193,10 @@ function createEmptyReferralAdminRestrictions() {
   };
 }
 
+function createEmptyReferralRewardApprovalNotices() {
+  return [];
+}
+
 test("multiplayer rooms: featured rival join seeds an asymmetric 8 vs 12 boss hand", () => {
   const store = createRoomStore({ random: () => 0 });
   const host = createStoreSocket("host-featured");
@@ -8531,7 +8535,8 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
       },
       risk: createEmptyReferralRisk(),
       rewardReview: createEmptyReferralRewardReview(),
-      adminRestrictions: createEmptyReferralAdminRestrictions()
+      adminRestrictions: createEmptyReferralAdminRestrictions(),
+      rewardApprovalNotices: createEmptyReferralRewardApprovalNotices()
     });
 
     const firstCode = await accountStore.getOrCreateReferralCode({ accountId: firstAccount.accountId });
@@ -8587,7 +8592,8 @@ test("multiplayer foundation: referral schema normalizes privately and codes are
       },
       risk: createEmptyReferralRisk(),
       rewardReview: createEmptyReferralRewardReview(),
-      adminRestrictions: createEmptyReferralAdminRestrictions()
+      adminRestrictions: createEmptyReferralAdminRestrictions(),
+      rewardApprovalNotices: createEmptyReferralRewardApprovalNotices()
     });
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
@@ -9561,6 +9567,41 @@ test("multiplayer foundation: admin referral review queue secures approve deny a
       (await coordinator.profiles.getProfile("AdminHeldOwn")).tokens,
       heldOwnBefore.tokens + 100
     );
+    const approvedNoticeDashboard = await emitWithAck(
+      regularClient,
+      "profile:getReferralDashboard",
+      {}
+    );
+    assert.equal(approvedNoticeDashboard?.ok, true);
+    assert.equal(approvedNoticeDashboard.dashboard.ownProgress.rewardStatus, "claimed");
+    assert.deepEqual(approvedNoticeDashboard.dashboard.approvalNotices, [
+      {
+        claimType: "own",
+        amount: 100,
+        message: "Referral Reward Approved: +100 Tokens",
+        approvedAt: approveOwn.result.review.approvedAt
+      }
+    ]);
+    assert.doesNotMatch(
+      JSON.stringify(approvedNoticeDashboard),
+      /rewardReview|heldRewards|blockedRewards|riskReasons|reviewId|targetAccountId|deterministicGrantId|approvedBy|ADMIN_APPROVED/
+    );
+    const approvedNoticeRetry = await emitWithAck(
+      regularClient,
+      "profile:getReferralDashboard",
+      {}
+    );
+    assert.equal(approvedNoticeRetry?.ok, true);
+    assert.deepEqual(approvedNoticeRetry.dashboard.approvalNotices ?? [], []);
+    const rawAfterNotice = await accountStore.readState();
+    const storedApprovedOwn = rawAfterNotice.accounts.find(
+      (entry) => entry.accountId === accounts.AdminHeldOwn.accountId
+    );
+    assert.equal(
+      storedApprovedOwn.referral.rewardApprovalNotices.length,
+      1
+    );
+    assert.ok(storedApprovedOwn.referral.rewardApprovalNotices[0].consumedAt);
 
     const referrerBefore = await coordinator.profiles.getProfile("VampyrLee");
     const approveReferrer = await emitWithAck(
@@ -9604,6 +9645,12 @@ test("multiplayer foundation: admin referral review queue secures approve deny a
       (await coordinator.profiles.getProfile("AdminDeniedOwn")).tokens,
       deniedOwnBefore.tokens
     );
+    const deniedNoticeDashboard = await accountStore.getReferralDashboard({
+      accountId: accounts.AdminDeniedOwn.accountId,
+      playerLevel: 2,
+      consumeApprovalNotices: true
+    });
+    assert.deepEqual(deniedNoticeDashboard.approvalNotices ?? [], []);
 
     const denyReferrerBefore = await coordinator.profiles.getProfile("VampyrLee");
     const denyReferrer = await emitWithAck(

@@ -35,6 +35,8 @@ const REFERRAL_HELD_REWARD_LIMIT = 100;
 const REFERRAL_BLOCKED_REWARD_LIMIT = 100;
 const REFERRAL_LATEST_REFERRER_REVIEW_LIMIT = 50;
 const REFERRAL_ADMIN_RESTRICTION_SCHEMA_VERSION = 1;
+const REFERRAL_REWARD_APPROVAL_NOTICE_SCHEMA_VERSION = 1;
+const REFERRAL_REWARD_APPROVAL_NOTICE_LIMIT = 20;
 const REFERRAL_QUALIFYING_MODES = new Set([
   "pve",
   "gauntlet",
@@ -349,6 +351,80 @@ function normalizeReferralRewardReview(value) {
   };
 }
 
+function normalizeReferralRewardApprovalNotice(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const noticeId = String(value.noticeId ?? "").trim();
+  const claimType = String(value.claimType ?? "").trim().toLowerCase();
+  const approvedAt = normalizeIsoTimestamp(value.approvedAt);
+  const amount = Math.max(0, Math.floor(Number(value.amount ?? 0) || 0));
+  if (
+    !noticeId ||
+    !["own", "referrer"].includes(claimType) ||
+    !approvedAt ||
+    amount !== REFERRAL_REWARD_TOKENS
+  ) {
+    return null;
+  }
+  return {
+    schemaVersion: REFERRAL_REWARD_APPROVAL_NOTICE_SCHEMA_VERSION,
+    noticeId,
+    claimType,
+    approvedAt,
+    amount,
+    message: "Referral Reward Approved: +100 Tokens",
+    consumedAt: normalizeIsoTimestamp(value.consumedAt)
+  };
+}
+
+function normalizeReferralRewardApprovalNotices(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((notice) => normalizeReferralRewardApprovalNotice(notice))
+    .filter(Boolean)
+    .slice(-REFERRAL_REWARD_APPROVAL_NOTICE_LIMIT);
+}
+
+function appendReferralRewardApprovalNotice(referralValue, record, approvedAt) {
+  const referral = normalizeReferral(referralValue);
+  const notice = normalizeReferralRewardApprovalNotice({
+    noticeId: `referral-approval-${record.reviewId}`,
+    claimType: record.claimType,
+    approvedAt,
+    amount: record.rewardAmount
+  });
+  if (!notice) {
+    return referral;
+  }
+  if (
+    referral.rewardApprovalNotices.some(
+      (entry) => entry.noticeId === notice.noticeId
+    )
+  ) {
+    return referral;
+  }
+  return {
+    ...referral,
+    rewardApprovalNotices: normalizeReferralRewardApprovalNotices([
+      ...referral.rewardApprovalNotices,
+      notice
+    ])
+  };
+}
+
+function buildSafeReferralApprovalNotice(noticeValue) {
+  const notice = normalizeReferralRewardApprovalNotice(noticeValue);
+  if (!notice || notice.consumedAt) {
+    return null;
+  }
+  return {
+    claimType: notice.claimType,
+    amount: notice.amount,
+    message: notice.message,
+    approvedAt: notice.approvedAt
+  };
+}
+
 function buildReferralRewardReviewId(claimId) {
   return `referral-review-${crypto
     .createHash("sha256")
@@ -643,7 +719,10 @@ function normalizeReferral(value) {
     },
     risk: normalizeReferralRisk(source.risk),
     rewardReview: normalizeReferralRewardReview(source.rewardReview),
-    adminRestrictions: normalizeReferralAdminRestrictions(source.adminRestrictions)
+    adminRestrictions: normalizeReferralAdminRestrictions(source.adminRestrictions),
+    rewardApprovalNotices: normalizeReferralRewardApprovalNotices(
+      source.rewardApprovalNotices
+    )
   };
 }
 
@@ -1348,21 +1427,63 @@ export class MultiplayerAccountStore {
     return pending;
   }
 
-  async getReferralDashboard({ accountId, username, playerLevel = 1 } = {}) {
-    const safeAccountId = String(accountId ?? "").trim();
-    const safeUsername = normalizeUsername(username);
-    const state = await this.readState();
-    const account =
-      state.accounts.find(
-        (entry) =>
-          (safeAccountId && entry?.accountId === safeAccountId) ||
-          (safeUsername && normalizeUsername(entry?.username) === safeUsername)
-      ) ?? null;
-    if (!account) {
-      throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
-    }
+  async getReferralDashboard({
+    accountId,
+    username,
+    playerLevel = 1,
+    consumeApprovalNotices = false
+  } = {}) {
+    const operation = async () => {
+      const safeAccountId = String(accountId ?? "").trim();
+      const safeUsername = normalizeUsername(username);
+      const state = await this.readState();
+      const account =
+        state.accounts.find(
+          (entry) =>
+            (safeAccountId && entry?.accountId === safeAccountId) ||
+            (safeUsername && normalizeUsername(entry?.username) === safeUsername)
+        ) ?? null;
+      if (!account) {
+        throw buildAccountError("ACCOUNT_NOT_FOUND", "Account was not found.");
+      }
 
-    return buildSafeReferralDashboard(account, state.accounts, playerLevel, this.now());
+      const referral = normalizeReferral(account.referral);
+      const approvalNotices = consumeApprovalNotices
+        ? referral.rewardApprovalNotices
+            .map((notice) => buildSafeReferralApprovalNotice(notice))
+            .filter(Boolean)
+        : [];
+      const dashboard = buildSafeReferralDashboard(
+        account,
+        state.accounts,
+        playerLevel,
+        this.now()
+      );
+      if (approvalNotices.length > 0) {
+        dashboard.approvalNotices = approvalNotices;
+      }
+      if (approvalNotices.length > 0) {
+        const consumedAt = new Date(this.now()).toISOString();
+        account.referral = {
+          ...referral,
+          rewardApprovalNotices: normalizeReferralRewardApprovalNotices(
+            referral.rewardApprovalNotices.map((notice) =>
+              notice.consumedAt ? notice : { ...notice, consumedAt }
+            )
+          )
+        };
+        account.updatedAt = consumedAt;
+        await this.writeState(state);
+      }
+      return dashboard;
+    };
+
+    if (!consumeApprovalNotices) {
+      return operation();
+    }
+    const pending = this.referralMutationQueue.then(operation, operation);
+    this.referralMutationQueue = pending.catch(() => undefined);
+    return pending;
   }
 
   async claimReferralReward({
@@ -1805,6 +1926,15 @@ export class MultiplayerAccountStore {
           claimId: record.deterministicGrantId,
           amount: record.rewardAmount
         });
+        const reportedTokensAdded = Number(grantResult?.tokensAdded);
+        const tokensAdded = Number.isFinite(reportedTokensAdded)
+          ? Math.min(
+              record.rewardAmount,
+              Math.max(0, Math.floor(reportedTokensAdded))
+            )
+          : grantResult?.duplicate
+            ? 0
+            : record.rewardAmount;
         const approvedAt = new Date(this.now()).toISOString();
         const approvedRecord = {
           ...record,
@@ -1836,6 +1966,13 @@ export class MultiplayerAccountStore {
                   }
                 }
               };
+        if (tokensAdded > 0) {
+          referral = appendReferralRewardApprovalNotice(
+            referral,
+            approvedRecord,
+            approvedAt
+          );
+        }
         account.referral = {
           ...referral,
           rewardReview: updateReferralRewardReviewRecord(
@@ -1845,18 +1982,10 @@ export class MultiplayerAccountStore {
         };
         account.updatedAt = approvedAt;
         await this.writeState(state);
-        const reportedTokensAdded = Number(grantResult?.tokensAdded);
         return {
           action: "approve",
           duplicate: Boolean(grantResult?.duplicate),
-          tokensAdded: Number.isFinite(reportedTokensAdded)
-            ? Math.min(
-                record.rewardAmount,
-                Math.max(0, Math.floor(reportedTokensAdded))
-              )
-            : grantResult?.duplicate
-              ? 0
-              : record.rewardAmount,
+          tokensAdded,
           review: buildSafeAdminReferralReview(
             normalizeReferralRewardReviewRecord(approvedRecord),
             account,

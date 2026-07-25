@@ -334,6 +334,7 @@ export class AppController {
     this.emailVerificationSubmitPromise = null;
     this.referralDashboardRequestPromise = null;
     this.referralRewardClaimPromise = null;
+    this.seenReferralApprovalNoticeIds = new Set();
     this.referralActivationState = {
       username: null,
       status: "idle",
@@ -4562,6 +4563,7 @@ export class AppController {
         if (referralLinked && typeof window.elemintz?.multiplayer?.getReferralDashboard === "function") {
           try {
             const dashboard = await window.elemintz.multiplayer.getReferralDashboard({});
+            this.showReferralApprovalNotices(dashboard);
             const dashboardRewardStatus = String(
               dashboard?.ownProgress?.rewardStatus ?? ""
             ).trim().toLowerCase();
@@ -4880,11 +4882,34 @@ export class AppController {
         actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
       });
       this.bindReferralDashboardModalControls(dashboard);
+      this.showReferralApprovalNotices(dashboard);
     } catch (error) {
       this.modalManager.show({
         title: "Referral Dashboard Unavailable",
         body: String(error?.message ?? "Unable to load Referral Dashboard."),
         actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
+    }
+  }
+
+  showReferralApprovalNotices(dashboard = {}) {
+    const notices = Array.isArray(dashboard?.approvalNotices)
+      ? dashboard.approvalNotices
+      : [];
+    for (const notice of notices) {
+      const amount = Math.max(0, Math.floor(Number(notice?.amount ?? 0) || 0));
+      const noticeKey = [
+        String(notice?.claimType ?? "").trim().toLowerCase(),
+        String(notice?.approvedAt ?? "").trim(),
+        amount
+      ].join(":");
+      if (!noticeKey || amount <= 0 || this.seenReferralApprovalNoticeIds.has(noticeKey)) {
+        continue;
+      }
+      this.seenReferralApprovalNoticeIds.add(noticeKey);
+      this.toastManager?.showTokenReward?.({
+        amount,
+        label: "Referral Reward Approved"
       });
     }
   }

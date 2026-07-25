@@ -32480,6 +32480,64 @@ test("ui: Referral Dashboard loads through authenticated authority and closes cl
   }
 });
 
+test("ui: Referral Dashboard shows approved referral reward notice once", async () => {
+  const previousDocument = global.document;
+  const modalCalls = [];
+  const tokenToasts = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (config) => modalCalls.push(config),
+      hide: () => {},
+      clearStaleOverlay: () => false
+    },
+    toastManager: {
+      showTokenReward: (payload) => tokenToasts.push(payload)
+    }
+  });
+  global.document = {
+    getElementById: () => null,
+    querySelectorAll: () => []
+  };
+  const dashboard = {
+    emailVerified: true,
+    referralCode: "ELM-K7QX-M9PD",
+    ownProgress: {
+      referralLinked: true,
+      level2Reached: true,
+      qualifyingMatchesCompleted: 3,
+      qualified: true,
+      rewardStatus: "claimed"
+    },
+    approvalNotices: [
+      {
+        claimType: "own",
+        amount: 100,
+        message: "Referral Reward Approved: +100 Tokens",
+        approvedAt: "2026-07-24T18:10:00.000Z",
+        reviewId: "private-review-id",
+        riskReasons: ["same_signup_ip_hash"]
+      }
+    ],
+    referees: []
+  };
+
+  try {
+    await controller.showReferralDashboardModal(dashboard);
+    await controller.showReferralDashboardModal(dashboard);
+    assert.equal(modalCalls.length, 2);
+    assert.deepEqual(tokenToasts, [
+      { amount: 100, label: "Referral Reward Approved" }
+    ]);
+    assert.doesNotMatch(
+      modalCalls[0].bodyHtml,
+      /private-review-id|riskReasons|same_signup_ip_hash|rewardReview|heldRewards|blockedRewards/
+    );
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
 test("ui: referral reward claim is single-flight and refreshes tokens plus claimed dashboard state", async () => {
   const previousWindow = global.window;
   let claimCalls = 0;
@@ -32950,10 +33008,14 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
   const previousWindow = global.window;
   let referralCalls = 0;
   let dashboardCalls = 0;
+  const tokenToasts = [];
   const controller = new AppController({
     screenManager: { register: () => {}, show: () => {} },
     modalManager: { show: () => {}, hide: () => {}, clearStaleOverlay: () => false },
-    toastManager: { enqueueToast: () => {} }
+    toastManager: {
+      enqueueToast: () => {},
+      showTokenReward: (payload) => tokenToasts.push(payload)
+    }
   });
 
   try {
@@ -32974,6 +33036,14 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
           getReferralDashboard: async () => {
             dashboardCalls += 1;
             return {
+              approvalNotices: [
+                {
+                  claimType: "own",
+                  amount: 100,
+                  message: "Referral Reward Approved: +100 Tokens",
+                  approvedAt: "2026-07-24T18:10:00.000Z"
+                }
+              ],
               ownProgress: {
                 rewardStatus: "locked"
               }
@@ -33000,6 +33070,9 @@ test("ui: referral code loading is authenticated-only, single-flight, and fails 
     assert.equal(first.qualified, false);
     assert.equal(first.rewardStatus, "locked");
     assert.equal(dashboardCalls, 1);
+    assert.deepEqual(tokenToasts, [
+      { amount: 100, label: "Referral Reward Approved" }
+    ]);
 
     controller.referralCodeState.status = "idle";
     global.window.elemintz.multiplayer.getOrCreateReferralCode = async () => {
