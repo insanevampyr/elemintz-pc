@@ -15555,8 +15555,92 @@ test("appController: PvE still uses the Settings difficulty when no override is 
   }
 });
 
+test("appController: generic PvE starts reset stale rival identity to Elemental AI", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const genericStarts = [
+    { label: "Training", options: { aiDifficulty: "easy", trainingMode: true } },
+    { label: "Easy", options: { aiDifficulty: "easy" } },
+    { label: "Normal", options: { aiDifficulty: "normal" } },
+    { label: "Hard", options: { aiDifficulty: "hard" } }
+  ];
+
+  try {
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({})
+        }
+      }
+    };
+    globalThis.document = {
+      activeElement: null,
+      querySelector: () => null
+    };
+
+    for (const { label, options } of genericStarts) {
+      const shownScreens = [];
+      const app = new AppController({
+        screenManager: {
+          register: () => {},
+          show: (name, context) => shownScreens.push({ name, context })
+        },
+        modalManager: { show: () => {}, hide: () => {} },
+        toastManager: { showAchievement: () => {} }
+      });
+
+      app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: true } };
+      app.username = `${label}IdentityUser`;
+      app.profile = { username: `${label}IdentityUser`, equippedCosmetics: { background: "default_background" } };
+      app.pveFeaturedRivalId = "crownfire_duelist";
+      app.opponentDisplayName = "Inferno Drummer";
+      app.pveGauntletMode = true;
+      app.gauntletRunState = {
+        active: true,
+        currentStreak: 3,
+        currentRivalIndex: 1,
+        currentRivalId: "inferno_drummer",
+        rivalBag: ["storm_chaser"],
+        lastRivalId: "tide_witch",
+        claimedMilestoneStreaks: [3],
+        defeatedRivalIds: [],
+        lastResult: "win"
+      };
+
+      try {
+        app.startGame(MATCH_MODE.PVE, options);
+
+        const payload = shownScreens.at(-1).context;
+        assert.equal(payload.opponentDisplay.name, "Elemental AI");
+        assert.equal(payload.hotseat.p2Name, "Elemental AI");
+        assert.notEqual(payload.opponentDisplay.name, "Inferno Drummer");
+        assert.equal(app.pveFeaturedRivalId, null);
+        assert.equal(app.pveGauntletMode, false);
+        assert.equal(app.pveOpponentStyle?.name, "Elemental AI");
+        assert.equal(app.pveOpponentStyle?.featuredRivalId, undefined);
+        assert.equal(app.pveOpponentStyle?.gauntletRivalId, undefined);
+        assert.ok(payload.opponentDisplay.avatar);
+        assert.ok(payload.opponentDisplay.title);
+        assert.ok(payload.cardBacks.p2);
+        assert.ok(payload.opponentCardVariants.fire);
+        assert.ok(payload.opponentCardVariants.water);
+        assert.ok(payload.opponentCardVariants.earth);
+        assert.ok(payload.opponentCardVariants.wind);
+      } finally {
+        app.clearPassTimer();
+        app.gameController?.stopTimer();
+        app.gameController?.stopMatchClock();
+      }
+    }
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  }
+});
+
 test("appController: Crownfire rival display uses fixed rival-only identity assets", async () => {
   const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
   const shownScreens = [];
 
   const app = new AppController({
@@ -15583,6 +15667,10 @@ test("appController: Crownfire rival display uses fixed rival-only identity asse
         }
       }
     };
+    globalThis.document = {
+      activeElement: null,
+      querySelector: () => null
+    };
 
     app.startGame(MATCH_MODE.PVE, { featuredRivalId: "crownfire_duelist" });
     const payload = shownScreens.at(-1).context;
@@ -15603,7 +15691,66 @@ test("appController: Crownfire rival display uses fixed rival-only identity asse
     app.gameController?.stopTimer();
     app.gameController?.stopMatchClock();
     globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
   }
+});
+
+test("appController: Gauntlet showGame keeps current rival identity over stale generic name", () => {
+  const originalDocument = globalThis.document;
+  const shownScreens = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (name, context) => shownScreens.push({ name, context })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { showAchievement: () => {} }
+  });
+
+  app.username = "GauntletIdentityUser";
+  app.profile = { username: "GauntletIdentityUser", equippedCosmetics: { background: "default_background" } };
+  app.opponentDisplayName = "Elemental AI";
+  app.pveGauntletMode = true;
+  app.gauntletRunState = {
+    active: true,
+    currentRivalId: "inferno_drummer"
+  };
+  app.gameController = {
+    pauseLocalTurnTimer: () => {},
+    resumeLocalTurnTimer: () => {},
+    getViewModel: () => ({
+      status: "active",
+      mode: MATCH_MODE.PVE,
+      roundOutcome: { key: "no_effect", label: "No effect" },
+      roundResult: "No effect.",
+      round: 1,
+      timerSeconds: 20,
+      totalMatchSeconds: 300,
+      canSelectCard: true,
+      playerHand: ["fire"],
+      opponentHand: ["water"],
+      pileCount: 0,
+      totalWarClashes: 0,
+      warPileCards: [],
+      captured: { p1: 0, p2: 0 },
+      lastRound: null
+    })
+  };
+
+  try {
+    globalThis.document = {
+      activeElement: null,
+      querySelector: () => null
+    };
+
+    app.showGame();
+  } finally {
+    globalThis.document = originalDocument;
+  }
+
+  const payload = shownScreens.at(-1).context;
+  assert.equal(payload.opponentDisplay.name, "Inferno Drummer");
+  assert.equal(payload.hotseat.p2Name, "Inferno Drummer");
 });
 
 test("gameController: local WAR continuation requires additional player choices", async () => {
@@ -15958,7 +16105,7 @@ test("appController: reward toasts are labeled with receiving player", () => {
 
   app.emitRewardToastsForResult(
     {
-      profile: { username: "Alice", chests: { basic: 3 } },
+      profile: { username: "Alice", playerLevel: 2, chests: { basic: 3 } },
       unlockedAchievements: [
         { id: "first_flame", name: "First Flame", description: "Win first match." }
       ],

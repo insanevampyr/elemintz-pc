@@ -1875,7 +1875,6 @@ export class AppController {
     return (
       this.getCurrentGauntletRival()?.displayName ??
       this.getFeaturedRivalConfig(this.pveFeaturedRivalId)?.name ??
-      this.opponentDisplayName ??
       "Elemental AI"
     );
   }
@@ -2987,6 +2986,7 @@ export class AppController {
 
     if (this.getConfiguredAiOpponentStyle() !== "random") {
       return {
+        name: "Elemental AI",
         avatarId: "default_avatar",
         titleId: null,
         titleName: "Arena Rival",
@@ -3002,6 +3002,7 @@ export class AppController {
     const cardBack = this.chooseRandomCatalogItem("cardBack", { excludeIds: ["default_card_back"] });
 
     return {
+      name: "Elemental AI",
       avatarId: avatar?.id ?? "default_avatar",
       titleId: title?.id ?? null,
       titleName: getCosmeticDisplayName("title", title?.id, title?.name ?? "Arena Rival"),
@@ -10194,6 +10195,9 @@ export class AppController {
     const featuredRival = this.getFeaturedRivalConfig(this.pveFeaturedRivalId);
     this.pveOpponentStyle =
       mode === MATCH_MODE.PVE ? this.buildPveOpponentStyle(this.pveFeaturedRivalId) : null;
+    if (mode === MATCH_MODE.PVE && !wantsGauntlet && !featuredRival) {
+      this.opponentDisplayName = "Elemental AI";
+    }
     const resolvedAiDifficulty =
       trainingMode
         ? "easy"
