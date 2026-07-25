@@ -13,7 +13,10 @@ import {
   getCosmeticCatalogForProfile,
   getCosmeticHoverMetadata,
   normalizeCosmeticMetadata,
-  normalizeCosmeticRarity
+  normalizeCosmeticRarity,
+  normalizeProfileShowcaseSlots,
+  resolveProfileShowcaseSlots,
+  updateProfileShowcaseSlot
 } from "../../src/state/cosmeticSystem.js";
 import {
   buildCollectionAlbumDetail,
@@ -528,6 +531,142 @@ test("cosmetics: new profile has default owned and equipped cosmetics", async ()
   const cosmetics = await state.getCosmetics("CosmeticDefaultUser");
   const unlockTag = cosmetics.catalog.title.find((item) => item.id === "Flame Vanguard").unlockSource.type;
   assert.equal(unlockTag, "achievement reward");
+});
+
+test("cosmetics: Showcase auto slots avoid manual duplicates when an alternate owned item exists", () => {
+  const profile = {
+    username: "ShowcaseDuplicateUser",
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    },
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    profileShowcaseSlots: [null, { type: "avatar", id: "default_avatar" }, null]
+  };
+
+  const resolved = resolveProfileShowcaseSlots(profile);
+
+  assert.deepEqual(profile.profileShowcaseSlots, [null, { type: "avatar", id: "default_avatar" }, null]);
+  assert.equal(resolved[0].type, "avatar");
+  assert.equal(resolved[0].id, "avatar_crystal_soul");
+  assert.equal(resolved[1].type, "avatar");
+  assert.equal(resolved[1].id, "default_avatar");
+  assert.equal(new Set(resolved.filter(Boolean).map((item) => `${item.type}:${item.id}`)).size, 3);
+});
+
+test("cosmetics: Showcase auto slots resolve distinct identities when enough owned cosmetics exist", () => {
+  const profile = {
+    username: "ShowcaseAutoUser",
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    },
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back", "cardback_neon_arcana"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate", "title_spellwired"]
+    },
+    profileShowcaseSlots: [null, null, null]
+  };
+
+  const resolved = resolveProfileShowcaseSlots(profile);
+  const keys = resolved.filter(Boolean).map((item) => `${item.type}:${item.id}`);
+
+  assert.deepEqual(keys, ["avatar:default_avatar", "cardBack:default_card_back", "title:Initiate"]);
+  assert.equal(new Set(keys).size, keys.length);
+});
+
+test("cosmetics: Showcase duplicate fallback stays stable when too few owned cosmetics exist", () => {
+  const profile = {
+    username: "ShowcaseSparseUser",
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      cardBack: "default_card_back",
+      background: "default_background",
+      badge: "none",
+      title: "Initiate",
+      elementCardVariant: {
+        fire: "default_fire_card",
+        water: "default_water_card",
+        earth: "default_earth_card",
+        wind: "default_wind_card"
+      }
+    },
+    ownedCosmetics: {
+      avatar: ["default_avatar"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    profileShowcaseSlots: [null, { type: "avatar", id: "default_avatar" }, null]
+  };
+
+  const resolved = resolveProfileShowcaseSlots(profile);
+
+  assert.deepEqual(profile.profileShowcaseSlots, [null, { type: "avatar", id: "default_avatar" }, null]);
+  assert.equal(resolved.length, 3);
+  assert.equal(resolved[0]?.id, "default_avatar");
+  assert.equal(resolved[1]?.id, "default_avatar");
+  assert.equal(resolved[2]?.id, "Initiate");
+});
+
+test("cosmetics: Showcase manual duplicate protection remains unchanged", () => {
+  const profile = {
+    username: "ShowcaseManualDuplicateUser",
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_crystal_soul"],
+      cardBack: ["default_card_back"],
+      background: ["default_background"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none"],
+      title: ["Initiate"]
+    },
+    profileShowcaseSlots: [
+      { type: "avatar", id: "avatar_crystal_soul" },
+      { type: "avatar", id: "avatar_crystal_soul" },
+      null
+    ]
+  };
+
+  assert.deepEqual(normalizeProfileShowcaseSlots(profile), [
+    { type: "avatar", id: "avatar_crystal_soul" },
+    null,
+    null
+  ]);
+  assert.throws(
+    () => updateProfileShowcaseSlot(profile, { slotIndex: 2, cosmetic: { type: "avatar", id: "avatar_crystal_soul" } }),
+    /already showcased/i
+  );
 });
 
 test("cosmetics: achievement reward grants unlockable title", async () => {

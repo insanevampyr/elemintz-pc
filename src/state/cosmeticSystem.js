@@ -3813,6 +3813,31 @@ function buildResolvedShowcaseItem(type, entry) {
   };
 }
 
+function buildShowcaseIdentityKey(type, id) {
+  const safeType = String(type ?? "").trim();
+  const safeId = String(id ?? "").trim();
+  return safeType && safeId ? `${safeType}:${safeId}` : null;
+}
+
+function findOwnedShowcaseEntry(catalog, type, preferredId, excludeKeys = new Set()) {
+  const entries = Array.isArray(catalog?.[type]) ? catalog[type] : [];
+  const preferredEntry = entries.find((item) => item?.id === preferredId) ?? null;
+  const preferredKey = buildShowcaseIdentityKey(type, preferredEntry?.id);
+  if (preferredEntry?.owned && preferredKey && !excludeKeys.has(preferredKey)) {
+    return preferredEntry;
+  }
+
+  const alternateEntry = entries.find((item) => {
+    const key = buildShowcaseIdentityKey(type, item?.id);
+    return item?.owned && key && !excludeKeys.has(key);
+  });
+  if (alternateEntry) {
+    return alternateEntry;
+  }
+
+  return preferredEntry?.owned ? preferredEntry : null;
+}
+
 export function resolveProfileShowcaseSlots(profile = {}, { catalog = null } = {}) {
   const normalized = normalizeProfileCosmetics(profile);
   const sourceCatalog = catalog && typeof catalog === "object"
@@ -3827,18 +3852,40 @@ export function resolveProfileShowcaseSlots(profile = {}, { catalog = null } = {
     },
     { catalog: sourceCatalog }
   );
+  const manualKeys = new Set(
+    manualSlots
+      .map((slot) => buildShowcaseIdentityKey(slot?.type, slot?.id))
+      .filter(Boolean)
+  );
+  const usedKeys = new Set();
 
   return PROFILE_SHOWCASE_AUTOMATIC_SLOTS.map((automaticSlot, index) => {
     const manualSlot = manualSlots[index];
     if (manualSlot) {
       const manualEntry = getShowcaseCatalogEntry(sourceCatalog, manualSlot.type, manualSlot.id);
       if (manualEntry?.owned) {
+        const manualKey = buildShowcaseIdentityKey(manualSlot.type, manualSlot.id);
+        if (manualKey) {
+          usedKeys.add(manualKey);
+        }
         return buildResolvedShowcaseItem(manualSlot.type, manualEntry);
       }
     }
 
     const automaticId = normalized.equippedCosmetics?.[automaticSlot.type] ?? null;
-    const automaticEntry = getShowcaseCatalogEntry(sourceCatalog, automaticSlot.type, automaticId);
+    const excludeKeys = new Set([...manualKeys, ...usedKeys]);
+    const automaticEntry = findOwnedShowcaseEntry(
+      sourceCatalog,
+      automaticSlot.type,
+      automaticId,
+      excludeKeys
+    );
+    if (automaticEntry?.owned) {
+      const automaticKey = buildShowcaseIdentityKey(automaticSlot.type, automaticEntry.id);
+      if (automaticKey) {
+        usedKeys.add(automaticKey);
+      }
+    }
     return automaticEntry?.owned
       ? buildResolvedShowcaseItem(automaticSlot.type, automaticEntry)
       : null;
