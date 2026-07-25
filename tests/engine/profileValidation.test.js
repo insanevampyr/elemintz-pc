@@ -238,6 +238,24 @@ test("profile validation: normalizeProfile is idempotent after the first repair"
   assert.deepEqual(secondPass, firstPass);
 });
 
+test("profile validation: time played normalizes to a non-negative integer", () => {
+  assert.equal(normalizeProfile({ username: "MissingTimeUser" }).totalLoggedInPlayTimeMs, 0);
+  assert.equal(
+    normalizeProfile({
+      username: "FractionalTimeUser",
+      totalLoggedInPlayTimeMs: 12345.9
+    }).totalLoggedInPlayTimeMs,
+    12345
+  );
+  assert.equal(
+    normalizeProfile({
+      username: "BrokenTimeUser",
+      totalLoggedInPlayTimeMs: -100
+    }).totalLoggedInPlayTimeMs,
+    0
+  );
+});
+
 test("profile validation: valid profile stays stable and emits no repair logs", () => {
   const validProfile = normalizeProfile({
     username: "StableValidUser"

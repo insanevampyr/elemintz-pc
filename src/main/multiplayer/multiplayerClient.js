@@ -3082,6 +3082,19 @@ export class MultiplayerClient {
     return response.result ?? null;
   }
 
+  async addProfilePlayTime({ username, deltaMs, serverUrl } = {}) {
+    const response = await this.runServerRequest(
+      "profile:addPlayTime",
+      { username, deltaMs },
+      { serverUrl }
+    );
+    if (!response?.ok) {
+      throw new Error(response?.error?.message ?? "Unable to update profile time played.");
+    }
+
+    return response.result ?? null;
+  }
+
   async applyCosmeticLoadout({ username, slotIndex, serverUrl } = {}) {
     const response = await this.runServerRequest(
       "profile:applyCosmeticLoadout",

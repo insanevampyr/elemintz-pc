@@ -4045,6 +4045,42 @@ export class StateCoordinator {
     };
   }
 
+  async addProfilePlayTime({ username, deltaMs }) {
+    const safeUsername = String(username ?? "").trim();
+    const safeDeltaMs = Math.max(0, Math.floor(Number(deltaMs ?? 0) || 0));
+    if (!safeUsername) {
+      throw new Error("Profile username is required.");
+    }
+
+    if (safeDeltaMs <= 0) {
+      const profile = await this.profiles.getProfile(safeUsername);
+      return {
+        profile,
+        deltaMs: 0,
+        totalLoggedInPlayTimeMs: Math.max(
+          0,
+          Math.floor(Number(profile?.totalLoggedInPlayTimeMs ?? 0) || 0)
+        )
+      };
+    }
+
+    const profile = await this.profiles.updateProfile(safeUsername, (current) => ({
+      ...current,
+      totalLoggedInPlayTimeMs:
+        Math.max(0, Math.floor(Number(current?.totalLoggedInPlayTimeMs ?? 0) || 0)) +
+        safeDeltaMs
+    }));
+
+    return {
+      profile,
+      deltaMs: safeDeltaMs,
+      totalLoggedInPlayTimeMs: Math.max(
+        0,
+        Math.floor(Number(profile?.totalLoggedInPlayTimeMs ?? 0) || 0)
+      )
+    };
+  }
+
   async claimCollectionAlbumReward({ username, albumId }) {
     let claimResult = null;
     const profile = await this.profiles.updateProfile(username, (current) => {

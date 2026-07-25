@@ -297,6 +297,7 @@ function buildSnapshotStats(profile) {
       wins: Number(profile?.wins ?? 0),
       losses: Number(profile?.losses ?? 0),
       gamesPlayed: Number(profile?.gamesPlayed ?? 0),
+      totalLoggedInPlayTimeMs: Number(profile?.totalLoggedInPlayTimeMs ?? 0),
       warsEntered: Number(profile?.warsEntered ?? 0),
       warsWon: Number(profile?.warsWon ?? 0),
       cardsCaptured: Number(profile?.cardsCaptured ?? 0)
@@ -430,6 +431,7 @@ function buildPublicProfileSnapshot({ profile, specialRecords = [] }) {
       wins: stats.summary.wins,
       losses: stats.summary.losses,
       gamesPlayed: stats.summary.gamesPlayed,
+      totalLoggedInPlayTimeMs: stats.summary.totalLoggedInPlayTimeMs,
       warsEntered: stats.summary.warsEntered,
       warsWon: stats.summary.warsWon,
       cardsCaptured: stats.summary.cardsCaptured,
@@ -1353,6 +1355,22 @@ export class MultiplayerProfileAuthority {
     const result = await this.coordinator.claimCollectionAlbumReward({
       username: safeUsername,
       albumId
+    });
+    return {
+      ...sanitizeProfileResult(result),
+      snapshot: await this.getProfile(safeUsername)
+    };
+  }
+
+  async addProfilePlayTime({ username, deltaMs }) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    if (!safeUsername) {
+      throw new Error("username is required for server-authoritative play-time updates.");
+    }
+
+    const result = await this.coordinator.addProfilePlayTime({
+      username: safeUsername,
+      deltaMs
     });
     return {
       ...sanitizeProfileResult(result),

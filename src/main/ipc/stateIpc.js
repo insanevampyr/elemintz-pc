@@ -167,6 +167,10 @@ export function registerStateIpcHandlers(ipcMain, options = {}) {
     coordinator.claimCollectionAlbumReward(payload)
   );
 
+  registerGuardedMutation("state:addProfilePlayTime", async (payload) =>
+    coordinator.addProfilePlayTime(payload)
+  );
+
   registerGuardedMutation("state:acknowledgeLoadoutUnlocks", async (username) =>
     coordinator.acknowledgeLoadoutUnlocks(username)
   );

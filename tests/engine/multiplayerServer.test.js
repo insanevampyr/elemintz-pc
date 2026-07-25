@@ -2921,6 +2921,63 @@ test("multiplayer foundation: profile:get returns the server-authoritative profi
   }
 });
 
+test("multiplayer foundation: profile:addPlayTime routes to server authority", async () => {
+  const authorityCalls = [];
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    logger: { info: () => {} },
+    profileAuthority: {
+      addProfilePlayTime: async ({ username, deltaMs }) => {
+        authorityCalls.push({ username, deltaMs });
+        return {
+          deltaMs,
+          totalLoggedInPlayTimeMs: 120000,
+          snapshot: {
+            authority: "server",
+            source: "multiplayer",
+            username,
+            profile: {
+              username,
+              totalLoggedInPlayTimeMs: 120000
+            },
+            stats: {
+              summary: {
+                wins: 0,
+                losses: 0,
+                gamesPlayed: 0,
+                totalLoggedInPlayTimeMs: 120000,
+                warsEntered: 0,
+                warsWon: 0,
+                cardsCaptured: 0
+              },
+              modes: {}
+            }
+          }
+        };
+      }
+    }
+  });
+  let client = null;
+
+  try {
+    const port = await foundation.start();
+    client = await connectClient(port);
+
+    const response = await new Promise((resolve) => {
+      client.emit("profile:addPlayTime", { username: "AuthorityTimeUser", deltaMs: 120000 }, resolve);
+    });
+
+    assert.equal(response.ok, true);
+    assert.deepEqual(authorityCalls, [{ username: "AuthorityTimeUser", deltaMs: 120000 }]);
+    assert.equal(response.result.totalLoggedInPlayTimeMs, 120000);
+    assert.equal(response.result.snapshot.profile.totalLoggedInPlayTimeMs, 120000);
+    assert.equal(response.result.snapshot.stats.summary.totalLoggedInPlayTimeMs, 120000);
+  } finally {
+    client?.disconnect();
+    await foundation.stop();
+  }
+});
+
 test("multiplayer foundation: gauntlet progress and milestone rewards follow server-owned session state", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

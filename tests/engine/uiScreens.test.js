@@ -8511,6 +8511,47 @@ test("ui: own profile shows a Battle Report button", () => {
   assert.match(html, /View your 5 most recent completed battles\./);
 });
 
+test("ui: profile screen renders formatted time played for own and viewed profiles", () => {
+  const ownHtml = profileScreen.render(
+    createProfileScreenContext({
+      profile: {
+        ...createProfileScreenContext().profile,
+        totalLoggedInPlayTimeMs: (12 * 60 + 34) * 60000
+      }
+    })
+  );
+  const viewedHtml = profileScreen.renderViewedProfileModalBody({
+    username: "RemoteTimeUser",
+    title: "Initiate",
+    wins: 0,
+    losses: 0,
+    gamesPlayed: 0,
+    totalLoggedInPlayTimeMs: 127 * 60 * 60000,
+    bestWinStreak: 0,
+    warsEntered: 0,
+    warsWon: 0,
+    longestWar: 0,
+    cardsCaptured: 0,
+    featuredRivalWins: 0,
+    modeStats: {
+      pve: {},
+      local_pvp: {},
+      online_pvp: {}
+    },
+    equippedCosmetics: {
+      avatar: "default_avatar",
+      title: "Initiate",
+      badge: "none",
+      background: "default_background"
+    },
+    achievements: {}
+  });
+
+  assert.match(ownHtml, /<span class="profile-stat-label">Time Played<\/span>\s*<strong class="profile-stat-value">12h 34m<\/strong>/);
+  assert.match(viewedHtml, /<span class="profile-stat-label">Time Played<\/span>\s*<strong class="profile-stat-value">127h<\/strong>/);
+  assert.doesNotMatch(viewedHtml, /totalLoggedInPlayTimeMs/);
+});
+
 test("ui: own profile renders Blood Match stats as a full-width two-column row", () => {
   const context = createProfileScreenContext();
   const html = profileScreen.render({
@@ -8749,6 +8790,7 @@ test("ui: profile screen renders safe fallback values for missing online and fea
       longestWar: 0,
       cardsCaptured: 0,
       gamesPlayed: 0,
+      totalLoggedInPlayTimeMs: 0,
       bestWinStreak: 0,
       tokens: 0,
       supporterPass: false,

@@ -95,6 +95,7 @@ const TITLE_ICON_MAP = Object.freeze({
   "Last Card Legend": "badges/badge_comeback_win_25.png"
 });
 const ONLINE_RECONNECT_TIMEOUT_MS = 60000;
+const PROFILE_PLAY_TIME_FLUSH_INTERVAL_MS = 60000;
 const SAFE_REFERRAL_ACTIVATION_MESSAGES = new Set([
   "Sign in before activating a referral code.",
   "Verify your email before activating a referral code.",
@@ -467,13 +468,163 @@ export class AppController {
         selectedCardIndex: null
       };
       this.screenFlow = "idle";
-      this.updateCoordinatorState = buildUpdateCoordinatorState();
-      this.updateLifecycleUnsubscribe = null;
-      this.updateReadyPromptVersion = null;
-      this.updateReadyPromptVisible = false;
+    this.updateCoordinatorState = buildUpdateCoordinatorState();
+    this.updateLifecycleUnsubscribe = null;
+    this.updateReadyPromptVersion = null;
+    this.updateReadyPromptVisible = false;
+    this.profilePlayTime = {
+      username: null,
+      startedAtMs: null,
+      pendingMs: 0,
+      flushTimerId: null,
+      flushPromise: null
+    };
 
     this.registerScreens();
     this.ensureNavigationShortcutHandler();
+  }
+
+  getActiveProfilePlayTimeUsername() {
+    return String(this.profile?.username ?? this.username ?? "").trim() || null;
+  }
+
+  resetProfilePlayTimeTracking() {
+    if (this.profilePlayTime.flushTimerId) {
+      clearInterval(this.profilePlayTime.flushTimerId);
+    }
+    this.profilePlayTime = {
+      username: null,
+      startedAtMs: null,
+      pendingMs: 0,
+      flushTimerId: null,
+      flushPromise: null
+    };
+  }
+
+  ensureProfilePlayTimeFlushTimer() {
+    if (this.profilePlayTime.flushTimerId) {
+      return;
+    }
+    this.profilePlayTime.flushTimerId = setInterval(() => {
+      void this.flushProfilePlayTime();
+    }, PROFILE_PLAY_TIME_FLUSH_INTERVAL_MS);
+    this.profilePlayTime.flushTimerId?.unref?.();
+  }
+
+  startProfilePlayTimeTracking(username = this.getActiveProfilePlayTimeUsername()) {
+    const safeUsername = String(username ?? "").trim();
+    if (!safeUsername) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    if (this.profilePlayTime.username && this.profilePlayTime.username !== safeUsername) {
+      void this.flushProfilePlayTime();
+      this.profilePlayTime.username = safeUsername;
+      this.profilePlayTime.startedAtMs = nowMs;
+      this.profilePlayTime.pendingMs = 0;
+    } else {
+      this.profilePlayTime.username = safeUsername;
+      this.profilePlayTime.startedAtMs = this.profilePlayTime.startedAtMs ?? nowMs;
+    }
+    this.ensureProfilePlayTimeFlushTimer();
+  }
+
+  accumulateProfilePlayTime(nowMs = Date.now()) {
+    if (!this.profilePlayTime.username || this.profilePlayTime.startedAtMs == null) {
+      return 0;
+    }
+
+    const elapsedMs = Math.max(0, Math.floor(Number(nowMs) - Number(this.profilePlayTime.startedAtMs)));
+    this.profilePlayTime.startedAtMs = nowMs;
+    this.profilePlayTime.pendingMs += elapsedMs;
+    return elapsedMs;
+  }
+
+  extractProfileFromPlayTimeResult(result) {
+    if (result?.snapshot) {
+      return this.buildProfileFromServerSnapshot(result.snapshot);
+    }
+    if (result?.profile?.profile || result?.profile?.stats || result?.profile?.cosmetics) {
+      return this.buildProfileFromServerSnapshot(result.profile);
+    }
+    return result?.profile && typeof result.profile === "object" ? result.profile : null;
+  }
+
+  async persistProfilePlayTimeDelta(username, deltaMs) {
+    const safeUsername = String(username ?? "").trim();
+    const safeDeltaMs = Math.max(0, Math.floor(Number(deltaMs ?? 0) || 0));
+    if (!safeUsername || safeDeltaMs <= 0) {
+      return null;
+    }
+
+    const payload = {
+      username: safeUsername,
+      deltaMs: safeDeltaMs
+    };
+    if (
+      this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, safeUsername) &&
+      typeof window.elemintz?.multiplayer?.addProfilePlayTime === "function"
+    ) {
+      return window.elemintz.multiplayer.addProfilePlayTime(payload);
+    }
+    if (typeof window.elemintz?.state?.addProfilePlayTime === "function") {
+      return window.elemintz.state.addProfilePlayTime(payload);
+    }
+    return null;
+  }
+
+  async flushProfilePlayTime({ stopAfterFlush = false } = {}) {
+    this.accumulateProfilePlayTime();
+    const username = this.profilePlayTime.username;
+    const deltaMs = Math.max(0, Math.floor(Number(this.profilePlayTime.pendingMs ?? 0) || 0));
+    if (!username || deltaMs <= 0) {
+      if (stopAfterFlush) {
+        this.resetProfilePlayTimeTracking();
+      }
+      return null;
+    }
+
+    if (this.profilePlayTime.flushPromise) {
+      return this.profilePlayTime.flushPromise;
+    }
+
+    this.profilePlayTime.pendingMs = 0;
+    this.profilePlayTime.flushPromise = (async () => {
+      try {
+        const result = await this.persistProfilePlayTimeDelta(username, deltaMs);
+        const nextProfile = this.extractProfileFromPlayTimeResult(result);
+        if (
+          nextProfile &&
+          String(this.profilePlayTime.username ?? "").trim().toLowerCase() === username.toLowerCase() &&
+          String(nextProfile.username ?? "").trim().toLowerCase() === username.toLowerCase()
+        ) {
+          this.profile = this.mergeSeenAnnouncementsIntoProfile(nextProfile, this.profile);
+          if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, username)) {
+            this.rememberAuthoritativeOwnProfile(this.profile, {
+              username,
+              onlineState: this.onlinePlayState
+            });
+          }
+        }
+        return result;
+      } catch (error) {
+        if (String(this.profilePlayTime.username ?? "").trim().toLowerCase() === username.toLowerCase()) {
+          this.profilePlayTime.pendingMs += deltaMs;
+        }
+        console.warn("[ProfilePlayTime] Failed to persist time-played delta.", {
+          message: String(error?.message ?? error ?? "Unknown error")
+        });
+        return null;
+      } finally {
+        this.profilePlayTime.flushPromise = null;
+        if (stopAfterFlush) {
+          this.resetProfilePlayTimeTracking();
+        }
+      }
+    })();
+
+    return this.profilePlayTime.flushPromise;
   }
 
   cloneOnlineBattleLogResult(result) {
@@ -3833,6 +3984,7 @@ export class AppController {
   }
 
   clearAuthenticatedExperienceState() {
+    this.resetProfilePlayTimeTracking();
     this.username = null;
     this.profile = null;
     this.lastAuthoritativeOwnProfile = null;
@@ -3866,6 +4018,7 @@ export class AppController {
 
   async logoutToLogin({ noticeMessage = "Signed out." } = {}) {
     this.resetDailyLoginAutoClaimGuard();
+    await this.flushProfilePlayTime({ stopAfterFlush: true });
     await window.elemintz?.multiplayer?.logout?.();
     this.onlinePlayState = this.normalizeOnlinePlayState(
       await window.elemintz?.multiplayer?.getState?.()
@@ -3878,6 +4031,7 @@ export class AppController {
     this.onlinePlayState = this.normalizeOnlinePlayState(
       await window.elemintz?.multiplayer?.getState?.()
     );
+    this.resetProfilePlayTimeTracking();
     this.clearAuthenticatedExperienceState();
     this.showLogin({
       errorMessage: String(message ?? "").trim() || "Session expired. Please sign in again."
@@ -5786,6 +5940,8 @@ export class AppController {
             wins: stats.summary?.wins ?? baseProfile?.wins ?? 0,
             losses: stats.summary?.losses ?? baseProfile?.losses ?? 0,
             gamesPlayed: stats.summary?.gamesPlayed ?? baseProfile?.gamesPlayed ?? 0,
+            totalLoggedInPlayTimeMs:
+              stats.summary?.totalLoggedInPlayTimeMs ?? baseProfile?.totalLoggedInPlayTimeMs ?? 0,
             warsEntered: stats.summary?.warsEntered ?? baseProfile?.warsEntered ?? 0,
             warsWon: stats.summary?.warsWon ?? baseProfile?.warsWon ?? 0,
             cardsCaptured: stats.summary?.cardsCaptured ?? baseProfile?.cardsCaptured ?? 0,
@@ -5822,6 +5978,8 @@ export class AppController {
       wins: serverProfileView.wins ?? localProfile?.wins ?? 0,
       losses: serverProfileView.losses ?? localProfile?.losses ?? 0,
       gamesPlayed: serverProfileView.gamesPlayed ?? localProfile?.gamesPlayed ?? 0,
+      totalLoggedInPlayTimeMs:
+        serverProfileView.totalLoggedInPlayTimeMs ?? localProfile?.totalLoggedInPlayTimeMs ?? 0,
       warsEntered: serverProfileView.warsEntered ?? localProfile?.warsEntered ?? 0,
       warsWon: serverProfileView.warsWon ?? localProfile?.warsWon ?? 0,
       cardsCaptured: serverProfileView.cardsCaptured ?? localProfile?.cardsCaptured ?? 0,
@@ -5853,6 +6011,12 @@ export class AppController {
         );
       this.profile = shouldPreserveRememberedProfile ? rememberedAuthoritativeProfile : nextProfile;
       this.username = this.profile?.username ?? nextProfileUsername ?? this.username;
+      if (
+        nextProfileUsername &&
+        String(this.username ?? "").trim().toLowerCase() === String(nextProfileUsername).trim().toLowerCase()
+      ) {
+        this.startProfilePlayTimeTracking(nextProfileUsername);
+      }
       if (this.isAuthenticatedOnlineProfileFlow(this.onlinePlayState, nextProfileUsername)) {
         if (!shouldPreserveRememberedProfile) {
           this.rememberAuthoritativeOwnProfile(nextProfile, {
@@ -6104,11 +6268,13 @@ export class AppController {
 
     if (allowEnsureLocal && window.elemintz?.state?.ensureProfile) {
       this.profile = await window.elemintz.state.ensureProfile(safeUsername);
+      this.startProfilePlayTimeTracking(this.profile?.username ?? safeUsername);
       return this.profile;
     }
 
     if (localProfile) {
       this.profile = localProfile;
+      this.startProfilePlayTimeTracking(this.profile?.username ?? safeUsername);
     }
     return this.profile;
   }
@@ -11243,6 +11409,9 @@ export class AppController {
         return;
       }
     }
+    if (!profileOverride && this.profilePlayTime.username) {
+      await this.flushProfilePlayTime();
+    }
 
     const enteringFresh = this.screenFlow !== "profile";
     this.clearTransientUiBeforeScreenTransition({ preserveModal });
@@ -11288,6 +11457,9 @@ export class AppController {
       this.profile = resolvedProfile;
     } else if (profileOverride) {
       this.profile = profileOverride;
+    }
+    if (this.profile?.username) {
+      this.startProfilePlayTimeTracking(this.profile.username);
     }
     const achievementCatalog = this.buildAchievementCatalogForProfile(this.profile);
     const rawCosmetics = cosmeticsOverride

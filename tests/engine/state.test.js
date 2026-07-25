@@ -213,6 +213,39 @@ test("state: new profile defaults include gauntlet stats at 0", async () => {
   assert.equal(profile.gauntletRivalsDefeated, 0);
 });
 
+test("state: profile play time defaults to 0 and additive updates persist", async () => {
+  const dataDir = await createTempDataDir();
+  const state = createBoostAwareStateCoordinator({ dataDir });
+
+  const initial = await state.profiles.ensureProfile("TimePlayedUser");
+  assert.equal(initial.totalLoggedInPlayTimeMs, 0);
+
+  const first = await state.addProfilePlayTime({
+    username: "TimePlayedUser",
+    deltaMs: 60000
+  });
+  assert.equal(first.deltaMs, 60000);
+  assert.equal(first.totalLoggedInPlayTimeMs, 60000);
+  assert.equal(first.profile.totalLoggedInPlayTimeMs, 60000);
+
+  const second = await state.addProfilePlayTime({
+    username: "TimePlayedUser",
+    deltaMs: 90000.8
+  });
+  assert.equal(second.deltaMs, 90000);
+  assert.equal(second.profile.totalLoggedInPlayTimeMs, 150000);
+
+  const ignored = await state.addProfilePlayTime({
+    username: "TimePlayedUser",
+    deltaMs: -1000
+  });
+  assert.equal(ignored.deltaMs, 0);
+  assert.equal(ignored.profile.totalLoggedInPlayTimeMs, 150000);
+
+  const reloaded = await state.profiles.getProfile("TimePlayedUser");
+  assert.equal(reloaded.totalLoggedInPlayTimeMs, 150000);
+});
+
 function createBloodMatchSettlementSummary({
   round = 7,
   result = "player_win",

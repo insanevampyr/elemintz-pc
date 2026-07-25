@@ -167,6 +167,22 @@ function safeStat(value) {
   return Math.max(0, Number(value ?? 0));
 }
 
+function formatTimePlayed(totalMs) {
+  const safeMs = Math.max(0, Number(totalMs ?? 0) || 0);
+  const totalMinutes = Math.floor(safeMs / 60000);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours >= 100 || minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}m`;
+}
+
 const FLEX_VARIANT_ORDER = Object.freeze(["fire", "earth", "wind", "water"]);
 const TROPHY_SHELF_LIMIT = 3;
 const PROFILE_SHOWCASE_SLOT_COUNT = 3;
@@ -2229,6 +2245,7 @@ function renderReadOnlyProfile(viewedProfile, options = {}) {
               { label: "Wins", value: wins },
               { label: "Losses", value: losses },
               { label: "Games Played", value: gamesPlayed },
+              { label: "Time Played", value: formatTimePlayed(viewedProfile.totalLoggedInPlayTimeMs) },
               { label: "Best Win Streak", value: bestWinStreak }
             ])}
           </section>
@@ -2367,6 +2384,7 @@ export const profileScreen = {
                 { label: "Wins", value: profile.wins ?? 0 },
                 { label: "Losses", value: profile.losses ?? 0 },
                 { label: "Games Played", value: profile.gamesPlayed ?? 0 },
+                { label: "Time Played", value: formatTimePlayed(profile.totalLoggedInPlayTimeMs) },
                 { label: "Best Win Streak", value: profile.bestWinStreak ?? 0 }
               ])}
             </section>
