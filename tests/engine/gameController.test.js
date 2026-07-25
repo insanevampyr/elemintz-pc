@@ -15083,6 +15083,274 @@ test("appController: delayed Gauntlet mutual-exhaustion draw run-ended payload r
   }
 });
 
+test("appController: Gauntlet terminal WAR opponent exhaustion win reaches victory modal without stale cosmetics or fake rewards", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const scheduler = createFakeAiPacingScheduler();
+  const modalManager = createModalCapture();
+  const screenShows = [];
+  const gauntletStatCalls = [];
+  const levelToasts = [];
+  const tokenToasts = [];
+  const app = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, context) => {
+        screenShows.push({ screen, context });
+      }
+    },
+    modalManager,
+    toastManager: {
+      showAchievement: () => {},
+      showLevelUp: (payload) => levelToasts.push(payload),
+      showTokenReward: (payload) => tokenToasts.push(payload)
+    }
+  });
+
+  globalThis.setTimeout = scheduler.setTimeout;
+  globalThis.clearTimeout = scheduler.clearTimeout;
+
+  try {
+    app.settings = { aiDifficulty: "normal", gameplay: { timerSeconds: 30 }, ui: { reducedMotion: false } };
+    app.username = "GauntletWarWinner";
+    app.gauntletRandom = () => 0;
+    app.profile = {
+      username: "GauntletWarWinner",
+      playerLevel: 24,
+      playerXP: 2300,
+      tokens: 500,
+      equippedCosmetics: {},
+      cosmetics: {
+        snapshot: {
+          equipped: {
+            avatar: "avatar_neon_pyre_entity",
+            background: "bg_crystal_nexus",
+            cardBack: "cardback_neon_arcana",
+            elementCardVariant: {
+              fire: "fire_variant_neon_arcana",
+              water: "water_variant_neon_arcana",
+              earth: "earth_variant_neon_arcana",
+              wind: "wind_variant_neon_arcana"
+            },
+            title: "Flame Vanguard",
+            badge: "first_flame"
+          }
+        }
+      }
+    };
+    app.applyPostMatchCosmeticRandomization = async () => {};
+    app.maybeEmitPveAiTaunt = () => {};
+    app.maybeEmitPveAiTauntForResult = () => {};
+    app.sound.playMatchComplete = () => {};
+    app.sound.playRoundResolved = () => {};
+    app.waitForRevealSoundSpacing = async () => {};
+
+    const continueButton = createFakeDomElement();
+    const returnButton = createFakeDomElement();
+    globalThis.document = {
+      getElementById: (id) =>
+        id === "gauntlet-continue-btn"
+          ? continueButton
+          : id === "gauntlet-return-menu-btn"
+            ? returnButton
+            : null,
+      querySelector: () => null
+    };
+    globalThis.window = {
+      elemintz: {
+        state: {
+          recordMatchResult: async () => ({
+            profile: {
+              ...app.profile,
+              playerLevel: 24,
+              playerXP: 2300,
+              tokens: 500,
+              gauntletBestStreak: 2
+            },
+            matchXpDelta: 10,
+            matchTokenDelta: 12,
+            chestGrants: []
+          }),
+          recordGauntletStats: async (payload) => {
+            gauntletStatCalls.push(payload);
+            return {
+              profile: {
+                ...app.profile,
+                playerLevel: 24,
+                playerXP: 2300,
+                tokens: 500,
+                gauntletBestStreak: 2
+              },
+              levelBefore: 24,
+              levelAfter: 24,
+              milestoneRewards: [],
+              levelRewards: [],
+              chestGrants: []
+            };
+          }
+        }
+      }
+    };
+
+    const warRoom = createAuthoritativeLocalRoom({
+      warActive: true,
+      totalWarClashes: 2,
+      hostHand: { fire: 1, water: 1, earth: 1, wind: 1 },
+      guestHand: { fire: 1, water: 0, earth: 0, wind: 0 },
+      warPot: { host: ["water", "fire"], guest: ["water", "fire"] },
+      warRounds: [
+        { round: 1, outcomeType: "war" },
+        { round: 2, outcomeType: "war" }
+      ]
+    });
+    const terminalWarStore = createAuthoritativePveStore({
+      initialRoom: warRoom,
+      submitMove: (_socketId, move) => ({
+        ok: true,
+        room: createAuthoritativeLocalRoom({
+          roundNumber: 3,
+          warActive: true,
+          totalWarClashes: 3,
+          hostHand: { water: 1, earth: 1, wind: 1 },
+          guestHand: {},
+          warPot: { host: ["water", "fire", move], guest: ["water", "fire"] },
+          warRounds: [
+            { round: 1, outcomeType: "war" },
+            { round: 2, outcomeType: "war" },
+            { round: 3, outcomeType: "war" }
+          ],
+          roundHistory: [
+            {
+              round: 3,
+              hostMove: move,
+              guestMove: null,
+              outcomeType: "war",
+              hostResult: "war",
+              guestResult: "war"
+            }
+          ]
+        }),
+        roundResult: {
+          round: 3,
+          hostMove: move,
+          guestMove: null,
+          outcomeType: "war",
+          hostResult: "war",
+          guestResult: "war",
+          warRounds: [{ round: 3, outcomeType: "war" }],
+          warPot: { host: ["water", "fire", move], guest: ["water", "fire"] }
+        }
+      }),
+      completeMatch: () => ({
+        ok: true,
+        room: createAuthoritativeLocalRoom({
+          matchComplete: true,
+          winner: "host",
+          winReason: "hand_exhaustion",
+          roundNumber: 3,
+          hostHand: { water: 1, earth: 1, wind: 1 },
+          guestHand: {},
+          warActive: false,
+          totalWarClashes: 3,
+          warPot: { host: [], guest: [] },
+          roundHistory: [
+            {
+              round: 3,
+              hostMove: null,
+              guestMove: null,
+              outcomeType: "war_resolved",
+              hostResult: "win",
+              guestResult: "lose",
+              reason: "hand_exhaustion"
+            }
+          ]
+        })
+      })
+    });
+    app.startGame(MATCH_MODE.PVE, {
+      gauntletMode: true,
+      gauntletRivalId: "pyro_maniac"
+    });
+    await Promise.resolve();
+    app.gameController.localAuthority.store = terminalWarStore;
+    app.gameController.syncLocalAuthorityState(warRoom, null);
+    app.gauntletRunState = {
+      ...app.gauntletRunState,
+      currentStreak: 1,
+      currentRivalId: "pyro_maniac",
+      rivalBag: ["tide_witch"],
+      defeatedRivalIds: ["stonewall"],
+      claimedMilestoneStreaks: [],
+      active: true
+    };
+    gauntletStatCalls.length = 0;
+    modalManager.shows.length = 0;
+    screenShows.length = 0;
+
+    const pending = app.presentPveRound(0);
+    await Promise.resolve();
+    scheduler.runNext();
+    await Promise.resolve();
+    await Promise.resolve();
+    scheduler.runNext();
+    await Promise.resolve();
+    await Promise.resolve();
+    scheduler.runNext();
+    await pending;
+
+    assert.equal(app.gameController.getViewModel()?.status, "completed");
+    assert.equal(app.gameController.getViewModel()?.winner, "p1");
+    assert.equal(app.gameController.getViewModel()?.endReason, "hand_exhaustion");
+    assert.equal(app.pendingMatchCompletePayload, null);
+    assert.equal(app.pendingGauntletContinuationRequiresConfirm, true);
+    assert.equal(app.pendingGauntletContinuation?.options?.gauntletRivalId, "tide_witch");
+    assert.equal(modalManager.shows.length, 1);
+    assert.equal(modalManager.shows[0].title, "Gauntlet Victory!");
+    assert.match(modalManager.shows[0].bodyHtml, /Continue Gauntlet/);
+    assert.match(modalManager.shows[0].bodyHtml, /Rewards Earned/);
+    assert.doesNotMatch(modalManager.shows[0].bodyHtml, /Basic Chest|Milestone Chest|Level Up|Gauntlet Run Ended/);
+    assert.deepEqual(levelToasts, []);
+    assert.deepEqual(tokenToasts, [
+      { amount: 12, label: "GauntletWarWinner reward payout" }
+    ]);
+    assert.equal(gauntletStatCalls.length, 1);
+    assert.equal(gauntletStatCalls[0]?.username, "GauntletWarWinner");
+    assert.equal(gauntletStatCalls[0]?.runStarted, false);
+    assert.equal(gauntletStatCalls[0]?.matchWon, true);
+    assert.equal(gauntletStatCalls[0]?.runEndedWithLoss, false);
+    assert.equal(gauntletStatCalls[0]?.currentStreak, 2);
+    assert.deepEqual(gauntletStatCalls[0]?.claimedMilestoneStreaks, []);
+    assert.equal(gauntletStatCalls[0]?.battleReportAlreadyRecorded, true);
+    assert.equal(gauntletStatCalls[0]?.matchState?.winner, "p1");
+    assert.equal(gauntletStatCalls[0]?.matchState?.endReason, "hand_exhaustion");
+    const gameContexts = screenShows
+      .filter((entry) => entry.screen === "game")
+      .map((entry) => entry.context);
+    assert.ok(gameContexts.length > 0);
+    assert.equal(
+      gameContexts.some(
+        (context) =>
+          /avatar_neon_pyre_entity\.png/.test(String(context?.playerDisplay?.avatar ?? "")) &&
+          context?.playerDisplay?.title === "Flame Vanguard" &&
+          context?.cosmeticIds?.cardBacks?.p1 === "cardback_neon_arcana" &&
+          context?.cosmeticIds?.variants?.p1?.fire === "fire_variant_neon_arcana" &&
+          /bg_crystal_nexus\.png/.test(String(context?.arenaBackground ?? ""))
+      ),
+      true
+    );
+  } finally {
+    app.clearPassTimer();
+    app.gameController?.stopTimer();
+    app.gameController?.stopMatchClock();
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
 test("appController: gauntlet victory modal does not show milestone reward text when no milestone is earned", async () => {
   const originalWindow = globalThis.window;
   const modalManager = createModalCapture();
