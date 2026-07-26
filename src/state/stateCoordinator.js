@@ -72,6 +72,7 @@ import {
   getDailyElementChestStatus,
   openDailyElementChest
 } from "./dailyElementChestSystem.js";
+import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfileProgress.js";
 import {
   applyLevelRewardsForLevelChange,
@@ -2740,7 +2741,7 @@ export class StateCoordinator {
 
   async getDailyElementChestStatus(username, nowMs = Date.now()) {
     const profile = await this.profiles.ensureProfile(username);
-    return getDailyElementChestStatus(profile, nowMs);
+    return getDailyElementChestStatusFromEventProjection(profile, { nowMs });
   }
 
   async acknowledgeAnnouncement({ username, key }) {

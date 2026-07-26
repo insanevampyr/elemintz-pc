@@ -28,7 +28,10 @@ import {
   validateEventChestDefinition
 } from "../../src/state/eventChestDefinitions.js";
 import { getDailyElementChestStatusFromEventProjection } from "../../src/state/eventChestDailyStatusAdapter.js";
-import { auditDailyElementChestMirrorParity } from "../../src/state/eventChestProfileProgress.js";
+import {
+  auditDailyElementChestMirrorParity,
+  eventChestProgressFromDailyElementChest
+} from "../../src/state/eventChestProfileProgress.js";
 import {
   getActiveEventChestDefinitions,
   getDefaultDailyElementChestDefinition,
@@ -878,6 +881,132 @@ test("daily chest: status returns free eligibility, paid cost, pity counters, po
       ]
     }
   });
+});
+
+test("daily chest: StateCoordinator status uses the Event Chest adapter without shape drift", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-06-06T23:30:00.000Z");
+
+  try {
+    await state.profiles.updateProfile("DailyChestStatusAdapterUser", (current) => ({
+      ...current,
+      tokens: 345,
+      ownedCosmetics: {
+        ...(current?.ownedCosmetics ?? {}),
+        avatar: ["default_avatar", "avatar_chestbound_adept"],
+        background: ["default_background"],
+        cardBack: ["default_card_back", "cardback_daily_element_chest"],
+        elementCardVariant: [
+          "default_fire_card",
+          "default_water_card",
+          "default_earth_card",
+          "default_wind_card"
+        ],
+        badge: ["none", "badge_daily_emblem"],
+        title: ["Initiate", "title_first_light"]
+      },
+      dailyElementChest: {
+        lastFreeOpenDateKey: null,
+        totalOpens: 10,
+        paidOpens: 7,
+        freeOpens: 3,
+        pity: {
+          opensSinceEpicPlus: 4,
+          opensSinceLegendary: 10
+        }
+      }
+    }));
+
+    const profile = await state.profiles.getProfile("DailyChestStatusAdapterUser");
+    assert.deepEqual(
+      await state.getDailyElementChestStatus("DailyChestStatusAdapterUser", nowMs),
+      getDailyElementChestStatus(profile, nowMs)
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("daily chest: StateCoordinator status remains based on legacy dailyElementChest, not eventChests mirror", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-06-06T23:30:00.000Z");
+  const legacyDailyElementChest = {
+    lastFreeOpenDateKey: null,
+    totalOpens: 2,
+    paidOpens: 1,
+    freeOpens: 1,
+    pity: {
+      opensSinceEpicPlus: 2,
+      opensSinceLegendary: 2
+    }
+  };
+
+  try {
+    await state.profiles.updateProfile("DailyChestLegacyAuthorityUser", (current) => ({
+      ...current,
+      tokens: 400,
+      dailyElementChest: legacyDailyElementChest,
+      eventChests: {
+        [DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]: eventChestProgressFromDailyElementChest(
+          {
+            lastFreeOpenDateKey: "2026-06-05T23:00:00.000Z",
+            totalOpens: 99,
+            paidOpens: 88,
+            freeOpens: 11,
+            pity: {
+              opensSinceEpicPlus: 9,
+              opensSinceLegendary: 29
+            }
+          },
+          DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+          {
+            openedAt: "2026-06-05T23:30:00.000Z",
+            lastOpenType: "paid"
+          }
+        )
+      }
+    }));
+
+    const status = await state.getDailyElementChestStatus("DailyChestLegacyAuthorityUser", nowMs);
+
+    assert.deepEqual(
+      status.dailyElementChest,
+      normalizeProfileDailyElementChest({ dailyElementChest: legacyDailyElementChest }).dailyElementChest
+    );
+    assert.equal(status.dailyElementChest.totalOpens, 2);
+    assert.equal(status.pity.opensSinceEpicPlus, 2);
+    assert.equal(status.pity.opensSinceLegendary, 2);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("daily chest: registry copy mutation cannot affect StateCoordinator status output", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({ dataDir });
+  const nowMs = Date.parse("2026-06-06T23:30:00.000Z");
+
+  try {
+    await state.profiles.updateProfile("DailyChestRegistryMutationUser", (current) => ({
+      ...current,
+      tokens: 400
+    }));
+    const baseline = await state.getDailyElementChestStatus("DailyChestRegistryMutationUser", nowMs);
+
+    const registryCopy = getEventChestDefinitionById(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    registryCopy.paidTokenCost = 999;
+    registryCopy.odds.common = 0;
+    registryCopy.pool.common[0].cosmeticId = "mutated_cosmetic";
+
+    assert.deepEqual(
+      await state.getDailyElementChestStatus("DailyChestRegistryMutationUser", nowMs),
+      baseline
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
 });
 
 test("daily chest: pool completion helpers report incomplete when any current pool cosmetic is missing", () => {
