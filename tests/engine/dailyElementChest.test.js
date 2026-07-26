@@ -11,6 +11,8 @@ import {
 import {
   DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
   DAILY_ELEMENT_CHEST_DUPLICATE_TOKEN_REWARDS,
+  DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD,
+  DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD,
   DAILY_ELEMENT_CHEST_ODDS,
   DAILY_ELEMENT_CHEST_PAID_OPEN_COST,
   DAILY_ELEMENT_CHEST_POOL,
@@ -121,6 +123,97 @@ function addDailyChestPoolOwnership(profile, entries = DAILY_CHEST_EXPECTATIONS)
   }
 
   return next;
+}
+
+const DAILY_CHEST_STATUS_PARITY_NOW = Date.parse("2026-06-06T23:30:00.000Z");
+
+function buildDailyChestPoolSummaryExpectation() {
+  return Object.fromEntries(
+    Object.entries(DAILY_ELEMENT_CHEST_POOL).map(([rarity, entries]) => [
+      rarity,
+      entries.map((entry) => ({
+        type: entry.type,
+        cosmeticId: entry.cosmeticId,
+        name: COSMETIC_CATALOG[entry.type].find((item) => item.id === entry.cosmeticId)?.name ?? entry.cosmeticId
+      }))
+    ])
+  );
+}
+
+function compareDailyElementChestStatusProjection(profile, nowMs = DAILY_CHEST_STATUS_PARITY_NOW) {
+  const currentStatus = getDailyElementChestStatus(profile, nowMs);
+  const projection = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, profile);
+  const expectedMissing =
+    currentStatus.collectionProgress.totalAvailable - currentStatus.collectionProgress.totalOwned;
+
+  assert.equal(projection.totalPoolCount, currentStatus.collectionProgress.totalAvailable);
+  assert.equal(projection.ownedCount, currentStatus.collectionProgress.totalOwned);
+  assert.equal(projection.missingCount, expectedMissing);
+  assert.equal(projection.isPoolComplete, currentStatus.collectionProgress.isComplete);
+  assert.equal(projection.ownedEntries.length, currentStatus.collectionProgress.totalOwned);
+  assert.equal(projection.missingEntries.length, expectedMissing);
+
+  for (const rarity of Object.keys(currentStatus.collectionProgress.byRarity)) {
+    const currentRarity = currentStatus.collectionProgress.byRarity[rarity];
+    assert.deepEqual(projection.byRarity[rarity], {
+      total: currentRarity.total,
+      owned: currentRarity.owned,
+      missing: currentRarity.total - currentRarity.owned,
+      isComplete: currentRarity.isComplete
+    });
+    assert.deepEqual(
+      projection.pool.items[rarity].map((entry) => ({
+        type: entry.type,
+        cosmeticId: entry.cosmeticId,
+        name: entry.name,
+        owned: entry.owned
+      })),
+      currentStatus.collectionProgress.items[rarity]
+    );
+  }
+
+  assert.equal(projection.shouldHideTile, currentStatus.collectionProgress.isComplete);
+  assert.equal(projection.hideTileWhenPoolComplete, true);
+  assert.equal(projection.allowOpensAfterCompleteAsDuplicateConversion, true);
+
+  assert.equal(projection.progress.totalOpens, currentStatus.dailyElementChest.totalOpens);
+  assert.equal(projection.progress.paidOpens, currentStatus.dailyElementChest.paidOpens);
+  assert.equal(projection.progress.freeOpens, currentStatus.dailyElementChest.freeOpens);
+  assert.equal(projection.progress.lastFreeOpenDateKey, currentStatus.dailyElementChest.lastFreeOpenDateKey);
+  assert.deepEqual(projection.progress.pity, currentStatus.pity);
+
+  assert.equal(projection.pityDisplay.epicPlus.current, currentStatus.pity.opensSinceEpicPlus);
+  assert.equal(projection.pityDisplay.epicPlus.threshold, DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD);
+  assert.equal(
+    projection.pityDisplay.epicPlus.displayCurrent,
+    Math.min(DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD, currentStatus.pity.opensSinceEpicPlus)
+  );
+  assert.equal(
+    projection.pityDisplay.epicPlus.displayLabel,
+    `${Math.min(DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD, currentStatus.pity.opensSinceEpicPlus)} / ${DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD}`
+  );
+  assert.equal(projection.pityDisplay.legendary.current, currentStatus.pity.opensSinceLegendary);
+  assert.equal(projection.pityDisplay.legendary.threshold, DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD);
+  assert.equal(
+    projection.pityDisplay.legendary.displayCurrent,
+    Math.min(DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD, currentStatus.pity.opensSinceLegendary)
+  );
+  assert.equal(
+    projection.pityDisplay.legendary.displayLabel,
+    `${Math.min(DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD, currentStatus.pity.opensSinceLegendary)} / ${DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD}`
+  );
+
+  // Intentional parity gaps: the Event Chest projection is ownership/progress-only.
+  // Current Daily Chest status still owns free-open timing, token affordability,
+  // odds/pool summary, and UI countdown/copy inputs until a later runtime migration pass.
+  assert.equal(typeof currentStatus.canOpenFree, "boolean");
+  assert.equal(typeof currentStatus.nextFreeResetAt, "string");
+  assert.equal(currentStatus.paidOpenCost, DAILY_ELEMENT_CHEST_PAID_OPEN_COST);
+  assert.equal(typeof currentStatus.tokens, "number");
+  assert.deepEqual(currentStatus.odds, DAILY_ELEMENT_CHEST_ODDS);
+  assert.deepEqual(currentStatus.poolSummary, buildDailyChestPoolSummaryExpectation());
+
+  return { currentStatus, projection };
 }
 
 test("daily chest: approved cosmetics exist in catalog with final rarity and chest-only flags", () => {
@@ -1148,4 +1241,105 @@ test("event chest status: projection output mutations do not alter inputs", () =
   assert.deepEqual(profile, beforeProfile);
   assert.equal(definition.pool.common[0].cosmeticId, "title_first_light");
   assert.equal(profile.ownedCosmetics.title.includes("title_first_light"), true);
+});
+
+test("event chest parity: empty/default profile matches current Daily Chest status overlap", () => {
+  const { currentStatus, projection } = compareDailyElementChestStatusProjection(
+    buildDailyChestCompletionProfile()
+  );
+
+  assert.equal(currentStatus.collectionProgress.totalOwned, 0);
+  assert.equal(projection.ownedCount, 0);
+  assert.equal(projection.missingCount, 12);
+  assert.equal(projection.isPoolComplete, false);
+});
+
+test("event chest parity: partial ownership profile matches current Daily Chest status overlap", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile(), [
+    ["title", "title_first_light"],
+    ["badge", "badge_daily_emblem"],
+    ["avatar", "avatar_chestbound_adept"],
+    ["cardBack", "cardback_daily_element_chest"]
+  ]);
+  const { currentStatus, projection } = compareDailyElementChestStatusProjection(profile);
+
+  assert.equal(currentStatus.collectionProgress.totalOwned, 4);
+  assert.equal(projection.ownedCount, 4);
+  assert.equal(projection.byRarity.common.owned, 2);
+  assert.equal(projection.byRarity.rare.owned, 1);
+  assert.equal(projection.byRarity.epic.owned, 1);
+  assert.equal(projection.byRarity.legendary.owned, 0);
+});
+
+test("event chest parity: full pool ownership and hide-tile condition match current Daily Chest status", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile());
+  const { currentStatus, projection } = compareDailyElementChestStatusProjection(profile);
+
+  assert.equal(currentStatus.collectionProgress.isComplete, true);
+  assert.equal(projection.isPoolComplete, true);
+  assert.equal(projection.shouldHideTile, true);
+  assert.equal(projection.missingEntries.length, 0);
+});
+
+test("event chest parity: pity progress and paid/free open counts match current Daily Chest status", () => {
+  const profile = buildDailyChestCompletionProfile({
+    dailyElementChest: {
+      lastFreeOpenDateKey: "2026-06-05",
+      totalOpens: 19,
+      paidOpens: 13,
+      freeOpens: 6,
+      pity: {
+        opensSinceEpicPlus: 8,
+        opensSinceLegendary: 21
+      }
+    }
+  });
+  const { currentStatus, projection } = compareDailyElementChestStatusProjection(profile);
+
+  assert.equal(currentStatus.dailyElementChest.totalOpens, 19);
+  assert.equal(projection.progress.totalOpens, 19);
+  assert.equal(projection.progress.paidOpens, 13);
+  assert.equal(projection.progress.freeOpens, 6);
+  assert.equal(projection.pityDisplay.epicPlus.displayLabel, "8 / 10");
+  assert.equal(projection.pityDisplay.legendary.displayLabel, "21 / 30");
+});
+
+test("event chest parity: capped pity display matches current Daily Chest threshold expectations", () => {
+  const profile = buildDailyChestCompletionProfile({
+    dailyElementChest: {
+      totalOpens: 120,
+      paidOpens: 80,
+      freeOpens: 40,
+      pity: {
+        opensSinceEpicPlus: 22,
+        opensSinceLegendary: 44
+      }
+    }
+  });
+  const { currentStatus, projection } = compareDailyElementChestStatusProjection(profile);
+
+  assert.equal(currentStatus.pity.opensSinceEpicPlus, 22);
+  assert.equal(currentStatus.pity.opensSinceLegendary, 44);
+  assert.equal(projection.pityDisplay.epicPlus.current, 22);
+  assert.equal(projection.pityDisplay.epicPlus.displayCurrent, 10);
+  assert.equal(projection.pityDisplay.legendary.current, 44);
+  assert.equal(projection.pityDisplay.legendary.displayCurrent, 30);
+});
+
+test("event chest parity: unrelated cosmetics are ignored by both status models", () => {
+  const profile = buildDailyChestCompletionProfile({
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_fire_mage"],
+      background: ["default_background", "forest_glade_background"],
+      cardBack: ["default_card_back", "fire_card_back"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none", "war_machine"],
+      title: ["Initiate", "Flame Vanguard"]
+    }
+  });
+  const { currentStatus, projection } = compareDailyElementChestStatusProjection(profile);
+
+  assert.equal(currentStatus.collectionProgress.totalOwned, 0);
+  assert.equal(projection.ownedCount, 0);
+  assert.equal(projection.missingCount, 12);
 });
