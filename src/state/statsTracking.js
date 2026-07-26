@@ -298,6 +298,7 @@ export function createDefaultProfile(username) {
     ...createDefaultEconomyState(),
     ...createDefaultChestState(),
     ...createDefaultDailyElementChestState(),
+    eventChests: {},
     dailyChallenges: createDefaultDailyChallenges(),
     featuredRivalRewards: {
       crownfire_duelist: {

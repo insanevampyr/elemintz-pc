@@ -3324,6 +3324,14 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
         basic: 2,
         epic: 1
       },
+      eventChests: {
+        future_public_redaction_chest: {
+          chestId: "future_public_redaction_chest",
+          totalOpens: 3,
+          paidOpens: 2,
+          freeOpens: 1
+        }
+      },
       ownedCosmetics: {
         ...(current?.ownedCosmetics ?? {}),
         avatar: ["default_avatar", "avatar_neon_tide_entity", "avatar_lycan_anubis"],
@@ -3402,6 +3410,10 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
     assert.deepEqual(ownProfile?.profile?.profile?.seenAnnouncements, {
       launch_celebration: true
     });
+    assert.equal(
+      ownProfile?.profile?.profile?.eventChests?.future_public_redaction_chest?.totalOpens,
+      3
+    );
     assert.ok(Array.isArray(ownProfile?.profile?.profile?.ownedCosmetics?.avatar));
     assert.ok(Array.isArray(ownProfile?.profile?.profile?.cosmeticLoadouts));
 
@@ -3422,6 +3434,7 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
     assert.equal("linkedAccountId" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("chests" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("seenAnnouncements" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("eventChests" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("ownedCosmetics" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("cosmeticLoadouts" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("cosmeticRandomizeAfterMatch" in (viewedProfile?.profile?.profile ?? {}), false);

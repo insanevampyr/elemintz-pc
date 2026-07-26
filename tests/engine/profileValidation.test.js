@@ -9,6 +9,7 @@ import {
   normalizeProfile
 } from "../../src/state/profileSystem.js";
 import { normalizeProfileShowcaseSlots } from "../../src/state/cosmeticSystem.js";
+import { createDefaultProfile } from "../../src/state/statsTracking.js";
 
 async function createTempDataDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "elemintz-profile-validation-"));
@@ -56,6 +57,7 @@ test("profile validation: repairs malformed fields and writes back the upgraded 
   assert.equal(typeof profile.achievements, "object");
   assert.equal(Array.isArray(profile.achievements), false);
   assert.equal(typeof profile.chests, "object");
+  assert.deepEqual(profile.eventChests, {});
   assert.equal(Array.isArray(profile.cosmeticLoadouts), true);
   assert.equal(
     profile.onlineDisconnectTracking.totalLiveMatchDisconnects,
@@ -63,6 +65,7 @@ test("profile validation: repairs malformed fields and writes back the upgraded 
   );
   assert.equal(persisted[0].schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
   assert.equal(persisted[0].tokens, 450);
+  assert.deepEqual(persisted[0].eventChests, {});
   assert.equal(Array.isArray(persisted[0].cosmeticLoadouts), true);
 });
 
@@ -236,6 +239,73 @@ test("profile validation: normalizeProfile is idempotent after the first repair"
   const secondPass = normalizeProfile(firstPass);
 
   assert.deepEqual(secondPass, firstPass);
+});
+
+test("profile validation: event chest progress defaults, repairs, and preserves legacy Daily progress", () => {
+  assert.deepEqual(createDefaultProfile("EventChestDefaultUser").eventChests, {});
+
+  const legacyDailyElementChest = {
+    lastFreeOpenDateKey: "2026-07-25T23:00:00.000Z",
+    totalOpens: 11,
+    paidOpens: 7,
+    freeOpens: 4,
+    pity: {
+      opensSinceEpicPlus: 6,
+      opensSinceLegendary: 11
+    }
+  };
+  const missing = normalizeProfile({
+    username: "EventChestMissingUser",
+    dailyElementChest: legacyDailyElementChest
+  });
+  assert.deepEqual(missing.eventChests, {});
+  assert.deepEqual(missing.dailyElementChest, legacyDailyElementChest);
+
+  const malformed = normalizeProfile({
+    username: "EventChestMalformedUser",
+    eventChests: []
+  });
+  assert.deepEqual(malformed.eventChests, {});
+
+  const valid = normalizeProfile({
+    username: "EventChestValidUser",
+    eventChests: {
+      future_event_chest: {
+        chestId: "wrong_internal_id",
+        totalOpens: "8.9",
+        paidOpens: -2,
+        freeOpens: 3,
+        pity: {
+          opensSinceEpicPlus: "4.7",
+          opensSinceLegendary: 9
+        },
+        participation: {
+          definitionRevisionIdsSeen: [" revision-a ", "revision-a", "revision-b"]
+        }
+      }
+    }
+  });
+  assert.deepEqual(valid.eventChests.future_event_chest, {
+    schemaVersion: 1,
+    chestId: "future_event_chest",
+    firstOpenedAt: null,
+    lastOpenedAt: null,
+    lastOpenType: null,
+    lastFreeOpenDateKey: null,
+    totalOpens: 8,
+    paidOpens: 0,
+    freeOpens: 3,
+    pity: {
+      opensSinceEpicPlus: 4,
+      opensSinceLegendary: 9
+    },
+    participation: {
+      firstDefinitionSeenAt: null,
+      lastDefinitionSeenAt: null,
+      definitionRevisionIdsSeen: ["revision-a", "revision-b"]
+    }
+  });
+  assert.deepEqual(normalizeProfile(valid), valid);
 });
 
 test("profile validation: time played normalizes to a non-negative integer", () => {

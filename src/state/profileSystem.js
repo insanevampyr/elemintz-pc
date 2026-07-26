@@ -16,6 +16,7 @@ import {
 } from "./cosmeticSystem.js";
 import { applyLevelMilestoneChestGrants, normalizeProfileChests } from "./chestSystem.js";
 import { normalizeProfileDailyElementChest } from "./dailyElementChestSystem.js";
+import { normalizeProfileEventChests } from "./eventChestProfileProgress.js";
 import {
   applyMatchStatsToProfile,
   createDefaultProfile,
@@ -319,6 +320,7 @@ function validateAndRepairProfile(profile) {
   );
   repairObjectSection("chests", defaults.chests);
   repairObjectSection("dailyElementChest", defaults.dailyElementChest);
+  repairObjectSection("eventChests", defaults.eventChests);
   repairObjectSection("milestoneChestGrantedLevels", defaults.milestoneChestGrantedLevels);
   repairObjectSection("legendaryChestGrantedLevels", defaults.legendaryChestGrantedLevels);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
@@ -823,6 +825,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   const normalizedCollectionAlbumRewardClaims = normalizeCollectionAlbumRewardClaims(
     validatedProfile.collectionAlbumRewardClaims
   );
+  const normalizedEventChests = normalizeProfileEventChests(validatedProfile.eventChests);
   const normalizedReferralRewardGrantIds = [
     ...new Set(
       (Array.isArray(validatedProfile.referralRewardGrantIds)
@@ -845,6 +848,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
             onlineDisconnectTracking: normalizedDisconnectTracking,
             onlineRewardSettlements: normalizedOnlineRewardSettlements,
             collectionAlbumRewardClaims: normalizedCollectionAlbumRewardClaims,
+            eventChests: normalizedEventChests,
             referralRewardGrantIds: normalizedReferralRewardGrantIds,
             storeRoyaltyPayouts: normalizedStoreRoyaltyPayouts
           })
