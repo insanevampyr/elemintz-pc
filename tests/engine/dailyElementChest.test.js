@@ -21,6 +21,17 @@ import {
   normalizeProfileDailyElementChest,
   openDailyElementChest
 } from "../../src/state/dailyElementChestSystem.js";
+import {
+  DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+  validateEventChestDefinition
+} from "../../src/state/eventChestDefinitions.js";
+import {
+  getActiveEventChestDefinitions,
+  getDefaultDailyElementChestDefinition,
+  getEventChestDefinitionById,
+  getEventChestDefinitions,
+  isEventChestDefinitionActive
+} from "../../src/state/eventChestRegistry.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import {
@@ -752,4 +763,205 @@ test("daily chest: unrelated owned and equipped cosmetics do not affect pool com
   assert.equal(status.totalOwned, 0);
   assert.equal(status.isComplete, false);
   assert.equal(isDailyChestPoolComplete(unrelatedProfile), false);
+});
+
+function cloneEventChestPreset(overrides = {}) {
+  return {
+    ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+    ...overrides
+  };
+}
+
+test("event chest definitions: Daily EleMintz Chest default preset validates with current behavior values", () => {
+  const validation = validateEventChestDefinition(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET);
+  const poolEntryCount = Object.values(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool).reduce(
+    (total, entries) => total + entries.length,
+    0
+  );
+
+  assert.equal(validation.ok, true, validation.errors.join("; "));
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.title, "Daily EleMintz Chest");
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.icons.closed, "icons/daily_chest.png");
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.icons.open, "icons/daily_chest_open.png");
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.icons.fallbackClosed, "icons/loot_chest.png");
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.icons.fallbackOpen, "icons/loot_chest_open.png");
+  assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.openTypes, ["free", "paid"]);
+  assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.freeOpenPolicy, {
+    cadence: "daily",
+    resetTimeZone: "America/Chicago",
+    resetHour: 18
+  });
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.paidTokenCost, DAILY_ELEMENT_CHEST_PAID_OPEN_COST);
+  assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.odds, DAILY_ELEMENT_CHEST_ODDS);
+  assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pity, {
+    epicPlusThreshold: 10,
+    legendaryThreshold: 30,
+    epicPlusTable: [
+      { rarity: "epic", weight: 0.875 },
+      { rarity: "legendary", weight: 0.125 }
+    ]
+  });
+  assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.duplicateTokenRewards, DAILY_ELEMENT_CHEST_DUPLICATE_TOKEN_REWARDS);
+  assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool, DAILY_ELEMENT_CHEST_POOL);
+  assert.equal(poolEntryCount, 12);
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.preferUnownedWithinRolledRarity, true);
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.hideTileWhenPoolComplete, true);
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.allowOpensAfterCompleteAsDuplicateConversion, true);
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.preserveHistoryOnReactivation, true);
+  assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.profileProgressField, "dailyElementChest");
+});
+
+test("event chest definitions: validator rejects missing chestId", () => {
+  const definition = cloneEventChestPreset({ chestId: "" });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /chestId/i);
+});
+
+test("event chest definitions: validator rejects odds that do not sum to one", () => {
+  const definition = cloneEventChestPreset({
+    odds: {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.02
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /odds must sum to 1/i);
+});
+
+test("event chest definitions: validator rejects unknown cosmetic ids", () => {
+  const definition = cloneEventChestPreset({
+    pool: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      common: [{ type: "title", cosmeticId: "missing_daily_chest_title" }]
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /unknown cosmetic/i);
+});
+
+test("event chest definitions: validator rejects duplicate cosmetic entries inside one chest", () => {
+  const definition = cloneEventChestPreset({
+    pool: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      rare: [
+        { type: "avatar", cosmeticId: "avatar_chestbound_adept" },
+        { type: "avatar", cosmeticId: "avatar_chestbound_adept" }
+      ]
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /duplicate cosmetic/i);
+});
+
+test("event chest definitions: validator rejects unsupported open type and cosmetic type", () => {
+  const definition = cloneEventChestPreset({
+    openTypes: ["free", "bonus"],
+    pool: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      common: [{ type: "taunt", cosmeticId: "taunt_daily_chest" }]
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /openType 'bonus' is unsupported/i);
+  assert.match(validation.errors.join("\n"), /type is unsupported/i);
+});
+
+test("event chest definitions: validator rejects invalid pity config", () => {
+  const definition = cloneEventChestPreset({
+    pity: {
+      epicPlusThreshold: 0,
+      legendaryThreshold: 5,
+      epicPlusTable: [
+        { rarity: "epic", weight: 0.75 },
+        { rarity: "mythic", weight: 0.25 }
+      ]
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /epicPlusThreshold/i);
+  assert.match(validation.errors.join("\n"), /rarity is unsupported/i);
+});
+
+test("event chest registry: includes and looks up the Daily EleMintz Chest default preset", () => {
+  const definitions = getEventChestDefinitions();
+  const lookup = getEventChestDefinitionById(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  const defaultLookup = getDefaultDailyElementChestDefinition();
+
+  assert.equal(definitions.length, 1);
+  assert.equal(definitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.deepEqual(lookup, DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET);
+  assert.deepEqual(defaultLookup, DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET);
+});
+
+test("event chest registry: unknown or blank lookup fails safely", () => {
+  assert.equal(getEventChestDefinitionById("missing_event_chest"), null);
+  assert.equal(getEventChestDefinitionById(""), null);
+  assert.equal(getEventChestDefinitionById(null), null);
+});
+
+test("event chest registry: every registry definition validates", () => {
+  for (const definition of getEventChestDefinitions()) {
+    const validation = validateEventChestDefinition(definition);
+    assert.equal(validation.ok, true, validation.errors.join("; "));
+  }
+});
+
+test("event chest registry: returned definitions are defensive copies", () => {
+  const firstLookup = getEventChestDefinitionById(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  firstLookup.title = "Mutated Chest";
+  firstLookup.pool.common[0].cosmeticId = "mutated_cosmetic";
+  firstLookup.icons.closed = "icons/mutated.png";
+
+  const secondLookup = getEventChestDefinitionById(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  const listLookup = getEventChestDefinitions()[0];
+
+  assert.equal(secondLookup.title, "Daily EleMintz Chest");
+  assert.equal(secondLookup.pool.common[0].cosmeticId, "title_first_light");
+  assert.equal(secondLookup.icons.closed, "icons/daily_chest.png");
+  assert.equal(listLookup.title, "Daily EleMintz Chest");
+  assert.equal(listLookup.pool.common[0].cosmeticId, "title_first_light");
+});
+
+test("event chest registry: active lookup returns the default active chest", () => {
+  const activeDefinitions = getActiveEventChestDefinitions(Date.parse("2026-06-06T23:30:00.000Z"));
+
+  assert.equal(activeDefinitions.length, 1);
+  assert.equal(activeDefinitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.equal(isEventChestDefinitionActive(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET), true);
+});
+
+test("event chest registry: active window helper respects explicit windows", () => {
+  const definition = cloneEventChestPreset({
+    activeWindows: [
+      {
+        startsAt: "2026-06-01T00:00:00.000Z",
+        endsAt: "2026-06-30T23:59:59.000Z"
+      }
+    ]
+  });
+  const inactiveDefinition = cloneEventChestPreset({
+    lifecycle: {
+      status: "inactive",
+      defaultPreset: true
+    }
+  });
+
+  assert.equal(isEventChestDefinitionActive(definition, "2026-06-15T12:00:00.000Z"), true);
+  assert.equal(isEventChestDefinitionActive(definition, "2026-07-01T00:00:00.000Z"), false);
+  assert.equal(isEventChestDefinitionActive(inactiveDefinition, "2026-06-15T12:00:00.000Z"), false);
 });
