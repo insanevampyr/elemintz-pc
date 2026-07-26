@@ -32,6 +32,7 @@ import {
   getEventChestDefinitions,
   isEventChestDefinitionActive
 } from "../../src/state/eventChestRegistry.js";
+import { projectEventChestStatus } from "../../src/state/eventChestStatus.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
 import {
@@ -964,4 +965,187 @@ test("event chest registry: active window helper respects explicit windows", () 
   assert.equal(isEventChestDefinitionActive(definition, "2026-06-15T12:00:00.000Z"), true);
   assert.equal(isEventChestDefinitionActive(definition, "2026-07-01T00:00:00.000Z"), false);
   assert.equal(isEventChestDefinitionActive(inactiveDefinition, "2026-06-15T12:00:00.000Z"), false);
+});
+
+test("event chest status: Daily EleMintz Chest projects empty profile pool progress", () => {
+  const status = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, buildDailyChestCompletionProfile());
+
+  assert.equal(status.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.equal(status.totalPoolCount, 12);
+  assert.equal(status.ownedCount, 0);
+  assert.equal(status.missingCount, 12);
+  assert.equal(status.isPoolComplete, false);
+  assert.equal(status.shouldHideTile, false);
+  assert.equal(status.hideTileWhenPoolComplete, true);
+  assert.equal(status.allowOpensAfterCompleteAsDuplicateConversion, true);
+  assert.equal(status.missingEntries.length, 12);
+  assert.equal(status.ownedEntries.length, 0);
+});
+
+test("event chest status: Daily EleMintz Chest projects full pool completion", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile());
+  const status = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, profile);
+
+  assert.equal(status.totalPoolCount, 12);
+  assert.equal(status.ownedCount, 12);
+  assert.equal(status.missingCount, 0);
+  assert.equal(status.isPoolComplete, true);
+  assert.equal(status.shouldHideTile, true);
+  assert.equal(status.missingEntries.length, 0);
+  assert.equal(status.ownedEntries.length, 12);
+});
+
+test("event chest status: unrelated owned cosmetics do not count toward pool progress", () => {
+  const status = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, {
+    username: "EventChestUnrelatedUser",
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_fire_mage"],
+      background: ["default_background", "forest_glade_background"],
+      cardBack: ["default_card_back", "fire_card_back"],
+      elementCardVariant: ["default_fire_card", "fire_variant_ember"],
+      badge: ["none", "war_machine"],
+      title: ["Initiate", "Flame Vanguard"]
+    }
+  });
+
+  assert.equal(status.ownedCount, 0);
+  assert.equal(status.missingCount, 12);
+  assert.equal(status.isPoolComplete, false);
+});
+
+test("event chest status: per-rarity progress is computed from the definition pool", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile(), [
+    ["title", "title_first_light"],
+    ["avatar", "avatar_chestbound_adept"],
+    ["cardBack", "cardback_daily_element_chest"],
+    ["avatar", "avatar_element_chosen"]
+  ]);
+  const status = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, profile);
+
+  assert.deepEqual(status.byRarity.common, { total: 3, owned: 1, missing: 2, isComplete: false });
+  assert.deepEqual(status.byRarity.rare, { total: 2, owned: 1, missing: 1, isComplete: false });
+  assert.deepEqual(status.byRarity.epic, { total: 5, owned: 1, missing: 4, isComplete: false });
+  assert.deepEqual(status.byRarity.legendary, { total: 2, owned: 1, missing: 1, isComplete: false });
+});
+
+test("event chest status: hide tile flag only hides complete pools when enabled", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile());
+  const hiddenStatus = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, profile);
+  const visibleDefinition = cloneEventChestPreset({ hideTileWhenPoolComplete: false });
+  const visibleStatus = projectEventChestStatus(visibleDefinition, profile);
+
+  assert.equal(hiddenStatus.isPoolComplete, true);
+  assert.equal(hiddenStatus.shouldHideTile, true);
+  assert.equal(visibleStatus.isPoolComplete, true);
+  assert.equal(visibleStatus.shouldHideTile, false);
+  assert.equal(visibleStatus.hideTileWhenPoolComplete, false);
+});
+
+test("event chest status: existing Daily Chest progress and pity display project without mutation", () => {
+  const profile = buildDailyChestCompletionProfile({
+    dailyElementChest: {
+      lastFreeOpenDateKey: "2026-06-06T23:00:00.000Z",
+      totalOpens: 17,
+      paidOpens: 12,
+      freeOpens: 5,
+      pity: {
+        opensSinceEpicPlus: 7,
+        opensSinceLegendary: 14
+      }
+    }
+  });
+  const before = structuredClone(profile);
+  const status = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, profile);
+
+  assert.deepEqual(status.progress, {
+    lastFreeOpenDateKey: "2026-06-06T23:00:00.000Z",
+    totalOpens: 17,
+    paidOpens: 12,
+    freeOpens: 5,
+    pity: {
+      opensSinceEpicPlus: 7,
+      opensSinceLegendary: 14
+    }
+  });
+  assert.deepEqual(status.pityDisplay, {
+    epicPlus: {
+      current: 7,
+      threshold: 10,
+      displayCurrent: 7,
+      displayLabel: "7 / 10"
+    },
+    legendary: {
+      current: 14,
+      threshold: 30,
+      displayCurrent: 14,
+      displayLabel: "14 / 30"
+    }
+  });
+  assert.deepEqual(profile, before);
+});
+
+test("event chest status: pity display values are capped at current Daily Chest thresholds", () => {
+  const status = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, {
+    dailyElementChest: {
+      totalOpens: 200,
+      paidOpens: 100,
+      freeOpens: 100,
+      pity: {
+        opensSinceEpicPlus: 99,
+        opensSinceLegendary: 99
+      }
+    }
+  });
+
+  assert.equal(status.pityDisplay.epicPlus.current, 99);
+  assert.equal(status.pityDisplay.epicPlus.threshold, 10);
+  assert.equal(status.pityDisplay.epicPlus.displayCurrent, 10);
+  assert.equal(status.pityDisplay.epicPlus.displayLabel, "10 / 10");
+  assert.equal(status.pityDisplay.legendary.current, 99);
+  assert.equal(status.pityDisplay.legendary.threshold, 30);
+  assert.equal(status.pityDisplay.legendary.displayCurrent, 30);
+  assert.equal(status.pityDisplay.legendary.displayLabel, "30 / 30");
+});
+
+test("event chest status: malformed profile progress normalizes safely for projection", () => {
+  const status = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, {
+    dailyElementChest: {
+      lastFreeOpenDateKey: "   ",
+      totalOpens: "not-a-number",
+      paidOpens: -5,
+      freeOpens: 2.9,
+      pity: {
+        opensSinceEpicPlus: "bad",
+        opensSinceLegendary: 4.7
+      }
+    }
+  });
+
+  assert.deepEqual(status.progress, {
+    lastFreeOpenDateKey: null,
+    totalOpens: 0,
+    paidOpens: 0,
+    freeOpens: 2,
+    pity: {
+      opensSinceEpicPlus: 0,
+      opensSinceLegendary: 4
+    }
+  });
+});
+
+test("event chest status: projection output mutations do not alter inputs", () => {
+  const definition = cloneEventChestPreset();
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile(), [["title", "title_first_light"]]);
+  const beforeDefinition = structuredClone(definition);
+  const beforeProfile = structuredClone(profile);
+  const status = projectEventChestStatus(definition, profile);
+
+  status.byRarity.common.owned = 99;
+  status.ownedEntries[0].cosmeticId = "mutated_cosmetic";
+  status.progress.totalOpens = 99;
+
+  assert.deepEqual(definition, beforeDefinition);
+  assert.deepEqual(profile, beforeProfile);
+  assert.equal(definition.pool.common[0].cosmeticId, "title_first_light");
+  assert.equal(profile.ownedCosmetics.title.includes("title_first_light"), true);
 });
