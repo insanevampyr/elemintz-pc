@@ -334,3 +334,54 @@ export function auditDailyElementChestMirrorParity(
     mismatches
   };
 }
+
+function getProfileDiagnosticIdentifier(profile, index) {
+  const username = String(profile?.username ?? "").trim();
+  if (username) {
+    return username;
+  }
+
+  const profileKey = String(profile?.profileKey ?? "").trim();
+  if (profileKey) {
+    return profileKey;
+  }
+
+  return `profile_${index}`;
+}
+
+export function scanDailyElementChestMirrorParityProfiles(
+  profiles,
+  { chestId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID, detailLimit = 50 } = {}
+) {
+  const sourceProfiles = Array.isArray(profiles) ? profiles : [];
+  const safeDetailLimit = Math.max(0, Math.floor(Number(detailLimit) || 0));
+  const summary = {
+    totalProfiles: sourceProfiles.length,
+    matched: 0,
+    missing_mirror: 0,
+    mismatch: 0,
+    invalid_chest_id: 0
+  };
+  const details = [];
+
+  sourceProfiles.forEach((profile, index) => {
+    const audit = auditDailyElementChestMirrorParity(profile, { chestId });
+    const status = Object.hasOwn(summary, audit.status) ? audit.status : "mismatch";
+    summary[status] += 1;
+
+    if (audit.ok || details.length >= safeDetailLimit) {
+      return;
+    }
+
+    details.push({
+      profileIdentifier: getProfileDiagnosticIdentifier(profile, index),
+      status: audit.status,
+      mismatchFields: audit.mismatches.map((mismatch) => mismatch.field)
+    });
+  });
+
+  return {
+    ...summary,
+    details
+  };
+}
