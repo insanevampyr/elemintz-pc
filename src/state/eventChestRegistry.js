@@ -83,6 +83,11 @@ export function getEventChestDefinitionById(chestId) {
   return definition ? cloneDefinition(definition) : null;
 }
 
+export function hasEventChestDefinition(chestId) {
+  const safeChestId = normalizeChestId(chestId);
+  return safeChestId ? EVENT_CHEST_REGISTRY_BY_ID.has(safeChestId) : false;
+}
+
 export function getActiveEventChestDefinitions(now = Date.now()) {
   return [...EVENT_CHEST_REGISTRY_BY_ID.values()]
     .filter((definition) => isEventChestDefinitionActive(definition, now))

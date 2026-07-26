@@ -34,6 +34,7 @@ import {
   getDefaultDailyElementChestDefinition,
   getEventChestDefinitionById,
   getEventChestDefinitions,
+  hasEventChestDefinition,
   isEventChestDefinitionActive
 } from "../../src/state/eventChestRegistry.js";
 import { projectEventChestStatus } from "../../src/state/eventChestStatus.js";
@@ -1129,6 +1130,10 @@ test("event chest registry: unknown or blank lookup fails safely", () => {
   assert.equal(getEventChestDefinitionById("missing_event_chest"), null);
   assert.equal(getEventChestDefinitionById(""), null);
   assert.equal(getEventChestDefinitionById(null), null);
+  assert.equal(hasEventChestDefinition(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID), true);
+  assert.equal(hasEventChestDefinition("missing_event_chest"), false);
+  assert.equal(hasEventChestDefinition(""), false);
+  assert.equal(hasEventChestDefinition(null), false);
 });
 
 test("event chest registry: every registry definition validates", () => {
