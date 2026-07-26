@@ -58,6 +58,22 @@ function randomSequence(values) {
   };
 }
 
+function assertDailyChestMirrorMatches(profile, { openType = null, openedAt = null } = {}) {
+  const mirror = profile?.eventChests?.[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID];
+  assert.ok(mirror, "expected Daily Elemintz Chest eventChests mirror");
+  assert.equal(mirror.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.equal(mirror.source, "legacy_daily_element_chest_mirror");
+  assert.equal(mirror.sourceProfileField, "dailyElementChest");
+  assert.equal(mirror.lastOpenType, openType);
+  assert.equal(mirror.lastOpenedAt, openedAt);
+  assert.equal(mirror.lastUpdatedAt, openedAt);
+  assert.equal(mirror.lastFreeOpenDateKey, profile.dailyElementChest.lastFreeOpenDateKey);
+  assert.equal(mirror.totalOpens, profile.dailyElementChest.totalOpens);
+  assert.equal(mirror.paidOpens, profile.dailyElementChest.paidOpens);
+  assert.equal(mirror.freeOpens, profile.dailyElementChest.freeOpens);
+  assert.deepEqual(mirror.pity, profile.dailyElementChest.pity);
+}
+
 const DAILY_CHEST_EXPECTATIONS = Object.freeze([
   ["title", "title_first_light", "Common"],
   ["title", "title_element_touched", "Common"],
@@ -383,12 +399,21 @@ test("daily chest: free open is available once per reset window and second free 
     nowMs
   });
   const statusAfter = await state.getDailyElementChestStatus("DailyChestFreeUser", nowMs);
+  const profileAfterFirstOpen = await state.profiles.getProfile("DailyChestFreeUser");
 
   assert.equal(statusBefore.canOpenFree, true);
   assert.equal(firstOpen.openType, "free");
   assert.equal(firstOpen.dailyElementChest.freeOpens, 1);
   assert.equal(firstOpen.dailyElementChest.totalOpens, 1);
   assert.equal(statusAfter.canOpenFree, false);
+  assertDailyChestMirrorMatches(firstOpen.profile, {
+    openType: "free",
+    openedAt: new Date(nowMs).toISOString()
+  });
+  assert.deepEqual(
+    firstOpen.profile.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
+    profileAfterFirstOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
+  );
 
   await assert.rejects(
     () =>
@@ -396,8 +421,13 @@ test("daily chest: free open is available once per reset window and second free 
         username: "DailyChestFreeUser",
         openType: "free",
         nowMs
-      }),
+    }),
     /already been used/i
+  );
+  const profileAfterRejectedSecondOpen = await state.profiles.getProfile("DailyChestFreeUser");
+  assert.deepEqual(
+    profileAfterRejectedSecondOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
+    profileAfterFirstOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
   );
 
   await fs.rm(dataDir, { recursive: true, force: true });
@@ -420,11 +450,20 @@ test("daily chest: paid opens cost 100 tokens and reject cleanly when tokens are
     openType: "paid",
     nowMs: Date.parse("2026-06-06T23:30:00.000Z")
   });
+  const profileAfterPaidOpen = await state.profiles.getProfile("DailyChestPaidUser");
 
   assert.equal(opened.openType, "paid");
   assert.equal(opened.profile.tokens, 50);
   assert.equal(opened.dailyElementChest.paidOpens, 1);
   assert.equal(opened.dailyElementChest.totalOpens, 1);
+  assertDailyChestMirrorMatches(opened.profile, {
+    openType: "paid",
+    openedAt: "2026-06-06T23:30:00.000Z"
+  });
+  assert.deepEqual(
+    opened.profile.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
+    profileAfterPaidOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
+  );
 
   await assert.rejects(
     () =>
@@ -432,9 +471,49 @@ test("daily chest: paid opens cost 100 tokens and reject cleanly when tokens are
         username: "DailyChestPaidUser",
         openType: "paid",
         nowMs: Date.parse("2026-06-07T00:30:00.000Z")
-      }),
+    }),
     /Insufficient tokens/i
   );
+  const profileAfterRejectedPaidOpen = await state.profiles.getProfile("DailyChestPaidUser");
+  assert.deepEqual(
+    profileAfterRejectedPaidOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
+    profileAfterPaidOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
+  );
+
+  await fs.rm(dataDir, { recursive: true, force: true });
+});
+
+test("daily chest: invalid open type does not mutate the event chest mirror", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: randomSequence([0, 0])
+  });
+  const nowMs = Date.parse("2026-06-06T23:30:00.000Z");
+
+  await state.openDailyElementChest({
+    username: "DailyChestInvalidTypeUser",
+    openType: "free",
+    nowMs
+  });
+  const profileAfterOpen = await state.profiles.getProfile("DailyChestInvalidTypeUser");
+
+  await assert.rejects(
+    () =>
+      state.openDailyElementChest({
+        username: "DailyChestInvalidTypeUser",
+        openType: "bonus",
+        nowMs: Date.parse("2026-06-07T23:30:00.000Z")
+      }),
+    /openType/i
+  );
+
+  const profileAfterRejectedOpen = await state.profiles.getProfile("DailyChestInvalidTypeUser");
+  assert.deepEqual(
+    profileAfterRejectedOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
+    profileAfterOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
+  );
+  assert.deepEqual(profileAfterRejectedOpen.dailyElementChest, profileAfterOpen.dailyElementChest);
 
   await fs.rm(dataDir, { recursive: true, force: true });
 });

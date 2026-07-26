@@ -72,6 +72,7 @@ import {
   getDailyElementChestStatus,
   openDailyElementChest
 } from "./dailyElementChestSystem.js";
+import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfileProgress.js";
 import {
   applyLevelRewardsForLevelChange,
   applyXpWithMaxLevelFallback,
@@ -3884,7 +3885,16 @@ export class StateCoordinator {
         nowMs,
         random: this.random
       });
-      return openResult.profile;
+      const mirroredProfile = mirrorDailyElementChestProgressToEventChests(openResult.profile, {
+        openedAt: new Date(nowMs).toISOString(),
+        lastOpenType: openResult.openType
+      });
+      openResult = {
+        ...openResult,
+        profile: mirroredProfile,
+        dailyElementChest: mirroredProfile.dailyElementChest
+      };
+      return mirroredProfile;
     });
 
     return {

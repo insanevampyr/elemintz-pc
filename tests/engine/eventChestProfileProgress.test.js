@@ -30,8 +30,11 @@ test("event chest profile progress: default shape is correct", () => {
   assert.deepEqual(createDefaultEventChestProgress("daily_elemintz_chest_current"), {
     schemaVersion: EVENT_CHEST_PROGRESS_SCHEMA_VERSION,
     chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+    source: null,
+    sourceProfileField: null,
     firstOpenedAt: null,
     lastOpenedAt: null,
+    lastUpdatedAt: null,
     lastOpenType: null,
     lastFreeOpenDateKey: null,
     totalOpens: 0,
@@ -61,8 +64,11 @@ test("event chest profile progress: malformed keyed progress repairs safely", ()
     [DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]: {
       chestId: "wrong_internal_value",
       schemaVersion: "bad",
+      source: " legacy_daily_element_chest_mirror ",
+      sourceProfileField: " dailyElementChest ",
       firstOpenedAt: "not-a-date",
       lastOpenedAt: "2026-06-07T01:02:03.000Z",
+      lastUpdatedAt: "2026-06-07T01:02:04.000Z",
       lastOpenType: "paid",
       lastFreeOpenDateKey: "bad-date",
       totalOpens: "7.9",
@@ -76,8 +82,11 @@ test("event chest profile progress: malformed keyed progress repairs safely", ()
   assert.deepEqual(normalized[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID], {
     schemaVersion: 1,
     chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+    source: "legacy_daily_element_chest_mirror",
+    sourceProfileField: "dailyElementChest",
     firstOpenedAt: null,
     lastOpenedAt: "2026-06-07T01:02:03.000Z",
+    lastUpdatedAt: "2026-06-07T01:02:04.000Z",
     lastOpenType: "paid",
     lastFreeOpenDateKey: null,
     totalOpens: 7,
@@ -160,11 +169,26 @@ test("event chest profile progress: existing dailyElementChest converts exactly 
   const progress = eventChestProgressFromDailyElementChest(daily);
 
   assert.equal(progress.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.equal(progress.source, "legacy_daily_element_chest_mirror");
+  assert.equal(progress.sourceProfileField, "dailyElementChest");
   assert.equal(progress.lastFreeOpenDateKey, daily.lastFreeOpenDateKey);
   assert.equal(progress.totalOpens, daily.totalOpens);
   assert.equal(progress.paidOpens, daily.paidOpens);
   assert.equal(progress.freeOpens, daily.freeOpens);
   assert.deepEqual(progress.pity, daily.pity);
+});
+
+test("event chest profile progress: Daily mirror records update timestamp and open type", () => {
+  const daily = buildLegacyDailyProgress({ totalOpens: 13, paidOpens: 9 });
+  const progress = eventChestProgressFromDailyElementChest(daily, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID, {
+    openedAt: "2026-06-08T01:02:03.000Z",
+    lastOpenType: "paid"
+  });
+
+  assert.equal(progress.firstOpenedAt, "2026-06-08T01:02:03.000Z");
+  assert.equal(progress.lastOpenedAt, "2026-06-08T01:02:03.000Z");
+  assert.equal(progress.lastUpdatedAt, "2026-06-08T01:02:03.000Z");
+  assert.equal(progress.lastOpenType, "paid");
 });
 
 test("event chest profile progress: keyed Daily progress derives legacy dailyElementChest exactly", () => {

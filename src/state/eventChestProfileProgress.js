@@ -34,6 +34,11 @@ function normalizeOpenType(value) {
   return ["free", "paid"].includes(normalized) ? normalized : null;
 }
 
+function normalizeNullableString(value) {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
 function normalizePity(value) {
   const source = isPlainObject(value) ? value : {};
   return {
@@ -72,8 +77,11 @@ export function createDefaultEventChestProgress(chestId) {
   return {
     schemaVersion: EVENT_CHEST_PROGRESS_SCHEMA_VERSION,
     chestId: safeChestId,
+    source: null,
+    sourceProfileField: null,
     firstOpenedAt: null,
     lastOpenedAt: null,
+    lastUpdatedAt: null,
     lastOpenType: null,
     lastFreeOpenDateKey: null,
     totalOpens: 0,
@@ -101,8 +109,11 @@ export function normalizeEventChestProgressEntry(value, { chestId = null } = {})
   return {
     schemaVersion: EVENT_CHEST_PROGRESS_SCHEMA_VERSION,
     chestId: safeChestId,
+    source: normalizeNullableString(source.source),
+    sourceProfileField: normalizeNullableString(source.sourceProfileField),
     firstOpenedAt: normalizeNullableIso(source.firstOpenedAt),
     lastOpenedAt: normalizeNullableIso(source.lastOpenedAt),
+    lastUpdatedAt: normalizeNullableIso(source.lastUpdatedAt),
     lastOpenType: normalizeOpenType(source.lastOpenType),
     lastFreeOpenDateKey: normalizeNullableIso(source.lastFreeOpenDateKey),
     totalOpens: safeCounter(source.totalOpens),
@@ -135,7 +146,8 @@ export function normalizeProfileEventChests(value) {
 
 export function eventChestProgressFromDailyElementChest(
   dailyElementChest,
-  chestId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID
+  chestId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+  { openedAt = null, lastOpenType = null, lastUpdatedAt = openedAt } = {}
 ) {
   const safeChestId = normalizeChestId(chestId);
   if (!safeChestId) {
@@ -146,6 +158,12 @@ export function eventChestProgressFromDailyElementChest(
   return normalizeEventChestProgressEntry(
     {
       chestId: safeChestId,
+      source: "legacy_daily_element_chest_mirror",
+      sourceProfileField: "dailyElementChest",
+      firstOpenedAt: source.totalOpens > 0 ? openedAt : null,
+      lastOpenedAt: source.totalOpens > 0 ? openedAt : null,
+      lastUpdatedAt,
+      lastOpenType,
       lastFreeOpenDateKey: source.lastFreeOpenDateKey,
       totalOpens: source.totalOpens,
       paidOpens: source.paidOpens,
@@ -154,6 +172,48 @@ export function eventChestProgressFromDailyElementChest(
     },
     { chestId: safeChestId }
   );
+}
+
+export function mirrorDailyElementChestProgressToEventChests(
+  profile,
+  {
+    chestId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+    openedAt = null,
+    lastOpenType = null,
+    lastUpdatedAt = openedAt
+  } = {}
+) {
+  const safeChestId = normalizeChestId(chestId);
+  if (!safeChestId) {
+    return profile;
+  }
+
+  const eventChests = normalizeProfileEventChests(profile?.eventChests);
+  const previous = eventChests[safeChestId] ?? null;
+  const mirrored = eventChestProgressFromDailyElementChest(profile?.dailyElementChest, safeChestId, {
+    openedAt,
+    lastOpenType,
+    lastUpdatedAt
+  });
+
+  if (!mirrored) {
+    return {
+      ...profile,
+      eventChests
+    };
+  }
+
+  return {
+    ...profile,
+    eventChests: normalizeProfileEventChests({
+      ...eventChests,
+      [safeChestId]: {
+        ...mirrored,
+        firstOpenedAt: previous?.firstOpenedAt ?? mirrored.firstOpenedAt,
+        participation: previous?.participation ?? mirrored.participation
+      }
+    })
+  };
 }
 
 export function dailyElementChestFromEventChestProgress(progress) {

@@ -288,8 +288,11 @@ test("profile validation: event chest progress defaults, repairs, and preserves 
   assert.deepEqual(valid.eventChests.future_event_chest, {
     schemaVersion: 1,
     chestId: "future_event_chest",
+    source: null,
+    sourceProfileField: null,
     firstOpenedAt: null,
     lastOpenedAt: null,
+    lastUpdatedAt: null,
     lastOpenType: null,
     lastFreeOpenDateKey: null,
     totalOpens: 8,
