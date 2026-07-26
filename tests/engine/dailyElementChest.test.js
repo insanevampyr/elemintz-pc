@@ -28,6 +28,7 @@ import {
   validateEventChestDefinition
 } from "../../src/state/eventChestDefinitions.js";
 import { getDailyElementChestStatusFromEventProjection } from "../../src/state/eventChestDailyStatusAdapter.js";
+import { auditDailyElementChestMirrorParity } from "../../src/state/eventChestProfileProgress.js";
 import {
   getActiveEventChestDefinitions,
   getDefaultDailyElementChestDefinition,
@@ -72,6 +73,15 @@ function assertDailyChestMirrorMatches(profile, { openType = null, openedAt = nu
   assert.equal(mirror.paidOpens, profile.dailyElementChest.paidOpens);
   assert.equal(mirror.freeOpens, profile.dailyElementChest.freeOpens);
   assert.deepEqual(mirror.pity, profile.dailyElementChest.pity);
+}
+
+function assertDailyChestMirrorParity(profile) {
+  assert.deepEqual(auditDailyElementChestMirrorParity(profile), {
+    ok: true,
+    status: "matched",
+    chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+    mismatches: []
+  });
 }
 
 const DAILY_CHEST_EXPECTATIONS = Object.freeze([
@@ -414,6 +424,15 @@ test("daily chest: free open is available once per reset window and second free 
     firstOpen.profile.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
     profileAfterFirstOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
   );
+  assertDailyChestMirrorParity(firstOpen.profile);
+  assertDailyChestMirrorParity(profileAfterFirstOpen);
+
+  const reloadedState = new StateCoordinator({
+    dataDir,
+    random: randomSequence([0, 0])
+  });
+  const reloadedProfile = await reloadedState.profiles.getProfile("DailyChestFreeUser");
+  assertDailyChestMirrorParity(reloadedProfile);
 
   await assert.rejects(
     () =>
@@ -429,6 +448,7 @@ test("daily chest: free open is available once per reset window and second free 
     profileAfterRejectedSecondOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
     profileAfterFirstOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
   );
+  assertDailyChestMirrorParity(profileAfterRejectedSecondOpen);
 
   await fs.rm(dataDir, { recursive: true, force: true });
 });
@@ -464,6 +484,8 @@ test("daily chest: paid opens cost 100 tokens and reject cleanly when tokens are
     opened.profile.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
     profileAfterPaidOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
   );
+  assertDailyChestMirrorParity(opened.profile);
+  assertDailyChestMirrorParity(profileAfterPaidOpen);
 
   await assert.rejects(
     () =>
@@ -479,6 +501,7 @@ test("daily chest: paid opens cost 100 tokens and reject cleanly when tokens are
     profileAfterRejectedPaidOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID],
     profileAfterPaidOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
   );
+  assertDailyChestMirrorParity(profileAfterRejectedPaidOpen);
 
   await fs.rm(dataDir, { recursive: true, force: true });
 });
@@ -514,6 +537,7 @@ test("daily chest: invalid open type does not mutate the event chest mirror", as
     profileAfterOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
   );
   assert.deepEqual(profileAfterRejectedOpen.dailyElementChest, profileAfterOpen.dailyElementChest);
+  assertDailyChestMirrorParity(profileAfterRejectedOpen);
 
   await fs.rm(dataDir, { recursive: true, force: true });
 });

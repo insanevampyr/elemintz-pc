@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID } from "../../src/state/dailyElementChestSystem.js";
 import {
   EVENT_CHEST_PROGRESS_SCHEMA_VERSION,
+  auditDailyElementChestMirrorParity,
   createDefaultEventChestProgress,
   dailyElementChestFromEventChestProgress,
   eventChestProgressFromDailyElementChest,
@@ -253,6 +254,80 @@ test("event chest profile progress: matching old and keyed shapes remain idempot
   );
 });
 
+test("event chest profile progress: Daily mirror parity reports matched state", () => {
+  const dailyElementChest = buildLegacyDailyProgress();
+  const profile = {
+    dailyElementChest,
+    eventChests: {
+      [DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]: eventChestProgressFromDailyElementChest(dailyElementChest)
+    }
+  };
+
+  assert.deepEqual(auditDailyElementChestMirrorParity(profile), {
+    ok: true,
+    status: "matched",
+    chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+    mismatches: []
+  });
+});
+
+test("event chest profile progress: Daily mirror parity reports missing mirror safely", () => {
+  const audit = auditDailyElementChestMirrorParity({
+    dailyElementChest: buildLegacyDailyProgress(),
+    eventChests: {}
+  });
+
+  assert.equal(audit.ok, false);
+  assert.equal(audit.status, "missing_mirror");
+  assert.equal(audit.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+  assert.deepEqual(audit.mismatches, [
+    {
+      field: "eventChests.daily_elemintz_chest_current",
+      expected: "present",
+      actual: "missing"
+    }
+  ]);
+});
+
+test("event chest profile progress: Daily mirror parity reports field mismatch details", () => {
+  const dailyElementChest = buildLegacyDailyProgress();
+  const mirror = eventChestProgressFromDailyElementChest(dailyElementChest);
+  const audit = auditDailyElementChestMirrorParity({
+    dailyElementChest,
+    eventChests: {
+      [DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]: {
+        ...mirror,
+        source: "wrong_source",
+        totalOpens: mirror.totalOpens + 1,
+        pity: {
+          ...mirror.pity,
+          opensSinceLegendary: mirror.pity.opensSinceLegendary + 2
+        }
+      }
+    }
+  });
+
+  assert.equal(audit.ok, false);
+  assert.equal(audit.status, "mismatch");
+  assert.deepEqual(audit.mismatches, [
+    {
+      field: "source",
+      expected: "legacy_daily_element_chest_mirror",
+      actual: "wrong_source"
+    },
+    {
+      field: "totalOpens",
+      expected: dailyElementChest.totalOpens,
+      actual: dailyElementChest.totalOpens + 1
+    },
+    {
+      field: "pity.opensSinceLegendary",
+      expected: dailyElementChest.pity.opensSinceLegendary,
+      actual: dailyElementChest.pity.opensSinceLegendary + 2
+    }
+  ]);
+});
+
 test("event chest profile progress: invalid chestId is ignored unless a known chestId is supplied", () => {
   assert.equal(normalizeEventChestProgressEntry({ chestId: "" }), null);
   assert.deepEqual(normalizeProfileEventChests({ "": { totalOpens: 9 } }), {});
@@ -275,6 +350,7 @@ test("event chest profile progress: pure helpers do not mutate inputs", () => {
   eventChestProgressFromDailyElementChest(profile.dailyElementChest);
   getNormalizedDailyEventChestProgress(profile);
   dailyElementChestFromEventChestProgress(profile.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]);
+  auditDailyElementChestMirrorParity(profile);
 
   assert.deepEqual(profile, before);
 });

@@ -249,3 +249,88 @@ export function getNormalizedDailyEventChestProgress(
 
   return eventChestProgressFromDailyElementChest(profile?.dailyElementChest, safeChestId);
 }
+
+export function auditDailyElementChestMirrorParity(
+  profile,
+  { chestId = DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID } = {}
+) {
+  const safeChestId = normalizeChestId(chestId);
+  const mismatches = [];
+  const legacy = dailyElementChestFromEventChestProgress(
+    eventChestProgressFromDailyElementChest(profile?.dailyElementChest, safeChestId)
+  );
+  const eventChests = normalizeProfileEventChests(profile?.eventChests);
+  const mirror = safeChestId ? eventChests[safeChestId] ?? null : null;
+
+  const addMismatch = (field, expected, actual) => {
+    mismatches.push({ field, expected, actual });
+  };
+
+  if (!safeChestId) {
+    addMismatch("chestId", DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID, safeChestId);
+    return {
+      ok: false,
+      status: "invalid_chest_id",
+      chestId: safeChestId,
+      mismatches
+    };
+  }
+
+  if (!mirror) {
+    return {
+      ok: false,
+      status: "missing_mirror",
+      chestId: safeChestId,
+      mismatches: [
+        {
+          field: "eventChests.daily_elemintz_chest_current",
+          expected: "present",
+          actual: "missing"
+        }
+      ]
+    };
+  }
+
+  if (mirror.chestId !== safeChestId) {
+    addMismatch("chestId", safeChestId, mirror.chestId);
+  }
+  if (mirror.source !== "legacy_daily_element_chest_mirror") {
+    addMismatch("source", "legacy_daily_element_chest_mirror", mirror.source);
+  }
+  if (mirror.sourceProfileField !== "dailyElementChest") {
+    addMismatch("sourceProfileField", "dailyElementChest", mirror.sourceProfileField);
+  }
+  if (mirror.lastFreeOpenDateKey !== legacy.lastFreeOpenDateKey) {
+    addMismatch("lastFreeOpenDateKey", legacy.lastFreeOpenDateKey, mirror.lastFreeOpenDateKey);
+  }
+  if (mirror.totalOpens !== legacy.totalOpens) {
+    addMismatch("totalOpens", legacy.totalOpens, mirror.totalOpens);
+  }
+  if (mirror.paidOpens !== legacy.paidOpens) {
+    addMismatch("paidOpens", legacy.paidOpens, mirror.paidOpens);
+  }
+  if (mirror.freeOpens !== legacy.freeOpens) {
+    addMismatch("freeOpens", legacy.freeOpens, mirror.freeOpens);
+  }
+  if (mirror.pity.opensSinceEpicPlus !== legacy.pity.opensSinceEpicPlus) {
+    addMismatch(
+      "pity.opensSinceEpicPlus",
+      legacy.pity.opensSinceEpicPlus,
+      mirror.pity.opensSinceEpicPlus
+    );
+  }
+  if (mirror.pity.opensSinceLegendary !== legacy.pity.opensSinceLegendary) {
+    addMismatch(
+      "pity.opensSinceLegendary",
+      legacy.pity.opensSinceLegendary,
+      mirror.pity.opensSinceLegendary
+    );
+  }
+
+  return {
+    ok: mismatches.length === 0,
+    status: mismatches.length === 0 ? "matched" : "mismatch",
+    chestId: safeChestId,
+    mismatches
+  };
+}
