@@ -142,7 +142,7 @@ function buildDailyChestPoolSummaryExpectation() {
 
 function compareDailyElementChestStatusProjection(profile, nowMs = DAILY_CHEST_STATUS_PARITY_NOW) {
   const currentStatus = getDailyElementChestStatus(profile, nowMs);
-  const projection = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, profile);
+  const projection = projectEventChestStatus(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET, profile, { nowMs });
   const expectedMissing =
     currentStatus.collectionProgress.totalAvailable - currentStatus.collectionProgress.totalOwned;
 
@@ -180,7 +180,32 @@ function compareDailyElementChestStatusProjection(profile, nowMs = DAILY_CHEST_S
   assert.equal(projection.progress.paidOpens, currentStatus.dailyElementChest.paidOpens);
   assert.equal(projection.progress.freeOpens, currentStatus.dailyElementChest.freeOpens);
   assert.equal(projection.progress.lastFreeOpenDateKey, currentStatus.dailyElementChest.lastFreeOpenDateKey);
+  assert.equal(projection.lastFreeOpenDateKey, currentStatus.dailyElementChest.lastFreeOpenDateKey);
   assert.deepEqual(projection.progress.pity, currentStatus.pity);
+
+  assert.equal(projection.freeOpenAvailable, currentStatus.canOpenFree);
+  assert.equal(projection.nextFreeOpenAt, currentStatus.nextFreeResetAt);
+  assert.equal(projection.nextFreeResetAt, currentStatus.nextFreeResetAt);
+  assert.equal(projection.msUntilNextFreeOpen, Math.max(0, Date.parse(currentStatus.nextFreeResetAt) - nowMs));
+  assert.equal(projection.resetWindow.nextResetAt, currentStatus.nextFreeResetAt);
+  assert.equal(projection.currentDateKey, projection.resetWindow.lastResetAt);
+  assert.equal(projection.tokenBalance, currentStatus.tokens);
+  assert.equal(projection.paidOpenCostTokens, currentStatus.paidOpenCost);
+  assert.equal(projection.canAffordPaidOpen, currentStatus.tokens >= currentStatus.paidOpenCost);
+  assert.deepEqual(projection.odds, currentStatus.odds);
+  assert.deepEqual(projection.poolSummary, currentStatus.poolSummary);
+  assert.deepEqual(projection.openTypes, ["free", "paid"]);
+  assert.deepEqual(projection.openAvailability.free, {
+    supported: true,
+    available: currentStatus.canOpenFree,
+    nextAvailableAt: currentStatus.canOpenFree ? null : currentStatus.nextFreeResetAt
+  });
+  assert.deepEqual(projection.openAvailability.paid, {
+    supported: true,
+    available: currentStatus.tokens >= currentStatus.paidOpenCost,
+    costTokens: currentStatus.paidOpenCost,
+    canAfford: currentStatus.tokens >= currentStatus.paidOpenCost
+  });
 
   assert.equal(projection.pityDisplay.epicPlus.current, currentStatus.pity.opensSinceEpicPlus);
   assert.equal(projection.pityDisplay.epicPlus.threshold, DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD);
@@ -203,15 +228,9 @@ function compareDailyElementChestStatusProjection(profile, nowMs = DAILY_CHEST_S
     `${Math.min(DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD, currentStatus.pity.opensSinceLegendary)} / ${DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD}`
   );
 
-  // Intentional parity gaps: the Event Chest projection is ownership/progress-only.
-  // Current Daily Chest status still owns free-open timing, token affordability,
-  // odds/pool summary, and UI countdown/copy inputs until a later runtime migration pass.
-  assert.equal(typeof currentStatus.canOpenFree, "boolean");
-  assert.equal(typeof currentStatus.nextFreeResetAt, "string");
-  assert.equal(currentStatus.paidOpenCost, DAILY_ELEMENT_CHEST_PAID_OPEN_COST);
-  assert.equal(typeof currentStatus.tokens, "number");
-  assert.deepEqual(currentStatus.odds, DAILY_ELEMENT_CHEST_ODDS);
-  assert.deepEqual(currentStatus.poolSummary, buildDailyChestPoolSummaryExpectation());
+  assert.equal(projection.paidOpenCostTokens, DAILY_ELEMENT_CHEST_PAID_OPEN_COST);
+  assert.deepEqual(projection.odds, DAILY_ELEMENT_CHEST_ODDS);
+  assert.deepEqual(projection.poolSummary, buildDailyChestPoolSummaryExpectation());
 
   return { currentStatus, projection };
 }
@@ -1252,6 +1271,8 @@ test("event chest parity: empty/default profile matches current Daily Chest stat
   assert.equal(projection.ownedCount, 0);
   assert.equal(projection.missingCount, 12);
   assert.equal(projection.isPoolComplete, false);
+  assert.equal(projection.freeOpenAvailable, true);
+  assert.equal(projection.canAffordPaidOpen, true);
 });
 
 test("event chest parity: partial ownership profile matches current Daily Chest status overlap", () => {
@@ -1342,4 +1363,77 @@ test("event chest parity: unrelated cosmetics are ignored by both status models"
   assert.equal(currentStatus.collectionProgress.totalOwned, 0);
   assert.equal(projection.ownedCount, 0);
   assert.equal(projection.missingCount, 12);
+});
+
+test("event chest full status: used free open projects unavailable until the next reset", () => {
+  const initialProjection = projectEventChestStatus(
+    DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+    buildDailyChestCompletionProfile(),
+    { nowMs: DAILY_CHEST_STATUS_PARITY_NOW }
+  );
+  const profile = buildDailyChestCompletionProfile({
+    dailyElementChest: {
+      lastFreeOpenDateKey: initialProjection.currentDateKey,
+      totalOpens: 1,
+      paidOpens: 0,
+      freeOpens: 1,
+      pity: {
+        opensSinceEpicPlus: 1,
+        opensSinceLegendary: 1
+      }
+    }
+  });
+  const { currentStatus, projection } = compareDailyElementChestStatusProjection(profile);
+
+  assert.equal(currentStatus.canOpenFree, false);
+  assert.equal(projection.freeOpenAvailable, false);
+  assert.equal(projection.openAvailability.free.available, false);
+  assert.equal(projection.openAvailability.free.nextAvailableAt, currentStatus.nextFreeResetAt);
+});
+
+test("event chest full status: token affordability is projected from the profile balance", () => {
+  const affordable = compareDailyElementChestStatusProjection(
+    buildDailyChestCompletionProfile({ tokens: 100 })
+  ).projection;
+  const unaffordable = compareDailyElementChestStatusProjection(
+    buildDailyChestCompletionProfile({ tokens: 99 })
+  ).projection;
+
+  assert.equal(affordable.paidOpenCostTokens, 100);
+  assert.equal(affordable.tokenBalance, 100);
+  assert.equal(affordable.canAffordPaidOpen, true);
+  assert.equal(affordable.openAvailability.paid.available, true);
+  assert.equal(unaffordable.paidOpenCostTokens, 100);
+  assert.equal(unaffordable.tokenBalance, 99);
+  assert.equal(unaffordable.canAffordPaidOpen, false);
+  assert.equal(unaffordable.openAvailability.paid.available, false);
+});
+
+test("event chest full status: projection adds Daily Chest reset and UI status fields without mutating inputs", () => {
+  const profile = buildDailyChestCompletionProfile({
+    tokens: 125,
+    dailyElementChest: {
+      lastFreeOpenDateKey: null,
+      totalOpens: 6,
+      paidOpens: 4,
+      freeOpens: 2,
+      pity: {
+        opensSinceEpicPlus: 3,
+        opensSinceLegendary: 6
+      }
+    }
+  });
+  const definition = cloneEventChestPreset();
+  const beforeProfile = structuredClone(profile);
+  const beforeDefinition = structuredClone(definition);
+  const projection = projectEventChestStatus(definition, profile, { nowMs: DAILY_CHEST_STATUS_PARITY_NOW });
+
+  assert.equal(projection.currentDateKey, projection.resetWindow.lastResetAt);
+  assert.equal(projection.nextFreeOpenAt, projection.resetWindow.nextResetAt);
+  assert.equal(projection.nextFreeResetAt, projection.resetWindow.nextResetAt);
+  assert.equal(projection.msUntilNextFreeOpen, Date.parse(projection.nextFreeOpenAt) - DAILY_CHEST_STATUS_PARITY_NOW);
+  assert.deepEqual(projection.odds, DAILY_ELEMENT_CHEST_ODDS);
+  assert.deepEqual(projection.poolSummary, buildDailyChestPoolSummaryExpectation());
+  assert.deepEqual(profile, beforeProfile);
+  assert.deepEqual(definition, beforeDefinition);
 });

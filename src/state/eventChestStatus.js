@@ -1,4 +1,5 @@
 import { getCosmeticDefinition } from "./cosmeticSystem.js";
+import { getDailyResetWindow } from "./dailyChallengesSystem.js";
 import { validateEventChestDefinition } from "./eventChestDefinitions.js";
 
 function safeCounter(value) {
@@ -110,16 +111,104 @@ function buildPoolProgress(definition, profile) {
   };
 }
 
-export function projectEventChestStatus(definition, profile = {}) {
+function buildPoolSummary(poolProgress) {
+  return Object.fromEntries(
+    Object.entries(poolProgress.items).map(([rarity, entries]) => [
+      rarity,
+      entries.map((entry) => ({
+        type: entry.type,
+        cosmeticId: entry.cosmeticId,
+        name: entry.name
+      }))
+    ])
+  );
+}
+
+function buildFreeOpenStatus(definition, progress, nowMs) {
+  const allowsFreeOpen = Array.isArray(definition.openTypes) && definition.openTypes.includes("free");
+  const policy = definition.freeOpenPolicy;
+  const supportsDailyReset =
+    allowsFreeOpen &&
+    policy?.cadence === "daily" &&
+    policy?.resetTimeZone === "America/Chicago" &&
+    policy?.resetHour === 18;
+
+  if (!supportsDailyReset) {
+    return {
+      freeOpenAvailable: false,
+      currentDateKey: null,
+      nextFreeOpenAt: null,
+      nextFreeResetAt: null,
+      msUntilNextFreeOpen: null,
+      resetWindow: null
+    };
+  }
+
+  const resetWindow = getDailyResetWindow(nowMs);
+  const currentDateKey = new Date(resetWindow.lastResetMs).toISOString();
+  const nextFreeOpenAt = new Date(resetWindow.nextResetMs).toISOString();
+
+  return {
+    freeOpenAvailable: progress.lastFreeOpenDateKey !== currentDateKey,
+    currentDateKey,
+    nextFreeOpenAt,
+    nextFreeResetAt: nextFreeOpenAt,
+    msUntilNextFreeOpen: Math.max(0, resetWindow.nextResetMs - nowMs),
+    resetWindow: {
+      lastResetAt: currentDateKey,
+      nextResetAt: nextFreeOpenAt,
+      lastResetMs: resetWindow.lastResetMs,
+      nextResetMs: resetWindow.nextResetMs
+    }
+  };
+}
+
+function buildOpenAvailability(definition, freeStatus, tokenBalance) {
+  const openTypes = Array.isArray(definition.openTypes) ? definition.openTypes : [];
+  const paidOpenCostTokens = openTypes.includes("paid") ? safeCounter(definition.paidTokenCost) : null;
+  const canAffordPaidOpen =
+    paidOpenCostTokens !== null && tokenBalance >= paidOpenCostTokens;
+
+  return {
+    paidOpenCostTokens,
+    canAffordPaidOpen,
+    availableOpenTypes: openTypes.filter((openType) => (
+      openType === "free"
+        ? freeStatus.freeOpenAvailable
+        : openType === "paid"
+          ? canAffordPaidOpen
+          : false
+    )),
+    openAvailability: {
+      free: {
+        supported: openTypes.includes("free"),
+        available: freeStatus.freeOpenAvailable,
+        nextAvailableAt: freeStatus.freeOpenAvailable ? null : freeStatus.nextFreeOpenAt
+      },
+      paid: {
+        supported: openTypes.includes("paid"),
+        available: canAffordPaidOpen,
+        costTokens: paidOpenCostTokens,
+        canAfford: canAffordPaidOpen
+      }
+    }
+  };
+}
+
+export function projectEventChestStatus(definition, profile = {}, options = {}) {
   const validation = validateEventChestDefinition(definition);
   if (!validation.ok) {
     throw new Error(`Invalid Event Chest definition: ${validation.errors.join("; ")}`);
   }
 
+  const nowMs = Number.isFinite(Number(options?.nowMs)) ? Number(options.nowMs) : Date.now();
   const poolProgress = buildPoolProgress(definition, profile);
   const progressField = String(definition.profileProgressField ?? "").trim();
   const progress = normalizeProgressState(progressField ? profile?.[progressField] : null);
   const shouldHideTile = definition.hideTileWhenPoolComplete === true && poolProgress.isPoolComplete;
+  const tokenBalance = safeCounter(profile?.tokens);
+  const freeStatus = buildFreeOpenStatus(definition, progress, nowMs);
+  const openAvailability = buildOpenAvailability(definition, freeStatus, tokenBalance);
 
   return {
     chestId: definition.chestId,
@@ -140,6 +229,21 @@ export function projectEventChestStatus(definition, profile = {}) {
     allowOpensAfterCompleteAsDuplicateConversion:
       definition.allowOpensAfterCompleteAsDuplicateConversion === true,
     progress,
+    lastFreeOpenDateKey: progress.lastFreeOpenDateKey,
+    freeOpenAvailable: freeStatus.freeOpenAvailable,
+    currentDateKey: freeStatus.currentDateKey,
+    nextFreeOpenAt: freeStatus.nextFreeOpenAt,
+    nextFreeResetAt: freeStatus.nextFreeResetAt,
+    msUntilNextFreeOpen: freeStatus.msUntilNextFreeOpen,
+    resetWindow: freeStatus.resetWindow,
+    tokenBalance,
+    paidOpenCostTokens: openAvailability.paidOpenCostTokens,
+    canAffordPaidOpen: openAvailability.canAffordPaidOpen,
+    openTypes: [...definition.openTypes],
+    availableOpenTypes: openAvailability.availableOpenTypes,
+    openAvailability: openAvailability.openAvailability,
+    odds: { ...definition.odds },
+    poolSummary: buildPoolSummary(poolProgress),
     pityDisplay: buildPityDisplay(progress, definition.pity)
   };
 }
