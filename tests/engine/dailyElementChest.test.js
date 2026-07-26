@@ -27,6 +27,7 @@ import {
   DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
   validateEventChestDefinition
 } from "../../src/state/eventChestDefinitions.js";
+import { getDailyElementChestStatusFromEventProjection } from "../../src/state/eventChestDailyStatusAdapter.js";
 import {
   getActiveEventChestDefinitions,
   getDefaultDailyElementChestDefinition,
@@ -1436,4 +1437,115 @@ test("event chest full status: projection adds Daily Chest reset and UI status f
   assert.deepEqual(projection.poolSummary, buildDailyChestPoolSummaryExpectation());
   assert.deepEqual(profile, beforeProfile);
   assert.deepEqual(definition, beforeDefinition);
+});
+
+function assertDailyStatusAdapterMatchesCurrent(profile, nowMs = DAILY_CHEST_STATUS_PARITY_NOW) {
+  assert.deepEqual(
+    getDailyElementChestStatusFromEventProjection(profile, { nowMs }),
+    getDailyElementChestStatus(profile, nowMs)
+  );
+}
+
+test("event chest Daily status adapter: empty/default profile matches current status shape", () => {
+  assertDailyStatusAdapterMatchesCurrent(buildDailyChestCompletionProfile());
+});
+
+test("event chest Daily status adapter: used free open matches current status shape", () => {
+  const usedFreeStatus = getDailyElementChestStatusFromEventProjection(buildDailyChestCompletionProfile(), {
+    nowMs: DAILY_CHEST_STATUS_PARITY_NOW
+  });
+  const profile = buildDailyChestCompletionProfile({
+    dailyElementChest: {
+      lastFreeOpenDateKey: new Date(Date.parse(usedFreeStatus.nextFreeResetAt) - 24 * 60 * 60 * 1000).toISOString(),
+      totalOpens: 1,
+      paidOpens: 0,
+      freeOpens: 1,
+      pity: {
+        opensSinceEpicPlus: 1,
+        opensSinceLegendary: 1
+      }
+    }
+  });
+
+  assertDailyStatusAdapterMatchesCurrent(profile);
+  assert.equal(getDailyElementChestStatusFromEventProjection(profile, { nowMs: DAILY_CHEST_STATUS_PARITY_NOW }).canOpenFree, false);
+});
+
+test("event chest Daily status adapter: paid-open affordability matches current status shape", () => {
+  assertDailyStatusAdapterMatchesCurrent(buildDailyChestCompletionProfile({ tokens: 100 }));
+  assertDailyStatusAdapterMatchesCurrent(buildDailyChestCompletionProfile({ tokens: 99 }));
+});
+
+test("event chest Daily status adapter: partial ownership matches current status shape", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile(), [
+    ["title", "title_first_light"],
+    ["badge", "badge_daily_emblem"],
+    ["avatar", "avatar_chestbound_adept"],
+    ["cardBack", "cardback_daily_element_chest"]
+  ]);
+
+  assertDailyStatusAdapterMatchesCurrent(profile);
+});
+
+test("event chest Daily status adapter: full ownership matches current completed status shape", () => {
+  assertDailyStatusAdapterMatchesCurrent(addDailyChestPoolOwnership(buildDailyChestCompletionProfile()));
+});
+
+test("event chest Daily status adapter: existing and capped pity progress match current status shape", () => {
+  assertDailyStatusAdapterMatchesCurrent(buildDailyChestCompletionProfile({
+    dailyElementChest: {
+      lastFreeOpenDateKey: null,
+      totalOpens: 19,
+      paidOpens: 13,
+      freeOpens: 6,
+      pity: {
+        opensSinceEpicPlus: 8,
+        opensSinceLegendary: 21
+      }
+    }
+  }));
+  assertDailyStatusAdapterMatchesCurrent(buildDailyChestCompletionProfile({
+    dailyElementChest: {
+      lastFreeOpenDateKey: null,
+      totalOpens: 120,
+      paidOpens: 80,
+      freeOpens: 40,
+      pity: {
+        opensSinceEpicPlus: 22,
+        opensSinceLegendary: 44
+      }
+    }
+  }));
+});
+
+test("event chest Daily status adapter: unrelated cosmetics are ignored like current status", () => {
+  assertDailyStatusAdapterMatchesCurrent(buildDailyChestCompletionProfile({
+    ownedCosmetics: {
+      avatar: ["default_avatar", "avatar_fire_mage"],
+      background: ["default_background", "forest_glade_background"],
+      cardBack: ["default_card_back", "fire_card_back"],
+      elementCardVariant: ["default_fire_card", "default_water_card", "default_earth_card", "default_wind_card"],
+      badge: ["none", "war_machine"],
+      title: ["Initiate", "Flame Vanguard"]
+    }
+  }));
+});
+
+test("event chest Daily status adapter: returned object mutation does not mutate profile or future calls", () => {
+  const profile = addDailyChestPoolOwnership(buildDailyChestCompletionProfile(), [
+    ["title", "title_first_light"]
+  ]);
+  const beforeProfile = structuredClone(profile);
+  const first = getDailyElementChestStatusFromEventProjection(profile, { nowMs: DAILY_CHEST_STATUS_PARITY_NOW });
+  first.dailyElementChest.pity.opensSinceEpicPlus = 99;
+  first.pity.opensSinceLegendary = 99;
+  first.odds.common = 0;
+  first.poolSummary.common[0].cosmeticId = "mutated";
+  first.collectionProgress.items.common[0].owned = false;
+
+  assert.deepEqual(profile, beforeProfile);
+  assert.deepEqual(
+    getDailyElementChestStatusFromEventProjection(profile, { nowMs: DAILY_CHEST_STATUS_PARITY_NOW }),
+    getDailyElementChestStatus(profile, DAILY_CHEST_STATUS_PARITY_NOW)
+  );
 });
