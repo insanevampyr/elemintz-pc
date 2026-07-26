@@ -68,10 +68,7 @@ import {
   getDailyChallengesView,
   getDailyResetWindow
 } from "./dailyChallengesSystem.js";
-import {
-  getDailyElementChestStatus,
-  openDailyElementChest
-} from "./dailyElementChestSystem.js";
+import { openDailyElementChest } from "./dailyElementChestSystem.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfileProgress.js";
 import {
@@ -3902,7 +3899,7 @@ export class StateCoordinator {
       ...openResult,
       profile,
       dailyElementChest: profile.dailyElementChest,
-      status: getDailyElementChestStatus(profile, nowMs)
+      status: getDailyElementChestStatusFromEventProjection(profile, { nowMs })
     };
   }
 

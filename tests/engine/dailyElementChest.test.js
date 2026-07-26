@@ -419,6 +419,11 @@ test("daily chest: free open is available once per reset window and second free 
   assert.equal(firstOpen.openType, "free");
   assert.equal(firstOpen.dailyElementChest.freeOpens, 1);
   assert.equal(firstOpen.dailyElementChest.totalOpens, 1);
+  assert.deepEqual(
+    firstOpen.status,
+    getDailyElementChestStatusFromEventProjection(firstOpen.profile, { nowMs })
+  );
+  assert.deepEqual(firstOpen.status, getDailyElementChestStatus(firstOpen.profile, nowMs));
   assert.equal(statusAfter.canOpenFree, false);
   assertDailyChestMirrorMatches(firstOpen.profile, {
     openType: "free",
@@ -480,6 +485,16 @@ test("daily chest: paid opens cost 100 tokens and reject cleanly when tokens are
   assert.equal(opened.profile.tokens, 50);
   assert.equal(opened.dailyElementChest.paidOpens, 1);
   assert.equal(opened.dailyElementChest.totalOpens, 1);
+  assert.deepEqual(
+    opened.status,
+    getDailyElementChestStatusFromEventProjection(opened.profile, {
+      nowMs: Date.parse("2026-06-06T23:30:00.000Z")
+    })
+  );
+  assert.deepEqual(
+    opened.status,
+    getDailyElementChestStatus(opened.profile, Date.parse("2026-06-06T23:30:00.000Z"))
+  );
   assertDailyChestMirrorMatches(opened.profile, {
     openType: "paid",
     openedAt: "2026-06-06T23:30:00.000Z"
@@ -506,6 +521,64 @@ test("daily chest: paid opens cost 100 tokens and reject cleanly when tokens are
     profileAfterPaidOpen.eventChests[DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]
   );
   assertDailyChestMirrorParity(profileAfterRejectedPaidOpen);
+
+  await fs.rm(dataDir, { recursive: true, force: true });
+});
+
+test("daily chest: post-open status follows updated legacy dailyElementChest over stale eventChests", async () => {
+  const dataDir = await createTempDataDir();
+  const state = new StateCoordinator({
+    dataDir,
+    random: randomSequence([0.99, 0])
+  });
+  const nowMs = Date.parse("2026-06-06T23:30:00.000Z");
+
+  await state.profiles.updateProfile("DailyChestPostOpenLegacyStatusUser", (current) => ({
+    ...current,
+    tokens: 500,
+    dailyElementChest: {
+      lastFreeOpenDateKey: null,
+      totalOpens: 2,
+      paidOpens: 1,
+      freeOpens: 1,
+      pity: {
+        opensSinceEpicPlus: 2,
+        opensSinceLegendary: 2
+      }
+    },
+    eventChests: {
+      [DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID]: eventChestProgressFromDailyElementChest(
+        {
+          lastFreeOpenDateKey: "2026-06-05T23:00:00.000Z",
+          totalOpens: 99,
+          paidOpens: 88,
+          freeOpens: 11,
+          pity: {
+            opensSinceEpicPlus: 9,
+            opensSinceLegendary: 29
+          }
+        },
+        DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+        {
+          openedAt: "2026-06-05T23:30:00.000Z",
+          lastOpenType: "paid"
+        }
+      )
+    }
+  }));
+
+  const opened = await state.openDailyElementChest({
+    username: "DailyChestPostOpenLegacyStatusUser",
+    openType: "paid",
+    nowMs
+  });
+
+  assert.equal(opened.dailyElementChest.totalOpens, 3);
+  assert.equal(opened.dailyElementChest.paidOpens, 2);
+  assert.equal(opened.dailyElementChest.freeOpens, 1);
+  assert.deepEqual(opened.status.dailyElementChest, opened.dailyElementChest);
+  assert.deepEqual(opened.status, getDailyElementChestStatus(opened.profile, nowMs));
+  assertDailyChestMirrorParity(opened.profile);
 
   await fs.rm(dataDir, { recursive: true, force: true });
 });
