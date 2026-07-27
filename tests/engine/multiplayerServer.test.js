@@ -44,6 +44,7 @@ import {
   EVENT_CHEST_REGISTRY_FILENAME,
   EventChestRegistryStore
 } from "../../src/state/eventChestRegistryStore.js";
+import { EVENT_CHEST_DRAFT_STORE_FILENAME } from "../../src/state/eventChestDraftStore.js";
 import { DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET } from "../../src/state/eventChestDefinitions.js";
 import { StorePurchaseLedgerStore } from "../../src/state/storePurchaseLedgerStore.js";
 import { SpecialCosmeticRegistryStore } from "../../src/state/specialCosmeticRegistryStore.js";
@@ -4144,6 +4145,200 @@ test("multiplayer foundation: admin Event Chest registry route is read-only and 
       fs.access(path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME)),
       /ENOENT/
     );
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin Event Chest draft routes are admin-only and draft-store scoped", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    eventChestRegistryStore: new EventChestRegistryStore({
+      dataDir,
+      now: () => "2026-07-26T12:00:00.000Z",
+      logger: { warn: () => {} }
+    })
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let unauthenticatedClient = null;
+
+  try {
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "regular@example.com",
+      password: "PlayerPass123",
+      username: "RegularUser"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(playerLogin?.ok, true);
+
+    const draftRoutes = [
+      ["admin:listEventChestDrafts", {}],
+      ["admin:getEventChestDraft", { draftId: "draft_daily" }],
+      ["admin:validateEventChestDraft", { definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET }],
+      [
+        "admin:saveEventChestDraft",
+        {
+          draftId: "draft_daily",
+          metadata: { draftRevisionId: "draft_revision_1" },
+          definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET
+        }
+      ]
+    ];
+    for (const [routeName, payload] of draftRoutes) {
+      const unauthenticated = await emitWithAck(unauthenticatedClient, routeName, payload);
+      assert.equal(unauthenticated?.ok, false, `${routeName} should reject unauthenticated calls`);
+      assert.ok(["SESSION_REQUIRED", "ADMIN_AUTH_REQUIRED"].includes(unauthenticated?.error?.code));
+
+      const nonAdmin = await emitWithAck(playerClient, routeName, {
+        ...payload,
+        sessionToken: playerLogin?.session?.token
+      });
+      assert.equal(nonAdmin?.ok, false, `${routeName} should reject non-admin calls`);
+      assert.equal(nonAdmin?.error?.code, "ADMIN_ACCESS_DENIED");
+    }
+
+    const validPreview = await emitWithAck(adminClient, "admin:validateEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET
+    });
+    assert.equal(validPreview?.ok, true);
+    assert.equal(validPreview?.result?.validation?.ok, true);
+    assert.equal(validPreview?.result?.normalizedDefinition?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+
+    const invalidPreview = await emitWithAck(adminClient, "admin:validateEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      definition: {
+        ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        chestId: ""
+      }
+    });
+    assert.equal(invalidPreview?.ok, true);
+    assert.equal(invalidPreview?.result?.validation?.ok, false);
+    assert.equal(invalidPreview?.result?.normalizedDefinition, null);
+    const privatePreview = await emitWithAck(adminClient, "admin:validateEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      definition: {
+        ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        eventChests: {}
+      }
+    });
+    assert.equal(privatePreview?.ok, true);
+    assert.equal(privatePreview?.result?.validation?.ok, false);
+    assert.equal(privatePreview?.result?.normalizedDefinition, null);
+    await assert.rejects(
+      fs.access(path.join(dataDir, "server-data", EVENT_CHEST_DRAFT_STORE_FILENAME)),
+      /ENOENT/
+    );
+
+    const profileBeforeSave = await coordinator.profiles.getProfile("RegularUser");
+    const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+    const save = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      metadata: {
+        draftRevisionId: "draft_revision_1",
+        status: "draft"
+      },
+      definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET
+    });
+    assert.equal(save?.ok, true);
+    assert.equal(save?.result?.draft?.draftId, "draft_daily");
+    assert.equal(save?.result?.draft?.definition?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(save?.result?.draft?.createdBy, "VampyrLee");
+    assert.equal(save?.result?.draft?.updatedBy, "VampyrLee");
+
+    const list = await emitWithAck(adminClient, "admin:listEventChestDrafts", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(list?.ok, true);
+    assert.equal(list?.result?.drafts?.length, 1);
+    assert.equal(list?.result?.drafts?.[0]?.draftId, "draft_daily");
+    assert.equal(list?.result?.drafts?.[0]?.title, DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.title);
+    assert.equal(Object.prototype.hasOwnProperty.call(list?.result?.drafts?.[0] ?? {}, "definition"), false);
+
+    const get = await emitWithAck(adminClient, "admin:getEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily"
+    });
+    assert.equal(get?.ok, true);
+    assert.equal(get?.result?.draft?.draftId, "draft_daily");
+    assert.equal(get?.result?.draft?.definition?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+
+    const validateStored = await emitWithAck(adminClient, "admin:validateEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily"
+    });
+    assert.equal(validateStored?.ok, true);
+    assert.equal(validateStored?.result?.validation?.ok, true);
+
+    const privateSave = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "private_draft",
+      metadata: { draftRevisionId: "draft_revision_private" },
+      definition: {
+        ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        ownedCosmetics: { avatar: ["default_avatar"] }
+      }
+    });
+    assert.equal(privateSave?.ok, false);
+    assert.equal(privateSave?.error?.code, "EVENT_CHEST_DRAFT_SAVE_FAILED");
+
+    const profileAfterSave = await coordinator.profiles.getProfile("RegularUser");
+    assert.deepEqual(profileAfterSave, profileBeforeSave);
+    await assert.rejects(fs.access(registryPath), /ENOENT/);
+
+    const registryRead = await emitWithAck(adminClient, "admin:getEventChestRegistry", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(registryRead?.ok, true);
+    assert.equal(registryRead?.result?.ok, true);
+
+    const serializedResponses = JSON.stringify({ list, get, validPreview, validateStored });
+    assert.equal(serializedResponses.includes("ownedCosmetics"), false);
+    assert.equal(serializedResponses.includes('"dailyElementChest":'), false);
+    assert.equal(serializedResponses.includes("eventChests"), false);
+    assert.equal(serializedResponses.includes('"tokens":'), false);
+    assert.equal(serializedResponses.includes("profileKey"), false);
+    assert.equal(serializedResponses.includes("sessionToken"), false);
   } finally {
     adminClient?.disconnect();
     playerClient?.disconnect();

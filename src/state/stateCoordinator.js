@@ -70,6 +70,10 @@ import {
 } from "./dailyChallengesSystem.js";
 import { openDailyElementChest } from "./dailyElementChestSystem.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
+import {
+  EventChestDraftStore,
+  validateEventChestDraftDefinition
+} from "./eventChestDraftStore.js";
 import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfileProgress.js";
 import { EventChestRegistryStore } from "./eventChestRegistryStore.js";
 import {
@@ -1446,6 +1450,8 @@ export class StateCoordinator {
       options.collectionPackStore ?? new CollectionPackStore(options);
     this.eventChestRegistryStore =
       options.eventChestRegistryStore ?? new EventChestRegistryStore(options);
+    this.eventChestDraftStore =
+      options.eventChestDraftStore ?? new EventChestDraftStore(options);
     this.adminGrantStore =
       options.adminGrantStore ?? new AdminGrantStore(options);
     this.uniquePurchaseQueue = Promise.resolve();
@@ -1567,6 +1573,53 @@ export class StateCoordinator {
 
   async getEventChestRegistryForAdmin() {
     return this.eventChestRegistryStore.getEventChestRegistryReadModel();
+  }
+
+  async listEventChestDraftsForAdmin() {
+    return this.eventChestDraftStore.listDraftSummaries();
+  }
+
+  async getEventChestDraftForAdmin(draftId) {
+    const draft = await this.eventChestDraftStore.getDraft(draftId);
+    if (!draft) {
+      throw new Error(`Event Chest draft '${String(draftId ?? "").trim()}' was not found.`);
+    }
+    return draft;
+  }
+
+  async validateEventChestDraftForAdmin({ definition = null, draftId = null } = {}) {
+    if (draftId) {
+      const draft = await this.getEventChestDraftForAdmin(draftId);
+      const validation = validateEventChestDraftDefinition(draft.definition);
+      return {
+        validation,
+        normalizedDefinition: validation.ok ? structuredClone(draft.definition) : null
+      };
+    }
+
+    const validation = validateEventChestDraftDefinition(definition);
+    return {
+      validation,
+      normalizedDefinition: validation.ok ? structuredClone(definition) : null
+    };
+  }
+
+  async saveEventChestDraftForAdmin({ draftId = null, definition = null, metadata = {}, actor = null } = {}) {
+    const safeMetadata =
+      metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {};
+    const now = this.eventChestDraftStore.now();
+    const existing = draftId ? await this.eventChestDraftStore.getDraft(draftId) : null;
+    return this.eventChestDraftStore.saveDraft({
+      ...safeMetadata,
+      draftId: String(draftId ?? safeMetadata.draftId ?? "").trim(),
+      definition,
+      draftRevisionId:
+        safeMetadata.draftRevisionId ??
+        existing?.draftRevisionId ??
+        `draft_revision_${Date.parse(now) || Date.now()}`,
+      createdBy: existing?.createdBy ?? safeMetadata.createdBy ?? actor,
+      updatedBy: actor ?? safeMetadata.updatedBy ?? existing?.updatedBy ?? null
+    });
   }
 
   buildCosmeticsView(profile, specialRecords = []) {

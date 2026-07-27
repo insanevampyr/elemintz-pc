@@ -122,6 +122,15 @@ function assertNoPrivateDraftFields(value) {
 }
 
 export function validateEventChestDraftDefinition(definition) {
+  try {
+    assertNoPrivateDraftFields(definition);
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [String(error?.message ?? "Draft payload contains private player/profile fields.")]
+    };
+  }
+
   const validation = validateEventChestDefinition(definition);
   return {
     ok: validation.ok,
