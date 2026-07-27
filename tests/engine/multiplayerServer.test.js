@@ -44,6 +44,7 @@ import {
   EVENT_CHEST_REGISTRY_FILENAME,
   EventChestRegistryStore
 } from "../../src/state/eventChestRegistryStore.js";
+import { EVENT_CHEST_ACTIVATION_FILENAME } from "../../src/state/eventChestActivationStore.js";
 import { EVENT_CHEST_DRAFT_STORE_FILENAME } from "../../src/state/eventChestDraftStore.js";
 import { DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET } from "../../src/state/eventChestDefinitions.js";
 import { StorePurchaseLedgerStore } from "../../src/state/storePurchaseLedgerStore.js";
@@ -4492,6 +4493,292 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(serializedResponses.includes('"tokens":'), false);
     assert.equal(serializedResponses.includes("profileKey"), false);
     assert.equal(serializedResponses.includes("sessionToken"), false);
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin Event Chest activation routes are admin-only, revision-bound, and idempotent", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    eventChestRegistryStore: new EventChestRegistryStore({
+      dataDir,
+      now: () => "2026-07-27T18:00:00.000Z",
+      logger: { warn: () => {} }
+    })
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let unauthenticatedClient = null;
+
+  const buildPublishedDefinition = (overrides = {}) => ({
+    ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+    chestId: "smoke_event_chest_activation_test",
+    title: "Smoke Event Chest Activation Test",
+    definitionRevisionId: "definition_revision_smoke_activation_1",
+    publishedAt: "2026-07-27T17:55:00.000Z",
+    publishedBy: "VampyrLee",
+    sourceDraftId: "draft_smoke_activation",
+    sourceDraftRevisionId: "draft_revision_smoke_activation_1",
+    ...overrides
+  });
+  const writeRegistry = async (definitions) => {
+    const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+    await fs.mkdir(path.dirname(registryPath), { recursive: true });
+    await fs.writeFile(
+      registryPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          registryId: "elemintz_event_chest_registry",
+          registryRevisionId: "registry_revision_activation_test",
+          publishedAt: "2026-07-27T18:00:00.000Z",
+          publishedBy: "VampyrLee",
+          definitions
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    return registryPath;
+  };
+
+  try {
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "regular@example.com",
+      password: "PlayerPass123",
+      username: "RegularUser"
+    });
+    await coordinator.profiles.ensureProfile("RegularUser");
+    const profileBeforeActivation = await coordinator.profiles.getProfile("RegularUser");
+
+    const registryPath = await writeRegistry([buildPublishedDefinition()]);
+    const activationPath = path.join(dataDir, "server-data", EVENT_CHEST_ACTIVATION_FILENAME);
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(playerLogin?.ok, true);
+
+    for (const [routeName, payload] of [
+      ["admin:getEventChestActivation", {}],
+      [
+        "admin:activateEventChestDefinition",
+        {
+          chestId: "smoke_event_chest_activation_test",
+          definitionRevisionId: "definition_revision_smoke_activation_1"
+        }
+      ],
+      ["admin:endEventChestActivation", {}]
+    ]) {
+      const unauthenticated = await emitWithAck(unauthenticatedClient, routeName, payload);
+      assert.equal(unauthenticated?.ok, false, `${routeName} should reject unauthenticated calls`);
+      assert.ok(["SESSION_REQUIRED", "ADMIN_AUTH_REQUIRED"].includes(unauthenticated?.error?.code));
+
+      const nonAdmin = await emitWithAck(playerClient, routeName, {
+        ...payload,
+        sessionToken: playerLogin?.session?.token
+      });
+      assert.equal(nonAdmin?.ok, false, `${routeName} should reject non-admin calls`);
+      assert.equal(nonAdmin?.error?.code, "ADMIN_ACCESS_DENIED");
+    }
+
+    const initialRead = await emitWithAck(adminClient, "admin:getEventChestActivation", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(initialRead?.ok, true);
+    assert.equal(initialRead?.result?.activation?.status, "inactive");
+    assert.equal(initialRead?.result?.activeChest, null);
+    await assert.rejects(fs.access(activationPath), /ENOENT/);
+
+    const activate = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_test",
+      definitionRevisionId: "definition_revision_smoke_activation_1"
+    });
+    assert.equal(activate?.ok, true);
+    assert.equal(activate?.result?.activationStatus, "activated");
+    assert.equal(activate?.result?.idempotent, false);
+    assert.equal(activate?.result?.activation?.status, "active");
+    assert.equal(activate?.result?.activation?.chestId, "smoke_event_chest_activation_test");
+    assert.equal(activate?.result?.activation?.definitionRevisionId, "definition_revision_smoke_activation_1");
+    assert.ok(activate?.result?.activation?.activationRevisionId);
+    assert.equal(activate?.result?.activation?.activatedBy, "VampyrLee");
+    assert.equal(activate?.result?.activeChest?.title, "Smoke Event Chest Activation Test");
+
+    const serializedActivate = JSON.stringify(activate);
+    assert.equal(serializedActivate.includes('"pool"'), false);
+    assert.equal(serializedActivate.includes('"odds"'), false);
+    assert.equal(serializedActivate.includes('"pity"'), false);
+    assert.equal(serializedActivate.includes("sourceDraftId"), false);
+    assert.equal(serializedActivate.includes("sessionToken"), false);
+    assert.equal(serializedActivate.includes("ownedCosmetics"), false);
+    assert.equal(serializedActivate.includes("eventChests"), false);
+
+    const activationFileAfterActivate = await fs.readFile(activationPath, "utf8");
+    const replay = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_test",
+      definitionRevisionId: "definition_revision_smoke_activation_1"
+    });
+    assert.equal(replay?.ok, true);
+    assert.equal(replay?.result?.activationStatus, "already_active");
+    assert.equal(replay?.result?.idempotent, true);
+    assert.equal(replay?.result?.alreadyActive, true);
+    assert.equal(
+      replay?.result?.activation?.activationRevisionId,
+      activate?.result?.activation?.activationRevisionId
+    );
+    assert.equal(await fs.readFile(activationPath, "utf8"), activationFileAfterActivate);
+
+    const [concurrentReplayA, concurrentReplayB] = await Promise.all([
+      emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+        sessionToken: adminLogin?.session?.token,
+        chestId: "smoke_event_chest_activation_test",
+        definitionRevisionId: "definition_revision_smoke_activation_1"
+      }),
+      emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+        sessionToken: adminLogin?.session?.token,
+        chestId: "smoke_event_chest_activation_test",
+        definitionRevisionId: "definition_revision_smoke_activation_1"
+      })
+    ]);
+    assert.equal(concurrentReplayA?.ok, true);
+    assert.equal(concurrentReplayB?.ok, true);
+    assert.equal(concurrentReplayA?.result?.activationStatus, "already_active");
+    assert.equal(concurrentReplayB?.result?.activationStatus, "already_active");
+    assert.equal(
+      concurrentReplayA?.result?.activation?.activationRevisionId,
+      activate?.result?.activation?.activationRevisionId
+    );
+    assert.equal(
+      concurrentReplayB?.result?.activation?.activationRevisionId,
+      activate?.result?.activation?.activationRevisionId
+    );
+
+    await writeRegistry([
+      buildPublishedDefinition(),
+      buildPublishedDefinition({
+        chestId: "smoke_event_chest_activation_switch",
+        title: "Switch Event Chest",
+        definitionRevisionId: "definition_revision_smoke_activation_switch"
+      })
+    ]);
+    const switchActivate = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(switchActivate?.ok, true);
+    assert.equal(switchActivate?.result?.activationStatus, "activated");
+    assert.notEqual(
+      switchActivate?.result?.activation?.activationRevisionId,
+      activate?.result?.activation?.activationRevisionId
+    );
+    assert.equal(switchActivate?.result?.activation?.chestId, "smoke_event_chest_activation_switch");
+    const activationFileBeforeFailures = await fs.readFile(activationPath, "utf8");
+
+    const unknownChest = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "missing_event_chest",
+      definitionRevisionId: "definition_revision_missing"
+    });
+    assert.equal(unknownChest?.ok, false);
+    assert.equal(unknownChest?.error?.code, "EVENT_CHEST_DEFINITION_NOT_FOUND");
+    assert.equal(await fs.readFile(activationPath, "utf8"), activationFileBeforeFailures);
+
+    const unknownRevision = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_missing"
+    });
+    assert.equal(unknownRevision?.ok, false);
+    assert.equal(unknownRevision?.error?.code, "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND");
+    assert.equal(await fs.readFile(activationPath, "utf8"), activationFileBeforeFailures);
+
+    await fs.rm(registryPath, { force: true });
+    const missingRegistry = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      definitionRevisionId: "any_revision"
+    });
+    assert.equal(missingRegistry?.ok, false);
+    assert.equal(missingRegistry?.error?.code, "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE");
+    assert.equal(await fs.readFile(activationPath, "utf8"), activationFileBeforeFailures);
+
+    await fs.writeFile(registryPath, "{ nope", "utf8");
+    const malformedRegistry = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(malformedRegistry?.ok, false);
+    assert.equal(malformedRegistry?.error?.code, "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE");
+    assert.equal(await fs.readFile(activationPath, "utf8"), activationFileBeforeFailures);
+
+    const beforeEndRevisionId = switchActivate?.result?.activation?.activationRevisionId;
+    const end = await emitWithAck(adminClient, "admin:endEventChestActivation", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(end?.ok, true);
+    assert.equal(end?.result?.activationStatus, "ended");
+    assert.equal(end?.result?.idempotent, false);
+    assert.equal(end?.result?.activation?.status, "inactive");
+    assert.notEqual(end?.result?.activation?.activationRevisionId, beforeEndRevisionId);
+    assert.equal(end?.result?.activation?.endedBy, "VampyrLee");
+    const activationFileAfterEnd = await fs.readFile(activationPath, "utf8");
+
+    const repeatedEnd = await emitWithAck(adminClient, "admin:endEventChestActivation", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(repeatedEnd?.ok, true);
+    assert.equal(repeatedEnd?.result?.activationStatus, "already_inactive");
+    assert.equal(repeatedEnd?.result?.idempotent, true);
+    assert.equal(repeatedEnd?.result?.alreadyInactive, true);
+    assert.equal(
+      repeatedEnd?.result?.activation?.activationRevisionId,
+      end?.result?.activation?.activationRevisionId
+    );
+    assert.equal(await fs.readFile(activationPath, "utf8"), activationFileAfterEnd);
+
+    const profileAfterActivation = await coordinator.profiles.getProfile("RegularUser");
+    assert.deepEqual(profileAfterActivation, profileBeforeActivation);
   } finally {
     adminClient?.disconnect();
     playerClient?.disconnect();

@@ -76,6 +76,7 @@ import {
   validateEventChestDraftDefinition
 } from "./eventChestDraftStore.js";
 import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfileProgress.js";
+import { EventChestActivationStore } from "./eventChestActivationStore.js";
 import { EventChestRegistryStore } from "./eventChestRegistryStore.js";
 import {
   applyLevelRewardsForLevelChange,
@@ -1453,6 +1454,8 @@ export class StateCoordinator {
       options.eventChestRegistryStore ?? new EventChestRegistryStore(options);
     this.eventChestDraftStore =
       options.eventChestDraftStore ?? new EventChestDraftStore(options);
+    this.eventChestActivationStore =
+      options.eventChestActivationStore ?? new EventChestActivationStore(options);
     this.adminGrantStore =
       options.adminGrantStore ?? new AdminGrantStore(options);
     this.uniquePurchaseQueue = Promise.resolve();
@@ -1686,6 +1689,112 @@ export class StateCoordinator {
       registryRevisionId: registry.registry?.registryRevisionId ?? null,
       publishedAt: registry.registry?.publishedAt ?? null
     };
+  }
+
+  buildEventChestActivationReadModel(activation, definition = null, extra = {}) {
+    const safeDefinition =
+      definition && typeof definition === "object" && !Array.isArray(definition)
+        ? {
+            chestId: definition.chestId ?? null,
+            definitionRevisionId: definition.definitionRevisionId ?? null,
+            title: definition.title ?? null,
+            subtitle: definition.subtitle ?? null,
+            description: definition.description ?? null,
+            modalTitle: definition.modalTitle ?? null,
+            icons: definition.icons ? structuredClone(definition.icons) : null
+          }
+        : null;
+
+    return {
+      activation: activation ? structuredClone(activation) : null,
+      activeChest: safeDefinition,
+      warnings: Array.isArray(extra.warnings) ? [...extra.warnings] : [],
+      activationStatus: extra.activationStatus ?? null,
+      idempotent: Boolean(extra.idempotent),
+      alreadyActive: Boolean(extra.alreadyActive),
+      alreadyInactive: Boolean(extra.alreadyInactive)
+    };
+  }
+
+  async getPublishedEventChestDefinitionForActivation({ chestId, definitionRevisionId }) {
+    const safeChestId = String(chestId ?? "").trim();
+    const safeDefinitionRevisionId = String(definitionRevisionId ?? "").trim();
+    if (!safeChestId || !safeDefinitionRevisionId) {
+      throw Object.assign(new Error("chestId and definitionRevisionId are required."), {
+        code: "EVENT_CHEST_ACTIVATION_INVALID_REQUEST"
+      });
+    }
+
+    const registry = await this.eventChestRegistryStore.getPublishedEventChestRegistry();
+    if (!registry?.ok || registry.source !== "file") {
+      throw Object.assign(new Error("Published Event Chest registry is unavailable or invalid."), {
+        code: "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE"
+      });
+    }
+
+    const definitions = Array.isArray(registry.definitions) ? registry.definitions : [];
+    const sameChestDefinitions = definitions.filter((definition) => definition?.chestId === safeChestId);
+    if (sameChestDefinitions.length === 0) {
+      throw Object.assign(new Error(`Event Chest definition '${safeChestId}' was not found.`), {
+        code: "EVENT_CHEST_DEFINITION_NOT_FOUND"
+      });
+    }
+
+    const definition =
+      sameChestDefinitions.find(
+        (entry) => String(entry?.definitionRevisionId ?? "").trim() === safeDefinitionRevisionId
+      ) ?? null;
+    if (!definition) {
+      throw Object.assign(
+        new Error(`Event Chest definition revision '${safeDefinitionRevisionId}' was not found.`),
+        { code: "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND" }
+      );
+    }
+
+    if (!String(definition?.publishedAt ?? "").trim()) {
+      throw Object.assign(new Error("Event Chest definition revision is not publish-complete."), {
+        code: "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND"
+      });
+    }
+
+    return structuredClone(definition);
+  }
+
+  async getEventChestActivationForAdmin() {
+    const activation = await this.eventChestActivationStore.readActivation();
+    let definition = null;
+    const warnings = [];
+    if (activation?.status === "active") {
+      try {
+        definition = await this.getPublishedEventChestDefinitionForActivation({
+          chestId: activation.chestId,
+          definitionRevisionId: activation.definitionRevisionId
+        });
+      } catch (error) {
+        warnings.push(String(error?.message ?? "Active Event Chest definition could not be resolved."));
+      }
+    }
+
+    return this.buildEventChestActivationReadModel(activation, definition, { warnings });
+  }
+
+  async activateEventChestDefinitionForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    const definition = await this.getPublishedEventChestDefinitionForActivation({
+      chestId,
+      definitionRevisionId
+    });
+    const result = await this.eventChestActivationStore.activate({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor
+    });
+
+    return this.buildEventChestActivationReadModel(result.activation, definition, result);
+  }
+
+  async endEventChestActivationForAdmin({ actor = null } = {}) {
+    const result = await this.eventChestActivationStore.end({ actor });
+    return this.buildEventChestActivationReadModel(result.activation, null, result);
   }
 
   buildCosmeticsView(profile, specialRecords = []) {

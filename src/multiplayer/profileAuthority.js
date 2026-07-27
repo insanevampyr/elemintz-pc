@@ -1178,6 +1178,27 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.publishEventChestDraftForAdmin({ draftId, expectedDraftRevisionId, actor });
   }
 
+  async getEventChestActivationForAdmin() {
+    this.logger.info?.("[ProfileAuthority] getEventChestActivationForAdmin");
+    return this.coordinator.getEventChestActivationForAdmin();
+  }
+
+  async activateEventChestDefinitionForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] activateEventChestDefinitionForAdmin -> ${String(chestId ?? "")}:${String(definitionRevisionId ?? "")}`
+    );
+    return this.coordinator.activateEventChestDefinitionForAdmin({
+      chestId,
+      definitionRevisionId,
+      actor
+    });
+  }
+
+  async endEventChestActivationForAdmin({ actor = null } = {}) {
+    this.logger.info?.("[ProfileAuthority] endEventChestActivationForAdmin");
+    return this.coordinator.endEventChestActivationForAdmin({ actor });
+  }
+
   async openChest({ username, chestType }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

@@ -4254,6 +4254,84 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:getEventChestActivation", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.getEventChestActivationForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest activation authority is not available."), {
+            code: "EVENT_CHEST_ACTIVATION_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.getEventChestActivationForAdmin();
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_ACTIVATION_READ_FAILED"));
+      }
+    });
+
+    socket.on("admin:activateEventChestDefinition", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.activateEventChestDefinitionForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest activation authority is not available."), {
+            code: "EVENT_CHEST_ACTIVATION_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.activateEventChestDefinitionForAdmin({
+          chestId: payload?.chestId,
+          definitionRevisionId: payload?.definitionRevisionId,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_ACTIVATION_FAILED"));
+      }
+    });
+
+    socket.on("admin:endEventChestActivation", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.endEventChestActivationForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest activation authority is not available."), {
+            code: "EVENT_CHEST_ACTIVATION_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.endEventChestActivationForAdmin({
+          actor: adminAccess.adminIdentifier
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_ACTIVATION_FAILED"));
+      }
+    });
+
     socket.on("admin:getCollectionPack", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);
