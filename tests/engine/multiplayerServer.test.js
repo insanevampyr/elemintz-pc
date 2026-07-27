@@ -4412,12 +4412,59 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(publish?.result?.publishedChest?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
     assert.equal(publish?.result?.publishedChest?.publishedBy, "VampyrLee");
     assert.equal(publish?.result?.source, "file");
+    assert.equal(publish?.result?.publicationStatus, "published");
+    assert.equal(publish?.result?.idempotent, false);
+    assert.equal(publish?.result?.alreadyPublished, false);
+    assert.equal(publish?.result?.publishedDefinition?.sourceDraftId, "draft_daily");
+    assert.equal(publish?.result?.publishedDefinition?.sourceDraftRevisionId, "draft_revision_1");
     assert.ok(publish?.result?.registryRevisionId);
     assert.ok(publish?.result?.publishedAt);
 
     const registryFile = JSON.parse(await fs.readFile(registryPath, "utf8"));
     assert.equal(registryFile.definitions.length, 1);
     assert.equal(registryFile.definitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(registryFile.definitions[0].sourceDraftId, "draft_daily");
+    assert.equal(registryFile.definitions[0].sourceDraftRevisionId, "draft_revision_1");
+
+    const firstRegistryRevisionId = publish?.result?.registryRevisionId;
+    const firstDefinitionRevisionId = publish?.result?.publishedChest?.definitionRevisionId;
+    const serializedRegistryAfterFirstPublish = await fs.readFile(registryPath, "utf8");
+    const replayPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: "draft_revision_1"
+    });
+    assert.equal(replayPublish?.ok, true);
+    assert.equal(replayPublish?.result?.publicationStatus, "already_published");
+    assert.equal(replayPublish?.result?.idempotent, true);
+    assert.equal(replayPublish?.result?.alreadyPublished, true);
+    assert.equal(replayPublish?.result?.registryRevisionId, firstRegistryRevisionId);
+    assert.equal(replayPublish?.result?.publishedChest?.definitionRevisionId, firstDefinitionRevisionId);
+    assert.equal(await fs.readFile(registryPath, "utf8"), serializedRegistryAfterFirstPublish);
+
+    const [concurrentReplayA, concurrentReplayB] = await Promise.all([
+      emitWithAck(adminClient, "admin:publishEventChestDraft", {
+        sessionToken: adminLogin?.session?.token,
+        draftId: "draft_daily",
+        expectedDraftRevisionId: "draft_revision_1"
+      }),
+      emitWithAck(adminClient, "admin:publishEventChestDraft", {
+        sessionToken: adminLogin?.session?.token,
+        draftId: "draft_daily",
+        expectedDraftRevisionId: "draft_revision_1"
+      })
+    ]);
+    for (const replay of [concurrentReplayA, concurrentReplayB]) {
+      assert.equal(replay?.ok, true);
+      assert.equal(replay?.result?.publicationStatus, "already_published");
+      assert.equal(replay?.result?.idempotent, true);
+      assert.equal(replay?.result?.registryRevisionId, firstRegistryRevisionId);
+      assert.equal(replay?.result?.publishedChest?.definitionRevisionId, firstDefinitionRevisionId);
+    }
+    const registryFileAfterReplay = JSON.parse(await fs.readFile(registryPath, "utf8"));
+    assert.equal(registryFileAfterReplay.definitions.length, 1);
+    assert.equal(registryFileAfterReplay.registryRevisionId, firstRegistryRevisionId);
+    assert.equal(registryFileAfterReplay.definitions[0].definitionRevisionId, firstDefinitionRevisionId);
 
     const profileAfterPublish = await coordinator.profiles.getProfile("RegularUser");
     assert.deepEqual(profileAfterPublish, profileBeforeSave);
@@ -4430,7 +4477,15 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(registryRead?.result?.source, "file");
     assert.equal(registryRead?.result?.registry?.publishedBy, "VampyrLee");
 
-    const serializedResponses = JSON.stringify({ rewardCatalog, list, get, validPreview, validateStored, publish });
+    const serializedResponses = JSON.stringify({
+      rewardCatalog,
+      list,
+      get,
+      validPreview,
+      validateStored,
+      publish,
+      replayPublish
+    });
     assert.equal(serializedResponses.includes("ownedCosmetics"), false);
     assert.equal(serializedResponses.includes('"dailyElementChest":'), false);
     assert.equal(serializedResponses.includes("eventChests"), false);

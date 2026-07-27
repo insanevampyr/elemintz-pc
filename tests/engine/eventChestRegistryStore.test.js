@@ -118,6 +118,183 @@ test("event chest registry writer: valid existing registry replaces matching che
   }
 });
 
+test("event chest registry writer: exact draft revision replay is idempotent without rewriting", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    let tick = 0;
+    const store = new EventChestRegistryStore({
+      dataDir,
+      now: () => `2026-07-26T12:30:0${tick++}.000Z`,
+      logger: { warn: () => {} }
+    });
+
+    const first = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "Replay Safe Daily Chest" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_daily",
+      sourceDraftRevisionId: "draft_revision_1"
+    });
+    const writtenAfterFirst = await fs.readFile(
+      path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME),
+      "utf8"
+    );
+    const firstRegistryRevisionId = first.registry.registryRevisionId;
+    const firstDefinitionRevisionId = first.definitions[0].definitionRevisionId;
+
+    const replay = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "Replay Safe Daily Chest" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_daily",
+      sourceDraftRevisionId: "draft_revision_1"
+    });
+    const writtenAfterReplay = await fs.readFile(
+      path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME),
+      "utf8"
+    );
+
+    assert.equal(first.publicationStatus, "published");
+    assert.equal(first.idempotent, false);
+    assert.equal(replay.publicationStatus, "already_published");
+    assert.equal(replay.idempotent, true);
+    assert.equal(replay.alreadyPublished, true);
+    assert.equal(replay.registry.registryRevisionId, firstRegistryRevisionId);
+    assert.equal(replay.definitions[0].definitionRevisionId, firstDefinitionRevisionId);
+    assert.equal(writtenAfterReplay, writtenAfterFirst);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry writer: concurrent exact draft revision replay publishes once", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    let tick = 0;
+    const store = new EventChestRegistryStore({
+      dataDir,
+      now: () => `2026-07-26T12:31:0${tick++}.000Z`,
+      logger: { warn: () => {} }
+    });
+
+    const [left, right] = await Promise.all([
+      store.publishEventChestDraftDefinition({
+        definition: cloneDailyDefinition({ title: "Concurrent Replay Daily Chest" }),
+        actor: "VampyrLee",
+        sourceDraftId: "draft_daily",
+        sourceDraftRevisionId: "draft_revision_1"
+      }),
+      store.publishEventChestDraftDefinition({
+        definition: cloneDailyDefinition({ title: "Concurrent Replay Daily Chest" }),
+        actor: "VampyrLee",
+        sourceDraftId: "draft_daily",
+        sourceDraftRevisionId: "draft_revision_1"
+      })
+    ]);
+
+    const published = [left, right].filter((result) => result.publicationStatus === "published");
+    const idempotent = [left, right].filter((result) => result.publicationStatus === "already_published");
+    assert.equal(published.length, 1);
+    assert.equal(idempotent.length, 1);
+    assert.equal(left.registry.registryRevisionId, right.registry.registryRevisionId);
+    assert.equal(left.definitions[0].definitionRevisionId, right.definitions[0].definitionRevisionId);
+
+    const written = await readRegistryFile(dataDir);
+    assert.equal(written.definitions.length, 1);
+    assert.equal(written.definitions[0].sourceDraftId, "draft_daily");
+    assert.equal(written.definitions[0].sourceDraftRevisionId, "draft_revision_1");
+    const serverDataEntries = await fs.readdir(path.join(dataDir, "server-data"));
+    const backups = serverDataEntries.filter(
+      (entry) => entry.startsWith(`${EVENT_CHEST_REGISTRY_FILENAME}.backup-`) && entry.endsWith(".json")
+    );
+    assert.equal(backups.length, 0);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry writer: newer draft revision publishes normally after prior revision", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    let tick = 0;
+    const store = new EventChestRegistryStore({
+      dataDir,
+      now: () => `2026-07-26T12:32:0${tick++}.000Z`,
+      logger: { warn: () => {} }
+    });
+
+    const first = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "Original Draft Revision" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_daily",
+      sourceDraftRevisionId: "draft_revision_1"
+    });
+    const second = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "New Draft Revision" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_daily",
+      sourceDraftRevisionId: "draft_revision_2"
+    });
+
+    assert.equal(second.publicationStatus, "published");
+    assert.notEqual(second.registry.registryRevisionId, first.registry.registryRevisionId);
+    assert.notEqual(second.definitions[0].definitionRevisionId, first.definitions[0].definitionRevisionId);
+    assert.equal(second.definitions[0].title, "New Draft Revision");
+    assert.equal(second.definitions[0].sourceDraftRevisionId, "draft_revision_2");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry writer: different draft and chest identities are independent", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    let tick = 0;
+    const store = new EventChestRegistryStore({
+      dataDir,
+      now: () => `2026-07-26T12:33:0${tick++}.000Z`,
+      logger: { warn: () => {} }
+    });
+
+    const first = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "Draft One" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_one",
+      sourceDraftRevisionId: "draft_revision_1"
+    });
+    const differentDraft = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "Draft Two Same Chest" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_two",
+      sourceDraftRevisionId: "draft_revision_1"
+    });
+    const differentChest = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({
+        chestId: "daily_elemintz_chest_bonus",
+        title: "Draft Three Different Chest"
+      }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_three",
+      sourceDraftRevisionId: "draft_revision_1"
+    });
+
+    assert.equal(first.publicationStatus, "published");
+    assert.equal(differentDraft.publicationStatus, "published");
+    assert.equal(differentChest.publicationStatus, "published");
+    assert.notEqual(differentDraft.registry.registryRevisionId, first.registry.registryRevisionId);
+    assert.notEqual(differentChest.registry.registryRevisionId, differentDraft.registry.registryRevisionId);
+    assert.equal(differentChest.definitions.length, 2);
+    assert.equal(
+      differentChest.definitions.filter((definition) => definition.chestId === DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID).length,
+      1
+    );
+    assert.equal(
+      differentChest.definitions.filter((definition) => definition.chestId === "daily_elemintz_chest_bonus").length,
+      1
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("event chest registry writer: invalid draft does not write registry", async () => {
   const dataDir = await createTempDataDir();
   try {

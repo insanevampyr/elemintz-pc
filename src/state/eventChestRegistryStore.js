@@ -53,7 +53,10 @@ function buildRevisionId(prefix, timestamp) {
   return `${prefix}_${safeTimestamp || Date.now()}`;
 }
 
-function sanitizeRegistryDefinitionForPublish(definition, { now, actor = null } = {}) {
+function sanitizeRegistryDefinitionForPublish(
+  definition,
+  { now, actor = null, sourceDraftId = null, sourceDraftRevisionId = null } = {}
+) {
   const publishedAt = normalizeTimestamp(now, "publishedAt");
   const safeActor = normalizeOptionalText(actor);
   const safeDefinition = clone(definition);
@@ -67,8 +70,22 @@ function sanitizeRegistryDefinitionForPublish(definition, { now, actor = null } 
     definitionRevisionId: revisionId,
     publishedAt,
     publishedBy: safeActor,
+    sourceDraftId: normalizeOptionalText(sourceDraftId),
+    sourceDraftRevisionId: normalizeOptionalText(sourceDraftRevisionId),
     updatedAt: publishedAt,
     updatedBy: safeActor
+  };
+}
+
+function buildRegistryReadModelFromDocument(registry, { source = "file", warnings = [], errors = [] } = {}) {
+  return {
+    ok: errors.length === 0,
+    source,
+    readAt: new Date().toISOString(),
+    registry: clone(registry),
+    definitions: clone(registry?.definitions ?? []),
+    warnings: [...warnings],
+    errors: [...errors]
   };
 }
 
@@ -262,7 +279,12 @@ export class EventChestRegistryStore {
     return clone((registry.definitions ?? []).find((definition) => definition.chestId === safeChestId) ?? null);
   }
 
-  async publishEventChestDraftDefinition({ definition, actor = null } = {}) {
+  async publishEventChestDraftDefinition({
+    definition,
+    actor = null,
+    sourceDraftId = null,
+    sourceDraftRevisionId = null
+  } = {}) {
     return this.runMutation(async () => {
       const draftValidation = validateEventChestDefinition(definition);
       if (!draftValidation.ok) {
@@ -285,11 +307,32 @@ export class EventChestRegistryStore {
         seenChestIds.add(chestId);
       }
 
+      const safeSourceDraftId = normalizeOptionalText(sourceDraftId);
+      const safeSourceDraftRevisionId = normalizeOptionalText(sourceDraftRevisionId);
+      const chestId = String(definition?.chestId ?? "").trim();
+      const existingPublishedDefinition =
+        existingDefinitions.find((existingDefinition) => existingDefinition.chestId === chestId) ?? null;
+      if (
+        existingPublishedDefinition &&
+        safeSourceDraftId &&
+        safeSourceDraftRevisionId &&
+        existingPublishedDefinition.sourceDraftId === safeSourceDraftId &&
+        existingPublishedDefinition.sourceDraftRevisionId === safeSourceDraftRevisionId
+      ) {
+        return {
+          ...buildRegistryReadModelFromDocument(baseRegistry),
+          publicationStatus: "already_published",
+          idempotent: true,
+          alreadyPublished: true
+        };
+      }
+
       const publishedDefinition = sanitizeRegistryDefinitionForPublish(definition, {
         now: publishedAt,
-        actor
+        actor,
+        sourceDraftId: safeSourceDraftId,
+        sourceDraftRevisionId: safeSourceDraftRevisionId
       });
-      const chestId = String(publishedDefinition.chestId ?? "").trim();
       const replaced = [];
       let didReplace = false;
       for (const existingDefinition of existingDefinitions) {
@@ -323,7 +366,12 @@ export class EventChestRegistryStore {
       if (!reread.ok) {
         throw new Error(`Published Event Chest registry failed re-read validation: ${(reread.errors ?? []).join("; ")}`);
       }
-      return reread;
+      return {
+        ...reread,
+        publicationStatus: "published",
+        idempotent: false,
+        alreadyPublished: false
+      };
     });
   }
 }

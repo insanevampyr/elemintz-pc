@@ -28,35 +28,31 @@ const ROADMAP_SECTIONS = [
     items: [
       {
         title: "More Gauntlet Rivals",
-        description: "New rivals, streak goals, and special Gauntlet rewards."
+        description: "New rivals, streak goals, themed arenas, taunts, and special rewards."
       },
       {
-        title: "Collection Albums",
-        description: "Track themed cosmetic sets and earn completion rewards."
+        title: "Event Chests",
+        description: "Limited-time reward chests with themed cosmetics and special pools."
       },
       {
         title: "Alpha Season Track",
-        description: "Play matches and complete missions to unlock seasonal rewards."
+        description: "Complete missions and matches to unlock seasonal rewards."
       },
       {
-        title: "Blood Moon Mode",
-        description: "A future Vampire vs Lycan vs Player chaos mode."
-      },
-      {
-        title: "Friends List",
-        description: "Add friends from matches or searched profiles."
+        title: "Friends List + Invite to Match",
+        description: "Add friends from matches or searched profiles, then invite them directly from your Friends List."
       },
       {
         title: "More Achievements",
-        description: "New long-term goals for Gauntlet, Online Play, cosmetics, and Featured Rivals."
+        description: "New goals for Gauntlet, Online Play, Featured Rivals, and cosmetics."
       },
       {
-        title: "Limited-Time Events",
-        description: "Temporary reward tracks, special cosmetics, and themed challenges."
+        title: "More Gauntlet Events",
+        description: "Special Gauntlet runs with event rivals, unique rules, and completion rewards."
       },
       {
-        title: "More Affordable Cosmetics",
-        description: "More Common and Rare avatars, titles, card backs, and variants."
+        title: "Password Recovery",
+        description: "Reset forgotten passwords through verified email."
       }
     ]
   }

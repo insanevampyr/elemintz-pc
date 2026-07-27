@@ -17134,21 +17134,24 @@ test("ui: roadmap screen renders the static player-facing roadmap content", () =
   assert.match(html, /These are planned ideas and active development goals\. They are not listed in release order, and some may change as EleMintz grows\./);
   assert.match(html, />PLANNED IDEAS</);
   assert.match(html, /More Gauntlet Rivals/);
-  assert.match(html, /New rivals, streak goals, and special Gauntlet rewards\./);
-  assert.match(html, /Collection Albums/);
-  assert.match(html, /Track themed cosmetic sets and earn completion rewards\./);
+  assert.match(html, /New rivals, streak goals, themed arenas, taunts, and special rewards\./);
+  assert.match(html, /Event Chests/);
+  assert.match(html, /Limited-time reward chests with themed cosmetics and special pools\./);
   assert.match(html, /Alpha Season Track/);
-  assert.match(html, /Play matches and complete missions to unlock seasonal rewards\./);
-  assert.match(html, /Blood Moon Mode/);
-  assert.match(html, /A future Vampire vs Lycan vs Player chaos mode\./);
-  assert.match(html, /Friends List/);
-  assert.match(html, /Add friends from matches or searched profiles\./);
+  assert.match(html, /Complete missions and matches to unlock seasonal rewards\./);
+  assert.match(html, /Friends List \+ Invite to Match/);
+  assert.match(html, /Add friends from matches or searched profiles, then invite them directly from your Friends List\./);
   assert.match(html, /More Achievements/);
-  assert.match(html, /New long-term goals for Gauntlet, Online Play, cosmetics, and Featured Rivals\./);
-  assert.match(html, /Limited-Time Events/);
-  assert.match(html, /Temporary reward tracks, special cosmetics, and themed challenges\./);
-  assert.match(html, /More Affordable Cosmetics/);
-  assert.match(html, /More Common and Rare avatars, titles, card backs, and variants\./);
+  assert.match(html, /New goals for Gauntlet, Online Play, Featured Rivals, and cosmetics\./);
+  assert.match(html, /More Gauntlet Events/);
+  assert.match(html, /Special Gauntlet runs with event rivals, unique rules, and completion rewards\./);
+  assert.match(html, /Password Recovery/);
+  assert.match(html, /Reset forgotten passwords through verified email\./);
+  assert.doesNotMatch(html, /Collection Albums/);
+  assert.doesNotMatch(html, /Blood Moon Mode/);
+  assert.doesNotMatch(html, /More Affordable Cosmetics/);
+  assert.doesNotMatch(html, /Reward Reveal Polish/);
+  assert.doesNotMatch(html, /Limited-Time Events/);
 });
 
 test("ui: roadmap screen back button binds to the provided action", () => {

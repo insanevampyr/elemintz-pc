@@ -1659,7 +1659,9 @@ export class StateCoordinator {
 
     const registry = await this.eventChestRegistryStore.publishEventChestDraftDefinition({
       definition: draft.definition,
-      actor
+      actor,
+      sourceDraftId: draft.draftId,
+      sourceDraftRevisionId: draft.draftRevisionId
     });
     const publishedDefinition =
       (registry.definitions ?? []).find((definition) => definition.chestId === draft.definition.chestId) ?? null;
@@ -1678,6 +1680,9 @@ export class StateCoordinator {
       warnings: [...(registry.warnings ?? [])],
       errors: [...(registry.errors ?? [])],
       source: registry.source,
+      publicationStatus: registry.publicationStatus ?? "published",
+      idempotent: Boolean(registry.idempotent),
+      alreadyPublished: Boolean(registry.alreadyPublished),
       registryRevisionId: registry.registry?.registryRevisionId ?? null,
       publishedAt: registry.registry?.publishedAt ?? null
     };
