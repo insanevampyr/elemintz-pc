@@ -44,6 +44,7 @@ import {
   EVENT_CHEST_REGISTRY_FILENAME,
   EventChestRegistryStore
 } from "../../src/state/eventChestRegistryStore.js";
+import { DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET } from "../../src/state/eventChestDefinitions.js";
 import { StorePurchaseLedgerStore } from "../../src/state/storePurchaseLedgerStore.js";
 import { SpecialCosmeticRegistryStore } from "../../src/state/specialCosmeticRegistryStore.js";
 import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
@@ -4095,12 +4096,48 @@ test("multiplayer foundation: admin Event Chest registry route is read-only and 
     assert.equal(adminRead?.result?.ok, true);
     assert.equal(adminRead?.result?.source, "fallback_static");
     assert.equal(adminRead?.result?.readAt, "2026-07-26T12:00:00.000Z");
+    assert.ok(adminRead?.result?.registry);
+    assert.ok(Array.isArray(adminRead?.result?.definitions));
+    assert.ok(Array.isArray(adminRead?.result?.warnings));
+    assert.ok(Array.isArray(adminRead?.result?.errors));
     assert.equal(adminRead?.result?.registry?.registryRevisionId, "static_daily_elemintz_chest_default");
     assert.equal(adminRead?.result?.definitions?.length, 1);
-    assert.equal(adminRead?.result?.definitions?.[0]?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    const definition = adminRead?.result?.definitions?.[0];
+    assert.equal(definition?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(definition?.title, DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.title);
+    assert.equal(definition?.paidTokenCost, 100);
+    assert.deepEqual(definition?.odds, {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.01
+    });
+    assert.equal(definition?.pity?.epicPlusThreshold, 10);
+    assert.equal(definition?.pity?.legendaryThreshold, 30);
+    assert.deepEqual(definition?.pity?.epicPlusTable, [
+      { rarity: "epic", weight: 0.875 },
+      { rarity: "legendary", weight: 0.125 }
+    ]);
+    assert.deepEqual(definition?.duplicateTokenRewards, {
+      common: 25,
+      rare: 60,
+      epic: 150,
+      legendary: 400
+    });
+    assert.equal(definition?.freeOpenPolicy?.resetTimeZone, "America/Chicago");
+    assert.equal(definition?.freeOpenPolicy?.resetHour, 18);
+    assert.equal(definition?.hideTileWhenPoolComplete, true);
+    assert.equal(definition?.allowOpensAfterCompleteAsDuplicateConversion, true);
+    assert.equal(definition?.preserveHistoryOnReactivation, true);
     const serializedAdminRead = JSON.stringify(adminRead);
+    assert.equal(serializedAdminRead.includes('"profiles"'), false);
     assert.equal(serializedAdminRead.includes("eventChests"), false);
+    assert.equal(serializedAdminRead.includes('"dailyElementChest":'), false);
     assert.equal(serializedAdminRead.includes("ownedCosmetics"), false);
+    assert.equal(serializedAdminRead.includes('"tokens":'), false);
+    assert.equal(serializedAdminRead.includes("adminSessionToken"), false);
+    assert.equal(serializedAdminRead.includes("sessionToken"), false);
+    assert.equal(serializedAdminRead.includes("password"), false);
     assert.equal(serializedAdminRead.includes("lastFreeOpenDateKey"), false);
     assert.equal(serializedAdminRead.includes("totalOpens"), false);
     await assert.rejects(
