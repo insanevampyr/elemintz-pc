@@ -71,6 +71,7 @@ import {
 import { openDailyElementChest } from "./dailyElementChestSystem.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfileProgress.js";
+import { EventChestRegistryStore } from "./eventChestRegistryStore.js";
 import {
   applyLevelRewardsForLevelChange,
   applyXpWithMaxLevelFallback,
@@ -1443,6 +1444,8 @@ export class StateCoordinator {
       options.storePurchaseLedgerStore ?? new StorePurchaseLedgerStore(options);
     this.collectionPackStore =
       options.collectionPackStore ?? new CollectionPackStore(options);
+    this.eventChestRegistryStore =
+      options.eventChestRegistryStore ?? new EventChestRegistryStore(options);
     this.adminGrantStore =
       options.adminGrantStore ?? new AdminGrantStore(options);
     this.uniquePurchaseQueue = Promise.resolve();
@@ -1560,6 +1563,10 @@ export class StateCoordinator {
 
   async listEligibleCollectionPackCosmeticsForAdmin() {
     return listEligibleCollectionPackCosmetics({ catalog: COSMETIC_CATALOG });
+  }
+
+  async getEventChestRegistryForAdmin() {
+    return this.eventChestRegistryStore.getEventChestRegistryReadModel();
   }
 
   buildCosmeticsView(profile, specialRecords = []) {

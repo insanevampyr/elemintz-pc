@@ -1143,6 +1143,11 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.listEligibleCollectionPackCosmeticsForAdmin();
   }
 
+  async getEventChestRegistryForAdmin() {
+    this.logger.info?.("[ProfileAuthority] getEventChestRegistryForAdmin");
+    return this.coordinator.getEventChestRegistryForAdmin();
+  }
+
   async openChest({ username, chestType }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

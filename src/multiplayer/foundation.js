@@ -4068,6 +4068,30 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:getEventChestRegistry", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.getEventChestRegistryForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest registry authority is not available."), {
+            code: "EVENT_CHEST_REGISTRY_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const registry = await profileAuthority.getEventChestRegistryForAdmin();
+        respond({
+          ok: true,
+          result: registry
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_REGISTRY_READ_FAILED"));
+      }
+    });
+
     socket.on("admin:getCollectionPack", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);

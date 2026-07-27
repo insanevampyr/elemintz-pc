@@ -40,6 +40,11 @@ import {
   hasEventChestDefinition,
   isEventChestDefinitionActive
 } from "../../src/state/eventChestRegistry.js";
+import {
+  EVENT_CHEST_REGISTRY_DOCUMENT_VERSION,
+  EVENT_CHEST_REGISTRY_FILENAME,
+  EventChestRegistryStore
+} from "../../src/state/eventChestRegistryStore.js";
 import { projectEventChestStatus } from "../../src/state/eventChestStatus.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { getStoreViewForProfile } from "../../src/state/storeSystem.js";
@@ -1388,6 +1393,149 @@ test("event chest registry: active window helper respects explicit windows", () 
   assert.equal(isEventChestDefinitionActive(definition, "2026-06-15T12:00:00.000Z"), true);
   assert.equal(isEventChestDefinitionActive(definition, "2026-07-01T00:00:00.000Z"), false);
   assert.equal(isEventChestDefinitionActive(inactiveDefinition, "2026-06-15T12:00:00.000Z"), false);
+});
+
+function buildEventChestRegistryDocument(definitions = [DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET], overrides = {}) {
+  return {
+    schemaVersion: EVENT_CHEST_REGISTRY_DOCUMENT_VERSION,
+    registryId: "test_event_chest_registry",
+    registryRevisionId: "test_registry_revision_1",
+    publishedAt: "2026-07-26T12:00:00.000Z",
+    publishedBy: "test-admin",
+    definitions: structuredClone(definitions),
+    ...overrides
+  };
+}
+
+async function writeEventChestRegistryFixture(dataDir, payload) {
+  const filePath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, typeof payload === "string" ? payload : JSON.stringify(payload, null, 2), "utf8");
+  return filePath;
+}
+
+test("event chest registry store: missing file returns static Daily EleMintz Chest fallback without writing", async () => {
+  const dataDir = await createTempDataDir();
+  const store = new EventChestRegistryStore({
+    dataDir,
+    now: () => "2026-07-26T12:00:00.000Z",
+    logger: { warn: () => {} }
+  });
+
+  try {
+    const result = await store.getPublishedEventChestRegistry();
+
+    assert.equal(result.ok, true);
+    assert.equal(result.source, "fallback_static");
+    assert.equal(result.registry.registryRevisionId, "static_daily_elemintz_chest_default");
+    assert.equal(result.definitions.length, 1);
+    assert.equal(result.definitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    await assert.rejects(
+      fs.access(path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME)),
+      /ENOENT/
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry store: valid file loads and returns defensive copies", async () => {
+  const dataDir = await createTempDataDir();
+  const document = buildEventChestRegistryDocument();
+  await writeEventChestRegistryFixture(dataDir, document);
+  const store = new EventChestRegistryStore({
+    dataDir,
+    now: () => "2026-07-26T12:05:00.000Z",
+    logger: { warn: () => {} }
+  });
+
+  try {
+    const result = await store.getPublishedEventChestRegistry();
+    assert.equal(result.ok, true);
+    assert.equal(result.source, "file");
+    assert.equal(result.readAt, "2026-07-26T12:05:00.000Z");
+    assert.equal(result.registry.registryId, "test_event_chest_registry");
+    assert.equal(result.definitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+
+    result.definitions[0].title = "Mutated";
+    const lookup = await store.getEventChestDefinitionById(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(lookup.title, "Daily EleMintz Chest");
+    assert.equal(await store.getEventChestDefinitionById("missing_chest"), null);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry store: malformed JSON falls back with an admin-safe error", async () => {
+  const dataDir = await createTempDataDir();
+  await writeEventChestRegistryFixture(dataDir, "{ nope");
+  const store = new EventChestRegistryStore({
+    dataDir,
+    now: () => "2026-07-26T12:10:00.000Z",
+    logger: { warn: () => {} }
+  });
+
+  try {
+    const result = await store.getPublishedEventChestRegistry();
+    assert.equal(result.ok, false);
+    assert.equal(result.source, "fallback_static");
+    assert.equal(result.definitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.match(result.errors.join("\n"), /Unable to read event chest registry/i);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry store: invalid definition and duplicate chestId do not become authoritative", async () => {
+  const invalidDataDir = await createTempDataDir();
+  const duplicateDataDir = await createTempDataDir();
+
+  try {
+    await writeEventChestRegistryFixture(
+      invalidDataDir,
+      buildEventChestRegistryDocument([
+        cloneEventChestPreset({
+          chestId: "invalid_loaded_chest",
+          odds: {
+            common: 1,
+            rare: 1,
+            epic: 1,
+            legendary: 1
+          }
+        })
+      ])
+    );
+    const invalidStore = new EventChestRegistryStore({
+      dataDir: invalidDataDir,
+      logger: { warn: () => {} }
+    });
+    const invalidResult = await invalidStore.getPublishedEventChestRegistry();
+    assert.equal(invalidResult.ok, false);
+    assert.equal(invalidResult.source, "fallback_static");
+    assert.equal(invalidResult.definitions.some((definition) => definition.chestId === "invalid_loaded_chest"), false);
+    assert.match(invalidResult.errors.join("\n"), /odds must sum to 1/i);
+
+    await writeEventChestRegistryFixture(
+      duplicateDataDir,
+      buildEventChestRegistryDocument([
+        DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        cloneEventChestPreset({ title: "Duplicate Daily Chest" })
+      ])
+    );
+    const duplicateStore = new EventChestRegistryStore({
+      dataDir: duplicateDataDir,
+      logger: { warn: () => {} }
+    });
+    const duplicateResult = await duplicateStore.getPublishedEventChestRegistry();
+    assert.equal(duplicateResult.ok, false);
+    assert.equal(duplicateResult.source, "fallback_static");
+    assert.match(duplicateResult.errors.join("\n"), /duplicate chestId/i);
+    assert.equal(duplicateResult.definitions.length, 1);
+    assert.equal(duplicateResult.definitions[0].title, "Daily EleMintz Chest");
+  } finally {
+    await fs.rm(invalidDataDir, { recursive: true, force: true });
+    await fs.rm(duplicateDataDir, { recursive: true, force: true });
+  }
 });
 
 test("event chest status: Daily EleMintz Chest projects empty profile pool progress", () => {

@@ -40,9 +40,14 @@ import {
 } from "../../src/multiplayer/rooms.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
 import { AdminGrantStore } from "../../src/state/adminGrantStore.js";
+import {
+  EVENT_CHEST_REGISTRY_FILENAME,
+  EventChestRegistryStore
+} from "../../src/state/eventChestRegistryStore.js";
 import { StorePurchaseLedgerStore } from "../../src/state/storePurchaseLedgerStore.js";
 import { SpecialCosmeticRegistryStore } from "../../src/state/specialCosmeticRegistryStore.js";
 import { COSMETIC_CATALOG } from "../../src/state/cosmeticSystem.js";
+import { DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID } from "../../src/state/dailyElementChestSystem.js";
 import { getDailyResetWindow } from "../../src/state/dailyChallengesSystem.js";
 import { getXpThresholds } from "../../src/state/levelRewardsSystem.js";
 import { DEFAULT_STARTING_TOKENS } from "../../src/state/storeSystem.js";
@@ -4008,6 +4013,100 @@ test("multiplayer foundation: admin Collection Pack seams are admin-only and ser
     }
     assert.deepEqual(profileAfterEligibleList, profileBeforeEligibleList);
     assert.deepEqual(registryAfterEligibleList, registryBeforeEligibleList);
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer foundation: admin Event Chest registry route is read-only and admin-only", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({
+    dataDir,
+    eventChestRegistryStore: new EventChestRegistryStore({
+      dataDir,
+      now: () => "2026-07-26T12:00:00.000Z",
+      logger: { warn: () => {} }
+    })
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let unauthenticatedClient = null;
+
+  try {
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "regular@example.com",
+      password: "PlayerPass123",
+      username: "RegularUser"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(playerLogin?.ok, true);
+
+    const unauthenticated = await emitWithAck(unauthenticatedClient, "admin:getEventChestRegistry", {});
+    assert.equal(unauthenticated?.ok, false);
+    assert.ok(["SESSION_REQUIRED", "ADMIN_AUTH_REQUIRED"].includes(unauthenticated?.error?.code));
+
+    const nonAdmin = await emitWithAck(playerClient, "admin:getEventChestRegistry", {
+      sessionToken: playerLogin?.session?.token
+    });
+    assert.equal(nonAdmin?.ok, false);
+    assert.equal(nonAdmin?.error?.code, "ADMIN_ACCESS_DENIED");
+
+    const adminRead = await emitWithAck(adminClient, "admin:getEventChestRegistry", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(adminRead?.ok, true);
+    assert.equal(adminRead?.result?.ok, true);
+    assert.equal(adminRead?.result?.source, "fallback_static");
+    assert.equal(adminRead?.result?.readAt, "2026-07-26T12:00:00.000Z");
+    assert.equal(adminRead?.result?.registry?.registryRevisionId, "static_daily_elemintz_chest_default");
+    assert.equal(adminRead?.result?.definitions?.length, 1);
+    assert.equal(adminRead?.result?.definitions?.[0]?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    const serializedAdminRead = JSON.stringify(adminRead);
+    assert.equal(serializedAdminRead.includes("eventChests"), false);
+    assert.equal(serializedAdminRead.includes("ownedCosmetics"), false);
+    assert.equal(serializedAdminRead.includes("lastFreeOpenDateKey"), false);
+    assert.equal(serializedAdminRead.includes("totalOpens"), false);
+    await assert.rejects(
+      fs.access(path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME)),
+      /ENOENT/
+    );
   } finally {
     adminClient?.disconnect();
     playerClient?.disconnect();
