@@ -4226,6 +4226,34 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:publishEventChestDraft", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.publishEventChestDraftForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest draft publish authority is not available."), {
+            code: "EVENT_CHEST_DRAFT_PUBLISH_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.publishEventChestDraftForAdmin({
+          draftId: payload?.draftId,
+          expectedDraftRevisionId: payload?.expectedDraftRevisionId,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_DRAFT_PUBLISH_FAILED"));
+      }
+    });
+
     socket.on("admin:getCollectionPack", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);

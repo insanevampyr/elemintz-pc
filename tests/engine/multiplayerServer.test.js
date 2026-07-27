@@ -4222,6 +4222,13 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
           metadata: { draftRevisionId: "draft_revision_1" },
           definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET
         }
+      ],
+      [
+        "admin:publishEventChestDraft",
+        {
+          draftId: "draft_daily",
+          expectedDraftRevisionId: "draft_revision_1"
+        }
       ]
     ];
     for (const [routeName, payload] of draftRoutes) {
@@ -4359,13 +4366,71 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.deepEqual(profileAfterSave, profileBeforeSave);
     await assert.rejects(fs.access(registryPath), /ENOENT/);
 
+    const missingDraftIdPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(missingDraftIdPublish?.ok, false);
+    assert.equal(missingDraftIdPublish?.error?.code, "EVENT_CHEST_DRAFT_PUBLISH_FAILED");
+
+    const missingDraftPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "missing_draft"
+    });
+    assert.equal(missingDraftPublish?.ok, false);
+    assert.equal(missingDraftPublish?.error?.code, "EVENT_CHEST_DRAFT_PUBLISH_FAILED");
+
+    const revisionMismatchPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: "stale_revision"
+    });
+    assert.equal(revisionMismatchPublish?.ok, false);
+    assert.equal(revisionMismatchPublish?.error?.code, "EVENT_CHEST_DRAFT_REVISION_MISMATCH");
+
+    await fs.mkdir(path.dirname(registryPath), { recursive: true });
+    await fs.writeFile(registryPath, "{ nope", "utf8");
+    const malformedRegistryPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: "draft_revision_1"
+    });
+    assert.equal(malformedRegistryPublish?.ok, false);
+    assert.equal(malformedRegistryPublish?.error?.code, "EVENT_CHEST_DRAFT_PUBLISH_FAILED");
+    assert.equal(await fs.readFile(registryPath, "utf8"), "{ nope");
+
+    await fs.rm(registryPath, { force: true });
+    const publish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: "draft_revision_1"
+    });
+    assert.equal(publish?.ok, true);
+    assert.equal(publish?.result?.registry?.ok, true);
+    assert.equal(publish?.result?.registry?.source, "file");
+    assert.equal(publish?.result?.publishedDefinition?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(publish?.result?.publishedDefinition?.publishedBy, "VampyrLee");
+    assert.equal(publish?.result?.publishedChest?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(publish?.result?.publishedChest?.publishedBy, "VampyrLee");
+    assert.equal(publish?.result?.source, "file");
+    assert.ok(publish?.result?.registryRevisionId);
+    assert.ok(publish?.result?.publishedAt);
+
+    const registryFile = JSON.parse(await fs.readFile(registryPath, "utf8"));
+    assert.equal(registryFile.definitions.length, 1);
+    assert.equal(registryFile.definitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+
+    const profileAfterPublish = await coordinator.profiles.getProfile("RegularUser");
+    assert.deepEqual(profileAfterPublish, profileBeforeSave);
+
     const registryRead = await emitWithAck(adminClient, "admin:getEventChestRegistry", {
       sessionToken: adminLogin?.session?.token
     });
     assert.equal(registryRead?.ok, true);
     assert.equal(registryRead?.result?.ok, true);
+    assert.equal(registryRead?.result?.source, "file");
+    assert.equal(registryRead?.result?.registry?.publishedBy, "VampyrLee");
 
-    const serializedResponses = JSON.stringify({ rewardCatalog, list, get, validPreview, validateStored });
+    const serializedResponses = JSON.stringify({ rewardCatalog, list, get, validPreview, validateStored, publish });
     assert.equal(serializedResponses.includes("ownedCosmetics"), false);
     assert.equal(serializedResponses.includes('"dailyElementChest":'), false);
     assert.equal(serializedResponses.includes("eventChests"), false);

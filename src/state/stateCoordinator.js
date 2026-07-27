@@ -1640,6 +1640,49 @@ export class StateCoordinator {
     });
   }
 
+  async publishEventChestDraftForAdmin({ draftId = null, expectedDraftRevisionId = null, actor = null } = {}) {
+    const draft = await this.getEventChestDraftForAdmin(draftId);
+    const safeExpectedRevisionId = String(expectedDraftRevisionId ?? "").trim();
+    if (safeExpectedRevisionId && draft.draftRevisionId !== safeExpectedRevisionId) {
+      throw Object.assign(new Error("Event Chest draft revision does not match the expected revision."), {
+        code: "EVENT_CHEST_DRAFT_REVISION_MISMATCH"
+      });
+    }
+
+    const validation = validateEventChestDraftDefinition(draft.definition);
+    if (!validation.ok) {
+      throw Object.assign(
+        new Error(`Event Chest draft definition is invalid: ${validation.errors.join("; ")}`),
+        { code: "EVENT_CHEST_DRAFT_INVALID" }
+      );
+    }
+
+    const registry = await this.eventChestRegistryStore.publishEventChestDraftDefinition({
+      definition: draft.definition,
+      actor
+    });
+    const publishedDefinition =
+      (registry.definitions ?? []).find((definition) => definition.chestId === draft.definition.chestId) ?? null;
+    return {
+      registry,
+      publishedDefinition: publishedDefinition ? structuredClone(publishedDefinition) : null,
+      publishedChest: publishedDefinition
+        ? {
+            chestId: publishedDefinition.chestId,
+            title: publishedDefinition.title,
+            definitionRevisionId: publishedDefinition.definitionRevisionId ?? null,
+            publishedAt: publishedDefinition.publishedAt ?? null,
+            publishedBy: publishedDefinition.publishedBy ?? null
+          }
+        : null,
+      warnings: [...(registry.warnings ?? [])],
+      errors: [...(registry.errors ?? [])],
+      source: registry.source,
+      registryRevisionId: registry.registry?.registryRevisionId ?? null,
+      publishedAt: registry.registry?.publishedAt ?? null
+    };
+  }
+
   buildCosmeticsView(profile, specialRecords = []) {
     const snapshot = buildAuthoritativeCosmeticSnapshot(profile);
     const randomizeAfterEachMatch = normalizeCosmeticRandomizationPreferences(snapshot.preferences);
