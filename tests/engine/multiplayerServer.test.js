@@ -4211,6 +4211,7 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(playerLogin?.ok, true);
 
     const draftRoutes = [
+      ["admin:listEventChestRewardCosmetics", {}],
       ["admin:listEventChestDrafts", {}],
       ["admin:getEventChestDraft", { draftId: "draft_daily" }],
       ["admin:validateEventChestDraft", { definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET }],
@@ -4268,6 +4269,38 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
       fs.access(path.join(dataDir, "server-data", EVENT_CHEST_DRAFT_STORE_FILENAME)),
       /ENOENT/
     );
+
+    const rewardCatalog = await emitWithAck(adminClient, "admin:listEventChestRewardCosmetics", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(rewardCatalog?.ok, true);
+    assert.ok(Array.isArray(rewardCatalog?.result?.cosmetics));
+    assert.equal(Number.isInteger(rewardCatalog?.result?.summary?.total), true);
+    assert.equal(Number.isInteger(rewardCatalog?.result?.summary?.eligible), true);
+    assert.equal(Number.isInteger(rewardCatalog?.result?.summary?.excluded), true);
+    const rewardEntries = rewardCatalog?.result?.cosmetics ?? [];
+    const dailyReward = rewardEntries.find(
+      (entry) => entry.type === "title" && entry.cosmeticId === "title_first_light"
+    );
+    const defaultReward = rewardEntries.find(
+      (entry) => entry.type === "avatar" && entry.cosmeticId === "default_avatar"
+    );
+    assert.ok(dailyReward);
+    assert.equal(dailyReward.eligible, true);
+    assert.equal(dailyReward.rarity, "Common");
+    assert.ok(dailyReward.warningReasons.includes("chest_only"));
+    assert.ok(defaultReward);
+    assert.equal(defaultReward.eligible, false);
+    assert.ok(defaultReward.blockingReasons.includes("default_owned"));
+    for (const entry of rewardEntries) {
+      assert.ok(Object.prototype.hasOwnProperty.call(entry, "type"));
+      assert.ok(Object.prototype.hasOwnProperty.call(entry, "cosmeticId"));
+      assert.ok(Object.prototype.hasOwnProperty.call(entry, "name"));
+      assert.ok(Object.prototype.hasOwnProperty.call(entry, "rarity"));
+      assert.ok(Object.prototype.hasOwnProperty.call(entry, "eligible"));
+      assert.equal(Array.isArray(entry.blockingReasons), true);
+      assert.equal(Array.isArray(entry.warningReasons), true);
+    }
 
     const profileBeforeSave = await coordinator.profiles.getProfile("RegularUser");
     const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
@@ -4332,7 +4365,7 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(registryRead?.ok, true);
     assert.equal(registryRead?.result?.ok, true);
 
-    const serializedResponses = JSON.stringify({ list, get, validPreview, validateStored });
+    const serializedResponses = JSON.stringify({ rewardCatalog, list, get, validPreview, validateStored });
     assert.equal(serializedResponses.includes("ownedCosmetics"), false);
     assert.equal(serializedResponses.includes('"dailyElementChest":'), false);
     assert.equal(serializedResponses.includes("eventChests"), false);

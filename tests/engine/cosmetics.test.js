@@ -12,6 +12,7 @@ import {
   getBaseCosmeticPrice,
   getCosmeticCatalogForProfile,
   getCosmeticHoverMetadata,
+  listEventChestRewardCosmeticsForAdmin,
   normalizeCosmeticMetadata,
   normalizeCosmeticRarity,
   normalizeProfileShowcaseSlots,
@@ -133,6 +134,39 @@ const SIMPLE_BACKGROUNDS_DEFINITIONS = Object.freeze([
   ["background_glowtide_flats", "Glowtide Flats", "backgrounds/background_glowtide_flats.png"],
   ["background_moonshade_grove", "Moonshade Grove", "backgrounds/background_moonshade_grove.png"]
 ]);
+
+test("cosmetics: Event Chest reward admin catalog returns safe eligibility metadata", () => {
+  const entries = listEventChestRewardCosmeticsForAdmin();
+  const dailyTitle = entries.find((entry) => entry.type === "title" && entry.cosmeticId === "title_first_light");
+  const defaultAvatar = entries.find((entry) => entry.type === "avatar" && entry.cosmeticId === "default_avatar");
+
+  assert.ok(entries.length > 0);
+  assert.ok(dailyTitle);
+  assert.equal(dailyTitle.eligible, true);
+  assert.equal(dailyTitle.rarity, "Common");
+  assert.ok(dailyTitle.warningReasons.includes("chest_only"));
+  assert.ok(defaultAvatar);
+  assert.equal(defaultAvatar.eligible, false);
+  assert.ok(defaultAvatar.blockingReasons.includes("default_owned"));
+
+  for (const entry of entries) {
+    assert.ok(Object.prototype.hasOwnProperty.call(entry, "type"));
+    assert.ok(Object.prototype.hasOwnProperty.call(entry, "cosmeticId"));
+    assert.ok(Object.prototype.hasOwnProperty.call(entry, "name"));
+    assert.ok(Object.prototype.hasOwnProperty.call(entry, "rarity"));
+    assert.ok(Object.prototype.hasOwnProperty.call(entry, "eligible"));
+    assert.equal(Array.isArray(entry.blockingReasons), true);
+    assert.equal(Array.isArray(entry.warningReasons), true);
+  }
+
+  const serialized = JSON.stringify(entries);
+  assert.equal(serialized.includes("ownedCosmetics"), false);
+  assert.equal(serialized.includes("eventChests"), false);
+  assert.equal(serialized.includes("dailyElementChest"), false);
+  assert.equal(serialized.includes("profileKey"), false);
+  assert.equal(serialized.includes("sessionToken"), false);
+  assert.equal(serialized.includes('"tokens":'), false);
+});
 
 test("cosmetics: Unique is supported without changing invalid rarity fallback behavior", () => {
   assert.deepEqual(COSMETIC_RARITIES, ["Common", "Rare", "Epic", "Legendary", "Unique"]);

@@ -1143,6 +1143,11 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.listEligibleCollectionPackCosmeticsForAdmin();
   }
 
+  async listEventChestRewardCosmeticsForAdmin() {
+    this.logger.info?.("[ProfileAuthority] listEventChestRewardCosmeticsForAdmin");
+    return this.coordinator.listEventChestRewardCosmeticsForAdmin();
+  }
+
   async getEventChestRegistryForAdmin() {
     this.logger.info?.("[ProfileAuthority] getEventChestRegistryForAdmin");
     return this.coordinator.getEventChestRegistryForAdmin();

@@ -1273,6 +1273,19 @@ test("event chest definitions: validator rejects unknown cosmetic ids", () => {
   assert.match(validation.errors.join("\n"), /unknown cosmetic/i);
 });
 
+test("event chest definitions: validator rejects catalog rarity bucket mismatch", () => {
+  const definition = cloneEventChestPreset({
+    pool: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      common: [{ type: "avatar", cosmeticId: "avatar_chestbound_adept" }]
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /rarity bucket does not match catalog rarity 'rare'/i);
+});
+
 test("event chest definitions: validator rejects duplicate cosmetic entries inside one chest", () => {
   const definition = cloneEventChestPreset({
     pool: {
@@ -1287,6 +1300,43 @@ test("event chest definitions: validator rejects duplicate cosmetic entries insi
 
   assert.equal(validation.ok, false);
   assert.match(validation.errors.join("\n"), /duplicate cosmetic/i);
+});
+
+test("event chest definitions: validator rejects unsafe normal Event Chest reward cosmetics", () => {
+  const definition = cloneEventChestPreset({
+    pool: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      common: [{ type: "avatar", cosmeticId: "default_avatar" }],
+      legendary: [{ type: "avatar", cosmeticId: "avatar_lycan_anubis" }]
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+  const errors = validation.errors.join("\n");
+
+  assert.equal(validation.ok, false);
+  assert.match(errors, /default_owned/i);
+  assert.match(errors, /unique_rarity|unsupported_rarity/i);
+  assert.match(errors, /grant_only/i);
+  assert.match(errors, /store_hidden_not_chest_eligible/i);
+});
+
+test("event chest definitions: validator rejects private fields directly", () => {
+  const definition = cloneEventChestPreset({
+    pool: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      common: [
+        {
+          type: "title",
+          cosmeticId: "title_first_light",
+          ownedCosmetics: { title: ["title_first_light"] }
+        }
+      ]
+    }
+  });
+  const validation = validateEventChestDefinition(definition);
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /private player\/profile field 'pool\.common\[0\]\.ownedCosmetics'/i);
 });
 
 test("event chest definitions: validator rejects unsupported open type and cosmetic type", () => {

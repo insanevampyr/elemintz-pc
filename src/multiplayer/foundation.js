@@ -4092,6 +4092,30 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:listEventChestRewardCosmetics", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.listEventChestRewardCosmeticsForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest reward catalog authority is not available."), {
+            code: "EVENT_CHEST_REWARD_CATALOG_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.listEventChestRewardCosmeticsForAdmin();
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_REWARD_CATALOG_LIST_FAILED"));
+      }
+    });
+
     socket.on("admin:listEventChestDrafts", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);

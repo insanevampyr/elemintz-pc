@@ -1,4 +1,4 @@
-import { getCosmeticDefinition } from "./cosmeticSystem.js";
+import { getCosmeticDefinition, getEventChestRewardCosmeticEligibility } from "./cosmeticSystem.js";
 import {
   DAILY_ELEMENT_CHEST_COLLECTION,
   DAILY_ELEMENT_CHEST_DROP_KEY,
@@ -28,6 +28,27 @@ export const EVENT_CHEST_COSMETIC_TYPES = Object.freeze([
 ]);
 
 const ODDS_SUM_TOLERANCE = 0.000001;
+const PRIVATE_EVENT_CHEST_DEFINITION_FIELD_KEYS = Object.freeze([
+  "account",
+  "accounts",
+  "accountId",
+  "adminSessionToken",
+  "dailyElementChest",
+  "eventChests",
+  "ownedCosmetics",
+  "playerLevel",
+  "playerProfile",
+  "playerXP",
+  "profile",
+  "profiles",
+  "profileKey",
+  "sessionId",
+  "sessionToken",
+  "settlementKey",
+  "socketId",
+  "tokens",
+  "uniqueCosmeticAcquisitions"
+]);
 
 function clonePool(pool) {
   return Object.freeze(
@@ -226,6 +247,22 @@ function validatePool(pool, errors) {
 
       if (type && cosmeticId && !getCosmeticDefinition(type, cosmeticId)) {
         errors.push(`pool.${rarity}[${index}] references unknown cosmetic '${key}'.`);
+        continue;
+      }
+
+      if (type && cosmeticId) {
+        const eligibility = getEventChestRewardCosmeticEligibility(type, cosmeticId);
+        if (eligibility.rarityKey && eligibility.rarityKey !== rarity) {
+          errors.push(
+            `pool.${rarity}[${index}] rarity bucket does not match catalog rarity '${eligibility.rarityKey}' for cosmetic '${key}'.`
+          );
+        }
+        for (const reason of eligibility.blockingReasons) {
+          if (reason === "unknown_cosmetic" || reason === "missing_cosmetic_id") {
+            continue;
+          }
+          errors.push(`pool.${rarity}[${index}] cosmetic '${key}' is not eligible for normal Event Chests: ${reason}.`);
+        }
       }
     }
   }
@@ -261,6 +298,25 @@ function validateDefinitionHistory(definitionHistory, errors) {
   }
 }
 
+function validateNoPrivateFields(value, errors, prefix = "") {
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      validateNoPrivateFields(entry, errors, `${prefix}[${index}]`);
+    });
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const pathName = prefix ? `${prefix}.${key}` : key;
+    if (PRIVATE_EVENT_CHEST_DEFINITION_FIELD_KEYS.includes(key)) {
+      errors.push(`definition contains private player/profile field '${pathName}'.`);
+    }
+    validateNoPrivateFields(child, errors, pathName);
+  }
+}
+
 export function validateEventChestDefinition(definition) {
   const errors = [];
   if (!isObject(definition)) {
@@ -269,6 +325,8 @@ export function validateEventChestDefinition(definition) {
       errors: ["definition must be an object."]
     };
   }
+
+  validateNoPrivateFields(definition, errors);
 
   if (!hasText(definition.chestId)) {
     errors.push("chestId is required.");

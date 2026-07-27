@@ -4025,6 +4025,113 @@ export function getCosmeticDefinition(type, id) {
   return COSMETIC_CATALOG[type].find((item) => item.id === id) ?? null;
 }
 
+function normalizeEventChestRarityKey(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ["common", "rare", "epic", "legendary"].includes(normalized) ? normalized : null;
+}
+
+function getEventChestRewardEligibility(type, item) {
+  const blockingReasons = [];
+  const warningReasons = [];
+  const rarityKey = normalizeEventChestRarityKey(item?.rarity);
+  const chestEligible = item?.chestOnly === true || item?.dailyChestEligible === true;
+
+  if (!COSMETIC_TYPES.includes(type)) {
+    blockingReasons.push("unsupported_type");
+  }
+  if (!item?.id) {
+    blockingReasons.push("missing_cosmetic_id");
+  }
+  if (!rarityKey) {
+    blockingReasons.push(item?.rarity === "Unique" ? "unique_rarity" : "unsupported_rarity");
+  }
+  if (item?.grantOnly === true) {
+    blockingReasons.push("grant_only");
+  }
+  if (item?.supporterOnly === true) {
+    blockingReasons.push("supporter_only");
+  }
+  if (item?.defaultOwned === true) {
+    blockingReasons.push("default_owned");
+  }
+  if (item?.hidden === true) {
+    blockingReasons.push("hidden");
+  }
+  if (item?.storeHidden === true && !chestEligible) {
+    blockingReasons.push("store_hidden_not_chest_eligible");
+  }
+  if (item?.storeHidden === true && chestEligible) {
+    warningReasons.push("store_hidden_chest_eligible");
+  }
+  if (item?.chestOnly === true) {
+    warningReasons.push("chest_only");
+  }
+
+  return {
+    eligible: blockingReasons.length === 0,
+    rarityKey,
+    blockingReasons,
+    warningReasons
+  };
+}
+
+export function getEventChestRewardCosmeticEligibility(type, cosmeticId, { catalog = COSMETIC_CATALOG } = {}) {
+  const safeType = String(type ?? "").trim();
+  const safeCosmeticId = String(cosmeticId ?? "").trim();
+  const item = COSMETIC_TYPES.includes(safeType)
+    ? (Array.isArray(catalog?.[safeType]) ? catalog[safeType] : []).find((candidate) => candidate.id === safeCosmeticId) ?? null
+    : null;
+
+  if (!item) {
+    return {
+      eligible: false,
+      rarityKey: null,
+      blockingReasons: [safeCosmeticId ? "unknown_cosmetic" : "missing_cosmetic_id"],
+      warningReasons: []
+    };
+  }
+
+  return getEventChestRewardEligibility(safeType, item);
+}
+
+export function listEventChestRewardCosmeticsForAdmin({ catalog = COSMETIC_CATALOG } = {}) {
+  const entries = [];
+  for (const type of COSMETIC_TYPES) {
+    for (const item of Array.isArray(catalog?.[type]) ? catalog[type] : []) {
+      const eligibility = getEventChestRewardEligibility(type, item);
+      entries.push({
+        type,
+        cosmeticId: String(item.id ?? ""),
+        name: String(item.name ?? item.id ?? ""),
+        rarity: String(item.rarity ?? "Common"),
+        ...(item.element ? { element: String(item.element) } : {}),
+        ...(getCosmeticCollectionName(type, item) ? { collection: getCosmeticCollectionName(type, item) } : {}),
+        ...(item.source ? { source: String(item.source) } : {}),
+        ...(item.image ? { image: String(item.image) } : {}),
+        eligible: eligibility.eligible,
+        blockingReasons: [...eligibility.blockingReasons],
+        warningReasons: [...eligibility.warningReasons]
+      });
+    }
+  }
+
+  return entries.sort((left, right) => {
+    const eligibleDelta = Number(right.eligible) - Number(left.eligible);
+    if (eligibleDelta !== 0) {
+      return eligibleDelta;
+    }
+    const rarityDelta = String(left.rarity).localeCompare(String(right.rarity));
+    if (rarityDelta !== 0) {
+      return rarityDelta;
+    }
+    const typeDelta = left.type.localeCompare(right.type);
+    if (typeDelta !== 0) {
+      return typeDelta;
+    }
+    return left.cosmeticId.localeCompare(right.cosmeticId);
+  });
+}
+
 export function getCosmeticDisplayName(type, id, fallback = null) {
   if (!id) {
     return fallback;

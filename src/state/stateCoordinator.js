@@ -33,6 +33,7 @@ import {
   COSMETIC_CATALOG,
   getCosmeticCatalogForProfile,
   getCosmeticDefinition,
+  listEventChestRewardCosmeticsForAdmin,
   getCosmeticLoadoutsForProfile,
   normalizeCosmeticRandomizationPreferences,
   preserveUniqueCosmeticAcquisition,
@@ -1569,6 +1570,23 @@ export class StateCoordinator {
 
   async listEligibleCollectionPackCosmeticsForAdmin() {
     return listEligibleCollectionPackCosmetics({ catalog: COSMETIC_CATALOG });
+  }
+
+  async listEventChestRewardCosmeticsForAdmin() {
+    const cosmetics = listEventChestRewardCosmeticsForAdmin({ catalog: COSMETIC_CATALOG });
+    const summary = cosmetics.reduce(
+      (totals, entry) => {
+        totals.total += 1;
+        if (entry.eligible) {
+          totals.eligible += 1;
+        } else {
+          totals.excluded += 1;
+        }
+        return totals;
+      },
+      { total: 0, eligible: 0, excluded: 0 }
+    );
+    return { cosmetics, summary };
   }
 
   async getEventChestRegistryForAdmin() {
