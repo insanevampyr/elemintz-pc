@@ -6,6 +6,7 @@ import {
   validateEventChestDefinition
 } from "./eventChestDefinitions.js";
 import { resolveDataDir } from "./paths.js";
+import { JsonStore } from "./storage/jsonStore.js";
 
 export const EVENT_CHEST_REGISTRY_DOCUMENT_VERSION = 1;
 export const EVENT_CHEST_REGISTRY_FILENAME = "event-chest-registry.json";
@@ -35,6 +36,40 @@ function normalizeOptionalText(value) {
 
 function stripBom(value) {
   return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+}
+
+function normalizeTimestamp(value, fieldName) {
+  const parsedMs = Date.parse(String(value ?? ""));
+  if (!Number.isFinite(parsedMs)) {
+    throw new Error(`${fieldName} must be a valid timestamp.`);
+  }
+  return new Date(parsedMs).toISOString();
+}
+
+function buildRevisionId(prefix, timestamp) {
+  const safeTimestamp = String(timestamp ?? "")
+    .replace(/[^0-9A-Za-z]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `${prefix}_${safeTimestamp || Date.now()}`;
+}
+
+function sanitizeRegistryDefinitionForPublish(definition, { now, actor = null } = {}) {
+  const publishedAt = normalizeTimestamp(now, "publishedAt");
+  const safeActor = normalizeOptionalText(actor);
+  const safeDefinition = clone(definition);
+  const chestId = String(safeDefinition?.chestId ?? "").trim();
+  const revisionId =
+    normalizeOptionalText(safeDefinition?.definitionRevisionId) ??
+    buildRevisionId(`definition_revision_${chestId || "event_chest"}`, publishedAt);
+
+  return {
+    ...safeDefinition,
+    definitionRevisionId: revisionId,
+    publishedAt,
+    publishedBy: safeActor,
+    updatedAt: publishedAt,
+    updatedBy: safeActor
+  };
 }
 
 function buildFallbackReadModel({ source = "fallback_static", readAt, warnings = [], errors = [] } = {}) {
@@ -136,11 +171,40 @@ export class EventChestRegistryStore {
     this.logger = logger;
     this.now = typeof now === "function" ? now : () => new Date().toISOString();
     this.filePath = path.join(this.dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+    this.store = new JsonStore(path.join("server-data", EVENT_CHEST_REGISTRY_FILENAME), {
+      dataDir: this.dataDir
+    });
+    this.mutationQueue = Promise.resolve();
+  }
+
+  runMutation(task) {
+    const run = this.mutationQueue.then(task, task);
+    this.mutationQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   }
 
   async readRawFile() {
     const source = await fs.readFile(this.filePath, "utf8");
     return JSON.parse(stripBom(source));
+  }
+
+  async readPublishBaseRegistry() {
+    try {
+      const parsed = await this.readRawFile();
+      const validation = validateEventChestRegistryDocument(parsed);
+      if (!validation.ok) {
+        throw new Error(`Existing Event Chest registry is invalid: ${validation.errors.join("; ")}`);
+      }
+      return validation.registry;
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return clone(STATIC_FALLBACK_REGISTRY);
+      }
+      throw error;
+    }
   }
 
   async getPublishedEventChestRegistry() {
@@ -196,6 +260,71 @@ export class EventChestRegistryStore {
 
     const registry = await this.getPublishedEventChestRegistry();
     return clone((registry.definitions ?? []).find((definition) => definition.chestId === safeChestId) ?? null);
+  }
+
+  async publishEventChestDraftDefinition({ definition, actor = null } = {}) {
+    return this.runMutation(async () => {
+      const draftValidation = validateEventChestDefinition(definition);
+      if (!draftValidation.ok) {
+        throw new Error(`Event Chest draft definition is invalid: ${draftValidation.errors.join("; ")}`);
+      }
+
+      const now = this.now();
+      const publishedAt = normalizeTimestamp(now, "publishedAt");
+      const baseRegistry = await this.readPublishBaseRegistry();
+      const existingDefinitions = Array.isArray(baseRegistry.definitions) ? baseRegistry.definitions : [];
+      const seenChestIds = new Set();
+      for (const existingDefinition of existingDefinitions) {
+        const chestId = String(existingDefinition?.chestId ?? "").trim();
+        if (!chestId) {
+          continue;
+        }
+        if (seenChestIds.has(chestId)) {
+          throw new Error(`Existing Event Chest registry contains duplicate chestId '${chestId}'.`);
+        }
+        seenChestIds.add(chestId);
+      }
+
+      const publishedDefinition = sanitizeRegistryDefinitionForPublish(definition, {
+        now: publishedAt,
+        actor
+      });
+      const chestId = String(publishedDefinition.chestId ?? "").trim();
+      const replaced = [];
+      let didReplace = false;
+      for (const existingDefinition of existingDefinitions) {
+        if (existingDefinition.chestId === chestId) {
+          replaced.push(publishedDefinition);
+          didReplace = true;
+        } else {
+          replaced.push(clone(existingDefinition));
+        }
+      }
+      if (!didReplace) {
+        replaced.push(publishedDefinition);
+      }
+
+      const document = {
+        schemaVersion: EVENT_CHEST_REGISTRY_DOCUMENT_VERSION,
+        registryId: normalizeOptionalText(baseRegistry.registryId) ?? EVENT_CHEST_REGISTRY_ID,
+        registryRevisionId: buildRevisionId("registry_revision", publishedAt),
+        publishedAt,
+        publishedBy: normalizeOptionalText(actor),
+        definitions: replaced
+      };
+      const registryValidation = validateEventChestRegistryDocument(document);
+      if (!registryValidation.ok) {
+        throw new Error(`Published Event Chest registry is invalid: ${registryValidation.errors.join("; ")}`);
+      }
+
+      await this.store.write(registryValidation.registry);
+
+      const reread = await this.getPublishedEventChestRegistry();
+      if (!reread.ok) {
+        throw new Error(`Published Event Chest registry failed re-read validation: ${(reread.errors ?? []).join("; ")}`);
+      }
+      return reread;
+    });
   }
 }
 
