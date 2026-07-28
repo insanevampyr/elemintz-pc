@@ -1248,6 +1248,53 @@ export class ProfileSystem {
     });
   }
 
+  async updateProfileIfChangedAsync(username, updater) {
+    return this.runMutation(async () => {
+      const normalized = normalizeUsername(username);
+      const profiles = await this.readProfilesArray();
+      const index = this.findProfileIndex(profiles, normalized);
+
+      const nextProfiles = [...profiles];
+      const current = index === -1
+        ? normalizeProfile(createDefaultProfile(normalized))
+        : normalizeProfile(profiles[index]);
+      const next = normalizeProfile(
+        typeof updater === "function" ? await updater(current) : { ...current, ...updater }
+      );
+
+      if (JSON.stringify(current) === JSON.stringify(next)) {
+        this.cacheProfile(current);
+        return {
+          profile: current,
+          changed: false
+        };
+      }
+
+      if (index === -1) {
+        nextProfiles.push(next);
+      } else {
+        nextProfiles[index] = next;
+      }
+
+      console.info("[ProfileSystem] updateProfileIfChangedAsync write", {
+        before: snapshot(current),
+        after: snapshot(next),
+        filePath: this.store.filePath
+      });
+
+      await this.store.write(nextProfiles);
+      this.cacheProfile(next);
+
+      const reloaded = (await this.loadNormalizedProfileByUsername(normalized, {
+        applyRetroactive: false
+      })).profile;
+      return {
+        profile: reloaded ?? next,
+        changed: true
+      };
+    });
+  }
+
   async updateProfilesAtomically(usernames, updater) {
     return this.runMutation(async () => {
       const normalizedUsernames = [...new Set(

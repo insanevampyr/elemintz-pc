@@ -79,6 +79,14 @@ import {
   normalizeEventChestEntitlements,
   sanitizeEventChestEntitlementForPlayer
 } from "./eventChestEntitlements.js";
+import {
+  applyEventChestReward,
+  buildEventChestOpenResponse,
+  buildEventChestOpenTransactionId,
+  createEventChestRewardSettlement,
+  normalizeEventChestRewardSettlement,
+  selectEventChestReward
+} from "./eventChestOpening.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import {
   EventChestDraftStore,
@@ -1894,6 +1902,129 @@ export class StateCoordinator {
         definitionRevisionId: definition.definitionRevisionId,
         ...this.buildEventChestPlayerMetadata(definition)
       }
+    };
+  }
+
+  async openEventChestEntitlement({
+    username,
+    accountId,
+    profileKey = username,
+    entitlementId,
+    random = this.random
+  } = {}) {
+    const safeUsername = String(username ?? "").trim();
+    const safeAccountId = String(accountId ?? "").trim();
+    const safeProfileKey = String(profileKey ?? safeUsername).trim();
+    const safeEntitlementId = String(entitlementId ?? "").trim();
+    if (!safeUsername || !safeAccountId || !safeProfileKey) {
+      throw Object.assign(new Error("An authenticated claimed profile is required for Event Chest opening."), {
+        code: "EVENT_CHEST_OPEN_INELIGIBLE"
+      });
+    }
+    if (!safeEntitlementId) {
+      throw Object.assign(new Error("entitlementId is required."), {
+        code: "EVENT_CHEST_OPEN_INVALID_REQUEST"
+      });
+    }
+
+    let response = null;
+    const update = await this.profiles.updateProfileIfChangedAsync(safeProfileKey, async (current) => {
+      const linkedAccountId = String(current?.linkedAccountId ?? "").trim();
+      if (!linkedAccountId || linkedAccountId !== safeAccountId) {
+        throw Object.assign(new Error("Event Chest opening requires the authenticated claimed profile."), {
+          code: "EVENT_CHEST_OPEN_INELIGIBLE"
+        });
+      }
+
+      const eventChestEntitlements = normalizeEventChestEntitlements(current?.eventChestEntitlements);
+      const entitlementIndex = eventChestEntitlements.items.findIndex(
+        (item) => item.entitlementId === safeEntitlementId
+      );
+      if (entitlementIndex < 0) {
+        throw Object.assign(new Error("Event Chest entitlement was not found."), {
+          code: "EVENT_CHEST_OPEN_ENTITLEMENT_NOT_FOUND"
+        });
+      }
+
+      const entitlement = eventChestEntitlements.items[entitlementIndex];
+      if (entitlement.status === "expired") {
+        throw Object.assign(new Error("Event Chest entitlement is not available."), {
+          code: "EVENT_CHEST_OPEN_ENTITLEMENT_EXPIRED"
+        });
+      }
+
+      if (entitlement.status === "opened") {
+        const settlement = normalizeEventChestRewardSettlement(entitlement.rewardSettlement);
+        if (!settlement) {
+          throw Object.assign(new Error("Event Chest reward settlement is invalid."), {
+            code: "EVENT_CHEST_OPEN_SETTLEMENT_INVALID"
+          });
+        }
+        response = buildEventChestOpenResponse({
+          entitlement,
+          settlement,
+          replayed: true
+        });
+        return {
+          ...current,
+          eventChestEntitlements
+        };
+      }
+
+      const definition = await this.getPublishedEventChestDefinitionForActivation({
+        chestId: entitlement.chestId,
+        definitionRevisionId: entitlement.definitionRevisionId
+      });
+      const selectedReward = selectEventChestReward({
+        definition,
+        profile: current,
+        random
+      });
+      const rewardResult = applyEventChestReward({
+        profile: current,
+        definition,
+        selectedReward
+      });
+      const openedAt = new Date().toISOString();
+      const transactionId = buildEventChestOpenTransactionId(entitlement.entitlementId);
+      const settlement = createEventChestRewardSettlement({
+        entitlementId: entitlement.entitlementId,
+        chestId: entitlement.chestId,
+        definitionRevisionId: entitlement.definitionRevisionId,
+        transactionId,
+        settledAt: openedAt,
+        reward: rewardResult.reward
+      });
+      const openedEntitlement = {
+        ...entitlement,
+        status: "opened",
+        openedAt,
+        openTransactionId: transactionId,
+        rewardSettlement: settlement
+      };
+      const nextEntitlements = normalizeEventChestEntitlements({
+        schemaVersion: eventChestEntitlements.schemaVersion,
+        items: eventChestEntitlements.items.map((item, index) =>
+          index === entitlementIndex ? openedEntitlement : item
+        )
+      });
+      const persistedEntitlement = nextEntitlements.items.find(
+        (item) => item.entitlementId === entitlement.entitlementId
+      );
+      response = buildEventChestOpenResponse({
+        entitlement: persistedEntitlement,
+        settlement,
+        replayed: false
+      });
+      return {
+        ...rewardResult.profile,
+        eventChestEntitlements: nextEntitlements
+      };
+    });
+
+    return {
+      ...response,
+      idempotent: !update.changed
     };
   }
 
