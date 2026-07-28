@@ -17023,6 +17023,433 @@ test("ui: menu renders active boost event card above daily login with title, mul
   assert.ok(html.indexOf('data-menu-boost-card="true"') < html.indexOf('data-menu-daily-login-panel="true"'));
 });
 
+test("ui: menu renders available Event Chest entitlement without private fields", () => {
+  const html = menuScreen.render({
+    username: "EventUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: null,
+    boostEvent: null,
+    eventChest: {
+      available: true,
+      entitlementId: "event_chest_entitlement_public_1",
+      chestId: "event_chest_public",
+      definitionRevisionId: "event_chest_public_rev_1",
+      title: "Moonlit Event Chest",
+      subtitle: "Open your limited reward.",
+      icon: "icons/daily_chest.png",
+      status: "available"
+    },
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  });
+
+  assert.match(html, /data-menu-event-chest-panel="true"/);
+  assert.match(html, /id="open-event-chest-entitlement-btn"/);
+  assert.match(html, /Moonlit Event Chest/);
+  assert.match(html, /Ready to Open/);
+  assert.match(html, /Open your limited reward\./);
+  assert.doesNotMatch(html, /accountId|profileKey|sessionId|socketId|transactionId|rewardSettlement|definitionHistory|odds|pool|pity/);
+});
+
+test("ui: menu keeps Daily Chest and Event Chest visibility independent", () => {
+  const baseContext = {
+    username: "EventUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: null,
+    boostEvent: null,
+    dailyChallenges: {
+      dailyLogin: {
+        stateLabel: "Daily Login Reward Available Now",
+        resetLabel: "01:00"
+      },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    actions: {}
+  };
+  const dailyAvailable = {
+    loading: false,
+    canOpenFree: true,
+    nextFreeLabel: "--",
+    paidOpenCost: 100,
+    isPoolComplete: false
+  };
+  const dailyComplete = {
+    ...dailyAvailable,
+    canOpenFree: false,
+    isPoolComplete: true
+  };
+  const eventAvailable = {
+    available: true,
+    entitlementId: "event_chest_entitlement_visibility_1",
+    chestId: "event_chest_visibility",
+    definitionRevisionId: "event_chest_visibility_rev_1",
+    title: "Visibility Event Chest",
+    subtitle: "Open this event reward.",
+    icon: "icons/daily_chest.png",
+    status: "available",
+    accountId: "private-account"
+  };
+
+  const bothHtml = menuScreen.render({
+    ...baseContext,
+    dailyElementChest: dailyAvailable,
+    eventChest: eventAvailable
+  });
+  assert.match(bothHtml, /data-menu-daily-element-chest-panel="true"/);
+  assert.match(bothHtml, /data-menu-event-chest-panel="true"/);
+
+  const eventOnlyHtml = menuScreen.render({
+    ...baseContext,
+    dailyElementChest: dailyComplete,
+    eventChest: eventAvailable
+  });
+  assert.doesNotMatch(eventOnlyHtml, /data-menu-daily-element-chest-panel="true"/);
+  assert.doesNotMatch(eventOnlyHtml, /id="open-daily-element-chest-btn"/);
+  assert.match(eventOnlyHtml, /data-menu-event-chest-panel="true"/);
+  assert.match(eventOnlyHtml, /id="open-event-chest-entitlement-btn"/);
+  assert.match(eventOnlyHtml, /Visibility Event Chest/);
+  assert.doesNotMatch(eventOnlyHtml, /private-account|accountId|profileKey|sessionId|socketId|rewardSettlement|odds|pool|pity/);
+
+  const dailyOnlyHtml = menuScreen.render({
+    ...baseContext,
+    dailyElementChest: dailyAvailable,
+    eventChest: null
+  });
+  assert.match(dailyOnlyHtml, /data-menu-daily-element-chest-panel="true"/);
+  assert.doesNotMatch(dailyOnlyHtml, /data-menu-event-chest-panel="true"/);
+
+  const neitherHtml = menuScreen.render({
+    ...baseContext,
+    dailyElementChest: dailyComplete,
+    eventChest: null
+  });
+  assert.doesNotMatch(neitherHtml, /data-menu-daily-element-chest-panel="true"/);
+  assert.doesNotMatch(neitherHtml, /data-menu-event-chest-panel="true"/);
+  assert.doesNotMatch(neitherHtml, /id="open-daily-element-chest-btn"/);
+  assert.doesNotMatch(neitherHtml, /id="open-event-chest-entitlement-btn"/);
+});
+
+test("ui: menu Event Chest open button binds to the provided action", async () => {
+  const previousDocument = global.document;
+  let openCalls = 0;
+  const elements = {
+    "start-pve-btn": createFakeElement(),
+    "start-local-btn": createFakeElement(),
+    "online-play-btn": createFakeElement(),
+    "profile-btn": createFakeElement(),
+    "achievements-btn": createFakeElement(),
+    "open-daily-challenges-btn": createFakeElement(),
+    "cosmetics-btn": createFakeElement(),
+    "store-btn": createFakeElement(),
+    "roadmap-btn": createFakeElement(),
+    "settings-btn": createFakeElement(),
+    "how-to-play-btn": createFakeElement(),
+    "feedback-btn": createFakeElement(),
+    "logout-btn": createFakeElement(),
+    "open-event-chest-entitlement-btn": createFakeElement()
+  };
+
+  global.document = {
+    getElementById: (id) => elements[id] ?? null
+  };
+
+  try {
+    menuScreen.bind({
+      actions: {
+        startPveGame: () => {},
+        startLocalGame: () => {},
+        openOnlinePlay: async () => {},
+        openProfile: async () => {},
+        openAchievements: async () => {},
+        openDailyChallenges: async () => {},
+        openCosmetics: async () => {},
+        openStore: async () => {},
+        openRoadmap: () => {},
+        openSettings: async () => {},
+        openHowToPlay: async () => {},
+        openFeedback: () => {},
+        openDailyElementChest: async () => {},
+        openEventChestEntitlement: async () => {
+          openCalls += 1;
+        },
+        logout: () => {},
+        dismissAnnouncement: async () => {}
+      }
+    });
+
+    await elements["open-event-chest-entitlement-btn"].listeners.get("click")();
+
+    assert.equal(openCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: AppController consumes Event Chest entitlement sync without auto-opening", async () => {
+  const previousWindow = globalThis.window;
+  const screenCalls = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, payload) => screenCalls.push({ screen, payload })
+    },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+  controller.username = "EventUser";
+  controller.screenFlow = "menu";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "EventUser"
+    }
+  };
+
+  let syncCalls = 0;
+  let openCalls = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        syncEventChestEntitlements: async () => {
+          syncCalls += 1;
+          return {
+            active: true,
+            deliveryStatus: "delivered",
+            entitlement: {
+              entitlementId: "event_chest_entitlement_sync_1",
+              chestId: "event_chest_sync",
+              definitionRevisionId: "event_chest_sync_rev_1",
+              status: "available",
+              accountId: "private-account",
+              profileKey: "private-profile"
+            },
+            activeChest: {
+              chestId: "event_chest_sync",
+              definitionRevisionId: "event_chest_sync_rev_1",
+              title: "Sync Event Chest",
+              subtitle: "Ready from sync.",
+              icons: { closed: "icons/daily_chest.png" },
+              odds: { legendary: 1 }
+            }
+          };
+        },
+        openEventChestEntitlement: async () => {
+          openCalls += 1;
+          throw new Error("Should not auto-open");
+        },
+        getDailyElementChestStatus: async () => null,
+        openDailyElementChest: async () => null
+      }
+    }
+  };
+
+  try {
+    await controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({ reason: "test" });
+
+    assert.equal(syncCalls, 1);
+    assert.equal(openCalls, 0);
+    assert.equal(controller.availableEventChestEntitlement?.entitlementId, "event_chest_entitlement_sync_1");
+    assert.equal(controller.availableEventChestEntitlement?.title, "Sync Event Chest");
+    assert.equal(controller.availableEventChestEntitlement?.accountId, undefined);
+    assert.equal(controller.availableEventChestEntitlement?.profileKey, undefined);
+    assert.equal(screenCalls.at(-1)?.payload?.eventChest?.title, "Sync Event Chest");
+    assert.equal(screenCalls.at(-1)?.payload?.eventChest?.odds, undefined);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("ui: AppController opens Event Chest entitlement with renderer single-flight and safe reward modal", async () => {
+  const previousWindow = globalThis.window;
+  const screenCalls = [];
+  const modalCalls = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, payload) => screenCalls.push({ screen, payload })
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+  controller.username = "EventUser";
+  controller.profile = { username: "EventUser", tokens: 10 };
+  controller.screenFlow = "menu";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "EventUser"
+    }
+  };
+  controller.availableEventChestEntitlement = {
+    available: true,
+    entitlementId: "event_chest_entitlement_open_1",
+    chestId: "event_chest_open",
+    definitionRevisionId: "event_chest_open_rev_1",
+    status: "available",
+    title: "Open Event Chest",
+    subtitle: "Open now.",
+    icon: "icons/daily_chest.png"
+  };
+  let refreshCalls = 0;
+  controller.loadPreferredProfileForOnlineSession = async () => {
+    refreshCalls += 1;
+    controller.profile = { username: "EventUser", tokens: 110 };
+    return controller.profile;
+  };
+
+  let openCalls = 0;
+  let resolveOpen = null;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        openEventChestEntitlement: async (entitlementId) => {
+          openCalls += 1;
+          assert.equal(entitlementId, "event_chest_entitlement_open_1");
+          return new Promise((resolve) => {
+            resolveOpen = resolve;
+          });
+        },
+        getDailyElementChestStatus: async () => null,
+        openDailyElementChest: async () => null
+      }
+    }
+  };
+
+  try {
+    const first = controller.openEventChestEntitlement();
+    const second = controller.openEventChestEntitlement();
+    assert.equal(openCalls, 1);
+    assert.equal(controller.eventChestOpenPromises.size, 1);
+    assert.equal(screenCalls.at(-1)?.payload?.eventChest?.opening, true);
+
+    resolveOpen({
+      entitlement: {
+        entitlementId: "event_chest_entitlement_open_1",
+        chestId: "event_chest_open",
+        definitionRevisionId: "event_chest_open_rev_1",
+        status: "opened",
+        openedAt: "2026-07-28T00:00:00.000Z"
+      },
+      replayed: false,
+      alreadyOpened: false,
+      reward: {
+        type: "tokens",
+        rarity: "Rare",
+        tokenAmount: 100,
+        duplicateConverted: true,
+        transactionId: "private-transaction"
+      }
+    });
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.equal(firstResult, secondResult);
+    assert.equal(refreshCalls, 1);
+    assert.equal(controller.eventChestOpenPromises.size, 0);
+    assert.equal(controller.availableEventChestEntitlement, null);
+    assert.equal(modalCalls.at(-1)?.title, "Event Chest Opened");
+    assert.match(modalCalls.at(-1)?.bodyHtml, /\+100 Tokens/);
+    assert.doesNotMatch(modalCalls.at(-1)?.bodyHtml, /transactionId|private-transaction|accountId|profileKey|rewardSettlement/);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("ui: AppController Event Chest open failure clears lock and preserves retry", async () => {
+  const previousWindow = globalThis.window;
+  const modalCalls = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+  controller.username = "EventUser";
+  controller.screenFlow = "menu";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "EventUser"
+    }
+  };
+  controller.availableEventChestEntitlement = {
+    available: true,
+    entitlementId: "event_chest_entitlement_retry_1",
+    chestId: "event_chest_retry",
+    definitionRevisionId: "event_chest_retry_rev_1",
+    status: "available",
+    title: "Retry Event Chest"
+  };
+
+  let openCalls = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        openEventChestEntitlement: async () => {
+          openCalls += 1;
+          if (openCalls === 1) {
+            throw new Error("Temporary server error");
+          }
+          return {
+            entitlement: {
+              entitlementId: "event_chest_entitlement_retry_1",
+              chestId: "event_chest_retry",
+              definitionRevisionId: "event_chest_retry_rev_1",
+              status: "opened",
+              openedAt: "2026-07-28T00:00:00.000Z"
+            },
+            reward: {
+              type: "cosmetic",
+              rarity: "Epic",
+              tokenAmount: 0,
+              duplicateConverted: false,
+              cosmetic: {
+                type: "avatar",
+                cosmeticId: "safe_avatar",
+                name: "Safe Avatar",
+                accountId: "private-account"
+              }
+            }
+          };
+        },
+        getDailyElementChestStatus: async () => null,
+        openDailyElementChest: async () => null
+      }
+    }
+  };
+
+  try {
+    await assert.rejects(controller.openEventChestEntitlement(), /Temporary server error/);
+    assert.equal(controller.eventChestOpenPromises.size, 0);
+    assert.equal(controller.availableEventChestEntitlement?.entitlementId, "event_chest_entitlement_retry_1");
+    assert.equal(modalCalls.at(-1)?.title, "Event Chest Open Failed");
+
+    const retry = await controller.openEventChestEntitlement();
+    assert.equal(openCalls, 2);
+    assert.equal(retry?.entitlement?.status, "opened");
+    assert.equal(controller.availableEventChestEntitlement, null);
+    assert.match(modalCalls.at(-1)?.bodyHtml, /Safe Avatar/);
+    assert.doesNotMatch(modalCalls.at(-1)?.bodyHtml, /private-account|accountId|profileKey|rewardSettlement/);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
 test("ui: menu renders no empty announcement shell when there is no active announcement", () => {
   const html = menuScreen.render({
     username: "AnnouncementUser",
@@ -28829,6 +29256,10 @@ test("ui: renderer-shared state modules do not import the server-only boost even
     "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\shared\\boostEventRules.js",
     "utf8"
   );
+  const eventChestEntitlementsSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\eventChestEntitlements.js",
+    "utf8"
+  );
 
   assert.equal(stateCoordinatorSource.includes("../multiplayer/boostEventStore.js"), false);
   assert.equal(dailyChallengesSource.includes("../multiplayer/boostEventStore.js"), false);
@@ -28838,6 +29269,8 @@ test("ui: renderer-shared state modules do not import the server-only boost even
   assert.equal(dailyChallengesSource.includes("fs/promises"), false);
   assert.equal(sharedBoostRulesSource.includes("node:path"), false);
   assert.equal(sharedBoostRulesSource.includes("fs/promises"), false);
+  assert.equal(eventChestEntitlementsSource.includes("node:crypto"), false);
+  assert.equal(eventChestEntitlementsSource.includes("createHash"), false);
 });
 
 test("ui: appController refreshes the open profile screen when an admin reward notice arrives", async () => {

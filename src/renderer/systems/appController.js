@@ -357,6 +357,9 @@ export class AppController {
     this.initPromise = null;
     this.eventChestEntitlementSyncPromise = null;
     this.lastEventChestEntitlementSyncResult = null;
+    this.availableEventChestEntitlement = null;
+    this.eventChestOpenPromises = new Map();
+    this.eventChestOpeningEntitlementId = null;
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
     this.dailyLoginAutoClaimSessionGateKey = null;
@@ -3366,6 +3369,7 @@ export class AppController {
           }
         : null,
       dailyElementChest: this.buildDailyElementChestMenuView(),
+      eventChest: this.buildEventChestMenuView(),
       actions: {
         startPveGame: () => this.showAiDifficultySelect(),
         startLocalGame: () => this.showLocalSetup(),
@@ -3373,6 +3377,7 @@ export class AppController {
         openProfile: async () => this.showProfile(),
         openAchievements: async () => this.showAchievements(),
         openDailyElementChest: async () => this.showDailyElementChestModal(),
+        openEventChestEntitlement: async () => this.openEventChestEntitlement(),
         openDailyChallenges: async () => this.showDailyChallenges(),
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
@@ -3434,6 +3439,169 @@ export class AppController {
       paidOpenCost: this.dailyElementChestStatus.paidOpenCost ?? 100,
       isPoolComplete: this.dailyElementChestStatus.collectionProgress?.isComplete === true
     };
+  }
+
+  normalizeEventChestEntitlementMenuState(result) {
+    const entitlement = result?.entitlement ?? null;
+    const activeChest = result?.activeChest ?? null;
+    const entitlementId = String(entitlement?.entitlementId ?? "").trim();
+    const status = String(entitlement?.status ?? "").trim();
+    if (
+      result?.active !== true ||
+      !entitlementId ||
+      status !== "available" ||
+      !activeChest
+    ) {
+      return null;
+    }
+
+    return {
+      available: true,
+      entitlementId,
+      chestId: String(entitlement?.chestId ?? activeChest?.chestId ?? "").trim(),
+      definitionRevisionId: String(
+        entitlement?.definitionRevisionId ?? activeChest?.definitionRevisionId ?? ""
+      ).trim(),
+      status,
+      title: String(activeChest?.title ?? "Event Chest").trim() || "Event Chest",
+      subtitle: String(activeChest?.subtitle ?? "").trim(),
+      description: String(activeChest?.description ?? "").trim(),
+      icon: String(activeChest?.icons?.closed ?? activeChest?.icon ?? "").trim(),
+      opening: this.eventChestOpeningEntitlementId === entitlementId
+    };
+  }
+
+  buildEventChestMenuView() {
+    if (!this.availableEventChestEntitlement?.available) {
+      return null;
+    }
+
+    const entitlementId = String(this.availableEventChestEntitlement.entitlementId ?? "").trim();
+    if (!entitlementId) {
+      return null;
+    }
+
+    return {
+      ...this.availableEventChestEntitlement,
+      opening:
+        this.eventChestOpeningEntitlementId === entitlementId ||
+        this.eventChestOpenPromises.has(entitlementId)
+    };
+  }
+
+  formatEventChestRewardSummary(reward) {
+    const rewardType = String(reward?.type ?? "").trim();
+    if (rewardType === "tokens") {
+      const tokenAmount = Math.max(0, Number(reward?.tokenAmount ?? 0) || 0);
+      return {
+        title: `+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}`,
+        body: "Duplicate reward converted to tokens."
+      };
+    }
+
+    const cosmetic = reward?.cosmetic ?? null;
+    if (rewardType === "cosmetic" && cosmetic) {
+      const name = String(cosmetic?.name ?? cosmetic?.cosmeticId ?? "Cosmetic Reward").trim();
+      const rarity = String(reward?.rarity ?? cosmetic?.rarity ?? "").trim();
+      return {
+        title: name || "Cosmetic Reward",
+        body: rarity ? `${rarity} cosmetic unlocked.` : "Cosmetic unlocked."
+      };
+    }
+
+    return {
+      title: "Event Chest Reward",
+      body: "Reward received."
+    };
+  }
+
+  async openEventChestEntitlement(entitlementId = null) {
+    const safeEntitlementId = String(
+      entitlementId ?? this.availableEventChestEntitlement?.entitlementId ?? ""
+    ).trim();
+    if (!safeEntitlementId) {
+      return null;
+    }
+
+    const openEntitlement = window.elemintz?.multiplayer?.openEventChestEntitlement;
+    if (typeof openEntitlement !== "function") {
+      this.modalManager.show({
+        title: "Event Chest Unavailable",
+        body: "Unable to open Event Chest right now.",
+        actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+      });
+      return null;
+    }
+
+    if (this.eventChestOpenPromises.has(safeEntitlementId)) {
+      return this.eventChestOpenPromises.get(safeEntitlementId);
+    }
+
+    const openPromise = (async () => {
+      this.eventChestOpeningEntitlementId = safeEntitlementId;
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+
+      try {
+        const result = await openEntitlement(safeEntitlementId);
+        this.availableEventChestEntitlement = null;
+        const reward = this.formatEventChestRewardSummary(result?.reward);
+        this.modalManager.show({
+          title: "Event Chest Opened",
+          bodyHtml: `
+            <div class="stack-sm" data-event-chest-open-result="true">
+              <p><strong>${escapeHtml(reward.title)}</strong></p>
+              <p>${escapeHtml(reward.body)}</p>
+            </div>
+          `,
+          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+        });
+
+        try {
+          await this.loadPreferredProfileForOnlineSession({
+            username: this.username,
+            onlineState: this.onlinePlayState,
+            allowEnsureLocal: false
+          });
+        } catch (refreshError) {
+          console.warn("[EventChest][Renderer] post-open profile refresh skipped", {
+            message: refreshError?.message ?? "Unable to refresh profile after Event Chest opening."
+          });
+        }
+        return result;
+      } catch (error) {
+        const message = this.formatPlayerFacingMessage(
+          error?.message,
+          "Unable to open Event Chest entitlement."
+        );
+        const lowercase = message.toLowerCase();
+        if (
+          lowercase.includes("not found") ||
+          lowercase.includes("not available") ||
+          lowercase.includes("expired")
+        ) {
+          this.availableEventChestEntitlement = null;
+        }
+        this.modalManager.show({
+          title: "Event Chest Open Failed",
+          body: message,
+          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+        });
+        throw error;
+      } finally {
+        this.eventChestOpenPromises.delete(safeEntitlementId);
+        if (this.eventChestOpeningEntitlementId === safeEntitlementId) {
+          this.eventChestOpeningEntitlementId = null;
+        }
+        if (this.screenFlow === "menu") {
+          this.renderMenuScreen();
+        }
+      }
+    })();
+
+    this.eventChestOpenPromises.set(safeEntitlementId, openPromise);
+    return openPromise;
   }
 
   buildDailyElementChestModalView() {
@@ -3997,6 +4165,10 @@ export class AppController {
     this.dailyElementChestUiError = "";
     this.dailyElementChestOpenInFlight = false;
     this.dailyElementChestPendingOpenType = null;
+    this.lastEventChestEntitlementSyncResult = null;
+    this.availableEventChestEntitlement = null;
+    this.eventChestOpeningEntitlementId = null;
+    this.eventChestOpenPromises.clear();
     this.menuBoostEvent = null;
     this.localPlayers = null;
     this.localProfiles = null;
@@ -4450,12 +4622,17 @@ export class AppController {
       try {
         const result = await syncEntitlements({});
         this.lastEventChestEntitlementSyncResult = result ?? null;
+        this.availableEventChestEntitlement =
+          this.normalizeEventChestEntitlementMenuState(result) ?? null;
         const deliveryStatus = String(result?.deliveryStatus ?? "").trim();
         if (deliveryStatus && deliveryStatus !== "no_active_event_chest") {
           console.info("[EventChest][Renderer] entitlement sync completed", {
             reason,
             deliveryStatus
           });
+        }
+        if (this.screenFlow === "menu") {
+          this.renderMenuScreen();
         }
         return result ?? null;
       } catch (error) {

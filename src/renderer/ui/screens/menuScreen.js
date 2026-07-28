@@ -345,6 +345,40 @@ function renderMenuBoostEventCard(boostEvent) {
   `;
 }
 
+function renderMenuEventChestCard(eventChest) {
+  if (!eventChest?.available) {
+    return "";
+  }
+
+  const title = eventChest.title || "Event Chest";
+  const subtitle = eventChest.subtitle || eventChest.description || "A limited Event Chest is ready.";
+  const icon = eventChest.icon ? getAssetPath(eventChest.icon) : getAssetPath("icons/daily_chest.png");
+  const opening = eventChest.opening === true;
+
+  return `
+    <section class="menu-event-chest-card" data-menu-event-chest-panel="true">
+      <button
+        id="open-event-chest-entitlement-btn"
+        class="daily-element-chest-card menu-event-chest-card__button"
+        type="button"
+        data-event-chest-entitlement-id="${escapeHtml(eventChest.entitlementId)}"
+        ${opening ? "disabled aria-busy=\"true\"" : ""}
+      >
+        <div class="daily-element-chest-card__art">
+          <img class="daily-element-chest-card__image" src="${icon}" alt="" />
+        </div>
+        <div class="daily-element-chest-card__content">
+          <p class="daily-element-chest-card__eyebrow">${escapeHtml(title)}</p>
+          <p class="daily-element-chest-card__status" data-event-chest-status="true">${
+            opening ? "Opening..." : "Ready to Open"
+          }</p>
+          <p class="daily-element-chest-card__cost">${escapeHtml(subtitle)}</p>
+        </div>
+      </button>
+    </section>
+  `;
+}
+
 export const menuScreen = {
   render(context) {
     return `
@@ -383,6 +417,7 @@ export const menuScreen = {
                       </div>
                     `
                 }
+                ${renderMenuEventChestCard(context.eventChest)}
                 <div class="menu-challenges-heading">
                   <h3 class="section-title">Challenges</h3>
                 </div>
@@ -423,6 +458,9 @@ export const menuScreen = {
     document
       .getElementById("open-daily-element-chest-btn")
       ?.addEventListener("click", context.actions.openDailyElementChest);
+    document
+      .getElementById("open-event-chest-entitlement-btn")
+      ?.addEventListener("click", context.actions.openEventChestEntitlement);
     const dismissAnnouncementButton = document.getElementById("dismiss-announcement-btn");
     if (dismissAnnouncementButton) {
       dismissAnnouncementButton.addEventListener("click", () =>
