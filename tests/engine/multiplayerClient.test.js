@@ -496,6 +496,22 @@ class FakeSocket {
       });
     }
 
+    if (eventName === "profile:syncEventChestEntitlements") {
+      queueMicrotask(() => {
+        ack?.({
+          ok: true,
+          result: {
+            active: false,
+            deliveryStatus: "no_active_event_chest",
+            idempotent: true,
+            alreadyEntitled: false,
+            entitlement: null,
+            activeChest: null
+          }
+        });
+      });
+    }
+
     if (eventName === "profile:view") {
       queueMicrotask(() => {
         ack?.({
@@ -2653,6 +2669,95 @@ test("multiplayer client: unchecked authenticated login does not persist a remem
   }
 });
 
+test("multiplayer client: Event Chest entitlement sync uses authenticated profile route once while in flight", async () => {
+  let lastSocket = null;
+  const dataDir = await createTempDataDir();
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    dataDir
+  });
+
+  try {
+    await client.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+
+    const [first, second] = await Promise.all([
+      client.syncEventChestEntitlements(),
+      client.syncEventChestEntitlements()
+    ]);
+
+    assert.equal(first?.deliveryStatus, "no_active_event_chest");
+    assert.deepEqual(second, first);
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:syncEventChestEntitlements").length,
+      1
+    );
+
+    await client.syncEventChestEntitlements();
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:syncEventChestEntitlements").length,
+      2
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: Event Chest entitlement sync clears its lock after rejection", async () => {
+  class FailingEntitlementSocket extends FakeSocket {
+    emit(eventName, payload, ack) {
+      if (eventName === "profile:syncEventChestEntitlements") {
+        this.sentEvents.push({ eventName, payload });
+        queueMicrotask(() => {
+          ack?.({
+            ok: false,
+            error: {
+              code: "EVENT_CHEST_ENTITLEMENT_SYNC_FAILED",
+              message: "Sync failed."
+            }
+          });
+        });
+        return;
+      }
+
+      super.emit(eventName, payload, ack);
+    }
+  }
+
+  let lastSocket = null;
+  const dataDir = await createTempDataDir();
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FailingEntitlementSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    dataDir
+  });
+
+  try {
+    await client.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+
+    await assert.rejects(client.syncEventChestEntitlements(), /Sync failed/);
+    await assert.rejects(client.syncEventChestEntitlements(), /Sync failed/);
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:syncEventChestEntitlements").length,
+      2
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer client: logout clears the stored session identity", async () => {
   let lastSocket = null;
   const dataDir = await createTempDataDir();
@@ -4129,6 +4234,149 @@ test("app controller: authenticated online profile load does not fall back to lo
   assert.equal(localProfileReads, 0);
   assert.equal(profile?.username, "AuthorityUser");
   assert.equal(profile?.cosmetics?.snapshot?.equipped?.avatar, "server_avatar");
+});
+
+test("app controller: Event Chest entitlement sync is gated to authenticated own-profile refreshes", async () => {
+  const controller = createAppController();
+  controller.username = "AuthorityUser";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: {
+      authenticated: true,
+      username: "AuthorityUser"
+    }
+  };
+
+  let syncCalls = 0;
+  let resolveSync = null;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        syncEventChestEntitlements: async () => {
+          syncCalls += 1;
+          return new Promise((resolve) => {
+            resolveSync = resolve;
+          });
+        },
+        getProfile: async () => ({
+          profile: { username: "AuthorityUser" }
+        })
+      },
+      state: {
+        getProfile: async () => ({ username: "AuthorityUser" })
+      }
+    }
+  };
+
+  const first = controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({ reason: "test" });
+  const second = controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({ reason: "test" });
+  assert.equal(syncCalls, 1);
+  resolveSync({
+    deliveryStatus: "no_active_event_chest"
+  });
+  assert.deepEqual(await first, { deliveryStatus: "no_active_event_chest" });
+  assert.deepEqual(await second, { deliveryStatus: "no_active_event_chest" });
+  assert.equal(controller.eventChestEntitlementSyncPromise, null);
+
+  const retry = controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({ reason: "reconnect" });
+  assert.equal(syncCalls, 2);
+  resolveSync({
+    deliveryStatus: "already_entitled"
+  });
+  assert.deepEqual(await retry, { deliveryStatus: "already_entitled" });
+
+  controller.onlinePlayState.session.authenticated = false;
+  await controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({ reason: "guest" });
+  assert.equal(syncCalls, 2);
+
+  controller.onlinePlayState.session = {
+    authenticated: true,
+    username: "OtherUser"
+  };
+  await controller.loadPreferredProfileForOnlineSession({
+    username: "AuthorityUser",
+    onlineState: controller.onlinePlayState,
+    allowEnsureLocal: false
+  });
+  assert.equal(syncCalls, 2);
+});
+
+test("app controller: Event Chest entitlement sync failure does not block authenticated login", async () => {
+  const screenCalls = [];
+  let toastCalls = 0;
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: (screen, payload) => {
+        screenCalls.push({ screen, payload });
+      }
+    },
+    modalManager: {
+      show: () => {},
+      hide: () => {}
+    },
+    toastManager: {
+      show: () => {
+        toastCalls += 1;
+      }
+    }
+  });
+
+  let syncCalls = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        login: async () => ({
+          ok: true,
+          account: {
+            username: "AuthorityUser"
+          },
+          session: {
+            username: "AuthorityUser",
+            authenticated: true,
+            emailVerified: false
+          }
+        }),
+        getState: async () => ({
+          connectionStatus: "connected",
+          session: {
+            authenticated: true,
+            username: "AuthorityUser"
+          }
+        }),
+        getProfile: async () => ({
+          profile: {
+            username: "AuthorityUser",
+            tokens: 225,
+            playerXP: 18,
+            playerLevel: 1
+          }
+        }),
+        syncEventChestEntitlements: async () => {
+          syncCalls += 1;
+          throw new Error("No active Event Chest.");
+        },
+        claimDailyLoginReward: async () => null
+      },
+      state: {
+        getProfile: async () => null
+      }
+    }
+  };
+
+  controller.showLogin({ mode: "login" });
+  const loginAction = screenCalls.at(-1)?.payload?.actions?.login;
+  await loginAction({
+    mode: "login",
+    email: "player@example.com",
+    password: "password123",
+    rememberSession: true
+  });
+  await Promise.resolve();
+
+  assert.equal(syncCalls, 1);
+  assert.equal(screenCalls.at(-1)?.screen, "menu");
+  assert.equal(toastCalls, 0);
 });
 
 test("app controller: authenticated online daily login claim uses multiplayer authority instead of legacy local mutation", async () => {

@@ -828,6 +828,7 @@ export class MultiplayerClient {
     this.sessionBoundSocketId = null;
     this.isOpeningChest = false;
     this.isOpeningDailyElementChest = false;
+    this.eventChestEntitlementSyncPromise = null;
     this.logger.info?.("[Multiplayer][Electron] persistent client log ready", {
       logPath: this.logPath
     });
@@ -2946,6 +2947,31 @@ export class MultiplayerClient {
       return response.result ?? null;
     } finally {
       this.isOpeningDailyElementChest = false;
+    }
+  }
+
+  async syncEventChestEntitlements({ serverUrl } = {}) {
+    if (this.eventChestEntitlementSyncPromise) {
+      return this.eventChestEntitlementSyncPromise;
+    }
+
+    this.eventChestEntitlementSyncPromise = (async () => {
+      const response = await this.runServerRequest(
+        "profile:syncEventChestEntitlements",
+        {},
+        { serverUrl }
+      );
+      if (!response?.ok) {
+        throw new Error(response?.error?.message ?? "Unable to sync Event Chest entitlements.");
+      }
+
+      return response.result ?? null;
+    })();
+
+    try {
+      return await this.eventChestEntitlementSyncPromise;
+    } finally {
+      this.eventChestEntitlementSyncPromise = null;
     }
   }
 

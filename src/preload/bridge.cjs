@@ -61,6 +61,8 @@ function buildElemintzBridge(ipcRenderer, { appVersion = "unknown" } = {}) {
       claimDailyLoginReward: (payload) => ipcRenderer.invoke("multiplayer:claimDailyLoginReward", payload),
       getDailyElementChestStatus: (payload) =>
         ipcRenderer.invoke("multiplayer:getDailyElementChestStatus", payload),
+      syncEventChestEntitlements: (payload) =>
+        ipcRenderer.invoke("multiplayer:syncEventChestEntitlements", payload),
       buyStoreItem: (payload) => ipcRenderer.invoke("multiplayer:buyStoreItem", payload),
       recordGauntletStats: (payload) => ipcRenderer.invoke("multiplayer:recordGauntletStats", payload),
       openChest: (payload) => ipcRenderer.invoke("multiplayer:openChest", payload),

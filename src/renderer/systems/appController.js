@@ -355,6 +355,8 @@ export class AppController {
     this.dailyChallengesRefreshPromise = null;
     this.localQuitLastRequestAt = 0;
     this.initPromise = null;
+    this.eventChestEntitlementSyncPromise = null;
+    this.lastEventChestEntitlementSyncResult = null;
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
     this.dailyLoginAutoClaimSessionGateKey = null;
@@ -4428,6 +4430,49 @@ export class AppController {
     const requestedUsername = String(username ?? "").trim();
     const sessionUsername = String(onlineState?.session?.username ?? "").trim();
     return !requestedUsername || !sessionUsername || requestedUsername === sessionUsername;
+  }
+
+  async syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({ reason = "profile-refresh" } = {}) {
+    if (!this.hasAuthenticatedMultiplayerSessionForUsername(this.username, this.onlinePlayState)) {
+      return null;
+    }
+
+    const syncEntitlements = window.elemintz?.multiplayer?.syncEventChestEntitlements;
+    if (typeof syncEntitlements !== "function") {
+      return null;
+    }
+
+    if (this.eventChestEntitlementSyncPromise) {
+      return this.eventChestEntitlementSyncPromise;
+    }
+
+    const syncPromise = (async () => {
+      try {
+        const result = await syncEntitlements({});
+        this.lastEventChestEntitlementSyncResult = result ?? null;
+        const deliveryStatus = String(result?.deliveryStatus ?? "").trim();
+        if (deliveryStatus && deliveryStatus !== "no_active_event_chest") {
+          console.info("[EventChest][Renderer] entitlement sync completed", {
+            reason,
+            deliveryStatus
+          });
+        }
+        return result ?? null;
+      } catch (error) {
+        console.warn("[EventChest][Renderer] entitlement sync skipped", {
+          reason,
+          message: error?.message ?? "Unable to sync Event Chest entitlements."
+        });
+        return null;
+      } finally {
+        if (this.eventChestEntitlementSyncPromise === syncPromise) {
+          this.eventChestEntitlementSyncPromise = null;
+        }
+      }
+    })();
+
+    this.eventChestEntitlementSyncPromise = syncPromise;
+    return syncPromise;
   }
 
   async loadOwnEmailVerificationState() {
@@ -9845,6 +9890,9 @@ export class AppController {
           onlineState: this.onlinePlayState,
           allowEnsureLocal: false
         });
+        void this.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({
+          reason: "restore"
+        });
         await this.ensureDailyLoginAutoClaim({
           showToasts: true,
           requestKey: `restore:${this.username}`
@@ -9963,6 +10011,9 @@ export class AppController {
             if (!profile?.username) {
               throw new Error("Unable to load the authenticated profile snapshot.");
             }
+            void this.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({
+              reason: `login:${mode === "register" ? "register" : "login"}`
+            });
             await this.ensureDailyLoginAutoClaim({
               showToasts: true,
               requestKey: `login:${this.username}`

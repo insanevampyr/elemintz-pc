@@ -174,6 +174,11 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.getDailyElementChestStatus(payload);
   });
 
+  ipcMain.handle("multiplayer:syncEventChestEntitlements", async (event, payload) => {
+    subscribers.add(event.sender);
+    return client.syncEventChestEntitlements(payload);
+  });
+
   ipcMain.handle("multiplayer:startLocalPveMatch", async (event, payload) => {
     subscribers.add(event.sender);
     return client.startLocalPveMatch(payload);
