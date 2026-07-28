@@ -74,11 +74,11 @@ import {
   openDailyElementChest
 } from "./dailyElementChestSystem.js";
 import {
-  buildEventChestEntitlementId,
   createEventChestEntitlement,
   normalizeEventChestEntitlements,
   sanitizeEventChestEntitlementForPlayer
 } from "./eventChestEntitlements.js";
+import { buildEventChestEntitlementId } from "./eventChestEntitlementIds.js";
 import {
   applyEventChestReward,
   buildEventChestOpenResponse,

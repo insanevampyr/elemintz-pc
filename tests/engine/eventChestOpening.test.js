@@ -5,10 +5,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
-import {
-  buildEventChestEntitlementId,
-  createEventChestEntitlement
-} from "../../src/state/eventChestEntitlements.js";
+import { buildEventChestEntitlementId } from "../../src/state/eventChestEntitlementIds.js";
+import { createEventChestEntitlement } from "../../src/state/eventChestEntitlements.js";
 import {
   buildEventChestOpenResponse,
   createEventChestRewardSettlement
