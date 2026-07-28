@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 export const EVENT_CHEST_ENTITLEMENTS_SCHEMA_VERSION = 1;
 export const EVENT_CHEST_ENTITLEMENT_SCHEMA_VERSION = 1;
 
@@ -48,6 +50,55 @@ export function createDefaultEventChestEntitlements() {
     schemaVersion: EVENT_CHEST_ENTITLEMENTS_SCHEMA_VERSION,
     items: []
   };
+}
+
+export function buildEventChestEntitlementId({
+  accountId,
+  profileKey,
+  chestId,
+  definitionRevisionId
+} = {}) {
+  const safeAccountId = normalizeRequiredString(accountId);
+  const safeProfileKey = normalizeRequiredString(profileKey);
+  const safeChestId = normalizeRequiredString(chestId);
+  const safeDefinitionRevisionId = normalizeRequiredString(definitionRevisionId);
+  if (!safeAccountId || !safeProfileKey || !safeChestId || !safeDefinitionRevisionId) {
+    return null;
+  }
+
+  const digest = crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        accountId: safeAccountId,
+        profileKey: safeProfileKey,
+        chestId: safeChestId,
+        definitionRevisionId: safeDefinitionRevisionId
+      })
+    )
+    .digest("hex");
+
+  return `event_chest_entitlement_${digest.slice(0, 32)}`;
+}
+
+export function createEventChestEntitlement({
+  entitlementId,
+  chestId,
+  definitionRevisionId,
+  grantedAt
+} = {}) {
+  return normalizeEventChestEntitlement({
+    schemaVersion: EVENT_CHEST_ENTITLEMENT_SCHEMA_VERSION,
+    entitlementId,
+    chestId,
+    definitionRevisionId,
+    grantedAt,
+    grantSource: "active_event",
+    status: "available",
+    openedAt: null,
+    openTransactionId: null,
+    rewardSettlement: null
+  });
 }
 
 export function normalizeEventChestEntitlement(value) {
@@ -168,5 +219,20 @@ export function sanitizeEventChestEntitlementsForOwnProfile(value) {
         openedAt
       })
     )
+  };
+}
+
+export function sanitizeEventChestEntitlementForPlayer(value) {
+  const normalized = normalizeEventChestEntitlement(value);
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    entitlementId: normalized.entitlementId,
+    chestId: normalized.chestId,
+    definitionRevisionId: normalized.definitionRevisionId,
+    grantedAt: normalized.grantedAt,
+    status: normalized.status
   };
 }

@@ -20,6 +20,7 @@ import {
   getXpThresholds,
   normalizeProfileDailyChallenges
 } from "../../src/state/dailyChallengesSystem.js";
+import { DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID } from "../../src/state/dailyElementChestSystem.js";
 import {
   COSMETIC_CATALOG,
   getCosmeticCatalogForProfile,
@@ -27,6 +28,8 @@ import {
 } from "../../src/state/cosmeticSystem.js";
 import { buildCollectionAlbumDetail } from "../../src/state/collectionAlbums.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
+import { DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET } from "../../src/state/eventChestDefinitions.js";
+import { EVENT_CHEST_REGISTRY_FILENAME } from "../../src/state/eventChestRegistryStore.js";
 import {
   applyLevelRewardsForLevelChange,
   applyXpWithMaxLevelFallback,
@@ -49,6 +52,45 @@ import { getArenaBackground, getAvatarImage, getCardBackImage, getVariantCardIma
 async function createTempDataDir() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-state-"));
   return root;
+}
+
+function buildPublishedEventChestDefinition(overrides = {}) {
+  return {
+    ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+    chestId: "state_event_chest_entitlement",
+    title: "State Event Chest Entitlement",
+    subtitle: "State sync test.",
+    description: "State entitlement delivery test chest.",
+    modalTitle: "State Event Chest",
+    definitionRevisionId: "definition_revision_state_entitlement_1",
+    publishedAt: "2026-07-28T12:00:00.000Z",
+    publishedBy: "VampyrLee",
+    sourceDraftId: "draft_state_entitlement",
+    sourceDraftRevisionId: "draft_revision_state_entitlement_1",
+    ...overrides
+  };
+}
+
+async function writeEventChestRegistryFile(dataDir, definitions) {
+  const filePath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(
+    filePath,
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        registryId: "elemintz_event_chest_registry",
+        registryRevisionId: "registry_revision_state_entitlement",
+        publishedAt: "2026-07-28T12:00:00.000Z",
+        publishedBy: "VampyrLee",
+        definitions
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  return filePath;
 }
 
 async function writeBoostEventConfig(dataDir, config) {
@@ -5483,6 +5525,283 @@ test("state: public and own Collection Album shaping tolerates unknown legacy cl
   assert.equal(Array.isArray(own.profile.collectionAlbums.summaries), true);
   assert.equal(Number.isInteger(viewed.profile.collectionAlbums.completedCount), true);
   assert.equal(JSON.stringify(viewed).includes("old_reward"), false);
+});
+
+test("state: Event Chest entitlement delivery validates active registry state before profile mutation", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  try {
+    await coordinator.profiles.ensureProfile("EntitlementValidationUser", {
+      linkedAccountId: "account-validation"
+    });
+    const profilePath = path.join(dataDir, "profiles.json");
+    const profileBeforeMissingActivation = await fs.readFile(profilePath, "utf8");
+
+    const missingActivation = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementValidationUser",
+      profileKey: "EntitlementValidationUser",
+      accountId: "account-validation"
+    });
+    assert.equal(missingActivation.deliveryStatus, "no_active_event_chest");
+    assert.equal(missingActivation.entitlement, null);
+    assert.equal(await fs.readFile(profilePath, "utf8"), profileBeforeMissingActivation);
+
+    await coordinator.eventChestActivationStore.activate({
+      chestId: "state_event_chest_entitlement",
+      definitionRevisionId: "definition_revision_state_entitlement_1"
+    });
+    const profileBeforeRegistryFailures = await fs.readFile(profilePath, "utf8");
+    await assert.rejects(
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementValidationUser",
+        profileKey: "EntitlementValidationUser",
+        accountId: "account-validation"
+      }),
+      /Published Event Chest registry is unavailable or invalid/
+    );
+    assert.equal(await fs.readFile(profilePath, "utf8"), profileBeforeRegistryFailures);
+
+    const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+    await fs.writeFile(registryPath, "{ nope", "utf8");
+    await assert.rejects(
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementValidationUser",
+        profileKey: "EntitlementValidationUser",
+        accountId: "account-validation"
+      }),
+      /Published Event Chest registry is unavailable or invalid/
+    );
+    assert.equal(await fs.readFile(profilePath, "utf8"), profileBeforeRegistryFailures);
+
+    await writeEventChestRegistryFile(dataDir, [buildPublishedEventChestDefinition()]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: "missing_state_event_chest",
+      definitionRevisionId: "definition_revision_state_entitlement_1"
+    });
+    await assert.rejects(
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementValidationUser",
+        profileKey: "EntitlementValidationUser",
+        accountId: "account-validation"
+      }),
+      /was not found/
+    );
+    assert.equal(await fs.readFile(profilePath, "utf8"), profileBeforeRegistryFailures);
+
+    await coordinator.eventChestActivationStore.activate({
+      chestId: "state_event_chest_entitlement",
+      definitionRevisionId: "definition_revision_missing"
+    });
+    await assert.rejects(
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementValidationUser",
+        profileKey: "EntitlementValidationUser",
+        accountId: "account-validation"
+      }),
+      /revision 'definition_revision_missing' was not found/
+    );
+    assert.equal(await fs.readFile(profilePath, "utf8"), profileBeforeRegistryFailures);
+
+    await writeEventChestRegistryFile(dataDir, [
+      buildPublishedEventChestDefinition({
+        chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+        definitionRevisionId: "definition_revision_static_daily_blocked",
+        title: "Daily EleMintz Chest"
+      })
+    ]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      definitionRevisionId: "definition_revision_static_daily_blocked"
+    });
+    await assert.rejects(
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementValidationUser",
+        profileKey: "EntitlementValidationUser",
+        accountId: "account-validation"
+      }),
+      /Daily Elemintz Chest fallback content cannot deliver/
+    );
+    assert.equal(await fs.readFile(profilePath, "utf8"), profileBeforeRegistryFailures);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("state: Event Chest entitlement delivery is deterministic, idempotent, and private", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  try {
+    await writeEventChestRegistryFile(dataDir, [buildPublishedEventChestDefinition()]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: "state_event_chest_entitlement",
+      definitionRevisionId: "definition_revision_state_entitlement_1"
+    });
+    await coordinator.profiles.ensureProfile("EntitlementUserA", {
+      linkedAccountId: "account-a",
+      eventChests: {
+        daily_elemintz_chest_current: {
+          chestId: "daily_elemintz_chest_current",
+          totalOpens: 2
+        }
+      }
+    });
+    await coordinator.profiles.ensureProfile("EntitlementUserB", {
+      linkedAccountId: "account-b"
+    });
+    await coordinator.profiles.ensureProfile("EntitlementConcurrentUser", {
+      linkedAccountId: "account-concurrent"
+    });
+    await coordinator.profiles.ensureProfile("EntitlementEndedUser", {
+      linkedAccountId: "account-ended"
+    });
+    await coordinator.profiles.ensureProfile("EntitlementLegacyUser", {
+      linkedAccountId: "account-legacy"
+    });
+
+    const profilePath = path.join(dataDir, "profiles.json");
+    const rawLegacyProfiles = JSON.parse(await fs.readFile(profilePath, "utf8"));
+    const rawLegacyProfile = rawLegacyProfiles.find((profile) => profile.username === "EntitlementLegacyUser");
+    delete rawLegacyProfile.eventChestEntitlements;
+    await fs.writeFile(profilePath, JSON.stringify(rawLegacyProfiles, null, 2), "utf8");
+
+    const beforeA = await coordinator.profiles.getProfile("EntitlementUserA");
+    const first = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementUserA",
+      profileKey: "EntitlementUserA",
+      accountId: "account-a"
+    });
+    assert.equal(first.deliveryStatus, "delivered");
+    assert.equal(first.idempotent, false);
+    assert.equal(first.alreadyEntitled, false);
+    assert.equal(first.entitlement.status, "available");
+    assert.equal(first.entitlement.chestId, "state_event_chest_entitlement");
+    assert.equal(first.entitlement.definitionRevisionId, "definition_revision_state_entitlement_1");
+    assert.equal(first.activeChest.title, "State Event Chest Entitlement");
+    assert.equal(first.activeChest.subtitle, "State sync test.");
+    assert.equal(first.activeChest.icons.closed, "icons/daily_chest.png");
+    const serializedFirst = JSON.stringify(first);
+    for (const privateKey of [
+      '"pool"',
+      '"odds"',
+      '"pity"',
+      "duplicateTokenRewards",
+      "sourceDraftId",
+      "sourceDraftRevisionId",
+      "rewardSettlement",
+      "openTransactionId",
+      "account-a",
+      "profileKey",
+      "sessionToken"
+    ]) {
+      assert.equal(serializedFirst.includes(privateKey), false);
+    }
+
+    const afterFirstProfile = await coordinator.profiles.getProfile("EntitlementUserA");
+    assert.deepEqual(afterFirstProfile.eventChests, beforeA.eventChests);
+    assert.equal(afterFirstProfile.eventChestEntitlements.items.length, 1);
+    assert.equal(afterFirstProfile.eventChestEntitlements.items[0].status, "available");
+    assert.equal(afterFirstProfile.eventChestEntitlements.items[0].openTransactionId, null);
+    assert.equal(afterFirstProfile.eventChestEntitlements.items[0].rewardSettlement, null);
+    assert.equal(afterFirstProfile.tokens, beforeA.tokens);
+    assert.deepEqual(afterFirstProfile.ownedCosmetics, beforeA.ownedCosmetics);
+
+    const serializedProfileAfterFirst = await fs.readFile(profilePath, "utf8");
+    const repeat = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementUserA",
+      profileKey: "EntitlementUserA",
+      accountId: "account-a"
+    });
+    assert.equal(repeat.deliveryStatus, "already_entitled");
+    assert.equal(repeat.idempotent, true);
+    assert.equal(repeat.alreadyEntitled, true);
+    assert.equal(repeat.entitlement.entitlementId, first.entitlement.entitlementId);
+    assert.equal(repeat.entitlement.grantedAt, first.entitlement.grantedAt);
+    assert.equal(await fs.readFile(profilePath, "utf8"), serializedProfileAfterFirst);
+
+    const [concurrentA, concurrentB] = await Promise.all([
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementConcurrentUser",
+        profileKey: "EntitlementConcurrentUser",
+        accountId: "account-concurrent"
+      }),
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementConcurrentUser",
+        profileKey: "EntitlementConcurrentUser",
+        accountId: "account-concurrent"
+      })
+    ]);
+    assert.equal(
+      [concurrentA, concurrentB].filter((result) => result.deliveryStatus === "delivered").length,
+      1
+    );
+    assert.equal(
+      [concurrentA, concurrentB].filter((result) => result.deliveryStatus === "already_entitled").length,
+      1
+    );
+    assert.equal(concurrentA.entitlement.entitlementId, concurrentB.entitlement.entitlementId);
+    assert.equal(concurrentA.entitlement.grantedAt, concurrentB.entitlement.grantedAt);
+    const concurrentProfile = await coordinator.profiles.getProfile("EntitlementConcurrentUser");
+    assert.equal(concurrentProfile.eventChestEntitlements.items.length, 1);
+
+    const userB = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementUserB",
+      profileKey: "EntitlementUserB",
+      accountId: "account-b"
+    });
+    assert.notEqual(userB.entitlement.entitlementId, first.entitlement.entitlementId);
+
+    const legacy = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementLegacyUser",
+      profileKey: "EntitlementLegacyUser",
+      accountId: "account-legacy"
+    });
+    assert.equal(legacy.deliveryStatus, "delivered");
+    const legacyProfile = await coordinator.profiles.getProfile("EntitlementLegacyUser");
+    assert.equal(legacyProfile.eventChestEntitlements.items.length, 1);
+
+    await writeEventChestRegistryFile(dataDir, [
+      buildPublishedEventChestDefinition({
+        definitionRevisionId: "definition_revision_state_entitlement_2",
+        sourceDraftRevisionId: "draft_revision_state_entitlement_2"
+      })
+    ]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: "state_event_chest_entitlement",
+      definitionRevisionId: "definition_revision_state_entitlement_2"
+    });
+    const secondRevision = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementUserA",
+      profileKey: "EntitlementUserA",
+      accountId: "account-a"
+    });
+    assert.equal(secondRevision.deliveryStatus, "delivered");
+    assert.notEqual(secondRevision.entitlement.entitlementId, first.entitlement.entitlementId);
+    const afterSecondRevisionProfile = await coordinator.profiles.getProfile("EntitlementUserA");
+    assert.equal(afterSecondRevisionProfile.eventChestEntitlements.items.length, 2);
+
+    await assert.rejects(
+      coordinator.syncEventChestEntitlementForProfile({
+        username: "EntitlementUserA",
+        profileKey: "EntitlementUserA",
+        accountId: "wrong-account"
+      }),
+      /authenticated claimed profile/
+    );
+
+    await coordinator.eventChestActivationStore.end();
+    const beforeEndedUser = await coordinator.profiles.getProfile("EntitlementEndedUser");
+    const ended = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementEndedUser",
+      profileKey: "EntitlementEndedUser",
+      accountId: "account-ended"
+    });
+    assert.equal(ended.deliveryStatus, "no_active_event_chest");
+    assert.deepEqual(await coordinator.profiles.getProfile("EntitlementEndedUser"), beforeEndedUser);
+    const afterEndUserA = await coordinator.profiles.getProfile("EntitlementUserA");
+    assert.equal(afterEndUserA.eventChestEntitlements.items.length, 2);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
 });
 
 test("state: local Collection Album reward claim grants tokens once and validates album state", async () => {

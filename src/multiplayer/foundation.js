@@ -5593,6 +5593,59 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("profile:syncEventChestEntitlements", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (!sessionResult.session?.authenticated || !sessionResult.session?.accountId) {
+        respond({
+          ok: false,
+          error: {
+            code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE",
+            message: "An authenticated claimed profile is required for Event Chest entitlement delivery."
+          }
+        });
+        return;
+      }
+
+      if (typeof profileAuthority?.syncEventChestEntitlements !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.syncEventChestEntitlements({
+          username: sessionResult.session?.username,
+          accountId: sessionResult.session?.accountId,
+          profileKey: sessionResult.session?.profileKey ?? sessionResult.session?.username
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          error: {
+            code: String(error?.code ?? "EVENT_CHEST_ENTITLEMENT_DELIVERY_FAILED"),
+            message: String(error?.message ?? "Unable to sync Event Chest entitlements.")
+          }
+        });
+      }
+    });
+
     socket.on("profile:openChest", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureClaimedProfileAccess(socket, payload, {

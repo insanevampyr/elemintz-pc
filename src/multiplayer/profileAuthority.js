@@ -1201,6 +1201,24 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.endEventChestActivationForAdmin({ actor });
   }
 
+  async syncEventChestEntitlements({ username, accountId, profileKey = username } = {}) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    const safeAccountId = normalizeAuthorityAccountId(accountId);
+    const safeProfileKey = normalizeAuthorityUsername(profileKey ?? username);
+    if (!safeUsername || !safeProfileKey || !safeAccountId) {
+      throw Object.assign(new Error("An authenticated claimed profile is required for Event Chest entitlement delivery."), {
+        code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE"
+      });
+    }
+
+    this.logger.info?.(`[ProfileAuthority] syncEventChestEntitlements -> ${safeProfileKey}`);
+    return this.coordinator.syncEventChestEntitlementForProfile({
+      username: safeUsername,
+      accountId: safeAccountId,
+      profileKey: safeProfileKey
+    });
+  }
+
   async openChest({ username, chestType }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

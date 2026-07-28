@@ -4819,6 +4819,169 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
   }
 });
 
+test("multiplayer foundation: profile Event Chest entitlement sync is authenticated, private, and idempotent", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let playerClient = null;
+  let otherClient = null;
+  let guestClient = null;
+
+  const definition = {
+    ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+    chestId: "route_event_chest_entitlement",
+    title: "Route Event Chest",
+    subtitle: "Route sync test.",
+    description: "Route entitlement sync test chest.",
+    modalTitle: "Route Event Chest",
+    definitionRevisionId: "definition_revision_route_entitlement_1",
+    publishedAt: "2026-07-28T13:00:00.000Z",
+    publishedBy: "VampyrLee",
+    sourceDraftId: "draft_route_entitlement",
+    sourceDraftRevisionId: "draft_revision_route_entitlement_1"
+  };
+  const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+  await fs.writeFile(
+    registryPath,
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        registryId: "elemintz_event_chest_registry",
+        registryRevisionId: "registry_revision_route_entitlement",
+        publishedAt: "2026-07-28T13:00:00.000Z",
+        publishedBy: "VampyrLee",
+        definitions: [definition]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await coordinator.eventChestActivationStore.activate({
+    chestId: "route_event_chest_entitlement",
+    definitionRevisionId: "definition_revision_route_entitlement_1"
+  });
+
+  try {
+    const port = await foundation.start();
+    playerClient = await connectClient(port);
+    otherClient = await connectClient(port);
+    guestClient = await connectClient(port);
+
+    const unauthenticated = await emitWithAck(guestClient, "profile:syncEventChestEntitlements", {});
+    assert.equal(unauthenticated?.ok, false);
+    assert.equal(unauthenticated?.error?.code, "SESSION_REQUIRED");
+
+    const guestSession = await emitWithAck(guestClient, "session:bootstrap", {
+      username: "GuestEntitlementUser"
+    });
+    assert.equal(guestSession?.ok, true);
+    const guestAttempt = await emitWithAck(guestClient, "profile:syncEventChestEntitlements", {
+      sessionToken: guestSession?.session?.token
+    });
+    assert.equal(guestAttempt?.ok, false);
+    assert.equal(guestAttempt?.error?.code, "EVENT_CHEST_ENTITLEMENT_INELIGIBLE");
+
+    const playerRegister = await registerAccount(playerClient, {
+      username: "RouteEntitlementUser",
+      email: "route-entitlement@example.com",
+      password: "RoutePass123"
+    });
+    const otherRegister = await registerAccount(otherClient, {
+      username: "OtherRouteEntitlementUser",
+      email: "other-route-entitlement@example.com",
+      password: "RoutePass123"
+    });
+    assert.equal(playerRegister?.ok, true);
+    assert.equal(otherRegister?.ok, true);
+
+    const first = await emitWithAck(playerClient, "profile:syncEventChestEntitlements", {
+      sessionToken: playerRegister?.session?.token,
+      username: "OtherRouteEntitlementUser"
+    });
+    assert.equal(first?.ok, true);
+    assert.equal(first?.result?.deliveryStatus, "delivered");
+    assert.equal(first?.result?.entitlement?.status, "available");
+    assert.equal(first?.result?.entitlement?.chestId, "route_event_chest_entitlement");
+    assert.equal(first?.result?.entitlement?.definitionRevisionId, "definition_revision_route_entitlement_1");
+    assert.equal(first?.result?.activeChest?.title, "Route Event Chest");
+    assert.equal(first?.result?.activeChest?.subtitle, "Route sync test.");
+
+    const playerProfile = await coordinator.profiles.getProfile("RouteEntitlementUser");
+    const otherProfile = await coordinator.profiles.getProfile("OtherRouteEntitlementUser");
+    assert.equal(playerProfile.eventChestEntitlements.items.length, 1);
+    assert.equal(otherProfile.eventChestEntitlements.items.length, 0);
+
+    const repeat = await emitWithAck(playerClient, "profile:syncEventChestEntitlements", {
+      sessionToken: playerRegister?.session?.token
+    });
+    assert.equal(repeat?.ok, true);
+    assert.equal(repeat?.result?.deliveryStatus, "already_entitled");
+    assert.equal(repeat?.result?.idempotent, true);
+    assert.equal(repeat?.result?.entitlement?.entitlementId, first?.result?.entitlement?.entitlementId);
+    assert.equal(repeat?.result?.entitlement?.grantedAt, first?.result?.entitlement?.grantedAt);
+
+    const publicView = await emitWithAck(otherClient, "profile:view", {
+      sessionToken: otherRegister?.session?.token,
+      username: "RouteEntitlementUser"
+    });
+    assert.equal(publicView?.ok, true);
+    const ownProfile = await emitWithAck(playerClient, "profile:get", {
+      sessionToken: playerRegister?.session?.token
+    });
+    assert.equal(ownProfile?.ok, true);
+    const serializedDelivery = JSON.stringify({
+      first,
+      repeat
+    });
+    assert.equal(serializedDelivery.includes('"pool"'), false);
+    assert.equal(serializedDelivery.includes('"odds"'), false);
+    assert.equal(serializedDelivery.includes('"pity"'), false);
+    assert.equal(serializedDelivery.includes("duplicateTokenRewards"), false);
+    assert.equal(serializedDelivery.includes("sourceDraftId"), false);
+    assert.equal(serializedDelivery.includes("sourceDraftRevisionId"), false);
+    assert.equal(serializedDelivery.includes("rewardSettlement"), false);
+    assert.equal(serializedDelivery.includes("openTransactionId"), false);
+    assert.equal(serializedDelivery.includes("eventChestEntitlements"), false);
+    assert.equal(serializedDelivery.includes("route-entitlement@example.com"), false);
+    assert.equal(serializedDelivery.includes("sessionToken"), false);
+
+    const serializedSnapshots = JSON.stringify({
+      repeat,
+      publicView,
+      ownProfile
+    });
+    assert.equal(serializedSnapshots.includes("eventChestEntitlements"), false);
+    assert.equal(serializedSnapshots.includes("rewardSettlement"), false);
+    assert.equal(serializedSnapshots.includes("openTransactionId"), false);
+
+    const routeEntitlementId = first?.result?.entitlement?.entitlementId;
+    assert.equal(JSON.stringify(publicView).includes(routeEntitlementId), false);
+    assert.equal(JSON.stringify(ownProfile).includes(routeEntitlementId), false);
+  } finally {
+    playerClient?.disconnect();
+    otherClient?.disconnect();
+    guestClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: admin grants apply once, notify the player, and update confirmation status", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

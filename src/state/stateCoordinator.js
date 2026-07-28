@@ -69,7 +69,16 @@ import {
   getDailyChallengesView,
   getDailyResetWindow
 } from "./dailyChallengesSystem.js";
-import { openDailyElementChest } from "./dailyElementChestSystem.js";
+import {
+  DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+  openDailyElementChest
+} from "./dailyElementChestSystem.js";
+import {
+  buildEventChestEntitlementId,
+  createEventChestEntitlement,
+  normalizeEventChestEntitlements,
+  sanitizeEventChestEntitlementForPlayer
+} from "./eventChestEntitlements.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import {
   EventChestDraftStore,
@@ -1716,6 +1725,20 @@ export class StateCoordinator {
     };
   }
 
+  buildEventChestPlayerMetadata(definition = null) {
+    if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+      return null;
+    }
+
+    return {
+      title: definition.title ?? null,
+      subtitle: definition.subtitle ?? null,
+      description: definition.description ?? null,
+      modalTitle: definition.modalTitle ?? null,
+      icons: definition.icons ? structuredClone(definition.icons) : null
+    };
+  }
+
   async getPublishedEventChestDefinitionForActivation({ chestId, definitionRevisionId }) {
     const safeChestId = String(chestId ?? "").trim();
     const safeDefinitionRevisionId = String(definitionRevisionId ?? "").trim();
@@ -1758,6 +1781,147 @@ export class StateCoordinator {
     }
 
     return structuredClone(definition);
+  }
+
+  async getActiveEventChestDefinitionForEntitlementDelivery() {
+    const activation = await this.eventChestActivationStore.readActivation();
+    if (activation?.status !== "active") {
+      return {
+        active: false,
+        activation,
+        definition: null,
+        deliveryStatus: "no_active_event_chest"
+      };
+    }
+
+    const definition = await this.getPublishedEventChestDefinitionForActivation({
+      chestId: activation.chestId,
+      definitionRevisionId: activation.definitionRevisionId
+    });
+    if (definition.chestId === DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID) {
+      throw Object.assign(new Error("Daily Elemintz Chest fallback content cannot deliver Event Chest entitlements."), {
+        code: "EVENT_CHEST_ENTITLEMENT_DAILY_FALLBACK_BLOCKED"
+      });
+    }
+
+    return {
+      active: true,
+      activation,
+      definition,
+      deliveryStatus: "active"
+    };
+  }
+
+  async syncEventChestEntitlementForProfile({
+    username,
+    accountId,
+    profileKey = username
+  } = {}) {
+    const safeUsername = String(username ?? "").trim();
+    const safeAccountId = String(accountId ?? "").trim();
+    const safeProfileKey = String(profileKey ?? safeUsername).trim();
+    if (!safeUsername || !safeAccountId || !safeProfileKey) {
+      throw Object.assign(new Error("An authenticated claimed profile is required for Event Chest entitlement delivery."), {
+        code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE"
+      });
+    }
+
+    const active = await this.getActiveEventChestDefinitionForEntitlementDelivery();
+    if (!active.active) {
+      return {
+        active: false,
+        deliveryStatus: active.deliveryStatus,
+        idempotent: true,
+        alreadyEntitled: false,
+        entitlement: null,
+        activeChest: null
+      };
+    }
+
+    const { definition } = active;
+    const entitlementId = buildEventChestEntitlementId({
+      accountId: safeAccountId,
+      profileKey: safeProfileKey,
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId
+    });
+    if (!entitlementId) {
+      throw Object.assign(new Error("Unable to build Event Chest entitlement identity."), {
+        code: "EVENT_CHEST_ENTITLEMENT_ID_FAILED"
+      });
+    }
+
+    let deliveryStatus = "already_entitled";
+    let alreadyEntitled = true;
+    let entitlement = null;
+    const update = await this.profiles.updateProfileIfChanged(safeProfileKey, (current) => {
+      const linkedAccountId = String(current?.linkedAccountId ?? "").trim();
+      if (!linkedAccountId || linkedAccountId !== safeAccountId) {
+        throw Object.assign(new Error("Event Chest entitlement delivery requires the authenticated claimed profile."), {
+          code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE"
+        });
+      }
+
+      const eventChestEntitlements = normalizeEventChestEntitlements(current?.eventChestEntitlements);
+      const existing =
+        eventChestEntitlements.items.find(
+          (item) =>
+            item.chestId === definition.chestId &&
+            item.definitionRevisionId === definition.definitionRevisionId
+        ) ?? null;
+      if (existing) {
+        entitlement = existing;
+        return {
+          ...current,
+          eventChestEntitlements
+        };
+      }
+
+      const grantedAt = new Date(this.eventChestActivationStore.now()).toISOString();
+      const nextEntitlement = createEventChestEntitlement({
+        entitlementId,
+        chestId: definition.chestId,
+        definitionRevisionId: definition.definitionRevisionId,
+        grantedAt
+      });
+      if (!nextEntitlement) {
+        throw Object.assign(new Error("Unable to create Event Chest entitlement."), {
+          code: "EVENT_CHEST_ENTITLEMENT_CREATE_FAILED"
+        });
+      }
+
+      deliveryStatus = "delivered";
+      alreadyEntitled = false;
+      entitlement = nextEntitlement;
+      return {
+        ...current,
+        eventChestEntitlements: normalizeEventChestEntitlements({
+          schemaVersion: eventChestEntitlements.schemaVersion,
+          items: [...eventChestEntitlements.items, nextEntitlement]
+        })
+      };
+    });
+
+    const persistedEntitlements = normalizeEventChestEntitlements(update.profile?.eventChestEntitlements);
+    const persisted =
+      persistedEntitlements.items.find(
+        (item) =>
+          item.chestId === definition.chestId &&
+          item.definitionRevisionId === definition.definitionRevisionId
+      ) ?? entitlement;
+
+    return {
+      active: true,
+      deliveryStatus,
+      idempotent: !update.changed,
+      alreadyEntitled,
+      entitlement: sanitizeEventChestEntitlementForPlayer(persisted),
+      activeChest: {
+        chestId: definition.chestId,
+        definitionRevisionId: definition.definitionRevisionId,
+        ...this.buildEventChestPlayerMetadata(definition)
+      }
+    };
   }
 
   async getEventChestActivationForAdmin() {
