@@ -5401,6 +5401,25 @@ test("state: public profile Collection Album shape exposes completed chips only"
         sessionKey: "session-secret"
       }
     },
+    eventChestEntitlements: {
+      schemaVersion: 1,
+      items: [
+        {
+          schemaVersion: 1,
+          entitlementId: "private-event-entitlement",
+          chestId: "private-event-chest",
+          definitionRevisionId: "private-definition-revision",
+          grantedAt: "2026-07-25T12:34:56.000Z",
+          grantSource: "active_event",
+          status: "opened",
+          openedAt: "2026-07-26T12:34:56.000Z",
+          openTransactionId: "private-open-transaction",
+          rewardSettlement: {
+            privateRewardGrantId: "private-reward-grant"
+          }
+        }
+      ]
+    },
     accountId: "acct-secret",
     profileKey: "profile-secret",
     sessionKey: "session-secret",
@@ -5424,12 +5443,17 @@ test("state: public profile Collection Album shape exposes completed chips only"
   assert.equal(albums.completed.some((album) => album.albumId === "lycan_power"), false);
   assert.equal("ownedCosmetics" in viewed.profile, false);
   assert.equal("collectionAlbumRewardClaims" in viewed.profile, false);
+  assert.equal("eventChestEntitlements" in viewed.profile, false);
   assert.equal("rewardState" in albums, false);
   assert.equal("rewardPreview" in albums, false);
   assert.equal("items" in albums, false);
   assert.equal("uniqueCosmeticAcquisitions" in viewed.profile, false);
   assert.equal(serialized.includes("private_future_reward"), false);
   assert.equal(serialized.includes("legacy_private_reward"), false);
+  assert.equal(serialized.includes("private-event-entitlement"), false);
+  assert.equal(serialized.includes("private-open-transaction"), false);
+  assert.equal(serialized.includes("private-reward-grant"), false);
+  assert.equal(serialized.includes("rewardSettlement"), false);
   assert.equal(serialized.includes("acct-secret"), false);
   assert.equal(serialized.includes("profile-secret"), false);
   assert.equal(serialized.includes("session-secret"), false);

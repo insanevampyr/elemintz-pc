@@ -16,6 +16,7 @@ import {
 } from "./cosmeticSystem.js";
 import { applyLevelMilestoneChestGrants, normalizeProfileChests } from "./chestSystem.js";
 import { normalizeProfileDailyElementChest } from "./dailyElementChestSystem.js";
+import { normalizeEventChestEntitlements } from "./eventChestEntitlements.js";
 import { normalizeProfileEventChests } from "./eventChestProfileProgress.js";
 import {
   applyMatchStatsToProfile,
@@ -321,6 +322,7 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("chests", defaults.chests);
   repairObjectSection("dailyElementChest", defaults.dailyElementChest);
   repairObjectSection("eventChests", defaults.eventChests);
+  repairObjectSection("eventChestEntitlements", defaults.eventChestEntitlements);
   repairObjectSection("milestoneChestGrantedLevels", defaults.milestoneChestGrantedLevels);
   repairObjectSection("legendaryChestGrantedLevels", defaults.legendaryChestGrantedLevels);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
@@ -826,6 +828,9 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
     validatedProfile.collectionAlbumRewardClaims
   );
   const normalizedEventChests = normalizeProfileEventChests(validatedProfile.eventChests);
+  const normalizedEventChestEntitlements = normalizeEventChestEntitlements(
+    validatedProfile.eventChestEntitlements
+  );
   const normalizedReferralRewardGrantIds = [
     ...new Set(
       (Array.isArray(validatedProfile.referralRewardGrantIds)
@@ -849,6 +854,7 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
             onlineRewardSettlements: normalizedOnlineRewardSettlements,
             collectionAlbumRewardClaims: normalizedCollectionAlbumRewardClaims,
             eventChests: normalizedEventChests,
+            eventChestEntitlements: normalizedEventChestEntitlements,
             referralRewardGrantIds: normalizedReferralRewardGrantIds,
             storeRoyaltyPayouts: normalizedStoreRoyaltyPayouts
           })

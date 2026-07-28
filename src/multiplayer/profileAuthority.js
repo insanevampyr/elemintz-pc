@@ -27,6 +27,7 @@ function sanitizeProfileResult(result) {
   }
   const {
     uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
+    eventChestEntitlements: _eventChestEntitlements,
     referralRewardGrantIds: _referralRewardGrantIds,
     ...publicProfile
   } = result.profile;
@@ -373,6 +374,7 @@ function buildProfileSnapshot({ profile, challenges }) {
   const {
     uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
     collectionAlbums: _collectionAlbums,
+    eventChestEntitlements: _eventChestEntitlements,
     referralRewardGrantIds: _referralRewardGrantIds,
     ...clientProfile
   } = profile ?? {};

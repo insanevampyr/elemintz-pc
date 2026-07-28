@@ -3340,6 +3340,26 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
           freeOpens: 1
         }
       },
+      eventChestEntitlements: {
+        schemaVersion: 1,
+        items: [
+          {
+            schemaVersion: 1,
+            entitlementId: "private-entitlement-id",
+            chestId: "private_event_chest",
+            definitionRevisionId: "private-revision-id",
+            grantedAt: "2026-07-25T12:34:56.000Z",
+            grantSource: "active_event",
+            status: "opened",
+            openedAt: "2026-07-26T12:34:56.000Z",
+            openTransactionId: "private-open-transaction",
+            rewardSettlement: {
+              tokens: 100,
+              internalGrantId: "private-grant-id"
+            }
+          }
+        ]
+      },
       ownedCosmetics: {
         ...(current?.ownedCosmetics ?? {}),
         avatar: ["default_avatar", "avatar_neon_tide_entity", "avatar_lycan_anubis"],
@@ -3422,6 +3442,7 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
       ownProfile?.profile?.profile?.eventChests?.future_public_redaction_chest?.totalOpens,
       3
     );
+    assert.equal("eventChestEntitlements" in (ownProfile?.profile?.profile ?? {}), false);
     assert.ok(Array.isArray(ownProfile?.profile?.profile?.ownedCosmetics?.avatar));
     assert.ok(Array.isArray(ownProfile?.profile?.profile?.cosmeticLoadouts));
 
@@ -3443,6 +3464,7 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
     assert.equal("chests" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("seenAnnouncements" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("eventChests" in (viewedProfile?.profile?.profile ?? {}), false);
+    assert.equal("eventChestEntitlements" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("ownedCosmetics" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("cosmeticLoadouts" in (viewedProfile?.profile?.profile ?? {}), false);
     assert.equal("cosmeticRandomizeAfterMatch" in (viewedProfile?.profile?.profile ?? {}), false);
@@ -3452,6 +3474,15 @@ test("multiplayer foundation: profile:view returns a sanitized public snapshot w
     assert.equal("dailyChallenges" in (viewedProfile?.profile?.progression ?? {}), false);
     assert.equal("weeklyChallenges" in (viewedProfile?.profile?.progression ?? {}), false);
     assert.equal("dailyLogin" in (viewedProfile?.profile?.progression ?? {}), false);
+    const serializedOwn = JSON.stringify(ownProfile);
+    const serializedPublic = JSON.stringify(viewedProfile);
+    assert.equal(serializedOwn.includes("private-entitlement-id"), false);
+    assert.equal(serializedOwn.includes("private-open-transaction"), false);
+    assert.equal(serializedOwn.includes("rewardSettlement"), false);
+    assert.equal(serializedPublic.includes("eventChestEntitlements"), false);
+    assert.equal(serializedPublic.includes("private-entitlement-id"), false);
+    assert.equal(serializedPublic.includes("private-open-transaction"), false);
+    assert.equal(serializedPublic.includes("rewardSettlement"), false);
   } finally {
     ownerClient?.disconnect();
     viewerClient?.disconnect();

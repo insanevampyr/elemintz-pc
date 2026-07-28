@@ -9,6 +9,10 @@ import {
   normalizeProfile
 } from "../../src/state/profileSystem.js";
 import { normalizeProfileShowcaseSlots } from "../../src/state/cosmeticSystem.js";
+import {
+  createDefaultEventChestEntitlements,
+  normalizeEventChestEntitlements
+} from "../../src/state/eventChestEntitlements.js";
 import { createDefaultProfile } from "../../src/state/statsTracking.js";
 
 async function createTempDataDir() {
@@ -58,6 +62,7 @@ test("profile validation: repairs malformed fields and writes back the upgraded 
   assert.equal(Array.isArray(profile.achievements), false);
   assert.equal(typeof profile.chests, "object");
   assert.deepEqual(profile.eventChests, {});
+  assert.deepEqual(profile.eventChestEntitlements, createDefaultEventChestEntitlements());
   assert.equal(Array.isArray(profile.cosmeticLoadouts), true);
   assert.equal(
     profile.onlineDisconnectTracking.totalLiveMatchDisconnects,
@@ -66,6 +71,7 @@ test("profile validation: repairs malformed fields and writes back the upgraded 
   assert.equal(persisted[0].schemaVersion, CURRENT_PROFILE_SCHEMA_VERSION);
   assert.equal(persisted[0].tokens, 450);
   assert.deepEqual(persisted[0].eventChests, {});
+  assert.deepEqual(persisted[0].eventChestEntitlements, createDefaultEventChestEntitlements());
   assert.equal(Array.isArray(persisted[0].cosmeticLoadouts), true);
 });
 
@@ -309,6 +315,200 @@ test("profile validation: event chest progress defaults, repairs, and preserves 
     }
   });
   assert.deepEqual(normalizeProfile(valid), valid);
+});
+
+test("profile validation: event chest entitlements normalize fail-closed and preserve valid private items", () => {
+  const emptyContract = createDefaultEventChestEntitlements();
+  assert.deepEqual(createDefaultProfile("EntitlementDefaultUser").eventChestEntitlements, emptyContract);
+  assert.deepEqual(normalizeProfile({ username: "EntitlementMissingUser" }).eventChestEntitlements, emptyContract);
+
+  for (const value of [null, [], "bad-data", 7, true, { schemaVersion: 2, items: [] }, { items: [] }]) {
+    assert.deepEqual(normalizeEventChestEntitlements(value), emptyContract);
+  }
+
+  const availableWithContradictions = {
+    schemaVersion: 1,
+    entitlementId: "entitlement-available",
+    chestId: "event_chest_alpha",
+    definitionRevisionId: "revision-1",
+    grantedAt: "2026-07-25T12:34:56.000Z",
+    grantSource: "active_event",
+    status: "available",
+    openedAt: "2026-07-26T12:34:56.000Z",
+    openTransactionId: "open-tx-available",
+    rewardSettlement: { tokens: 999 },
+    extraField: "removed"
+  };
+  const opened = {
+    schemaVersion: 1,
+    entitlementId: "entitlement-opened",
+    chestId: "event_chest_alpha",
+    definitionRevisionId: "revision-1",
+    grantedAt: "2026-07-25T12:34:56.000Z",
+    grantSource: "active_event",
+    status: "opened",
+    openedAt: "2026-07-26T12:34:56.000Z",
+    openTransactionId: "open-tx-1",
+    rewardSettlement: { rewardType: "cosmetic", cosmeticId: "avatar_test" },
+    extraField: "removed"
+  };
+  const expiredWithContradictions = {
+    schemaVersion: 1,
+    entitlementId: "entitlement-expired",
+    chestId: "event_chest_alpha",
+    definitionRevisionId: "revision-1",
+    grantedAt: "2026-07-25T12:34:56.000Z",
+    grantSource: "active_event",
+    status: "expired",
+    openedAt: "2026-07-26T12:34:56.000Z",
+    openTransactionId: "open-tx-expired",
+    rewardSettlement: { tokens: 999 }
+  };
+
+  const normalized = normalizeProfile({
+    username: "EntitlementValidUser",
+    eventChests: {
+      daily_elemintz_chest_current: {
+        chestId: "daily_elemintz_chest_current",
+        totalOpens: 3
+      }
+    },
+    eventChestEntitlements: {
+      schemaVersion: 1,
+      items: [
+        availableWithContradictions,
+        opened,
+        expiredWithContradictions,
+        {
+          ...opened,
+          entitlementId: "entitlement-opened-missing-opened-at",
+          openedAt: null
+        },
+        {
+          ...opened,
+          entitlementId: "entitlement-opened-missing-transaction",
+          openTransactionId: ""
+        },
+        {
+          ...availableWithContradictions,
+          entitlementId: "entitlement-invalid-status",
+          status: "pending"
+        },
+        {
+          ...availableWithContradictions,
+          entitlementId: ""
+        },
+        {
+          ...availableWithContradictions,
+          entitlementId: "entitlement-missing-chest",
+          chestId: ""
+        },
+        {
+          ...availableWithContradictions,
+          entitlementId: "entitlement-missing-revision",
+          definitionRevisionId: ""
+        },
+        {
+          ...availableWithContradictions,
+          entitlementId: "entitlement-invalid-granted-at",
+          grantedAt: "not-a-date"
+        },
+        {
+          ...availableWithContradictions,
+          entitlementId: "entitlement-invalid-source",
+          grantSource: "admin_manual"
+        },
+        {
+          ...opened,
+          entitlementId: "entitlement-bad-settlement",
+          rewardSettlement: ["not", "plain"]
+        },
+        {
+          ...opened,
+          entitlementId: "entitlement-opened",
+          chestId: "duplicate_should_drop"
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(normalized.eventChests.daily_elemintz_chest_current, {
+    schemaVersion: 1,
+    chestId: "daily_elemintz_chest_current",
+    source: null,
+    sourceProfileField: null,
+    firstOpenedAt: null,
+    lastOpenedAt: null,
+    lastUpdatedAt: null,
+    lastOpenType: null,
+    lastFreeOpenDateKey: null,
+    totalOpens: 3,
+    paidOpens: 0,
+    freeOpens: 0,
+    pity: {
+      opensSinceEpicPlus: 0,
+      opensSinceLegendary: 0
+    },
+    participation: {
+      firstDefinitionSeenAt: null,
+      lastDefinitionSeenAt: null,
+      definitionRevisionIdsSeen: []
+    }
+  });
+  assert.deepEqual(normalized.eventChestEntitlements, {
+    schemaVersion: 1,
+    items: [
+      {
+        schemaVersion: 1,
+        entitlementId: "entitlement-available",
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "revision-1",
+        grantedAt: "2026-07-25T12:34:56.000Z",
+        grantSource: "active_event",
+        status: "available",
+        openedAt: null,
+        openTransactionId: null,
+        rewardSettlement: null
+      },
+      {
+        schemaVersion: 1,
+        entitlementId: "entitlement-opened",
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "revision-1",
+        grantedAt: "2026-07-25T12:34:56.000Z",
+        grantSource: "active_event",
+        status: "opened",
+        openedAt: "2026-07-26T12:34:56.000Z",
+        openTransactionId: "open-tx-1",
+        rewardSettlement: { rewardType: "cosmetic", cosmeticId: "avatar_test" }
+      },
+      {
+        schemaVersion: 1,
+        entitlementId: "entitlement-expired",
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "revision-1",
+        grantedAt: "2026-07-25T12:34:56.000Z",
+        grantSource: "active_event",
+        status: "expired",
+        openedAt: null,
+        openTransactionId: null,
+        rewardSettlement: null
+      },
+      {
+        schemaVersion: 1,
+        entitlementId: "entitlement-bad-settlement",
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "revision-1",
+        grantedAt: "2026-07-25T12:34:56.000Z",
+        grantSource: "active_event",
+        status: "opened",
+        openedAt: "2026-07-26T12:34:56.000Z",
+        openTransactionId: "open-tx-1",
+        rewardSettlement: null
+      }
+    ]
+  });
+  assert.deepEqual(normalizeProfile(normalized), normalized);
 });
 
 test("profile validation: time played normalizes to a non-negative integer", () => {

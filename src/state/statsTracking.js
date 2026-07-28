@@ -2,6 +2,7 @@ import { ACHIEVEMENT_DEFINITIONS } from "./achievementSystem.js";
 import { createDefaultChestState } from "./chestSystem.js";
 import { createDefaultCosmeticsState } from "./cosmeticSystem.js";
 import { createDefaultDailyElementChestState } from "./dailyElementChestSystem.js";
+import { createDefaultEventChestEntitlements } from "./eventChestEntitlements.js";
 import { createDefaultEconomyState } from "./storeSystem.js";
 import { createDefaultDailyChallenges } from "./dailyChallengesSystem.js";
 
@@ -299,6 +300,7 @@ export function createDefaultProfile(username) {
     ...createDefaultChestState(),
     ...createDefaultDailyElementChestState(),
     eventChests: {},
+    eventChestEntitlements: createDefaultEventChestEntitlements(),
     dailyChallenges: createDefaultDailyChallenges(),
     featuredRivalRewards: {
       crownfire_duelist: {
