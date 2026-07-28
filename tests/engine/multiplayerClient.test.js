@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { MultiplayerClient } from "../../src/main/multiplayer/multiplayerClient.js";
+import { registerMultiplayerIpcHandlers } from "../../src/main/ipc/multiplayerIpc.js";
 import { MULTIPLAYER_RUNTIME_CONFIG_FILENAME } from "../../src/main/multiplayer/multiplayerConfig.js";
 import { AppController } from "../../src/renderer/systems/appController.js";
 import { onlinePlayScreen } from "../../src/renderer/ui/screens/onlinePlayScreen.js";
@@ -1449,6 +1450,76 @@ class DeferredDailyElementChestSocket extends FakeSocket {
   }
 }
 
+class DeferredEventChestOpenSocket extends FakeSocket {
+  constructor() {
+    super();
+    this.pendingEventChestOpenAcks = [];
+  }
+
+  emit(eventName, payload, ack) {
+    if (eventName === "profile:openEventChestEntitlement") {
+      this.sentEvents.push({ eventName, payload });
+      this.pendingEventChestOpenAcks.push({ payload, ack });
+      return this;
+    }
+
+    return super.emit(eventName, payload, ack);
+  }
+
+  resolveNextEventChestOpen(result = null) {
+    const next = this.pendingEventChestOpenAcks.shift();
+    if (!next) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      next.ack?.({
+        ok: true,
+        result:
+          result ?? {
+            entitlement: {
+              entitlementId: next.payload?.entitlementId,
+              chestId: "client_event_chest",
+              definitionRevisionId: "definition_revision_client_event_chest_1",
+              status: "opened",
+              openedAt: "2026-07-28T17:00:00.000Z"
+            },
+            replayed: false,
+            alreadyOpened: false,
+            reward: {
+              type: "cosmetic",
+              rarity: "common",
+              duplicateConverted: false,
+              tokenAmount: 0,
+              cosmetic: {
+                type: "title",
+                cosmeticId: "title_first_light",
+                name: "First Light"
+              }
+            }
+          }
+      });
+    });
+  }
+
+  rejectNextEventChestOpen(message = "Open failed.") {
+    const next = this.pendingEventChestOpenAcks.shift();
+    if (!next) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      next.ack?.({
+        ok: false,
+        error: {
+          code: "EVENT_CHEST_OPEN_FAILED",
+          message
+        }
+      });
+    });
+  }
+}
+
 async function waitFor(predicate, { attempts = 20 } = {}) {
   for (let index = 0; index < attempts; index += 1) {
     if (predicate()) {
@@ -2755,6 +2826,227 @@ test("multiplayer client: Event Chest entitlement sync clears its lock after rej
     );
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: Event Chest opening is not triggered by login, profile reads, or entitlement sync", async () => {
+  let lastSocket = null;
+  const dataDir = await createTempDataDir();
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new FakeSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    dataDir
+  });
+
+  try {
+    await client.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+    await client.getProfile({});
+    await client.syncEventChestEntitlements();
+
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:openEventChestEntitlement").length,
+      0
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: Event Chest opening sends entitlementId only and reuses same-entitlement in-flight request", async () => {
+  let lastSocket = null;
+  const dataDir = await createTempDataDir();
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new DeferredEventChestOpenSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    dataDir
+  });
+
+  try {
+    await client.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+
+    await assert.rejects(client.openEventChestEntitlement(), /entitlementId is required/);
+    await assert.rejects(client.openEventChestEntitlement("   "), /entitlementId is required/);
+    await assert.rejects(client.openEventChestEntitlement({ entitlementId: "object-id" }), /entitlementId is required/);
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:openEventChestEntitlement").length,
+      0
+    );
+
+    const firstPromise = client.openEventChestEntitlement("event_chest_entitlement_client_1");
+    const secondPromise = client.openEventChestEntitlement("event_chest_entitlement_client_1");
+    assert.equal(await waitFor(() => lastSocket?.pendingEventChestOpenAcks?.length === 1), true);
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:openEventChestEntitlement").length,
+      1
+    );
+    assert.deepEqual(
+      lastSocket.sentEvents.find((event) => event.eventName === "profile:openEventChestEntitlement")?.payload,
+      { entitlementId: "event_chest_entitlement_client_1" }
+    );
+    lastSocket.resolveNextEventChestOpen();
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+    assert.deepEqual(second, first);
+    assert.equal(first?.entitlement?.entitlementId, "event_chest_entitlement_client_1");
+    assert.equal(first?.reward?.cosmetic?.cosmeticId, "title_first_light");
+
+    const replayPromise = client.openEventChestEntitlement("event_chest_entitlement_client_1");
+    assert.equal(await waitFor(() => lastSocket?.pendingEventChestOpenAcks?.length === 1), true);
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:openEventChestEntitlement").length,
+      2
+    );
+    lastSocket.resolveNextEventChestOpen({
+      ...first,
+      replayed: true,
+      alreadyOpened: true
+    });
+    const replay = await replayPromise;
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.alreadyOpened, true);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer client: Event Chest opening lock clears after rejection and different entitlements can proceed independently", async () => {
+  let lastSocket = null;
+  const dataDir = await createTempDataDir();
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new DeferredEventChestOpenSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    dataDir
+  });
+
+  try {
+    await client.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+
+    const rejected = client.openEventChestEntitlement("event_chest_entitlement_reject");
+    assert.equal(await waitFor(() => lastSocket?.pendingEventChestOpenAcks?.length === 1), true);
+    lastSocket.rejectNextEventChestOpen("Open failed.");
+    await assert.rejects(rejected, /Open failed/);
+
+    const retry = client.openEventChestEntitlement("event_chest_entitlement_reject");
+    assert.equal(await waitFor(() => lastSocket?.pendingEventChestOpenAcks?.length === 1), true);
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:openEventChestEntitlement").length,
+      2
+    );
+    lastSocket.resolveNextEventChestOpen();
+    await retry;
+
+    const leftPromise = client.openEventChestEntitlement("event_chest_entitlement_left");
+    const rightPromise = client.openEventChestEntitlement("event_chest_entitlement_right");
+    assert.equal(await waitFor(() => lastSocket?.pendingEventChestOpenAcks?.length === 2), true);
+    assert.deepEqual(
+      lastSocket.pendingEventChestOpenAcks.map((entry) => entry.payload),
+      [
+        { entitlementId: "event_chest_entitlement_left" },
+        { entitlementId: "event_chest_entitlement_right" }
+      ]
+    );
+    lastSocket.resolveNextEventChestOpen({
+      entitlement: {
+        entitlementId: "event_chest_entitlement_left",
+        chestId: "client_event_chest",
+        definitionRevisionId: "definition_revision_client_event_chest_1",
+        status: "opened",
+        openedAt: "2026-07-28T17:00:00.000Z"
+      },
+      replayed: true,
+      alreadyOpened: true,
+      reward: {
+        type: "tokens",
+        rarity: "common",
+        tokenAmount: 25,
+        duplicateConverted: true
+      }
+    });
+    lastSocket.resolveNextEventChestOpen();
+    const [left, right] = await Promise.all([leftPromise, rightPromise]);
+    assert.equal(left.replayed, true);
+    assert.equal(left.alreadyOpened, true);
+    assert.equal(left.reward.tokenAmount, 25);
+    assert.equal(right.entitlement.entitlementId, "event_chest_entitlement_right");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("multiplayer IPC: Event Chest opening delegates entitlementId only to MultiplayerClient", async () => {
+  const handlers = new Map();
+  const listeners = new Map();
+  const ipcMain = {
+    handle: (channel, handler) => {
+      handlers.set(channel, handler);
+    },
+    on: (channel, listener) => {
+      listeners.set(channel, listener);
+    }
+  };
+  const calls = [];
+  const result = {
+    entitlement: {
+      entitlementId: "event_chest_entitlement_ipc",
+      chestId: "client_event_chest",
+      definitionRevisionId: "definition_revision_client_event_chest_1",
+      status: "opened",
+      openedAt: "2026-07-28T17:00:00.000Z"
+    },
+    replayed: false,
+    alreadyOpened: false,
+    reward: { type: "tokens", rarity: "common", tokenAmount: 25 }
+  };
+  const sender = {
+    send: () => {},
+    isDestroyed: () => false
+  };
+
+  registerMultiplayerIpcHandlers(ipcMain, {
+    socketFactory: () => new FakeSocket(),
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    persistSession: false
+  });
+  const handler = handlers.get("multiplayer:openEventChestEntitlement");
+  assert.equal(typeof handler, "function");
+
+  const originalOpen = MultiplayerClient.prototype.openEventChestEntitlement;
+  MultiplayerClient.prototype.openEventChestEntitlement = async function patchedOpenEventChestEntitlement(entitlementId) {
+    calls.push({ entitlementId });
+    return result;
+  };
+  try {
+    const response = await handler(
+      { sender },
+      {
+        entitlementId: "event_chest_entitlement_ipc",
+        accountId: "forged-account",
+        profileKey: "forged-profile",
+        reward: { tokenAmount: 999999 }
+      }
+    );
+
+    assert.deepEqual(response, result);
+    assert.deepEqual(calls, [{ entitlementId: "event_chest_entitlement_ipc" }]);
+  } finally {
+    MultiplayerClient.prototype.openEventChestEntitlement = originalOpen;
   }
 });
 

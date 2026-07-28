@@ -63,6 +63,8 @@ function buildElemintzBridge(ipcRenderer, { appVersion = "unknown" } = {}) {
         ipcRenderer.invoke("multiplayer:getDailyElementChestStatus", payload),
       syncEventChestEntitlements: (payload) =>
         ipcRenderer.invoke("multiplayer:syncEventChestEntitlements", payload),
+      openEventChestEntitlement: (entitlementId) =>
+        ipcRenderer.invoke("multiplayer:openEventChestEntitlement", { entitlementId }),
       buyStoreItem: (payload) => ipcRenderer.invoke("multiplayer:buyStoreItem", payload),
       recordGauntletStats: (payload) => ipcRenderer.invoke("multiplayer:recordGauntletStats", payload),
       openChest: (payload) => ipcRenderer.invoke("multiplayer:openChest", payload),

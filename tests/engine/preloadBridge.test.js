@@ -98,6 +98,7 @@ test("preload bridge remains available when version falls back", async () => {
   assert.equal(typeof bridge.multiplayer.getActiveBoostEvent, "function");
   assert.equal(typeof bridge.multiplayer.getOnlineCount, "function");
   assert.equal(typeof bridge.multiplayer.acknowledgeMilestoneChestReward, "function");
+  assert.equal(typeof bridge.multiplayer.openEventChestEntitlement, "function");
   assert.equal(typeof bridge.multiplayer.submitFeedback, "function");
   assert.equal(typeof bridge.multiplayer.startBloodMatch, "function");
   assert.equal(typeof bridge.multiplayer.applyBloodMatchResult, "function");
@@ -113,6 +114,7 @@ test("preload bridge remains available when version falls back", async () => {
   await bridge.multiplayer.getActiveBoostEvent({ username: "VampyrLee" });
   await bridge.multiplayer.getOnlineCount({ username: "VampyrLee" });
   await bridge.multiplayer.acknowledgeMilestoneChestReward({ username: "RewardHero", level: 5 });
+  await bridge.multiplayer.openEventChestEntitlement("event_chest_entitlement_bridge");
   await bridge.multiplayer.getCollectionPackDeals({ username: "PackBridgeUser" });
   await bridge.multiplayer.buyCollectionPack({
     username: "PackBridgeUser",
@@ -127,7 +129,7 @@ test("preload bridge remains available when version falls back", async () => {
     summary: { mode: "bloodMatch", status: "completed" }
   });
 
-  assert.deepEqual(ipcRenderer.invocations.slice(0, 14), [
+  assert.deepEqual(ipcRenderer.invocations.slice(0, 15), [
     { channel: "state:getSettings", payload: undefined },
     { channel: "updates:getState", payload: undefined },
     { channel: "updates:reportPromptEvent", payload: { type: "install_prompt_shown", version: "2.1.5" } },
@@ -142,6 +144,10 @@ test("preload bridge remains available when version falls back", async () => {
     { channel: "multiplayer:getActiveBoostEvent", payload: { username: "VampyrLee" } },
     { channel: "multiplayer:getOnlineCount", payload: { username: "VampyrLee" } },
     { channel: "multiplayer:acknowledgeMilestoneChestReward", payload: { username: "RewardHero", level: 5 } },
+    {
+      channel: "multiplayer:openEventChestEntitlement",
+      payload: { entitlementId: "event_chest_entitlement_bridge" }
+    },
     { channel: "multiplayer:getCollectionPackDeals", payload: { username: "PackBridgeUser" } },
     {
       channel: "multiplayer:buyCollectionPack",
@@ -153,7 +159,7 @@ test("preload bridge remains available when version falls back", async () => {
     },
     { channel: "multiplayer:submitFeedback", payload: { category: "Bug / Error", message: "Hello" } }
   ]);
-  assert.deepEqual(ipcRenderer.invocations.slice(14), [
+  assert.deepEqual(ipcRenderer.invocations.slice(15), [
     {
       channel: "multiplayer:startBloodMatch",
       payload: { username: "BloodBridgeUser" }
@@ -167,6 +173,20 @@ test("preload bridge remains available when version falls back", async () => {
       }
     }
   ]);
+});
+
+test("maintained preload variants expose Event Chest opening through the same IPC channel", () => {
+  const files = [
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\preload\\preload.js",
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\preload\\preload.cjs",
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\preload\\bridge.cjs"
+  ];
+
+  for (const filePath of files) {
+    const source = fs.readFileSync(filePath, "utf8");
+    assert.equal(source.includes("openEventChestEntitlement"), true, filePath);
+    assert.equal(source.includes("multiplayer:openEventChestEntitlement"), true, filePath);
+  }
 });
 
 test("preload bridge subscriptions still wire update events with fallback version", () => {

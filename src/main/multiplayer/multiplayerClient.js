@@ -829,6 +829,7 @@ export class MultiplayerClient {
     this.isOpeningChest = false;
     this.isOpeningDailyElementChest = false;
     this.eventChestEntitlementSyncPromise = null;
+    this.eventChestOpenPromises = new Map();
     this.logger.info?.("[Multiplayer][Electron] persistent client log ready", {
       logPath: this.logPath
     });
@@ -2972,6 +2973,38 @@ export class MultiplayerClient {
       return await this.eventChestEntitlementSyncPromise;
     } finally {
       this.eventChestEntitlementSyncPromise = null;
+    }
+  }
+
+  async openEventChestEntitlement(entitlementId, { serverUrl } = {}) {
+    const safeEntitlementId = typeof entitlementId === "string" ? entitlementId.trim() : "";
+    if (!safeEntitlementId) {
+      throw new Error("entitlementId is required.");
+    }
+
+    const existing = this.eventChestOpenPromises.get(safeEntitlementId);
+    if (existing) {
+      return existing;
+    }
+
+    const openPromise = (async () => {
+      const response = await this.runServerRequest(
+        "profile:openEventChestEntitlement",
+        { entitlementId: safeEntitlementId },
+        { serverUrl }
+      );
+      if (!response?.ok) {
+        throw new Error(response?.error?.message ?? "Unable to open Event Chest entitlement.");
+      }
+
+      return response.result ?? null;
+    })();
+
+    this.eventChestOpenPromises.set(safeEntitlementId, openPromise);
+    try {
+      return await openPromise;
+    } finally {
+      this.eventChestOpenPromises.delete(safeEntitlementId);
     }
   }
 

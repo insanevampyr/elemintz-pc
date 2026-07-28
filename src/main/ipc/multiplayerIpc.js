@@ -179,6 +179,12 @@ export function registerMultiplayerIpcHandlers(ipcMain, options = {}) {
     return client.syncEventChestEntitlements(payload);
   });
 
+  ipcMain.handle("multiplayer:openEventChestEntitlement", async (event, payload) => {
+    subscribers.add(event.sender);
+    const entitlementId = typeof payload === "string" ? payload : payload?.entitlementId;
+    return client.openEventChestEntitlement(entitlementId);
+  });
+
   ipcMain.handle("multiplayer:startLocalPveMatch", async (event, payload) => {
     subscribers.add(event.sender);
     return client.startLocalPveMatch(payload);
