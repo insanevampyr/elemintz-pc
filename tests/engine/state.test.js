@@ -5804,6 +5804,75 @@ test("state: Event Chest entitlement delivery is deterministic, idempotent, and 
   }
 });
 
+test("state: Event Chest exact published revision lookup survives activation switches and end", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  try {
+    const firstRevision = buildPublishedEventChestDefinition({
+      title: "Historical Event Chest Revision",
+      definitionRevisionId: "definition_revision_state_entitlement_history_1",
+      sourceDraftRevisionId: "draft_revision_state_entitlement_history_1",
+      publishedAt: "2026-07-28T12:00:00.000Z"
+    });
+    const secondRevision = buildPublishedEventChestDefinition({
+      title: "Current Event Chest Revision",
+      definitionRevisionId: "definition_revision_state_entitlement_history_2",
+      sourceDraftRevisionId: "draft_revision_state_entitlement_history_2",
+      publishedAt: "2026-07-28T12:05:00.000Z"
+    });
+    const otherChest = buildPublishedEventChestDefinition({
+      chestId: "state_event_chest_entitlement_other",
+      title: "Other Active Event Chest",
+      definitionRevisionId: "definition_revision_state_entitlement_other_1",
+      sourceDraftId: "draft_state_entitlement_other",
+      sourceDraftRevisionId: "draft_revision_state_entitlement_other_1",
+      publishedAt: "2026-07-28T12:10:00.000Z"
+    });
+    await writeEventChestRegistryFile(dataDir, [firstRevision, secondRevision, otherChest]);
+
+    await coordinator.eventChestActivationStore.activate({
+      chestId: firstRevision.chestId,
+      definitionRevisionId: firstRevision.definitionRevisionId
+    });
+    assert.equal(
+      (
+        await coordinator.getPublishedEventChestDefinitionForActivation({
+          chestId: firstRevision.chestId,
+          definitionRevisionId: firstRevision.definitionRevisionId
+        })
+      ).title,
+      "Historical Event Chest Revision"
+    );
+
+    await coordinator.eventChestActivationStore.activate({
+      chestId: otherChest.chestId,
+      definitionRevisionId: otherChest.definitionRevisionId
+    });
+    assert.equal(
+      (
+        await coordinator.getPublishedEventChestDefinitionForActivation({
+          chestId: firstRevision.chestId,
+          definitionRevisionId: firstRevision.definitionRevisionId
+        })
+      ).title,
+      "Historical Event Chest Revision"
+    );
+
+    await coordinator.eventChestActivationStore.end();
+    assert.equal(
+      (
+        await coordinator.getPublishedEventChestDefinitionForActivation({
+          chestId: firstRevision.chestId,
+          definitionRevisionId: firstRevision.definitionRevisionId
+        })
+      ).title,
+      "Historical Event Chest Revision"
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("state: local Collection Album reward claim grants tokens once and validates album state", async () => {
   const dataDir = await createTempDataDir();
   const state = new StateCoordinator({ dataDir });

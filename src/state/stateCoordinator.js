@@ -1676,7 +1676,9 @@ export class StateCoordinator {
       sourceDraftRevisionId: draft.draftRevisionId
     });
     const publishedDefinition =
-      (registry.definitions ?? []).find((definition) => definition.chestId === draft.definition.chestId) ?? null;
+      registry.publishedDefinition ??
+      (registry.definitions ?? []).find((definition) => definition.chestId === draft.definition.chestId) ??
+      null;
     return {
       registry,
       publishedDefinition: publishedDefinition ? structuredClone(publishedDefinition) : null,
@@ -1748,39 +1750,10 @@ export class StateCoordinator {
       });
     }
 
-    const registry = await this.eventChestRegistryStore.getPublishedEventChestRegistry();
-    if (!registry?.ok || registry.source !== "file") {
-      throw Object.assign(new Error("Published Event Chest registry is unavailable or invalid."), {
-        code: "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE"
-      });
-    }
-
-    const definitions = Array.isArray(registry.definitions) ? registry.definitions : [];
-    const sameChestDefinitions = definitions.filter((definition) => definition?.chestId === safeChestId);
-    if (sameChestDefinitions.length === 0) {
-      throw Object.assign(new Error(`Event Chest definition '${safeChestId}' was not found.`), {
-        code: "EVENT_CHEST_DEFINITION_NOT_FOUND"
-      });
-    }
-
-    const definition =
-      sameChestDefinitions.find(
-        (entry) => String(entry?.definitionRevisionId ?? "").trim() === safeDefinitionRevisionId
-      ) ?? null;
-    if (!definition) {
-      throw Object.assign(
-        new Error(`Event Chest definition revision '${safeDefinitionRevisionId}' was not found.`),
-        { code: "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND" }
-      );
-    }
-
-    if (!String(definition?.publishedAt ?? "").trim()) {
-      throw Object.assign(new Error("Event Chest definition revision is not publish-complete."), {
-        code: "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND"
-      });
-    }
-
-    return structuredClone(definition);
+    return this.eventChestRegistryStore.getPublishedEventChestDefinitionRevision({
+      chestId: safeChestId,
+      definitionRevisionId: safeDefinitionRevisionId
+    });
   }
 
   async getActiveEventChestDefinitionForEntitlementDelivery() {

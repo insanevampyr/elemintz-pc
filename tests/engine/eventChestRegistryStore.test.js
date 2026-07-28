@@ -84,10 +84,20 @@ test("event chest registry writer: missing registry can publish a valid draft", 
   }
 });
 
-test("event chest registry writer: valid existing registry replaces matching chestId and creates backup", async () => {
+test("event chest registry writer: valid existing registry preserves matching chestId revision and creates backup", async () => {
   const dataDir = await createTempDataDir();
   try {
-    await writeRegistryFixture(dataDir, buildRegistryDocument());
+    await writeRegistryFixture(
+      dataDir,
+      buildRegistryDocument([
+        cloneDailyDefinition({
+          definitionRevisionId: "definition_revision_existing_1",
+          publishedAt: "2026-07-26T11:00:00.000Z",
+          sourceDraftId: "draft_daily",
+          sourceDraftRevisionId: "draft_revision_existing_1"
+        })
+      ])
+    );
     const store = new EventChestRegistryStore({
       dataDir,
       now: () => "2026-07-26T12:05:00.000Z",
@@ -104,8 +114,15 @@ test("event chest registry writer: valid existing registry replaces matching che
     assert.equal(result.definitions[0].title, "Edited Daily EleMintz Chest");
 
     const written = await readRegistryFile(dataDir);
-    assert.equal(written.definitions.length, 1);
-    assert.equal(written.definitions[0].title, "Edited Daily EleMintz Chest");
+    assert.equal(written.definitions.length, 2);
+    assert.equal(
+      written.definitions.some((definition) => definition.definitionRevisionId === "definition_revision_existing_1"),
+      true
+    );
+    assert.equal(
+      written.definitions.some((definition) => definition.title === "Edited Daily EleMintz Chest"),
+      true
+    );
     const serverDataEntries = await fs.readdir(path.join(dataDir, "server-data"));
     assert.equal(
       serverDataEntries.some(
@@ -116,6 +133,25 @@ test("event chest registry writer: valid existing registry replaces matching che
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
+});
+
+test("event chest registry validation: allows same chestId revisions and rejects exact duplicate revision", () => {
+  const firstRevision = cloneDailyDefinition({
+    definitionRevisionId: "definition_revision_daily_1",
+    publishedAt: "2026-07-26T12:00:00.000Z"
+  });
+  const secondRevision = cloneDailyDefinition({
+    definitionRevisionId: "definition_revision_daily_2",
+    publishedAt: "2026-07-26T12:05:00.000Z"
+  });
+
+  assert.equal(validateEventChestRegistryDocumentForAdmin(buildRegistryDocument([firstRevision, secondRevision])).ok, true);
+
+  const duplicate = validateEventChestRegistryDocumentForAdmin(
+    buildRegistryDocument([firstRevision, cloneDailyDefinition({ ...firstRevision, title: "Duplicate Revision" })])
+  );
+  assert.equal(duplicate.ok, false);
+  assert.match(duplicate.errors.join("\n"), /duplicate chestId and definitionRevisionId/i);
 });
 
 test("event chest registry writer: exact draft revision replay is idempotent without rewriting", async () => {
@@ -239,6 +275,78 @@ test("event chest registry writer: newer draft revision publishes normally after
     assert.notEqual(second.definitions[0].definitionRevisionId, first.definitions[0].definitionRevisionId);
     assert.equal(second.definitions[0].title, "New Draft Revision");
     assert.equal(second.definitions[0].sourceDraftRevisionId, "draft_revision_2");
+
+    const written = await readRegistryFile(dataDir);
+    assert.equal(written.definitions.length, 2);
+    const older = await store.getPublishedEventChestDefinitionRevision({
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      definitionRevisionId: first.publishedDefinition.definitionRevisionId
+    });
+    assert.equal(older.title, "Original Draft Revision");
+    const latest = await store.getEventChestDefinitionById(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(latest.title, "New Draft Revision");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry writer: retained revisions survive store re-instantiation", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    let tick = 0;
+    const store = new EventChestRegistryStore({
+      dataDir,
+      now: () => `2026-07-26T12:34:0${tick++}.000Z`,
+      logger: { warn: () => {} }
+    });
+
+    const first = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "Reload Original Revision" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_daily",
+      sourceDraftRevisionId: "draft_revision_reload_1"
+    });
+    await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({ title: "Reload New Revision" }),
+      actor: "VampyrLee",
+      sourceDraftId: "draft_daily",
+      sourceDraftRevisionId: "draft_revision_reload_2"
+    });
+
+    const reloaded = new EventChestRegistryStore({
+      dataDir,
+      now: () => "2026-07-26T12:35:00.000Z",
+      logger: { warn: () => {} }
+    });
+    const older = await reloaded.getPublishedEventChestDefinitionRevision({
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      definitionRevisionId: first.publishedDefinition.definitionRevisionId
+    });
+
+    assert.equal(older.title, "Reload Original Revision");
+    assert.equal((await readRegistryFile(dataDir)).definitions.length, 2);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry writer: exact lookup rejects static fallback", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const store = new EventChestRegistryStore({
+      dataDir,
+      logger: { warn: () => {} }
+    });
+
+    const readModel = await store.getPublishedEventChestRegistry();
+    assert.equal(readModel.source, "fallback_static");
+    await assert.rejects(
+      store.getPublishedEventChestDefinitionRevision({
+        chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+        definitionRevisionId: "any_revision"
+      }),
+      (error) => error?.code === "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE"
+    );
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
@@ -286,10 +394,8 @@ test("event chest registry writer: different draft and chest identities are inde
       differentChest.definitions.filter((definition) => definition.chestId === DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID).length,
       1
     );
-    assert.equal(
-      differentChest.definitions.filter((definition) => definition.chestId === "daily_elemintz_chest_bonus").length,
-      1
-    );
+    assert.equal(differentChest.definitions.filter((definition) => definition.chestId === "daily_elemintz_chest_bonus").length, 1);
+    assert.equal((await readRegistryFile(dataDir)).definitions.length, 3);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }

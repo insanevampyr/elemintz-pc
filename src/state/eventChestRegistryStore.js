@@ -78,12 +78,16 @@ function sanitizeRegistryDefinitionForPublish(
 }
 
 function buildRegistryReadModelFromDocument(registry, { source = "file", warnings = [], errors = [] } = {}) {
+  const latestDefinitions = getLatestEventChestDefinitions(registry?.definitions ?? []);
   return {
     ok: errors.length === 0,
     source,
     readAt: new Date().toISOString(),
-    registry: clone(registry),
-    definitions: clone(registry?.definitions ?? []),
+    registry: {
+      ...clone(registry),
+      definitions: clone(latestDefinitions)
+    },
+    definitions: clone(latestDefinitions),
     warnings: [...warnings],
     errors: [...errors]
   };
@@ -99,6 +103,51 @@ function buildFallbackReadModel({ source = "fallback_static", readAt, warnings =
     warnings: [...warnings],
     errors: [...errors]
   };
+}
+
+function getRevisionSortTimestamp(definition) {
+  const publishedMs = Date.parse(String(definition?.publishedAt ?? ""));
+  if (Number.isFinite(publishedMs)) {
+    return publishedMs;
+  }
+  const updatedMs = Date.parse(String(definition?.updatedAt ?? ""));
+  return Number.isFinite(updatedMs) ? updatedMs : 0;
+}
+
+function compareLatestDefinitions(left, right) {
+  const leftMs = getRevisionSortTimestamp(left);
+  const rightMs = getRevisionSortTimestamp(right);
+  if (leftMs !== rightMs) {
+    return leftMs - rightMs;
+  }
+
+  return String(left?.definitionRevisionId ?? "").localeCompare(String(right?.definitionRevisionId ?? ""));
+}
+
+function getLatestEventChestDefinitions(definitions) {
+  const latestByChestId = new Map();
+  for (const definition of Array.isArray(definitions) ? definitions : []) {
+    const chestId = String(definition?.chestId ?? "").trim();
+    if (!chestId) {
+      continue;
+    }
+
+    const current = latestByChestId.get(chestId);
+    if (!current || compareLatestDefinitions(current, definition) <= 0) {
+      latestByChestId.set(chestId, definition);
+    }
+  }
+
+  return [...latestByChestId.values()].sort((left, right) =>
+    String(left?.chestId ?? "").localeCompare(String(right?.chestId ?? ""))
+  );
+}
+
+function isCompletePublishedDefinition(definition) {
+  return Boolean(
+    normalizeOptionalText(definition?.definitionRevisionId) &&
+      normalizeOptionalText(definition?.publishedAt)
+  );
 }
 
 function validateEventChestRegistryDocument(document) {
@@ -140,14 +189,20 @@ function validateEventChestRegistryDocument(document) {
   }
 
   const definitions = [];
-  const seenChestIds = new Set();
+  const seenRevisionKeys = new Set();
   for (const [index, definition] of (Array.isArray(document.definitions) ? document.definitions : []).entries()) {
     const chestId = String(definition?.chestId ?? "").trim() || `index:${index}`;
-    if (seenChestIds.has(chestId)) {
-      errors.push(`definitions contains duplicate chestId '${chestId}'.`);
+    const definitionRevisionId = String(definition?.definitionRevisionId ?? "").trim();
+    const revisionKey = `${chestId}\u0000${definitionRevisionId}`;
+    if (seenRevisionKeys.has(revisionKey)) {
+      errors.push(
+        definitionRevisionId
+          ? `definitions contains duplicate chestId and definitionRevisionId '${chestId}:${definitionRevisionId}'.`
+          : `definitions contains duplicate chestId '${chestId}' without definitionRevisionId.`
+      );
       continue;
     }
-    seenChestIds.add(chestId);
+    seenRevisionKeys.add(revisionKey);
 
     const validation = validateEventChestDefinition(definition);
     if (!validation.ok) {
@@ -242,8 +297,11 @@ export class EventChestRegistryStore {
         ok: true,
         source: "file",
         readAt,
-        registry: clone(validation.registry),
-        definitions: clone(validation.registry.definitions),
+        registry: {
+          ...clone(validation.registry),
+          definitions: clone(getLatestEventChestDefinitions(validation.registry.definitions))
+        },
+        definitions: clone(getLatestEventChestDefinitions(validation.registry.definitions)),
         warnings: validation.warnings,
         errors: []
       };
@@ -279,6 +337,60 @@ export class EventChestRegistryStore {
     return clone((registry.definitions ?? []).find((definition) => definition.chestId === safeChestId) ?? null);
   }
 
+  async getPublishedEventChestDefinitionRevision({ chestId, definitionRevisionId } = {}) {
+    const safeChestId = String(chestId ?? "").trim();
+    const safeDefinitionRevisionId = String(definitionRevisionId ?? "").trim();
+    if (!safeChestId || !safeDefinitionRevisionId) {
+      throw Object.assign(new Error("chestId and definitionRevisionId are required."), {
+        code: "EVENT_CHEST_ACTIVATION_INVALID_REQUEST"
+      });
+    }
+
+    let parsed = null;
+    try {
+      parsed = await this.readRawFile();
+    } catch (error) {
+      throw Object.assign(new Error("Published Event Chest registry is unavailable or invalid."), {
+        code: "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE",
+        cause: error
+      });
+    }
+
+    const validation = validateEventChestRegistryDocument(parsed);
+    if (!validation.ok) {
+      throw Object.assign(new Error("Published Event Chest registry is unavailable or invalid."), {
+        code: "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE"
+      });
+    }
+
+    const definitions = Array.isArray(validation.registry.definitions) ? validation.registry.definitions : [];
+    const sameChestDefinitions = definitions.filter((definition) => definition?.chestId === safeChestId);
+    if (sameChestDefinitions.length === 0) {
+      throw Object.assign(new Error(`Event Chest definition '${safeChestId}' was not found.`), {
+        code: "EVENT_CHEST_DEFINITION_NOT_FOUND"
+      });
+    }
+
+    const definition =
+      sameChestDefinitions.find(
+        (entry) => String(entry?.definitionRevisionId ?? "").trim() === safeDefinitionRevisionId
+      ) ?? null;
+    if (!definition) {
+      throw Object.assign(
+        new Error(`Event Chest definition revision '${safeDefinitionRevisionId}' was not found.`),
+        { code: "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND" }
+      );
+    }
+
+    if (!String(definition?.publishedAt ?? "").trim()) {
+      throw Object.assign(new Error("Event Chest definition revision is not publish-complete."), {
+        code: "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND"
+      });
+    }
+
+    return clone(definition);
+  }
+
   async publishEventChestDraftDefinition({
     definition,
     actor = null,
@@ -295,32 +407,44 @@ export class EventChestRegistryStore {
       const publishedAt = normalizeTimestamp(now, "publishedAt");
       const baseRegistry = await this.readPublishBaseRegistry();
       const existingDefinitions = Array.isArray(baseRegistry.definitions) ? baseRegistry.definitions : [];
-      const seenChestIds = new Set();
+      const seenRevisionKeys = new Set();
       for (const existingDefinition of existingDefinitions) {
         const chestId = String(existingDefinition?.chestId ?? "").trim();
         if (!chestId) {
           continue;
         }
-        if (seenChestIds.has(chestId)) {
-          throw new Error(`Existing Event Chest registry contains duplicate chestId '${chestId}'.`);
+        const definitionRevisionId = String(existingDefinition?.definitionRevisionId ?? "").trim();
+        const revisionKey = `${chestId}\u0000${definitionRevisionId}`;
+        if (seenRevisionKeys.has(revisionKey)) {
+          throw new Error(
+            definitionRevisionId
+              ? `Existing Event Chest registry contains duplicate chestId and definitionRevisionId '${chestId}:${definitionRevisionId}'.`
+              : `Existing Event Chest registry contains duplicate chestId '${chestId}' without definitionRevisionId.`
+          );
         }
-        seenChestIds.add(chestId);
+        seenRevisionKeys.add(revisionKey);
       }
 
       const safeSourceDraftId = normalizeOptionalText(sourceDraftId);
       const safeSourceDraftRevisionId = normalizeOptionalText(sourceDraftRevisionId);
       const chestId = String(definition?.chestId ?? "").trim();
       const existingPublishedDefinition =
-        existingDefinitions.find((existingDefinition) => existingDefinition.chestId === chestId) ?? null;
+        existingDefinitions.find(
+          (existingDefinition) =>
+            existingDefinition.chestId === chestId &&
+            safeSourceDraftId &&
+            safeSourceDraftRevisionId &&
+            existingDefinition.sourceDraftId === safeSourceDraftId &&
+            existingDefinition.sourceDraftRevisionId === safeSourceDraftRevisionId
+        ) ?? null;
       if (
         existingPublishedDefinition &&
-        safeSourceDraftId &&
-        safeSourceDraftRevisionId &&
         existingPublishedDefinition.sourceDraftId === safeSourceDraftId &&
         existingPublishedDefinition.sourceDraftRevisionId === safeSourceDraftRevisionId
       ) {
         return {
           ...buildRegistryReadModelFromDocument(baseRegistry),
+          publishedDefinition: clone(existingPublishedDefinition),
           publicationStatus: "already_published",
           idempotent: true,
           alreadyPublished: true
@@ -333,19 +457,15 @@ export class EventChestRegistryStore {
         sourceDraftId: safeSourceDraftId,
         sourceDraftRevisionId: safeSourceDraftRevisionId
       });
-      const replaced = [];
-      let didReplace = false;
-      for (const existingDefinition of existingDefinitions) {
-        if (existingDefinition.chestId === chestId) {
-          replaced.push(publishedDefinition);
-          didReplace = true;
-        } else {
-          replaced.push(clone(existingDefinition));
-        }
-      }
-      if (!didReplace) {
-        replaced.push(publishedDefinition);
-      }
+      const retainedDefinitions = [
+        ...existingDefinitions
+          .filter(
+            (existingDefinition) =>
+              existingDefinition.chestId !== chestId || isCompletePublishedDefinition(existingDefinition)
+          )
+          .map((existingDefinition) => clone(existingDefinition)),
+        publishedDefinition
+      ];
 
       const document = {
         schemaVersion: EVENT_CHEST_REGISTRY_DOCUMENT_VERSION,
@@ -353,7 +473,7 @@ export class EventChestRegistryStore {
         registryRevisionId: buildRevisionId("registry_revision", publishedAt),
         publishedAt,
         publishedBy: normalizeOptionalText(actor),
-        definitions: replaced
+        definitions: retainedDefinitions
       };
       const registryValidation = validateEventChestRegistryDocument(document);
       if (!registryValidation.ok) {
@@ -368,6 +488,7 @@ export class EventChestRegistryStore {
       }
       return {
         ...reread,
+        publishedDefinition: clone(publishedDefinition),
         publicationStatus: "published",
         idempotent: false,
         alreadyPublished: false
