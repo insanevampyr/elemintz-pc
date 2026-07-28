@@ -50,6 +50,24 @@ const BLOOD_MATCH_END_REASONS = new Set([
   "timeout_tie_or_deficit",
   "quit_forfeit"
 ]);
+const EVENT_CHEST_OPEN_SAFE_ERROR_MESSAGES = Object.freeze({
+  EVENT_CHEST_OPEN_INVALID_REQUEST: "entitlementId is required.",
+  EVENT_CHEST_OPEN_INELIGIBLE: "An authenticated claimed profile is required for Event Chest opening.",
+  EVENT_CHEST_OPEN_ENTITLEMENT_NOT_FOUND: "Event Chest entitlement is not available.",
+  EVENT_CHEST_OPEN_ENTITLEMENT_EXPIRED: "Event Chest entitlement is not available.",
+  EVENT_CHEST_OPEN_SETTLEMENT_INVALID: "Event Chest opening could not be replayed.",
+  EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND: "Event Chest definition is unavailable.",
+  EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE: "Event Chest definition is unavailable.",
+  EVENT_CHEST_OPEN_INVALID_DEFINITION: "Event Chest reward is unavailable.",
+  EVENT_CHEST_OPEN_INVALID_POOL: "Event Chest reward is unavailable.",
+  EVENT_CHEST_OPEN_INVALID_REWARD: "Event Chest reward is unavailable.",
+  EVENT_CHEST_OPEN_INVALID_DUPLICATE_REWARD: "Event Chest reward is unavailable.",
+  EVENT_CHEST_OPEN_DUPLICATE_CONVERSION_DISABLED: "Event Chest reward is unavailable."
+});
+
+function getSafeEventChestOpenErrorMessage(code) {
+  return EVENT_CHEST_OPEN_SAFE_ERROR_MESSAGES[code] ?? "Unable to open Event Chest entitlement.";
+}
 
 function logRoomEvent(logger, message, details = {}) {
   logger.info("[Multiplayer] " + message, details);
@@ -5641,6 +5659,73 @@ export function createMultiplayerFoundation({
           error: {
             code: String(error?.code ?? "EVENT_CHEST_ENTITLEMENT_DELIVERY_FAILED"),
             message: String(error?.message ?? "Unable to sync Event Chest entitlements.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:openEventChestEntitlement", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+
+      if (!sessionResult.session?.authenticated || !sessionResult.session?.accountId) {
+        respond({
+          ok: false,
+          error: {
+            code: "EVENT_CHEST_OPEN_INELIGIBLE",
+            message: "An authenticated claimed profile is required for Event Chest opening."
+          }
+        });
+        return;
+      }
+
+      const entitlementId = String(payload?.entitlementId ?? "").trim();
+      if (!entitlementId) {
+        respond({
+          ok: false,
+          error: {
+            code: "EVENT_CHEST_OPEN_INVALID_REQUEST",
+            message: "entitlementId is required."
+          }
+        });
+        return;
+      }
+
+      if (typeof profileAuthority?.openEventChestEntitlement !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+
+      try {
+        const result = await profileAuthority.openEventChestEntitlement({
+          username: sessionResult.session?.username,
+          accountId: sessionResult.session?.accountId,
+          profileKey: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          entitlementId
+        });
+        respond({
+          ok: true,
+          result
+        });
+      } catch (error) {
+        const code = String(error?.code ?? "EVENT_CHEST_OPEN_FAILED");
+        respond({
+          ok: false,
+          error: {
+            code,
+            message: getSafeEventChestOpenErrorMessage(code)
           }
         });
       }

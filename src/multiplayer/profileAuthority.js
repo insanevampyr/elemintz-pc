@@ -1219,6 +1219,31 @@ export class MultiplayerProfileAuthority {
     });
   }
 
+  async openEventChestEntitlement({ username, accountId, profileKey = username, entitlementId } = {}) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    const safeAccountId = normalizeAuthorityAccountId(accountId);
+    const safeProfileKey = normalizeAuthorityUsername(profileKey ?? username);
+    const safeEntitlementId = String(entitlementId ?? "").trim();
+    if (!safeUsername || !safeProfileKey || !safeAccountId) {
+      throw Object.assign(new Error("An authenticated claimed profile is required for Event Chest opening."), {
+        code: "EVENT_CHEST_OPEN_INELIGIBLE"
+      });
+    }
+    if (!safeEntitlementId) {
+      throw Object.assign(new Error("entitlementId is required."), {
+        code: "EVENT_CHEST_OPEN_INVALID_REQUEST"
+      });
+    }
+
+    this.logger.info?.("[ProfileAuthority] openEventChestEntitlement");
+    return this.coordinator.openEventChestEntitlement({
+      username: safeUsername,
+      accountId: safeAccountId,
+      profileKey: safeProfileKey,
+      entitlementId: safeEntitlementId
+    });
+  }
+
   async openChest({ username, chestType }) {
     const safeUsername = normalizeAuthorityUsername(username);
     if (!safeUsername) {

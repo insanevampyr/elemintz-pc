@@ -4982,6 +4982,407 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
   }
 });
 
+test("multiplayer foundation: profile Event Chest opening route is claimed-profile authorized, replay-safe, and private", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthorityLogEntries = [];
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    accountStore,
+    logger: {
+      info: (...args) => {
+        profileAuthorityLogEntries.push(args);
+      }
+    }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let playerClient = null;
+  let otherClient = null;
+  let guestClient = null;
+  let mismatchClient = null;
+  let malformedClient = null;
+  let concurrentClient = null;
+
+  const historical = {
+    ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+    chestId: "route_event_chest_open",
+    title: "Route Open Historical",
+    subtitle: "Route opening test.",
+    description: "Route opening test chest.",
+    modalTitle: "Route Open Historical",
+    definitionRevisionId: "definition_revision_route_open_1",
+    publishedAt: "2026-07-28T15:00:00.000Z",
+    publishedBy: "VampyrLee",
+    sourceDraftId: "draft_route_open",
+    sourceDraftRevisionId: "draft_revision_route_open_1",
+    odds: {
+      common: 1,
+      rare: 0,
+      epic: 0,
+      legendary: 0
+    },
+    pool: {
+      common: [{ type: "title", cosmeticId: "title_first_light" }],
+      rare: [],
+      epic: [],
+      legendary: []
+    }
+  };
+  const newer = {
+    ...historical,
+    title: "Route Open Newer",
+    modalTitle: "Route Open Newer",
+    definitionRevisionId: "definition_revision_route_open_2",
+    sourceDraftRevisionId: "draft_revision_route_open_2",
+    pool: {
+      common: [{ type: "title", cosmeticId: "title_element_touched" }],
+      rare: [],
+      epic: [],
+      legendary: []
+    }
+  };
+  const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+  await fs.writeFile(
+    registryPath,
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        registryId: "elemintz_event_chest_registry",
+        registryRevisionId: "registry_revision_route_open",
+        publishedAt: "2026-07-28T15:00:00.000Z",
+        publishedBy: "VampyrLee",
+        definitions: [historical, newer]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await coordinator.eventChestActivationStore.activate({
+    chestId: historical.chestId,
+    definitionRevisionId: historical.definitionRevisionId
+  });
+
+  try {
+    const port = await foundation.start();
+    playerClient = await connectClient(port);
+    otherClient = await connectClient(port);
+    guestClient = await connectClient(port);
+    mismatchClient = await connectClient(port);
+    malformedClient = await connectClient(port);
+    concurrentClient = await connectClient(port);
+
+    const unauthenticated = await emitWithAck(guestClient, "profile:openEventChestEntitlement", {
+      entitlementId: "anything"
+    });
+    assert.equal(unauthenticated?.ok, false);
+    assert.equal(unauthenticated?.error?.code, "SESSION_REQUIRED");
+
+    const guestSession = await emitWithAck(guestClient, "session:bootstrap", {
+      username: "GuestEventChestOpenUser"
+    });
+    assert.equal(guestSession?.ok, true);
+    const guestAttempt = await emitWithAck(guestClient, "profile:openEventChestEntitlement", {
+      sessionToken: guestSession?.session?.token,
+      entitlementId: "anything"
+    });
+    assert.equal(guestAttempt?.ok, false);
+    assert.equal(guestAttempt?.error?.code, "EVENT_CHEST_OPEN_INELIGIBLE");
+
+    const missingPayload = await emitWithAck(guestClient, "profile:openEventChestEntitlement", {
+      sessionToken: guestSession?.session?.token
+    });
+    assert.equal(missingPayload?.ok, false);
+    assert.notEqual(missingPayload?.error?.code, "EVENT_CHEST_OPEN_INVALID_REQUEST");
+
+    const playerRegister = await registerAccount(playerClient, {
+      username: "RouteOpenUser",
+      email: "route-open@example.com",
+      password: "RoutePass123"
+    });
+    const otherRegister = await registerAccount(otherClient, {
+      username: "OtherRouteOpenUser",
+      email: "other-route-open@example.com",
+      password: "RoutePass123"
+    });
+    const mismatchRegister = await registerAccount(mismatchClient, {
+      username: "MismatchRouteOpenUser",
+      email: "mismatch-route-open@example.com",
+      password: "RoutePass123"
+    });
+    const malformedRegister = await registerAccount(malformedClient, {
+      username: "MalformedRouteOpenUser",
+      email: "malformed-route-open@example.com",
+      password: "RoutePass123"
+    });
+    const concurrentRegister = await registerAccount(concurrentClient, {
+      username: "ConcurrentRouteOpenUser",
+      email: "concurrent-route-open@example.com",
+      password: "RoutePass123"
+    });
+    assert.equal(playerRegister?.ok, true);
+    assert.equal(otherRegister?.ok, true);
+    assert.equal(mismatchRegister?.ok, true);
+    assert.equal(malformedRegister?.ok, true);
+    assert.equal(concurrentRegister?.ok, true);
+
+    const playerBeforeSyncProfile = await coordinator.profiles.getProfile("RouteOpenUser");
+    const preSyncProfileRead = await emitWithAck(playerClient, "profile:get", {
+      sessionToken: playerRegister?.session?.token
+    });
+    const preSyncPublicRead = await emitWithAck(otherClient, "profile:view", {
+      sessionToken: otherRegister?.session?.token,
+      username: "RouteOpenUser"
+    });
+    assert.equal(preSyncProfileRead?.ok, true);
+    assert.equal(preSyncPublicRead?.ok, true);
+    assert.equal(playerBeforeSyncProfile.eventChestEntitlements.items.length, 0);
+    assert.equal(playerBeforeSyncProfile.ownedCosmetics.title.includes("title_first_light"), false);
+
+    const sync = await emitWithAck(playerClient, "profile:syncEventChestEntitlements", {
+      sessionToken: playerRegister?.session?.token,
+      accountId: "forged-account",
+      profileKey: "OtherRouteOpenUser",
+      username: "OtherRouteOpenUser"
+    });
+    assert.equal(sync?.ok, true);
+    const entitlementId = sync?.result?.entitlement?.entitlementId;
+    assert.equal(typeof entitlementId, "string");
+    assert.equal(sync?.result?.entitlement?.status, "available");
+    const afterSyncProfile = await coordinator.profiles.getProfile("RouteOpenUser");
+    assert.equal(afterSyncProfile.eventChestEntitlements.items[0].status, "available");
+    assert.equal(afterSyncProfile.eventChestEntitlements.items[0].rewardSettlement, null);
+    assert.equal(afterSyncProfile.ownedCosmetics.title.includes("title_first_light"), false);
+
+    const malformedEntitlement = await emitWithAck(malformedClient, "profile:syncEventChestEntitlements", {
+      sessionToken: malformedRegister?.session?.token
+    });
+    assert.equal(malformedEntitlement?.ok, true);
+    const mismatchEntitlement = await emitWithAck(mismatchClient, "profile:syncEventChestEntitlements", {
+      sessionToken: mismatchRegister?.session?.token
+    });
+    assert.equal(mismatchEntitlement?.ok, true);
+    const concurrentSync = await emitWithAck(concurrentClient, "profile:syncEventChestEntitlements", {
+      sessionToken: concurrentRegister?.session?.token
+    });
+    assert.equal(concurrentSync?.ok, true);
+    await coordinator.eventChestActivationStore.end();
+
+    await coordinator.profiles.updateProfile("MalformedRouteOpenUser", (current) => ({
+      ...current,
+      tokens: 0,
+      eventChestEntitlements: {
+        schemaVersion: 1,
+        items: current.eventChestEntitlements.items.map((item) =>
+          item.entitlementId === malformedEntitlement.result.entitlement.entitlementId
+            ? {
+                ...item,
+                status: "opened",
+                openedAt: "2026-07-28T15:10:00.000Z",
+                openTransactionId: "event_chest_open_bad_route",
+                rewardSettlement: { nope: true }
+              }
+            : item
+        )
+      }
+    }));
+    const malformedBefore = await coordinator.profiles.getProfile("MalformedRouteOpenUser");
+    const malformedAttempt = await emitWithAck(malformedClient, "profile:openEventChestEntitlement", {
+      sessionToken: malformedRegister?.session?.token,
+      entitlementId: malformedEntitlement.result.entitlement.entitlementId
+    });
+    assert.equal(malformedAttempt?.ok, false);
+    assert.equal(malformedAttempt?.error?.code, "EVENT_CHEST_OPEN_SETTLEMENT_INVALID");
+    assert.equal(malformedAttempt?.error?.message, "Event Chest opening could not be replayed.");
+    assert.deepEqual(await coordinator.profiles.getProfile("MalformedRouteOpenUser"), malformedBefore);
+
+    const missingForPlayer = await emitWithAck(playerClient, "profile:openEventChestEntitlement", {
+      sessionToken: playerRegister?.session?.token,
+      entitlementId: "missing_event_chest_entitlement"
+    });
+    assert.equal(missingForPlayer?.ok, false);
+    assert.equal(missingForPlayer?.error?.code, "EVENT_CHEST_OPEN_ENTITLEMENT_NOT_FOUND");
+    assert.equal(missingForPlayer?.error?.message, "Event Chest entitlement is not available.");
+
+    const crossProfile = await emitWithAck(otherClient, "profile:openEventChestEntitlement", {
+      sessionToken: otherRegister?.session?.token,
+      entitlementId
+    });
+    assert.equal(crossProfile?.ok, false);
+    assert.equal(crossProfile?.error?.code, "EVENT_CHEST_OPEN_ENTITLEMENT_NOT_FOUND");
+    assert.equal(crossProfile?.error?.message, "Event Chest entitlement is not available.");
+    assert.equal(JSON.stringify(crossProfile).includes("RouteOpenUser"), false);
+
+    const invalidEntitlementId = await emitWithAck(playerClient, "profile:openEventChestEntitlement", {
+      sessionToken: playerRegister?.session?.token,
+      entitlementId: "   "
+    });
+    assert.equal(invalidEntitlementId?.ok, false);
+    assert.equal(invalidEntitlementId?.error?.code, "EVENT_CHEST_OPEN_INVALID_REQUEST");
+
+    const beforeUnknownInternal = await coordinator.profiles.getProfile("RouteOpenUser");
+    const originalOpenEventChestEntitlement = profileAuthority.openEventChestEntitlement;
+    profileAuthority.openEventChestEntitlement = async () => {
+      throw new Error(
+        "Internal Event Chest failure: C:\\server-data\\event-chest-registry.json rewardSettlement account-id-1"
+      );
+    };
+    const unknownInternal = await emitWithAck(playerClient, "profile:openEventChestEntitlement", {
+      sessionToken: playerRegister?.session?.token,
+      entitlementId
+    });
+    profileAuthority.openEventChestEntitlement = originalOpenEventChestEntitlement;
+    assert.equal(unknownInternal?.ok, false);
+    assert.equal(unknownInternal?.error?.code, "EVENT_CHEST_OPEN_FAILED");
+    assert.equal(unknownInternal?.error?.message, "Unable to open Event Chest entitlement.");
+    assert.equal(JSON.stringify(unknownInternal).includes("event-chest-registry.json"), false);
+    assert.equal(JSON.stringify(unknownInternal).includes("rewardSettlement"), false);
+    assert.equal(JSON.stringify(unknownInternal).includes("account-id-1"), false);
+    assert.deepEqual(await coordinator.profiles.getProfile("RouteOpenUser"), beforeUnknownInternal);
+
+    const beforeWrongLink = await coordinator.profiles.getProfile("MismatchRouteOpenUser");
+    await coordinator.profiles.updateProfile("MismatchRouteOpenUser", (current) => ({
+      ...current,
+      linkedAccountId: "different-account-id"
+    }));
+    const mismatchAttempt = await emitWithAck(mismatchClient, "profile:openEventChestEntitlement", {
+      sessionToken: mismatchRegister?.session?.token,
+      entitlementId: mismatchEntitlement?.result?.entitlement?.entitlementId
+    });
+    assert.equal(mismatchAttempt?.ok, false);
+    assert.equal(mismatchAttempt?.error?.code, "EVENT_CHEST_OPEN_INELIGIBLE");
+    const mismatchAfter = await coordinator.profiles.getProfile("MismatchRouteOpenUser");
+    assert.equal(mismatchAfter.tokens, beforeWrongLink.tokens);
+    assert.equal(mismatchAfter.ownedCosmetics.title.includes("title_first_light"), false);
+    assert.equal(mismatchAfter.eventChestEntitlements.items[0].status, "available");
+
+    const beforeOpen = await coordinator.profiles.getProfile("RouteOpenUser");
+    const opened = await emitWithAck(playerClient, "profile:openEventChestEntitlement", {
+      sessionToken: playerRegister?.session?.token,
+      entitlementId,
+      accountId: otherRegister?.session?.accountId,
+      username: "OtherRouteOpenUser",
+      profileKey: "OtherRouteOpenUser",
+      chestId: newer.chestId,
+      definitionRevisionId: newer.definitionRevisionId,
+      transactionId: "client-forged-transaction",
+      reward: { type: "tokens", tokenAmount: 999999 },
+      random: 0.99
+    });
+    assert.equal(opened?.ok, true);
+    assert.equal(opened?.result?.replayed, false);
+    assert.equal(opened?.result?.alreadyOpened, false);
+    assert.equal(opened?.result?.entitlement?.entitlementId, entitlementId);
+    assert.equal(opened?.result?.entitlement?.status, "opened");
+    assert.equal(opened?.result?.entitlement?.definitionRevisionId, historical.definitionRevisionId);
+    assert.equal(opened?.result?.reward?.type, "cosmetic");
+    assert.equal(opened?.result?.reward?.cosmetic?.cosmeticId, "title_first_light");
+
+    const afterOpen = await coordinator.profiles.getProfile("RouteOpenUser");
+    assert.equal(afterOpen.tokens, beforeOpen.tokens);
+    assert.equal(afterOpen.ownedCosmetics.title.includes("title_first_light"), true);
+    assert.equal(afterOpen.ownedCosmetics.title.includes("title_element_touched"), false);
+    assert.equal(afterOpen.eventChestEntitlements.items.length, 1);
+    assert.equal(afterOpen.eventChestEntitlements.items[0].status, "opened");
+    assert.equal(typeof afterOpen.eventChestEntitlements.items[0].rewardSettlement, "object");
+    assert.equal(typeof afterOpen.eventChestEntitlements.items[0].openTransactionId, "string");
+
+    const replay = await emitWithAck(playerClient, "profile:openEventChestEntitlement", {
+      sessionToken: playerRegister?.session?.token,
+      entitlementId
+    });
+    assert.equal(replay?.ok, true);
+    assert.equal(replay?.result?.replayed, true);
+    assert.equal(replay?.result?.alreadyOpened, true);
+    assert.deepEqual(replay?.result?.reward, opened?.result?.reward);
+    assert.equal(
+      (await coordinator.profiles.getProfile("RouteOpenUser")).ownedCosmetics.title.filter(
+        (id) => id === "title_first_light"
+      ).length,
+      1
+    );
+
+    const concurrentEntitlementId = concurrentSync?.result?.entitlement?.entitlementId;
+    const [left, right] = await Promise.all([
+      emitWithAck(concurrentClient, "profile:openEventChestEntitlement", {
+        sessionToken: concurrentRegister?.session?.token,
+        entitlementId: concurrentEntitlementId
+      }),
+      emitWithAck(concurrentClient, "profile:openEventChestEntitlement", {
+        sessionToken: concurrentRegister?.session?.token,
+        entitlementId: concurrentEntitlementId
+      })
+    ]);
+    assert.equal(left?.ok, true);
+    assert.equal(right?.ok, true);
+    assert.equal([left, right].filter((response) => response?.result?.replayed).length, 1);
+    assert.deepEqual(left?.result?.reward, right?.result?.reward);
+    const concurrentProfile = await coordinator.profiles.getProfile("ConcurrentRouteOpenUser");
+    assert.equal(
+      concurrentProfile.ownedCosmetics.title.filter((id) => id === "title_first_light").length,
+      1
+    );
+    assert.equal(concurrentProfile.eventChestEntitlements.items.length, 1);
+    assert.equal(concurrentProfile.eventChestEntitlements.items[0].status, "opened");
+    assert.equal(typeof concurrentProfile.eventChestEntitlements.items[0].rewardSettlement, "object");
+
+    const serializedOpenResponses = JSON.stringify({
+      opened,
+      replay,
+      left,
+      right,
+      malformedAttempt,
+      missingForPlayer,
+      crossProfile,
+      invalidEntitlementId
+    });
+    assert.equal(serializedOpenResponses.includes("transactionId"), false);
+    assert.equal(serializedOpenResponses.includes("openTransactionId"), false);
+    assert.equal(serializedOpenResponses.includes("rewardSettlement"), false);
+    assert.equal(serializedOpenResponses.includes("eventChestEntitlements"), false);
+    assert.equal(serializedOpenResponses.includes("eventChests"), false);
+    assert.equal(serializedOpenResponses.includes("linkedAccountId"), false);
+    assert.equal(serializedOpenResponses.includes("ownedCosmetics"), false);
+    assert.equal(serializedOpenResponses.includes("accountId"), false);
+    assert.equal(serializedOpenResponses.includes("profileKey"), false);
+    assert.equal(serializedOpenResponses.includes("sourceDraftId"), false);
+    assert.equal(serializedOpenResponses.includes("sourceDraftRevisionId"), false);
+    assert.equal(serializedOpenResponses.includes('"pool"'), false);
+    assert.equal(serializedOpenResponses.includes('"odds"'), false);
+    assert.equal(serializedOpenResponses.includes('"pity"'), false);
+
+    const serializedOpenLogs = JSON.stringify(
+      profileAuthorityLogEntries.filter((entry) =>
+        String(entry?.[0] ?? "").includes("openEventChestEntitlement")
+      )
+    );
+    assert.equal(serializedOpenLogs.includes("RouteOpenUser"), false);
+    assert.equal(serializedOpenLogs.includes("OtherRouteOpenUser"), false);
+    assert.equal(serializedOpenLogs.includes("MismatchRouteOpenUser"), false);
+    assert.equal(serializedOpenLogs.includes(entitlementId), false);
+    assert.equal(serializedOpenLogs.includes("account-id-1"), false);
+  } finally {
+    playerClient?.disconnect();
+    otherClient?.disconnect();
+    guestClient?.disconnect();
+    mismatchClient?.disconnect();
+    malformedClient?.disconnect();
+    concurrentClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: admin grants apply once, notify the player, and update confirmation status", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });
