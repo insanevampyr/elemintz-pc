@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 
 import { validateEventChestDefinition } from "./eventChestDefinitions.js";
 import { resolveDataDir } from "./paths.js";
@@ -7,6 +8,9 @@ import { JsonStore } from "./storage/jsonStore.js";
 
 export const EVENT_CHEST_DRAFT_STORE_VERSION = 1;
 export const EVENT_CHEST_DRAFT_STORE_FILENAME = "event-chest-drafts.json";
+export const EVENT_CHEST_DRAFT_REVISION_CONFLICT = "EVENT_CHEST_DRAFT_REVISION_CONFLICT";
+export const EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED =
+  "EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED";
 export const EVENT_CHEST_DRAFT_STATUSES = Object.freeze([
   "draft",
   "validation_failed",
@@ -61,6 +65,13 @@ function normalizeRequiredText(value, fieldName) {
 function normalizeOptionalText(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
   return normalized || null;
+}
+
+function buildDraftRevisionId(timestamp, randomUUID) {
+  const safeTimestamp = String(timestamp ?? "")
+    .replace(/[^0-9A-Za-z]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `draft_revision_${safeTimestamp || Date.now()}_${randomUUID()}`;
 }
 
 function normalizeTimestamp(value, fieldName, fallback = null) {
@@ -238,9 +249,15 @@ function buildDraftSummary(draft) {
 }
 
 export class EventChestDraftStore {
-  constructor({ dataDir, now = () => new Date().toISOString() } = {}) {
+  constructor({
+    dataDir,
+    now = () => new Date().toISOString(),
+    randomUUID = () => crypto.randomUUID()
+  } = {}) {
     this.dataDir = resolveDataDir(dataDir);
     this.now = typeof now === "function" ? now : () => new Date().toISOString();
+    this.randomUUID =
+      typeof randomUUID === "function" ? randomUUID : () => crypto.randomUUID();
     this.filePath = path.join(this.dataDir, "server-data", EVENT_CHEST_DRAFT_STORE_FILENAME);
     this.store = new JsonStore(path.join("server-data", EVENT_CHEST_DRAFT_STORE_FILENAME), {
       dataDir: this.dataDir
@@ -290,16 +307,47 @@ export class EventChestDraftStore {
       const draftId = normalizeRequiredText(input?.draftId, "draftId");
       const existingIndex = document.drafts.findIndex((draft) => draft.draftId === draftId);
       const existing = existingIndex >= 0 ? document.drafts[existingIndex] : null;
-      const record = createEventChestDraftRecord(
+      const expectedDraftRevisionId = normalizeOptionalText(input?.expectedDraftRevisionId);
+      if (existing && !expectedDraftRevisionId) {
+        throw Object.assign(
+          new Error("The current draft revision is required before saving."),
+          {
+            code: EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED,
+            details: {
+              draftId,
+              currentDraftRevisionId: existing.draftRevisionId
+            }
+          }
+        );
+      }
+      if (existing && expectedDraftRevisionId !== existing.draftRevisionId) {
+        throw Object.assign(
+          new Error("This draft changed after you opened it. Reload the latest version before saving."),
+          {
+            code: EVENT_CHEST_DRAFT_REVISION_CONFLICT,
+            details: {
+              draftId,
+              currentDraftRevisionId: existing.draftRevisionId
+            }
+          }
+        );
+      }
+
+      const candidate = createEventChestDraftRecord(
         {
           ...(existing ?? {}),
           ...(input ?? {}),
           draftId,
+          draftRevisionId: existing?.draftRevisionId ?? "pending_server_revision",
           createdAt: existing?.createdAt ?? input?.createdAt ?? now,
           updatedAt: now
         },
         { now }
       );
+      const record = {
+        ...candidate,
+        draftRevisionId: buildDraftRevisionId(now, this.randomUUID)
+      };
 
       if (existingIndex >= 0) {
         document.drafts[existingIndex] = record;

@@ -4188,11 +4188,12 @@ test("multiplayer foundation: admin Event Chest registry route is read-only and 
 
 test("multiplayer foundation: admin Event Chest draft routes are admin-only and draft-store scoped", async () => {
   const dataDir = await createTempDataDir();
+  let registryNow = "2026-07-26T12:00:00.000Z";
   const coordinator = new StateCoordinator({
     dataDir,
     eventChestRegistryStore: new EventChestRegistryStore({
       dataDir,
-      now: () => "2026-07-26T12:00:00.000Z",
+      now: () => registryNow,
       logger: { warn: () => {} }
     })
   });
@@ -4343,20 +4344,32 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
 
     const profileBeforeSave = await coordinator.profiles.getProfile("RegularUser");
     const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+    const seededDraft = await coordinator.eventChestDraftStore.saveDraft({
+      draftId: "draft_daily",
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      status: "draft",
+      definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+      createdBy: "VampyrLee",
+      updatedBy: "VampyrLee"
+    });
     const save = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
       sessionToken: adminLogin?.session?.token,
       draftId: "draft_daily",
-      metadata: {
-        draftRevisionId: "draft_revision_1",
-        status: "draft"
-      },
-      definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET
+      expectedDraftRevisionId: seededDraft.draftRevisionId,
+      metadata: { status: "draft" },
+      definition: {
+        ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        title: "Saved Event Chest Draft"
+      }
     });
     assert.equal(save?.ok, true);
     assert.equal(save?.result?.draft?.draftId, "draft_daily");
     assert.equal(save?.result?.draft?.definition?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(save?.result?.draft?.definition?.title, "Saved Event Chest Draft");
+    assert.notEqual(save?.result?.draft?.draftRevisionId, seededDraft.draftRevisionId);
     assert.equal(save?.result?.draft?.createdBy, "VampyrLee");
     assert.equal(save?.result?.draft?.updatedBy, "VampyrLee");
+    const savedDraftRevisionId = save?.result?.draft?.draftRevisionId;
 
     const list = await emitWithAck(adminClient, "admin:listEventChestDrafts", {
       sessionToken: adminLogin?.session?.token
@@ -4364,7 +4377,8 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(list?.ok, true);
     assert.equal(list?.result?.drafts?.length, 1);
     assert.equal(list?.result?.drafts?.[0]?.draftId, "draft_daily");
-    assert.equal(list?.result?.drafts?.[0]?.title, DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.title);
+    assert.equal(list?.result?.drafts?.[0]?.title, "Saved Event Chest Draft");
+    assert.equal(list?.result?.drafts?.[0]?.draftRevisionId, savedDraftRevisionId);
     assert.equal(Object.prototype.hasOwnProperty.call(list?.result?.drafts?.[0] ?? {}, "definition"), false);
 
     const get = await emitWithAck(adminClient, "admin:getEventChestDraft", {
@@ -4374,6 +4388,7 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(get?.ok, true);
     assert.equal(get?.result?.draft?.draftId, "draft_daily");
     assert.equal(get?.result?.draft?.definition?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(get?.result?.draft?.draftRevisionId, savedDraftRevisionId);
 
     const validateStored = await emitWithAck(adminClient, "admin:validateEventChestDraft", {
       sessionToken: adminLogin?.session?.token,
@@ -4381,11 +4396,15 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     });
     assert.equal(validateStored?.ok, true);
     assert.equal(validateStored?.result?.validation?.ok, true);
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft("draft_daily"))?.draftRevisionId,
+      savedDraftRevisionId
+    );
 
     const privateSave = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
       sessionToken: adminLogin?.session?.token,
-      draftId: "private_draft",
-      metadata: { draftRevisionId: "draft_revision_private" },
+      draftId: "draft_daily",
+      expectedDraftRevisionId: savedDraftRevisionId,
       definition: {
         ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
         ownedCosmetics: { avatar: ["default_avatar"] }
@@ -4393,6 +4412,76 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     });
     assert.equal(privateSave?.ok, false);
     assert.equal(privateSave?.error?.code, "EVENT_CHEST_DRAFT_SAVE_FAILED");
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft("draft_daily"))?.draftRevisionId,
+      savedDraftRevisionId
+    );
+
+    const missingDraftSave = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "missing_draft",
+      expectedDraftRevisionId: "missing_revision",
+      definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET
+    });
+    assert.equal(missingDraftSave?.ok, false);
+    assert.equal(missingDraftSave?.error?.code, "EVENT_CHEST_DRAFT_NOT_FOUND");
+
+    const staleSave = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: seededDraft.draftRevisionId,
+      definition: {
+        ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        title: "Stale Event Chest Draft"
+      }
+    });
+    assert.equal(staleSave?.ok, false);
+    assert.equal(staleSave?.error?.code, "EVENT_CHEST_DRAFT_REVISION_CONFLICT");
+    assert.equal(
+      staleSave?.error?.message,
+      "This draft changed after you opened it. Reload the latest version before saving."
+    );
+    assert.deepEqual(staleSave?.error?.details, {
+      draftId: "draft_daily",
+      currentDraftRevisionId: savedDraftRevisionId
+    });
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft("draft_daily"))?.definition?.title,
+      "Saved Event Chest Draft"
+    );
+
+    const concurrentSavePayload = {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: savedDraftRevisionId
+    };
+    const [concurrentSaveA, concurrentSaveB] = await Promise.all([
+      emitWithAck(adminClient, "admin:saveEventChestDraft", {
+        ...concurrentSavePayload,
+        definition: {
+          ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+          title: "Concurrent Save A"
+        }
+      }),
+      emitWithAck(adminClient, "admin:saveEventChestDraft", {
+        ...concurrentSavePayload,
+        definition: {
+          ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+          title: "Concurrent Save B"
+        }
+      })
+    ]);
+    const concurrentSaveResults = [concurrentSaveA, concurrentSaveB];
+    const concurrentSaveSuccess = concurrentSaveResults.find((result) => result?.ok);
+    const concurrentSaveConflict = concurrentSaveResults.find((result) => !result?.ok);
+    assert.ok(concurrentSaveSuccess);
+    assert.equal(concurrentSaveConflict?.error?.code, "EVENT_CHEST_DRAFT_REVISION_CONFLICT");
+    const currentDraftRevisionId = concurrentSaveSuccess?.result?.draft?.draftRevisionId;
+    assert.notEqual(currentDraftRevisionId, savedDraftRevisionId);
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft("draft_daily"))?.draftRevisionId,
+      currentDraftRevisionId
+    );
 
     const profileAfterSave = await coordinator.profiles.getProfile("RegularUser");
     assert.deepEqual(profileAfterSave, profileBeforeSave);
@@ -4419,12 +4508,22 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(revisionMismatchPublish?.ok, false);
     assert.equal(revisionMismatchPublish?.error?.code, "EVENT_CHEST_DRAFT_REVISION_MISMATCH");
 
+    const missingRevisionPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily"
+    });
+    assert.equal(missingRevisionPublish?.ok, false);
+    assert.equal(
+      missingRevisionPublish?.error?.code,
+      "EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED"
+    );
+
     await fs.mkdir(path.dirname(registryPath), { recursive: true });
     await fs.writeFile(registryPath, "{ nope", "utf8");
     const malformedRegistryPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
       sessionToken: adminLogin?.session?.token,
       draftId: "draft_daily",
-      expectedDraftRevisionId: "draft_revision_1"
+      expectedDraftRevisionId: currentDraftRevisionId
     });
     assert.equal(malformedRegistryPublish?.ok, false);
     assert.equal(malformedRegistryPublish?.error?.code, "EVENT_CHEST_DRAFT_PUBLISH_FAILED");
@@ -4434,7 +4533,7 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     const publish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
       sessionToken: adminLogin?.session?.token,
       draftId: "draft_daily",
-      expectedDraftRevisionId: "draft_revision_1"
+      expectedDraftRevisionId: currentDraftRevisionId
     });
     assert.equal(publish?.ok, true);
     assert.equal(publish?.result?.registry?.ok, true);
@@ -4448,7 +4547,7 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(publish?.result?.idempotent, false);
     assert.equal(publish?.result?.alreadyPublished, false);
     assert.equal(publish?.result?.publishedDefinition?.sourceDraftId, "draft_daily");
-    assert.equal(publish?.result?.publishedDefinition?.sourceDraftRevisionId, "draft_revision_1");
+    assert.equal(publish?.result?.publishedDefinition?.sourceDraftRevisionId, currentDraftRevisionId);
     assert.ok(publish?.result?.registryRevisionId);
     assert.ok(publish?.result?.publishedAt);
 
@@ -4456,7 +4555,7 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(registryFile.definitions.length, 1);
     assert.equal(registryFile.definitions[0].chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
     assert.equal(registryFile.definitions[0].sourceDraftId, "draft_daily");
-    assert.equal(registryFile.definitions[0].sourceDraftRevisionId, "draft_revision_1");
+    assert.equal(registryFile.definitions[0].sourceDraftRevisionId, currentDraftRevisionId);
 
     const firstRegistryRevisionId = publish?.result?.registryRevisionId;
     const firstDefinitionRevisionId = publish?.result?.publishedChest?.definitionRevisionId;
@@ -4464,7 +4563,7 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     const replayPublish = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
       sessionToken: adminLogin?.session?.token,
       draftId: "draft_daily",
-      expectedDraftRevisionId: "draft_revision_1"
+      expectedDraftRevisionId: currentDraftRevisionId
     });
     assert.equal(replayPublish?.ok, true);
     assert.equal(replayPublish?.result?.publicationStatus, "already_published");
@@ -4478,12 +4577,12 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
       emitWithAck(adminClient, "admin:publishEventChestDraft", {
         sessionToken: adminLogin?.session?.token,
         draftId: "draft_daily",
-        expectedDraftRevisionId: "draft_revision_1"
+        expectedDraftRevisionId: currentDraftRevisionId
       }),
       emitWithAck(adminClient, "admin:publishEventChestDraft", {
         sessionToken: adminLogin?.session?.token,
         draftId: "draft_daily",
-        expectedDraftRevisionId: "draft_revision_1"
+        expectedDraftRevisionId: currentDraftRevisionId
       })
     ]);
     for (const replay of [concurrentReplayA, concurrentReplayB]) {
@@ -4497,6 +4596,44 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(registryFileAfterReplay.definitions.length, 1);
     assert.equal(registryFileAfterReplay.registryRevisionId, firstRegistryRevisionId);
     assert.equal(registryFileAfterReplay.definitions[0].definitionRevisionId, firstDefinitionRevisionId);
+
+    const saveAfterPublish = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: currentDraftRevisionId,
+      definition: {
+        ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        title: "Published Revision Two"
+      }
+    });
+    assert.equal(saveAfterPublish?.ok, true);
+    const nextDraftRevisionId = saveAfterPublish?.result?.draft?.draftRevisionId;
+    assert.notEqual(nextDraftRevisionId, currentDraftRevisionId);
+
+    registryNow = "2026-07-26T12:01:00.000Z";
+    const publishNextRevision = await emitWithAck(adminClient, "admin:publishEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: nextDraftRevisionId
+    });
+    assert.equal(publishNextRevision?.ok, true, JSON.stringify(publishNextRevision));
+    assert.equal(publishNextRevision?.result?.publicationStatus, "published");
+    assert.equal(publishNextRevision?.result?.idempotent, false);
+    assert.notEqual(
+      publishNextRevision?.result?.publishedChest?.definitionRevisionId,
+      firstDefinitionRevisionId
+    );
+    assert.equal(
+      publishNextRevision?.result?.publishedDefinition?.sourceDraftRevisionId,
+      nextDraftRevisionId
+    );
+    const registryFileAfterNextRevision = JSON.parse(await fs.readFile(registryPath, "utf8"));
+    assert.equal(registryFileAfterNextRevision.definitions.length, 2);
+    assert.ok(
+      registryFileAfterNextRevision.definitions.some(
+        (definition) => definition.definitionRevisionId === firstDefinitionRevisionId
+      )
+    );
 
     const profileAfterPublish = await coordinator.profiles.getProfile("RegularUser");
     assert.deepEqual(profileAfterPublish, profileBeforeSave);

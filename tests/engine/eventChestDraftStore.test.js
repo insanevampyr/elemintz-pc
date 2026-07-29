@@ -41,6 +41,11 @@ function buildDraft(overrides = {}) {
   };
 }
 
+function createRevisionSequence() {
+  let index = 0;
+  return () => `test-uuid-${++index}`;
+}
+
 test("event chest draft store: missing drafts file loads empty without writing", async () => {
   const dataDir = await createTempDataDir();
   try {
@@ -62,7 +67,8 @@ test("event chest draft store: valid draft saves, loads, and summarizes safe met
   try {
     const store = new EventChestDraftStore({
       dataDir,
-      now: () => "2026-07-26T12:05:00.000Z"
+      now: () => "2026-07-26T12:05:00.000Z",
+      randomUUID: createRevisionSequence()
     });
     const saved = await store.saveDraft(buildDraft());
 
@@ -70,6 +76,11 @@ test("event chest draft store: valid draft saves, loads, and summarizes safe met
     assert.equal(saved.chestId, "daily_elemintz_chest_current");
     assert.equal(saved.updatedAt, "2026-07-26T12:05:00.000Z");
     assert.equal(saved.validation.ok, true);
+    assert.equal(
+      saved.draftRevisionId,
+      "draft_revision_2026_07_26T12_05_00_000Z_test-uuid-1"
+    );
+    assert.notEqual(saved.draftRevisionId, buildDraft().draftRevisionId);
 
     const loaded = await store.getDraft("daily-draft-1");
     assert.equal(loaded.definition.title, DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.title);
@@ -130,26 +141,143 @@ test("event chest draft store: invalid definitions and missing metadata are reje
   assert.throws(() => normalizeEventChestDraftMetadata({ draftId: "x", draftRevisionId: "y", status: "bad" }), /status/);
 });
 
-test("event chest draft store: duplicate draftId upserts safely without duplicate records", async () => {
+test("event chest draft store: successful sequential saves rotate server revisions", async () => {
   const dataDir = await createTempDataDir();
   try {
     const store = new EventChestDraftStore({
       dataDir,
-      now: () => "2026-07-26T12:05:00.000Z"
+      now: () => "2026-07-26T12:05:00.000Z",
+      randomUUID: createRevisionSequence()
     });
     const first = await store.saveDraft(buildDraft());
     const second = await store.saveDraft(
       buildDraft({
-        draftRevisionId: "draft-revision-2",
+        expectedDraftRevisionId: first.draftRevisionId,
+        draftRevisionId: "client-revision-must-be-ignored",
         definition: buildDefinition({ title: "Edited Daily Chest Draft" })
+      })
+    );
+    const third = await store.saveDraft(
+      buildDraft({
+        expectedDraftRevisionId: second.draftRevisionId,
+        definition: buildDefinition({ title: "Edited Daily Chest Draft Again" })
       })
     );
 
     assert.equal(second.createdAt, first.createdAt);
-    assert.equal(second.draftRevisionId, "draft-revision-2");
+    assert.notEqual(second.draftRevisionId, first.draftRevisionId);
+    assert.notEqual(second.draftRevisionId, "client-revision-must-be-ignored");
+    assert.notEqual(third.draftRevisionId, second.draftRevisionId);
     const drafts = await store.listDrafts();
     assert.equal(drafts.length, 1);
-    assert.equal(drafts[0].definition.title, "Edited Daily Chest Draft");
+    assert.equal(drafts[0].definition.title, "Edited Daily Chest Draft Again");
+    assert.equal(drafts[0].draftRevisionId, third.draftRevisionId);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest draft store: stale save rejects without mutation or revision generation", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    let generatedRevisionCount = 0;
+    const store = new EventChestDraftStore({
+      dataDir,
+      randomUUID: () => `test-uuid-${++generatedRevisionCount}`
+    });
+    const first = await store.saveDraft(buildDraft());
+
+    await assert.rejects(
+      store.saveDraft({
+        ...buildDraft(),
+        definition: buildDefinition({ title: "Missing Expected Revision" })
+      }),
+      (error) => error?.code === "EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED"
+    );
+    assert.equal(generatedRevisionCount, 1);
+
+    const second = await store.saveDraft({
+      ...buildDraft(),
+      expectedDraftRevisionId: first.draftRevisionId,
+      definition: buildDefinition({ title: "Authoritative Edit" })
+    });
+    const beforeConflict = await store.getDraft(first.draftId);
+
+    await assert.rejects(
+      store.saveDraft({
+        ...buildDraft(),
+        expectedDraftRevisionId: first.draftRevisionId,
+        definition: buildDefinition({ title: "Stale Edit" })
+      }),
+      (error) =>
+        error?.code === "EVENT_CHEST_DRAFT_REVISION_CONFLICT" &&
+        error?.details?.currentDraftRevisionId === second.draftRevisionId
+    );
+
+    assert.equal(generatedRevisionCount, 2);
+    assert.deepEqual(await store.getDraft(first.draftId), beforeConflict);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest draft store: reads and failed validation do not rotate revision", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    let generatedRevisionCount = 0;
+    const store = new EventChestDraftStore({
+      dataDir,
+      randomUUID: () => `test-uuid-${++generatedRevisionCount}`
+    });
+    const saved = await store.saveDraft(buildDraft());
+
+    await store.getDraft(saved.draftId);
+    await store.listDrafts();
+    await store.listDraftSummaries();
+    assert.equal(generatedRevisionCount, 1);
+
+    await assert.rejects(
+      store.saveDraft({
+        ...buildDraft(),
+        expectedDraftRevisionId: saved.draftRevisionId,
+        definition: buildDefinition({ chestId: "" })
+      }),
+      /definition is invalid/
+    );
+    assert.equal(generatedRevisionCount, 1);
+    assert.equal((await store.getDraft(saved.draftId)).draftRevisionId, saved.draftRevisionId);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest draft store: concurrent saves from one revision produce one success and one conflict", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const store = new EventChestDraftStore({
+      dataDir,
+      randomUUID: createRevisionSequence()
+    });
+    const first = await store.saveDraft(buildDraft());
+    const results = await Promise.allSettled([
+      store.saveDraft({
+        ...buildDraft(),
+        expectedDraftRevisionId: first.draftRevisionId,
+        definition: buildDefinition({ title: "Concurrent Edit A" })
+      }),
+      store.saveDraft({
+        ...buildDraft(),
+        expectedDraftRevisionId: first.draftRevisionId,
+        definition: buildDefinition({ title: "Concurrent Edit B" })
+      })
+    ]);
+
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const rejected = results.find((result) => result.status === "rejected");
+    assert.equal(rejected?.reason?.code, "EVENT_CHEST_DRAFT_REVISION_CONFLICT");
+    const persisted = await store.getDraft(first.draftId);
+    assert.ok(["Concurrent Edit A", "Concurrent Edit B"].includes(persisted.definition.title));
+    assert.notEqual(persisted.draftRevisionId, first.draftRevisionId);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }

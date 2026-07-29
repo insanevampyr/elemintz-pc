@@ -4229,6 +4229,7 @@ export function createMultiplayerFoundation({
         }
         const draft = await profileAuthority.saveEventChestDraftForAdmin({
           draftId: payload?.draftId ?? payload?.metadata?.draftId,
+          expectedDraftRevisionId: payload?.expectedDraftRevisionId,
           definition: payload?.definition,
           metadata: payload?.metadata,
           actor: adminAccess.adminIdentifier
@@ -4240,7 +4241,19 @@ export function createMultiplayerFoundation({
           }
         });
       } catch (error) {
-        respond(buildAdminError(error, "EVENT_CHEST_DRAFT_SAVE_FAILED"));
+        const response = buildAdminError(error, "EVENT_CHEST_DRAFT_SAVE_FAILED");
+        if (
+          error?.code === "EVENT_CHEST_DRAFT_REVISION_CONFLICT" &&
+          error?.details &&
+          typeof error.details === "object"
+        ) {
+          response.error.details = {
+            draftId: String(error.details.draftId ?? "").trim() || null,
+            currentDraftRevisionId:
+              String(error.details.currentDraftRevisionId ?? "").trim() || null
+          };
+        }
+        respond(response);
       }
     });
 

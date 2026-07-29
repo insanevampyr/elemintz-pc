@@ -1642,20 +1642,30 @@ export class StateCoordinator {
     };
   }
 
-  async saveEventChestDraftForAdmin({ draftId = null, definition = null, metadata = {}, actor = null } = {}) {
+  async saveEventChestDraftForAdmin({
+    draftId = null,
+    expectedDraftRevisionId = null,
+    definition = null,
+    metadata = {},
+    actor = null
+  } = {}) {
     const safeMetadata =
       metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {};
-    const now = this.eventChestDraftStore.now();
-    const existing = draftId ? await this.eventChestDraftStore.getDraft(draftId) : null;
+    const safeDraftId = String(draftId ?? safeMetadata.draftId ?? "").trim();
+    const existing = safeDraftId
+      ? await this.eventChestDraftStore.getDraft(safeDraftId)
+      : null;
+    if (!existing) {
+      throw Object.assign(new Error("Event Chest draft was not found."), {
+        code: "EVENT_CHEST_DRAFT_NOT_FOUND"
+      });
+    }
     return this.eventChestDraftStore.saveDraft({
       ...safeMetadata,
-      draftId: String(draftId ?? safeMetadata.draftId ?? "").trim(),
+      draftId: safeDraftId,
+      expectedDraftRevisionId,
       definition,
-      draftRevisionId:
-        safeMetadata.draftRevisionId ??
-        existing?.draftRevisionId ??
-        `draft_revision_${Date.parse(now) || Date.now()}`,
-      createdBy: existing?.createdBy ?? safeMetadata.createdBy ?? actor,
+      createdBy: existing.createdBy ?? safeMetadata.createdBy ?? actor,
       updatedBy: actor ?? safeMetadata.updatedBy ?? existing?.updatedBy ?? null
     });
   }
@@ -1663,7 +1673,12 @@ export class StateCoordinator {
   async publishEventChestDraftForAdmin({ draftId = null, expectedDraftRevisionId = null, actor = null } = {}) {
     const draft = await this.getEventChestDraftForAdmin(draftId);
     const safeExpectedRevisionId = String(expectedDraftRevisionId ?? "").trim();
-    if (safeExpectedRevisionId && draft.draftRevisionId !== safeExpectedRevisionId) {
+    if (!safeExpectedRevisionId) {
+      throw Object.assign(new Error("The current draft revision is required before publishing."), {
+        code: "EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED"
+      });
+    }
+    if (draft.draftRevisionId !== safeExpectedRevisionId) {
       throw Object.assign(new Error("Event Chest draft revision does not match the expected revision."), {
         code: "EVENT_CHEST_DRAFT_REVISION_MISMATCH"
       });

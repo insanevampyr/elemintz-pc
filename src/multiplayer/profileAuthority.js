@@ -1170,9 +1170,21 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.validateEventChestDraftForAdmin({ definition, draftId });
   }
 
-  async saveEventChestDraftForAdmin({ draftId = null, definition = null, metadata = {}, actor = null } = {}) {
+  async saveEventChestDraftForAdmin({
+    draftId = null,
+    expectedDraftRevisionId = null,
+    definition = null,
+    metadata = {},
+    actor = null
+  } = {}) {
     this.logger.info?.(`[ProfileAuthority] saveEventChestDraftForAdmin -> ${String(draftId ?? metadata?.draftId ?? "")}`);
-    return this.coordinator.saveEventChestDraftForAdmin({ draftId, definition, metadata, actor });
+    return this.coordinator.saveEventChestDraftForAdmin({
+      draftId,
+      expectedDraftRevisionId,
+      definition,
+      metadata,
+      actor
+    });
   }
 
   async publishEventChestDraftForAdmin({ draftId = null, expectedDraftRevisionId = null, actor = null } = {}) {
