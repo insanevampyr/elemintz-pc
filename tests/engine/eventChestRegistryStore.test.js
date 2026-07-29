@@ -84,6 +84,77 @@ test("event chest registry writer: missing registry can publish a valid draft", 
   }
 });
 
+test("event chest registry writer: publish stores canonical ordered schedule windows", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const store = new EventChestRegistryStore({
+      dataDir,
+      now: () => "2026-07-26T12:00:00.000Z",
+      logger: { warn: () => {} }
+    });
+    const result = await store.publishEventChestDraftDefinition({
+      definition: cloneDailyDefinition({
+        chestId: "scheduled_publish",
+        activeWindows: [
+          {
+            startsAt: "2026-08-02T13:00:00-05:00",
+            endsAt: "2026-08-02T14:00:00-05:00"
+          },
+          {
+            startsAt: "2026-08-01T13:00:00-05:00",
+            endsAt: "2026-08-01T14:00:00-05:00"
+          }
+        ]
+      }),
+      actor: "ScheduleAdmin"
+    });
+
+    assert.deepEqual(result.publishedDefinition.activeWindows, [
+      {
+        startsAt: "2026-08-01T18:00:00.000Z",
+        endsAt: "2026-08-01T19:00:00.000Z"
+      },
+      {
+        startsAt: "2026-08-02T18:00:00.000Z",
+        endsAt: "2026-08-02T19:00:00.000Z"
+      }
+    ]);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest registry store retains malformed historical schedules for exact opening lookup", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const historical = cloneDailyDefinition({
+      chestId: "historical_schedule",
+      definitionRevisionId: "historical_schedule_revision",
+      publishedAt: "2026-07-20T12:00:00.000Z",
+      activeWindows: [
+        {
+          startsAt: "malformed-historical-start",
+          endsAt: "2026-08-01T19:00:00.000Z"
+        }
+      ]
+    });
+    await writeRegistryFixture(dataDir, buildRegistryDocument([historical]));
+    const store = new EventChestRegistryStore({ dataDir, logger: { warn: () => {} } });
+
+    const read = await store.getPublishedEventChestRegistry();
+    assert.equal(read.ok, true);
+    assert.match(read.warnings.join(" "), /invalid historical schedule/);
+    const exact = await store.getPublishedEventChestDefinitionRevision({
+      chestId: historical.chestId,
+      definitionRevisionId: historical.definitionRevisionId
+    });
+    assert.equal(exact.chestId, historical.chestId);
+    assert.equal(exact.activeWindows[0].startsAt, "malformed-historical-start");
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("event chest registry writer: valid existing registry preserves matching chestId revision and creates backup", async () => {
   const dataDir = await createTempDataDir();
   try {

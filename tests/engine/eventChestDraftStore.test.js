@@ -464,3 +464,43 @@ test("event chest draft store: draft save does not write registry or profiles", 
     await fs.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("event chest draft store: valid schedule windows persist as canonical ordered timestamps", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const store = new EventChestDraftStore({
+      dataDir,
+      now: () => "2026-07-26T12:05:00.000Z",
+      randomUUID: createRevisionSequence()
+    });
+    const saved = await store.saveDraft(
+      buildDraft({
+        definition: buildDefinition({
+          activeWindows: [
+            {
+              startsAt: "2026-08-02T13:00:00-05:00",
+              endsAt: "2026-08-02T14:00:00-05:00"
+            },
+            {
+              startsAt: "2026-08-01T13:00:00-05:00",
+              endsAt: "2026-08-01T14:00:00-05:00"
+            }
+          ]
+        })
+      })
+    );
+
+    assert.deepEqual(saved.definition.activeWindows, [
+      {
+        startsAt: "2026-08-01T18:00:00.000Z",
+        endsAt: "2026-08-01T19:00:00.000Z"
+      },
+      {
+        startsAt: "2026-08-02T18:00:00.000Z",
+        endsAt: "2026-08-02T19:00:00.000Z"
+      }
+    ]);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});

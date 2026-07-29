@@ -1257,11 +1257,17 @@ export class MultiplayerProfileAuthority {
     }
 
     this.logger.info?.(`[ProfileAuthority] syncEventChestEntitlements -> ${safeProfileKey}`);
-    return this.coordinator.syncEventChestEntitlementForProfile({
+    const result = await this.coordinator.syncEventChestEntitlementForProfile({
       username: safeUsername,
       accountId: safeAccountId,
       profileKey: safeProfileKey
     });
+    if (result?.deliveryStatus === "schedule_invalid") {
+      this.logger.warn?.(
+        "[ProfileAuthority] Active Event Chest schedule is invalid; new entitlement delivery was skipped."
+      );
+    }
+    return result;
   }
 
   async openEventChestEntitlement({ username, accountId, profileKey = username, entitlementId } = {}) {

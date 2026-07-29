@@ -12,6 +12,7 @@ import {
   DAILY_ELEMENT_CHEST_SOURCE,
   DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID
 } from "./dailyElementChestSystem.js";
+import { normalizeEventChestActiveWindows } from "./eventChestSchedule.js";
 
 export const EVENT_CHEST_SCHEMA_VERSION = 1;
 export const EVENT_CHEST_TYPES = Object.freeze(["daily_event_chest"]);
@@ -273,23 +274,7 @@ function validatePool(pool, errors) {
 }
 
 function validateActiveWindows(activeWindows, errors) {
-  if (!Array.isArray(activeWindows)) {
-    errors.push("activeWindows must be an array.");
-    return;
-  }
-
-  for (const [index, window] of activeWindows.entries()) {
-    if (!isObject(window)) {
-      errors.push(`activeWindows[${index}] must be an object.`);
-      continue;
-    }
-    if (window.startsAt !== undefined && Number.isNaN(Date.parse(String(window.startsAt)))) {
-      errors.push(`activeWindows[${index}].startsAt must be a valid date string.`);
-    }
-    if (window.endsAt !== undefined && Number.isNaN(Date.parse(String(window.endsAt)))) {
-      errors.push(`activeWindows[${index}].endsAt must be a valid date string.`);
-    }
-  }
+  errors.push(...normalizeEventChestActiveWindows(activeWindows).errors);
 }
 
 function validateDefinitionHistory(definitionHistory, errors) {

@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 import { validateEventChestDefinition } from "./eventChestDefinitions.js";
+import { normalizeEventChestActiveWindows } from "./eventChestSchedule.js";
 import { resolveDataDir } from "./paths.js";
 import { JsonStore } from "./storage/jsonStore.js";
 
@@ -215,6 +216,10 @@ export function createEventChestDraftRecord(input = {}, options = {}) {
   const now = typeof options.now === "function" ? options.now() : options.now ?? new Date().toISOString();
   const metadata = normalizeEventChestDraftMetadata(input, { now });
   const definition = clone(input.definition);
+  const normalizedSchedule = normalizeEventChestActiveWindows(definition?.activeWindows);
+  if (normalizedSchedule.ok) {
+    definition.activeWindows = normalizedSchedule.windows;
+  }
   const definitionValidation = validateEventChestDraftDefinitionForRecord(definition, {
     allowInvalidDefinition: Boolean(options.allowInvalidDefinition)
   });

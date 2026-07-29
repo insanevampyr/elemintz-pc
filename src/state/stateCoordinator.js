@@ -78,6 +78,7 @@ import {
   normalizeEventChestEntitlements,
   sanitizeEventChestEntitlementForPlayer
 } from "./eventChestEntitlements.js";
+import { evaluateEventChestSchedule } from "./eventChestSchedule.js";
 import { buildEventChestEntitlementId } from "./eventChestEntitlementIds.js";
 import {
   applyEventChestReward,
@@ -1813,7 +1814,7 @@ export class StateCoordinator {
     });
   }
 
-  async getActiveEventChestDefinitionForEntitlementDelivery() {
+  async getActiveEventChestDefinitionForEntitlementDelivery({ nowMs = this.eventChestActivationStore.now() } = {}) {
     const activation = await this.eventChestActivationStore.readActivation();
     if (activation?.status !== "active") {
       return {
@@ -1833,13 +1834,55 @@ export class StateCoordinator {
         code: "EVENT_CHEST_ENTITLEMENT_DAILY_FALLBACK_BLOCKED"
       });
     }
+    const schedule = evaluateEventChestSchedule(definition, { nowMs });
+    if (!schedule.isWithinSchedule) {
+      return {
+        active: false,
+        activation,
+        definition: null,
+        schedule,
+        deliveryStatus: `schedule_${schedule.state}`
+      };
+    }
 
     return {
       active: true,
       activation,
       definition,
+      schedule,
       deliveryStatus: "active"
     };
+  }
+
+  async getExistingAvailableEventChestEntitlementForProfile({
+    profileKey,
+    accountId
+  } = {}) {
+    const profile = await this.profiles.getProfile(profileKey);
+    if (String(profile?.linkedAccountId ?? "").trim() !== String(accountId ?? "").trim()) {
+      throw Object.assign(new Error("Event Chest entitlement delivery requires the authenticated claimed profile."), {
+        code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE"
+      });
+    }
+    const entitlements = normalizeEventChestEntitlements(profile?.eventChestEntitlements);
+    const available = entitlements.items
+      .filter((item) => item.status === "available")
+      .sort((left, right) => Date.parse(right.grantedAt) - Date.parse(left.grantedAt));
+    for (const entitlement of available) {
+      try {
+        const definition = await this.eventChestRegistryStore.getPublishedEventChestDefinitionRevision({
+          chestId: entitlement.chestId,
+          definitionRevisionId: entitlement.definitionRevisionId
+        });
+        return {
+          entitlement,
+          definition
+        };
+      } catch {
+        // Try another retained available entitlement without exposing registry diagnostics.
+      }
+    }
+    return null;
   }
 
   async syncEventChestEntitlementForProfile({
@@ -1858,6 +1901,24 @@ export class StateCoordinator {
 
     const active = await this.getActiveEventChestDefinitionForEntitlementDelivery();
     if (!active.active) {
+      const existing = await this.getExistingAvailableEventChestEntitlementForProfile({
+        profileKey: safeProfileKey,
+        accountId: safeAccountId
+      });
+      if (existing) {
+        return {
+          active: true,
+          deliveryStatus: "existing_entitlement_available",
+          idempotent: true,
+          alreadyEntitled: true,
+          entitlement: sanitizeEventChestEntitlementForPlayer(existing.entitlement),
+          activeChest: {
+            chestId: existing.definition.chestId,
+            definitionRevisionId: existing.definition.definitionRevisionId,
+            ...this.buildEventChestPlayerMetadata(existing.definition)
+          }
+        };
+      }
       return {
         active: false,
         deliveryStatus: active.deliveryStatus,

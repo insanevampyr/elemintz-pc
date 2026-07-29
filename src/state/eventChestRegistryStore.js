@@ -5,6 +5,7 @@ import {
   DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
   validateEventChestDefinition
 } from "./eventChestDefinitions.js";
+import { normalizeEventChestActiveWindows } from "./eventChestSchedule.js";
 import { resolveDataDir } from "./paths.js";
 import { JsonStore } from "./storage/jsonStore.js";
 
@@ -60,6 +61,11 @@ function sanitizeRegistryDefinitionForPublish(
   const publishedAt = normalizeTimestamp(now, "publishedAt");
   const safeActor = normalizeOptionalText(actor);
   const safeDefinition = clone(definition);
+  const schedule = normalizeEventChestActiveWindows(safeDefinition?.activeWindows);
+  if (!schedule.ok) {
+    throw new Error(`Event Chest schedule is invalid: ${schedule.errors.join("; ")}`);
+  }
+  safeDefinition.activeWindows = schedule.windows;
   const chestId = String(safeDefinition?.chestId ?? "").trim();
   const revisionId =
     normalizeOptionalText(safeDefinition?.definitionRevisionId) ??
@@ -205,9 +211,20 @@ function validateEventChestRegistryDocument(document) {
     seenRevisionKeys.add(revisionKey);
 
     const validation = validateEventChestDefinition(definition);
-    if (!validation.ok) {
-      errors.push(`definitions[${index}] '${chestId}' is invalid: ${validation.errors.join("; ")}`);
+    const scheduleErrors = (validation.errors ?? []).filter((error) =>
+      String(error).startsWith("activeWindows")
+    );
+    const blockingErrors = (validation.errors ?? []).filter(
+      (error) => !String(error).startsWith("activeWindows")
+    );
+    if (blockingErrors.length > 0) {
+      errors.push(`definitions[${index}] '${chestId}' is invalid: ${blockingErrors.join("; ")}`);
       continue;
+    }
+    if (scheduleErrors.length > 0) {
+      warnings.push(
+        `definitions[${index}] '${chestId}' has an invalid historical schedule and is unavailable for new delivery: ${scheduleErrors.join("; ")}`
+      );
     }
 
     definitions.push(clone(definition));
