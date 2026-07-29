@@ -4213,6 +4213,108 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:createEventChestDraft", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.createEventChestDraftForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest draft authority is not available."), {
+            code: "EVENT_CHEST_DRAFT_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const draft = await profileAuthority.createEventChestDraftForAdmin({
+          displaySeed: payload?.displaySeed,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({
+          ok: true,
+          result: {
+            draft
+          }
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_DRAFT_CREATE_FAILED"));
+      }
+    });
+
+    socket.on("admin:duplicateEventChestDraft", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.duplicateEventChestDraftForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest draft authority is not available."), {
+            code: "EVENT_CHEST_DRAFT_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const draft = await profileAuthority.duplicateEventChestDraftForAdmin({
+          sourceDraftId: payload?.sourceDraftId ?? payload?.draftId,
+          expectedSourceDraftRevisionId:
+            payload?.expectedSourceDraftRevisionId ?? payload?.expectedDraftRevisionId,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({
+          ok: true,
+          result: {
+            draft
+          }
+        });
+      } catch (error) {
+        const response = buildAdminError(error, "EVENT_CHEST_DRAFT_DUPLICATE_FAILED");
+        if (
+          error?.code === "EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH" &&
+          error?.details &&
+          typeof error.details === "object"
+        ) {
+          response.error.details = {
+            draftId: String(error.details.draftId ?? "").trim() || null,
+            currentDraftRevisionId:
+              String(error.details.currentDraftRevisionId ?? "").trim() || null
+          };
+        }
+        respond(response);
+      }
+    });
+
+    socket.on("admin:duplicatePublishedEventChestDefinition", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.duplicatePublishedEventChestDefinitionForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest draft authority is not available."), {
+            code: "EVENT_CHEST_DRAFT_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const draft = await profileAuthority.duplicatePublishedEventChestDefinitionForAdmin({
+          chestId: payload?.chestId,
+          definitionRevisionId: payload?.definitionRevisionId,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({
+          ok: true,
+          result: {
+            draft
+          }
+        });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_PUBLISHED_DEFINITION_DUPLICATE_FAILED"));
+      }
+    });
+
     socket.on("admin:saveEventChestDraft", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);

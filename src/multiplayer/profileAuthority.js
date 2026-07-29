@@ -1170,6 +1170,39 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.validateEventChestDraftForAdmin({ definition, draftId });
   }
 
+  async createEventChestDraftForAdmin({ displaySeed = null, actor = null } = {}) {
+    this.logger.info?.("[ProfileAuthority] createEventChestDraftForAdmin");
+    return this.coordinator.createEventChestDraftForAdmin({ displaySeed, actor });
+  }
+
+  async duplicateEventChestDraftForAdmin({
+    sourceDraftId = null,
+    expectedSourceDraftRevisionId = null,
+    actor = null
+  } = {}) {
+    this.logger.info?.(`[ProfileAuthority] duplicateEventChestDraftForAdmin -> ${String(sourceDraftId ?? "")}`);
+    return this.coordinator.duplicateEventChestDraftForAdmin({
+      sourceDraftId,
+      expectedSourceDraftRevisionId,
+      actor
+    });
+  }
+
+  async duplicatePublishedEventChestDefinitionForAdmin({
+    chestId = null,
+    definitionRevisionId = null,
+    actor = null
+  } = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] duplicatePublishedEventChestDefinitionForAdmin -> ${String(chestId ?? "")}:${String(definitionRevisionId ?? "")}`
+    );
+    return this.coordinator.duplicatePublishedEventChestDefinitionForAdmin({
+      chestId,
+      definitionRevisionId,
+      actor
+    });
+  }
+
   async saveEventChestDraftForAdmin({
     draftId = null,
     expectedDraftRevisionId = null,

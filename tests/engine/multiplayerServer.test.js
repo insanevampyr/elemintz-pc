@@ -4248,6 +4248,21 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
       ["admin:listEventChestDrafts", {}],
       ["admin:getEventChestDraft", { draftId: "draft_daily" }],
       ["admin:validateEventChestDraft", { definition: DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET }],
+      ["admin:createEventChestDraft", {}],
+      [
+        "admin:duplicateEventChestDraft",
+        {
+          sourceDraftId: "draft_daily",
+          expectedSourceDraftRevisionId: "draft_revision_1"
+        }
+      ],
+      [
+        "admin:duplicatePublishedEventChestDefinition",
+        {
+          chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+          definitionRevisionId: "definition_revision_1"
+        }
+      ],
       [
         "admin:saveEventChestDraft",
         {
@@ -4646,6 +4661,96 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(registryRead?.result?.source, "file");
     assert.equal(registryRead?.result?.registry?.publishedBy, "VampyrLee");
 
+    const createdDraft = await emitWithAck(adminClient, "admin:createEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "client_supplied_draft",
+      chestId: "client_supplied_chest",
+      draftRevisionId: "client_supplied_revision",
+      displaySeed: {
+        title: "Created Smoke Chest"
+      }
+    });
+    assert.equal(createdDraft?.ok, true);
+    assert.match(createdDraft?.result?.draft?.draftId, /^event_chest_draft_/);
+    assert.match(createdDraft?.result?.draft?.chestId, /^event_chest_/);
+    assert.match(createdDraft?.result?.draft?.draftRevisionId, /^draft_revision_/);
+    assert.notEqual(createdDraft?.result?.draft?.draftId, "client_supplied_draft");
+    assert.notEqual(createdDraft?.result?.draft?.chestId, "client_supplied_chest");
+    assert.notEqual(createdDraft?.result?.draft?.draftRevisionId, "client_supplied_revision");
+    assert.equal(createdDraft?.result?.draft?.definition?.title, "Created Smoke Chest");
+    assert.deepEqual(createdDraft?.result?.draft?.definition?.pool, {
+      common: [],
+      rare: [],
+      epic: [],
+      legendary: []
+    });
+    assert.equal(createdDraft?.result?.draft?.validation?.ok, false);
+    assert.equal(createdDraft?.result?.draft?.status, "validation_failed");
+    assert.equal(createdDraft?.result?.draft?.definition?.lifecycle?.status, "draft");
+
+    const createdDraftB = await emitWithAck(adminClient, "admin:createEventChestDraft", {
+      sessionToken: adminLogin?.session?.token
+    });
+    assert.equal(createdDraftB?.ok, true);
+    assert.notEqual(createdDraftB?.result?.draft?.draftId, createdDraft?.result?.draft?.draftId);
+    assert.notEqual(createdDraftB?.result?.draft?.chestId, createdDraft?.result?.draft?.chestId);
+
+    const staleDuplicateDraft = await emitWithAck(adminClient, "admin:duplicateEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      sourceDraftId: "draft_daily",
+      expectedSourceDraftRevisionId: "stale_revision"
+    });
+    assert.equal(staleDuplicateDraft?.ok, false);
+    assert.equal(staleDuplicateDraft?.error?.code, "EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH");
+
+    const duplicateDraft = await emitWithAck(adminClient, "admin:duplicateEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      sourceDraftId: "draft_daily",
+      expectedSourceDraftRevisionId: nextDraftRevisionId
+    });
+    assert.equal(duplicateDraft?.ok, true, JSON.stringify(duplicateDraft));
+    assert.notEqual(duplicateDraft?.result?.draft?.draftId, "draft_daily");
+    assert.notEqual(duplicateDraft?.result?.draft?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.notEqual(duplicateDraft?.result?.draft?.draftRevisionId, nextDraftRevisionId);
+    assert.equal(duplicateDraft?.result?.draft?.definition?.title, "Published Revision Two Copy");
+    assert.equal(duplicateDraft?.result?.draft?.validation?.ok, true);
+    assert.equal(duplicateDraft?.result?.draft?.status, "ready");
+    assert.deepEqual(duplicateDraft?.result?.draft?.definition?.activeWindows, []);
+    assert.equal(duplicateDraft?.result?.draft?.copiedFromDraftId, "draft_daily");
+    assert.equal(duplicateDraft?.result?.draft?.copiedFromDraftRevisionId, nextDraftRevisionId);
+
+    const duplicatePublished = await emitWithAck(adminClient, "admin:duplicatePublishedEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      definitionRevisionId: firstDefinitionRevisionId
+    });
+    assert.equal(duplicatePublished?.ok, true, JSON.stringify(duplicatePublished));
+    assert.notEqual(duplicatePublished?.result?.draft?.chestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.match(duplicatePublished?.result?.draft?.definition?.title, /^Concurrent Save [AB] Copy$/);
+    assert.equal(duplicatePublished?.result?.draft?.validation?.ok, true);
+    assert.equal(duplicatePublished?.result?.draft?.status, "ready");
+    assert.equal(duplicatePublished?.result?.draft?.copiedFromChestId, DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
+    assert.equal(
+      duplicatePublished?.result?.draft?.copiedFromDefinitionRevisionId,
+      firstDefinitionRevisionId
+    );
+    assert.equal(duplicatePublished?.result?.draft?.definition?.definitionRevisionId, undefined);
+    assert.deepEqual(duplicatePublished?.result?.draft?.definition?.activeWindows, []);
+
+    const missingPublished = await emitWithAck(adminClient, "admin:duplicatePublishedEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      definitionRevisionId: "missing_revision"
+    });
+    assert.equal(missingPublished?.ok, false);
+    assert.equal(
+      missingPublished?.error?.code,
+      "EVENT_CHEST_DEFINITION_REVISION_NOT_FOUND"
+    );
+
+    const profileAfterCreateDuplicate = await coordinator.profiles.getProfile("RegularUser");
+    assert.deepEqual(profileAfterCreateDuplicate, profileBeforeSave);
+
     const serializedResponses = JSON.stringify({
       rewardCatalog,
       list,
@@ -4653,7 +4758,10 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
       validPreview,
       validateStored,
       publish,
-      replayPublish
+      replayPublish,
+      createdDraft,
+      duplicateDraft,
+      duplicatePublished
     });
     assert.equal(serializedResponses.includes("ownedCosmetics"), false);
     assert.equal(serializedResponses.includes('"dailyElementChest":'), false);

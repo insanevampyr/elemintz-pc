@@ -1642,6 +1642,40 @@ export class StateCoordinator {
     };
   }
 
+  async createEventChestDraftForAdmin({ displaySeed = null, actor = null } = {}) {
+    return this.eventChestDraftStore.createDraft({
+      displaySeed,
+      actor
+    });
+  }
+
+  async duplicateEventChestDraftForAdmin({
+    sourceDraftId = null,
+    expectedSourceDraftRevisionId = null,
+    actor = null
+  } = {}) {
+    return this.eventChestDraftStore.duplicateDraft({
+      sourceDraftId,
+      expectedSourceDraftRevisionId,
+      actor
+    });
+  }
+
+  async duplicatePublishedEventChestDefinitionForAdmin({
+    chestId = null,
+    definitionRevisionId = null,
+    actor = null
+  } = {}) {
+    const definition = await this.eventChestRegistryStore.getPublishedEventChestDefinitionRevision({
+      chestId,
+      definitionRevisionId
+    });
+    return this.eventChestDraftStore.duplicatePublishedDefinition({
+      definition,
+      actor
+    });
+  }
+
   async saveEventChestDraftForAdmin({
     draftId = null,
     expectedDraftRevisionId = null,

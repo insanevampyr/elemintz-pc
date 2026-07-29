@@ -11,6 +11,9 @@ export const EVENT_CHEST_DRAFT_STORE_FILENAME = "event-chest-drafts.json";
 export const EVENT_CHEST_DRAFT_REVISION_CONFLICT = "EVENT_CHEST_DRAFT_REVISION_CONFLICT";
 export const EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED =
   "EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED";
+export const EVENT_CHEST_DRAFT_NOT_FOUND = "EVENT_CHEST_DRAFT_NOT_FOUND";
+export const EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH =
+  "EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH";
 export const EVENT_CHEST_DRAFT_STATUSES = Object.freeze([
   "draft",
   "validation_failed",
@@ -72,6 +75,16 @@ function buildDraftRevisionId(timestamp, randomUUID) {
     .replace(/[^0-9A-Za-z]+/g, "_")
     .replace(/^_+|_+$/g, "");
   return `draft_revision_${safeTimestamp || Date.now()}_${randomUUID()}`;
+}
+
+function buildGeneratedId(prefix, timestamp, randomUUID) {
+  const safeTimestamp = String(timestamp ?? "")
+    .replace(/[^0-9A-Za-z]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const safeUuid = String(randomUUID())
+    .replace(/[^0-9A-Za-z]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `${prefix}_${safeTimestamp || Date.now()}_${safeUuid}`;
 }
 
 function normalizeTimestamp(value, fieldName, fallback = null) {
@@ -149,6 +162,14 @@ export function validateEventChestDraftDefinition(definition) {
   };
 }
 
+function validateEventChestDraftDefinitionForRecord(definition, { allowInvalidDefinition = false } = {}) {
+  const validation = validateEventChestDraftDefinition(definition);
+  if (!validation.ok && !allowInvalidDefinition) {
+    throw new Error(`definition is invalid: ${validation.errors.join("; ")}`);
+  }
+  return validation;
+}
+
 export function normalizeEventChestDraftMetadata(input = {}, { now = new Date().toISOString() } = {}) {
   if (!isObject(input)) {
     throw new Error("draft must be an object.");
@@ -172,8 +193,17 @@ export function normalizeEventChestDraftMetadata(input = {}, { now = new Date().
     createdBy: normalizeOptionalText(input.createdBy),
     updatedBy: normalizeOptionalText(input.updatedBy),
     copiedFromChestId: normalizeOptionalText(input.copiedFromChestId),
-    copiedFromDefinitionRevisionId: normalizeOptionalText(input.copiedFromDefinitionRevisionId)
+    copiedFromDefinitionRevisionId: normalizeOptionalText(input.copiedFromDefinitionRevisionId),
+    copiedFromDraftId: normalizeOptionalText(input.copiedFromDraftId),
+    copiedFromDraftRevisionId: normalizeOptionalText(input.copiedFromDraftRevisionId)
   };
+}
+
+function deriveEventChestDraftStatus(status, validation) {
+  if (status === "published" || status === "archived") {
+    return status;
+  }
+  return validation?.ok ? "ready" : "validation_failed";
 }
 
 export function createEventChestDraftRecord(input = {}, options = {}) {
@@ -185,19 +215,19 @@ export function createEventChestDraftRecord(input = {}, options = {}) {
   const now = typeof options.now === "function" ? options.now() : options.now ?? new Date().toISOString();
   const metadata = normalizeEventChestDraftMetadata(input, { now });
   const definition = clone(input.definition);
-  const definitionValidation = validateEventChestDraftDefinition(definition);
-  if (!definitionValidation.ok) {
-    throw new Error(`definition is invalid: ${definitionValidation.errors.join("; ")}`);
-  }
+  const definitionValidation = validateEventChestDraftDefinitionForRecord(definition, {
+    allowInvalidDefinition: Boolean(options.allowInvalidDefinition)
+  });
 
   const chestId = metadata.chestId ?? (String(definition?.chestId ?? "").trim() || null);
   const validation = {
-    ok: true,
-    errors: []
+    ok: definitionValidation.ok,
+    errors: [...(definitionValidation.errors ?? [])]
   };
 
   return {
     ...metadata,
+    status: deriveEventChestDraftStatus(metadata.status, validation),
     chestId,
     definition,
     validation
@@ -213,7 +243,9 @@ function normalizeDraftDocument(value) {
   const seen = new Set();
   for (const draft of value.drafts) {
     try {
-      const normalized = createEventChestDraftRecord(draft);
+      const normalized = createEventChestDraftRecord(draft, {
+        allowInvalidDefinition: true
+      });
       if (seen.has(normalized.draftId)) {
         continue;
       }
@@ -244,7 +276,118 @@ function buildDraftSummary(draft) {
     createdBy: draft.createdBy,
     updatedBy: draft.updatedBy,
     copiedFromChestId: draft.copiedFromChestId,
-    copiedFromDefinitionRevisionId: draft.copiedFromDefinitionRevisionId
+    copiedFromDefinitionRevisionId: draft.copiedFromDefinitionRevisionId,
+    copiedFromDraftId: draft.copiedFromDraftId,
+    copiedFromDraftRevisionId: draft.copiedFromDraftRevisionId
+  };
+}
+
+function buildNewDraftDefinition({ chestId, title = "Untitled Event Chest" } = {}) {
+  return {
+    schemaVersion: 1,
+    chestId,
+    presetId: "event_chest_draft",
+    title,
+    subtitle: "Draft Event Chest",
+    description: "Configure rewards before publishing this Event Chest.",
+    modalTitle: title,
+    chestType: "daily_event_chest",
+    lifecycle: {
+      status: "draft",
+      defaultPreset: false
+    },
+    source: "event_chest_draft",
+    dropKey: "event_chest_draft",
+    collection: "Event Chests",
+    releaseTag: "event_chest_draft",
+    icons: {
+      closed: "icons/loot_chest.png",
+      open: "icons/loot_chest_open.png",
+      fallbackClosed: "icons/loot_chest.png",
+      fallbackOpen: "icons/loot_chest_open.png"
+    },
+    openTypes: ["free"],
+    freeOpenPolicy: {
+      cadence: "daily",
+      resetTimeZone: "America/Chicago",
+      resetHour: 18
+    },
+    paidTokenCost: 0,
+    odds: {
+      common: 0.7,
+      rare: 0.22,
+      epic: 0.07,
+      legendary: 0.01
+    },
+    pity: {
+      epicPlusThreshold: 10,
+      legendaryThreshold: 30,
+      epicPlusTable: [
+        { rarity: "epic", weight: 0.875 },
+        { rarity: "legendary", weight: 0.125 }
+      ]
+    },
+    duplicateTokenRewards: {
+      common: 25,
+      rare: 60,
+      epic: 150,
+      legendary: 400
+    },
+    pool: {
+      common: [],
+      rare: [],
+      epic: [],
+      legendary: []
+    },
+    preferUnownedWithinRolledRarity: true,
+    hideTileWhenPoolComplete: true,
+    allowOpensAfterCompleteAsDuplicateConversion: true,
+    activeWindows: [],
+    definitionHistory: [],
+    preserveHistoryOnReactivation: true
+  };
+}
+
+function appendCopySuffix(value, maxLength = 120) {
+  const base = String(value ?? "Untitled Event Chest").trim() || "Untitled Event Chest";
+  const suffix = " Copy";
+  const copyTitle = base.endsWith(suffix) ? base : `${base}${suffix}`;
+  return copyTitle.length <= maxLength
+    ? copyTitle
+    : `${copyTitle.slice(0, Math.max(0, maxLength - suffix.length)).trimEnd()}${suffix}`;
+}
+
+function buildDuplicatedDefinition(sourceDefinition, { chestId } = {}) {
+  const definition = clone(sourceDefinition);
+  if (!isObject(definition)) {
+    throw new Error("Source Event Chest definition is malformed.");
+  }
+  const title = appendCopySuffix(definition.title);
+  const modalTitle = appendCopySuffix(definition.modalTitle ?? definition.title);
+  delete definition.definitionRevisionId;
+  delete definition.registryRevisionId;
+  delete definition.publishedAt;
+  delete definition.publishedBy;
+  delete definition.sourceDraftId;
+  delete definition.sourceDraftRevisionId;
+  delete definition.activationRevisionId;
+  delete definition.activatedAt;
+  delete definition.activatedBy;
+  delete definition.updatedAt;
+  delete definition.updatedBy;
+
+  return {
+    ...definition,
+    chestId,
+    title,
+    modalTitle,
+    lifecycle: {
+      ...(isObject(definition.lifecycle) ? definition.lifecycle : {}),
+      status: "draft",
+      defaultPreset: false
+    },
+    activeWindows: [],
+    definitionHistory: []
   };
 }
 
@@ -342,7 +485,7 @@ export class EventChestDraftStore {
           createdAt: existing?.createdAt ?? input?.createdAt ?? now,
           updatedAt: now
         },
-        { now }
+        { now, allowInvalidDefinition: true }
       );
       const record = {
         ...candidate,
@@ -354,6 +497,155 @@ export class EventChestDraftStore {
       } else {
         document.drafts.push(record);
       }
+      document.drafts.sort((left, right) => left.draftId.localeCompare(right.draftId));
+      await this.store.write(document);
+      return clone(record);
+    });
+  }
+
+  async createDraft({ displaySeed = null, actor = null } = {}) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const document = await this.readDocument();
+      let draftId = "";
+      let chestId = "";
+      do {
+        draftId = buildGeneratedId("event_chest_draft", now, this.randomUUID);
+      } while (document.drafts.some((draft) => draft.draftId === draftId));
+      do {
+        chestId = buildGeneratedId("event_chest", now, this.randomUUID);
+      } while (document.drafts.some((draft) => draft.chestId === chestId));
+
+      const titleSeed =
+        typeof displaySeed === "string"
+          ? displaySeed
+          : typeof displaySeed?.title === "string"
+            ? displaySeed.title
+            : "";
+      const definition = buildNewDraftDefinition({
+        chestId,
+        title: String(titleSeed ?? "").trim() || "Untitled Event Chest"
+      });
+      const record = createEventChestDraftRecord(
+        {
+          draftId,
+          chestId,
+          draftRevisionId: buildDraftRevisionId(now, this.randomUUID),
+          status: "validation_failed",
+          definition,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: actor,
+          updatedBy: actor
+        },
+        { now, allowInvalidDefinition: true }
+      );
+
+      document.drafts.push(record);
+      document.drafts.sort((left, right) => left.draftId.localeCompare(right.draftId));
+      await this.store.write(document);
+      return clone(record);
+    });
+  }
+
+  async duplicateDraft({ sourceDraftId, expectedSourceDraftRevisionId, actor = null } = {}) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const document = await this.readDocument();
+      const safeSourceDraftId = normalizeRequiredText(sourceDraftId, "sourceDraftId");
+      const safeExpectedRevisionId = normalizeRequiredText(
+        expectedSourceDraftRevisionId,
+        "expectedSourceDraftRevisionId"
+      );
+      const source = document.drafts.find((draft) => draft.draftId === safeSourceDraftId) ?? null;
+      if (!source) {
+        throw Object.assign(new Error("Event Chest draft was not found."), {
+          code: EVENT_CHEST_DRAFT_NOT_FOUND
+        });
+      }
+      if (source.draftRevisionId !== safeExpectedRevisionId) {
+        throw Object.assign(
+          new Error("This draft changed after you opened it. Reload the latest version before duplicating."),
+          {
+            code: EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH,
+            details: {
+              draftId: safeSourceDraftId,
+              currentDraftRevisionId: source.draftRevisionId
+            }
+          }
+        );
+      }
+
+      let draftId = "";
+      let chestId = "";
+      do {
+        draftId = buildGeneratedId("event_chest_draft", now, this.randomUUID);
+      } while (document.drafts.some((draft) => draft.draftId === draftId));
+      do {
+        chestId = buildGeneratedId("event_chest", now, this.randomUUID);
+      } while (document.drafts.some((draft) => draft.chestId === chestId));
+
+      const record = createEventChestDraftRecord(
+        {
+          draftId,
+          chestId,
+          draftRevisionId: buildDraftRevisionId(now, this.randomUUID),
+          status: "validation_failed",
+          definition: buildDuplicatedDefinition(source.definition, { chestId }),
+          createdAt: now,
+          updatedAt: now,
+          createdBy: actor,
+          updatedBy: actor,
+          copiedFromDraftId: source.draftId,
+          copiedFromDraftRevisionId: source.draftRevisionId
+        },
+        { now, allowInvalidDefinition: true }
+      );
+
+      document.drafts.push(record);
+      document.drafts.sort((left, right) => left.draftId.localeCompare(right.draftId));
+      await this.store.write(document);
+      return clone(record);
+    });
+  }
+
+  async duplicatePublishedDefinition({ definition, actor = null } = {}) {
+    return this.runMutation(async () => {
+      const now = this.now();
+      const document = await this.readDocument();
+      const sourceDefinition = clone(definition);
+      const sourceChestId = normalizeRequiredText(sourceDefinition?.chestId, "chestId");
+      const sourceDefinitionRevisionId = normalizeRequiredText(
+        sourceDefinition?.definitionRevisionId,
+        "definitionRevisionId"
+      );
+      let draftId = "";
+      let chestId = "";
+      do {
+        draftId = buildGeneratedId("event_chest_draft", now, this.randomUUID);
+      } while (document.drafts.some((draft) => draft.draftId === draftId));
+      do {
+        chestId = buildGeneratedId("event_chest", now, this.randomUUID);
+      } while (document.drafts.some((draft) => draft.chestId === chestId));
+
+      const record = createEventChestDraftRecord(
+        {
+          draftId,
+          chestId,
+          draftRevisionId: buildDraftRevisionId(now, this.randomUUID),
+          status: "validation_failed",
+          definition: buildDuplicatedDefinition(sourceDefinition, { chestId }),
+          createdAt: now,
+          updatedAt: now,
+          createdBy: actor,
+          updatedBy: actor,
+          copiedFromChestId: sourceChestId,
+          copiedFromDefinitionRevisionId: sourceDefinitionRevisionId
+        },
+        { now, allowInvalidDefinition: true }
+      );
+
+      document.drafts.push(record);
       document.drafts.sort((left, right) => left.draftId.localeCompare(right.draftId));
       await this.store.write(document);
       return clone(record);
