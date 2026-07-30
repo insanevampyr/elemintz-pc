@@ -5267,9 +5267,7 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
       "accountId",
       "profileKey",
       "rewardSettlement",
-      '"pool"',
-      '"odds"',
-      '"pity"'
+      "eventChestPity"
     ]) {
       assert.equal(serializedDirect.includes(privateKey), false);
     }
@@ -5287,9 +5285,6 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
       first,
       repeat
     });
-    assert.equal(serializedDelivery.includes('"pool"'), false);
-    assert.equal(serializedDelivery.includes('"odds"'), false);
-    assert.equal(serializedDelivery.includes('"pity"'), false);
     assert.equal(serializedDelivery.includes("duplicateTokenRewards"), false);
     assert.equal(serializedDelivery.includes("sourceDraftId"), false);
     assert.equal(serializedDelivery.includes("sourceDraftRevisionId"), false);

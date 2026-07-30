@@ -5682,11 +5682,14 @@ test("state: Event Chest entitlement delivery is deterministic, idempotent, and 
     assert.equal(first.activeChest.title, "State Event Chest Entitlement");
     assert.equal(first.activeChest.subtitle, "State sync test.");
     assert.equal(first.activeChest.icons.closed, "icons/daily_chest.png");
+    assert.equal(first.directOpen.available, false);
+    assert.deepEqual(first.directOpen.openTypes, ["entitlement"]);
+    assert.deepEqual(first.directOpen.odds, DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.odds);
+    assert.equal(first.directOpen.pity.epicPlus.displayLabel, "0 / 10");
+    assert.equal(first.directOpen.pity.legendary.displayLabel, "0 / 30");
+    assert.equal(first.directOpen.rewardPool.totalCount, 12);
     const serializedFirst = JSON.stringify(first);
     for (const privateKey of [
-      '"pool"',
-      '"odds"',
-      '"pity"',
       "duplicateTokenRewards",
       "sourceDraftId",
       "sourceDraftRevisionId",

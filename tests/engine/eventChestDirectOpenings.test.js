@@ -163,6 +163,116 @@ test("event chest direct opening: paid charge, replay, concurrency, and distinct
   }
 });
 
+test("event chest direct opening: sync status includes safe presentation data", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const definition = buildDefinition({
+      odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 }
+    });
+    const coordinator = await createActiveCoordinator(dataDir, definition);
+    await createClaimedProfile(coordinator, "PresentationDirectUser", 500);
+    const rewardEntry = definition.pool.common[0];
+    await coordinator.profiles.updateProfile("PresentationDirectUser", (profile) => ({
+      ...profile,
+      eventChestPity: {
+        schemaVersion: 1,
+        byChestId: {
+          [definition.chestId]: {
+            epicPlusMisses: 4,
+            legendaryMisses: 18,
+            updatedAt: NOW
+          }
+        }
+      },
+      ownedCosmetics: {
+        ...profile.ownedCosmetics,
+        [rewardEntry.type]: [
+          ...(profile.ownedCosmetics?.[rewardEntry.type] ?? []),
+          rewardEntry.cosmeticId
+        ]
+      }
+    }));
+
+    const status = await coordinator.syncEventChestEntitlementForProfile({
+      username: "PresentationDirectUser",
+      profileKey: "PresentationDirectUser",
+      accountId: "account-PresentationDirectUser"
+    });
+    const directOpen = status.directOpen;
+    assert.equal(directOpen.available, true);
+    assert.equal(directOpen.chestId, definition.chestId);
+    assert.equal(directOpen.definitionRevisionId, definition.definitionRevisionId);
+    assert.deepEqual(directOpen.odds, definition.odds);
+    assert.equal(directOpen.pity.epicPlus.displayLabel, "4 / 10");
+    assert.equal(directOpen.pity.legendary.displayLabel, "18 / 30");
+    assert.equal(directOpen.rewardPool.totalCount, 12);
+    assert.equal(directOpen.rewardPool.ownedCount, 1);
+    assert.equal(directOpen.rewardPool.items.common[0].owned, true);
+    assert.equal(directOpen.rewardPool.items.common[0].name.length > 0, true);
+    assert.equal(directOpen.methods.paid.costTokens, 100);
+    assert.equal(directOpen.methods.paid.tokenBalance, 500);
+    assert.equal(
+      JSON.stringify(directOpen).includes("eventChestDirectOpenings"),
+      false
+    );
+    assert.equal(JSON.stringify(directOpen).includes("settlements"), false);
+    assert.equal(JSON.stringify(directOpen).includes("transactionId"), false);
+    assert.equal(JSON.stringify(directOpen).includes("account-"), false);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest direct opening: safe presentation normalizes retained legacy rarity casing", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const coordinator = new StateCoordinator({ dataDir });
+    const canonical = buildDefinition();
+    const definition = {
+      ...canonical,
+      odds: {
+        Common: 0.7,
+        Rare: 0.22,
+        Epic: 0.07,
+        Legendary: 0.01
+      },
+      pool: {
+        Common: canonical.pool.common,
+        Rare: canonical.pool.rare,
+        Epic: canonical.pool.epic,
+        Legendary: canonical.pool.legendary
+      }
+    };
+    const firstCommon = canonical.pool.common[0];
+    const status = coordinator.buildEventChestDirectOpenStatus(
+      definition,
+      {
+        tokens: 500,
+        ownedCosmetics: {
+          [firstCommon.type]: [firstCommon.cosmeticId]
+        }
+      },
+      { nowMs: NOW }
+    );
+
+    assert.equal(status.available, true);
+    assert.deepEqual(status.odds, { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 });
+    assert.equal(status.pity.epicPlus.displayLabel, "0 / 10");
+    assert.equal(status.pity.legendary.displayLabel, "0 / 30");
+    assert.equal(status.rewardPool.totalCount, 12);
+    assert.equal(status.rewardPool.ownedCount, 1);
+    assert.equal(status.rewardPool.byRarity.common.total, 3);
+    assert.equal(status.rewardPool.byRarity.rare.total, 2);
+    assert.equal(status.rewardPool.byRarity.epic.total, 5);
+    assert.equal(status.rewardPool.byRarity.legendary.total, 2);
+    assert.equal(status.rewardPool.items.common[0].owned, true);
+    assert.equal(JSON.stringify(status).includes("eventChestDirectOpenings"), false);
+    assert.equal(JSON.stringify(status).includes("transactionId"), false);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("event chest direct opening: insufficient paid and failed reward selection do not mutate", async () => {
   const dataDir = await createTempDataDir();
   try {

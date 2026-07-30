@@ -95,7 +95,11 @@ import {
   normalizeEventChestDirectRequestId
 } from "./eventChestDirectOpenings.js";
 import { createEventChestDirectOpeningSettlement } from "./eventChestDirectOpeningSettlement.js";
-import { applyEventChestPityState } from "./eventChestPity.js";
+import {
+  applyEventChestPityState,
+  getEventChestPityRuleState,
+  getEventChestPityState
+} from "./eventChestPity.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import {
   EventChestDraftStore,
@@ -113,6 +117,61 @@ import {
 } from "./levelRewardsSystem.js";
 import { rollBasicChest } from "../shared/basicChestDrop.js";
 import { getGauntletRivalById } from "../engine/gauntletRivals.js";
+
+const EVENT_CHEST_PRESENTATION_RARITIES = Object.freeze(["common", "rare", "epic", "legendary"]);
+
+function normalizeEventChestPresentationRarity(value) {
+  const rarity = String(value ?? "").trim().toLowerCase();
+  return EVENT_CHEST_PRESENTATION_RARITIES.includes(rarity) ? rarity : null;
+}
+
+function getEventChestPresentationOdds(definition) {
+  const odds = {};
+  const source = definition?.odds && typeof definition.odds === "object" && !Array.isArray(definition.odds)
+    ? definition.odds
+    : null;
+  for (const rarity of EVENT_CHEST_PRESENTATION_RARITIES) {
+    odds[rarity] = null;
+  }
+  if (!source) {
+    return odds;
+  }
+  for (const [key, rawValue] of Object.entries(source)) {
+    const rarity = normalizeEventChestPresentationRarity(key);
+    if (!rarity) {
+      continue;
+    }
+    const value = Number(rawValue);
+    odds[rarity] = Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  return odds;
+}
+
+function getEventChestPresentationPool(definition) {
+  const source = definition?.pool && typeof definition.pool === "object" && !Array.isArray(definition.pool)
+    ? definition.pool
+    : null;
+  const pool = {};
+  for (const rarity of EVENT_CHEST_PRESENTATION_RARITIES) {
+    pool[rarity] = [];
+  }
+  if (!source) {
+    return pool;
+  }
+  for (const [bucketKey, entries] of Object.entries(source)) {
+    const rarity = normalizeEventChestPresentationRarity(bucketKey);
+    if (!rarity || !Array.isArray(entries)) {
+      continue;
+    }
+    pool[rarity] = entries
+      .map((entry) => ({
+        type: String(entry?.type ?? "").trim(),
+        cosmeticId: String(entry?.cosmeticId ?? "").trim()
+      }))
+      .filter((entry) => entry.type && entry.cosmeticId);
+  }
+  return pool;
+}
 
 const DAILY_LOGIN_STREAK_REWARDS = Object.freeze([
   Object.freeze({ day: 1, xp: 2, tokens: 4 }),
@@ -1807,6 +1866,87 @@ export class StateCoordinator {
     };
   }
 
+  buildSafeEventChestPoolPresentation(definition, profile) {
+    const normalizedPool = getEventChestPresentationPool(definition);
+    const pool = {};
+    const byRarity = {};
+    let totalCount = 0;
+    let ownedCount = 0;
+    for (const rarity of EVENT_CHEST_PRESENTATION_RARITIES) {
+      const entries = normalizedPool[rarity];
+      const projected = entries.map((entry) => {
+        const type = String(entry?.type ?? "").trim();
+        const cosmeticId = String(entry?.cosmeticId ?? "").trim();
+        const cosmetic = getCosmeticDefinition(type, cosmeticId);
+        const owned = Array.isArray(profile?.ownedCosmetics?.[type])
+          ? profile.ownedCosmetics[type].includes(cosmeticId)
+          : false;
+        totalCount += 1;
+        if (owned) {
+          ownedCount += 1;
+        }
+        return {
+          type,
+          cosmeticId,
+          name: cosmetic?.name ?? cosmeticId,
+          rarity,
+          owned,
+          element: cosmetic?.element ?? null,
+          collection: cosmetic?.collection ?? null,
+          image: cosmetic?.image ?? null
+        };
+      });
+      const rarityOwned = projected.filter((entry) => entry.owned).length;
+      byRarity[rarity] = {
+        total: projected.length,
+        owned: rarityOwned,
+        missing: Math.max(0, projected.length - rarityOwned)
+      };
+      pool[rarity] = projected;
+    }
+    return {
+      totalCount,
+      ownedCount,
+      missingCount: Math.max(0, totalCount - ownedCount),
+      isComplete: totalCount > 0 && ownedCount >= totalCount,
+      byRarity,
+      items: pool
+    };
+  }
+
+  buildSafeEventChestPityPresentation(definition, profile) {
+    const rules = getEventChestPityRuleState(definition?.pity);
+    const state = getEventChestPityState(profile?.eventChestPity, definition?.chestId);
+    const epicThreshold = Number.isInteger(rules.epicPlusThreshold) && rules.epicPlusThreshold > 0
+      ? rules.epicPlusThreshold
+      : 0;
+    const legendaryThreshold = Number.isInteger(rules.legendaryThreshold) && rules.legendaryThreshold > 0
+      ? rules.legendaryThreshold
+      : 0;
+    const epicCurrent = Math.max(0, Math.floor(Number(state.epicPlusMisses ?? 0) || 0));
+    const legendaryCurrent = Math.max(0, Math.floor(Number(state.legendaryMisses ?? 0) || 0));
+    return {
+      epicPlus: {
+        enabled: rules.epicPlusEnabled === true,
+        current: epicCurrent,
+        threshold: epicThreshold,
+        displayCurrent: epicThreshold > 0 ? Math.min(epicCurrent, epicThreshold) : epicCurrent,
+        displayLabel: rules.epicPlusEnabled === true && epicThreshold > 0
+          ? `${Math.min(epicCurrent, epicThreshold)} / ${epicThreshold}`
+          : "Disabled"
+      },
+      legendary: {
+        enabled: rules.legendaryEnabled === true,
+        current: legendaryCurrent,
+        threshold: legendaryThreshold,
+        displayCurrent: legendaryThreshold > 0 ? Math.min(legendaryCurrent, legendaryThreshold) : legendaryCurrent,
+        displayLabel: rules.legendaryEnabled === true && legendaryThreshold > 0
+          ? `${Math.min(legendaryCurrent, legendaryThreshold)} / ${legendaryThreshold}`
+          : "Disabled"
+      }
+    };
+  }
+
   buildEventChestDirectOpenStatus(definition, profile, { schedule = null, nowMs = Date.now() } = {}) {
     if (!definition) {
       return {
@@ -1839,6 +1979,17 @@ export class StateCoordinator {
       chestId: definition.chestId,
       definitionRevisionId: definition.definitionRevisionId,
       ...this.buildEventChestPlayerMetadata(definition),
+      availability: {
+        state: schedule?.state ?? (scheduleAvailable ? "available" : "unavailable"),
+        isWithinSchedule: scheduleAvailable,
+        startsAt: schedule?.startsAt ?? null,
+        endsAt: schedule?.endsAt ?? null
+      },
+      openTypes: [...openTypes],
+      tokenBalance,
+      odds: getEventChestPresentationOdds(definition),
+      pity: this.buildSafeEventChestPityPresentation(definition, profile),
+      rewardPool: this.buildSafeEventChestPoolPresentation(definition, profile),
       methods: {
         paid: {
           enabled: openTypes.includes("paid"),
@@ -2197,7 +2348,10 @@ export class StateCoordinator {
           replayed: true,
           alreadyOpened: true,
           reward: buildSafeEventChestRewardResponse(existing.reward),
-          chest: this.buildEventChestPlayerMetadata(definition)
+          chest: this.buildEventChestPlayerMetadata(definition),
+          directOpen: this.buildEventChestDirectOpenStatus(definition, current, {
+            nowMs
+          })
         };
         return {
           ...current,
@@ -2311,7 +2465,11 @@ export class StateCoordinator {
         replayed: false,
         alreadyOpened: false,
         reward: buildSafeEventChestRewardResponse(settlement.reward),
-        chest: this.buildEventChestPlayerMetadata(definition)
+        chest: this.buildEventChestPlayerMetadata(definition),
+        directOpen: this.buildEventChestDirectOpenStatus(definition, rewardedProfile, {
+          schedule: active.schedule,
+          nowMs
+        })
       };
       return {
         ...rewardedProfile,

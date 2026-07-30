@@ -11,6 +11,7 @@ import {
   renderDailyElementChestMiniCard,
   renderDailyElementChestModalBody
 } from "../../src/renderer/ui/screens/dailyElementChestScreen.js";
+import { renderEventChestModalBody } from "../../src/renderer/ui/screens/eventChestScreen.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature, gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
 import { howToPlayScreen } from "../../src/renderer/ui/screens/howToPlayScreen.js";
 import { loginScreen } from "../../src/renderer/ui/screens/loginScreen.js";
@@ -17053,10 +17054,13 @@ test("ui: menu renders available Event Chest entitlement without private fields"
   });
 
   assert.match(html, /data-menu-event-chest-panel="true"/);
-  assert.match(html, /id="open-event-chest-entitlement-btn"/);
+  assert.match(html, /<button[\s\S]*id="view-event-chest-btn"[\s\S]*type="button"[\s\S]*data-event-chest-view="true"/);
+  assert.doesNotMatch(html, /menu-event-chest-card__view|>View Chest</);
   assert.match(html, /Moonlit Event Chest/);
   assert.match(html, /Ready to Open/);
   assert.match(html, /Open your limited reward\./);
+  assert.doesNotMatch(html, /id="open-event-chest-entitlement-btn"/);
+  assert.doesNotMatch(html, /id="open-event-chest-paid-btn"|id="open-event-chest-free-btn"/);
   assert.doesNotMatch(html, /accountId|profileKey|sessionId|socketId|transactionId|rewardSettlement|definitionHistory|odds|pool|pity/);
 });
 
@@ -17118,7 +17122,8 @@ test("ui: menu keeps Daily Chest and Event Chest visibility independent", () => 
   assert.doesNotMatch(eventOnlyHtml, /data-menu-daily-element-chest-panel="true"/);
   assert.doesNotMatch(eventOnlyHtml, /id="open-daily-element-chest-btn"/);
   assert.match(eventOnlyHtml, /data-menu-event-chest-panel="true"/);
-  assert.match(eventOnlyHtml, /id="open-event-chest-entitlement-btn"/);
+  assert.match(eventOnlyHtml, /id="view-event-chest-btn"/);
+  assert.doesNotMatch(eventOnlyHtml, />View Chest</);
   assert.match(eventOnlyHtml, /Visibility Event Chest/);
   assert.doesNotMatch(eventOnlyHtml, /private-account|accountId|profileKey|sessionId|socketId|rewardSettlement|odds|pool|pity/);
 
@@ -17138,10 +17143,10 @@ test("ui: menu keeps Daily Chest and Event Chest visibility independent", () => 
   assert.doesNotMatch(neitherHtml, /data-menu-daily-element-chest-panel="true"/);
   assert.doesNotMatch(neitherHtml, /data-menu-event-chest-panel="true"/);
   assert.doesNotMatch(neitherHtml, /id="open-daily-element-chest-btn"/);
-  assert.doesNotMatch(neitherHtml, /id="open-event-chest-entitlement-btn"/);
+  assert.doesNotMatch(neitherHtml, /id="view-event-chest-btn"/);
 });
 
-test("ui: menu Event Chest direct controls show authoritative paid and free state safely", () => {
+test("ui: menu Event Chest card summarizes authoritative paid and free state safely", () => {
   const html = menuScreen.render({
     username: "DirectMenuUser",
     backgroundImage: "assets/EleMintzIcon.png",
@@ -17175,16 +17180,321 @@ test("ui: menu Event Chest direct controls show authoritative paid and free stat
     actions: {}
   });
 
-  assert.match(html, /id="open-event-chest-paid-btn"[\s\S]*disabled[\s\S]*Open for 125 Tokens/);
+  assert.match(html, /id="view-event-chest-btn"/);
+  assert.doesNotMatch(html, />View Chest</);
+  assert.match(html, /Free claimed \| 125 Token paid open/);
   assert.match(html, /Not enough Tokens\./);
-  assert.match(html, /id="open-event-chest-free-btn"[\s\S]*disabled[\s\S]*Free Open Claimed/);
-  assert.match(html, /Free reset: 2026-07-30T23:00:00.000Z/);
+  assert.match(html, /Free reset: Jul 30,/);
+  assert.doesNotMatch(html, /2026-07-30T23:00:00\.000Z/);
+  assert.doesNotMatch(html, /id="open-event-chest-paid-btn"|id="open-event-chest-free-btn"/);
   assert.doesNotMatch(html, /privateSettlement|must-not-render|eventChestDirectOpenings|transactionId/);
 });
 
-test("ui: menu Event Chest open button binds to the provided action", async () => {
+test("ui: Event Chest modal renders safe active definition presentation", () => {
+  const html = renderEventChestModalBody({
+    chest: {
+      available: true,
+      chestId: "event_chest_modal",
+      definitionRevisionId: "event_chest_modal_rev_1",
+      title: "Modal Event Chest",
+      modalTitle: "Player Event Chest",
+      subtitle: "Featured rewards.",
+      description: "Open during this event.",
+      icons: {
+        closed: "icons/custom_closed.png",
+        open: "icons/custom_open.png"
+      },
+      availability: {
+        state: "available",
+        startsAt: "2026-07-29T00:00:00.000Z",
+        endsAt: "2026-08-01T00:00:00.000Z"
+      },
+      tokenBalance: 225,
+      methods: {
+        free: { enabled: true, available: true },
+        paid: {
+          enabled: true,
+          available: true,
+          canAfford: true,
+          costTokens: 100
+        }
+      },
+      odds: {
+        common: 0.7,
+        rare: 0.22,
+        epic: 0.07,
+        legendary: 0.01
+      },
+      pity: {
+        epicPlus: { enabled: true, displayLabel: "4 / 10" },
+        legendary: { enabled: true, displayLabel: "18 / 30" }
+      },
+      rewardPool: {
+        totalCount: 2,
+        ownedCount: 1,
+        byRarity: {
+          common: { total: 1, owned: 1 },
+          rare: { total: 0, owned: 0 },
+          epic: { total: 1, owned: 0 },
+          legendary: { total: 0, owned: 0 }
+        },
+        items: {
+          common: [
+            {
+              type: "avatar",
+              cosmeticId: "safe_owned_avatar",
+              name: "Safe Owned Avatar",
+              rarity: "common",
+              owned: true,
+              element: "fire",
+              image: "avatars/safe_owned_avatar.png"
+            }
+          ],
+          epic: [
+            {
+              type: "cardBack",
+              cosmeticId: "safe_missing_back",
+              name: "Safe Missing Back",
+              rarity: "epic",
+              owned: false,
+              collection: "Smoke",
+              image: "card-backs/safe_missing_back.png"
+            }
+          ]
+        }
+      },
+      accountId: "private-account",
+      profileKey: "private-profile"
+    },
+    errorMessage: "Safe transient error."
+  });
+
+  assert.match(html, /data-event-chest-modal="true"/);
+  assert.match(html, /data-event-chest-modal-chest-id="event_chest_modal"/);
+  assert.match(html, /data-event-chest-modal-definition-revision-id="event_chest_modal_rev_1"/);
+  assert.match(html, /Player Event Chest/);
+  assert.match(html, /Featured rewards\./);
+  assert.match(html, /icons\/custom_closed\.png/);
+  assert.match(html, /Availability: Available/);
+  assert.match(html, /2026-07-29T00:00:00\.000Z to 2026-08-01T00:00:00\.000Z/);
+  assert.match(html, /data-event-chest-token-balance="true">225</);
+  assert.match(html, /id="event-chest-free-open-btn"[\s\S]*Free Open/);
+  assert.match(html, /id="event-chest-paid-open-btn"[\s\S]*Open for 100 Tokens/);
+  assert.match(html, /Common 70%/);
+  assert.match(html, /Rare 22%/);
+  assert.match(html, /Epic 7%/);
+  assert.match(html, /Legendary 1%/);
+  assert.match(html, /Epic\+ guarantee: 4 \/ 10/);
+  assert.match(html, /Legendary guarantee: 18 \/ 30/);
+  assert.match(html, /Safe Owned Avatar/);
+  assert.match(html, /Safe Missing Back/);
+  assert.match(html, /Owned/);
+  assert.match(html, /Missing/);
+  assert.match(html, /data-event-chest-rarity-progress="common">Common 1\/1/);
+  assert.match(html, /data-event-chest-rarity-progress="epic">Epic 0\/1/);
+  assert.match(html, /Safe transient error\./);
+  assert.doesNotMatch(html, /private-account|private-profile|rewardSettlement|transactionId|definitionHistory/);
+});
+
+test("ui: Event Chest modal renders readable free reset copy", () => {
+  const html = renderEventChestModalBody({
+    chest: {
+      available: true,
+      chestId: "event_chest_reset",
+      definitionRevisionId: "event_chest_reset_rev_1",
+      title: "Reset Event Chest",
+      methods: {
+        free: {
+          enabled: true,
+          available: false,
+          claimed: true,
+          nextAvailableAt: "2026-07-30T23:00:00.000Z"
+        }
+      }
+    }
+  });
+
+  assert.match(html, /data-event-chest-next-free="true">Next free: Jul 30,/);
+  assert.doesNotMatch(html, /2026-07-30T23:00:00\.000Z/);
+});
+
+test("ui: AppController preserves rich Event Chest modal projection when entitlement drives availability", () => {
+  const modalCalls = [];
+  const controller = new AppController({
+    screenManager: {
+      register: () => {},
+      show: () => {}
+    },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+  controller.availableEventChestEntitlement = {
+    available: true,
+    entitlementId: "event_chest_entitlement_rich_1",
+    chestId: "event_chest_rich",
+    definitionRevisionId: "event_chest_rich_rev_1",
+    status: "available",
+    title: "Rich Event Chest",
+    subtitle: "Ready."
+  };
+  controller.availableEventChestDirectOpen = {
+    available: false,
+    reason: "schedule_unavailable",
+    chestId: "event_chest_rich",
+    definitionRevisionId: "event_chest_rich_rev_1",
+    title: "Rich Event Chest",
+    modalTitle: "Rich Player Chest",
+    subtitle: "Ready.",
+    availability: { state: "available", isWithinSchedule: true },
+    tokenBalance: 250,
+    odds: { common: 0.7, rare: 0.22, epic: 0.07, legendary: 0.01 },
+    pity: {
+      epicPlus: { enabled: true, displayLabel: "3 / 10" },
+      legendary: { enabled: true, displayLabel: "12 / 30" }
+    },
+    rewardPool: {
+      totalCount: 12,
+      ownedCount: 2,
+      byRarity: {
+        common: { total: 3, owned: 1 },
+        rare: { total: 2, owned: 1 },
+        epic: { total: 5, owned: 0 },
+        legendary: { total: 2, owned: 0 }
+      },
+      items: {
+        common: [{ type: "avatar", cosmeticId: "a", name: "Reward A", owned: true }],
+        rare: [{ type: "cardBack", cosmeticId: "b", name: "Reward B", owned: true }],
+        epic: [{ type: "background", cosmeticId: "c", name: "Reward C", owned: false }],
+        legendary: [{ type: "badge", cosmeticId: "d", name: "Reward D", owned: false }]
+      }
+    },
+    methods: {
+      paid: { enabled: true, available: true, canAfford: true, costTokens: 100, tokenBalance: 250 },
+      free: { enabled: true, available: false, claimed: true, nextAvailableAt: "2026-07-30T23:00:00.000Z" }
+    }
+  };
+
+  controller.showEventChestModal();
+
+  const bodyHtml = modalCalls.at(-1)?.bodyHtml ?? "";
+  assert.match(bodyHtml, /Rich Player Chest/);
+  assert.match(bodyHtml, /data-event-chest-modal-chest-id="event_chest_rich"/);
+  assert.match(bodyHtml, /data-event-chest-modal-definition-revision-id="event_chest_rich_rev_1"/);
+  assert.match(bodyHtml, /data-event-chest-collection-summary="true">2 \/ 12</);
+  assert.match(bodyHtml, /Common 70%/);
+  assert.match(bodyHtml, /Rare 22%/);
+  assert.match(bodyHtml, /Epic 7%/);
+  assert.match(bodyHtml, /Legendary 1%/);
+  assert.match(bodyHtml, /Epic\+ guarantee: 3 \/ 10/);
+  assert.match(bodyHtml, /Legendary guarantee: 12 \/ 30/);
+  assert.match(bodyHtml, /Reward A/);
+  assert.match(bodyHtml, /Reward D/);
+  assert.doesNotMatch(bodyHtml, /rewardSettlement|transactionId|accountId|profileKey/);
+});
+
+test("ui: Event Chest modal respects free-only and paid-only opening methods", () => {
+  const freeOnlyHtml = renderEventChestModalBody({
+    chest: {
+      available: true,
+      chestId: "free_chest",
+      definitionRevisionId: "free_rev",
+      title: "Free Chest",
+      methods: { free: { enabled: true, available: false, claimed: true } }
+    }
+  });
+  assert.match(freeOnlyHtml, /id="event-chest-free-open-btn"[\s\S]*disabled="disabled"[\s\S]*Free Open Claimed/);
+  assert.doesNotMatch(freeOnlyHtml, /id="event-chest-paid-open-btn"/);
+
+  const paidOnlyHtml = renderEventChestModalBody({
+    chest: {
+      available: true,
+      chestId: "paid_chest",
+      definitionRevisionId: "paid_rev",
+      title: "Paid Chest",
+      methods: {
+        paid: {
+          enabled: true,
+          available: false,
+          canAfford: false,
+          costTokens: 200
+        }
+      }
+    }
+  });
+  assert.match(paidOnlyHtml, /id="event-chest-paid-open-btn"[\s\S]*disabled="disabled"[\s\S]*Open for 200 Tokens/);
+  assert.match(paidOnlyHtml, /Not enough Tokens\./);
+  assert.doesNotMatch(paidOnlyHtml, /id="event-chest-free-open-btn"/);
+});
+
+test("ui: Event Chest modal renders rich new and duplicate result states safely", () => {
+  const newRewardHtml = renderEventChestModalBody({
+    chest: {
+      available: true,
+      chestId: "result_chest",
+      definitionRevisionId: "result_rev",
+      title: "Result Chest",
+      methods: {}
+    },
+    result: {
+      status: "opened",
+      costCharged: 100,
+      tokenBalance: 125,
+      pityGuarantee: "epic_plus",
+      transactionId: "private-result",
+      reward: {
+        type: "cosmetic",
+        rarity: "epic",
+        duplicateConverted: false,
+        cosmetic: {
+          type: "avatar",
+          cosmeticId: "result_avatar",
+          name: "Result Avatar",
+          element: "water",
+          image: "avatars/result_avatar.png",
+          accountId: "private-account"
+        }
+      }
+    }
+  });
+  assert.match(newRewardHtml, /data-event-chest-new-result="true"/);
+  assert.match(newRewardHtml, /Result Avatar/);
+  assert.match(newRewardHtml, /Epic\+ guarantee activated/);
+  assert.match(newRewardHtml, /Cost[\s\S]*100 Tokens/);
+  assert.match(newRewardHtml, /Balance[\s\S]*125 Tokens/);
+  assert.doesNotMatch(newRewardHtml, /private-result|private-account|transactionId|rewardSettlement/);
+
+  const duplicateHtml = renderEventChestModalBody({
+    chest: {
+      available: true,
+      chestId: "duplicate_chest",
+      definitionRevisionId: "duplicate_rev",
+      title: "Duplicate Chest",
+      methods: {}
+    },
+    result: {
+      status: "opened",
+      tokenBalance: 425,
+      reward: {
+        type: "tokens",
+        rarity: "common",
+        tokenAmount: 25,
+        duplicateConverted: true,
+        cosmetic: { name: "Duplicate Avatar", type: "avatar" }
+      }
+    }
+  });
+  assert.match(duplicateHtml, /data-event-chest-duplicate-result="true"/);
+  assert.match(duplicateHtml, /\+25 Tokens/);
+  assert.match(duplicateHtml, /Duplicate Avatar/);
+});
+
+test("ui: menu Event Chest card binds to details without opening", async () => {
   const previousDocument = global.document;
-  let openCalls = 0;
+  let viewCalls = 0;
+  let directOpenCalls = 0;
   const elements = {
     "start-pve-btn": createFakeElement(),
     "start-local-btn": createFakeElement(),
@@ -17199,7 +17509,7 @@ test("ui: menu Event Chest open button binds to the provided action", async () =
     "how-to-play-btn": createFakeElement(),
     "feedback-btn": createFakeElement(),
     "logout-btn": createFakeElement(),
-    "open-event-chest-entitlement-btn": createFakeElement()
+    "view-event-chest-btn": createFakeElement()
   };
 
   global.document = {
@@ -17222,71 +17532,24 @@ test("ui: menu Event Chest open button binds to the provided action", async () =
         openHowToPlay: async () => {},
         openFeedback: () => {},
         openDailyElementChest: async () => {},
-        openEventChestEntitlement: async () => {
-          openCalls += 1;
+        openEventChestDetails: async () => {
+          viewCalls += 1;
+        },
+        openEventChestPaid: async () => {
+          directOpenCalls += 1;
+        },
+        openEventChestFree: async () => {
+          directOpenCalls += 1;
         },
         logout: () => {},
         dismissAnnouncement: async () => {}
       }
     });
 
-    await elements["open-event-chest-entitlement-btn"].listeners.get("click")();
+    await elements["view-event-chest-btn"].listeners.get("click")();
 
-    assert.equal(openCalls, 1);
-  } finally {
-    global.document = previousDocument;
-  }
-});
-
-test("ui: menu Event Chest paid and free buttons bind independently", async () => {
-  const previousDocument = global.document;
-  const elements = Object.fromEntries(
-    [
-      "start-pve-btn",
-      "start-local-btn",
-      "online-play-btn",
-      "profile-btn",
-      "achievements-btn",
-      "open-daily-challenges-btn",
-      "cosmetics-btn",
-      "store-btn",
-      "roadmap-btn",
-      "settings-btn",
-      "how-to-play-btn",
-      "feedback-btn",
-      "logout-btn",
-      "open-event-chest-paid-btn",
-      "open-event-chest-free-btn"
-    ].map((id) => [id, createFakeElement()])
-  );
-  global.document = {
-    getElementById: (id) => elements[id] ?? null
-  };
-  const calls = [];
-  try {
-    menuScreen.bind({
-      actions: {
-        startPveGame: () => {},
-        startLocalGame: () => {},
-        openOnlinePlay: async () => {},
-        openProfile: async () => {},
-        openAchievements: async () => {},
-        openDailyChallenges: async () => {},
-        openCosmetics: async () => {},
-        openStore: async () => {},
-        openRoadmap: () => {},
-        openSettings: async () => {},
-        openHowToPlay: async () => {},
-        openFeedback: () => {},
-        openEventChestPaid: async () => calls.push("paid"),
-        openEventChestFree: async () => calls.push("free"),
-        logout: () => {},
-        dismissAnnouncement: async () => {}
-      }
-    });
-    await elements["open-event-chest-paid-btn"].listeners.get("click")();
-    await elements["open-event-chest-free-btn"].listeners.get("click")();
-    assert.deepEqual(calls, ["paid", "free"]);
+    assert.equal(viewCalls, 1);
+    assert.equal(directOpenCalls, 0);
   } finally {
     global.document = previousDocument;
   }
@@ -17551,14 +17814,20 @@ test("ui: AppController Event Chest open failure clears lock and preserves retry
 
 test("ui: AppController direct Event Chest opening is per-method single-flight and replay-safe", async () => {
   const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
   const modalCalls = [];
+  const toastCalls = [];
+  const modalButtons = {
+    "event-chest-paid-open-btn": createFakeElement(),
+    "event-chest-free-open-btn": createFakeElement()
+  };
   const controller = new AppController({
     screenManager: { register: () => {}, show: () => {} },
     modalManager: {
       show: (payload) => modalCalls.push(payload),
       hide: () => {}
     },
-    toastManager: { show: () => {} }
+    toastManager: { enqueueToast: (payload) => toastCalls.push(payload) }
   });
   controller.username = "DirectEventUser";
   controller.profile = { username: "DirectEventUser", tokens: 400 };
@@ -17569,6 +17838,8 @@ test("ui: AppController direct Event Chest opening is per-method single-flight a
   };
   controller.availableEventChestDirectOpen = {
     available: true,
+    chestId: "direct_event_chest",
+    definitionRevisionId: "direct_event_chest_rev_1",
     title: "Direct Event Chest",
     methods: {
       paid: { enabled: true, available: true, costTokens: 100, canAfford: true },
@@ -17580,6 +17851,10 @@ test("ui: AppController direct Event Chest opening is per-method single-flight a
     return controller.profile;
   };
   controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh = async () => null;
+  globalThis.document = {
+    getElementById: (id) => modalButtons[id] ?? null,
+    querySelector: (selector) => selector === "[data-event-chest-modal='true']" ? {} : null
+  };
 
   let openCalls = 0;
   let resolveOpen;
@@ -17598,25 +17873,292 @@ test("ui: AppController direct Event Chest opening is per-method single-flight a
     }
   };
   try {
+    controller.showEventChestModal();
+    assert.equal(modalCalls.at(-1)?.title, "Direct Event Chest");
+    assert.match(modalCalls.at(-1)?.bodyHtml, /id="event-chest-paid-open-btn"/);
+
     const first = controller.openEventChestDirect("paid");
     const second = controller.openEventChestDirect("paid");
     assert.equal(openCalls, 1);
     resolveOpen({
       status: "opened",
+      chestId: "direct_event_chest",
+      definitionRevisionId: "direct_event_chest_rev_1",
       method: "paid",
       costCharged: 100,
       tokenBalance: 300,
       replayed: true,
       alreadyOpened: true,
-      reward: { type: "tokens", rarity: "common", tokenAmount: 25 }
+      reward: { type: "tokens", rarity: "common", tokenAmount: 25 },
+      directOpen: {
+        available: true,
+        chestId: "direct_event_chest",
+        definitionRevisionId: "direct_event_chest_rev_1",
+        title: "Direct Event Chest",
+        tokenBalance: 300,
+        methods: {
+          paid: { enabled: true, available: true, costTokens: 100, canAfford: true },
+          free: { enabled: true, available: true, claimed: false }
+        }
+      }
     });
     const [firstResult, secondResult] = await Promise.all([first, second]);
     assert.equal(firstResult, secondResult);
     assert.equal(controller.eventChestDirectOpenPromises.size, 0);
-    assert.equal(modalCalls.at(-1)?.title, "Event Chest Already Opened");
-    assert.equal("bodyHtml" in modalCalls.at(-1), false);
+    assert.equal(toastCalls.length, 0);
+    assert.match(modalCalls.at(-1)?.bodyHtml, /data-event-chest-result="true"/);
+    assert.match(modalCalls.at(-1)?.bodyHtml, /\+25 Tokens/);
   } finally {
     globalThis.window = previousWindow;
+    globalThis.document = previousDocument;
+  }
+});
+
+test("ui: AppController direct Event Chest openings show concise one-shot result toasts", async () => {
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  const modalCalls = [];
+  const toastCalls = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { enqueueToast: (payload) => toastCalls.push(payload) }
+  });
+  controller.username = "ToastDirectUser";
+  controller.profile = { username: "ToastDirectUser", tokens: 500 };
+  controller.screenFlow = "menu";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: { authenticated: true, username: "ToastDirectUser" }
+  };
+  controller.availableEventChestDirectOpen = {
+    available: true,
+    chestId: "toast_event_chest",
+    definitionRevisionId: "toast_event_chest_rev_1",
+    title: "Toast Event Chest",
+    methods: {
+      paid: { enabled: true, available: true, costTokens: 100, canAfford: true },
+      free: { enabled: true, available: true, claimed: false }
+    }
+  };
+  controller.loadPreferredProfileForOnlineSession = async () => controller.profile;
+  controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh = async () => null;
+  globalThis.document = {
+    getElementById: () => null,
+    querySelector: (selector) => selector === "[data-event-chest-modal='true']" ? {} : null
+  };
+
+  let openCalls = 0;
+  const directOpenStatus = {
+    available: true,
+    chestId: "toast_event_chest",
+    definitionRevisionId: "toast_event_chest_rev_1",
+    title: "Toast Event Chest",
+    methods: {
+      paid: { enabled: true, available: true, costTokens: 100, canAfford: true },
+      free: { enabled: true, available: true, claimed: false }
+    }
+  };
+  const newRewardResult = {
+    status: "opened",
+    chestId: "toast_event_chest",
+    definitionRevisionId: "toast_event_chest_rev_1",
+    method: "paid",
+    requestId: "toast_paid_request_1",
+    openedAt: "2026-07-30T01:00:00.000Z",
+    costCharged: 100,
+    tokenBalance: 400,
+    pityGuarantee: "legendary",
+    replayed: false,
+    alreadyOpened: false,
+    reward: {
+      type: "cosmetic",
+      rarity: "legendary",
+      cosmetic: {
+        type: "avatar",
+        cosmeticId: "toast_avatar",
+        name: "Toast Avatar",
+        rarity: "legendary"
+      }
+    },
+    directOpen: directOpenStatus
+  };
+  const duplicateResult = {
+    status: "opened",
+    chestId: "toast_event_chest",
+    definitionRevisionId: "toast_event_chest_rev_1",
+    method: "free",
+    requestId: "toast_free_request_1",
+    openedAt: "2026-07-30T01:01:00.000Z",
+    costCharged: 0,
+    tokenBalance: 425,
+    replayed: false,
+    alreadyOpened: false,
+    reward: {
+      type: "tokens",
+      rarity: "common",
+      tokenAmount: 25,
+      duplicateConverted: true
+    },
+    duplicateTokensAwarded: 25,
+    directOpen: directOpenStatus
+  };
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        openEventChest: async ({ method }) => {
+          openCalls += 1;
+          return method === "paid" ? newRewardResult : duplicateResult;
+        }
+      }
+    }
+  };
+
+  try {
+    controller.showEventChestModal();
+    await controller.openEventChestDirect("paid");
+    assert.equal(openCalls, 1);
+    assert.equal(toastCalls.length, 1);
+    assert.match(toastCalls[0].html, /Toast Avatar/);
+    assert.match(toastCalls[0].html, /Legendary Unlocked/);
+    assert.match(toastCalls[0].html, /100 Tokens spent/);
+    assert.match(toastCalls[0].html, /400 Tokens remaining/);
+    assert.match(toastCalls[0].html, /Legendary guarantee/);
+    assert.doesNotMatch(toastCalls[0].html, /transactionId|rewardSettlement|accountId|profileKey/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /data-event-chest-result="true"/);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Toast Avatar/);
+
+    controller.emitEventChestDirectOpenToast(newRewardResult);
+    controller.showEventChestModal();
+    assert.equal(toastCalls.length, 1);
+
+    await controller.openEventChestDirect("free");
+    assert.equal(openCalls, 2);
+    assert.equal(toastCalls.length, 2);
+    assert.match(toastCalls[1].html, /Duplicate converted/);
+    assert.match(toastCalls[1].html, /\+25 Tokens/);
+    assert.match(toastCalls[1].html, /425 Tokens remaining/);
+    assert.doesNotMatch(toastCalls[1].html, /guarantee/i);
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.document = previousDocument;
+  }
+});
+
+test("ui: AppController direct Event Chest failures do not show success toasts", async () => {
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  const modalCalls = [];
+  const toastCalls = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { enqueueToast: (payload) => toastCalls.push(payload) }
+  });
+  controller.username = "FailedToastDirectUser";
+  controller.profile = { username: "FailedToastDirectUser", tokens: 500 };
+  controller.screenFlow = "menu";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: { authenticated: true, username: "FailedToastDirectUser" }
+  };
+  controller.availableEventChestDirectOpen = {
+    available: true,
+    chestId: "failed_toast_event_chest",
+    definitionRevisionId: "failed_toast_event_chest_rev_1",
+    title: "Failed Toast Event Chest",
+    methods: {
+      paid: { enabled: true, available: true, costTokens: 100, canAfford: true }
+    }
+  };
+  globalThis.document = {
+    getElementById: () => null,
+    querySelector: (selector) => selector === "[data-event-chest-modal='true']" ? {} : null
+  };
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        openEventChest: async () => {
+          throw new Error("Unable to open Event Chest.");
+        }
+      }
+    }
+  };
+
+  try {
+    controller.showEventChestModal();
+    await assert.rejects(() => controller.openEventChestDirect("paid"), /Unable to open Event Chest/);
+    assert.equal(toastCalls.length, 0);
+    assert.match(modalCalls.at(-1)?.bodyHtml ?? "", /Unable to open Event Chest\./);
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.document = previousDocument;
+  }
+});
+
+test("ui: AppController blocks stale Event Chest direct opens before sending", async () => {
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  const modalCalls = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+  controller.username = "StaleDirectUser";
+  controller.profile = { username: "StaleDirectUser", tokens: 400 };
+  controller.screenFlow = "menu";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: { authenticated: true, username: "StaleDirectUser" }
+  };
+  controller.availableEventChestDirectOpen = {
+    available: true,
+    chestId: "stale_chest",
+    definitionRevisionId: "stale_rev_1",
+    title: "Stale Chest",
+    methods: {
+      paid: { enabled: true, available: true, costTokens: 100, canAfford: true }
+    }
+  };
+  globalThis.document = {
+    getElementById: () => null,
+    querySelector: (selector) => selector === "[data-event-chest-modal='true']" ? {} : null
+  };
+  let openCalls = 0;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        openEventChest: async () => {
+          openCalls += 1;
+          throw new Error("should not send stale request");
+        }
+      }
+    }
+  };
+
+  try {
+    controller.showEventChestModal();
+    controller.availableEventChestDirectOpen = {
+      ...controller.availableEventChestDirectOpen,
+      definitionRevisionId: "stale_rev_2"
+    };
+    const result = await controller.openEventChestDirect("paid");
+    assert.equal(result, null);
+    assert.equal(openCalls, 0);
+    assert.match(modalCalls.at(-1)?.bodyHtml, /Refresh the Event Chest before opening\./);
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.document = previousDocument;
   }
 });
 
@@ -29434,6 +29976,10 @@ test("ui: renderer-shared state modules do not import the server-only boost even
     "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\eventChestDirectOpenings.js",
     "utf8"
   );
+  const eventChestScreenSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\renderer\\ui\\screens\\eventChestScreen.js",
+    "utf8"
+  );
   const statsTrackingSource = fs.readFileSync(
     "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\statsTracking.js",
     "utf8"
@@ -29451,6 +29997,8 @@ test("ui: renderer-shared state modules do not import the server-only boost even
   assert.equal(eventChestEntitlementsSource.includes("createHash"), false);
   assert.equal(eventChestDirectOpeningsSource.includes("node:crypto"), false);
   assert.equal(eventChestDirectOpeningsSource.includes("createHash"), false);
+  assert.equal(eventChestScreenSource.includes("node:"), false);
+  assert.equal(eventChestScreenSource.includes("fs/"), false);
   assert.equal(statsTrackingSource.includes("eventChestDirectOpeningSettlement"), false);
 });
 

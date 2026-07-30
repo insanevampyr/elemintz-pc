@@ -450,8 +450,33 @@
   gap: 10px;
 }
 
+.event-chest-modal__pool-item {
+  align-items: center;
+}
+
+.event-chest-modal__pool-image {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid rgba(214, 232, 245, 0.14);
+  background: rgba(5, 14, 27, 0.5);
+}
+
 .daily-element-chest-modal__pool-item span:first-child {
   min-width: 0;
+}
+
+.event-chest-modal__pool-item span:first-of-type {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.event-chest-modal__pool-item small {
+  color: rgba(214, 232, 245, 0.68);
+  font-size: 0.76rem;
 }
 
 .daily-element-chest-modal__pool-item--empty {
@@ -511,6 +536,24 @@
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.event-chest-modal__result-media {
+  display: grid;
+  place-items: center;
+  margin: 10px auto 0;
+  width: min(180px, 100%);
+  aspect-ratio: 1;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(214, 232, 245, 0.16);
+  background: rgba(5, 14, 27, 0.5);
+}
+
+.event-chest-modal__result-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .daily-element-chest-modal__rarity-badge {

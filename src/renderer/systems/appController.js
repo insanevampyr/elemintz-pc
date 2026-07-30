@@ -28,6 +28,7 @@ import {
 import {
   renderDailyElementChestModalBody
 } from "../ui/screens/dailyElementChestScreen.js";
+import { renderEventChestModalBody } from "../ui/screens/eventChestScreen.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../utils/assets.js";
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
@@ -363,6 +364,12 @@ export class AppController {
     this.eventChestOpeningEntitlementId = null;
     this.eventChestDirectOpenPromises = new Map();
     this.eventChestDirectRequestIds = new Map();
+    this.eventChestDirectToastKeys = new Set();
+    this.eventChestModalOpen = false;
+    this.eventChestModalKey = null;
+    this.eventChestPendingDirectOpenMethod = null;
+    this.eventChestLastResult = null;
+    this.eventChestUiError = "";
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
     this.dailyLoginAutoClaimSessionGateKey = null;
@@ -3380,6 +3387,7 @@ export class AppController {
         openProfile: async () => this.showProfile(),
         openAchievements: async () => this.showAchievements(),
         openDailyElementChest: async () => this.showDailyElementChestModal(),
+        openEventChestDetails: async () => this.showEventChestModal(),
         openEventChestEntitlement: async () => this.openEventChestEntitlement(),
         openEventChestPaid: async () => this.openEventChestDirect("paid"),
         openEventChestFree: async () => this.openEventChestDirect("free"),
@@ -3487,12 +3495,30 @@ export class AppController {
     const entitlementId = String(entitlement?.entitlementId ?? "").trim();
     const paid = directOpen?.methods?.paid ?? {};
     const free = directOpen?.methods?.free ?? {};
+    const chestId = String(directOpen?.chestId ?? entitlement?.chestId ?? "").trim();
+    const definitionRevisionId = String(
+      directOpen?.definitionRevisionId ?? entitlement?.definitionRevisionId ?? ""
+    ).trim();
     return {
       available: true,
+      chestId,
+      definitionRevisionId,
       title: entitlement?.title ?? directOpen?.title ?? "Event Chest",
       subtitle: entitlement?.subtitle ?? directOpen?.subtitle ?? "",
       description: entitlement?.description ?? directOpen?.description ?? "",
+      modalTitle: directOpen?.modalTitle ?? entitlement?.modalTitle ?? entitlement?.title ?? directOpen?.title ?? "Event Chest",
+      icons: directOpen?.icons ?? null,
       icon: entitlement?.icon ?? String(directOpen?.icons?.closed ?? "").trim(),
+      availability: directOpen?.availability ?? null,
+      openTypes: Array.isArray(directOpen?.openTypes) ? [...directOpen.openTypes] : [],
+      tokenBalance: directOpen?.tokenBalance,
+      odds: directOpen?.odds,
+      pity: directOpen?.pity,
+      rewardPool: directOpen?.rewardPool,
+      methods: {
+        paid,
+        free
+      },
       entitlement: entitlementId
         ? {
             ...entitlement,
@@ -3558,6 +3584,159 @@ export class AppController {
       title: "Event Chest Reward",
       body: "Reward received."
     };
+  }
+
+  buildEventChestDirectToastKey(result = {}) {
+    const openedAt = String(result?.openedAt ?? "").trim();
+    const requestId = String(result?.requestId ?? "").trim();
+    const method = String(result?.method ?? "").trim();
+    const chestId = String(result?.chestId ?? "").trim();
+    const definitionRevisionId = String(result?.definitionRevisionId ?? "").trim();
+    const reward = result?.reward ?? {};
+    const rewardType = String(reward?.type ?? "").trim();
+    const rewardId = String(
+      reward?.cosmetic?.cosmeticId ??
+        reward?.cosmeticId ??
+        reward?.tokenAmount ??
+        ""
+    ).trim();
+    return [chestId, definitionRevisionId, method, requestId, openedAt, rewardType, rewardId]
+      .filter(Boolean)
+      .join(":");
+  }
+
+  formatEventChestDirectToast(result = {}) {
+    const reward = result?.reward ?? {};
+    const rewardType = String(reward?.type ?? "").trim();
+    const tokensCharged = Math.max(0, Number(result?.tokensCharged ?? result?.costCharged ?? 0) || 0);
+    const tokenBalance = Number(result?.tokenBalance);
+    const pityGuarantee = String(result?.pityGuarantee ?? "").trim();
+    const details = [];
+    if (tokensCharged > 0) {
+      details.push(`${tokensCharged} Tokens spent`);
+    }
+    if (Number.isFinite(tokenBalance)) {
+      details.push(`${Math.max(0, tokenBalance)} Tokens remaining`);
+    }
+    if (pityGuarantee === "legendary") {
+      details.push("Legendary guarantee");
+    } else if (pityGuarantee === "epic_plus") {
+      details.push("Epic+ guarantee");
+    }
+
+    if (rewardType === "tokens" || reward?.duplicateConverted === true) {
+      const tokenAmount = Math.max(0, Number(reward?.tokenAmount ?? result?.duplicateTokensAwarded ?? 0) || 0);
+      return {
+        title: "Duplicate converted",
+        body: [`+${tokenAmount} Tokens`, ...details].join(" - ")
+      };
+    }
+
+    const cosmetic = reward?.cosmetic ?? null;
+    if (rewardType === "cosmetic" && cosmetic) {
+      const name = String(cosmetic?.name ?? cosmetic?.cosmeticId ?? "Cosmetic Reward").trim();
+      const rarity = String(reward?.rarity ?? cosmetic?.rarity ?? "").trim();
+      const rarityLabel = rarity
+        ? rarity.charAt(0).toUpperCase() + rarity.slice(1).toLowerCase()
+        : "";
+      return {
+        title: name || "Cosmetic Reward",
+        body: [rarityLabel ? `${rarityLabel} Unlocked` : "Unlocked", ...details].join(" - ")
+      };
+    }
+
+    return {
+      title: "Event Chest opened",
+      body: details.join(" - ") || "Reward received"
+    };
+  }
+
+  emitEventChestDirectOpenToast(result = {}) {
+    if (!result || result.replayed === true || result.alreadyOpened === true || !result.reward) {
+      return;
+    }
+    const key = this.buildEventChestDirectToastKey(result);
+    if (!key || this.eventChestDirectToastKeys.has(key)) {
+      return;
+    }
+    this.eventChestDirectToastKeys.add(key);
+    const toast = this.formatEventChestDirectToast(result);
+    this.toastManager?.enqueueToast?.({
+      className: "reward-toast event-chest-result-toast",
+      durationMs: 2600,
+      html: `
+        <div class="reward-toast-icon">\u2728</div>
+        <div>
+          <h4>${escapeHtml(toast.title)}</h4>
+          <p>${escapeHtml(toast.body)}</p>
+        </div>
+      `
+    });
+  }
+
+  buildEventChestModalKey(chest = null) {
+    const chestId = String(chest?.chestId ?? "").trim();
+    const definitionRevisionId = String(chest?.definitionRevisionId ?? "").trim();
+    return chestId && definitionRevisionId ? `${chestId}:${definitionRevisionId}` : null;
+  }
+
+  isEventChestModalOpen() {
+    return Boolean(globalThis.document?.querySelector?.("[data-event-chest-modal='true']"));
+  }
+
+  buildEventChestModalView() {
+    const chest = this.availableEventChestDirectOpen?.available
+      ? this.availableEventChestDirectOpen
+      : this.buildEventChestMenuView();
+    return {
+      chest,
+      openInFlight: this.eventChestDirectOpenPromises.size > 0,
+      pendingMethod: this.eventChestPendingDirectOpenMethod,
+      result: this.eventChestLastResult,
+      errorMessage: this.eventChestUiError
+    };
+  }
+
+  showEventChestModal() {
+    const view = this.buildEventChestModalView();
+    const chest = view.chest ?? null;
+    const modalKey = this.buildEventChestModalKey(chest);
+    if (!chest?.available || !modalKey) {
+      this.modalManager.show({
+        title: "Event Chest Unavailable",
+        body: "No active Event Chest is available right now.",
+        actions: [{ label: "Close", onClick: () => this.modalManager.hide() }]
+      });
+      return;
+    }
+    if (this.eventChestModalKey && this.eventChestModalKey !== modalKey) {
+      this.eventChestLastResult = null;
+      this.eventChestUiError = "";
+    }
+    this.eventChestModalOpen = true;
+    this.eventChestModalKey = modalKey;
+    this.modalManager.show({
+      title: chest.modalTitle ?? chest.title ?? "Event Chest",
+      bodyHtml: renderEventChestModalBody(view),
+      actions: [
+        {
+          label: "Close",
+          onClick: () => {
+            this.eventChestModalOpen = false;
+            this.eventChestModalKey = null;
+            this.modalManager.hide();
+          }
+        }
+      ],
+      modalClassName: "daily-element-chest-modal-shell event-chest-modal-shell"
+    });
+
+    globalThis.document
+      ?.getElementById?.("event-chest-free-open-btn")
+      ?.addEventListener("click", async () => this.openEventChestDirect("free"));
+    globalThis.document
+      ?.getElementById?.("event-chest-paid-open-btn")
+      ?.addEventListener("click", async () => this.openEventChestDirect("paid"));
   }
 
   async openEventChestEntitlement(entitlementId = null) {
@@ -3654,8 +3833,15 @@ export class AppController {
     if (!["paid", "free"].includes(safeMethod)) {
       return null;
     }
-    if (this.eventChestDirectOpenPromises.has(safeMethod)) {
-      return this.eventChestDirectOpenPromises.get(safeMethod);
+    if (this.eventChestDirectOpenPromises.size > 0) {
+      return this.eventChestDirectOpenPromises.get(safeMethod) ?? this.eventChestDirectOpenPromises.values().next().value;
+    }
+    const modalKey = this.eventChestModalKey;
+    const currentKey = this.buildEventChestModalKey(this.availableEventChestDirectOpen);
+    if (!modalKey || !currentKey || modalKey !== currentKey) {
+      this.eventChestUiError = "Refresh the Event Chest before opening.";
+      this.showEventChestModal();
+      return null;
     }
     const openEventChest = window.elemintz?.multiplayer?.openEventChest;
     if (typeof openEventChest !== "function") {
@@ -3669,31 +3855,35 @@ export class AppController {
       this.eventChestDirectRequestIds.set(safeMethod, requestId);
     }
     const promise = (async () => {
+      this.eventChestPendingDirectOpenMethod = safeMethod;
+      this.eventChestUiError = "";
       if (this.screenFlow === "menu") {
         this.renderMenuScreen();
+      }
+      if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
+        this.showEventChestModal();
       }
       try {
         const result = await openEventChest({ method: safeMethod, requestId });
         this.eventChestDirectRequestIds.delete(safeMethod);
-        if (result?.replayed) {
-          this.modalManager.show({
-            title: "Event Chest Already Opened",
-            body: "This opening was already completed.",
-            actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-          });
-        } else {
-          const reward = this.formatEventChestRewardSummary(result?.reward, result);
-          this.modalManager.show({
-            title: "Event Chest Opened",
-            bodyHtml: `
-              <div class="stack-sm" data-event-chest-open-result="true">
-                <p><strong>${escapeHtml(reward.title)}</strong></p>
-                <p>${escapeHtml(reward.body)}</p>
-              </div>
-            `,
-            actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-          });
+        if (
+          String(result?.chestId ?? "").trim() !== String(this.availableEventChestDirectOpen?.chestId ?? "").trim() ||
+          String(result?.definitionRevisionId ?? "").trim() !==
+            String(this.availableEventChestDirectOpen?.definitionRevisionId ?? "").trim()
+        ) {
+          this.eventChestUiError = "Event Chest revision changed. Refresh before opening again.";
+          this.eventChestLastResult = null;
+          if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
+            this.showEventChestModal();
+          }
+          return result;
         }
+        this.eventChestLastResult = result ?? null;
+        this.emitEventChestDirectOpenToast(result);
+        this.availableEventChestDirectOpen =
+          result?.directOpen && typeof result.directOpen === "object"
+            ? result.directOpen
+            : this.availableEventChestDirectOpen;
         await this.loadPreferredProfileForOnlineSession({
           username: this.username,
           onlineState: this.onlinePlayState,
@@ -3702,18 +3892,24 @@ export class AppController {
         await this.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({
           reason: `direct-${safeMethod}-open`
         });
+        if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
+          this.showEventChestModal();
+        }
         return result;
       } catch (error) {
-        this.modalManager.show({
-          title: "Event Chest Open Failed",
-          body: this.formatPlayerFacingMessage(error?.message, "Unable to open Event Chest."),
-          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
-        });
+        this.eventChestUiError = this.formatPlayerFacingMessage(error?.message, "Unable to open Event Chest.");
+        if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
+          this.showEventChestModal();
+        }
         throw error;
       } finally {
         this.eventChestDirectOpenPromises.delete(safeMethod);
+        this.eventChestPendingDirectOpenMethod = null;
         if (this.screenFlow === "menu") {
           this.renderMenuScreen();
+        }
+        if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
+          this.showEventChestModal();
         }
       }
     })();
@@ -4289,6 +4485,12 @@ export class AppController {
     this.eventChestOpenPromises.clear();
     this.eventChestDirectOpenPromises.clear();
     this.eventChestDirectRequestIds.clear();
+    this.eventChestDirectToastKeys.clear();
+    this.eventChestModalOpen = false;
+    this.eventChestModalKey = null;
+    this.eventChestPendingDirectOpenMethod = null;
+    this.eventChestLastResult = null;
+    this.eventChestUiError = "";
     this.menuBoostEvent = null;
     this.localPlayers = null;
     this.localProfiles = null;
@@ -4748,6 +4950,13 @@ export class AppController {
           result?.directOpen && typeof result.directOpen === "object"
             ? result.directOpen
             : null;
+        if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
+          const nextKey = this.buildEventChestModalKey(this.availableEventChestDirectOpen);
+          if (this.eventChestModalKey && nextKey && this.eventChestModalKey !== nextKey) {
+            this.eventChestUiError = "Event Chest revision changed. Reopen the chest before opening.";
+          }
+          this.showEventChestModal();
+        }
         const deliveryStatus = String(result?.deliveryStatus ?? "").trim();
         if (deliveryStatus && deliveryStatus !== "no_active_event_chest") {
           console.info("[EventChest][Renderer] entitlement sync completed", {
