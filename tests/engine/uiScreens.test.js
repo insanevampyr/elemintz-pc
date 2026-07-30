@@ -17031,13 +17031,15 @@ test("ui: menu renders available Event Chest entitlement without private fields"
     boostEvent: null,
     eventChest: {
       available: true,
-      entitlementId: "event_chest_entitlement_public_1",
-      chestId: "event_chest_public",
-      definitionRevisionId: "event_chest_public_rev_1",
       title: "Moonlit Event Chest",
       subtitle: "Open your limited reward.",
       icon: "icons/daily_chest.png",
-      status: "available"
+      entitlement: {
+        entitlementId: "event_chest_entitlement_public_1",
+        chestId: "event_chest_public",
+        definitionRevisionId: "event_chest_public_rev_1",
+        status: "available"
+      }
     },
     dailyChallenges: {
       dailyLogin: {
@@ -17088,14 +17090,16 @@ test("ui: menu keeps Daily Chest and Event Chest visibility independent", () => 
   };
   const eventAvailable = {
     available: true,
-    entitlementId: "event_chest_entitlement_visibility_1",
-    chestId: "event_chest_visibility",
-    definitionRevisionId: "event_chest_visibility_rev_1",
     title: "Visibility Event Chest",
     subtitle: "Open this event reward.",
     icon: "icons/daily_chest.png",
-    status: "available",
-    accountId: "private-account"
+    entitlement: {
+      entitlementId: "event_chest_entitlement_visibility_1",
+      chestId: "event_chest_visibility",
+      definitionRevisionId: "event_chest_visibility_rev_1",
+      status: "available",
+      accountId: "private-account"
+    }
   };
 
   const bothHtml = menuScreen.render({
@@ -17135,6 +17139,47 @@ test("ui: menu keeps Daily Chest and Event Chest visibility independent", () => 
   assert.doesNotMatch(neitherHtml, /data-menu-event-chest-panel="true"/);
   assert.doesNotMatch(neitherHtml, /id="open-daily-element-chest-btn"/);
   assert.doesNotMatch(neitherHtml, /id="open-event-chest-entitlement-btn"/);
+});
+
+test("ui: menu Event Chest direct controls show authoritative paid and free state safely", () => {
+  const html = menuScreen.render({
+    username: "DirectMenuUser",
+    backgroundImage: "assets/EleMintzIcon.png",
+    announcement: null,
+    boostEvent: null,
+    dailyElementChest: { isPoolComplete: true },
+    dailyChallenges: {
+      dailyLogin: { stateLabel: "Claimed", resetLabel: "01:00" },
+      daily: { resetLabel: "01:00", challenges: [] },
+      weekly: { resetLabel: "2d 03:00", challenges: [] }
+    },
+    eventChest: {
+      available: true,
+      title: "Direct Event Chest",
+      subtitle: "Open while available.",
+      paid: {
+        enabled: true,
+        available: false,
+        costTokens: 125,
+        tokenBalance: 50,
+        canAfford: false
+      },
+      free: {
+        enabled: true,
+        available: false,
+        claimed: true,
+        nextAvailableAt: "2026-07-30T23:00:00.000Z"
+      },
+      privateSettlement: "must-not-render"
+    },
+    actions: {}
+  });
+
+  assert.match(html, /id="open-event-chest-paid-btn"[\s\S]*disabled[\s\S]*Open for 125 Tokens/);
+  assert.match(html, /Not enough Tokens\./);
+  assert.match(html, /id="open-event-chest-free-btn"[\s\S]*disabled[\s\S]*Free Open Claimed/);
+  assert.match(html, /Free reset: 2026-07-30T23:00:00.000Z/);
+  assert.doesNotMatch(html, /privateSettlement|must-not-render|eventChestDirectOpenings|transactionId/);
 });
 
 test("ui: menu Event Chest open button binds to the provided action", async () => {
@@ -17188,6 +17233,60 @@ test("ui: menu Event Chest open button binds to the provided action", async () =
     await elements["open-event-chest-entitlement-btn"].listeners.get("click")();
 
     assert.equal(openCalls, 1);
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("ui: menu Event Chest paid and free buttons bind independently", async () => {
+  const previousDocument = global.document;
+  const elements = Object.fromEntries(
+    [
+      "start-pve-btn",
+      "start-local-btn",
+      "online-play-btn",
+      "profile-btn",
+      "achievements-btn",
+      "open-daily-challenges-btn",
+      "cosmetics-btn",
+      "store-btn",
+      "roadmap-btn",
+      "settings-btn",
+      "how-to-play-btn",
+      "feedback-btn",
+      "logout-btn",
+      "open-event-chest-paid-btn",
+      "open-event-chest-free-btn"
+    ].map((id) => [id, createFakeElement()])
+  );
+  global.document = {
+    getElementById: (id) => elements[id] ?? null
+  };
+  const calls = [];
+  try {
+    menuScreen.bind({
+      actions: {
+        startPveGame: () => {},
+        startLocalGame: () => {},
+        openOnlinePlay: async () => {},
+        openProfile: async () => {},
+        openAchievements: async () => {},
+        openDailyChallenges: async () => {},
+        openCosmetics: async () => {},
+        openStore: async () => {},
+        openRoadmap: () => {},
+        openSettings: async () => {},
+        openHowToPlay: async () => {},
+        openFeedback: () => {},
+        openEventChestPaid: async () => calls.push("paid"),
+        openEventChestFree: async () => calls.push("free"),
+        logout: () => {},
+        dismissAnnouncement: async () => {}
+      }
+    });
+    await elements["open-event-chest-paid-btn"].listeners.get("click")();
+    await elements["open-event-chest-free-btn"].listeners.get("click")();
+    assert.deepEqual(calls, ["paid", "free"]);
   } finally {
     global.document = previousDocument;
   }
@@ -17445,6 +17544,77 @@ test("ui: AppController Event Chest open failure clears lock and preserves retry
     assert.equal(controller.availableEventChestEntitlement, null);
     assert.match(modalCalls.at(-1)?.bodyHtml, /Safe Avatar/);
     assert.doesNotMatch(modalCalls.at(-1)?.bodyHtml, /private-account|accountId|profileKey|rewardSettlement/);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("ui: AppController direct Event Chest opening is per-method single-flight and replay-safe", async () => {
+  const previousWindow = globalThis.window;
+  const modalCalls = [];
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: {
+      show: (payload) => modalCalls.push(payload),
+      hide: () => {}
+    },
+    toastManager: { show: () => {} }
+  });
+  controller.username = "DirectEventUser";
+  controller.profile = { username: "DirectEventUser", tokens: 400 };
+  controller.screenFlow = "menu";
+  controller.onlinePlayState = {
+    connectionStatus: "connected",
+    session: { authenticated: true, username: "DirectEventUser" }
+  };
+  controller.availableEventChestDirectOpen = {
+    available: true,
+    title: "Direct Event Chest",
+    methods: {
+      paid: { enabled: true, available: true, costTokens: 100, canAfford: true },
+      free: { enabled: true, available: true, claimed: false }
+    }
+  };
+  controller.loadPreferredProfileForOnlineSession = async () => {
+    controller.profile = { username: "DirectEventUser", tokens: 300 };
+    return controller.profile;
+  };
+  controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh = async () => null;
+
+  let openCalls = 0;
+  let resolveOpen;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        openEventChest: ({ method, requestId }) => {
+          openCalls += 1;
+          assert.equal(method, "paid");
+          assert.match(requestId, /^event_chest_paid_/);
+          return new Promise((resolve) => {
+            resolveOpen = resolve;
+          });
+        }
+      }
+    }
+  };
+  try {
+    const first = controller.openEventChestDirect("paid");
+    const second = controller.openEventChestDirect("paid");
+    assert.equal(openCalls, 1);
+    resolveOpen({
+      status: "opened",
+      method: "paid",
+      costCharged: 100,
+      tokenBalance: 300,
+      replayed: true,
+      alreadyOpened: true,
+      reward: { type: "tokens", rarity: "common", tokenAmount: 25 }
+    });
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.equal(firstResult, secondResult);
+    assert.equal(controller.eventChestDirectOpenPromises.size, 0);
+    assert.equal(modalCalls.at(-1)?.title, "Event Chest Already Opened");
+    assert.equal("bodyHtml" in modalCalls.at(-1), false);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -29260,6 +29430,14 @@ test("ui: renderer-shared state modules do not import the server-only boost even
     "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\eventChestEntitlements.js",
     "utf8"
   );
+  const eventChestDirectOpeningsSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\eventChestDirectOpenings.js",
+    "utf8"
+  );
+  const statsTrackingSource = fs.readFileSync(
+    "C:\\Users\\mxz\\Desktop\\Projects\\Codex EleMintz PC\\src\\state\\statsTracking.js",
+    "utf8"
+  );
 
   assert.equal(stateCoordinatorSource.includes("../multiplayer/boostEventStore.js"), false);
   assert.equal(dailyChallengesSource.includes("../multiplayer/boostEventStore.js"), false);
@@ -29271,6 +29449,9 @@ test("ui: renderer-shared state modules do not import the server-only boost even
   assert.equal(sharedBoostRulesSource.includes("fs/promises"), false);
   assert.equal(eventChestEntitlementsSource.includes("node:crypto"), false);
   assert.equal(eventChestEntitlementsSource.includes("createHash"), false);
+  assert.equal(eventChestDirectOpeningsSource.includes("node:crypto"), false);
+  assert.equal(eventChestDirectOpeningsSource.includes("createHash"), false);
+  assert.equal(statsTrackingSource.includes("eventChestDirectOpeningSettlement"), false);
 });
 
 test("ui: appController refreshes the open profile screen when an admin reward notice arrives", async () => {

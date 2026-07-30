@@ -114,6 +114,8 @@ function buildElemintzBridge(ipcRendererRef, { appVersion = "unknown" } = {}) {
         ipcRendererRef.invoke("multiplayer:syncEventChestEntitlements", payload),
       openEventChestEntitlement: (entitlementId) =>
         ipcRendererRef.invoke("multiplayer:openEventChestEntitlement", { entitlementId }),
+      openEventChest: (payload) =>
+        ipcRendererRef.invoke("multiplayer:openEventChest", payload),
       startBloodMatch: (payload) => ipcRendererRef.invoke("multiplayer:startBloodMatch", payload),
       startLocalPveMatch: (payload) => ipcRendererRef.invoke("multiplayer:startLocalPveMatch", payload),
       startFeaturedRivalMatch: (payload) =>

@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { validateEventChestDefinition } from "./eventChestDefinitions.js";
+import {
+  normalizeEventChestOpeningRules,
+  validateEventChestDefinition
+} from "./eventChestDefinitions.js";
 import { normalizeEventChestActiveWindows } from "./eventChestSchedule.js";
 import { resolveDataDir } from "./paths.js";
 import { JsonStore } from "./storage/jsonStore.js";
@@ -15,6 +18,7 @@ export const EVENT_CHEST_DRAFT_EXPECTED_REVISION_REQUIRED =
 export const EVENT_CHEST_DRAFT_NOT_FOUND = "EVENT_CHEST_DRAFT_NOT_FOUND";
 export const EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH =
   "EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH";
+export const EVENT_CHEST_DRAFT_INVALID = "EVENT_CHEST_DRAFT_INVALID";
 export const EVENT_CHEST_DRAFT_STATUSES = Object.freeze([
   "draft",
   "validation_failed",
@@ -215,7 +219,7 @@ export function createEventChestDraftRecord(input = {}, options = {}) {
 
   const now = typeof options.now === "function" ? options.now() : options.now ?? new Date().toISOString();
   const metadata = normalizeEventChestDraftMetadata(input, { now });
-  const definition = clone(input.definition);
+  let definition = clone(input.definition);
   const normalizedSchedule = normalizeEventChestActiveWindows(definition?.activeWindows);
   if (normalizedSchedule.ok) {
     definition.activeWindows = normalizedSchedule.windows;
@@ -223,6 +227,9 @@ export function createEventChestDraftRecord(input = {}, options = {}) {
   const definitionValidation = validateEventChestDraftDefinitionForRecord(definition, {
     allowInvalidDefinition: Boolean(options.allowInvalidDefinition)
   });
+  if (definitionValidation.ok) {
+    definition = normalizeEventChestOpeningRules(definition);
+  }
 
   const chestId = metadata.chestId ?? (String(definition?.chestId ?? "").trim() || null);
   const validation = {
@@ -311,13 +318,13 @@ function buildNewDraftDefinition({ chestId, title = "Untitled Event Chest" } = {
       fallbackClosed: "icons/loot_chest.png",
       fallbackOpen: "icons/loot_chest_open.png"
     },
-    openTypes: ["free"],
+    openTypes: ["free", "paid"],
     freeOpenPolicy: {
       cadence: "daily",
       resetTimeZone: "America/Chicago",
       resetHour: 18
     },
-    paidTokenCost: 0,
+    paidTokenCost: 100,
     odds: {
       common: 0.7,
       rare: 0.22,
@@ -325,6 +332,8 @@ function buildNewDraftDefinition({ chestId, title = "Untitled Event Chest" } = {
       legendary: 0.01
     },
     pity: {
+      epicPlusEnabled: true,
+      legendaryEnabled: true,
       epicPlusThreshold: 10,
       legendaryThreshold: 30,
       epicPlusTable: [
@@ -492,6 +501,19 @@ export class EventChestDraftStore {
         },
         { now, allowInvalidDefinition: true }
       );
+      if (!candidate.validation.ok) {
+        throw Object.assign(
+          new Error(`Event Chest draft definition is invalid: ${candidate.validation.errors.join("; ")}`),
+          {
+            code: EVENT_CHEST_DRAFT_INVALID,
+            details: {
+              draftId,
+              currentDraftRevisionId: existing?.draftRevisionId ?? null,
+              validation: clone(candidate.validation)
+            }
+          }
+        );
+      }
       const record = {
         ...candidate,
         draftRevisionId: buildDraftRevisionId(now, this.randomUUID)

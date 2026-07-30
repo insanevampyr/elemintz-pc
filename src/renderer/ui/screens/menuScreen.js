@@ -354,27 +354,49 @@ function renderMenuEventChestCard(eventChest) {
   const subtitle = eventChest.subtitle || eventChest.description || "A limited Event Chest is ready.";
   const icon = eventChest.icon ? getAssetPath(eventChest.icon) : getAssetPath("icons/daily_chest.png");
   const opening = eventChest.opening === true;
+  const entitlement = eventChest.entitlement ?? null;
+  const paid = eventChest.paid ?? {};
+  const free = eventChest.free ?? {};
+  const statusLabel = opening ? "Opening..." : entitlement ? "Ready to Open" : "Available";
 
   return `
     <section class="menu-event-chest-card" data-menu-event-chest-panel="true">
-      <button
-        id="open-event-chest-entitlement-btn"
-        class="daily-element-chest-card menu-event-chest-card__button"
-        type="button"
-        data-event-chest-entitlement-id="${escapeHtml(eventChest.entitlementId)}"
-        ${opening ? "disabled aria-busy=\"true\"" : ""}
-      >
+      <div class="daily-element-chest-card menu-event-chest-card__button">
         <div class="daily-element-chest-card__art">
           <img class="daily-element-chest-card__image" src="${icon}" alt="" />
         </div>
         <div class="daily-element-chest-card__content">
           <p class="daily-element-chest-card__eyebrow">${escapeHtml(title)}</p>
-          <p class="daily-element-chest-card__status" data-event-chest-status="true">${
-            opening ? "Opening..." : "Ready to Open"
-          }</p>
+          <p class="daily-element-chest-card__status" data-event-chest-status="true">${statusLabel}</p>
           <p class="daily-element-chest-card__cost">${escapeHtml(subtitle)}</p>
+          <div class="inline-actions">
+            ${entitlement ? `
+              <button
+                id="open-event-chest-entitlement-btn"
+                type="button"
+                data-event-chest-entitlement-id="${escapeHtml(entitlement.entitlementId)}"
+                ${entitlement.opening ? "disabled aria-busy=\"true\"" : ""}
+              >${entitlement.opening ? "Opening..." : "Open Entitlement"}</button>
+            ` : ""}
+            ${free.enabled ? `
+              <button
+                id="open-event-chest-free-btn"
+                type="button"
+                ${!free.available || free.opening ? "disabled" : ""}
+              >${free.opening ? "Opening..." : free.available ? "Free Open" : free.claimed ? "Free Open Claimed" : "Free Open Unavailable"}</button>
+            ` : ""}
+            ${paid.enabled ? `
+              <button
+                id="open-event-chest-paid-btn"
+                type="button"
+                ${!paid.available || paid.opening ? "disabled" : ""}
+              >${paid.opening ? "Opening..." : `Open for ${Number(paid.costTokens ?? 0)} Tokens`}</button>
+            ` : ""}
+          </div>
+          ${free.enabled && !free.available && free.nextAvailableAt ? `<p class="daily-element-chest-card__cost">Free reset: ${escapeHtml(free.nextAvailableAt)}</p>` : ""}
+          ${paid.enabled && !paid.canAfford ? `<p class="daily-element-chest-card__cost">Not enough Tokens.</p>` : ""}
         </div>
-      </button>
+      </div>
     </section>
   `;
 }
@@ -461,6 +483,12 @@ export const menuScreen = {
     document
       .getElementById("open-event-chest-entitlement-btn")
       ?.addEventListener("click", context.actions.openEventChestEntitlement);
+    document
+      .getElementById("open-event-chest-free-btn")
+      ?.addEventListener("click", context.actions.openEventChestFree);
+    document
+      .getElementById("open-event-chest-paid-btn")
+      ?.addEventListener("click", context.actions.openEventChestPaid);
     const dismissAnnouncementButton = document.getElementById("dismiss-announcement-btn");
     if (dismissAnnouncementButton) {
       dismissAnnouncementButton.addEventListener("click", () =>

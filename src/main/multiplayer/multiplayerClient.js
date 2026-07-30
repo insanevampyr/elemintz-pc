@@ -830,6 +830,7 @@ export class MultiplayerClient {
     this.isOpeningDailyElementChest = false;
     this.eventChestEntitlementSyncPromise = null;
     this.eventChestOpenPromises = new Map();
+    this.eventChestDirectOpenPromises = new Map();
     this.logger.info?.("[Multiplayer][Electron] persistent client log ready", {
       logPath: this.logPath
     });
@@ -3005,6 +3006,36 @@ export class MultiplayerClient {
       return await openPromise;
     } finally {
       this.eventChestOpenPromises.delete(safeEntitlementId);
+    }
+  }
+
+  async openEventChest({ method, requestId, serverUrl } = {}) {
+    const safeMethod = typeof method === "string" ? method.trim() : "";
+    const safeRequestId = typeof requestId === "string" ? requestId.trim() : "";
+    if (!["paid", "free"].includes(safeMethod) || !/^[A-Za-z0-9_-]{8,128}$/.test(safeRequestId)) {
+      throw new Error("A valid Event Chest opening method and requestId are required.");
+    }
+    const key = `${safeMethod}:${safeRequestId}`;
+    const existing = this.eventChestDirectOpenPromises.get(key);
+    if (existing) {
+      return existing;
+    }
+    const openPromise = (async () => {
+      const response = await this.runServerRequest(
+        "profile:openEventChest",
+        { method: safeMethod, requestId: safeRequestId },
+        { serverUrl }
+      );
+      if (!response?.ok) {
+        throw new Error(response?.error?.message ?? "Unable to open Event Chest.");
+      }
+      return response.result ?? null;
+    })();
+    this.eventChestDirectOpenPromises.set(key, openPromise);
+    try {
+      return await openPromise;
+    } finally {
+      this.eventChestDirectOpenPromises.delete(key);
     }
   }
 

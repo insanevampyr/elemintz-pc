@@ -25,6 +25,8 @@ import {
 } from "../../src/state/dailyElementChestSystem.js";
 import {
   DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+  EVENT_CHEST_MAX_PAID_TOKEN_COST,
+  normalizeEventChestOpeningRules,
   validateEventChestDefinition
 } from "../../src/state/eventChestDefinitions.js";
 import { getDailyElementChestStatusFromEventProjection } from "../../src/state/eventChestDailyStatusAdapter.js";
@@ -1220,6 +1222,8 @@ test("event chest definitions: Daily EleMintz Chest default preset validates wit
   assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.paidTokenCost, DAILY_ELEMENT_CHEST_PAID_OPEN_COST);
   assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.odds, DAILY_ELEMENT_CHEST_ODDS);
   assert.deepEqual(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pity, {
+    epicPlusEnabled: true,
+    legendaryEnabled: true,
     epicPlusThreshold: 10,
     legendaryThreshold: 30,
     epicPlusTable: [
@@ -1235,6 +1239,80 @@ test("event chest definitions: Daily EleMintz Chest default preset validates wit
   assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.allowOpensAfterCompleteAsDuplicateConversion, true);
   assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.preserveHistoryOnReactivation, true);
   assert.equal(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.profileProgressField, "dailyElementChest");
+});
+
+test("event chest definitions: opening methods and paid cost are bounded", () => {
+  const entitlementOnly = {
+    ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+    openTypes: ["entitlement"],
+    freeOpenPolicy: null,
+    paidTokenCost: 0
+  };
+  assert.equal(validateEventChestDefinition(entitlementOnly).ok, true);
+  assert.equal(
+    validateEventChestDefinition({
+      ...entitlementOnly,
+      openTypes: ["paid"],
+      paidTokenCost: 125
+    }).ok,
+    true
+  );
+
+  for (const paidTokenCost of [0, -1, 1.5, EVENT_CHEST_MAX_PAID_TOKEN_COST + 1]) {
+    const result = validateEventChestDefinition({
+      ...entitlementOnly,
+      openTypes: ["paid"],
+      paidTokenCost
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((error) => error.includes("paidTokenCost")));
+  }
+
+  for (const openTypes of [[], ["paid", "paid"], ["unsupported"]]) {
+    assert.equal(
+      validateEventChestDefinition({
+        ...entitlementOnly,
+        openTypes,
+        paidTokenCost: openTypes.includes("paid") ? 100 : 0
+      }).ok,
+      false
+    );
+  }
+  assert.deepEqual(
+    normalizeEventChestOpeningRules({
+      ...entitlementOnly,
+      openTypes: ["paid", "entitlement", "free"]
+    }).openTypes,
+    ["entitlement", "free", "paid"]
+  );
+});
+
+test("event chest definitions: free opening policy is strict and timezone-aware", () => {
+  const base = {
+    ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+    openTypes: ["free"],
+    paidTokenCost: 0
+  };
+  assert.equal(validateEventChestDefinition(base).ok, true);
+  for (const freeOpenPolicy of [
+    null,
+    { cadence: "weekly", resetTimeZone: "America/Chicago", resetHour: 18 },
+    { cadence: "daily", resetTimeZone: "Not/A_Zone", resetHour: 18 },
+    { cadence: "daily", resetTimeZone: "America/Chicago", resetHour: 24 },
+    {
+      cadence: "daily",
+      resetTimeZone: "America/Chicago",
+      resetHour: 18,
+      claimsPerWindow: 2
+    }
+  ]) {
+    const result = validateEventChestDefinition({
+      ...base,
+      freeOpenPolicy
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((error) => error.includes("freeOpenPolicy")));
+  }
 });
 
 test("event chest definitions: validator rejects missing chestId", () => {

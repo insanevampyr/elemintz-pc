@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+  normalizeEventChestOpeningRules,
   validateEventChestDefinition
 } from "./eventChestDefinitions.js";
 import { normalizeEventChestActiveWindows } from "./eventChestSchedule.js";
@@ -60,7 +61,7 @@ function sanitizeRegistryDefinitionForPublish(
 ) {
   const publishedAt = normalizeTimestamp(now, "publishedAt");
   const safeActor = normalizeOptionalText(actor);
-  const safeDefinition = clone(definition);
+  const safeDefinition = normalizeEventChestOpeningRules(clone(definition));
   const schedule = normalizeEventChestActiveWindows(safeDefinition?.activeWindows);
   if (!schedule.ok) {
     throw new Error(`Event Chest schedule is invalid: ${schedule.errors.join("; ")}`);

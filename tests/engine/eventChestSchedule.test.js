@@ -23,7 +23,7 @@ const WINDOW_TWO = {
   endsAt: "2026-08-02T20:00:00.000Z"
 };
 
-function createDefinition(activeWindows = []) {
+function createDefinition(activeWindows = [], overrides = {}) {
   return structuredClone({
     ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
     chestId: "scheduled_event_chest",
@@ -33,7 +33,11 @@ function createDefinition(activeWindows = []) {
       defaultPreset: false
     },
     activeWindows,
-    definitionRevisionId: "definition_revision_schedule_1"
+    definitionRevisionId: "definition_revision_schedule_1",
+    openTypes: ["entitlement"],
+    freeOpenPolicy: null,
+    paidTokenCost: 0,
+    ...overrides
   });
 }
 
@@ -157,6 +161,10 @@ test("explicit activation and schedule jointly control new entitlement delivery"
   assert.equal(during.deliveryStatus, "delivered");
   assert.equal(during.entitlement.status, "available");
 
+  const entitlementEnabled = validateEventChestDefinition(definition);
+  assert.equal(entitlementEnabled.ok, true);
+  assert.deepEqual(definition.openTypes, ["entitlement"]);
+
   now = "2026-08-01T19:00:00.000Z";
   const after = await coordinator.syncEventChestEntitlementForProfile({
     username: "SchedulePlayer",
@@ -210,6 +218,29 @@ test("explicit activation and schedule jointly control new entitlement delivery"
   });
   assert.equal(inactive.active, false);
   assert.equal(inactive.deliveryStatus, "no_active_event_chest");
+
+  now = "2026-08-01T17:00:00.000Z";
+  activation = {
+    status: "active",
+    chestId: "scheduled_event_chest",
+    definitionRevisionId: "definition_revision_schedule_1"
+  };
+  definition = createDefinition([WINDOW_ONE], {
+    openTypes: ["paid"],
+    paidTokenCost: 100
+  });
+  await coordinator.profiles.ensureProfile("SchedulePaidOnlyPlayer");
+  await coordinator.profiles.updateProfile("SchedulePaidOnlyPlayer", (profile) => ({
+    ...profile,
+    linkedAccountId: "account_schedule_paid_only"
+  }));
+  const paidOnly = await coordinator.syncEventChestEntitlementForProfile({
+    username: "SchedulePaidOnlyPlayer",
+    accountId: "account_schedule_paid_only"
+  });
+  assert.equal(paidOnly.active, true);
+  assert.equal(paidOnly.deliveryStatus, "entitlement_method_disabled");
+  assert.equal(paidOnly.entitlement, null);
 });
 
 test("switching active revisions evaluates the selected revision schedule", async () => {

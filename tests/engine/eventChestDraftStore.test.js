@@ -223,7 +223,7 @@ test("event chest draft store: stale save rejects without mutation or revision g
   }
 });
 
-test("event chest draft store: reads do not rotate revision and invalid saves persist validation state", async () => {
+test("event chest draft store: reads do not rotate revision and invalid saves reject without mutation", async () => {
   const dataDir = await createTempDataDir();
   try {
     let generatedRevisionCount = 0;
@@ -237,18 +237,37 @@ test("event chest draft store: reads do not rotate revision and invalid saves pe
     await store.listDrafts();
     await store.listDraftSummaries();
     assert.equal(generatedRevisionCount, 1);
+    const beforeInvalidSave = await store.getDraft(saved.draftId);
 
-    const invalidSave = await store.saveDraft({
+    await assert.rejects(
+      store.saveDraft({
         ...buildDraft(),
         expectedDraftRevisionId: saved.draftRevisionId,
-        definition: buildDefinition({ chestId: "" })
-      });
-    assert.equal(generatedRevisionCount, 2);
-    assert.notEqual(invalidSave.draftRevisionId, saved.draftRevisionId);
-    assert.equal(invalidSave.validation.ok, false);
-    assert.equal(invalidSave.status, "validation_failed");
-    assert.match(invalidSave.validation.errors.join("\n"), /chestId is required/);
-    assert.equal((await store.getDraft(saved.draftId)).draftRevisionId, invalidSave.draftRevisionId);
+        definition: buildDefinition({
+          openTypes: ["paid"],
+          paidTokenCost: 0,
+          freeOpenPolicy: null
+        })
+      }),
+      (error) =>
+        error?.code === "EVENT_CHEST_DRAFT_INVALID" &&
+        error?.details?.currentDraftRevisionId === saved.draftRevisionId &&
+        error?.details?.validation?.errors?.some((entry) => entry.includes("paidTokenCost"))
+    );
+    assert.equal(generatedRevisionCount, 1);
+    assert.deepEqual(await store.getDraft(saved.draftId), beforeInvalidSave);
+
+    const paidOne = await store.saveDraft({
+      ...buildDraft(),
+      expectedDraftRevisionId: saved.draftRevisionId,
+      definition: buildDefinition({
+        openTypes: ["paid"],
+        paidTokenCost: 1,
+        freeOpenPolicy: null
+      })
+    });
+    assert.equal(paidOne.validation.ok, true);
+    assert.equal(paidOne.definition.paidTokenCost, 1);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
@@ -286,10 +305,68 @@ test("event chest draft store: create draft generates independent server identit
     assert.equal(first.definition.chestId, first.chestId);
     assert.equal(first.definition.lifecycle.status, "draft");
     assert.deepEqual(first.definition.activeWindows, []);
+    assert.deepEqual(first.definition.openTypes, ["free", "paid"]);
+    assert.equal(first.definition.paidTokenCost, 100);
+    assert.deepEqual(first.definition.freeOpenPolicy, {
+      cadence: "daily",
+      resetTimeZone: "America/Chicago",
+      resetHour: 18
+    });
     assert.equal(first.validation.ok, false);
     assert.equal(first.status, "validation_failed");
     assert.match(first.validation.errors.join("\n"), /pool must contain at least one cosmetic/);
     assert.equal((await store.listDrafts()).length, 2);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest draft store: existing invalid draft remains readable and repairable", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const store = new EventChestDraftStore({
+      dataDir,
+      now: () => "2026-07-27T13:00:00.000Z",
+      randomUUID: createRevisionSequence()
+    });
+    const serverDataDir = path.join(dataDir, "server-data");
+    await fs.mkdir(serverDataDir, { recursive: true });
+    await fs.writeFile(
+      path.join(serverDataDir, EVENT_CHEST_DRAFT_STORE_FILENAME),
+      JSON.stringify({
+        schemaVersion: 1,
+        drafts: [
+          buildDraft({
+            draftId: "invalid_paid_draft",
+            draftRevisionId: "draft_revision_invalid_paid",
+            status: "validation_failed",
+            definition: buildDefinition({
+              openTypes: ["paid"],
+              paidTokenCost: 0,
+              freeOpenPolicy: null
+            })
+          })
+        ]
+      }),
+      "utf8"
+    );
+
+    const invalid = await store.getDraft("invalid_paid_draft");
+    assert.equal(invalid.validation.ok, false);
+    assert.equal(invalid.status, "validation_failed");
+    assert.match(invalid.validation.errors.join("\n"), /paidTokenCost/);
+
+    const repaired = await store.saveDraft({
+      ...invalid,
+      expectedDraftRevisionId: invalid.draftRevisionId,
+      definition: {
+        ...invalid.definition,
+        paidTokenCost: 100
+      }
+    });
+    assert.equal(repaired.validation.ok, true);
+    assert.equal(repaired.status, "ready");
+    assert.equal(repaired.definition.paidTokenCost, 100);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
@@ -307,7 +384,12 @@ test("event chest draft store: duplicate draft requires exact revision and prese
       definition: buildDefinition({
         title: "Source Chest",
         modalTitle: "Source Modal",
-        activeWindows: [{ startsAt: "2026-08-01T00:00:00.000Z" }],
+        activeWindows: [
+          {
+            startsAt: "2026-08-01T00:00:00.000Z",
+            endsAt: "2026-08-02T00:00:00.000Z"
+          }
+        ],
         definitionHistory: [{ action: "published" }]
       })
     }));

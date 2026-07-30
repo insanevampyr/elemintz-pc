@@ -16,7 +16,10 @@ import { normalizeEventChestActiveWindows } from "./eventChestSchedule.js";
 
 export const EVENT_CHEST_SCHEMA_VERSION = 1;
 export const EVENT_CHEST_TYPES = Object.freeze(["daily_event_chest"]);
-export const EVENT_CHEST_OPEN_TYPES = Object.freeze(["free", "paid"]);
+export const EVENT_CHEST_OPEN_TYPES = Object.freeze(["entitlement", "free", "paid"]);
+export const EVENT_CHEST_MAX_PAID_TOKEN_COST = 1_000_000;
+export const EVENT_CHEST_MAX_DUPLICATE_TOKEN_REWARD = 1_000_000;
+export const EVENT_CHEST_MAX_PITY_THRESHOLD = 10_000;
 export const EVENT_CHEST_RARITIES = Object.freeze(["common", "rare", "epic", "legendary"]);
 export const EVENT_CHEST_LIFECYCLE_STATUSES = Object.freeze(["draft", "active", "inactive", "archived"]);
 export const EVENT_CHEST_COSMETIC_TYPES = Object.freeze([
@@ -101,6 +104,8 @@ export const DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET = Object.freeze({
   paidTokenCost: DAILY_ELEMENT_CHEST_PAID_OPEN_COST,
   odds: Object.freeze({ ...DAILY_ELEMENT_CHEST_ODDS }),
   pity: Object.freeze({
+    epicPlusEnabled: true,
+    legendaryEnabled: true,
     epicPlusThreshold: DAILY_ELEMENT_CHEST_EPIC_PLUS_PITY_THRESHOLD,
     legendaryThreshold: DAILY_ELEMENT_CHEST_LEGENDARY_PITY_THRESHOLD,
     epicPlusTable: Object.freeze([
@@ -135,6 +140,28 @@ function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
+function isSupportedTimeZone(value) {
+  if (!hasText(value)) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeEventChestOpeningRules(definition) {
+  const safeDefinition = structuredClone(definition ?? {});
+  const openTypeSet = new Set(
+    (Array.isArray(safeDefinition.openTypes) ? safeDefinition.openTypes : [])
+      .map((entry) => String(entry ?? "").trim())
+  );
+  safeDefinition.openTypes = EVENT_CHEST_OPEN_TYPES.filter((entry) => openTypeSet.has(entry));
+  return safeDefinition;
+}
+
 function validateOdds(odds, errors) {
   if (!isObject(odds)) {
     errors.push("odds must be an object.");
@@ -142,10 +169,15 @@ function validateOdds(odds, errors) {
   }
 
   let total = 0;
+  for (const key of Object.keys(odds)) {
+    if (!EVENT_CHEST_RARITIES.includes(key)) {
+      errors.push(`odds.${key} is unsupported.`);
+    }
+  }
   for (const rarity of EVENT_CHEST_RARITIES) {
     const value = odds[rarity];
-    if (!isNonNegativeNumber(value)) {
-      errors.push(`odds.${rarity} must be a non-negative number.`);
+    if (!isNonNegativeNumber(value) || value > 1) {
+      errors.push(`odds.${rarity} must be a number from 0 to 1.`);
       continue;
     }
     total += value;
@@ -163,6 +195,7 @@ function validateWeightedRarityTable(table, fieldName, errors) {
   }
 
   let total = 0;
+  const seenRarities = new Set();
   for (const [index, entry] of table.entries()) {
     if (!isObject(entry)) {
       errors.push(`${fieldName}[${index}] must be an object.`);
@@ -170,9 +203,15 @@ function validateWeightedRarityTable(table, fieldName, errors) {
     }
     if (!EVENT_CHEST_RARITIES.includes(entry.rarity)) {
       errors.push(`${fieldName}[${index}].rarity is unsupported.`);
+    } else if (!["epic", "legendary"].includes(entry.rarity)) {
+      errors.push(`${fieldName}[${index}].rarity must be epic or legendary.`);
     }
-    if (!isNonNegativeNumber(entry.weight)) {
-      errors.push(`${fieldName}[${index}].weight must be a non-negative number.`);
+    if (seenRarities.has(entry.rarity)) {
+      errors.push(`${fieldName} contains duplicate rarity '${entry.rarity}'.`);
+    }
+    seenRarities.add(entry.rarity);
+    if (!isNonNegativeNumber(entry.weight) || entry.weight > 1) {
+      errors.push(`${fieldName}[${index}].weight must be a number from 0 to 1.`);
       continue;
     }
     total += entry.weight;
@@ -189,13 +228,45 @@ function validatePity(pity, errors) {
     return;
   }
 
-  if (!isNonNegativeInteger(pity.epicPlusThreshold) || pity.epicPlusThreshold <= 0) {
-    errors.push("pity.epicPlusThreshold must be a positive integer.");
+  const supportedFields = new Set([
+    "epicPlusEnabled",
+    "legendaryEnabled",
+    "epicPlusThreshold",
+    "legendaryThreshold",
+    "epicPlusTable"
+  ]);
+  for (const key of Object.keys(pity)) {
+    if (!supportedFields.has(key)) {
+      errors.push(`pity.${key} is unsupported.`);
+    }
   }
-  if (!isNonNegativeInteger(pity.legendaryThreshold) || pity.legendaryThreshold <= 0) {
-    errors.push("pity.legendaryThreshold must be a positive integer.");
+  const epicPlusEnabled = pity.epicPlusEnabled !== false;
+  const legendaryEnabled = pity.legendaryEnabled !== false;
+  if (pity.epicPlusEnabled !== undefined && typeof pity.epicPlusEnabled !== "boolean") {
+    errors.push("pity.epicPlusEnabled must be a boolean.");
+  }
+  if (pity.legendaryEnabled !== undefined && typeof pity.legendaryEnabled !== "boolean") {
+    errors.push("pity.legendaryEnabled must be a boolean.");
   }
   if (
+    epicPlusEnabled &&
+    (!isNonNegativeInteger(pity.epicPlusThreshold) ||
+      pity.epicPlusThreshold <= 0 ||
+      pity.epicPlusThreshold > EVENT_CHEST_MAX_PITY_THRESHOLD)
+  ) {
+    errors.push(`pity.epicPlusThreshold must be a positive integer no greater than ${EVENT_CHEST_MAX_PITY_THRESHOLD}.`);
+  }
+  if (
+    legendaryEnabled &&
+    (!isNonNegativeInteger(pity.legendaryThreshold) ||
+      pity.legendaryThreshold <= 0 ||
+      pity.legendaryThreshold > EVENT_CHEST_MAX_PITY_THRESHOLD)
+  ) {
+    errors.push(`pity.legendaryThreshold must be a positive integer no greater than ${EVENT_CHEST_MAX_PITY_THRESHOLD}.`);
+  }
+  if (
+    epicPlusEnabled &&
+    legendaryEnabled &&
     isNonNegativeInteger(pity.epicPlusThreshold) &&
     isNonNegativeInteger(pity.legendaryThreshold) &&
     pity.legendaryThreshold < pity.epicPlusThreshold
@@ -203,7 +274,9 @@ function validatePity(pity, errors) {
     errors.push("pity.legendaryThreshold must be greater than or equal to pity.epicPlusThreshold.");
   }
 
-  validateWeightedRarityTable(pity.epicPlusTable, "pity.epicPlusTable", errors);
+  if (epicPlusEnabled) {
+    validateWeightedRarityTable(pity.epicPlusTable, "pity.epicPlusTable", errors);
+  }
 }
 
 function validatePool(pool, errors) {
@@ -361,10 +434,15 @@ export function validateEventChestDefinition(definition) {
   if (!Array.isArray(definition.openTypes) || definition.openTypes.length === 0) {
     errors.push("openTypes must be a non-empty array.");
   } else {
+    const seenOpenTypes = new Set();
     for (const openType of definition.openTypes) {
       if (!EVENT_CHEST_OPEN_TYPES.includes(openType)) {
         errors.push(`openType '${String(openType)}' is unsupported.`);
       }
+      if (seenOpenTypes.has(openType)) {
+        errors.push(`openTypes contains duplicate value '${String(openType)}'.`);
+      }
+      seenOpenTypes.add(openType);
     }
   }
 
@@ -376,17 +454,27 @@ export function validateEventChestDefinition(definition) {
       if (policy.cadence !== "daily") {
         errors.push("freeOpenPolicy.cadence must be 'daily'.");
       }
-      if (!hasText(policy.resetTimeZone)) {
-        errors.push("freeOpenPolicy.resetTimeZone is required.");
+      if (!isSupportedTimeZone(policy.resetTimeZone)) {
+        errors.push("freeOpenPolicy.resetTimeZone must be a valid IANA timezone.");
       }
       if (!Number.isInteger(policy.resetHour) || policy.resetHour < 0 || policy.resetHour > 23) {
         errors.push("freeOpenPolicy.resetHour must be an integer from 0 to 23.");
       }
+      const unsupportedFields = Object.keys(policy).filter(
+        (field) => !["cadence", "resetTimeZone", "resetHour"].includes(field)
+      );
+      if (unsupportedFields.length > 0) {
+        errors.push(`freeOpenPolicy contains unsupported field '${unsupportedFields[0]}'.`);
+      }
     }
   }
 
-  if (definition.openTypes?.includes("paid") && !isNonNegativeInteger(definition.paidTokenCost)) {
-    errors.push("paidTokenCost must be a non-negative integer when paid opens are allowed.");
+  if (definition.openTypes?.includes("paid")) {
+    if (!Number.isInteger(definition.paidTokenCost) || definition.paidTokenCost <= 0) {
+      errors.push("paidTokenCost must be a positive integer when paid opens are allowed.");
+    } else if (definition.paidTokenCost > EVENT_CHEST_MAX_PAID_TOKEN_COST) {
+      errors.push(`paidTokenCost cannot exceed ${EVENT_CHEST_MAX_PAID_TOKEN_COST}.`);
+    }
   }
 
   validateOdds(definition.odds, errors);
@@ -395,14 +483,52 @@ export function validateEventChestDefinition(definition) {
   if (!isObject(definition.duplicateTokenRewards)) {
     errors.push("duplicateTokenRewards must be an object.");
   } else {
+    for (const key of Object.keys(definition.duplicateTokenRewards)) {
+      if (!EVENT_CHEST_RARITIES.includes(key)) {
+        errors.push(`duplicateTokenRewards.${key} is unsupported.`);
+      }
+    }
     for (const rarity of EVENT_CHEST_RARITIES) {
-      if (!isNonNegativeInteger(definition.duplicateTokenRewards[rarity])) {
-        errors.push(`duplicateTokenRewards.${rarity} must be a non-negative integer.`);
+      const value = definition.duplicateTokenRewards[rarity];
+      if (!isNonNegativeInteger(value) || value > EVENT_CHEST_MAX_DUPLICATE_TOKEN_REWARD) {
+        errors.push(
+          `duplicateTokenRewards.${rarity} must be a non-negative integer no greater than ${EVENT_CHEST_MAX_DUPLICATE_TOKEN_REWARD}.`
+        );
       }
     }
   }
 
   validatePool(definition.pool, errors);
+
+  if (isObject(definition.odds) && isObject(definition.pool)) {
+    for (const rarity of EVENT_CHEST_RARITIES) {
+      if (Number(definition.odds[rarity]) > 0 && !Array.isArray(definition.pool[rarity])) {
+        errors.push(`pool.${rarity} must be an array because ${rarity} odds are greater than 0.`);
+      } else if (Number(definition.odds[rarity]) > 0 && definition.pool[rarity].length === 0) {
+        errors.push(`${rarity} rewards are required because ${rarity} odds are greater than 0.`);
+      }
+    }
+    if (
+      definition.pity?.legendaryEnabled !== false &&
+      Array.isArray(definition.pool.legendary) &&
+      definition.pool.legendary.length === 0
+    ) {
+      errors.push("legendary rewards are required while Legendary pity is enabled.");
+    }
+    if (definition.pity?.epicPlusEnabled !== false) {
+      for (const entry of Array.isArray(definition.pity?.epicPlusTable)
+        ? definition.pity.epicPlusTable
+        : []) {
+        if (
+          Number(entry?.weight) > 0 &&
+          Array.isArray(definition.pool[entry.rarity]) &&
+          definition.pool[entry.rarity].length === 0
+        ) {
+          errors.push(`${entry.rarity} rewards are required by the Epic+ pity table.`);
+        }
+      }
+    }
+  }
 
   for (const flag of [
     "preferUnownedWithinRolledRarity",

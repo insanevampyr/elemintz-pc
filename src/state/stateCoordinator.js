@@ -82,12 +82,20 @@ import { evaluateEventChestSchedule } from "./eventChestSchedule.js";
 import { buildEventChestEntitlementId } from "./eventChestEntitlementIds.js";
 import {
   applyEventChestReward,
+  buildSafeEventChestRewardResponse,
   buildEventChestOpenResponse,
   buildEventChestOpenTransactionId,
   createEventChestRewardSettlement,
   normalizeEventChestRewardSettlement,
   selectEventChestReward
 } from "./eventChestOpening.js";
+import {
+  getEventChestFreeResetWindow,
+  normalizeEventChestDirectOpenings,
+  normalizeEventChestDirectRequestId
+} from "./eventChestDirectOpenings.js";
+import { createEventChestDirectOpeningSettlement } from "./eventChestDirectOpeningSettlement.js";
+import { applyEventChestPityState } from "./eventChestPity.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import {
   EventChestDraftStore,
@@ -1799,6 +1807,62 @@ export class StateCoordinator {
     };
   }
 
+  buildEventChestDirectOpenStatus(definition, profile, { schedule = null, nowMs = Date.now() } = {}) {
+    if (!definition) {
+      return {
+        available: false,
+        reason: "no_active_event_chest",
+        methods: {}
+      };
+    }
+    const openTypes = Array.isArray(definition.openTypes) ? definition.openTypes : [];
+    const directOpenings = normalizeEventChestDirectOpenings(profile?.eventChestDirectOpenings);
+    const freeWindow = openTypes.includes("free")
+      ? getEventChestFreeResetWindow(definition.freeOpenPolicy, nowMs)
+      : null;
+    const freeConsumed = Boolean(
+      freeWindow &&
+      directOpenings.settlements.some(
+        (entry) =>
+          entry.method === "free" &&
+          entry.chestId === definition.chestId &&
+          entry.definitionRevisionId === definition.definitionRevisionId &&
+          entry.freeWindowKey === freeWindow.key
+      )
+    );
+    const tokenBalance = Math.max(0, Math.floor(Number(profile?.tokens ?? 0) || 0));
+    const paidCost = openTypes.includes("paid") ? Number(definition.paidTokenCost) : null;
+    const scheduleAvailable = schedule?.isWithinSchedule !== false;
+    return {
+      available: scheduleAvailable && (openTypes.includes("free") || openTypes.includes("paid")),
+      reason: scheduleAvailable ? null : `schedule_${schedule?.state ?? "unavailable"}`,
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      ...this.buildEventChestPlayerMetadata(definition),
+      methods: {
+        paid: {
+          enabled: openTypes.includes("paid"),
+          available:
+            scheduleAvailable &&
+            openTypes.includes("paid") &&
+            Number.isInteger(paidCost) &&
+            paidCost > 0 &&
+            tokenBalance >= paidCost,
+          costTokens: Number.isInteger(paidCost) && paidCost > 0 ? paidCost : null,
+          tokenBalance,
+          canAfford: Number.isInteger(paidCost) && paidCost > 0 && tokenBalance >= paidCost
+        },
+        free: {
+          enabled: openTypes.includes("free"),
+          available: scheduleAvailable && openTypes.includes("free") && Boolean(freeWindow) && !freeConsumed,
+          claimed: freeConsumed,
+          nextAvailableAt: freeConsumed ? freeWindow?.endsAt ?? null : null,
+          resetWindowKey: freeWindow?.key ?? null
+        }
+      }
+    };
+  }
+
   async getPublishedEventChestDefinitionForActivation({ chestId, definitionRevisionId }) {
     const safeChestId = String(chestId ?? "").trim();
     const safeDefinitionRevisionId = String(definitionRevisionId ?? "").trim();
@@ -1916,6 +1980,11 @@ export class StateCoordinator {
             chestId: existing.definition.chestId,
             definitionRevisionId: existing.definition.definitionRevisionId,
             ...this.buildEventChestPlayerMetadata(existing.definition)
+          },
+          directOpen: {
+            available: false,
+            reason: active.deliveryStatus,
+            methods: {}
           }
         };
       }
@@ -1925,11 +1994,53 @@ export class StateCoordinator {
         idempotent: true,
         alreadyEntitled: false,
         entitlement: null,
-        activeChest: null
+        activeChest: null,
+        directOpen: {
+          available: false,
+          reason: active.deliveryStatus,
+          methods: {}
+        }
       };
     }
 
     const { definition } = active;
+    if (!Array.isArray(definition.openTypes) || !definition.openTypes.includes("entitlement")) {
+      const profile = await this.profiles.getProfile(safeProfileKey);
+      if (String(profile?.linkedAccountId ?? "").trim() !== safeAccountId) {
+        throw Object.assign(new Error("Event Chest entitlement delivery requires the authenticated claimed profile."), {
+          code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE"
+        });
+      }
+      const existing = await this.getExistingAvailableEventChestEntitlementForProfile({
+        profileKey: safeProfileKey,
+        accountId: safeAccountId
+      });
+      return {
+        active: true,
+        deliveryStatus: "entitlement_method_disabled",
+        idempotent: true,
+        alreadyEntitled: Boolean(existing),
+        entitlement: existing
+          ? sanitizeEventChestEntitlementForPlayer(existing.entitlement)
+          : null,
+        entitlementChest: existing
+          ? {
+              chestId: existing.definition.chestId,
+              definitionRevisionId: existing.definition.definitionRevisionId,
+              ...this.buildEventChestPlayerMetadata(existing.definition)
+            }
+          : null,
+        activeChest: {
+          chestId: definition.chestId,
+          definitionRevisionId: definition.definitionRevisionId,
+          ...this.buildEventChestPlayerMetadata(definition)
+        },
+        directOpen: this.buildEventChestDirectOpenStatus(definition, profile, {
+          schedule: active.schedule,
+          nowMs: this.eventChestActivationStore.now()
+        })
+      };
+    }
     const entitlementId = buildEventChestEntitlementId({
       accountId: safeAccountId,
       profileKey: safeProfileKey,
@@ -2011,7 +2122,206 @@ export class StateCoordinator {
         chestId: definition.chestId,
         definitionRevisionId: definition.definitionRevisionId,
         ...this.buildEventChestPlayerMetadata(definition)
+      },
+      directOpen: this.buildEventChestDirectOpenStatus(definition, update.profile, {
+        schedule: active.schedule,
+        nowMs: this.eventChestActivationStore.now()
+      })
+    };
+  }
+
+  async openEventChestDirect({
+    username,
+    accountId,
+    profileKey = username,
+    method,
+    requestId,
+    random = this.random,
+    nowMs = this.eventChestActivationStore.now()
+  } = {}) {
+    const safeUsername = String(username ?? "").trim();
+    const safeAccountId = String(accountId ?? "").trim();
+    const safeProfileKey = String(profileKey ?? safeUsername).trim();
+    const safeMethod = String(method ?? "").trim();
+    const safeRequestId = normalizeEventChestDirectRequestId(requestId);
+    if (!safeUsername || !safeAccountId || !safeProfileKey) {
+      throw Object.assign(new Error("An authenticated claimed profile is required for Event Chest opening."), {
+        code: "EVENT_CHEST_OPEN_INELIGIBLE"
+      });
+    }
+    if (!["paid", "free"].includes(safeMethod) || !safeRequestId) {
+      throw Object.assign(new Error("A valid opening method and requestId are required."), {
+        code: "EVENT_CHEST_DIRECT_OPEN_INVALID_REQUEST"
+      });
+    }
+
+    let response = null;
+    const update = await this.profiles.updateProfileIfChangedAsync(safeProfileKey, async (current) => {
+      if (String(current?.linkedAccountId ?? "").trim() !== safeAccountId) {
+        throw Object.assign(new Error("Event Chest opening requires the authenticated claimed profile."), {
+          code: "EVENT_CHEST_OPEN_INELIGIBLE"
+        });
       }
+      const directOpenings = normalizeEventChestDirectOpenings(current?.eventChestDirectOpenings);
+      if (directOpenings.invalidRequestIds.includes(safeRequestId)) {
+        throw Object.assign(new Error("Event Chest opening settlement is invalid."), {
+          code: "EVENT_CHEST_DIRECT_OPEN_SETTLEMENT_INVALID"
+        });
+      }
+      const existing = directOpenings.settlements.find((entry) => entry.requestId === safeRequestId);
+      if (existing) {
+        if (existing.method !== safeMethod) {
+          throw Object.assign(new Error("Event Chest opening request does not match its settlement."), {
+            code: "EVENT_CHEST_DIRECT_OPEN_INVALID_REQUEST"
+          });
+        }
+        const definition = await this.getPublishedEventChestDefinitionForActivation({
+          chestId: existing.chestId,
+          definitionRevisionId: existing.definitionRevisionId
+        });
+        response = {
+          status: "opened",
+          method: existing.method,
+          requestId: existing.requestId,
+          chestId: existing.chestId,
+          definitionRevisionId: existing.definitionRevisionId,
+          openedAt: existing.settledAt,
+          costCharged: existing.costCharged,
+          duplicateTokensAwarded: existing.reward.duplicateConverted
+            ? existing.reward.tokenAmount
+            : 0,
+          tokenBalance:
+            existing.tokenBalance ??
+            Math.max(0, Math.floor(Number(current?.tokens ?? 0) || 0)),
+          pityGuarantee: existing.pity?.appliedTarget ?? null,
+          replayed: true,
+          alreadyOpened: true,
+          reward: buildSafeEventChestRewardResponse(existing.reward),
+          chest: this.buildEventChestPlayerMetadata(definition)
+        };
+        return {
+          ...current,
+          eventChestDirectOpenings: directOpenings
+        };
+      }
+
+      const active = await this.getActiveEventChestDefinitionForEntitlementDelivery({ nowMs });
+      if (!active.active || !active.definition) {
+        throw Object.assign(new Error("Event Chest direct opening is unavailable."), {
+          code: "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+        });
+      }
+      const definition = active.definition;
+      if (!Array.isArray(definition.openTypes) || !definition.openTypes.includes(safeMethod)) {
+        throw Object.assign(new Error("This Event Chest opening method is not enabled."), {
+          code: "EVENT_CHEST_DIRECT_OPEN_METHOD_DISABLED"
+        });
+      }
+
+      let costCharged = 0;
+      let freeWindowKey = null;
+      if (safeMethod === "paid") {
+        costCharged = Number(definition.paidTokenCost);
+        if (!Number.isInteger(costCharged) || costCharged <= 0) {
+          throw Object.assign(new Error("Event Chest token cost is invalid."), {
+            code: "EVENT_CHEST_DIRECT_OPEN_POLICY_INVALID"
+          });
+        }
+        if (Math.max(0, Math.floor(Number(current?.tokens ?? 0) || 0)) < costCharged) {
+          throw Object.assign(new Error("Not enough Tokens for this Event Chest opening."), {
+            code: "EVENT_CHEST_DIRECT_OPEN_INSUFFICIENT_TOKENS"
+          });
+        }
+      } else {
+        const freeWindow = getEventChestFreeResetWindow(definition.freeOpenPolicy, nowMs);
+        if (!freeWindow) {
+          throw Object.assign(new Error("Event Chest free-opening policy is invalid."), {
+            code: "EVENT_CHEST_DIRECT_OPEN_POLICY_INVALID"
+          });
+        }
+        freeWindowKey = freeWindow.key;
+        const alreadyConsumed = directOpenings.settlements.some(
+          (entry) =>
+            entry.method === "free" &&
+            entry.chestId === definition.chestId &&
+            entry.definitionRevisionId === definition.definitionRevisionId &&
+            entry.freeWindowKey === freeWindowKey
+        );
+        if (alreadyConsumed) {
+          throw Object.assign(new Error("The free Event Chest opening has already been claimed for this reset window."), {
+            code: "EVENT_CHEST_DIRECT_OPEN_FREE_ALREADY_CLAIMED"
+          });
+        }
+      }
+
+      const selectedReward = selectEventChestReward({
+        definition,
+        profile: current,
+        random,
+        now: new Date(nowMs).toISOString()
+      });
+      const rewardBaseProfile =
+        safeMethod === "paid"
+          ? { ...current, tokens: Math.max(0, Number(current.tokens ?? 0) - costCharged) }
+          : current;
+      const rewardResult = applyEventChestReward({
+        profile: rewardBaseProfile,
+        definition,
+        selectedReward
+      });
+      const rewardedProfile = {
+        ...rewardResult.profile,
+        eventChestPity: applyEventChestPityState(
+          current.eventChestPity,
+          definition.chestId,
+          selectedReward.pity.after
+        )
+      };
+      const settledAt = new Date(nowMs).toISOString();
+      const settlement = createEventChestDirectOpeningSettlement({
+        requestId: safeRequestId,
+        chestId: definition.chestId,
+        definitionRevisionId: definition.definitionRevisionId,
+        method: safeMethod,
+        settledAt,
+        costCharged,
+        tokenBalance: Math.max(0, Math.floor(Number(rewardedProfile.tokens ?? 0) || 0)),
+        pity: selectedReward.pity,
+        freeWindowKey,
+        reward: rewardResult.reward
+      });
+      const nextDirectOpenings = normalizeEventChestDirectOpenings({
+        schemaVersion: directOpenings.schemaVersion,
+        settlements: [...directOpenings.settlements, settlement],
+        invalidRequestIds: directOpenings.invalidRequestIds
+      });
+      response = {
+        status: "opened",
+        method: safeMethod,
+        requestId: safeRequestId,
+        chestId: definition.chestId,
+        definitionRevisionId: definition.definitionRevisionId,
+        openedAt: settledAt,
+        costCharged,
+        duplicateTokensAwarded: settlement.reward.duplicateConverted
+          ? settlement.reward.tokenAmount
+          : 0,
+        tokenBalance: settlement.tokenBalance,
+        pityGuarantee: settlement.pity?.appliedTarget ?? null,
+        replayed: false,
+        alreadyOpened: false,
+        reward: buildSafeEventChestRewardResponse(settlement.reward),
+        chest: this.buildEventChestPlayerMetadata(definition)
+      };
+      return {
+        ...rewardedProfile,
+        eventChestDirectOpenings: nextDirectOpenings
+      };
+    });
+
+    return {
+      ...response,
+      idempotent: !update.changed
     };
   }
 
@@ -2088,7 +2398,8 @@ export class StateCoordinator {
       const selectedReward = selectEventChestReward({
         definition,
         profile: current,
-        random
+        random,
+        now: new Date().toISOString()
       });
       const rewardResult = applyEventChestReward({
         profile: current,
@@ -2096,6 +2407,14 @@ export class StateCoordinator {
         selectedReward
       });
       const openedAt = new Date().toISOString();
+      const rewardedProfile = {
+        ...rewardResult.profile,
+        eventChestPity: applyEventChestPityState(
+          current.eventChestPity,
+          definition.chestId,
+          selectedReward.pity.after
+        )
+      };
       const transactionId = buildEventChestOpenTransactionId(entitlement.entitlementId);
       const settlement = createEventChestRewardSettlement({
         entitlementId: entitlement.entitlementId,
@@ -2103,6 +2422,10 @@ export class StateCoordinator {
         definitionRevisionId: entitlement.definitionRevisionId,
         transactionId,
         settledAt: openedAt,
+        openingMethod: "entitlement",
+        tokensCharged: 0,
+        tokenBalance: Math.max(0, Math.floor(Number(rewardedProfile.tokens ?? 0) || 0)),
+        pity: selectedReward.pity,
         reward: rewardResult.reward
       });
       const openedEntitlement = {
@@ -2127,7 +2450,7 @@ export class StateCoordinator {
         replayed: false
       });
       return {
-        ...rewardResult.profile,
+        ...rewardedProfile,
         eventChestEntitlements: nextEntitlements
       };
     });

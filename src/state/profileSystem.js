@@ -17,6 +17,8 @@ import {
 import { applyLevelMilestoneChestGrants, normalizeProfileChests } from "./chestSystem.js";
 import { normalizeProfileDailyElementChest } from "./dailyElementChestSystem.js";
 import { normalizeEventChestEntitlements } from "./eventChestEntitlements.js";
+import { normalizeEventChestDirectOpenings } from "./eventChestDirectOpenings.js";
+import { normalizeEventChestPity } from "./eventChestPity.js";
 import { normalizeProfileEventChests } from "./eventChestProfileProgress.js";
 import {
   applyMatchStatsToProfile,
@@ -323,6 +325,8 @@ function validateAndRepairProfile(profile) {
   repairObjectSection("dailyElementChest", defaults.dailyElementChest);
   repairObjectSection("eventChests", defaults.eventChests);
   repairObjectSection("eventChestEntitlements", defaults.eventChestEntitlements);
+  repairObjectSection("eventChestDirectOpenings", defaults.eventChestDirectOpenings);
+  repairObjectSection("eventChestPity", defaults.eventChestPity);
   repairObjectSection("milestoneChestGrantedLevels", defaults.milestoneChestGrantedLevels);
   repairObjectSection("legendaryChestGrantedLevels", defaults.legendaryChestGrantedLevels);
   repairObjectSection("onlineDisconnectTracking", defaults.onlineDisconnectTracking);
@@ -831,6 +835,10 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
   const normalizedEventChestEntitlements = normalizeEventChestEntitlements(
     validatedProfile.eventChestEntitlements
   );
+  const normalizedEventChestDirectOpenings = normalizeEventChestDirectOpenings(
+    validatedProfile.eventChestDirectOpenings
+  );
+  const normalizedEventChestPity = normalizeEventChestPity(validatedProfile.eventChestPity);
   const normalizedReferralRewardGrantIds = [
     ...new Set(
       (Array.isArray(validatedProfile.referralRewardGrantIds)
@@ -855,6 +863,8 @@ export function normalizeProfile(profile, { applyRetroactive = false } = {}) {
             collectionAlbumRewardClaims: normalizedCollectionAlbumRewardClaims,
             eventChests: normalizedEventChests,
             eventChestEntitlements: normalizedEventChestEntitlements,
+            eventChestDirectOpenings: normalizedEventChestDirectOpenings,
+            eventChestPity: normalizedEventChestPity,
             referralRewardGrantIds: normalizedReferralRewardGrantIds,
             storeRoyaltyPayouts: normalizedStoreRoyaltyPayouts
           })

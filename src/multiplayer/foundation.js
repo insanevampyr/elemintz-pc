@@ -62,11 +62,18 @@ const EVENT_CHEST_OPEN_SAFE_ERROR_MESSAGES = Object.freeze({
   EVENT_CHEST_OPEN_INVALID_POOL: "Event Chest reward is unavailable.",
   EVENT_CHEST_OPEN_INVALID_REWARD: "Event Chest reward is unavailable.",
   EVENT_CHEST_OPEN_INVALID_DUPLICATE_REWARD: "Event Chest reward is unavailable.",
-  EVENT_CHEST_OPEN_DUPLICATE_CONVERSION_DISABLED: "Event Chest reward is unavailable."
+  EVENT_CHEST_OPEN_DUPLICATE_CONVERSION_DISABLED: "Event Chest reward is unavailable.",
+  EVENT_CHEST_DIRECT_OPEN_INVALID_REQUEST: "A valid Event Chest opening request is required.",
+  EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE: "This Event Chest is not currently available.",
+  EVENT_CHEST_DIRECT_OPEN_METHOD_DISABLED: "This Event Chest opening method is not available.",
+  EVENT_CHEST_DIRECT_OPEN_POLICY_INVALID: "This Event Chest opening method is temporarily unavailable.",
+  EVENT_CHEST_DIRECT_OPEN_INSUFFICIENT_TOKENS: "You do not have enough Tokens for this opening.",
+  EVENT_CHEST_DIRECT_OPEN_FREE_ALREADY_CLAIMED: "Your free Event Chest opening has already been claimed for this reset window.",
+  EVENT_CHEST_DIRECT_OPEN_SETTLEMENT_INVALID: "Event Chest opening could not be replayed."
 });
 
-function getSafeEventChestOpenErrorMessage(code) {
-  return EVENT_CHEST_OPEN_SAFE_ERROR_MESSAGES[code] ?? "Unable to open Event Chest entitlement.";
+function getSafeEventChestOpenErrorMessage(code, fallbackMessage = "Unable to open Event Chest.") {
+  return EVENT_CHEST_OPEN_SAFE_ERROR_MESSAGES[code] ?? fallbackMessage;
 }
 
 function logRoomEvent(logger, message, details = {}) {
@@ -4345,14 +4352,18 @@ export function createMultiplayerFoundation({
       } catch (error) {
         const response = buildAdminError(error, "EVENT_CHEST_DRAFT_SAVE_FAILED");
         if (
-          error?.code === "EVENT_CHEST_DRAFT_REVISION_CONFLICT" &&
+          (error?.code === "EVENT_CHEST_DRAFT_REVISION_CONFLICT" ||
+            error?.code === "EVENT_CHEST_DRAFT_INVALID") &&
           error?.details &&
           typeof error.details === "object"
         ) {
           response.error.details = {
             draftId: String(error.details.draftId ?? "").trim() || null,
             currentDraftRevisionId:
-              String(error.details.currentDraftRevisionId ?? "").trim() || null
+              String(error.details.currentDraftRevisionId ?? "").trim() || null,
+            ...(error.details.validation
+              ? { validation: structuredClone(error.details.validation) }
+              : {})
           };
         }
         respond(response);
@@ -5836,6 +5847,71 @@ export function createMultiplayerFoundation({
         });
       } catch (error) {
         const code = String(error?.code ?? "EVENT_CHEST_OPEN_FAILED");
+        respond({
+          ok: false,
+          error: {
+            code,
+            message: getSafeEventChestOpenErrorMessage(code, "Unable to open Event Chest entitlement.")
+          }
+        });
+      }
+    });
+
+    socket.on("profile:openEventChest", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureClaimedProfileAccess(socket, payload, {
+        allowBootstrap: false
+      });
+      if (!sessionResult?.ok) {
+        respond(sessionResult);
+        return;
+      }
+      if (!sessionResult.session?.authenticated || !sessionResult.session?.accountId) {
+        respond({
+          ok: false,
+          error: {
+            code: "EVENT_CHEST_OPEN_INELIGIBLE",
+            message: getSafeEventChestOpenErrorMessage("EVENT_CHEST_OPEN_INELIGIBLE")
+          }
+        });
+        return;
+      }
+      const method = String(payload?.method ?? "").trim();
+      const requestId = String(payload?.requestId ?? "").trim();
+      if (
+        !["paid", "free"].includes(method) ||
+        !/^[A-Za-z0-9_-]{8,128}$/.test(requestId)
+      ) {
+        respond({
+          ok: false,
+          error: {
+            code: "EVENT_CHEST_DIRECT_OPEN_INVALID_REQUEST",
+            message: getSafeEventChestOpenErrorMessage("EVENT_CHEST_DIRECT_OPEN_INVALID_REQUEST")
+          }
+        });
+        return;
+      }
+      if (typeof profileAuthority?.openEventChestDirect !== "function") {
+        respond({
+          ok: false,
+          error: {
+            code: "PROFILE_AUTHORITY_UNAVAILABLE",
+            message: "Server profile authority is not available."
+          }
+        });
+        return;
+      }
+      try {
+        const result = await profileAuthority.openEventChestDirect({
+          username: sessionResult.session?.username,
+          accountId: sessionResult.session?.accountId,
+          profileKey: sessionResult.session?.profileKey ?? sessionResult.session?.username,
+          method,
+          requestId
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        const code = String(error?.code ?? "EVENT_CHEST_DIRECT_OPEN_FAILED");
         respond({
           ok: false,
           error: {

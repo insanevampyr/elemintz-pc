@@ -28,6 +28,8 @@ function sanitizeProfileResult(result) {
   const {
     uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
     eventChestEntitlements: _eventChestEntitlements,
+    eventChestDirectOpenings: _eventChestDirectOpenings,
+    eventChestPity: _eventChestPity,
     referralRewardGrantIds: _referralRewardGrantIds,
     ...publicProfile
   } = result.profile;
@@ -375,6 +377,8 @@ function buildProfileSnapshot({ profile, challenges }) {
     uniqueCosmeticAcquisitions: _uniqueCosmeticAcquisitions,
     collectionAlbums: _collectionAlbums,
     eventChestEntitlements: _eventChestEntitlements,
+    eventChestDirectOpenings: _eventChestDirectOpenings,
+    eventChestPity: _eventChestPity,
     referralRewardGrantIds: _referralRewardGrantIds,
     ...clientProfile
   } = profile ?? {};
@@ -1292,6 +1296,31 @@ export class MultiplayerProfileAuthority {
       accountId: safeAccountId,
       profileKey: safeProfileKey,
       entitlementId: safeEntitlementId
+    });
+  }
+
+  async openEventChestDirect({
+    username,
+    accountId,
+    profileKey = username,
+    method,
+    requestId
+  } = {}) {
+    const safeUsername = normalizeAuthorityUsername(username);
+    const safeAccountId = normalizeAuthorityAccountId(accountId);
+    const safeProfileKey = normalizeAuthorityUsername(profileKey ?? username);
+    if (!safeUsername || !safeProfileKey || !safeAccountId) {
+      throw Object.assign(new Error("An authenticated claimed profile is required for Event Chest opening."), {
+        code: "EVENT_CHEST_OPEN_INELIGIBLE"
+      });
+    }
+    this.logger.info?.("[ProfileAuthority] openEventChestDirect");
+    return this.coordinator.openEventChestDirect({
+      username: safeUsername,
+      accountId: safeAccountId,
+      profileKey: safeProfileKey,
+      method,
+      requestId
     });
   }
 

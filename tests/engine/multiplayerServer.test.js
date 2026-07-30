@@ -4386,6 +4386,37 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.equal(save?.result?.draft?.updatedBy, "VampyrLee");
     const savedDraftRevisionId = save?.result?.draft?.draftRevisionId;
 
+    const invalidPaidSave = await emitWithAck(adminClient, "admin:saveEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: "draft_daily",
+      expectedDraftRevisionId: savedDraftRevisionId,
+      definition: {
+        ...DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET,
+        openTypes: ["paid"],
+        freeOpenPolicy: null,
+        paidTokenCost: 0
+      }
+    });
+    assert.equal(invalidPaidSave?.ok, false);
+    assert.equal(invalidPaidSave?.error?.code, "EVENT_CHEST_DRAFT_INVALID");
+    assert.equal(
+      invalidPaidSave?.error?.details?.currentDraftRevisionId,
+      savedDraftRevisionId
+    );
+    assert.ok(
+      invalidPaidSave?.error?.details?.validation?.errors?.some((entry) =>
+        String(entry).includes("paidTokenCost")
+      )
+    );
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft("draft_daily"))?.draftRevisionId,
+      savedDraftRevisionId
+    );
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft("draft_daily"))?.definition?.title,
+      "Saved Event Chest Draft"
+    );
+
     const list = await emitWithAck(adminClient, "admin:listEventChestDrafts", {
       sessionToken: adminLogin?.session?.token
     });
@@ -4678,6 +4709,13 @@ test("multiplayer foundation: admin Event Chest draft routes are admin-only and 
     assert.notEqual(createdDraft?.result?.draft?.chestId, "client_supplied_chest");
     assert.notEqual(createdDraft?.result?.draft?.draftRevisionId, "client_supplied_revision");
     assert.equal(createdDraft?.result?.draft?.definition?.title, "Created Smoke Chest");
+    assert.deepEqual(createdDraft?.result?.draft?.definition?.openTypes, ["free", "paid"]);
+    assert.equal(createdDraft?.result?.draft?.definition?.paidTokenCost, 100);
+    assert.deepEqual(createdDraft?.result?.draft?.definition?.freeOpenPolicy, {
+      cadence: "daily",
+      resetTimeZone: "America/Chicago",
+      resetHour: 18
+    });
     assert.deepEqual(createdDraft?.result?.draft?.definition?.pool, {
       common: [],
       rare: [],
@@ -5097,7 +5135,10 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
     publishedAt: "2026-07-28T13:00:00.000Z",
     publishedBy: "VampyrLee",
     sourceDraftId: "draft_route_entitlement",
-    sourceDraftRevisionId: "draft_revision_route_entitlement_1"
+    sourceDraftRevisionId: "draft_revision_route_entitlement_1",
+    openTypes: ["entitlement", "paid"],
+    freeOpenPolicy: null,
+    paidTokenCost: 100
   };
   const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
   await fs.mkdir(path.dirname(registryPath), { recursive: true });
@@ -5181,6 +5222,58 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
     assert.equal(repeat?.result?.entitlement?.entitlementId, first?.result?.entitlement?.entitlementId);
     assert.equal(repeat?.result?.entitlement?.grantedAt, first?.result?.entitlement?.grantedAt);
 
+    const malformedDirect = await emitWithAck(playerClient, "profile:openEventChest", {
+      sessionToken: playerRegister?.session?.token,
+      method: "paid",
+      requestId: "bad id"
+    });
+    assert.equal(malformedDirect?.ok, false);
+    assert.equal(malformedDirect?.error?.code, "EVENT_CHEST_DIRECT_OPEN_INVALID_REQUEST");
+
+    const guestDirect = await emitWithAck(guestClient, "profile:openEventChest", {
+      sessionToken: guestSession?.session?.token,
+      method: "paid",
+      requestId: "guest_direct_request_1"
+    });
+    assert.equal(guestDirect?.ok, false);
+    assert.equal(guestDirect?.error?.code, "EVENT_CHEST_OPEN_INELIGIBLE");
+
+    const paidDirect = await emitWithAck(playerClient, "profile:openEventChest", {
+      sessionToken: playerRegister?.session?.token,
+      method: "paid",
+      requestId: "route_direct_request_1",
+      paidTokenCost: 1,
+      chestId: "forged-chest",
+      definitionRevisionId: "forged-revision"
+    });
+    assert.equal(paidDirect?.ok, true, JSON.stringify(paidDirect));
+    assert.equal(paidDirect?.result?.method, "paid");
+    assert.equal(paidDirect?.result?.costCharged, 100);
+    assert.equal(paidDirect?.result?.replayed, false);
+    const paidReplay = await emitWithAck(playerClient, "profile:openEventChest", {
+      sessionToken: playerRegister?.session?.token,
+      method: "paid",
+      requestId: "route_direct_request_1"
+    });
+    assert.equal(paidReplay?.ok, true);
+    assert.equal(paidReplay?.result?.replayed, true);
+    assert.deepEqual(paidReplay?.result?.reward, paidDirect?.result?.reward);
+    assert.equal(paidReplay?.result?.tokenBalance, paidDirect?.result?.tokenBalance);
+    const serializedDirect = JSON.stringify({ paidDirect, paidReplay });
+    for (const privateKey of [
+      "eventChestDirectOpenings",
+      "transactionId",
+      "openingId",
+      "accountId",
+      "profileKey",
+      "rewardSettlement",
+      '"pool"',
+      '"odds"',
+      '"pity"'
+    ]) {
+      assert.equal(serializedDirect.includes(privateKey), false);
+    }
+
     const publicView = await emitWithAck(otherClient, "profile:view", {
       sessionToken: otherRegister?.session?.token,
       username: "RouteEntitlementUser"
@@ -5203,6 +5296,7 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
     assert.equal(serializedDelivery.includes("rewardSettlement"), false);
     assert.equal(serializedDelivery.includes("openTransactionId"), false);
     assert.equal(serializedDelivery.includes("eventChestEntitlements"), false);
+    assert.equal(serializedDelivery.includes("eventChestDirectOpenings"), false);
     assert.equal(serializedDelivery.includes("route-entitlement@example.com"), false);
     assert.equal(serializedDelivery.includes("sessionToken"), false);
 
@@ -5212,6 +5306,7 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
       ownProfile
     });
     assert.equal(serializedSnapshots.includes("eventChestEntitlements"), false);
+    assert.equal(serializedSnapshots.includes("eventChestDirectOpenings"), false);
     assert.equal(serializedSnapshots.includes("rewardSettlement"), false);
     assert.equal(serializedSnapshots.includes("openTransactionId"), false);
 
@@ -5269,11 +5364,19 @@ test("multiplayer foundation: profile Event Chest opening route is claimed-profi
     publishedBy: "VampyrLee",
     sourceDraftId: "draft_route_open",
     sourceDraftRevisionId: "draft_revision_route_open_1",
+    openTypes: ["entitlement", "paid"],
+    freeOpenPolicy: null,
+    paidTokenCost: 100,
     odds: {
       common: 1,
       rare: 0,
       epic: 0,
       legendary: 0
+    },
+    pity: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pity),
+      epicPlusEnabled: false,
+      legendaryEnabled: false
     },
     pool: {
       common: [{ type: "title", cosmeticId: "title_first_light" }],

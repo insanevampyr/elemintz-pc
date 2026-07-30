@@ -67,6 +67,9 @@ function buildPublishedEventChestDefinition(overrides = {}) {
     publishedBy: "VampyrLee",
     sourceDraftId: "draft_state_entitlement",
     sourceDraftRevisionId: "draft_revision_state_entitlement_1",
+    openTypes: ["entitlement"],
+    freeOpenPolicy: null,
+    paidTokenCost: 0,
     ...overrides
   };
 }

@@ -1457,9 +1457,12 @@ class DeferredEventChestOpenSocket extends FakeSocket {
   }
 
   emit(eventName, payload, ack) {
-    if (eventName === "profile:openEventChestEntitlement") {
+    if (
+      eventName === "profile:openEventChestEntitlement" ||
+      eventName === "profile:openEventChest"
+    ) {
       this.sentEvents.push({ eventName, payload });
-      this.pendingEventChestOpenAcks.push({ payload, ack });
+      this.pendingEventChestOpenAcks.push({ eventName, payload, ack });
       return this;
     }
 
@@ -1476,7 +1479,26 @@ class DeferredEventChestOpenSocket extends FakeSocket {
       next.ack?.({
         ok: true,
         result:
-          result ?? {
+          result ?? (next.eventName === "profile:openEventChest"
+            ? {
+                status: "opened",
+                method: next.payload?.method,
+                requestId: next.payload?.requestId,
+                chestId: "client_event_chest",
+                definitionRevisionId: "definition_revision_client_event_chest_1",
+                costCharged: next.payload?.method === "paid" ? 100 : 0,
+                tokenBalance: 300,
+                replayed: false,
+                alreadyOpened: false,
+                reward: {
+                  type: "tokens",
+                  rarity: "common",
+                  duplicateConverted: true,
+                  tokenAmount: 25,
+                  cosmetic: null
+                }
+              }
+            : {
             entitlement: {
               entitlementId: next.payload?.entitlementId,
               chestId: "client_event_chest",
@@ -1497,7 +1519,7 @@ class DeferredEventChestOpenSocket extends FakeSocket {
                 name: "First Light"
               }
             }
-          }
+          })
       });
     });
   }
@@ -2990,6 +3012,85 @@ test("multiplayer client: Event Chest opening lock clears after rejection and di
   }
 });
 
+test("multiplayer client: direct Event Chest opening sends narrow payload and is keyed single-flight", async () => {
+  let lastSocket = null;
+  const dataDir = await createTempDataDir();
+  const client = new MultiplayerClient({
+    socketFactory: () => {
+      lastSocket = new DeferredEventChestOpenSocket();
+      return lastSocket;
+    },
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    dataDir
+  });
+
+  try {
+    await client.login({
+      email: "player@example.com",
+      password: "password123"
+    });
+    for (const payload of [
+      {},
+      { method: "entitlement", requestId: "valid_request_1" },
+      { method: "paid", requestId: "bad id" }
+    ]) {
+      await assert.rejects(
+        client.openEventChest(payload),
+        /valid Event Chest opening method and requestId/
+      );
+    }
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:openEventChest").length,
+      0
+    );
+
+    const payload = {
+      method: "paid",
+      requestId: "paid_client_request_1",
+      cost: 1,
+      chestId: "forged-chest"
+    };
+    const firstPromise = client.openEventChest(payload);
+    const secondPromise = client.openEventChest(payload);
+    assert.equal(await waitFor(() => lastSocket.pendingEventChestOpenAcks.length === 1), true);
+    assert.deepEqual(
+      lastSocket.sentEvents.find((event) => event.eventName === "profile:openEventChest")?.payload,
+      { method: "paid", requestId: "paid_client_request_1" }
+    );
+    lastSocket.resolveNextEventChestOpen();
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+    assert.deepEqual(second, first);
+    assert.equal(first.costCharged, 100);
+
+    const rejected = client.openEventChest({
+      method: "free",
+      requestId: "free_client_request_1"
+    });
+    assert.equal(await waitFor(() => lastSocket.pendingEventChestOpenAcks.length === 1), true);
+    lastSocket.rejectNextEventChestOpen("Free opening unavailable.");
+    await assert.rejects(rejected, /Free opening unavailable/);
+
+    const retry = client.openEventChest({
+      method: "free",
+      requestId: "free_client_request_1"
+    });
+    const other = client.openEventChest({
+      method: "paid",
+      requestId: "paid_client_request_2"
+    });
+    assert.equal(await waitFor(() => lastSocket.pendingEventChestOpenAcks.length === 2), true);
+    lastSocket.resolveNextEventChestOpen();
+    lastSocket.resolveNextEventChestOpen();
+    await Promise.all([retry, other]);
+    assert.equal(
+      lastSocket.sentEvents.filter((event) => event.eventName === "profile:openEventChest").length,
+      4
+    );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer IPC: Event Chest opening delegates entitlementId only to MultiplayerClient", async () => {
   const handlers = new Map();
   const listeners = new Map();
@@ -3047,6 +3148,64 @@ test("multiplayer IPC: Event Chest opening delegates entitlementId only to Multi
     assert.deepEqual(calls, [{ entitlementId: "event_chest_entitlement_ipc" }]);
   } finally {
     MultiplayerClient.prototype.openEventChestEntitlement = originalOpen;
+  }
+});
+
+test("multiplayer IPC and preload: direct Event Chest opening delegates narrow payload consistently", async () => {
+  const handlers = new Map();
+  const ipcMain = {
+    handle: (channel, handler) => {
+      handlers.set(channel, handler);
+    },
+    on: () => {}
+  };
+  const calls = [];
+  const sender = {
+    send: () => {},
+    isDestroyed: () => false
+  };
+  registerMultiplayerIpcHandlers(ipcMain, {
+    socketFactory: () => new FakeSocket(),
+    logger: { info: () => {}, error: () => {}, warn: () => {} },
+    persistSession: false
+  });
+  const handler = handlers.get("multiplayer:openEventChest");
+  assert.equal(typeof handler, "function");
+
+  const originalOpen = MultiplayerClient.prototype.openEventChest;
+  MultiplayerClient.prototype.openEventChest = async function patchedOpenEventChest(payload) {
+    calls.push(payload);
+    return { status: "opened", method: payload.method };
+  };
+  try {
+    const response = await handler(
+      { sender },
+      {
+        method: "paid",
+        requestId: "ipc_direct_request_1",
+        cost: 1,
+        accountId: "forged-account"
+      }
+    );
+    assert.deepEqual(response, { status: "opened", method: "paid" });
+    assert.deepEqual(calls, [
+      {
+        method: "paid",
+        requestId: "ipc_direct_request_1"
+      }
+    ]);
+  } finally {
+    MultiplayerClient.prototype.openEventChest = originalOpen;
+  }
+
+  for (const filePath of [
+    "src/preload/preload.js",
+    "src/preload/preload.cjs",
+    "src/preload/bridge.cjs"
+  ]) {
+    const source = await fs.readFile(filePath, "utf8");
+    assert.match(source, /openEventChest:\s*\(payload\)/);
+    assert.match(source, /multiplayer:openEventChest/);
   }
 });
 

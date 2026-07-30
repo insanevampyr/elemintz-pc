@@ -6,6 +6,11 @@ import {
 } from "./eventChestDefinitions.js";
 import { getCosmeticDefinition } from "./cosmeticSystem.js";
 import { grantCosmeticItem, normalizeProfileStore } from "./storeSystem.js";
+import {
+  getEventChestPityRuleState,
+  getEventChestPityState,
+  resolveEventChestPity
+} from "./eventChestPity.js";
 
 export const EVENT_CHEST_REWARD_SETTLEMENT_SCHEMA_VERSION = 1;
 export const EVENT_CHEST_REWARD_TYPES = Object.freeze(["cosmetic", "tokens"]);
@@ -49,17 +54,44 @@ function normalizeNullableCosmetic(value) {
 }
 
 function normalizeNonNegativeInteger(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-
-  return Math.max(0, Math.floor(numeric));
+  return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function normalizeIso(value) {
   const parsedMs = Date.parse(String(value ?? ""));
   return Number.isFinite(parsedMs) ? new Date(parsedMs).toISOString() : null;
+}
+
+function normalizePityCounters(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const epicPlusMisses = normalizeNonNegativeInteger(value.epicPlusMisses);
+  const legendaryMisses = normalizeNonNegativeInteger(value.legendaryMisses);
+  return epicPlusMisses == null || legendaryMisses == null
+    ? null
+    : { epicPlusMisses, legendaryMisses };
+}
+
+function normalizePitySettlement(value) {
+  if (value == null) {
+    return null;
+  }
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  const before = normalizePityCounters(value.before);
+  const after = normalizePityCounters(value.after);
+  const appliedTarget =
+    value.appliedTarget == null ? null : normalizeRequiredString(value.appliedTarget);
+  if (
+    !before ||
+    !after ||
+    (appliedTarget != null && !["epic_plus", "legendary"].includes(appliedTarget))
+  ) {
+    return null;
+  }
+  return { appliedTarget, before, after };
 }
 
 function getOwnedSet(profile, type) {
@@ -109,6 +141,12 @@ export function normalizeEventChestRewardSettlement(value) {
   const rarity = normalizeRequiredString(reward?.rarity);
   const cosmetic = normalizeNullableCosmetic(reward?.cosmetic);
   const tokenAmount = normalizeNonNegativeInteger(reward?.tokenAmount ?? 0);
+  const openingMethod =
+    value.openingMethod == null ? null : normalizeRequiredString(value.openingMethod);
+  const tokensCharged = normalizeNonNegativeInteger(value.tokensCharged ?? 0);
+  const tokenBalance =
+    value.tokenBalance == null ? null : normalizeNonNegativeInteger(value.tokenBalance);
+  const pity = normalizePitySettlement(value.pity);
 
   if (
     !entitlementId ||
@@ -118,7 +156,10 @@ export function normalizeEventChestRewardSettlement(value) {
     !settledAt ||
     !REWARD_TYPE_SET.has(rewardType) ||
     !RARITY_SET.has(rarity) ||
-    tokenAmount == null
+    tokenAmount == null ||
+    tokensCharged == null ||
+    (value.tokenBalance != null && tokenBalance == null) ||
+    (value.pity != null && !pity)
   ) {
     return null;
   }
@@ -127,7 +168,7 @@ export function normalizeEventChestRewardSettlement(value) {
     return null;
   }
 
-  if (rewardType === "tokens" && tokenAmount <= 0) {
+  if (rewardType === "tokens" && tokenAmount <= 0 && !reward?.duplicateConverted) {
     return null;
   }
 
@@ -138,6 +179,10 @@ export function normalizeEventChestRewardSettlement(value) {
     definitionRevisionId,
     transactionId,
     settledAt,
+    ...(openingMethod ? { openingMethod } : {}),
+    tokensCharged,
+    tokenBalance,
+    pity,
     reward: {
       type: rewardType,
       rarity,
@@ -190,7 +235,12 @@ function validateRewardEntry(entry, rarity) {
   return { type, cosmeticId, definition };
 }
 
-export function selectEventChestReward({ definition, profile, random = Math.random } = {}) {
+export function selectEventChestReward({
+  definition,
+  profile,
+  random = Math.random,
+  now = new Date().toISOString()
+} = {}) {
   const validation = validateEventChestDefinition(definition);
   if (!validation.ok) {
     throw Object.assign(new Error(`Event Chest definition is invalid: ${validation.errors.join("; ")}`), {
@@ -199,7 +249,34 @@ export function selectEventChestReward({ definition, profile, random = Math.rand
   }
 
   const normalizedProfile = normalizeProfileStore(profile);
-  const rarity = chooseWeightedRarity(typeof random === "function" ? random() : Math.random(), definition.odds);
+  const pityBefore = getEventChestPityState(profile?.eventChestPity, definition.chestId);
+  const pityRules = getEventChestPityRuleState(definition.pity);
+  const legendaryDue =
+    pityRules.legendaryEnabled &&
+    pityBefore.legendaryMisses + 1 >= pityRules.legendaryThreshold;
+  const epicPlusDue =
+    pityRules.epicPlusEnabled &&
+    pityBefore.epicPlusMisses + 1 >= pityRules.epicPlusThreshold;
+  const appliedPityTarget = legendaryDue ? "legendary" : epicPlusDue ? "epic_plus" : null;
+  const epicPlusOdds = Object.fromEntries(
+    EVENT_CHEST_RARITIES.map((rarityKey) => [
+      rarityKey,
+      (definition.pity?.epicPlusTable ?? [])
+        .filter((entry) => entry.rarity === rarityKey)
+        .reduce((sum, entry) => sum + Number(entry.weight ?? 0), 0)
+    ])
+  );
+  const rarity = legendaryDue
+    ? "legendary"
+    : epicPlusDue
+      ? chooseWeightedRarity(
+          typeof random === "function" ? random() : Math.random(),
+          epicPlusOdds
+        )
+      : chooseWeightedRarity(
+          typeof random === "function" ? random() : Math.random(),
+          definition.odds
+        );
   const rarityPool = Array.isArray(definition?.pool?.[rarity]) ? definition.pool[rarity] : [];
   const validEntries = rarityPool.map((entry) => validateRewardEntry(entry, rarity));
   if (validEntries.length === 0) {
@@ -219,11 +296,22 @@ export function selectEventChestReward({ definition, profile, random = Math.rand
   }
 
   const alreadyOwned = getOwnedSet(normalizedProfile, selected.type).has(selected.cosmeticId);
+  const pity = resolveEventChestPity({
+    pityState: pityBefore,
+    pityRules: definition.pity,
+    rolledRarity: rarity,
+    now
+  });
   return {
     rarity,
     type: selected.type,
     cosmeticId: selected.cosmeticId,
-    alreadyOwned
+    alreadyOwned,
+    pity: {
+      appliedTarget: appliedPityTarget,
+      before: pity.before,
+      after: pity.after
+    }
   };
 }
 
@@ -240,7 +328,7 @@ export function applyEventChestReward({ profile, definition, selectedReward } = 
     }
 
     const tokenAmount = normalizeNonNegativeInteger(definition?.duplicateTokenRewards?.[selectedReward.rarity]);
-    if (!tokenAmount || tokenAmount <= 0) {
+    if (tokenAmount == null) {
       throw Object.assign(new Error("Event Chest duplicate token reward is invalid."), {
         code: "EVENT_CHEST_OPEN_INVALID_DUPLICATE_REWARD"
       });
@@ -286,7 +374,11 @@ export function createEventChestRewardSettlement({
   definitionRevisionId,
   transactionId,
   settledAt,
-  reward
+  reward,
+  openingMethod = "entitlement",
+  tokensCharged = 0,
+  tokenBalance = null,
+  pity = null
 } = {}) {
   const normalized = normalizeEventChestRewardSettlement({
     schemaVersion: EVENT_CHEST_REWARD_SETTLEMENT_SCHEMA_VERSION,
@@ -295,6 +387,10 @@ export function createEventChestRewardSettlement({
     definitionRevisionId,
     transactionId,
     settledAt,
+    openingMethod,
+    tokensCharged,
+    tokenBalance,
+    pity,
     reward
   });
   if (!normalized) {
@@ -323,6 +419,19 @@ function buildSafeCosmeticMetadata(cosmetic) {
   };
 }
 
+export function buildSafeEventChestRewardResponse(reward) {
+  return {
+    type: reward.type,
+    rarity: reward.rarity,
+    tokenAmount: reward.tokenAmount,
+    duplicateConverted: reward.duplicateConverted,
+    cosmetic:
+      reward.type === "cosmetic"
+        ? buildSafeCosmeticMetadata(reward.cosmetic)
+        : null
+  };
+}
+
 export function buildEventChestOpenResponse({ entitlement, settlement, replayed = false } = {}) {
   const normalizedSettlement = normalizeEventChestRewardSettlement(settlement);
   if (!normalizedSettlement) {
@@ -342,16 +451,13 @@ export function buildEventChestOpenResponse({ entitlement, settlement, replayed 
     },
     replayed: Boolean(replayed),
     alreadyOpened: Boolean(replayed),
-    reward: {
-      type: normalizedSettlement.reward.type,
-      rarity: normalizedSettlement.reward.rarity,
-      tokenAmount: normalizedSettlement.reward.tokenAmount,
-      duplicateConverted: normalizedSettlement.reward.duplicateConverted,
-      cosmetic:
-        normalizedSettlement.reward.type === "cosmetic"
-          ? buildSafeCosmeticMetadata(normalizedSettlement.reward.cosmetic)
-          : null
-    }
+    tokensCharged: normalizedSettlement.tokensCharged,
+    duplicateTokensAwarded: normalizedSettlement.reward.duplicateConverted
+      ? normalizedSettlement.reward.tokenAmount
+      : 0,
+    tokenBalance: normalizedSettlement.tokenBalance,
+    pityGuarantee: normalizedSettlement.pity?.appliedTarget ?? null,
+    reward: buildSafeEventChestRewardResponse(normalizedSettlement.reward)
   };
 }
 

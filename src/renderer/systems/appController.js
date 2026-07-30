@@ -358,8 +358,11 @@ export class AppController {
     this.eventChestEntitlementSyncPromise = null;
     this.lastEventChestEntitlementSyncResult = null;
     this.availableEventChestEntitlement = null;
+    this.availableEventChestDirectOpen = null;
     this.eventChestOpenPromises = new Map();
     this.eventChestOpeningEntitlementId = null;
+    this.eventChestDirectOpenPromises = new Map();
+    this.eventChestDirectRequestIds = new Map();
     this.dailyLoginAutoClaimKey = null;
     this.dailyLoginAutoClaimPromise = null;
     this.dailyLoginAutoClaimSessionGateKey = null;
@@ -3378,6 +3381,8 @@ export class AppController {
         openAchievements: async () => this.showAchievements(),
         openDailyElementChest: async () => this.showDailyElementChestModal(),
         openEventChestEntitlement: async () => this.openEventChestEntitlement(),
+        openEventChestPaid: async () => this.openEventChestDirect("paid"),
+        openEventChestFree: async () => this.openEventChestDirect("free"),
         openDailyChallenges: async () => this.showDailyChallenges(),
         openCosmetics: async () => this.showCosmetics(),
         openStore: async () => this.showStore(),
@@ -3443,7 +3448,7 @@ export class AppController {
 
   normalizeEventChestEntitlementMenuState(result) {
     const entitlement = result?.entitlement ?? null;
-    const activeChest = result?.activeChest ?? null;
+    const activeChest = result?.entitlementChest ?? result?.activeChest ?? null;
     const entitlementId = String(entitlement?.entitlementId ?? "").trim();
     const status = String(entitlement?.status ?? "").trim();
     if (
@@ -3472,30 +3477,67 @@ export class AppController {
   }
 
   buildEventChestMenuView() {
-    if (!this.availableEventChestEntitlement?.available) {
+    const entitlement = this.availableEventChestEntitlement?.available
+      ? this.availableEventChestEntitlement
+      : null;
+    const directOpen = this.availableEventChestDirectOpen;
+    if (!entitlement && !directOpen?.available) {
       return null;
     }
-
-    const entitlementId = String(this.availableEventChestEntitlement.entitlementId ?? "").trim();
-    if (!entitlementId) {
-      return null;
-    }
-
+    const entitlementId = String(entitlement?.entitlementId ?? "").trim();
+    const paid = directOpen?.methods?.paid ?? {};
+    const free = directOpen?.methods?.free ?? {};
     return {
-      ...this.availableEventChestEntitlement,
+      available: true,
+      title: entitlement?.title ?? directOpen?.title ?? "Event Chest",
+      subtitle: entitlement?.subtitle ?? directOpen?.subtitle ?? "",
+      description: entitlement?.description ?? directOpen?.description ?? "",
+      icon: entitlement?.icon ?? String(directOpen?.icons?.closed ?? "").trim(),
+      entitlement: entitlementId
+        ? {
+            ...entitlement,
+            opening:
+              this.eventChestOpeningEntitlementId === entitlementId ||
+              this.eventChestOpenPromises.has(entitlementId)
+          }
+        : null,
+      paid: {
+        ...paid,
+        opening: this.eventChestDirectOpenPromises.has("paid")
+      },
+      free: {
+        ...free,
+        opening: this.eventChestDirectOpenPromises.has("free")
+      },
       opening:
         this.eventChestOpeningEntitlementId === entitlementId ||
-        this.eventChestOpenPromises.has(entitlementId)
+        this.eventChestOpenPromises.has(entitlementId) ||
+        this.eventChestDirectOpenPromises.size > 0
     };
   }
 
-  formatEventChestRewardSummary(reward) {
+  formatEventChestRewardSummary(reward, result = {}) {
     const rewardType = String(reward?.type ?? "").trim();
+    const detailParts = [];
+    const tokensCharged = Math.max(0, Number(result?.tokensCharged ?? result?.costCharged ?? 0) || 0);
+    const tokenBalance = Number(result?.tokenBalance);
+    const pityGuarantee = String(result?.pityGuarantee ?? "").trim();
+    if (tokensCharged > 0) {
+      detailParts.push(`${tokensCharged} Tokens charged.`);
+    }
+    if (Number.isFinite(tokenBalance)) {
+      detailParts.push(`Balance: ${Math.max(0, tokenBalance)} Tokens.`);
+    }
+    if (pityGuarantee === "legendary") {
+      detailParts.push("Pity guaranteed Legendary.");
+    } else if (pityGuarantee === "epic_plus") {
+      detailParts.push("Pity guaranteed Epic or better.");
+    }
     if (rewardType === "tokens") {
       const tokenAmount = Math.max(0, Number(reward?.tokenAmount ?? 0) || 0);
       return {
         title: `+${tokenAmount} Token${tokenAmount === 1 ? "" : "s"}`,
-        body: "Duplicate reward converted to tokens."
+        body: ["Duplicate reward converted to tokens.", ...detailParts].join(" ")
       };
     }
 
@@ -3505,7 +3547,10 @@ export class AppController {
       const rarity = String(reward?.rarity ?? cosmetic?.rarity ?? "").trim();
       return {
         title: name || "Cosmetic Reward",
-        body: rarity ? `${rarity} cosmetic unlocked.` : "Cosmetic unlocked."
+        body: [
+          rarity ? `${rarity} cosmetic unlocked.` : "Cosmetic unlocked.",
+          ...detailParts
+        ].join(" ")
       };
     }
 
@@ -3546,7 +3591,7 @@ export class AppController {
       try {
         const result = await openEntitlement(safeEntitlementId);
         this.availableEventChestEntitlement = null;
-        const reward = this.formatEventChestRewardSummary(result?.reward);
+        const reward = this.formatEventChestRewardSummary(result?.reward, result);
         this.modalManager.show({
           title: "Event Chest Opened",
           bodyHtml: `
@@ -3602,6 +3647,78 @@ export class AppController {
 
     this.eventChestOpenPromises.set(safeEntitlementId, openPromise);
     return openPromise;
+  }
+
+  async openEventChestDirect(method) {
+    const safeMethod = String(method ?? "").trim();
+    if (!["paid", "free"].includes(safeMethod)) {
+      return null;
+    }
+    if (this.eventChestDirectOpenPromises.has(safeMethod)) {
+      return this.eventChestDirectOpenPromises.get(safeMethod);
+    }
+    const openEventChest = window.elemintz?.multiplayer?.openEventChest;
+    if (typeof openEventChest !== "function") {
+      return null;
+    }
+    let requestId = this.eventChestDirectRequestIds.get(safeMethod);
+    if (!requestId) {
+      requestId = `event_chest_${safeMethod}_${globalThis.crypto?.randomUUID?.() ?? Date.now()}`
+        .replace(/[^A-Za-z0-9_-]/g, "_")
+        .slice(0, 128);
+      this.eventChestDirectRequestIds.set(safeMethod, requestId);
+    }
+    const promise = (async () => {
+      if (this.screenFlow === "menu") {
+        this.renderMenuScreen();
+      }
+      try {
+        const result = await openEventChest({ method: safeMethod, requestId });
+        this.eventChestDirectRequestIds.delete(safeMethod);
+        if (result?.replayed) {
+          this.modalManager.show({
+            title: "Event Chest Already Opened",
+            body: "This opening was already completed.",
+            actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+          });
+        } else {
+          const reward = this.formatEventChestRewardSummary(result?.reward, result);
+          this.modalManager.show({
+            title: "Event Chest Opened",
+            bodyHtml: `
+              <div class="stack-sm" data-event-chest-open-result="true">
+                <p><strong>${escapeHtml(reward.title)}</strong></p>
+                <p>${escapeHtml(reward.body)}</p>
+              </div>
+            `,
+            actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+          });
+        }
+        await this.loadPreferredProfileForOnlineSession({
+          username: this.username,
+          onlineState: this.onlinePlayState,
+          allowEnsureLocal: false
+        });
+        await this.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({
+          reason: `direct-${safeMethod}-open`
+        });
+        return result;
+      } catch (error) {
+        this.modalManager.show({
+          title: "Event Chest Open Failed",
+          body: this.formatPlayerFacingMessage(error?.message, "Unable to open Event Chest."),
+          actions: [{ label: "OK", onClick: () => this.modalManager.hide() }]
+        });
+        throw error;
+      } finally {
+        this.eventChestDirectOpenPromises.delete(safeMethod);
+        if (this.screenFlow === "menu") {
+          this.renderMenuScreen();
+        }
+      }
+    })();
+    this.eventChestDirectOpenPromises.set(safeMethod, promise);
+    return promise;
   }
 
   buildDailyElementChestModalView() {
@@ -4167,8 +4284,11 @@ export class AppController {
     this.dailyElementChestPendingOpenType = null;
     this.lastEventChestEntitlementSyncResult = null;
     this.availableEventChestEntitlement = null;
+    this.availableEventChestDirectOpen = null;
     this.eventChestOpeningEntitlementId = null;
     this.eventChestOpenPromises.clear();
+    this.eventChestDirectOpenPromises.clear();
+    this.eventChestDirectRequestIds.clear();
     this.menuBoostEvent = null;
     this.localPlayers = null;
     this.localProfiles = null;
@@ -4624,6 +4744,10 @@ export class AppController {
         this.lastEventChestEntitlementSyncResult = result ?? null;
         this.availableEventChestEntitlement =
           this.normalizeEventChestEntitlementMenuState(result) ?? null;
+        this.availableEventChestDirectOpen =
+          result?.directOpen && typeof result.directOpen === "object"
+            ? result.directOpen
+            : null;
         const deliveryStatus = String(result?.deliveryStatus ?? "").trim();
         if (deliveryStatus && deliveryStatus !== "no_active_event_chest") {
           console.info("[EventChest][Renderer] entitlement sync completed", {

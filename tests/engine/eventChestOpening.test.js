@@ -37,6 +37,11 @@ function buildDefinition(overrides = {}) {
       epic: 0,
       legendary: 0
     },
+    pity: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pity),
+      epicPlusEnabled: false,
+      legendaryEnabled: false
+    },
     pool: {
       common: [{ type: "title", cosmeticId: "title_first_light" }],
       rare: [],
@@ -477,4 +482,90 @@ test("event chest opening: replay with missing current cosmetic metadata does no
   assert.equal(response.replayed, true);
   assert.equal(response.reward.cosmetic.cosmeticId, "missing_replay_cosmetic");
   assert.equal(response.reward.cosmetic.name, "missing_replay_cosmetic");
+});
+
+test("event chest opening: entitlement pity is shared by chest across revisions and replay-safe", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  try {
+    const pity = {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pity),
+      epicPlusEnabled: true,
+      legendaryEnabled: true,
+      epicPlusThreshold: 2,
+      legendaryThreshold: 3
+    };
+    const firstDefinition = buildDefinition({
+      definitionRevisionId: "definition_revision_entitlement_pity_1",
+      sourceDraftRevisionId: "draft_revision_entitlement_pity_1",
+      pool: structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      pity
+    });
+    const secondDefinition = buildDefinition({
+      definitionRevisionId: "definition_revision_entitlement_pity_2",
+      sourceDraftRevisionId: "draft_revision_entitlement_pity_2",
+      publishedAt: "2026-07-28T16:00:00.000Z",
+      pool: structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool),
+      pity
+    });
+    await writeRegistry(dataDir, [firstDefinition, secondDefinition]);
+
+    const firstEntitlement = buildEntitlement({
+      accountId: "account-opening",
+      profileKey: "OpeningPityUser",
+      chestId: firstDefinition.chestId,
+      definitionRevisionId: firstDefinition.definitionRevisionId,
+      grantedAt: "2026-07-28T16:05:00.000Z"
+    });
+    const secondEntitlement = buildEntitlement({
+      accountId: "account-opening",
+      profileKey: "OpeningPityUser",
+      chestId: secondDefinition.chestId,
+      definitionRevisionId: secondDefinition.definitionRevisionId,
+      grantedAt: "2026-07-28T16:10:00.000Z"
+    });
+    await coordinator.profiles.ensureProfile("OpeningPityUser", {
+      linkedAccountId: "account-opening",
+      eventChestEntitlements: {
+        schemaVersion: 1,
+        items: [firstEntitlement, secondEntitlement]
+      }
+    });
+
+    const first = await coordinator.openEventChestEntitlement({
+      username: "OpeningPityUser",
+      profileKey: "OpeningPityUser",
+      accountId: "account-opening",
+      entitlementId: firstEntitlement.entitlementId,
+      random: createRandom([0, 0])
+    });
+    assert.equal(first.reward.rarity, "common");
+    assert.equal(first.pityGuarantee, null);
+
+    const replay = await coordinator.openEventChestEntitlement({
+      username: "OpeningPityUser",
+      profileKey: "OpeningPityUser",
+      accountId: "account-opening",
+      entitlementId: firstEntitlement.entitlementId,
+      random: () => {
+        throw new Error("replay must not reroll");
+      }
+    });
+    assert.equal(replay.replayed, true);
+
+    const second = await coordinator.openEventChestEntitlement({
+      username: "OpeningPityUser",
+      profileKey: "OpeningPityUser",
+      accountId: "account-opening",
+      entitlementId: secondEntitlement.entitlementId,
+      random: createRandom([0, 0])
+    });
+    assert.equal(second.reward.rarity, "epic");
+    assert.equal(second.pityGuarantee, "epic_plus");
+    const profile = await coordinator.profiles.getProfile("OpeningPityUser");
+    assert.equal(profile.eventChestPity.byChestId[firstDefinition.chestId].epicPlusMisses, 0);
+    assert.equal(profile.eventChestPity.byChestId[firstDefinition.chestId].legendaryMisses, 2);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
 });
