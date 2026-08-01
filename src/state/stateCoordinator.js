@@ -212,6 +212,37 @@ function buildEventChestDraftDeleteResult({
   };
 }
 
+function buildEventChestDraftDeletionEligibilityResult(proof = {}) {
+  const reasonCodes = Array.isArray(proof?.reasonCodes) ? proof.reasonCodes : [];
+  let status = proof?.status ?? "unavailable";
+  if (
+    status !== "unavailable" &&
+    reasonCodes.includes(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_NOT_FOUND)
+  ) {
+    status = "not_found";
+  } else if (
+    status !== "unavailable" &&
+    reasonCodes.includes(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_REVISION_MISMATCH)
+  ) {
+    status = "stale";
+  }
+
+  return {
+    schemaVersion: proof?.schemaVersion ?? 1,
+    status,
+    eligible: status === "eligible",
+    draft: structuredClone(proof?.draft ?? {
+      draftId: null,
+      draftRevisionId: null,
+      chestId: null
+    }),
+    reasonCodes: [...reasonCodes],
+    referenceCategories: Array.isArray(proof?.referenceCategories)
+      ? [...proof.referenceCategories]
+      : []
+  };
+}
+
 function normalizeEventChestPresentationRarity(value) {
   const rarity = String(value ?? "").trim().toLowerCase();
   return EVENT_CHEST_PRESENTATION_RARITIES.includes(rarity) ? rarity : null;
@@ -1926,6 +1957,14 @@ export class StateCoordinator {
         expectedDraftRevisionId
       })
     );
+  }
+
+  async getEventChestDraftDeletionEligibilityForAdmin(request = {}) {
+    const proof = await this.inspectEventChestDraftDeletionReferencesForAuthority({
+      draftId: request?.draftId,
+      expectedDraftRevisionId: request?.expectedDraftRevisionId
+    });
+    return buildEventChestDraftDeletionEligibilityResult(proof);
   }
 
   async inspectEventChestDraftDeletionReferencesWithinAuthoringLock({

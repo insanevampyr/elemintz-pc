@@ -4186,6 +4186,340 @@ test("multiplayer foundation: admin Event Chest registry route is read-only and 
   }
 });
 
+test("multiplayer foundation: admin Event Chest draft deletion routes are authorized, bounded, and fresh", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let unauthenticatedClient = null;
+
+  const saveDraft = (draftId, chestId) =>
+    coordinator.eventChestDraftStore.saveDraft({
+      draftId,
+      chestId,
+      status: "ready",
+      definition: {
+        ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+        chestId,
+        lifecycle: { status: "draft", defaultPreset: false }
+      },
+      createdBy: "PrivateAdmin",
+      updatedBy: "PrivateAdmin"
+    });
+
+  try {
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "regular@example.com",
+      password: "PlayerPass123",
+      username: "RegularUser"
+    });
+
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "regular@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(playerLogin?.ok, true);
+
+    for (const routeName of [
+      "admin:getEventChestDraftDeletionEligibility",
+      "admin:deleteEventChestDraft"
+    ]) {
+      const request = {
+        draftId: "draft_delete_candidate",
+        expectedDraftRevisionId: "draft_revision_candidate"
+      };
+      const unauthenticated = await emitWithAck(unauthenticatedClient, routeName, request);
+      assert.equal(unauthenticated?.ok, false);
+      assert.ok(["SESSION_REQUIRED", "ADMIN_AUTH_REQUIRED"].includes(unauthenticated?.error?.code));
+
+      const nonAdmin = await emitWithAck(playerClient, routeName, {
+        ...request,
+        sessionToken: playerLogin?.session?.token
+      });
+      assert.equal(nonAdmin?.ok, false);
+      assert.equal(nonAdmin?.error?.code, "ADMIN_ACCESS_DENIED");
+    }
+
+    for (const playerRouteName of [
+      "profile:getEventChestDraftDeletionEligibility",
+      "profile:deleteEventChestDraft"
+    ]) {
+      const unavailablePlayerRoute = await new Promise((resolve) => {
+        playerClient.timeout(100).emit(
+          playerRouteName,
+          {
+            sessionToken: playerLogin?.session?.token,
+            draftId: "draft_delete_candidate",
+            expectedDraftRevisionId: "draft_revision_candidate"
+          },
+          (error, response) => resolve({ error, response })
+        );
+      });
+      assert.ok(unavailablePlayerRoute.error, `${playerRouteName} must not exist`);
+      assert.equal(unavailablePlayerRoute.response, undefined);
+    }
+
+    const eligibleDraft = await saveDraft(
+      "draft_delete_eligible",
+      "event_chest_delete_eligible"
+    );
+    const blockedDraft = await saveDraft(
+      "draft_delete_blocked",
+      "event_chest_delete_blocked"
+    );
+    await coordinator.eventChestDraftStore.duplicateDraft({
+      sourceDraftId: blockedDraft.draftId,
+      expectedSourceDraftRevisionId: blockedDraft.draftRevisionId,
+      actor: "PrivateAdmin"
+    });
+    const freshnessDraft = await saveDraft(
+      "draft_delete_freshness",
+      "event_chest_delete_freshness"
+    );
+    const dailyDraft = await saveDraft(
+      "draft_delete_daily_reserved",
+      DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID
+    );
+
+    const eligibility = await emitWithAck(
+      adminClient,
+      "admin:getEventChestDraftDeletionEligibility",
+      {
+        sessionToken: adminLogin?.session?.token,
+        draftId: eligibleDraft.draftId,
+        expectedDraftRevisionId: eligibleDraft.draftRevisionId
+      }
+    );
+    assert.deepEqual(eligibility, {
+      ok: true,
+      result: {
+        schemaVersion: 1,
+        status: "eligible",
+        eligible: true,
+        draft: {
+          draftId: eligibleDraft.draftId,
+          draftRevisionId: eligibleDraft.draftRevisionId,
+          chestId: eligibleDraft.chestId
+        },
+        reasonCodes: [],
+        referenceCategories: []
+      }
+    });
+
+    const blocked = await emitWithAck(
+      adminClient,
+      "admin:getEventChestDraftDeletionEligibility",
+      {
+        sessionToken: adminLogin?.session?.token,
+        draftId: blockedDraft.draftId,
+        expectedDraftRevisionId: blockedDraft.draftRevisionId
+      }
+    );
+    assert.equal(blocked?.ok, true);
+    assert.equal(blocked?.result?.status, "blocked");
+    assert.equal(blocked?.result?.eligible, false);
+    assert.ok(blocked?.result?.referenceCategories?.includes("draft_lineage"));
+
+    const registryPath = path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME);
+    await fs.mkdir(path.dirname(registryPath), { recursive: true });
+    await fs.writeFile(registryPath, "{malformed", "utf8");
+    const unavailable = await emitWithAck(
+      adminClient,
+      "admin:getEventChestDraftDeletionEligibility",
+      {
+        sessionToken: adminLogin?.session?.token,
+        draftId: eligibleDraft.draftId,
+        expectedDraftRevisionId: eligibleDraft.draftRevisionId
+      }
+    );
+    assert.equal(unavailable?.ok, true);
+    assert.equal(unavailable?.result?.status, "unavailable");
+    assert.equal(unavailable?.result?.eligible, false);
+    assert.ok(unavailable?.result?.reasonCodes?.includes("registry_unavailable"));
+    await fs.rm(registryPath, { force: true });
+
+    const stale = await emitWithAck(
+      adminClient,
+      "admin:getEventChestDraftDeletionEligibility",
+      {
+        sessionToken: adminLogin?.session?.token,
+        draftId: eligibleDraft.draftId,
+        expectedDraftRevisionId: "draft_revision_stale"
+      }
+    );
+    assert.equal(stale?.ok, true);
+    assert.equal(stale?.result?.status, "stale");
+    assert.equal(stale?.result?.eligible, false);
+    const staleDelete = await emitWithAck(adminClient, "admin:deleteEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: eligibleDraft.draftId,
+      expectedDraftRevisionId: "draft_revision_stale"
+    });
+    assert.equal(staleDelete?.ok, true);
+    assert.equal(staleDelete?.result?.status, "stale");
+    assert.equal(staleDelete?.result?.deleted, false);
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft(eligibleDraft.draftId))?.draftId,
+      eligibleDraft.draftId
+    );
+
+    const missing = await emitWithAck(
+      adminClient,
+      "admin:getEventChestDraftDeletionEligibility",
+      {
+        sessionToken: adminLogin?.session?.token,
+        draftId: "draft_delete_missing",
+        expectedDraftRevisionId: "draft_revision_missing"
+      }
+    );
+    assert.equal(missing?.ok, true);
+    assert.equal(missing?.result?.status, "not_found");
+    assert.equal(missing?.result?.eligible, false);
+
+    const dailyBlocked = await emitWithAck(
+      adminClient,
+      "admin:getEventChestDraftDeletionEligibility",
+      {
+        sessionToken: adminLogin?.session?.token,
+        draftId: dailyDraft.draftId,
+        expectedDraftRevisionId: dailyDraft.draftRevisionId
+      }
+    );
+    assert.equal(dailyBlocked?.ok, true);
+    assert.equal(dailyBlocked?.result?.status, "blocked");
+    assert.ok(dailyBlocked?.result?.reasonCodes?.includes("daily_chest_reserved"));
+    assert.ok(dailyBlocked?.result?.referenceCategories?.includes("daily_chest"));
+    const dailyDelete = await emitWithAck(adminClient, "admin:deleteEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: dailyDraft.draftId,
+      expectedDraftRevisionId: dailyDraft.draftRevisionId
+    });
+    assert.equal(dailyDelete?.ok, true);
+    assert.equal(dailyDelete?.result?.status, "blocked");
+    assert.equal(dailyDelete?.result?.deleted, false);
+    assert.ok(dailyDelete?.result?.reasonCodes?.includes("daily_chest_reserved"));
+
+    const initiallyFresh = await emitWithAck(
+      adminClient,
+      "admin:getEventChestDraftDeletionEligibility",
+      {
+        sessionToken: adminLogin?.session?.token,
+        draftId: freshnessDraft.draftId,
+        expectedDraftRevisionId: freshnessDraft.draftRevisionId
+      }
+    );
+    assert.equal(initiallyFresh?.result?.status, "eligible");
+    await coordinator.eventChestDraftStore.duplicateDraft({
+      sourceDraftId: freshnessDraft.draftId,
+      expectedSourceDraftRevisionId: freshnessDraft.draftRevisionId,
+      actor: "PrivateAdmin"
+    });
+    const freshlyBlockedDelete = await emitWithAck(adminClient, "admin:deleteEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: freshnessDraft.draftId,
+      expectedDraftRevisionId: freshnessDraft.draftRevisionId
+    });
+    assert.equal(freshlyBlockedDelete?.ok, true);
+    assert.equal(freshlyBlockedDelete?.result?.status, "blocked");
+    assert.equal(freshlyBlockedDelete?.result?.deleted, false);
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft(freshnessDraft.draftId))?.draftId,
+      freshnessDraft.draftId
+    );
+
+    const deleted = await emitWithAck(adminClient, "admin:deleteEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: eligibleDraft.draftId,
+      expectedDraftRevisionId: eligibleDraft.draftRevisionId
+    });
+    assert.deepEqual(deleted, {
+      ok: true,
+      result: {
+        schemaVersion: 1,
+        status: "deleted",
+        deleted: true,
+        draft: {
+          draftId: eligibleDraft.draftId,
+          draftRevisionId: eligibleDraft.draftRevisionId,
+          chestId: eligibleDraft.chestId
+        },
+        reasonCodes: []
+      }
+    });
+    const replay = await emitWithAck(adminClient, "admin:deleteEventChestDraft", {
+      sessionToken: adminLogin?.session?.token,
+      draftId: eligibleDraft.draftId,
+      expectedDraftRevisionId: eligibleDraft.draftRevisionId
+    });
+    assert.equal(replay?.ok, true);
+    assert.equal(replay?.result?.status, "not_found");
+    assert.equal(replay?.result?.deleted, false);
+    assert.equal(
+      (await coordinator.eventChestDraftStore.getDraft(blockedDraft.draftId))?.draftId,
+      blockedDraft.draftId
+    );
+
+    const serializedResults = JSON.stringify({
+      eligibility,
+      blocked,
+      unavailable,
+      stale,
+      staleDelete,
+      missing,
+      dailyBlocked,
+      dailyDelete,
+      freshlyBlockedDelete,
+      deleted,
+      replay
+    });
+    for (const privateValue of [
+      "PrivateAdmin",
+      "RegularUser",
+      "sessionToken",
+      "entitlementId",
+      "settlementId",
+      "filePath",
+      "queue"
+    ]) {
+      assert.equal(serializedResults.includes(privateValue), false);
+    }
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer foundation: admin Event Chest draft routes are admin-only and draft-store scoped", async () => {
   const dataDir = await createTempDataDir();
   let registryNow = "2026-07-26T12:00:00.000Z";

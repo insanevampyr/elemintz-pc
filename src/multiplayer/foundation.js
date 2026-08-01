@@ -4193,6 +4193,54 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:getEventChestDraftDeletionEligibility", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.getEventChestDraftDeletionEligibilityForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest draft deletion authority is not available."), {
+            code: "EVENT_CHEST_DRAFT_DELETE_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.getEventChestDraftDeletionEligibilityForAdmin({
+          draftId: payload?.draftId,
+          expectedDraftRevisionId: payload?.expectedDraftRevisionId
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_DRAFT_DELETE_ELIGIBILITY_FAILED"));
+      }
+    });
+
+    socket.on("admin:deleteEventChestDraft", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.deleteEventChestDraftForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest draft deletion authority is not available."), {
+            code: "EVENT_CHEST_DRAFT_DELETE_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.deleteEventChestDraftForAdmin({
+          draftId: payload?.draftId,
+          expectedDraftRevisionId: payload?.expectedDraftRevisionId
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_DRAFT_DELETE_FAILED"));
+      }
+    });
+
     socket.on("admin:validateEventChestDraft", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);

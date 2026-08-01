@@ -1169,6 +1169,30 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.getEventChestDraftForAdmin(draftId);
   }
 
+  async getEventChestDraftDeletionEligibilityForAdmin({
+    draftId = null,
+    expectedDraftRevisionId = null
+  } = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] getEventChestDraftDeletionEligibilityForAdmin -> ${String(draftId ?? "")}`
+    );
+    return this.coordinator.getEventChestDraftDeletionEligibilityForAdmin({
+      draftId,
+      expectedDraftRevisionId
+    });
+  }
+
+  async deleteEventChestDraftForAdmin({
+    draftId = null,
+    expectedDraftRevisionId = null
+  } = {}) {
+    this.logger.info?.(`[ProfileAuthority] deleteEventChestDraftForAdmin -> ${String(draftId ?? "")}`);
+    return this.coordinator.deleteEventChestDraftForAdmin({
+      draftId,
+      expectedDraftRevisionId
+    });
+  }
+
   async validateEventChestDraftForAdmin({ definition = null, draftId = null } = {}) {
     this.logger.info?.(`[ProfileAuthority] validateEventChestDraftForAdmin -> ${String(draftId ?? "")}`);
     return this.coordinator.validateEventChestDraftForAdmin({ definition, draftId });
