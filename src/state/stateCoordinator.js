@@ -1904,10 +1904,30 @@ export class StateCoordinator {
                 chestId: entry?.chestId ?? null,
                 definitionRevisionId: entry?.definitionRevisionId ?? null,
                 state: entry?.state ?? null,
+                archived: Boolean(entry?.archived),
+                activatedAt: entry?.activatedAt ?? null,
                 deactivatedAt: entry?.deactivatedAt ?? null,
-                endedAt: entry?.endedAt ?? null
+                endedAt: entry?.endedAt ?? null,
+                archivedAt: entry?.archivedAt ?? null,
+                unarchivedAt: entry?.unarchivedAt ?? null,
+                updatedAt: entry?.updatedAt ?? null
               }
             ])
+          ),
+          history: (Array.isArray(sourceLifecycle.history) ? sourceLifecycle.history : []).map(
+            (entry) => ({
+              eventType: entry?.eventType ?? null,
+              chestId: entry?.chestId ?? null,
+              definitionRevisionId: entry?.definitionRevisionId ?? null,
+              occurredAt: entry?.occurredAt ?? null,
+              priorActiveRevision: entry?.priorActiveRevision
+                ? {
+                    chestId: entry.priorActiveRevision.chestId ?? null,
+                    definitionRevisionId:
+                      entry.priorActiveRevision.definitionRevisionId ?? null
+                  }
+                : null
+            })
           )
         }
       : null;
@@ -1932,7 +1952,9 @@ export class StateCoordinator {
       idempotent: Boolean(extra.idempotent),
       alreadyActive: Boolean(extra.alreadyActive),
       alreadyInactive: Boolean(extra.alreadyInactive),
-      alreadyEnded: Boolean(extra.alreadyEnded)
+      alreadyEnded: Boolean(extra.alreadyEnded),
+      alreadyArchived: Boolean(extra.alreadyArchived),
+      alreadyUnarchived: Boolean(extra.alreadyUnarchived)
     };
   }
 
@@ -2909,6 +2931,42 @@ export class StateCoordinator {
     const result = await this.eventChestActivationStore.end({
       chestId,
       definitionRevisionId,
+      actor
+    });
+    return this.buildEventChestActivationReadModel(result.activation, null, result);
+  }
+
+  async archiveEventChestRevisionForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    const definition = await this.getPublishedEventChestDefinitionForActivation({
+      chestId,
+      definitionRevisionId
+    });
+    if (definition.chestId === DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID) {
+      throw Object.assign(new Error("Daily Elemintz Chest is not managed by Event Chest archive authority."), {
+        code: "EVENT_CHEST_LIFECYCLE_UNAVAILABLE"
+      });
+    }
+    const result = await this.eventChestActivationStore.archive({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor
+    });
+    return this.buildEventChestActivationReadModel(result.activation, null, result);
+  }
+
+  async unarchiveEventChestRevisionForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    const definition = await this.getPublishedEventChestDefinitionForActivation({
+      chestId,
+      definitionRevisionId
+    });
+    if (definition.chestId === DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID) {
+      throw Object.assign(new Error("Daily Elemintz Chest is not managed by Event Chest archive authority."), {
+        code: "EVENT_CHEST_LIFECYCLE_UNAVAILABLE"
+      });
+    }
+    const result = await this.eventChestActivationStore.unarchive({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
       actor
     });
     return this.buildEventChestActivationReadModel(result.activation, null, result);

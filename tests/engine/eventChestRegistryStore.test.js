@@ -356,6 +356,12 @@ test("event chest registry writer: newer draft revision publishes normally after
     assert.equal(older.title, "Original Draft Revision");
     const latest = await store.getEventChestDefinitionById(DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID);
     assert.equal(latest.title, "New Draft Revision");
+    const adminReadModel = await store.getEventChestRegistryReadModel();
+    assert.equal(adminReadModel.definitions.length, 2);
+    assert.deepEqual(
+      adminReadModel.definitions.map((definition) => definition.title),
+      ["New Draft Revision", "Original Draft Revision"]
+    );
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }

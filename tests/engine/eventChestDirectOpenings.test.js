@@ -143,7 +143,7 @@ test("event chest direct opening: daily reset windows accept ISO time and honor 
   assert.equal(getEventChestFreeResetWindow(policy, "not-a-time"), null);
 });
 
-test("event chest lifecycle: deactivate and end hide new opens while preserving entitlements and settlement replay", async () => {
+test("event chest lifecycle: archive and end hide new opens while preserving entitlements and settlement replay", async () => {
   const dataDir = await createTempDataDir();
   try {
     const definition = buildDefinition({ openTypes: ["entitlement", "free", "paid"] });
@@ -161,6 +161,18 @@ test("event chest lifecycle: deactivate and end hide new opens while preserving 
       definitionRevisionId: definition.definitionRevisionId,
       actor: "VampyrLee"
     });
+    await coordinator.archiveEventChestRevisionForAdmin({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor: "VampyrLee"
+    });
+    await createClaimedProfile(coordinator, "ArchivedNewUser", 500);
+    const blockedIssuance = await coordinator.syncEventChestEntitlementForProfile({
+      username: "ArchivedNewUser",
+      profileKey: "ArchivedNewUser",
+      accountId: "account-ArchivedNewUser"
+    });
+    assert.equal(blockedIssuance.deliveryStatus, "no_active_event_chest");
 
     const retained = await coordinator.syncEventChestEntitlementForProfile({
       username: "LifecycleOpenUser",
@@ -168,6 +180,8 @@ test("event chest lifecycle: deactivate and end hide new opens while preserving 
       accountId: "account-LifecycleOpenUser"
     });
     assert.equal(retained.deliveryStatus, "existing_entitlement_available");
+    assert.equal(JSON.stringify(retained).includes("archived"), false);
+    assert.equal(JSON.stringify(retained).includes("lifecycle"), false);
     const beforeRejectedOpen = await coordinator.profiles.getProfile("LifecycleOpenUser");
     await assert.rejects(
       openDirect(coordinator, "LifecycleOpenUser", "free", "deactivated_free_request"),
@@ -196,6 +210,11 @@ test("event chest lifecycle: deactivate and end hide new opens while preserving 
     assert.equal(entitlementOpen.replayed, false);
     assert.equal(entitlementReplay.replayed, true);
 
+    await coordinator.unarchiveEventChestRevisionForAdmin({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor: "VampyrLee"
+    });
     await coordinator.activateEventChestDefinitionForAdmin({
       chestId: definition.chestId,
       definitionRevisionId: definition.definitionRevisionId,

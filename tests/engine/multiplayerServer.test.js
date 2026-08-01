@@ -4932,6 +4932,20 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
           chestId: "smoke_event_chest_activation_test",
           definitionRevisionId: "definition_revision_smoke_activation_1"
         }
+      ],
+      [
+        "admin:archiveEventChestRevision",
+        {
+          chestId: "smoke_event_chest_activation_test",
+          definitionRevisionId: "definition_revision_smoke_activation_1"
+        }
+      ],
+      [
+        "admin:unarchiveEventChestRevision",
+        {
+          chestId: "smoke_event_chest_activation_test",
+          definitionRevisionId: "definition_revision_smoke_activation_1"
+        }
       ]
     ]) {
       const unauthenticated = await emitWithAck(unauthenticatedClient, routeName, payload);
@@ -4979,6 +4993,14 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
     assert.equal(serializedActivate.includes("activatedBy"), false);
     assert.equal(serializedActivate.includes("deactivatedBy"), false);
     assert.equal(serializedActivate.includes("endedBy"), false);
+
+    const activeArchive = await emitWithAck(adminClient, "admin:archiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_test",
+      definitionRevisionId: "definition_revision_smoke_activation_1"
+    });
+    assert.equal(activeArchive?.ok, false);
+    assert.equal(activeArchive?.error?.code, "EVENT_CHEST_REVISION_ACTIVE");
 
     const activationFileAfterActivate = await fs.readFile(activationPath, "utf8");
     const replay = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
@@ -5075,6 +5097,60 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
     assert.equal(deactivateReplay?.result?.idempotent, true);
     assert.equal(await fs.readFile(activationPath, "utf8"), deactivatedFile);
 
+    const archived = await emitWithAck(adminClient, "admin:archiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(archived?.ok, true);
+    assert.equal(archived?.result?.activationStatus, "archived");
+    assert.equal(
+      archived?.result?.lifecycle?.revisionStates?.[
+        "smoke_event_chest_activation_switch:definition_revision_smoke_activation_switch"
+      ]?.archived,
+      true
+    );
+    const serializedArchived = JSON.stringify(archived);
+    assert.equal(serializedArchived.includes("AdminSecret"), false);
+    assert.equal(serializedArchived.includes("archivedBy"), false);
+    assert.equal(serializedArchived.includes('"actor"'), false);
+    assert.deepEqual(
+      archived?.result?.lifecycle?.history?.map((event) => event.eventType),
+      ["activated", "replaced", "deactivated", "archived"]
+    );
+    const archivedFile = await fs.readFile(activationPath, "utf8");
+    const archiveReplay = await emitWithAck(adminClient, "admin:archiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(archiveReplay?.result?.idempotent, true);
+    assert.equal(await fs.readFile(activationPath, "utf8"), archivedFile);
+    const archivedActivation = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(archivedActivation?.ok, false);
+    assert.equal(archivedActivation?.error?.code, "EVENT_CHEST_REVISION_ARCHIVED");
+
+    const unarchived = await emitWithAck(adminClient, "admin:unarchiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(unarchived?.ok, true);
+    assert.equal(unarchived?.result?.activationStatus, "unarchived");
+    assert.equal(unarchived?.result?.activation?.status, "inactive");
+    const unarchivedFile = await fs.readFile(activationPath, "utf8");
+    const unarchiveReplay = await emitWithAck(adminClient, "admin:unarchiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(unarchiveReplay?.result?.idempotent, true);
+    assert.equal(await fs.readFile(activationPath, "utf8"), unarchivedFile);
+
     const reactivated = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
       sessionToken: adminLogin?.session?.token,
       chestId: "smoke_event_chest_activation_switch",
@@ -5164,6 +5240,46 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
     });
     assert.equal(endedReactivation?.ok, false);
     assert.equal(endedReactivation?.error?.code, "EVENT_CHEST_REVISION_ENDED");
+
+    const archivedEnded = await emitWithAck(adminClient, "admin:archiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(archivedEnded?.ok, true);
+    assert.equal(
+      archivedEnded?.result?.lifecycle?.revisionStates?.[
+        "smoke_event_chest_activation_switch:definition_revision_smoke_activation_switch"
+      ]?.state,
+      "ended"
+    );
+    const unarchivedEnded = await emitWithAck(adminClient, "admin:unarchiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(unarchivedEnded?.ok, true);
+    assert.equal(
+      unarchivedEnded?.result?.lifecycle?.revisionStates?.[
+        "smoke_event_chest_activation_switch:definition_revision_smoke_activation_switch"
+      ]?.state,
+      "ended"
+    );
+
+    await writeRegistry([
+      buildPublishedDefinition({
+        chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+        title: "Daily Elemintz Chest",
+        definitionRevisionId: "definition_revision_daily_archive_block"
+      })
+    ]);
+    const dailyArchive = await emitWithAck(adminClient, "admin:archiveEventChestRevision", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID,
+      definitionRevisionId: "definition_revision_daily_archive_block"
+    });
+    assert.equal(dailyArchive?.ok, false);
+    assert.equal(dailyArchive?.error?.code, "EVENT_CHEST_LIFECYCLE_UNAVAILABLE");
 
     const profileAfterActivation = await coordinator.profiles.getProfile("RegularUser");
     assert.deepEqual(profileAfterActivation, profileBeforeActivation);

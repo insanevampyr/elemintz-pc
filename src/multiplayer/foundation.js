@@ -4503,6 +4503,56 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:archiveEventChestRevision", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.archiveEventChestRevisionForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest archive authority is not available."), {
+            code: "EVENT_CHEST_LIFECYCLE_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.archiveEventChestRevisionForAdmin({
+          chestId: payload?.chestId,
+          definitionRevisionId: payload?.definitionRevisionId,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_ARCHIVE_FAILED"));
+      }
+    });
+
+    socket.on("admin:unarchiveEventChestRevision", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.unarchiveEventChestRevisionForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest archive authority is not available."), {
+            code: "EVENT_CHEST_LIFECYCLE_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.unarchiveEventChestRevisionForAdmin({
+          chestId: payload?.chestId,
+          definitionRevisionId: payload?.definitionRevisionId,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_UNARCHIVE_FAILED"));
+      }
+    });
+
     socket.on("admin:getCollectionPack", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);

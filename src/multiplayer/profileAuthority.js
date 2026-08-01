@@ -1267,6 +1267,28 @@ export class MultiplayerProfileAuthority {
     });
   }
 
+  async archiveEventChestRevisionForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] archiveEventChestRevisionForAdmin -> ${String(chestId ?? "")}:${String(definitionRevisionId ?? "")}`
+    );
+    return this.coordinator.archiveEventChestRevisionForAdmin({
+      chestId,
+      definitionRevisionId,
+      actor
+    });
+  }
+
+  async unarchiveEventChestRevisionForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] unarchiveEventChestRevisionForAdmin -> ${String(chestId ?? "")}:${String(definitionRevisionId ?? "")}`
+    );
+    return this.coordinator.unarchiveEventChestRevisionForAdmin({
+      chestId,
+      definitionRevisionId,
+      actor
+    });
+  }
+
   async syncEventChestEntitlements({ username, accountId, profileKey = username } = {}) {
     const safeUsername = normalizeAuthorityUsername(username);
     const safeAccountId = normalizeAuthorityAccountId(accountId);

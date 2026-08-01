@@ -5,12 +5,21 @@ import crypto from "node:crypto";
 import { resolveDataDir } from "./paths.js";
 import { JsonStore } from "./storage/jsonStore.js";
 
-export const EVENT_CHEST_ACTIVATION_SCHEMA_VERSION = 2;
+export const EVENT_CHEST_ACTIVATION_SCHEMA_VERSION = 3;
 export const EVENT_CHEST_ACTIVATION_FILENAME = "event-chest-activation.json";
 export const EVENT_CHEST_ACTIVATION_STATUSES = Object.freeze(["active", "inactive"]);
 export const EVENT_CHEST_REVISION_LIFECYCLE_STATES = Object.freeze(["inactive", "ended"]);
+export const EVENT_CHEST_LIFECYCLE_EVENT_TYPES = Object.freeze([
+  "activated",
+  "replaced",
+  "deactivated",
+  "ended",
+  "archived",
+  "unarchived"
+]);
 
 const LEGACY_EVENT_CHEST_ACTIVATION_SCHEMA_VERSION = 1;
+const SCHEMA_TWO_EVENT_CHEST_ACTIVATION_VERSION = 2;
 
 function clone(value) {
   return value == null ? value : structuredClone(value);
@@ -41,6 +50,13 @@ function buildRevisionId(timestamp) {
   return `event_chest_activation_revision_${safeTimestamp || Date.now()}_${crypto.randomUUID()}`;
 }
 
+function buildLifecycleEventId(eventType, timestamp) {
+  const safeTimestamp = String(timestamp ?? "")
+    .replace(/[^0-9A-Za-z]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `event_chest_lifecycle_${eventType}_${safeTimestamp || Date.now()}_${crypto.randomUUID()}`;
+}
+
 export function buildEventChestRevisionLifecycleKey(chestId, definitionRevisionId) {
   const safeChestId = normalizeText(chestId);
   const safeDefinitionRevisionId = normalizeText(definitionRevisionId);
@@ -53,7 +69,8 @@ function buildEmptyLifecycle() {
   return {
     schemaVersion: EVENT_CHEST_ACTIVATION_SCHEMA_VERSION,
     active: null,
-    revisionStates: {}
+    revisionStates: {},
+    history: []
   };
 }
 
@@ -93,26 +110,78 @@ function normalizeRevisionState(value) {
   }
   const deactivatedAt = normalizeTimestamp(value.deactivatedAt);
   const endedAt = normalizeTimestamp(value.endedAt);
-  if (state === "inactive" && !deactivatedAt) {
-    return null;
-  }
   if (state === "ended" && !endedAt) {
     return null;
   }
+  const archived = value.archived === true;
+  const archivedAt = normalizeTimestamp(value.archivedAt);
   return {
     chestId,
     definitionRevisionId,
     state,
+    archived,
+    activatedAt: normalizeTimestamp(value.activatedAt),
     deactivatedAt: state === "inactive" ? deactivatedAt : null,
     deactivatedBy: state === "inactive" ? normalizeText(value.deactivatedBy) : null,
     endedAt: state === "ended" ? endedAt : null,
     endedBy: state === "ended" ? normalizeText(value.endedBy) : null,
-    updatedAt: normalizeTimestamp(value.updatedAt) ?? deactivatedAt ?? endedAt,
+    archivedAt: archived ? archivedAt : null,
+    archivedBy: archived ? normalizeText(value.archivedBy) : null,
+    unarchivedAt: archived ? null : normalizeTimestamp(value.unarchivedAt),
+    unarchivedBy: archived ? null : normalizeText(value.unarchivedBy),
+    updatedAt: normalizeTimestamp(value.updatedAt) ?? archivedAt ?? deactivatedAt ?? endedAt,
     updatedBy: normalizeText(value.updatedBy ?? value.deactivatedBy ?? value.endedBy)
   };
 }
 
-function normalizeSchemaTwoLifecycle(value) {
+function normalizeLifecycleEvent(value) {
+  if (!isObject(value)) {
+    return null;
+  }
+  const eventId = normalizeText(value.eventId);
+  const eventType = EVENT_CHEST_LIFECYCLE_EVENT_TYPES.includes(value.eventType)
+    ? value.eventType
+    : null;
+  const chestId = normalizeText(value.chestId);
+  const definitionRevisionId = normalizeText(value.definitionRevisionId);
+  const occurredAt = normalizeTimestamp(value.occurredAt);
+  if (!eventId || !eventType || !chestId || !definitionRevisionId || !occurredAt) {
+    return null;
+  }
+  const priorChestId = normalizeText(value.priorActiveRevision?.chestId);
+  const priorDefinitionRevisionId = normalizeText(
+    value.priorActiveRevision?.definitionRevisionId
+  );
+  return {
+    eventId,
+    eventType,
+    chestId,
+    definitionRevisionId,
+    occurredAt,
+    priorActiveRevision:
+      priorChestId && priorDefinitionRevisionId
+        ? { chestId: priorChestId, definitionRevisionId: priorDefinitionRevisionId }
+        : null,
+    actor: normalizeText(value.actor)
+  };
+}
+
+function appendLifecycleEvent(
+  lifecycle,
+  { eventType, chestId, definitionRevisionId, occurredAt, actor = null, priorActiveRevision = null }
+) {
+  lifecycle.history.push({
+    eventId: buildLifecycleEventId(eventType, occurredAt),
+    eventType,
+    chestId,
+    definitionRevisionId,
+    occurredAt,
+    priorActiveRevision: priorActiveRevision ? clone(priorActiveRevision) : null,
+    actor: normalizeText(actor)
+  });
+}
+
+function normalizeCurrentLifecycle(value, { preserveHistory = true } = {}) {
   const lifecycle = buildEmptyLifecycle();
   lifecycle.active = value.active == null ? null : normalizeActivePointer(value.active);
 
@@ -124,6 +193,17 @@ function normalizeSchemaTwoLifecycle(value) {
         : null;
       if (key) {
         lifecycle.revisionStates[key] = normalized;
+      }
+    }
+  }
+
+  if (preserveHistory && Array.isArray(value.history)) {
+    const seenEventIds = new Set();
+    for (const event of value.history) {
+      const normalized = normalizeLifecycleEvent(event);
+      if (normalized && !seenEventIds.has(normalized.eventId)) {
+        seenEventIds.add(normalized.eventId);
+        lifecycle.history.push(normalized);
       }
     }
   }
@@ -153,7 +233,10 @@ function normalizeLifecycleDocument(value) {
     return buildEmptyLifecycle();
   }
   if (value.schemaVersion === EVENT_CHEST_ACTIVATION_SCHEMA_VERSION) {
-    return normalizeSchemaTwoLifecycle(value);
+    return normalizeCurrentLifecycle(value);
+  }
+  if (value.schemaVersion === SCHEMA_TWO_EVENT_CHEST_ACTIVATION_VERSION) {
+    return normalizeCurrentLifecycle(value, { preserveHistory: false });
   }
   if (value.schemaVersion === LEGACY_EVENT_CHEST_ACTIVATION_SCHEMA_VERSION) {
     return normalizeLegacyLifecycle(value);
@@ -255,6 +338,12 @@ export class EventChestActivationStore {
       const exact = requireExactRevision(chestId, definitionRevisionId);
       const lifecycle = await this.readLifecycle();
       const targetState = lifecycle.revisionStates[exact.key] ?? null;
+      if (targetState?.archived) {
+        throw lifecycleError(
+          "This Event Chest revision is archived and cannot be activated.",
+          "EVENT_CHEST_REVISION_ARCHIVED"
+        );
+      }
       if (targetState?.state === "ended") {
         throw lifecycleError(
           "This Event Chest revision has ended and cannot be activated again.",
@@ -274,6 +363,7 @@ export class EventChestActivationStore {
 
       const now = normalizeTimestamp(this.now()) ?? new Date().toISOString();
       const safeActor = normalizeText(actor);
+      const previousActive = lifecycle.active ? clone(lifecycle.active) : null;
       if (lifecycle.active) {
         const previousKey = buildEventChestRevisionLifecycleKey(
           lifecycle.active.chestId,
@@ -283,10 +373,16 @@ export class EventChestActivationStore {
           chestId: lifecycle.active.chestId,
           definitionRevisionId: lifecycle.active.definitionRevisionId,
           state: "inactive",
+          archived: false,
+          activatedAt: lifecycle.active.activatedAt,
           deactivatedAt: now,
           deactivatedBy: safeActor,
           endedAt: null,
           endedBy: null,
+          archivedAt: null,
+          archivedBy: null,
+          unarchivedAt: null,
+          unarchivedBy: null,
           updatedAt: now,
           updatedBy: safeActor
         };
@@ -301,6 +397,19 @@ export class EventChestActivationStore {
         updatedAt: now,
         updatedBy: safeActor
       };
+      appendLifecycleEvent(lifecycle, {
+        eventType: previousActive ? "replaced" : "activated",
+        chestId: exact.chestId,
+        definitionRevisionId: exact.definitionRevisionId,
+        occurredAt: now,
+        actor: safeActor,
+        priorActiveRevision: previousActive
+          ? {
+              chestId: previousActive.chestId,
+              definitionRevisionId: previousActive.definitionRevisionId
+            }
+          : null
+      });
 
       await this.store.write(lifecycle);
       return buildMutationResult(lifecycle, {
@@ -340,18 +449,32 @@ export class EventChestActivationStore {
 
       const now = normalizeTimestamp(this.now()) ?? new Date().toISOString();
       const safeActor = normalizeText(actor);
+      const activatedAt = lifecycle.active.activatedAt;
       lifecycle.active = null;
       lifecycle.revisionStates[exact.key] = {
         chestId: exact.chestId,
         definitionRevisionId: exact.definitionRevisionId,
         state: "inactive",
+        archived: false,
+        activatedAt,
         deactivatedAt: now,
         deactivatedBy: safeActor,
         endedAt: null,
         endedBy: null,
+        archivedAt: null,
+        archivedBy: null,
+        unarchivedAt: null,
+        unarchivedBy: null,
         updatedAt: now,
         updatedBy: safeActor
       };
+      appendLifecycleEvent(lifecycle, {
+        eventType: "deactivated",
+        chestId: exact.chestId,
+        definitionRevisionId: exact.definitionRevisionId,
+        occurredAt: now,
+        actor: safeActor
+      });
       await this.store.write(lifecycle);
       return buildMutationResult(lifecycle, {
         activationStatus: "deactivated",
@@ -390,23 +513,135 @@ export class EventChestActivationStore {
 
       const now = normalizeTimestamp(this.now()) ?? new Date().toISOString();
       const safeActor = normalizeText(actor);
+      const activatedAt = lifecycle.active.activatedAt;
       lifecycle.active = null;
       lifecycle.revisionStates[exact.key] = {
         chestId: exact.chestId,
         definitionRevisionId: exact.definitionRevisionId,
         state: "ended",
+        archived: false,
+        activatedAt,
         deactivatedAt: null,
         deactivatedBy: null,
         endedAt: now,
         endedBy: safeActor,
+        archivedAt: null,
+        archivedBy: null,
+        unarchivedAt: null,
+        unarchivedBy: null,
         updatedAt: now,
         updatedBy: safeActor
       };
+      appendLifecycleEvent(lifecycle, {
+        eventType: "ended",
+        chestId: exact.chestId,
+        definitionRevisionId: exact.definitionRevisionId,
+        occurredAt: now,
+        actor: safeActor
+      });
       await this.store.write(lifecycle);
       return buildMutationResult(lifecycle, {
         activationStatus: "ended",
         idempotent: false,
         alreadyEnded: false
+      });
+    });
+  }
+
+  async archive({ chestId, definitionRevisionId, actor = null } = {}) {
+    return this.runMutation(async () => {
+      const exact = requireExactRevision(chestId, definitionRevisionId);
+      const lifecycle = await this.readLifecycle();
+      if (
+        lifecycle.active?.chestId === exact.chestId &&
+        lifecycle.active?.definitionRevisionId === exact.definitionRevisionId
+      ) {
+        throw lifecycleError(
+          "The active Event Chest revision must be deactivated or ended before it can be archived.",
+          "EVENT_CHEST_REVISION_ACTIVE"
+        );
+      }
+      const current = lifecycle.revisionStates[exact.key] ?? null;
+      if (current?.archived) {
+        return buildMutationResult(lifecycle, {
+          activationStatus: "already_archived",
+          idempotent: true,
+          alreadyArchived: true
+        });
+      }
+
+      const now = normalizeTimestamp(this.now()) ?? new Date().toISOString();
+      const safeActor = normalizeText(actor);
+      lifecycle.revisionStates[exact.key] = {
+        chestId: exact.chestId,
+        definitionRevisionId: exact.definitionRevisionId,
+        state: current?.state === "ended" ? "ended" : "inactive",
+        archived: true,
+        activatedAt: current?.activatedAt ?? null,
+        deactivatedAt: current?.state === "inactive" ? current.deactivatedAt ?? null : null,
+        deactivatedBy: current?.state === "inactive" ? current.deactivatedBy ?? null : null,
+        endedAt: current?.state === "ended" ? current.endedAt : null,
+        endedBy: current?.state === "ended" ? current.endedBy ?? null : null,
+        archivedAt: now,
+        archivedBy: safeActor,
+        unarchivedAt: current?.unarchivedAt ?? null,
+        unarchivedBy: current?.unarchivedBy ?? null,
+        updatedAt: now,
+        updatedBy: safeActor
+      };
+      appendLifecycleEvent(lifecycle, {
+        eventType: "archived",
+        chestId: exact.chestId,
+        definitionRevisionId: exact.definitionRevisionId,
+        occurredAt: now,
+        actor: safeActor
+      });
+      await this.store.write(lifecycle);
+      return buildMutationResult(lifecycle, {
+        activationStatus: "archived",
+        idempotent: false,
+        alreadyArchived: false
+      });
+    });
+  }
+
+  async unarchive({ chestId, definitionRevisionId, actor = null } = {}) {
+    return this.runMutation(async () => {
+      const exact = requireExactRevision(chestId, definitionRevisionId);
+      const lifecycle = await this.readLifecycle();
+      const current = lifecycle.revisionStates[exact.key] ?? null;
+      if (!current?.archived) {
+        return buildMutationResult(lifecycle, {
+          activationStatus: "already_unarchived",
+          idempotent: true,
+          alreadyUnarchived: true
+        });
+      }
+
+      const now = normalizeTimestamp(this.now()) ?? new Date().toISOString();
+      const safeActor = normalizeText(actor);
+      lifecycle.revisionStates[exact.key] = {
+        ...current,
+        archived: false,
+        archivedAt: null,
+        archivedBy: null,
+        unarchivedAt: now,
+        unarchivedBy: safeActor,
+        updatedAt: now,
+        updatedBy: safeActor
+      };
+      appendLifecycleEvent(lifecycle, {
+        eventType: "unarchived",
+        chestId: exact.chestId,
+        definitionRevisionId: exact.definitionRevisionId,
+        occurredAt: now,
+        actor: safeActor
+      });
+      await this.store.write(lifecycle);
+      return buildMutationResult(lifecycle, {
+        activationStatus: "unarchived",
+        idempotent: false,
+        alreadyUnarchived: false
       });
     });
   }

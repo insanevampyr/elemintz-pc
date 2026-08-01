@@ -150,6 +150,23 @@ function getLatestEventChestDefinitions(definitions) {
   );
 }
 
+function getAllEventChestDefinitionsForAdmin(definitions) {
+  return [...(Array.isArray(definitions) ? definitions : [])].sort((left, right) => {
+    const chestCompare = String(left?.chestId ?? "").localeCompare(
+      String(right?.chestId ?? "")
+    );
+    if (chestCompare !== 0) {
+      return chestCompare;
+    }
+    const timestampCompare = getRevisionSortTimestamp(right) - getRevisionSortTimestamp(left);
+    return timestampCompare !== 0
+      ? timestampCompare
+      : String(right?.definitionRevisionId ?? "").localeCompare(
+          String(left?.definitionRevisionId ?? "")
+        );
+  });
+}
+
 function isCompletePublishedDefinition(definition) {
   return Boolean(
     normalizeOptionalText(definition?.definitionRevisionId) &&
@@ -342,7 +359,41 @@ export class EventChestRegistryStore {
   }
 
   async getEventChestRegistryReadModel() {
-    return this.getPublishedEventChestRegistry();
+    const readAt = this.now();
+    try {
+      const parsed = await this.readRawFile();
+      const validation = validateEventChestRegistryDocument(parsed);
+      if (!validation.ok) {
+        return buildFallbackReadModel({
+          source: "fallback_static",
+          readAt,
+          errors: validation.errors,
+          warnings: validation.warnings
+        });
+      }
+      const definitions = getAllEventChestDefinitionsForAdmin(validation.registry.definitions);
+      return {
+        ok: true,
+        source: "file",
+        readAt,
+        registry: {
+          ...clone(validation.registry),
+          definitions: clone(definitions)
+        },
+        definitions: clone(definitions),
+        warnings: validation.warnings,
+        errors: []
+      };
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return buildFallbackReadModel({ source: "fallback_static", readAt });
+      }
+      return buildFallbackReadModel({
+        source: "fallback_static",
+        readAt,
+        errors: [`Unable to read event chest registry: ${error?.message ?? String(error)}`]
+      });
+    }
   }
 
   async getEventChestDefinitionById(chestId) {

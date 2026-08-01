@@ -33,16 +33,17 @@ async function withTempStore(callback, { now = "2026-08-01T12:00:00.000Z" } = {}
   }
 }
 
-test("event chest lifecycle store: missing file returns inactive schema-v2 projection without writing", async () => {
+test("event chest lifecycle store: missing file returns inactive canonical projection without writing", async () => {
   await withTempStore(async ({ dataDir, store }) => {
     const activation = await store.readActivation();
     assert.equal(activation.schemaVersion, EVENT_CHEST_ACTIVATION_SCHEMA_VERSION);
     assert.equal(activation.status, "inactive");
     assert.equal(activation.chestId, null);
     assert.deepEqual(activation.lifecycle, {
-      schemaVersion: 2,
+      schemaVersion: EVENT_CHEST_ACTIVATION_SCHEMA_VERSION,
       active: null,
-      revisionStates: {}
+      revisionStates: {},
+      history: []
     });
     await assert.rejects(fs.access(activationPath(dataDir)), /ENOENT/);
   });
@@ -82,7 +83,7 @@ test("event chest lifecycle store: valid schema-v1 active pointer migrates witho
       actor: "VampyrLee"
     });
     const canonical = await readActivationFile(dataDir);
-    assert.equal(canonical.schemaVersion, 2);
+    assert.equal(canonical.schemaVersion, EVENT_CHEST_ACTIVATION_SCHEMA_VERSION);
     assert.equal(canonical.active, null);
     assert.equal(
       canonical.revisionStates[
@@ -90,6 +91,70 @@ test("event chest lifecycle store: valid schema-v1 active pointer migrates witho
       ].state,
       "inactive"
     );
+  });
+});
+
+test("event chest lifecycle store: schema-v2 state migrates without fabricating archive or history", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    await fs.mkdir(path.dirname(activationPath(dataDir)), { recursive: true });
+    await fs.writeFile(
+      activationPath(dataDir),
+      JSON.stringify({
+        schemaVersion: 2,
+        active: {
+          activationRevisionId: "activation_alpha",
+          chestId: "event_chest_alpha",
+          definitionRevisionId: "definition_revision_alpha_1",
+          activatedAt: "2026-07-31T10:00:00.000Z",
+          activatedBy: "AdminA",
+          updatedAt: "2026-07-31T10:00:00.000Z",
+          updatedBy: "AdminA"
+        },
+        revisionStates: {
+          "event_chest_beta:definition_revision_beta_1": {
+            chestId: "event_chest_beta",
+            definitionRevisionId: "definition_revision_beta_1",
+            state: "inactive",
+            deactivatedAt: "2026-07-30T10:00:00.000Z",
+            deactivatedBy: "AdminB",
+            endedAt: null,
+            endedBy: null,
+            updatedAt: "2026-07-30T10:00:00.000Z",
+            updatedBy: "AdminB"
+          },
+          "event_chest_gamma:definition_revision_gamma_1": {
+            chestId: "event_chest_gamma",
+            definitionRevisionId: "definition_revision_gamma_1",
+            state: "ended",
+            deactivatedAt: null,
+            deactivatedBy: null,
+            endedAt: "2026-07-29T10:00:00.000Z",
+            endedBy: "AdminC",
+            updatedAt: "2026-07-29T10:00:00.000Z",
+            updatedBy: "AdminC"
+          }
+        }
+      }),
+      "utf8"
+    );
+
+    const migrated = await store.readActivation();
+    assert.equal(migrated.lifecycle.schemaVersion, EVENT_CHEST_ACTIVATION_SCHEMA_VERSION);
+    assert.equal(migrated.lifecycle.active.chestId, "event_chest_alpha");
+    assert.equal(
+      migrated.lifecycle.revisionStates["event_chest_beta:definition_revision_beta_1"].state,
+      "inactive"
+    );
+    assert.equal(
+      migrated.lifecycle.revisionStates["event_chest_gamma:definition_revision_gamma_1"].state,
+      "ended"
+    );
+    assert.equal(
+      migrated.lifecycle.revisionStates["event_chest_beta:definition_revision_beta_1"].archived,
+      false
+    );
+    assert.deepEqual(migrated.lifecycle.history, []);
+    assert.equal((await readActivationFile(dataDir)).schemaVersion, 2);
   });
 });
 
@@ -309,11 +374,193 @@ test("event chest lifecycle store: stale end cannot affect a queued replacement"
   });
 });
 
+test("event chest lifecycle store: archive and unarchive are exact, durable, idempotent, and preserve ended authority", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    const inactiveKey = buildEventChestRevisionLifecycleKey(
+      "event_chest_alpha",
+      "definition_revision_alpha_1"
+    );
+    const endedKey = buildEventChestRevisionLifecycleKey(
+      "event_chest_beta",
+      "definition_revision_beta_1"
+    );
+
+    await store.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "AdminA"
+    });
+    await assert.rejects(
+      store.archive({
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "definition_revision_alpha_1"
+      }),
+      (error) => error?.code === "EVENT_CHEST_REVISION_ACTIVE"
+    );
+    await store.deactivate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "AdminA"
+    });
+    const archived = await store.archive({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "AdminA"
+    });
+    assert.equal(archived.lifecycle.revisionStates[inactiveKey].archived, true);
+    await assert.rejects(
+      store.activate({
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "definition_revision_alpha_1"
+      }),
+      (error) => error?.code === "EVENT_CHEST_REVISION_ARCHIVED"
+    );
+    const archiveReplay = await store.archive({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "OtherAdmin"
+    });
+    assert.equal(archiveReplay.idempotent, true);
+    assert.equal(
+      archiveReplay.lifecycle.history.filter((event) => event.eventType === "archived").length,
+      1
+    );
+
+    const unarchived = await store.unarchive({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "AdminA"
+    });
+    assert.equal(unarchived.lifecycle.active, null);
+    assert.equal(unarchived.lifecycle.revisionStates[inactiveKey].archived, false);
+    const unarchiveReplay = await store.unarchive({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    assert.equal(unarchiveReplay.idempotent, true);
+    assert.equal(
+      unarchiveReplay.lifecycle.history.filter((event) => event.eventType === "unarchived").length,
+      1
+    );
+    await store.activate({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1"
+    });
+    await store.end({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1"
+    });
+    await store.archive({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1"
+    });
+    await store.unarchive({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1"
+    });
+    const reloaded = await new EventChestActivationStore({ dataDir }).readActivation();
+    assert.equal(reloaded.lifecycle.revisionStates[endedKey].state, "ended");
+    assert.equal(reloaded.lifecycle.revisionStates[endedKey].archived, false);
+    await assert.rejects(
+      store.activate({
+        chestId: "event_chest_beta",
+        definitionRevisionId: "definition_revision_beta_1"
+      }),
+      (error) => error?.code === "EVENT_CHEST_REVISION_ENDED"
+    );
+  });
+});
+
+test("event chest lifecycle store: append-only history is ordered, private internally, and race-safe", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    await store.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "AdminSecret"
+    });
+    await store.activate({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1",
+      actor: "AdminSecret"
+    });
+    await store.deactivate({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1",
+      actor: "AdminSecret"
+    });
+    const beforeRace = await store.readActivation();
+    assert.deepEqual(
+      beforeRace.lifecycle.history.map((event) => event.eventType),
+      ["activated", "replaced", "deactivated"]
+    );
+    assert.deepEqual(beforeRace.lifecycle.history[1].priorActiveRevision, {
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    assert.equal(beforeRace.lifecycle.history[0].actor, "AdminSecret");
+
+    const race = await Promise.allSettled([
+      store.archive({
+        chestId: "event_chest_gamma",
+        definitionRevisionId: "definition_revision_gamma_1"
+      }),
+      store.activate({
+        chestId: "event_chest_gamma",
+        definitionRevisionId: "definition_revision_gamma_1"
+      })
+    ]);
+    assert.equal(race.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(race.filter((result) => result.status === "rejected").length, 1);
+    const final = await new EventChestActivationStore({ dataDir }).readActivation();
+    const gammaKey = buildEventChestRevisionLifecycleKey(
+      "event_chest_gamma",
+      "definition_revision_gamma_1"
+    );
+    const activeGamma =
+      final.chestId === "event_chest_gamma" &&
+      final.definitionRevisionId === "definition_revision_gamma_1";
+    const archivedGamma = final.lifecycle.revisionStates[gammaKey]?.archived === true;
+    assert.notEqual(activeGamma, archivedGamma);
+    assert.equal(JSON.parse(await fs.readFile(activationPath(dataDir), "utf8")).schemaVersion, 3);
+  });
+});
+
 test("event chest lifecycle store: malformed persistence fails closed", async () => {
   await withTempStore(async ({ dataDir, store }) => {
     await fs.mkdir(path.dirname(activationPath(dataDir)), { recursive: true });
-    await fs.writeFile(activationPath(dataDir), JSON.stringify({ schemaVersion: 2, active: { nope: true } }), "utf8");
+    await fs.writeFile(activationPath(dataDir), JSON.stringify({ schemaVersion: 3, active: { nope: true } }), "utf8");
     assert.equal((await store.readActivation()).status, "inactive");
+
+    await fs.writeFile(
+      activationPath(dataDir),
+      JSON.stringify({
+        schemaVersion: 3,
+        active: null,
+        revisionStates: {
+          "event_chest_archived:definition_revision_archived_1": {
+            chestId: "event_chest_archived",
+            definitionRevisionId: "definition_revision_archived_1",
+            state: "inactive",
+            archived: true
+          }
+        },
+        history: []
+      }),
+      "utf8"
+    );
+    assert.equal(
+      (await store.readActivation()).lifecycle.revisionStates[
+        "event_chest_archived:definition_revision_archived_1"
+      ].archived,
+      true
+    );
+    await assert.rejects(
+      store.activate({
+        chestId: "event_chest_archived",
+        definitionRevisionId: "definition_revision_archived_1"
+      }),
+      (error) => error?.code === "EVENT_CHEST_REVISION_ARCHIVED"
+    );
 
     await fs.writeFile(activationPath(dataDir), "{ malformed", "utf8");
     await assert.rejects(store.readActivation(), SyntaxError);
