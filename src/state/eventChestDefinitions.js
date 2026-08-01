@@ -13,6 +13,10 @@ import {
   DEFAULT_DAILY_ELEMENT_CHEST_POOL_ID
 } from "./dailyElementChestSystem.js";
 import { normalizeEventChestActiveWindows } from "./eventChestSchedule.js";
+import {
+  normalizeEventChestEligibility,
+  validateEventChestEligibility
+} from "./eventChestEligibility.js";
 
 export const EVENT_CHEST_SCHEMA_VERSION = 1;
 export const EVENT_CHEST_TYPES = Object.freeze(["daily_event_chest"]);
@@ -96,6 +100,7 @@ export const DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET = Object.freeze({
     fallbackOpen: "icons/loot_chest_open.png"
   }),
   openTypes: Object.freeze(["free", "paid"]),
+  eligibility: Object.freeze({ mode: "all_players" }),
   freeOpenPolicy: Object.freeze({
     cadence: "daily",
     resetTimeZone: "America/Chicago",
@@ -159,6 +164,7 @@ export function normalizeEventChestOpeningRules(definition) {
       .map((entry) => String(entry ?? "").trim())
   );
   safeDefinition.openTypes = EVENT_CHEST_OPEN_TYPES.filter((entry) => openTypeSet.has(entry));
+  safeDefinition.eligibility = normalizeEventChestEligibility(safeDefinition.eligibility);
   return safeDefinition;
 }
 
@@ -476,6 +482,8 @@ export function validateEventChestDefinition(definition) {
       errors.push(`paidTokenCost cannot exceed ${EVENT_CHEST_MAX_PAID_TOKEN_COST}.`);
     }
   }
+
+  validateEventChestEligibility(definition.eligibility, errors);
 
   validateOdds(definition.odds, errors);
   validatePity(definition.pity, errors);

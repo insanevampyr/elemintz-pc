@@ -5630,6 +5630,184 @@ test("state: Event Chest entitlement delivery validates active registry state be
   }
 });
 
+test("state: Event Chest eligibility hides status and blocks new entitlement delivery without profile mutation", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir });
+  try {
+    await writeEventChestRegistryFile(dataDir, [
+      buildPublishedEventChestDefinition({
+        eligibility: { mode: "rules", minimumLevel: 10 }
+      })
+    ]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: "state_event_chest_entitlement",
+      definitionRevisionId: "definition_revision_state_entitlement_1"
+    });
+    await coordinator.profiles.ensureProfile("EntitlementEligibilityUser", {
+      linkedAccountId: "account-eligibility"
+    });
+    const before = await coordinator.profiles.getProfile("EntitlementEligibilityUser");
+    const result = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementEligibilityUser",
+      profileKey: "EntitlementEligibilityUser",
+      accountId: "account-eligibility",
+      account: { accountId: "account-eligibility", createdAt: "2026-07-20T12:00:00.000Z", emailVerified: true }
+    });
+    assert.equal(result.active, false);
+    assert.equal(result.deliveryStatus, "event_chest_unavailable");
+    assert.equal(result.entitlement, null);
+    assert.equal(result.activeChest, null);
+    assert.equal(result.directOpen.available, false);
+    assert.equal(JSON.stringify(result).includes("minimumLevel"), false);
+    assert.equal(JSON.stringify(result).includes("createdAt"), false);
+    assert.deepEqual(await coordinator.profiles.getProfile("EntitlementEligibilityUser"), before);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("state: completed Event Chest blocks new entitlement delivery but preserves an already-issued entitlement", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir, random: () => 0 });
+  try {
+    const rewards = structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool.common.slice(0, 2));
+    const definition = buildPublishedEventChestDefinition({
+      pool: { common: rewards, rare: [], epic: [], legendary: [] },
+      odds: { common: 1, rare: 0, epic: 0, legendary: 0 },
+      pity: {
+        ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pity),
+        epicPlusEnabled: false,
+        legendaryEnabled: false
+      }
+    });
+    await writeEventChestRegistryFile(dataDir, [definition]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId
+    });
+    await coordinator.profiles.ensureProfile("CompletedEntitlementUser", {
+      linkedAccountId: "account-completed-entitlement"
+    });
+    await coordinator.profiles.ensureProfile("FullyCompletedNoEntitlementUser", {
+      linkedAccountId: "account-completed-no-entitlement"
+    });
+
+    const grantRewards = async (username, entries) => {
+      await coordinator.profiles.updateProfile(username, (profile) => ({
+        ...profile,
+        ownedCosmetics: entries.reduce((ownedCosmetics, entry) => ({
+          ...ownedCosmetics,
+          [entry.type]: [...new Set([...(ownedCosmetics?.[entry.type] ?? []), entry.cosmeticId])]
+        }), structuredClone(profile.ownedCosmetics ?? {}))
+      }));
+    };
+
+    await grantRewards("CompletedEntitlementUser", [rewards[0]]);
+    const issued = await coordinator.syncEventChestEntitlementForProfile({
+      username: "CompletedEntitlementUser",
+      profileKey: "CompletedEntitlementUser",
+      accountId: "account-completed-entitlement"
+    });
+    assert.equal(issued.deliveryStatus, "delivered");
+
+    await grantRewards("CompletedEntitlementUser", [rewards[1]]);
+    const retained = await coordinator.syncEventChestEntitlementForProfile({
+      username: "CompletedEntitlementUser",
+      profileKey: "CompletedEntitlementUser",
+      accountId: "account-completed-entitlement"
+    });
+    assert.equal(retained.deliveryStatus, "existing_entitlement_available");
+    assert.equal(retained.entitlement.entitlementId, issued.entitlement.entitlementId);
+    assert.equal(retained.directOpen.available, false);
+
+    const opened = await coordinator.openEventChestEntitlement({
+      username: "CompletedEntitlementUser",
+      profileKey: "CompletedEntitlementUser",
+      accountId: "account-completed-entitlement",
+      entitlementId: issued.entitlement.entitlementId,
+      random: () => 0
+    });
+    const replay = await coordinator.openEventChestEntitlement({
+      username: "CompletedEntitlementUser",
+      profileKey: "CompletedEntitlementUser",
+      accountId: "account-completed-entitlement",
+      entitlementId: issued.entitlement.entitlementId,
+      random: () => 0.9
+    });
+    assert.equal(opened.replayed, false);
+    assert.equal(replay.replayed, true);
+
+    await grantRewards("FullyCompletedNoEntitlementUser", rewards);
+    const blocked = await coordinator.syncEventChestEntitlementForProfile({
+      username: "FullyCompletedNoEntitlementUser",
+      profileKey: "FullyCompletedNoEntitlementUser",
+      accountId: "account-completed-no-entitlement"
+    });
+    assert.equal(blocked.active, false);
+    assert.equal(blocked.entitlement, null);
+    const profile = await coordinator.profiles.getProfile("FullyCompletedNoEntitlementUser");
+    assert.equal(profile.eventChestEntitlements.items.length, 0);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("state: existing Event Chest entitlement remains visible and openable after later eligibility restriction", async () => {
+  const dataDir = await createTempDataDir();
+  const coordinator = new StateCoordinator({ dataDir, random: () => 0 });
+  try {
+    await writeEventChestRegistryFile(dataDir, [buildPublishedEventChestDefinition()]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: "state_event_chest_entitlement",
+      definitionRevisionId: "definition_revision_state_entitlement_1"
+    });
+    await coordinator.profiles.ensureProfile("EntitlementRestrictionUser", {
+      linkedAccountId: "account-restriction"
+    });
+    const issued = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementRestrictionUser",
+      profileKey: "EntitlementRestrictionUser",
+      accountId: "account-restriction"
+    });
+    assert.equal(issued.deliveryStatus, "delivered");
+
+    await writeEventChestRegistryFile(dataDir, [
+      buildPublishedEventChestDefinition({
+        eligibility: { mode: "rules", minimumLevel: 99 }
+      })
+    ]);
+    const restricted = await coordinator.syncEventChestEntitlementForProfile({
+      username: "EntitlementRestrictionUser",
+      profileKey: "EntitlementRestrictionUser",
+      accountId: "account-restriction"
+    });
+    assert.equal(restricted.deliveryStatus, "existing_entitlement_available");
+    assert.equal(restricted.entitlement.entitlementId, issued.entitlement.entitlementId);
+    assert.equal(restricted.directOpen.available, false);
+
+    const opened = await coordinator.openEventChestEntitlement({
+      username: "EntitlementRestrictionUser",
+      profileKey: "EntitlementRestrictionUser",
+      accountId: "account-restriction",
+      entitlementId: issued.entitlement.entitlementId,
+      random: () => 0
+    });
+    assert.equal(opened.entitlement.status, "opened");
+    assert.equal(opened.replayed, false);
+    const replay = await coordinator.openEventChestEntitlement({
+      username: "EntitlementRestrictionUser",
+      profileKey: "EntitlementRestrictionUser",
+      accountId: "account-restriction",
+      entitlementId: issued.entitlement.entitlementId,
+      random: () => 0.99
+    });
+    assert.equal(replay.replayed, true);
+    assert.deepEqual(replay.reward, opened.reward);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("state: Event Chest entitlement delivery is deterministic, idempotent, and private", async () => {
   const dataDir = await createTempDataDir();
   const coordinator = new StateCoordinator({ dataDir });

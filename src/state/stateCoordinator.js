@@ -33,6 +33,7 @@ import {
   COSMETIC_CATALOG,
   getCosmeticCatalogForProfile,
   getCosmeticDefinition,
+  getEventChestRewardCosmeticEligibility,
   listEventChestRewardCosmeticsForAdmin,
   getCosmeticLoadoutsForProfile,
   normalizeCosmeticRandomizationPreferences,
@@ -79,6 +80,7 @@ import {
   sanitizeEventChestEntitlementForPlayer
 } from "./eventChestEntitlements.js";
 import { evaluateEventChestSchedule } from "./eventChestSchedule.js";
+import { evaluateEventChestEligibility } from "./eventChestEligibility.js";
 import { buildEventChestEntitlementId } from "./eventChestEntitlementIds.js";
 import {
   applyEventChestReward,
@@ -171,6 +173,48 @@ function getEventChestPresentationPool(definition) {
       .filter((entry) => entry.type && entry.cosmeticId);
   }
   return pool;
+}
+
+function getEventChestCompletionPool(definition) {
+  const source = definition?.pool && typeof definition.pool === "object" && !Array.isArray(definition.pool)
+    ? definition.pool
+    : null;
+  if (!source) {
+    return { valid: false, entries: [] };
+  }
+
+  const seen = new Set();
+  const entries = [];
+  for (const [bucketKey, bucketEntries] of Object.entries(source)) {
+    const rarity = normalizeEventChestPresentationRarity(bucketKey);
+    if (!rarity || !Array.isArray(bucketEntries)) {
+      return { valid: false, entries: [] };
+    }
+    for (const entry of bucketEntries) {
+      const type = String(entry?.type ?? "").trim();
+      const cosmeticId = String(entry?.cosmeticId ?? "").trim();
+      const cosmetic = getCosmeticDefinition(type, cosmeticId);
+      const eligibility = getEventChestRewardCosmeticEligibility(type, cosmeticId);
+      if (
+        !type ||
+        !cosmeticId ||
+        !cosmetic ||
+        eligibility.rarityKey !== rarity ||
+        eligibility.blockingReasons.length > 0
+      ) {
+        return { valid: false, entries: [] };
+      }
+      const identity = `${type}:${cosmeticId}`;
+      if (!seen.has(identity)) {
+        seen.add(identity);
+        entries.push({ type, cosmeticId, identity });
+      }
+    }
+  }
+
+  return entries.length > 0
+    ? { valid: true, entries }
+    : { valid: false, entries: [] };
 }
 
 const DAILY_LOGIN_STREAK_REWARDS = Object.freeze([
@@ -1914,6 +1958,32 @@ export class StateCoordinator {
     };
   }
 
+  getEventChestCompletionState(definition, profile) {
+    const pool = getEventChestCompletionPool(definition);
+    if (!pool.valid) {
+      return {
+        poolValid: false,
+        totalCount: 0,
+        ownedCount: 0,
+        isComplete: false
+      };
+    }
+    const ownedCount = pool.entries.reduce(
+      (count, entry) =>
+        count + (Array.isArray(profile?.ownedCosmetics?.[entry.type]) &&
+        profile.ownedCosmetics[entry.type].includes(entry.cosmeticId)
+          ? 1
+          : 0),
+      0
+    );
+    return {
+      poolValid: true,
+      totalCount: pool.entries.length,
+      ownedCount,
+      isComplete: ownedCount === pool.entries.length
+    };
+  }
+
   buildSafeEventChestPityPresentation(definition, profile) {
     const rules = getEventChestPityRuleState(definition?.pity);
     const state = getEventChestPityState(profile?.eventChestPity, definition?.chestId);
@@ -1973,9 +2043,15 @@ export class StateCoordinator {
     const tokenBalance = Math.max(0, Math.floor(Number(profile?.tokens ?? 0) || 0));
     const paidCost = openTypes.includes("paid") ? Number(definition.paidTokenCost) : null;
     const scheduleAvailable = schedule?.isWithinSchedule !== false;
+    const completion = this.getEventChestCompletionState(definition, profile);
+    const poolAvailable = completion.poolValid && !completion.isComplete;
     return {
-      available: scheduleAvailable && (openTypes.includes("free") || openTypes.includes("paid")),
-      reason: scheduleAvailable ? null : `schedule_${schedule?.state ?? "unavailable"}`,
+      available: scheduleAvailable && poolAvailable && (openTypes.includes("free") || openTypes.includes("paid")),
+      reason: !scheduleAvailable
+        ? `schedule_${schedule?.state ?? "unavailable"}`
+        : poolAvailable
+          ? null
+          : "event_chest_unavailable",
       chestId: definition.chestId,
       definitionRevisionId: definition.definitionRevisionId,
       ...this.buildEventChestPlayerMetadata(definition),
@@ -1995,6 +2071,7 @@ export class StateCoordinator {
           enabled: openTypes.includes("paid"),
           available:
             scheduleAvailable &&
+            poolAvailable &&
             openTypes.includes("paid") &&
             Number.isInteger(paidCost) &&
             paidCost > 0 &&
@@ -2005,11 +2082,39 @@ export class StateCoordinator {
         },
         free: {
           enabled: openTypes.includes("free"),
-          available: scheduleAvailable && openTypes.includes("free") && Boolean(freeWindow) && !freeConsumed,
+          available:
+            scheduleAvailable &&
+            poolAvailable &&
+            openTypes.includes("free") &&
+            Boolean(freeWindow) &&
+            !freeConsumed,
           claimed: freeConsumed,
           nextAvailableAt: freeConsumed ? freeWindow?.endsAt ?? null : null,
           resetWindowKey: freeWindow?.key ?? null
         }
+      }
+    };
+  }
+
+  evaluateEventChestEligibilityForProfile(definition, profile, {
+    account = null,
+    nowMs = this.eventChestActivationStore.now()
+  } = {}) {
+    return evaluateEventChestEligibility(definition, { profile, account, nowMs });
+  }
+
+  buildHiddenEventChestStatus(reason = "event_chest_unavailable") {
+    return {
+      active: false,
+      deliveryStatus: reason,
+      idempotent: true,
+      alreadyEntitled: false,
+      entitlement: null,
+      activeChest: null,
+      directOpen: {
+        available: false,
+        reason,
+        methods: {}
       }
     };
   }
@@ -2103,7 +2208,8 @@ export class StateCoordinator {
   async syncEventChestEntitlementForProfile({
     username,
     accountId,
-    profileKey = username
+    profileKey = username,
+    account = null
   } = {}) {
     const safeUsername = String(username ?? "").trim();
     const safeAccountId = String(accountId ?? "").trim();
@@ -2155,13 +2261,70 @@ export class StateCoordinator {
     }
 
     const { definition } = active;
-    if (!Array.isArray(definition.openTypes) || !definition.openTypes.includes("entitlement")) {
-      const profile = await this.profiles.getProfile(safeProfileKey);
-      if (String(profile?.linkedAccountId ?? "").trim() !== safeAccountId) {
-        throw Object.assign(new Error("Event Chest entitlement delivery requires the authenticated claimed profile."), {
-          code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE"
-        });
+    const currentProfile = await this.profiles.getProfile(safeProfileKey);
+    if (String(currentProfile?.linkedAccountId ?? "").trim() !== safeAccountId) {
+      throw Object.assign(new Error("Event Chest entitlement delivery requires the authenticated claimed profile."), {
+        code: "EVENT_CHEST_ENTITLEMENT_INELIGIBLE"
+      });
+    }
+    const eligibility = this.evaluateEventChestEligibilityForProfile(definition, currentProfile, {
+      account,
+      nowMs: this.eventChestActivationStore.now()
+    });
+    if (!eligibility.eligible) {
+      const existing = await this.getExistingAvailableEventChestEntitlementForProfile({
+        profileKey: safeProfileKey,
+        accountId: safeAccountId
+      });
+      if (existing) {
+        return {
+          active: true,
+          deliveryStatus: "existing_entitlement_available",
+          idempotent: true,
+          alreadyEntitled: true,
+          entitlement: sanitizeEventChestEntitlementForPlayer(existing.entitlement),
+          activeChest: {
+            chestId: existing.definition.chestId,
+            definitionRevisionId: existing.definition.definitionRevisionId,
+            ...this.buildEventChestPlayerMetadata(existing.definition)
+          },
+          directOpen: {
+            available: false,
+            reason: "event_chest_unavailable",
+            methods: {}
+          }
+        };
       }
+      return this.buildHiddenEventChestStatus("event_chest_unavailable");
+    }
+    const completion = this.getEventChestCompletionState(definition, currentProfile);
+    if (!completion.poolValid || completion.isComplete) {
+      const existing = await this.getExistingAvailableEventChestEntitlementForProfile({
+        profileKey: safeProfileKey,
+        accountId: safeAccountId
+      });
+      if (existing) {
+        return {
+          active: true,
+          deliveryStatus: "existing_entitlement_available",
+          idempotent: true,
+          alreadyEntitled: true,
+          entitlement: sanitizeEventChestEntitlementForPlayer(existing.entitlement),
+          activeChest: {
+            chestId: existing.definition.chestId,
+            definitionRevisionId: existing.definition.definitionRevisionId,
+            ...this.buildEventChestPlayerMetadata(existing.definition)
+          },
+          directOpen: {
+            available: false,
+            reason: "event_chest_unavailable",
+            methods: {}
+          }
+        };
+      }
+      return this.buildHiddenEventChestStatus("event_chest_unavailable");
+    }
+    if (!Array.isArray(definition.openTypes) || !definition.openTypes.includes("entitlement")) {
       const existing = await this.getExistingAvailableEventChestEntitlementForProfile({
         profileKey: safeProfileKey,
         accountId: safeAccountId
@@ -2186,7 +2349,7 @@ export class StateCoordinator {
           definitionRevisionId: definition.definitionRevisionId,
           ...this.buildEventChestPlayerMetadata(definition)
         },
-        directOpen: this.buildEventChestDirectOpenStatus(definition, profile, {
+        directOpen: this.buildEventChestDirectOpenStatus(definition, currentProfile, {
           schedule: active.schedule,
           nowMs: this.eventChestActivationStore.now()
         })
@@ -2207,6 +2370,7 @@ export class StateCoordinator {
     let deliveryStatus = "already_entitled";
     let alreadyEntitled = true;
     let entitlement = null;
+    let completionBlocked = false;
     const update = await this.profiles.updateProfileIfChanged(safeProfileKey, (current) => {
       const linkedAccountId = String(current?.linkedAccountId ?? "").trim();
       if (!linkedAccountId || linkedAccountId !== safeAccountId) {
@@ -2228,6 +2392,12 @@ export class StateCoordinator {
           ...current,
           eventChestEntitlements
         };
+      }
+
+      const currentCompletion = this.getEventChestCompletionState(definition, current);
+      if (!currentCompletion.poolValid || currentCompletion.isComplete) {
+        completionBlocked = true;
+        return current;
       }
 
       const grantedAt = new Date(this.eventChestActivationStore.now()).toISOString();
@@ -2263,6 +2433,10 @@ export class StateCoordinator {
           item.definitionRevisionId === definition.definitionRevisionId
       ) ?? entitlement;
 
+    if (completionBlocked) {
+      return this.buildHiddenEventChestStatus("event_chest_unavailable");
+    }
+
     return {
       active: true,
       deliveryStatus,
@@ -2287,6 +2461,7 @@ export class StateCoordinator {
     profileKey = username,
     method,
     requestId,
+    account = null,
     random = this.random,
     nowMs = this.eventChestActivationStore.now()
   } = {}) {
@@ -2366,6 +2541,21 @@ export class StateCoordinator {
         });
       }
       const definition = active.definition;
+      const eligibility = this.evaluateEventChestEligibilityForProfile(definition, current, {
+        account,
+        nowMs
+      });
+      if (!eligibility.eligible) {
+        throw Object.assign(new Error("Event Chest direct opening is unavailable."), {
+          code: "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+        });
+      }
+      const completion = this.getEventChestCompletionState(definition, current);
+      if (!completion.poolValid || completion.isComplete) {
+        throw Object.assign(new Error("Event Chest direct opening is unavailable."), {
+          code: "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+        });
+      }
       if (!Array.isArray(definition.openTypes) || !definition.openTypes.includes(safeMethod)) {
         throw Object.assign(new Error("This Event Chest opening method is not enabled."), {
           code: "EVENT_CHEST_DIRECT_OPEN_METHOD_DISABLED"

@@ -5259,6 +5259,49 @@ test("multiplayer foundation: profile Event Chest entitlement sync is authentica
     assert.equal(paidReplay?.result?.replayed, true);
     assert.deepEqual(paidReplay?.result?.reward, paidDirect?.result?.reward);
     assert.equal(paidReplay?.result?.tokenBalance, paidDirect?.result?.tokenBalance);
+
+    await fs.writeFile(
+      registryPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          registryId: "elemintz_event_chest_registry",
+          registryRevisionId: "registry_revision_route_entitlement_restricted",
+          publishedAt: "2026-07-28T13:05:00.000Z",
+          publishedBy: "VampyrLee",
+          definitions: [
+            {
+              ...definition,
+              eligibility: { mode: "rules", minimumLevel: 99 }
+            }
+          ]
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    const otherBeforeRestriction = await coordinator.profiles.getProfile("OtherRouteEntitlementUser");
+    const restrictedSync = await emitWithAck(otherClient, "profile:syncEventChestEntitlements", {
+      sessionToken: otherRegister?.session?.token
+    });
+    assert.equal(restrictedSync?.ok, true);
+    assert.equal(restrictedSync?.result?.active, false);
+    assert.equal(restrictedSync?.result?.deliveryStatus, "event_chest_unavailable");
+    assert.equal(restrictedSync?.result?.activeChest, null);
+    assert.equal(restrictedSync?.result?.entitlement, null);
+    assert.deepEqual(await coordinator.profiles.getProfile("OtherRouteEntitlementUser"), otherBeforeRestriction);
+    const restrictedDirect = await emitWithAck(otherClient, "profile:openEventChest", {
+      sessionToken: otherRegister?.session?.token,
+      method: "paid",
+      requestId: "restricted_direct_request_1"
+    });
+    assert.equal(restrictedDirect?.ok, false);
+    assert.equal(restrictedDirect?.error?.code, "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE");
+    assert.deepEqual(await coordinator.profiles.getProfile("OtherRouteEntitlementUser"), otherBeforeRestriction);
+    assert.equal(JSON.stringify({ restrictedSync, restrictedDirect }).includes("minimumLevel"), false);
+    assert.equal(JSON.stringify({ restrictedSync, restrictedDirect }).includes("email"), false);
+
     const serializedDirect = JSON.stringify({ paidDirect, paidReplay });
     for (const privateKey of [
       "eventChestDirectOpenings",

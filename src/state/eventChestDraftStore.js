@@ -319,6 +319,9 @@ function buildNewDraftDefinition({ chestId, title = "Untitled Event Chest" } = {
       fallbackOpen: "icons/loot_chest_open.png"
     },
     openTypes: ["free", "paid"],
+    eligibility: {
+      mode: "all_players"
+    },
     freeOpenPolicy: {
       cadence: "daily",
       resetTimeZone: "America/Chicago",
@@ -400,6 +403,7 @@ function buildDuplicatedDefinition(sourceDefinition, { chestId } = {}) {
       status: "draft",
       defaultPreset: false
     },
+    eligibility: definition.eligibility ?? { mode: "all_players" },
     activeWindows: [],
     definitionHistory: []
   };

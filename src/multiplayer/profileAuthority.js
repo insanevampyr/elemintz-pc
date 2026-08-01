@@ -1261,10 +1261,15 @@ export class MultiplayerProfileAuthority {
     }
 
     this.logger.info?.(`[ProfileAuthority] syncEventChestEntitlements -> ${safeProfileKey}`);
+    const account =
+      typeof this.accountStore?.getAccountById === "function"
+        ? await this.accountStore.getAccountById(safeAccountId)
+        : null;
     const result = await this.coordinator.syncEventChestEntitlementForProfile({
       username: safeUsername,
       accountId: safeAccountId,
-      profileKey: safeProfileKey
+      profileKey: safeProfileKey,
+      account
     });
     if (result?.deliveryStatus === "schedule_invalid") {
       this.logger.warn?.(
@@ -1315,12 +1320,17 @@ export class MultiplayerProfileAuthority {
       });
     }
     this.logger.info?.("[ProfileAuthority] openEventChestDirect");
+    const account =
+      typeof this.accountStore?.getAccountById === "function"
+        ? await this.accountStore.getAccountById(safeAccountId)
+        : null;
     return this.coordinator.openEventChestDirect({
       username: safeUsername,
       accountId: safeAccountId,
       profileKey: safeProfileKey,
       method,
-      requestId
+      requestId,
+      account
     });
   }
 

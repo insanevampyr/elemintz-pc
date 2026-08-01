@@ -84,6 +84,36 @@ async function createClaimedProfile(coordinator, username, tokens = 500) {
   }));
 }
 
+function buildCompletionDefinition(overrides = {}) {
+  const sourceEntries = structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool.common.slice(0, 2));
+  return buildDefinition({
+    pool: {
+      common: sourceEntries,
+      rare: [],
+      epic: [],
+      legendary: []
+    },
+    odds: { common: 1, rare: 0, epic: 0, legendary: 0 },
+    pity: {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pity),
+      epicPlusEnabled: false,
+      legendaryEnabled: false
+    },
+    ...overrides
+  });
+}
+
+async function grantOwnedPoolEntries(coordinator, username, entries) {
+  await coordinator.profiles.updateProfile(username, (profile) => {
+    const ownedCosmetics = structuredClone(profile.ownedCosmetics ?? {});
+    for (const entry of entries) {
+      const owned = Array.isArray(ownedCosmetics[entry.type]) ? ownedCosmetics[entry.type] : [];
+      ownedCosmetics[entry.type] = [...new Set([...owned, entry.cosmeticId])];
+    }
+    return { ...profile, ownedCosmetics };
+  });
+}
+
 function openDirect(coordinator, username, method, requestId, options = {}) {
   return coordinator.openEventChestDirect({
     username,
@@ -91,6 +121,7 @@ function openDirect(coordinator, username, method, requestId, options = {}) {
     accountId: `account-${username}`,
     method,
     requestId,
+    account: options.account ?? null,
     nowMs: options.nowMs ?? NOW,
     random: options.random ?? (() => 0)
   });
@@ -158,6 +189,180 @@ test("event chest direct opening: paid charge, replay, concurrency, and distinct
       openDirect(coordinator, "PaidDirectUser", "free", "paid_request_0001"),
       (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_INVALID_REQUEST"
     );
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest direct opening: eligibility rejects before mutation, charge, free state, pity, or settlement", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const coordinator = await createActiveCoordinator(
+      dataDir,
+      buildDefinition({
+        eligibility: { mode: "rules", minimumLevel: 10 }
+      })
+    );
+    await createClaimedProfile(coordinator, "IneligibleDirectUser", 500);
+    const beforePaid = await coordinator.profiles.getProfile("IneligibleDirectUser");
+    await assert.rejects(
+      openDirect(coordinator, "IneligibleDirectUser", "paid", "ineligible_paid_request"),
+      (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+    );
+    const afterPaid = await coordinator.profiles.getProfile("IneligibleDirectUser");
+    assert.equal(afterPaid.tokens, beforePaid.tokens);
+    assert.deepEqual(afterPaid.eventChestDirectOpenings, beforePaid.eventChestDirectOpenings);
+    assert.deepEqual(afterPaid.eventChestPity, beforePaid.eventChestPity);
+    assert.deepEqual(afterPaid.ownedCosmetics, beforePaid.ownedCosmetics);
+
+    await assert.rejects(
+      openDirect(coordinator, "IneligibleDirectUser", "free", "ineligible_free_request"),
+      (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+    );
+    assert.deepEqual(await coordinator.profiles.getProfile("IneligibleDirectUser"), afterPaid);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest direct opening: completed exact revision is hidden and rejects stale free and paid requests before mutation", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const definition = buildCompletionDefinition();
+    const coordinator = await createActiveCoordinator(dataDir, definition);
+    await createClaimedProfile(coordinator, "CompletedDirectUser", 500);
+
+    await grantOwnedPoolEntries(coordinator, "CompletedDirectUser", [definition.pool.common[0]]);
+    const incomplete = await coordinator.syncEventChestEntitlementForProfile({
+      username: "CompletedDirectUser",
+      profileKey: "CompletedDirectUser",
+      accountId: "account-CompletedDirectUser"
+    });
+    assert.equal(incomplete.active, true);
+    assert.equal(incomplete.directOpen.available, true);
+    assert.equal(incomplete.directOpen.rewardPool.missingCount, 1);
+
+    await grantOwnedPoolEntries(coordinator, "CompletedDirectUser", [definition.pool.common[1]]);
+    const before = await coordinator.profiles.getProfile("CompletedDirectUser");
+    const completed = await coordinator.syncEventChestEntitlementForProfile({
+      username: "CompletedDirectUser",
+      profileKey: "CompletedDirectUser",
+      accountId: "account-CompletedDirectUser"
+    });
+    assert.equal(completed.active, false);
+    assert.equal(completed.directOpen.available, false);
+    assert.equal(JSON.stringify(completed).includes("rewardPool"), false);
+
+    for (const [method, requestId] of [
+      ["free", "completed_free_request"],
+      ["paid", "completed_paid_request"]
+    ]) {
+      await assert.rejects(
+        openDirect(coordinator, "CompletedDirectUser", method, requestId),
+        (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+      );
+    }
+    assert.deepEqual(await coordinator.profiles.getProfile("CompletedDirectUser"), before);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest direct opening: completion is deduplicated, fails closed for invalid pools, and reopens for a new revision", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const definition = buildCompletionDefinition();
+    const coordinator = await createActiveCoordinator(dataDir, definition);
+    await createClaimedProfile(coordinator, "RevisionDirectUser", 500);
+    const firstEntry = definition.pool.common[0];
+
+    const duplicated = {
+      ...definition,
+      pool: {
+        common: [firstEntry, structuredClone(firstEntry)],
+        rare: [],
+        epic: [],
+        legendary: []
+      }
+    };
+    await grantOwnedPoolEntries(coordinator, "RevisionDirectUser", [firstEntry]);
+    assert.deepEqual(coordinator.getEventChestCompletionState(duplicated, await coordinator.profiles.getProfile("RevisionDirectUser")), {
+      poolValid: true,
+      totalCount: 1,
+      ownedCount: 1,
+      isComplete: true
+    });
+    assert.equal(
+      coordinator.buildEventChestDirectOpenStatus(
+        { ...definition, pool: { common: [{ type: "avatar", cosmeticId: "missing_reward" }] } },
+        await coordinator.profiles.getProfile("RevisionDirectUser")
+      ).available,
+      false
+    );
+    assert.equal(
+      coordinator.buildEventChestDirectOpenStatus(
+        { ...definition, pool: { common: [], rare: [], epic: [], legendary: [] } },
+        await coordinator.profiles.getProfile("RevisionDirectUser")
+      ).available,
+      false
+    );
+
+    await grantOwnedPoolEntries(coordinator, "RevisionDirectUser", [definition.pool.common[1]]);
+    const hidden = await coordinator.syncEventChestEntitlementForProfile({
+      username: "RevisionDirectUser",
+      profileKey: "RevisionDirectUser",
+      accountId: "account-RevisionDirectUser"
+    });
+    assert.equal(hidden.active, false);
+
+    const reopened = buildCompletionDefinition({
+      definitionRevisionId: "definition_revision_direct_open_2",
+      pool: {
+        common: [definition.pool.common[0], definition.pool.common[1], DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool.common[2]],
+        rare: [],
+        epic: [],
+        legendary: []
+      }
+    });
+    await writeRegistry(dataDir, [definition, reopened]);
+    await coordinator.eventChestActivationStore.activate({
+      chestId: reopened.chestId,
+      definitionRevisionId: reopened.definitionRevisionId
+    });
+    const visible = await coordinator.syncEventChestEntitlementForProfile({
+      username: "RevisionDirectUser",
+      profileKey: "RevisionDirectUser",
+      accountId: "account-RevisionDirectUser"
+    });
+    assert.equal(visible.active, true);
+    assert.equal(visible.directOpen.available, true);
+    assert.equal(visible.directOpen.definitionRevisionId, reopened.definitionRevisionId);
+    assert.equal(visible.directOpen.rewardPool.missingCount, 1);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("event chest direct opening: a completed settlement replays while new requests are rejected", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const reward = structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET.pool.common[0]);
+    const definition = buildCompletionDefinition({
+      pool: { common: [reward], rare: [], epic: [], legendary: [] }
+    });
+    const coordinator = await createActiveCoordinator(dataDir, definition);
+    await createClaimedProfile(coordinator, "ReplayCompleteDirectUser", 500);
+
+    const opened = await openDirect(coordinator, "ReplayCompleteDirectUser", "paid", "completion_replay_request");
+    assert.equal(opened.replayed, false);
+    const replay = await openDirect(coordinator, "ReplayCompleteDirectUser", "paid", "completion_replay_request");
+    assert.equal(replay.replayed, true);
+    await assert.rejects(
+      openDirect(coordinator, "ReplayCompleteDirectUser", "paid", "completion_new_request"),
+      (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+    );
+    const profile = await coordinator.profiles.getProfile("ReplayCompleteDirectUser");
+    assert.equal(profile.eventChestDirectOpenings.settlements.length, 1);
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
