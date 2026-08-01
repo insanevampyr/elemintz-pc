@@ -104,6 +104,7 @@ import {
 } from "./eventChestPity.js";
 import { getDailyElementChestStatusFromEventProjection } from "./eventChestDailyStatusAdapter.js";
 import {
+  EVENT_CHEST_DRAFT_DELETE_FAILURES,
   EventChestDraftStore,
   validateEventChestDraftDefinition
 } from "./eventChestDraftStore.js";
@@ -125,6 +126,91 @@ import { rollBasicChest } from "../shared/basicChestDrop.js";
 import { getGauntletRivalById } from "../engine/gauntletRivals.js";
 
 const EVENT_CHEST_PRESENTATION_RARITIES = Object.freeze(["common", "rare", "epic", "legendary"]);
+
+const EVENT_CHEST_DRAFT_DELETE_RESULT_SCHEMA_VERSION = 1;
+const EVENT_CHEST_DRAFT_DELETE_REASON_CODES = Object.freeze({
+  EXPECTED_REVISION_REQUIRED: "expected_revision_required",
+  FINAL_IDENTITY_AMBIGUOUS: "final_identity_ambiguous",
+  PERSISTENCE_FAILED: "draft_persistence_failed",
+  PROOF_UNAVAILABLE: "proof_unavailable"
+});
+
+function strictEventChestDraftIdentity(value) {
+  return typeof value === "string" && value && value.trim() === value ? value : null;
+}
+
+function buildEventChestDraftDeleteResult({
+  request = {},
+  proof = null,
+  storeResult = null
+} = {}) {
+  const requestedDraftId = strictEventChestDraftIdentity(request?.draftId);
+  const expectedDraftRevisionId = strictEventChestDraftIdentity(
+    request?.expectedDraftRevisionId
+  );
+  const draft = storeResult?.draft ?? proof?.draft ?? null;
+  const boundedDraft = {
+    draftId: strictEventChestDraftIdentity(draft?.draftId) ?? requestedDraftId,
+    draftRevisionId:
+      strictEventChestDraftIdentity(draft?.draftRevisionId) ?? expectedDraftRevisionId,
+    chestId: strictEventChestDraftIdentity(draft?.chestId)
+  };
+
+  if (storeResult?.deleted) {
+    return {
+      schemaVersion: EVENT_CHEST_DRAFT_DELETE_RESULT_SCHEMA_VERSION,
+      status: "deleted",
+      deleted: true,
+      draft: boundedDraft,
+      reasonCodes: []
+    };
+  }
+
+  const reasonCodes = new Set(Array.isArray(proof?.reasonCodes) ? proof.reasonCodes : []);
+  let status = proof?.status === "unavailable" ? "unavailable" : "blocked";
+  if (!requestedDraftId) {
+    reasonCodes.add(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.INVALID_REQUEST);
+  }
+  if (!expectedDraftRevisionId) {
+    reasonCodes.add(EVENT_CHEST_DRAFT_DELETE_REASON_CODES.EXPECTED_REVISION_REQUIRED);
+    if (requestedDraftId) {
+      reasonCodes.delete(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.INVALID_REQUEST);
+    }
+  }
+
+  if (storeResult?.failure === EVENT_CHEST_DRAFT_DELETE_FAILURES.PROOF_UNAVAILABLE) {
+    status = "unavailable";
+    reasonCodes.add(EVENT_CHEST_DRAFT_DELETE_REASON_CODES.PROOF_UNAVAILABLE);
+  } else if (
+    storeResult?.failure === EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_IDENTITY_AMBIGUOUS
+  ) {
+    status = "unavailable";
+    reasonCodes.add(EVENT_CHEST_DRAFT_DELETE_REASON_CODES.FINAL_IDENTITY_AMBIGUOUS);
+  } else if (storeResult?.failure === EVENT_CHEST_DRAFT_DELETE_FAILURES.PERSISTENCE_FAILED) {
+    status = "unavailable";
+    reasonCodes.add(EVENT_CHEST_DRAFT_DELETE_REASON_CODES.PERSISTENCE_FAILED);
+  } else if (
+    storeResult?.failure === EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_NOT_FOUND ||
+    reasonCodes.has(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_NOT_FOUND)
+  ) {
+    status = "not_found";
+    reasonCodes.add(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_NOT_FOUND);
+  } else if (
+    storeResult?.failure === EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_STALE ||
+    reasonCodes.has(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_REVISION_MISMATCH)
+  ) {
+    status = "stale";
+    reasonCodes.add(EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_REVISION_MISMATCH);
+  }
+
+  return {
+    schemaVersion: EVENT_CHEST_DRAFT_DELETE_RESULT_SCHEMA_VERSION,
+    status,
+    deleted: false,
+    draft: boundedDraft,
+    reasonCodes: [...reasonCodes].sort()
+  };
+}
 
 function normalizeEventChestPresentationRarity(value) {
   const rarity = String(value ?? "").trim().toLowerCase();
@@ -1846,6 +1932,18 @@ export class StateCoordinator {
     draftId = null,
     expectedDraftRevisionId = null
   } = {}) {
+    return (
+      await this.buildEventChestDraftDeletionReferenceProofSnapshotWithinAuthoringLock({
+        draftId,
+        expectedDraftRevisionId
+      })
+    ).proof;
+  }
+
+  async buildEventChestDraftDeletionReferenceProofSnapshotWithinAuthoringLock({
+    draftId = null,
+    expectedDraftRevisionId = null
+  } = {}) {
     const unavailableReasonCodes = [];
     const readStrict = async (reader, unavailableReasonCode, missingValue) => {
       try {
@@ -1883,7 +1981,7 @@ export class StateCoordinator {
         )
       ]);
 
-    return buildEventChestDraftDeletionReferenceProof({
+    const proof = buildEventChestDraftDeletionReferenceProof({
       requestedDraftId: draftId,
       expectedDraftRevisionId,
       draftDocument,
@@ -1891,6 +1989,29 @@ export class StateCoordinator {
       lifecycleDocument,
       profilesDocument,
       unavailableReasonCodes
+    });
+    return {
+      proof,
+      draftDocument
+    };
+  }
+
+  async deleteEventChestDraftForAdmin(request = {}) {
+    return this.runEventChestAuthoringMutation(async () => {
+      const storeResult = await this.eventChestDraftStore.deleteDraftWithReferenceProof({
+        draftId: request?.draftId,
+        expectedDraftRevisionId: request?.expectedDraftRevisionId,
+        getReferenceProofSnapshot: () =>
+          this.buildEventChestDraftDeletionReferenceProofSnapshotWithinAuthoringLock({
+            draftId: request?.draftId,
+            expectedDraftRevisionId: request?.expectedDraftRevisionId
+          })
+      });
+      return buildEventChestDraftDeleteResult({
+        request,
+        proof: storeResult?.proof,
+        storeResult
+      });
     });
   }
 

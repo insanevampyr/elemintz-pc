@@ -25,6 +25,7 @@ export const EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS = Object.freeze({
   DRAFT_STORE_MALFORMED: "draft_store_malformed",
   DRAFT_NOT_FOUND: "draft_not_found",
   DRAFT_REVISION_MISMATCH: "draft_revision_mismatch",
+  DRAFT_NOT_UNPUBLISHED: "draft_not_unpublished",
   DRAFT_REFERENCED_BY_DRAFT: "draft_referenced_by_draft",
   DRAFT_SHARED_CHEST: "draft_shared_chest",
   REGISTRY_UNAVAILABLE: "registry_unavailable",
@@ -188,6 +189,7 @@ function inspectDraftDocument(document, requestedDraftId, expectedDraftRevisionI
       draftId,
       draftRevisionId,
       chestId,
+      status: rawDraft.status,
       copiedFromDraftId: rawDraft.copiedFromDraftId ?? null,
       copiedFromDraftRevisionId: rawDraft.copiedFromDraftRevisionId ?? null
     });
@@ -200,6 +202,9 @@ function inspectDraftDocument(document, requestedDraftId, expectedDraftRevisionI
   }
   if (candidate.draftRevisionId !== expectedDraftRevisionId) {
     addUnique(reasonCodes, EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_REVISION_MISMATCH);
+  }
+  if (!["draft", "validation_failed", "ready"].includes(candidate.status)) {
+    addUnique(reasonCodes, EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_NOT_UNPUBLISHED);
   }
 
   if (

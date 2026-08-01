@@ -19,6 +19,13 @@ export const EVENT_CHEST_DRAFT_NOT_FOUND = "EVENT_CHEST_DRAFT_NOT_FOUND";
 export const EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH =
   "EVENT_CHEST_DRAFT_SOURCE_REVISION_MISMATCH";
 export const EVENT_CHEST_DRAFT_INVALID = "EVENT_CHEST_DRAFT_INVALID";
+export const EVENT_CHEST_DRAFT_DELETE_FAILURES = Object.freeze({
+  PROOF_UNAVAILABLE: "proof_unavailable",
+  FINAL_NOT_FOUND: "final_not_found",
+  FINAL_STALE: "final_stale",
+  FINAL_IDENTITY_AMBIGUOUS: "final_identity_ambiguous",
+  PERSISTENCE_FAILED: "persistence_failed"
+});
 export const EVENT_CHEST_DRAFT_STATUSES = Object.freeze([
   "draft",
   "validation_failed",
@@ -473,6 +480,11 @@ export class EventChestDraftStore {
       const existingIndex = document.drafts.findIndex((draft) => draft.draftId === draftId);
       const existing = existingIndex >= 0 ? document.drafts[existingIndex] : null;
       const expectedDraftRevisionId = normalizeOptionalText(input?.expectedDraftRevisionId);
+      if (!existing && expectedDraftRevisionId) {
+        throw Object.assign(new Error("Event Chest draft was not found."), {
+          code: EVENT_CHEST_DRAFT_NOT_FOUND
+        });
+      }
       if (existing && !expectedDraftRevisionId) {
         throw Object.assign(
           new Error("The current draft revision is required before saving."),
@@ -684,6 +696,139 @@ export class EventChestDraftStore {
       document.drafts.sort((left, right) => left.draftId.localeCompare(right.draftId));
       await this.store.write(document);
       return clone(record);
+    });
+  }
+
+  async deleteDraftWithReferenceProof({
+    draftId,
+    expectedDraftRevisionId,
+    getReferenceProofSnapshot
+  } = {}) {
+    return this.runMutation(async () => {
+      let snapshot = null;
+      try {
+        snapshot = await getReferenceProofSnapshot?.();
+      } catch {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.PROOF_UNAVAILABLE,
+          proof: null
+        };
+      }
+
+      const proof = snapshot?.proof ?? null;
+      if (
+        !isObject(proof) ||
+        typeof proof.eligible !== "boolean" ||
+        !["eligible", "blocked", "unavailable"].includes(proof.status) ||
+        !Array.isArray(proof.reasonCodes)
+      ) {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.PROOF_UNAVAILABLE,
+          proof: null
+        };
+      }
+      if (!proof?.eligible) {
+        return {
+          deleted: false,
+          failure: null,
+          proof: clone(proof)
+        };
+      }
+
+      const document = snapshot?.draftDocument;
+      if (
+        !isObject(document) ||
+        document.schemaVersion !== EVENT_CHEST_DRAFT_STORE_VERSION ||
+        !Array.isArray(document.drafts)
+      ) {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_IDENTITY_AMBIGUOUS,
+          proof: clone(proof)
+        };
+      }
+
+      const exactDraftId =
+        typeof draftId === "string" && draftId && draftId.trim() === draftId
+          ? draftId
+          : null;
+      const exactExpectedRevisionId =
+        typeof expectedDraftRevisionId === "string" &&
+        expectedDraftRevisionId &&
+        expectedDraftRevisionId.trim() === expectedDraftRevisionId
+          ? expectedDraftRevisionId
+          : null;
+      const matchingIndexes = document.drafts
+        .map((draft, index) => ({ draft, index }))
+        .filter(({ draft }) => isObject(draft) && draft.draftId === exactDraftId);
+      if (matchingIndexes.length === 0) {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_NOT_FOUND,
+          proof: clone(proof)
+        };
+      }
+      if (matchingIndexes.length !== 1) {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_IDENTITY_AMBIGUOUS,
+          proof: clone(proof)
+        };
+      }
+
+      const { draft, index } = matchingIndexes[0];
+      if (draft.draftRevisionId !== exactExpectedRevisionId) {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_STALE,
+          proof: clone(proof)
+        };
+      }
+      const duplicateRevision = document.drafts.some(
+        (otherDraft, otherIndex) =>
+          otherIndex !== index && otherDraft?.draftRevisionId === exactExpectedRevisionId
+      );
+      if (
+        duplicateRevision ||
+        !isObject(draft.definition) ||
+        draft.chestId !== draft.definition.chestId ||
+        proof.draft?.draftId !== exactDraftId ||
+        proof.draft?.draftRevisionId !== exactExpectedRevisionId ||
+        proof.draft?.chestId !== draft.chestId
+      ) {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.FINAL_IDENTITY_AMBIGUOUS,
+          proof: clone(proof)
+        };
+      }
+
+      const nextDocument = {
+        ...document,
+        drafts: document.drafts.filter((_, draftIndex) => draftIndex !== index)
+      };
+      try {
+        await this.store.write(nextDocument);
+      } catch {
+        return {
+          deleted: false,
+          failure: EVENT_CHEST_DRAFT_DELETE_FAILURES.PERSISTENCE_FAILED,
+          proof: clone(proof)
+        };
+      }
+
+      return {
+        deleted: true,
+        failure: null,
+        draft: {
+          draftId: exactDraftId,
+          draftRevisionId: exactExpectedRevisionId,
+          chestId: draft.chestId
+        },
+        proof: clone(proof)
+      };
     });
   }
 }
