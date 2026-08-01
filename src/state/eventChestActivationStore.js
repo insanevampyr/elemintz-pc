@@ -317,6 +317,10 @@ export class EventChestActivationStore {
     return run;
   }
 
+  async readStrictReferenceDocument() {
+    return this.store.readStrict();
+  }
+
   async readLifecycle() {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");

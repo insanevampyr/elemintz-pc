@@ -435,6 +435,10 @@ export class EventChestDraftStore {
     return run;
   }
 
+  async readStrictReferenceDocument() {
+    return this.store.readStrict();
+  }
+
   async readDocument() {
     try {
       const source = await fs.readFile(this.filePath, "utf8");

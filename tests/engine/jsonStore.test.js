@@ -118,6 +118,30 @@ test("jsonStore: read recovers from the newest valid backup and restores the mai
   assert.deepEqual(restoredMain, [{ username: "Stable", tokens: 321 }]);
 });
 
+test("jsonStore: strict read never restores backups, creates fallbacks, or changes malformed data", async (t) => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-json-store-strict-"));
+  const store = new JsonStore("profiles.json", { dataDir });
+
+  t.after(async () => {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  await fs.mkdir(dataDir, { recursive: true });
+  const malformed = "{broken-current-json";
+  const backupPath = path.join(dataDir, "profiles.json.backup-20260801-120000.json");
+  const validBackup = JSON.stringify([{ username: "BackupOnly", tokens: 99 }]);
+  await fs.writeFile(store.filePath, malformed, "utf8");
+  await fs.writeFile(backupPath, validBackup, "utf8");
+
+  await assert.rejects(store.readStrict(), SyntaxError);
+  assert.equal(await fs.readFile(store.filePath, "utf8"), malformed);
+  assert.equal(await fs.readFile(backupPath, "utf8"), validBackup);
+
+  const missingStore = new JsonStore("missing.json", { dataDir });
+  await assert.rejects(missingStore.readStrict(), (error) => error?.code === "ENOENT");
+  await assert.rejects(fs.access(missingStore.filePath), /ENOENT/);
+});
+
 test("jsonStore: repeated writes in the same second keep distinct backups", async (t) => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-json-store-collision-"));
   const store = new JsonStore("profiles.json", { dataDir });

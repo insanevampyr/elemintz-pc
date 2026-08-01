@@ -1031,6 +1031,10 @@ export class ProfileSystem {
     return run;
   }
 
+  async readStrictEventChestReferenceProfiles() {
+    return this.store.readStrict();
+  }
+
   async listProfiles() {
     try {
       const profiles = await this.store.read([]);

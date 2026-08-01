@@ -162,6 +162,14 @@ export class JsonStore {
     return path.join(this.dataDir, this.filename);
   }
 
+  // Destructive eligibility checks must inspect the current primary file
+  // without creating directories, restoring backups, or writing fallback
+  // state. Owning stores decide whether a missing file is valid first-run
+  // state or a blocking condition.
+  async readStrict() {
+    return readJsonFile(this.filePath);
+  }
+
   async read(fallbackValue) {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
 

@@ -298,6 +298,10 @@ export class EventChestRegistryStore {
     return JSON.parse(stripBom(source));
   }
 
+  async readStrictReferenceDocument() {
+    return this.store.readStrict();
+  }
+
   async readPublishBaseRegistry() {
     try {
       const parsed = await this.readRawFile();

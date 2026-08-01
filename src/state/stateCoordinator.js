@@ -111,6 +111,10 @@ import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfil
 import { EventChestActivationStore } from "./eventChestActivationStore.js";
 import { EventChestRegistryStore } from "./eventChestRegistryStore.js";
 import {
+  EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS,
+  buildEventChestDraftDeletionReferenceProof
+} from "./eventChestDeletionReferenceProof.js";
+import {
   applyLevelRewardsForLevelChange,
   applyXpWithMaxLevelFallback,
   buildXpBreakdown,
@@ -1589,6 +1593,7 @@ export class StateCoordinator {
       options.adminGrantStore ?? new AdminGrantStore(options);
     this.uniquePurchaseQueue = Promise.resolve();
     this.collectionPackPurchaseQueue = Promise.resolve();
+    this.eventChestAuthoringQueue = Promise.resolve();
     this.random = typeof options.random === "function" ? options.random : Math.random;
     this.getActiveBoostEvent =
       typeof options.getActiveBoostEvent === "function"
@@ -1618,6 +1623,15 @@ export class StateCoordinator {
   runCollectionPackPurchaseTransaction(task) {
     const run = this.collectionPackPurchaseQueue.then(task, task);
     this.collectionPackPurchaseQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  runEventChestAuthoringMutation(task) {
+    const run = this.eventChestAuthoringQueue.then(task, task);
+    this.eventChestAuthoringQueue = run.then(
       () => undefined,
       () => undefined
     );
@@ -1816,7 +1830,81 @@ export class StateCoordinator {
     });
   }
 
-  async publishEventChestDraftForAdmin({ draftId = null, expectedDraftRevisionId = null, actor = null } = {}) {
+  async inspectEventChestDraftDeletionReferencesForAuthority({
+    draftId = null,
+    expectedDraftRevisionId = null
+  } = {}) {
+    return this.runEventChestAuthoringMutation(() =>
+      this.inspectEventChestDraftDeletionReferencesWithinAuthoringLock({
+        draftId,
+        expectedDraftRevisionId
+      })
+    );
+  }
+
+  async inspectEventChestDraftDeletionReferencesWithinAuthoringLock({
+    draftId = null,
+    expectedDraftRevisionId = null
+  } = {}) {
+    const unavailableReasonCodes = [];
+    const readStrict = async (reader, unavailableReasonCode, missingValue) => {
+      try {
+        return await reader();
+      } catch (error) {
+        if (error?.code === "ENOENT") {
+          return missingValue;
+        }
+        unavailableReasonCodes.push(unavailableReasonCode);
+        return missingValue;
+      }
+    };
+    const emptyDraftDocument = { schemaVersion: 1, drafts: [] };
+    const [draftDocument, registryDocument, lifecycleDocument, profilesDocument] =
+      await Promise.all([
+        readStrict(
+          () => this.eventChestDraftStore.readStrictReferenceDocument(),
+          EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.DRAFT_STORE_UNAVAILABLE,
+          emptyDraftDocument
+        ),
+        readStrict(
+          () => this.eventChestRegistryStore.readStrictReferenceDocument(),
+          EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.REGISTRY_UNAVAILABLE,
+          null
+        ),
+        readStrict(
+          () => this.eventChestActivationStore.readStrictReferenceDocument(),
+          EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.LIFECYCLE_UNAVAILABLE,
+          null
+        ),
+        readStrict(
+          () => this.profiles.readStrictEventChestReferenceProfiles(),
+          EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS.PROFILES_UNAVAILABLE,
+          null
+        )
+      ]);
+
+    return buildEventChestDraftDeletionReferenceProof({
+      requestedDraftId: draftId,
+      expectedDraftRevisionId,
+      draftDocument,
+      registryDocument,
+      lifecycleDocument,
+      profilesDocument,
+      unavailableReasonCodes
+    });
+  }
+
+  async publishEventChestDraftForAdmin(input = {}) {
+    return this.runEventChestAuthoringMutation(() =>
+      this.publishEventChestDraftWithinAuthoringLock(input)
+    );
+  }
+
+  async publishEventChestDraftWithinAuthoringLock({
+    draftId = null,
+    expectedDraftRevisionId = null,
+    actor = null
+  } = {}) {
     const draft = await this.getEventChestDraftForAdmin(draftId);
     const safeExpectedRevisionId = String(expectedDraftRevisionId ?? "").trim();
     if (!safeExpectedRevisionId) {
