@@ -136,7 +136,10 @@ test("event chest opening: available entitlement opens against exact retained re
       chestId: newer.chestId,
       definitionRevisionId: newer.definitionRevisionId
     });
-    await coordinator.eventChestActivationStore.end();
+    await coordinator.eventChestActivationStore.end({
+      chestId: newer.chestId,
+      definitionRevisionId: newer.definitionRevisionId
+    });
     const entitlement = await createEntitledProfile(coordinator, "OpeningHistoryUser", {
       definition: historical
     });

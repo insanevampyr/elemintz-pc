@@ -1885,14 +1885,54 @@ export class StateCoordinator {
           }
         : null;
 
+    const sourceLifecycle = extra.lifecycle ?? activation?.lifecycle ?? null;
+    const safeLifecycle = sourceLifecycle && typeof sourceLifecycle === "object"
+      ? {
+          schemaVersion: sourceLifecycle.schemaVersion ?? null,
+          active: sourceLifecycle.active
+            ? {
+                activationRevisionId: sourceLifecycle.active.activationRevisionId ?? null,
+                chestId: sourceLifecycle.active.chestId ?? null,
+                definitionRevisionId: sourceLifecycle.active.definitionRevisionId ?? null,
+                activatedAt: sourceLifecycle.active.activatedAt ?? null
+              }
+            : null,
+          revisionStates: Object.fromEntries(
+            Object.entries(sourceLifecycle.revisionStates ?? {}).map(([key, entry]) => [
+              key,
+              {
+                chestId: entry?.chestId ?? null,
+                definitionRevisionId: entry?.definitionRevisionId ?? null,
+                state: entry?.state ?? null,
+                deactivatedAt: entry?.deactivatedAt ?? null,
+                endedAt: entry?.endedAt ?? null
+              }
+            ])
+          )
+        }
+      : null;
+    const safeActivation = activation && typeof activation === "object"
+      ? {
+          schemaVersion: activation.schemaVersion ?? null,
+          activationRevisionId: activation.activationRevisionId ?? null,
+          status: activation.status ?? "inactive",
+          chestId: activation.chestId ?? null,
+          definitionRevisionId: activation.definitionRevisionId ?? null,
+          activatedAt: activation.activatedAt ?? null,
+          updatedAt: activation.updatedAt ?? null
+        }
+      : null;
+
     return {
-      activation: activation ? structuredClone(activation) : null,
+      activation: safeActivation,
+      lifecycle: safeLifecycle,
       activeChest: safeDefinition,
       warnings: Array.isArray(extra.warnings) ? [...extra.warnings] : [],
       activationStatus: extra.activationStatus ?? null,
       idempotent: Boolean(extra.idempotent),
       alreadyActive: Boolean(extra.alreadyActive),
-      alreadyInactive: Boolean(extra.alreadyInactive)
+      alreadyInactive: Boolean(extra.alreadyInactive),
+      alreadyEnded: Boolean(extra.alreadyEnded)
     };
   }
 
@@ -2832,6 +2872,21 @@ export class StateCoordinator {
       chestId,
       definitionRevisionId
     });
+    const current = await this.eventChestActivationStore.readActivation();
+    const isExactReplay = Boolean(
+      current?.status === "active" &&
+        current.chestId === definition.chestId &&
+        current.definitionRevisionId === definition.definitionRevisionId
+    );
+    const schedule = evaluateEventChestSchedule(definition, {
+      nowMs: this.eventChestActivationStore.now()
+    });
+    if (!isExactReplay && schedule.configured && schedule.state === "ended") {
+      throw Object.assign(
+        new Error("This Event Chest revision's configured schedule has permanently expired."),
+        { code: "EVENT_CHEST_REVISION_EXPIRED" }
+      );
+    }
     const result = await this.eventChestActivationStore.activate({
       chestId: definition.chestId,
       definitionRevisionId: definition.definitionRevisionId,
@@ -2841,8 +2896,21 @@ export class StateCoordinator {
     return this.buildEventChestActivationReadModel(result.activation, definition, result);
   }
 
-  async endEventChestActivationForAdmin({ actor = null } = {}) {
-    const result = await this.eventChestActivationStore.end({ actor });
+  async deactivateEventChestActivationForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    const result = await this.eventChestActivationStore.deactivate({
+      chestId,
+      definitionRevisionId,
+      actor
+    });
+    return this.buildEventChestActivationReadModel(result.activation, null, result);
+  }
+
+  async endEventChestActivationForAdmin({ chestId = null, definitionRevisionId = null, actor = null } = {}) {
+    const result = await this.eventChestActivationStore.end({
+      chestId,
+      definitionRevisionId,
+      actor
+    });
     return this.buildEventChestActivationReadModel(result.activation, null, result);
   }
 

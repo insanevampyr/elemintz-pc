@@ -4919,7 +4919,20 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
           definitionRevisionId: "definition_revision_smoke_activation_1"
         }
       ],
-      ["admin:endEventChestActivation", {}]
+      [
+        "admin:deactivateEventChestActivation",
+        {
+          chestId: "smoke_event_chest_activation_test",
+          definitionRevisionId: "definition_revision_smoke_activation_1"
+        }
+      ],
+      [
+        "admin:endEventChestActivation",
+        {
+          chestId: "smoke_event_chest_activation_test",
+          definitionRevisionId: "definition_revision_smoke_activation_1"
+        }
+      ]
     ]) {
       const unauthenticated = await emitWithAck(unauthenticatedClient, routeName, payload);
       assert.equal(unauthenticated?.ok, false, `${routeName} should reject unauthenticated calls`);
@@ -4953,7 +4966,6 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
     assert.equal(activate?.result?.activation?.chestId, "smoke_event_chest_activation_test");
     assert.equal(activate?.result?.activation?.definitionRevisionId, "definition_revision_smoke_activation_1");
     assert.ok(activate?.result?.activation?.activationRevisionId);
-    assert.equal(activate?.result?.activation?.activatedBy, "VampyrLee");
     assert.equal(activate?.result?.activeChest?.title, "Smoke Event Chest Activation Test");
 
     const serializedActivate = JSON.stringify(activate);
@@ -4964,6 +4976,9 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
     assert.equal(serializedActivate.includes("sessionToken"), false);
     assert.equal(serializedActivate.includes("ownedCosmetics"), false);
     assert.equal(serializedActivate.includes("eventChests"), false);
+    assert.equal(serializedActivate.includes("activatedBy"), false);
+    assert.equal(serializedActivate.includes("deactivatedBy"), false);
+    assert.equal(serializedActivate.includes("endedBy"), false);
 
     const activationFileAfterActivate = await fs.readFile(activationPath, "utf8");
     const replay = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
@@ -5026,6 +5041,47 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
       activate?.result?.activation?.activationRevisionId
     );
     assert.equal(switchActivate?.result?.activation?.chestId, "smoke_event_chest_activation_switch");
+
+    const staleDeactivate = await emitWithAck(adminClient, "admin:deactivateEventChestActivation", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_test",
+      definitionRevisionId: "definition_revision_smoke_activation_1"
+    });
+    assert.equal(staleDeactivate?.ok, false);
+    assert.equal(staleDeactivate?.error?.code, "EVENT_CHEST_ACTIVE_REVISION_MISMATCH");
+
+    const deactivate = await emitWithAck(adminClient, "admin:deactivateEventChestActivation", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(deactivate?.ok, true);
+    assert.equal(deactivate?.result?.activationStatus, "deactivated");
+    assert.equal(deactivate?.result?.activation?.status, "inactive");
+    assert.equal(
+      deactivate?.result?.lifecycle?.revisionStates?.[
+        "smoke_event_chest_activation_switch:definition_revision_smoke_activation_switch"
+      ]?.state,
+      "inactive"
+    );
+    const deactivatedFile = await fs.readFile(activationPath, "utf8");
+    const deactivateReplay = await emitWithAck(adminClient, "admin:deactivateEventChestActivation", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(deactivateReplay?.ok, true);
+    assert.equal(deactivateReplay?.result?.activationStatus, "already_inactive");
+    assert.equal(deactivateReplay?.result?.idempotent, true);
+    assert.equal(await fs.readFile(activationPath, "utf8"), deactivatedFile);
+
+    const reactivated = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(reactivated?.ok, true);
+    assert.equal(reactivated?.result?.activationStatus, "activated");
     const activationFileBeforeFailures = await fs.readFile(activationPath, "utf8");
 
     const unknownChest = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
@@ -5066,30 +5122,48 @@ test("multiplayer foundation: admin Event Chest activation routes are admin-only
     assert.equal(malformedRegistry?.error?.code, "EVENT_CHEST_ACTIVATION_REGISTRY_UNAVAILABLE");
     assert.equal(await fs.readFile(activationPath, "utf8"), activationFileBeforeFailures);
 
-    const beforeEndRevisionId = switchActivate?.result?.activation?.activationRevisionId;
     const end = await emitWithAck(adminClient, "admin:endEventChestActivation", {
-      sessionToken: adminLogin?.session?.token
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
     });
     assert.equal(end?.ok, true);
     assert.equal(end?.result?.activationStatus, "ended");
     assert.equal(end?.result?.idempotent, false);
     assert.equal(end?.result?.activation?.status, "inactive");
-    assert.notEqual(end?.result?.activation?.activationRevisionId, beforeEndRevisionId);
-    assert.equal(end?.result?.activation?.endedBy, "VampyrLee");
+    assert.equal(
+      end?.result?.lifecycle?.revisionStates?.[
+        "smoke_event_chest_activation_switch:definition_revision_smoke_activation_switch"
+      ]?.state,
+      "ended"
+    );
     const activationFileAfterEnd = await fs.readFile(activationPath, "utf8");
 
     const repeatedEnd = await emitWithAck(adminClient, "admin:endEventChestActivation", {
-      sessionToken: adminLogin?.session?.token
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
     });
     assert.equal(repeatedEnd?.ok, true);
-    assert.equal(repeatedEnd?.result?.activationStatus, "already_inactive");
+    assert.equal(repeatedEnd?.result?.activationStatus, "already_ended");
     assert.equal(repeatedEnd?.result?.idempotent, true);
-    assert.equal(repeatedEnd?.result?.alreadyInactive, true);
-    assert.equal(
-      repeatedEnd?.result?.activation?.activationRevisionId,
-      end?.result?.activation?.activationRevisionId
-    );
+    assert.equal(repeatedEnd?.result?.alreadyEnded, true);
     assert.equal(await fs.readFile(activationPath, "utf8"), activationFileAfterEnd);
+
+    await writeRegistry([
+      buildPublishedDefinition({
+        chestId: "smoke_event_chest_activation_switch",
+        title: "Switch Event Chest",
+        definitionRevisionId: "definition_revision_smoke_activation_switch"
+      })
+    ]);
+    const endedReactivation = await emitWithAck(adminClient, "admin:activateEventChestDefinition", {
+      sessionToken: adminLogin?.session?.token,
+      chestId: "smoke_event_chest_activation_switch",
+      definitionRevisionId: "definition_revision_smoke_activation_switch"
+    });
+    assert.equal(endedReactivation?.ok, false);
+    assert.equal(endedReactivation?.error?.code, "EVENT_CHEST_REVISION_ENDED");
 
     const profileAfterActivation = await coordinator.profiles.getProfile("RegularUser");
     assert.deepEqual(profileAfterActivation, profileBeforeActivation);
@@ -5562,7 +5636,10 @@ test("multiplayer foundation: profile Event Chest opening route is claimed-profi
       sessionToken: concurrentRegister?.session?.token
     });
     assert.equal(concurrentSync?.ok, true);
-    await coordinator.eventChestActivationStore.end();
+    await coordinator.eventChestActivationStore.end({
+      chestId: historical.chestId,
+      definitionRevisionId: historical.definitionRevisionId
+    });
 
     await coordinator.profiles.updateProfile("MalformedRouteOpenUser", (current) => ({
       ...current,

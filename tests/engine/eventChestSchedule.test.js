@@ -13,6 +13,7 @@ import {
   normalizeEventChestActiveWindows
 } from "../../src/state/eventChestSchedule.js";
 import { StateCoordinator } from "../../src/state/stateCoordinator.js";
+import { EventChestActivationStore } from "../../src/state/eventChestActivationStore.js";
 
 const WINDOW_ONE = {
   startsAt: "2026-08-01T12:00:00-05:00",
@@ -277,5 +278,64 @@ test("switching active revisions evaluates the selected revision schedule", asyn
   assert.equal(
     (await coordinator.getActiveEventChestDefinitionForEntitlementDelivery()).active,
     true
+  );
+});
+
+test("admin activation allows future schedules, rejects newly activating expired schedules, and does not mark natural expiry ended", async (t) => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "elemintz-event-activation-schedule-"));
+  t.after(() => fs.rm(dataDir, { recursive: true, force: true }));
+  let now = "2026-08-01T12:00:00.000Z";
+  const definition = createDefinition([
+    { startsAt: "2026-08-02T00:00:00.000Z", endsAt: "2026-08-03T00:00:00.000Z" }
+  ]);
+  const activationStore = new EventChestActivationStore({ dataDir, now: () => now });
+  const coordinator = new StateCoordinator({
+    dataDir,
+    eventChestActivationStore: activationStore,
+    eventChestRegistryStore: {
+      getPublishedEventChestDefinitionRevision: async () => structuredClone(definition)
+    }
+  });
+
+  const activated = await coordinator.activateEventChestDefinitionForAdmin({
+    chestId: definition.chestId,
+    definitionRevisionId: definition.definitionRevisionId,
+    actor: "VampyrLee"
+  });
+  assert.equal(activated.activationStatus, "activated");
+  assert.equal(
+    (await coordinator.getActiveEventChestDefinitionForEntitlementDelivery()).deliveryStatus,
+    "schedule_upcoming"
+  );
+
+  now = "2026-08-03T00:00:00.000Z";
+  const naturallyExpired = await coordinator.getActiveEventChestDefinitionForEntitlementDelivery();
+  assert.equal(naturallyExpired.deliveryStatus, "schedule_ended");
+  assert.equal((await activationStore.readActivation()).status, "active");
+  assert.equal(
+    Object.values((await activationStore.readLifecycle()).revisionStates).some(
+      (entry) => entry.state === "ended"
+    ),
+    false
+  );
+
+  await coordinator.deactivateEventChestActivationForAdmin({
+    chestId: definition.chestId,
+    definitionRevisionId: definition.definitionRevisionId,
+    actor: "VampyrLee"
+  });
+  await assert.rejects(
+    coordinator.activateEventChestDefinitionForAdmin({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor: "VampyrLee"
+    }),
+    (error) => error?.code === "EVENT_CHEST_REVISION_EXPIRED"
+  );
+  assert.equal(
+    (await activationStore.readLifecycle()).revisionStates[
+      `${definition.chestId}:${definition.definitionRevisionId}`
+    ].state,
+    "inactive"
   );
 });

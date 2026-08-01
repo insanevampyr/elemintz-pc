@@ -6,7 +6,9 @@ import path from "node:path";
 
 import {
   EVENT_CHEST_ACTIVATION_FILENAME,
-  EventChestActivationStore
+  EVENT_CHEST_ACTIVATION_SCHEMA_VERSION,
+  EventChestActivationStore,
+  buildEventChestRevisionLifecycleKey
 } from "../../src/state/eventChestActivationStore.js";
 
 async function createTempDataDir() {
@@ -21,218 +23,299 @@ async function readActivationFile(dataDir) {
   return JSON.parse(await fs.readFile(activationPath(dataDir), "utf8"));
 }
 
-test("event chest activation store: missing file returns normalized inactive state without writing", async () => {
+async function withTempStore(callback, { now = "2026-08-01T12:00:00.000Z" } = {}) {
   const dataDir = await createTempDataDir();
   try {
-    const store = new EventChestActivationStore({ dataDir });
-    const activation = await store.readActivation();
-
-    assert.equal(activation.status, "inactive");
-    assert.equal(activation.chestId, null);
-    assert.equal(activation.definitionRevisionId, null);
-    assert.equal(activation.activationRevisionId, null);
-    await assert.rejects(fs.access(activationPath(dataDir)), /ENOENT/);
+    const store = new EventChestActivationStore({ dataDir, now: () => now });
+    await callback({ dataDir, store });
   } finally {
     await fs.rm(dataDir, { recursive: true, force: true });
   }
+}
+
+test("event chest lifecycle store: missing file returns inactive schema-v2 projection without writing", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    const activation = await store.readActivation();
+    assert.equal(activation.schemaVersion, EVENT_CHEST_ACTIVATION_SCHEMA_VERSION);
+    assert.equal(activation.status, "inactive");
+    assert.equal(activation.chestId, null);
+    assert.deepEqual(activation.lifecycle, {
+      schemaVersion: 2,
+      active: null,
+      revisionStates: {}
+    });
+    await assert.rejects(fs.access(activationPath(dataDir)), /ENOENT/);
+  });
 });
 
-test("event chest activation store: first activation persists exact chest revision and actor metadata", async () => {
-  const dataDir = await createTempDataDir();
-  try {
-    const store = new EventChestActivationStore({
-      dataDir,
-      now: () => "2026-07-27T17:00:00.000Z"
-    });
+test("event chest lifecycle store: valid schema-v1 active pointer migrates without losing identity", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    await fs.mkdir(path.dirname(activationPath(dataDir)), { recursive: true });
+    await fs.writeFile(
+      activationPath(dataDir),
+      JSON.stringify({
+        schemaVersion: 1,
+        activationRevisionId: "legacy_activation_revision",
+        status: "active",
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "definition_revision_alpha_1",
+        activatedAt: "2026-07-31T12:00:00.000Z",
+        activatedBy: "LegacyAdmin",
+        endedAt: null,
+        endedBy: null,
+        updatedAt: "2026-07-31T12:00:00.000Z",
+        updatedBy: "LegacyAdmin"
+      }),
+      "utf8"
+    );
 
+    const migrated = await store.readActivation();
+    assert.equal(migrated.status, "active");
+    assert.equal(migrated.chestId, "event_chest_alpha");
+    assert.equal(migrated.definitionRevisionId, "definition_revision_alpha_1");
+    assert.equal(migrated.activationRevisionId, "legacy_activation_revision");
+    assert.equal((await readActivationFile(dataDir)).schemaVersion, 1);
+
+    await store.deactivate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "VampyrLee"
+    });
+    const canonical = await readActivationFile(dataDir);
+    assert.equal(canonical.schemaVersion, 2);
+    assert.equal(canonical.active, null);
+    assert.equal(
+      canonical.revisionStates[
+        buildEventChestRevisionLifecycleKey("event_chest_alpha", "definition_revision_alpha_1")
+      ].state,
+      "inactive"
+    );
+  });
+});
+
+test("event chest lifecycle store: activation persists exact revision and reloads canonical state", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
     const result = await store.activate({
       chestId: "event_chest_alpha",
       definitionRevisionId: "definition_revision_alpha_1",
       actor: "VampyrLee"
     });
-
     assert.equal(result.activationStatus, "activated");
-    assert.equal(result.idempotent, false);
     assert.equal(result.activation.status, "active");
-    assert.equal(result.activation.chestId, "event_chest_alpha");
-    assert.equal(result.activation.definitionRevisionId, "definition_revision_alpha_1");
-    assert.ok(result.activation.activationRevisionId);
-    assert.equal(result.activation.activatedAt, "2026-07-27T17:00:00.000Z");
-    assert.equal(result.activation.activatedBy, "VampyrLee");
-    assert.deepEqual(await readActivationFile(dataDir), result.activation);
-  } finally {
-    await fs.rm(dataDir, { recursive: true, force: true });
-  }
+    assert.equal(result.lifecycle.active.chestId, "event_chest_alpha");
+    assert.equal(result.lifecycle.active.definitionRevisionId, "definition_revision_alpha_1");
+    assert.equal(result.lifecycle.active.activatedAt, "2026-08-01T12:00:00.000Z");
+
+    const recreated = new EventChestActivationStore({ dataDir });
+    const reloaded = await recreated.readActivation();
+    assert.equal(reloaded.status, "active");
+    assert.equal(reloaded.chestId, "event_chest_alpha");
+    assert.deepEqual(await readActivationFile(dataDir), result.lifecycle);
+  });
 });
 
-test("event chest activation store: exact replay is idempotent and does not rewrite", async () => {
-  const dataDir = await createTempDataDir();
-  try {
-    const store = new EventChestActivationStore({
-      dataDir,
-      now: () => "2026-07-27T17:05:00.000Z"
-    });
-
+test("event chest lifecycle store: exact activation replay is idempotent and does not rewrite", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
     const first = await store.activate({
       chestId: "event_chest_alpha",
       definitionRevisionId: "definition_revision_alpha_1",
       actor: "VampyrLee"
     });
-    const firstSerialized = await fs.readFile(activationPath(dataDir), "utf8");
+    const serialized = await fs.readFile(activationPath(dataDir), "utf8");
     const replay = await store.activate({
       chestId: "event_chest_alpha",
       definitionRevisionId: "definition_revision_alpha_1",
       actor: "OtherAdmin"
     });
-
     assert.equal(replay.activationStatus, "already_active");
     assert.equal(replay.idempotent, true);
-    assert.equal(replay.alreadyActive, true);
     assert.equal(replay.activation.activationRevisionId, first.activation.activationRevisionId);
-    assert.equal(replay.activation.activatedBy, "VampyrLee");
-    assert.equal(await fs.readFile(activationPath(dataDir), "utf8"), firstSerialized);
-  } finally {
-    await fs.rm(dataDir, { recursive: true, force: true });
-  }
+    assert.equal(await fs.readFile(activationPath(dataDir), "utf8"), serialized);
+  });
 });
 
-test("event chest activation store: concurrent exact replay produces one active revision", async () => {
-  const dataDir = await createTempDataDir();
-  try {
-    const store = new EventChestActivationStore({
-      dataDir,
-      now: () => "2026-07-27T17:10:00.000Z"
-    });
-
-    const [left, right] = await Promise.all([
-      store.activate({
-        chestId: "event_chest_alpha",
-        definitionRevisionId: "definition_revision_alpha_1",
-        actor: "VampyrLee"
-      }),
-      store.activate({
-        chestId: "event_chest_alpha",
-        definitionRevisionId: "definition_revision_alpha_1",
-        actor: "VampyrLee"
-      })
-    ]);
-
-    assert.equal([left, right].filter((result) => result.activationStatus === "activated").length, 1);
-    assert.equal([left, right].filter((result) => result.activationStatus === "already_active").length, 1);
-    assert.equal(left.activation.activationRevisionId, right.activation.activationRevisionId);
-    assert.equal((await readActivationFile(dataDir)).status, "active");
-  } finally {
-    await fs.rm(dataDir, { recursive: true, force: true });
-  }
-});
-
-test("event chest activation store: switching chest or revision creates one new active pointer", async () => {
-  const dataDir = await createTempDataDir();
-  try {
-    const store = new EventChestActivationStore({
-      dataDir,
-      now: () => "2026-07-27T17:15:00.000Z"
-    });
-
-    const first = await store.activate({
+test("event chest lifecycle store: replacement makes the prior revision inactive and reactivatable", async () => {
+  await withTempStore(async ({ store }) => {
+    await store.activate({
       chestId: "event_chest_alpha",
-      definitionRevisionId: "definition_revision_alpha_1",
-      actor: "VampyrLee"
+      definitionRevisionId: "definition_revision_alpha_1"
     });
-    const newerRevision = await store.activate({
-      chestId: "event_chest_alpha",
-      definitionRevisionId: "definition_revision_alpha_2",
-      actor: "VampyrLee"
-    });
-    const differentChest = await store.activate({
+    const replacement = await store.activate({
       chestId: "event_chest_beta",
-      definitionRevisionId: "definition_revision_beta_1",
-      actor: "VampyrLee"
+      definitionRevisionId: "definition_revision_beta_1"
     });
-
-    assert.notEqual(newerRevision.activation.activationRevisionId, first.activation.activationRevisionId);
-    assert.equal(newerRevision.activation.chestId, "event_chest_alpha");
-    assert.equal(newerRevision.activation.definitionRevisionId, "definition_revision_alpha_2");
-    assert.notEqual(differentChest.activation.activationRevisionId, newerRevision.activation.activationRevisionId);
-    assert.equal(differentChest.activation.chestId, "event_chest_beta");
-    assert.equal(differentChest.activation.definitionRevisionId, "definition_revision_beta_1");
-    assert.deepEqual(await readActivationFile(dataDir), differentChest.activation);
-  } finally {
-    await fs.rm(dataDir, { recursive: true, force: true });
-  }
-});
-
-test("event chest activation store: concurrent different activations serialize to one active pointer", async () => {
-  const dataDir = await createTempDataDir();
-  try {
-    const store = new EventChestActivationStore({
-      dataDir,
-      now: () => "2026-07-27T17:17:00.000Z"
-    });
-
-    const [left, right] = await Promise.all([
-      store.activate({
-        chestId: "event_chest_alpha",
-        definitionRevisionId: "definition_revision_alpha_1",
-        actor: "VampyrLee"
-      }),
-      store.activate({
-        chestId: "event_chest_beta",
-        definitionRevisionId: "definition_revision_beta_1",
-        actor: "VampyrLee"
-      })
-    ]);
-    const persisted = await readActivationFile(dataDir);
-
-    assert.equal(left.activationStatus, "activated");
-    assert.equal(right.activationStatus, "activated");
-    assert.ok(["event_chest_alpha", "event_chest_beta"].includes(persisted.chestId));
-    assert.equal(persisted.status, "active");
-    assert.equal(
-      persisted.activationRevisionId,
-      persisted.chestId === left.activation.chestId
-        ? left.activation.activationRevisionId
-        : right.activation.activationRevisionId
+    const alphaKey = buildEventChestRevisionLifecycleKey(
+      "event_chest_alpha",
+      "definition_revision_alpha_1"
     );
-  } finally {
-    await fs.rm(dataDir, { recursive: true, force: true });
-  }
+    assert.equal(replacement.lifecycle.active.chestId, "event_chest_beta");
+    assert.equal(replacement.lifecycle.revisionStates[alphaKey].state, "inactive");
+    assert.equal(replacement.lifecycle.revisionStates[alphaKey].endedAt, null);
+
+    const reactivated = await store.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    const betaKey = buildEventChestRevisionLifecycleKey(
+      "event_chest_beta",
+      "definition_revision_beta_1"
+    );
+    assert.equal(reactivated.lifecycle.active.chestId, "event_chest_alpha");
+    assert.equal(reactivated.lifecycle.revisionStates[alphaKey], undefined);
+    assert.equal(reactivated.lifecycle.revisionStates[betaKey].state, "inactive");
+  });
 });
 
-test("event chest activation store: ending active event and repeated end are idempotent", async () => {
-  const dataDir = await createTempDataDir();
-  try {
-    const store = new EventChestActivationStore({
-      dataDir,
-      now: () => "2026-07-27T17:20:00.000Z"
-    });
-
-    const activated = await store.activate({
+test("event chest lifecycle store: deactivate is exact, replay-safe, stale-safe, and reversible", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    await store.activate({
       chestId: "event_chest_alpha",
-      definitionRevisionId: "definition_revision_alpha_1",
-      actor: "VampyrLee"
+      definitionRevisionId: "definition_revision_alpha_1"
     });
-    const ended = await store.end({ actor: "VampyrLee" });
-    const endedSerialized = await fs.readFile(activationPath(dataDir), "utf8");
-    const replay = await store.end({ actor: "OtherAdmin" });
-    const [concurrentA, concurrentB] = await Promise.all([
-      store.end({ actor: "VampyrLee" }),
-      store.end({ actor: "VampyrLee" })
-    ]);
+    await assert.rejects(
+      store.deactivate({
+        chestId: "event_chest_beta",
+        definitionRevisionId: "definition_revision_beta_1"
+      }),
+      (error) => error?.code === "EVENT_CHEST_ACTIVE_REVISION_MISMATCH"
+    );
+    const deactivated = await store.deactivate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    const serialized = await fs.readFile(activationPath(dataDir), "utf8");
+    assert.equal(deactivated.activationStatus, "deactivated");
+    assert.equal(deactivated.activation.status, "inactive");
 
-    assert.equal(ended.activationStatus, "ended");
-    assert.equal(ended.idempotent, false);
-    assert.equal(ended.activation.status, "inactive");
-    assert.notEqual(ended.activation.activationRevisionId, activated.activation.activationRevisionId);
-    assert.equal(ended.activation.endedAt, "2026-07-27T17:20:00.000Z");
-    assert.equal(ended.activation.endedBy, "VampyrLee");
+    const replay = await store.deactivate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
     assert.equal(replay.activationStatus, "already_inactive");
     assert.equal(replay.idempotent, true);
-    assert.equal(replay.activation.activationRevisionId, ended.activation.activationRevisionId);
-    assert.equal(await fs.readFile(activationPath(dataDir), "utf8"), endedSerialized);
-    assert.equal(concurrentA.activation.activationRevisionId, ended.activation.activationRevisionId);
-    assert.equal(concurrentB.activation.activationRevisionId, ended.activation.activationRevisionId);
-  } finally {
-    await fs.rm(dataDir, { recursive: true, force: true });
-  }
+    assert.equal(await fs.readFile(activationPath(dataDir), "utf8"), serialized);
+
+    const reactivated = await store.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    assert.equal(reactivated.activation.status, "active");
+  });
+});
+
+test("event chest lifecycle store: end is exact, terminal, idempotent, and durable", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    await store.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    await assert.rejects(
+      store.end({
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "definition_revision_alpha_2"
+      }),
+      (error) => error?.code === "EVENT_CHEST_ACTIVE_REVISION_MISMATCH"
+    );
+    const ended = await store.end({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1",
+      actor: "VampyrLee"
+    });
+    assert.equal(ended.activationStatus, "ended");
+    assert.equal(ended.lifecycle.active, null);
+    assert.equal(
+      ended.lifecycle.revisionStates[
+        buildEventChestRevisionLifecycleKey("event_chest_alpha", "definition_revision_alpha_1")
+      ].state,
+      "ended"
+    );
+
+    const recreated = new EventChestActivationStore({ dataDir });
+    const replay = await recreated.end({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    assert.equal(replay.activationStatus, "already_ended");
+    assert.equal(replay.idempotent, true);
+    await assert.rejects(
+      recreated.activate({
+        chestId: "event_chest_alpha",
+        definitionRevisionId: "definition_revision_alpha_1"
+      }),
+      (error) => error?.code === "EVENT_CHEST_REVISION_ENDED"
+    );
+
+    const nextRevision = await recreated.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_2"
+    });
+    assert.equal(nextRevision.activation.definitionRevisionId, "definition_revision_alpha_2");
+  });
+});
+
+test("event chest lifecycle store: queued replacement wins and stale deactivate cannot clear it", async () => {
+  await withTempStore(async ({ store }) => {
+    await store.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    const replacementPromise = store.activate({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1"
+    });
+    const staleDeactivatePromise = store.deactivate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    await replacementPromise;
+    await assert.rejects(
+      staleDeactivatePromise,
+      (error) => error?.code === "EVENT_CHEST_ACTIVE_REVISION_MISMATCH"
+    );
+    const final = await store.readActivation();
+    assert.equal(final.chestId, "event_chest_beta");
+    assert.equal(final.definitionRevisionId, "definition_revision_beta_1");
+  });
+});
+
+test("event chest lifecycle store: stale end cannot affect a queued replacement", async () => {
+  await withTempStore(async ({ store }) => {
+    await store.activate({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    const replacementPromise = store.activate({
+      chestId: "event_chest_beta",
+      definitionRevisionId: "definition_revision_beta_1"
+    });
+    const staleEndPromise = store.end({
+      chestId: "event_chest_alpha",
+      definitionRevisionId: "definition_revision_alpha_1"
+    });
+    await replacementPromise;
+    await assert.rejects(
+      staleEndPromise,
+      (error) => error?.code === "EVENT_CHEST_ACTIVE_REVISION_MISMATCH"
+    );
+    const final = await store.readActivation();
+    assert.equal(final.chestId, "event_chest_beta");
+    assert.equal(final.definitionRevisionId, "definition_revision_beta_1");
+    assert.equal(
+      final.lifecycle.revisionStates[
+        buildEventChestRevisionLifecycleKey("event_chest_alpha", "definition_revision_alpha_1")
+      ].state,
+      "inactive"
+    );
+  });
+});
+
+test("event chest lifecycle store: malformed persistence fails closed", async () => {
+  await withTempStore(async ({ dataDir, store }) => {
+    await fs.mkdir(path.dirname(activationPath(dataDir)), { recursive: true });
+    await fs.writeFile(activationPath(dataDir), JSON.stringify({ schemaVersion: 2, active: { nope: true } }), "utf8");
+    assert.equal((await store.readActivation()).status, "inactive");
+
+    await fs.writeFile(activationPath(dataDir), "{ malformed", "utf8");
+    await assert.rejects(store.readActivation(), SyntaxError);
+  });
 });

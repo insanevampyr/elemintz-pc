@@ -4450,6 +4450,31 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:deactivateEventChestActivation", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        const adminAccess = assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.deactivateEventChestActivationForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest lifecycle authority is not available."), {
+            code: "EVENT_CHEST_LIFECYCLE_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.deactivateEventChestActivationForAdmin({
+          chestId: payload?.chestId,
+          definitionRevisionId: payload?.definitionRevisionId,
+          actor: adminAccess.adminIdentifier
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_DEACTIVATION_FAILED"));
+      }
+    });
+
     socket.on("admin:endEventChestActivation", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);
@@ -4465,6 +4490,8 @@ export function createMultiplayerFoundation({
           });
         }
         const result = await profileAuthority.endEventChestActivationForAdmin({
+          chestId: payload?.chestId,
+          definitionRevisionId: payload?.definitionRevisionId,
           actor: adminAccess.adminIdentifier
         });
         respond({
@@ -4472,7 +4499,7 @@ export function createMultiplayerFoundation({
           result
         });
       } catch (error) {
-        respond(buildAdminError(error, "EVENT_CHEST_ACTIVATION_FAILED"));
+        respond(buildAdminError(error, "EVENT_CHEST_END_FAILED"));
       }
     });
 

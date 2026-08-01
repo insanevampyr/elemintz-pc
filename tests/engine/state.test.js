@@ -5972,7 +5972,10 @@ test("state: Event Chest entitlement delivery is deterministic, idempotent, and 
       /authenticated claimed profile/
     );
 
-    await coordinator.eventChestActivationStore.end();
+    await coordinator.eventChestActivationStore.end({
+      chestId: "state_event_chest_entitlement",
+      definitionRevisionId: "definition_revision_state_entitlement_2"
+    });
     const beforeEndedUser = await coordinator.profiles.getProfile("EntitlementEndedUser");
     const ended = await coordinator.syncEventChestEntitlementForProfile({
       username: "EntitlementEndedUser",
@@ -6042,7 +6045,10 @@ test("state: Event Chest exact published revision lookup survives activation swi
       "Historical Event Chest Revision"
     );
 
-    await coordinator.eventChestActivationStore.end();
+    await coordinator.eventChestActivationStore.end({
+      chestId: otherChest.chestId,
+      definitionRevisionId: otherChest.definitionRevisionId
+    });
     assert.equal(
       (
         await coordinator.getPublishedEventChestDefinitionForActivation({

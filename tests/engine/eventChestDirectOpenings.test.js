@@ -143,6 +143,96 @@ test("event chest direct opening: daily reset windows accept ISO time and honor 
   assert.equal(getEventChestFreeResetWindow(policy, "not-a-time"), null);
 });
 
+test("event chest lifecycle: deactivate and end hide new opens while preserving entitlements and settlement replay", async () => {
+  const dataDir = await createTempDataDir();
+  try {
+    const definition = buildDefinition({ openTypes: ["entitlement", "free", "paid"] });
+    const coordinator = await createActiveCoordinator(dataDir, definition);
+    await createClaimedProfile(coordinator, "LifecycleOpenUser", 500);
+
+    const issued = await coordinator.syncEventChestEntitlementForProfile({
+      username: "LifecycleOpenUser",
+      profileKey: "LifecycleOpenUser",
+      accountId: "account-LifecycleOpenUser"
+    });
+    assert.equal(issued.deliveryStatus, "delivered");
+    await coordinator.deactivateEventChestActivationForAdmin({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor: "VampyrLee"
+    });
+
+    const retained = await coordinator.syncEventChestEntitlementForProfile({
+      username: "LifecycleOpenUser",
+      profileKey: "LifecycleOpenUser",
+      accountId: "account-LifecycleOpenUser"
+    });
+    assert.equal(retained.deliveryStatus, "existing_entitlement_available");
+    const beforeRejectedOpen = await coordinator.profiles.getProfile("LifecycleOpenUser");
+    await assert.rejects(
+      openDirect(coordinator, "LifecycleOpenUser", "free", "deactivated_free_request"),
+      (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+    );
+    await assert.rejects(
+      openDirect(coordinator, "LifecycleOpenUser", "paid", "deactivated_paid_request"),
+      (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+    );
+    assert.deepEqual(await coordinator.profiles.getProfile("LifecycleOpenUser"), beforeRejectedOpen);
+
+    const entitlementOpen = await coordinator.openEventChestEntitlement({
+      username: "LifecycleOpenUser",
+      profileKey: "LifecycleOpenUser",
+      accountId: "account-LifecycleOpenUser",
+      entitlementId: issued.entitlement.entitlementId,
+      random: () => 0
+    });
+    const entitlementReplay = await coordinator.openEventChestEntitlement({
+      username: "LifecycleOpenUser",
+      profileKey: "LifecycleOpenUser",
+      accountId: "account-LifecycleOpenUser",
+      entitlementId: issued.entitlement.entitlementId,
+      random: () => 0.99
+    });
+    assert.equal(entitlementOpen.replayed, false);
+    assert.equal(entitlementReplay.replayed, true);
+
+    await coordinator.activateEventChestDefinitionForAdmin({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor: "VampyrLee"
+    });
+    const paid = await openDirect(
+      coordinator,
+      "LifecycleOpenUser",
+      "paid",
+      "ended_replay_request",
+      { random: () => 0.5 }
+    );
+    assert.equal(paid.replayed, false);
+    await coordinator.endEventChestActivationForAdmin({
+      chestId: definition.chestId,
+      definitionRevisionId: definition.definitionRevisionId,
+      actor: "VampyrLee"
+    });
+    const paidReplay = await openDirect(
+      coordinator,
+      "LifecycleOpenUser",
+      "paid",
+      "ended_replay_request",
+      { random: () => 0.99 }
+    );
+    assert.equal(paidReplay.replayed, true);
+    const beforeNewEndedOpen = await coordinator.profiles.getProfile("LifecycleOpenUser");
+    await assert.rejects(
+      openDirect(coordinator, "LifecycleOpenUser", "paid", "ended_new_request"),
+      (error) => error?.code === "EVENT_CHEST_DIRECT_OPEN_UNAVAILABLE"
+    );
+    assert.deepEqual(await coordinator.profiles.getProfile("LifecycleOpenUser"), beforeNewEndedOpen);
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("event chest direct opening: paid charge, replay, concurrency, and distinct requests are authoritative", async () => {
   const dataDir = await createTempDataDir();
   try {
