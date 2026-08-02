@@ -34,6 +34,29 @@ Common blocking categories include published-source identity, shared published-c
 
 If the status is unavailable, stop and inspect the bounded reason. Escalate malformed or ambiguous persistence as a separate repair task with backups and rollback proof. Never delete published revisions or player records to make a draft eligible.
 
+## Chest Review
+
+Chest Review gives Admin operators a read-only preview of one exact draft revision. It is advisory: publish validation remains the authority that decides whether a draft can be published.
+
+To review a chest:
+
+1. Select the draft and open its Review step.
+2. Choose **Refresh Review** to load the exact current draft revision.
+3. Read the compact summary for readiness, schedule, opening methods, token cost, reward count, and important warnings.
+4. Review **Standard odds**. Expand **Epic+ guarantee** or **Legendary guarantee** when needed.
+5. Optionally select one exact published version of the same chest to see what changed. No comparison is selected automatically.
+6. Expand technical IDs only when exact identity verification is needed.
+
+Reward odds are deterministic, profile-free projections of the runtime rarity rules. Rewards within a selected rarity are equally likely. If ownership preference is enabled, runtime selection may favor unowned rewards within that rolled rarity. Chest Review does not calculate personalized odds and does not read a player's ownership.
+
+Critical and high warnings identify objective conditions that need attention. Informational notices are advisory. Warnings do not replace validation and do not authorize publication.
+
+Chest Review does not save, publish, delete, open, grant, spend, update pity, or mutate player or Event Chest persistence. A stale result means the draft changed; reload the exact current revision. If review data is unavailable, stop and retry only after the authoritative server and registry are available.
+
+Artwork is shown when the Admin app can resolve the configured player-app asset. Missing or unavailable artwork uses a clean fallback and does not change the review result.
+
+Connected Electron smoke was accepted by the owner: the exact review loaded, the compact summary and rarity odds were understandable, pity scenarios and exact published-version comparison worked, technical IDs remained available, artwork rendered or used the fallback, existing filters and draft controls remained functional, deletion and lifecycle/history behavior remained intact, and review performed no mutation.
+
 ## Acceptance and recovery record
 
 Manual Electron smoke passed: eligible unpublished drafts were deleted successfully; protected drafts remained blocked with bounded reasons; exact selection and refresh behavior were correct; Event Chest category filters worked; published history and Daily Chest remained protected.
