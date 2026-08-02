@@ -51,6 +51,112 @@ function formatEventChestTimestamp(value) {
   }).format(new Date(timestamp));
 }
 
+function formatEventChestDate(timestamp, { includeYear = false, locale = "en-US" } = {}) {
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    ...(includeYear ? { year: "numeric" } : {})
+  }).format(new Date(timestamp));
+}
+
+function formatEventChestTime(timestamp, { locale = "en-US" } = {}) {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  }).format(new Date(timestamp));
+}
+
+export function getEventChestAvailabilityPresentation(
+  availability = {},
+  { nowMs = Date.now(), locale = "en-US" } = {}
+) {
+  const startsAtMs = Date.parse(String(availability?.startsAt ?? ""));
+  const endsAtMs = Date.parse(String(availability?.endsAt ?? ""));
+  const safeNowMs = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+  const hasValidWindow =
+    Number.isFinite(startsAtMs) &&
+    Number.isFinite(endsAtMs) &&
+    endsAtMs > startsAtMs;
+
+  if (!hasValidWindow) {
+    return {
+      expired: false,
+      windowLabel: "Limited-time Event Chest",
+      remainingLabel: "",
+      endsAtMs: null
+    };
+  }
+
+  if (safeNowMs >= endsAtMs) {
+    return {
+      expired: true,
+      windowLabel: "",
+      remainingLabel: "",
+      endsAtMs
+    };
+  }
+
+  const remainingMs = endsAtMs - safeNowMs;
+  const startDate = new Date(startsAtMs);
+  const endDate = new Date(endsAtMs);
+  const sameLocalYear = startDate.getFullYear() === endDate.getFullYear();
+  let windowLabel;
+  let remainingLabel;
+
+  if (remainingMs < 60 * 60 * 1000) {
+    windowLabel = `Active until ${formatEventChestTime(endsAtMs, { locale })}`;
+    const minutes = Math.floor(remainingMs / 60000);
+    remainingLabel = minutes >= 1 ? `Ends in ${minutes} minute${minutes === 1 ? "" : "s"}` : "Ending soon";
+  } else if (remainingMs < 24 * 60 * 60 * 1000) {
+    windowLabel = `Active until ${formatEventChestDate(endsAtMs, { includeYear: !sameLocalYear, locale })} at ${formatEventChestTime(endsAtMs, { locale })}`;
+    const hours = Math.floor(remainingMs / (60 * 60 * 1000));
+    remainingLabel = `Ends in ${hours} hour${hours === 1 ? "" : "s"}`;
+  } else {
+    windowLabel = `Active ${formatEventChestDate(startsAtMs, { includeYear: !sameLocalYear, locale })} – ${formatEventChestDate(endsAtMs, { includeYear: true, locale })}`;
+    const days = Math.floor(remainingMs / (24 * 60 * 60 * 1000));
+    remainingLabel = `Ends in ${days} day${days === 1 ? "" : "s"}`;
+  }
+
+  return {
+    expired: false,
+    windowLabel,
+    remainingLabel,
+    endsAtMs
+  };
+}
+
+export function renderEventChestAvailabilityBlock(
+  availability = {},
+  { checkingAvailability = false, authoritativelyAvailable = false, ...options } = {}
+) {
+  const presentation = getEventChestAvailabilityPresentation(availability, options);
+  if (presentation.expired) {
+    return checkingAvailability
+      ? `
+        <section class="event-chest-modal__availability" data-event-chest-availability-block="true">
+          <p data-event-chest-availability="true">Available now</p>
+          <p class="muted" data-event-chest-remaining="true">Checking availability…</p>
+        </section>
+      `
+      : authoritativelyAvailable
+        ? `
+          <section class="event-chest-modal__availability" data-event-chest-availability-block="true">
+            <p data-event-chest-availability="true">Available now</p>
+            <p class="muted" data-event-chest-remaining="true">Ending soon</p>
+          </section>
+        `
+        : "";
+  }
+  return `
+    <section class="event-chest-modal__availability" data-event-chest-availability-block="true">
+      <p data-event-chest-availability="true">Available now</p>
+      <p class="muted" data-event-chest-window="true">${escapeHtml(presentation.windowLabel)}</p>
+      ${presentation.remainingLabel ? `<p class="muted" data-event-chest-remaining="true">${escapeHtml(presentation.remainingLabel)}</p>` : ""}
+    </section>
+  `;
+}
+
 function getRarityClass(value) {
   const rarity = String(value ?? "").trim().toLowerCase();
   return RARITY_ORDER.includes(rarity) ? rarity : "common";
@@ -189,6 +295,10 @@ export function renderEventChestModalBody(view = {}) {
   const byRarity = rewardPool.byRarity ?? {};
   const availability = chest.availability ?? {};
   const errorMessage = String(view.errorMessage ?? "").trim();
+  const availabilityHtml = renderEventChestAvailabilityBlock(availability, {
+    checkingAvailability: view.checkingAvailability === true,
+    authoritativelyAvailable: view.authoritativelyAvailable === true
+  });
 
   return `
     <div
@@ -210,12 +320,7 @@ export function renderEventChestModalBody(view = {}) {
         <h4>${escapeHtml(chest.modalTitle ?? chest.title ?? "Event Chest")}</h4>
         ${chest.subtitle ? `<p>${escapeHtml(chest.subtitle)}</p>` : ""}
         ${chest.description ? `<p class="muted">${escapeHtml(chest.description)}</p>` : ""}
-        <p data-event-chest-availability="true">Availability: ${escapeHtml(formatTypeLabel(availability.state ?? (chest.available ? "available" : "unavailable")))}</p>
-        ${
-          availability.startsAt || availability.endsAt
-            ? `<p class="muted">Window: ${escapeHtml(availability.startsAt ?? "Now")} to ${escapeHtml(availability.endsAt ?? "No end")}</p>`
-            : `<p class="muted">No schedule limit is configured for this active revision.</p>`
-        }
+        ${availabilityHtml}
       </section>
       <div class="daily-element-chest-modal__status-grid">
         <div class="daily-element-chest-modal__stat">
@@ -231,16 +336,16 @@ export function renderEventChestModalBody(view = {}) {
       <div class="daily-element-chest-modal__actions">
         ${
           free.enabled
-            ? `<button id="event-chest-free-open-btn" class="btn" type="button" ${free.available && !opening ? "" : 'disabled="disabled"'}>${view.pendingMethod === "free" ? "Opening..." : free.available ? "Free Open" : free.claimed ? "Free Open Claimed" : "Free Open Unavailable"}</button>`
+            ? `<button id="event-chest-free-open-btn" class="btn" type="button" ${free.available && !opening && view.checkingAvailability !== true ? "" : 'disabled="disabled"'}>${view.pendingMethod === "free" ? "Opening..." : free.available ? "Free Open" : free.claimed ? "Free Open Claimed" : "Free Open Unavailable"}</button>`
             : ""
         }
         ${
           paid.enabled
-            ? `<button id="event-chest-paid-open-btn" class="btn btn-secondary" type="button" ${paid.available && !opening ? "" : 'disabled="disabled"'}>${view.pendingMethod === "paid" ? "Opening..." : `Open for ${Number(paid.costTokens ?? 0)} Tokens`}</button>`
+            ? `<button id="event-chest-paid-open-btn" class="btn btn-secondary" type="button" ${paid.available && !opening && view.checkingAvailability !== true ? "" : 'disabled="disabled"'}>${view.pendingMethod === "paid" ? "Opening..." : `Open for ${Number(paid.costTokens ?? 0)} Tokens`}</button>`
             : ""
         }
       </div>
-      ${free.enabled && !free.available && free.nextAvailableAt ? `<p class="muted" data-event-chest-next-free="true">Next free: ${escapeHtml(formatEventChestTimestamp(free.nextAvailableAt) || free.nextAvailableAt)}</p>` : ""}
+      ${free.enabled && !free.available && free.nextAvailableAt ? `<p class="muted" data-event-chest-next-free="true">Next free: ${escapeHtml(formatEventChestTimestamp(free.nextAvailableAt) || "Unavailable")}</p>` : ""}
       ${paid.enabled && !paid.canAfford ? `<p class="muted" data-event-chest-paid-affordability="true">Not enough Tokens.</p>` : ""}
       <section class="daily-element-chest-modal__section">
         <h4>Odds</h4>

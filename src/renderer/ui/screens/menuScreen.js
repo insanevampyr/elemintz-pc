@@ -382,7 +382,7 @@ function renderMenuEventChestCard(eventChest) {
           <p class="daily-element-chest-card__status" data-event-chest-status="true">${statusLabel}</p>
           <p class="daily-element-chest-card__cost">${escapeHtml(subtitle)}</p>
           <p class="daily-element-chest-card__cost" data-event-chest-method-summary="true">${escapeHtml(methodCopy || "View details")}</p>
-          ${free.enabled && !free.available && free.nextAvailableAt ? `<p class="daily-element-chest-card__cost">Free reset: ${escapeHtml(nextFreeLabel || free.nextAvailableAt)}</p>` : ""}
+          ${free.enabled && !free.available && free.nextAvailableAt ? `<p class="daily-element-chest-card__cost">Free reset: ${escapeHtml(nextFreeLabel || "Unavailable")}</p>` : ""}
           ${paid.enabled && !paid.canAfford ? `<p class="daily-element-chest-card__cost">Not enough Tokens.</p>` : ""}
         </div>
       </button>

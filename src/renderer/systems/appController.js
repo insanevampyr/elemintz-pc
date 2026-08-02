@@ -28,7 +28,10 @@ import {
 import {
   renderDailyElementChestModalBody
 } from "../ui/screens/dailyElementChestScreen.js";
-import { renderEventChestModalBody } from "../ui/screens/eventChestScreen.js";
+import {
+  getEventChestAvailabilityPresentation,
+  renderEventChestModalBody
+} from "../ui/screens/eventChestScreen.js";
 import { getArenaBackground, getAvatarImage, getBadgeImage, getCardBackImage, getVariantCardImages } from "../utils/assets.js";
 import { escapeHtml, getAssetPath } from "../utils/dom.js";
 import { GameController, MATCH_MODE } from "./gameController.js";
@@ -157,6 +160,7 @@ const FEEDBACK_CATEGORIES = Object.freeze([
 ]);
 const FEEDBACK_MAX_MESSAGE_LENGTH = 2000;
 const DAILY_ELEMENT_CHEST_RESULT_VISIBILITY_MS = 3000;
+const EVENT_CHEST_MODAL_REFRESH_INTERVAL_MS = 30000;
 const DAILY_LOGIN_UPDATE_SAFETY_STALE_MS = 20000;
 const PVE_AI_TAUNT_LINES = Object.freeze({
   match_start: Object.freeze(["👀 I saw that.", "😤 Not done yet.", "🔥 Burn it down!"]),
@@ -367,6 +371,10 @@ export class AppController {
     this.eventChestDirectToastKeys = new Set();
     this.eventChestModalOpen = false;
     this.eventChestModalKey = null;
+    this.eventChestModalRefreshTimerId = null;
+    this.eventChestExpirySyncPending = false;
+    this.eventChestAvailabilityCheckPending = false;
+    this.eventChestExpiryAuthorityConfirmedKey = null;
     this.eventChestPendingDirectOpenMethod = null;
     this.eventChestLastResult = null;
     this.eventChestUiError = "";
@@ -3684,6 +3692,88 @@ export class AppController {
     return Boolean(globalThis.document?.querySelector?.("[data-event-chest-modal='true']"));
   }
 
+  clearEventChestModalRefreshTimer() {
+    if (this.eventChestModalRefreshTimerId) {
+      clearInterval(this.eventChestModalRefreshTimerId);
+      this.eventChestModalRefreshTimerId = null;
+    }
+  }
+
+  closeEventChestModal() {
+    this.clearEventChestModalRefreshTimer();
+    this.eventChestModalOpen = false;
+    this.eventChestModalKey = null;
+    this.eventChestExpirySyncPending = false;
+    this.eventChestAvailabilityCheckPending = false;
+    this.eventChestExpiryAuthorityConfirmedKey = null;
+    if (this.isEventChestModalOpen()) {
+      this.modalManager.hide();
+    }
+  }
+
+  setEventChestModalAvailabilityText({ windowLabel = null, remainingLabel = null } = {}) {
+    const windowNode = globalThis.document?.querySelector?.("[data-event-chest-window='true']");
+    const remainingNode = globalThis.document?.querySelector?.("[data-event-chest-remaining='true']");
+    if (windowNode && windowLabel != null) {
+      windowNode.textContent = windowLabel;
+    }
+    if (remainingNode && remainingLabel != null) {
+      remainingNode.textContent = remainingLabel;
+    }
+  }
+
+  requestEventChestExpiryConfirmation() {
+    if (this.eventChestExpirySyncPending) {
+      return;
+    }
+    this.eventChestExpirySyncPending = true;
+    this.eventChestAvailabilityCheckPending = true;
+    this.setEventChestModalAvailabilityText({ remainingLabel: "Checking availability…" });
+    void this.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({
+      reason: "modal-window-expired"
+    }).then((result) => {
+      if (result || !this.eventChestModalOpen || !this.isEventChestModalOpen()) {
+        return;
+      }
+      this.eventChestExpirySyncPending = false;
+      this.eventChestAvailabilityCheckPending = false;
+      this.setEventChestModalAvailabilityText({ remainingLabel: "Ending soon" });
+    }).catch(() => {
+      this.eventChestExpirySyncPending = false;
+      this.eventChestAvailabilityCheckPending = false;
+      this.setEventChestModalAvailabilityText({ remainingLabel: "Ending soon" });
+    });
+  }
+
+  refreshEventChestModalAvailability({ nowMs = Date.now() } = {}) {
+    if (!this.eventChestModalOpen || !this.isEventChestModalOpen()) {
+      this.clearEventChestModalRefreshTimer();
+      return { active: false, expired: false };
+    }
+
+    const presentation = getEventChestAvailabilityPresentation(
+      this.availableEventChestDirectOpen?.availability,
+      { nowMs }
+    );
+    if (presentation.expired) {
+      this.requestEventChestExpiryConfirmation();
+      return { active: true, expired: true, checking: true };
+    }
+
+    this.setEventChestModalAvailabilityText(presentation);
+    return { active: true, expired: false };
+  }
+
+  startEventChestModalRefreshTimer() {
+    if (this.eventChestModalRefreshTimerId) {
+      return;
+    }
+    this.eventChestModalRefreshTimerId = setInterval(() => {
+      this.refreshEventChestModalAvailability();
+    }, EVENT_CHEST_MODAL_REFRESH_INTERVAL_MS);
+    this.eventChestModalRefreshTimerId?.unref?.();
+  }
+
   buildEventChestModalView() {
     const chest = this.availableEventChestDirectOpen?.available
       ? this.availableEventChestDirectOpen
@@ -3692,6 +3782,7 @@ export class AppController {
       chest,
       openInFlight: this.eventChestDirectOpenPromises.size > 0,
       pendingMethod: this.eventChestPendingDirectOpenMethod,
+      checkingAvailability: this.eventChestAvailabilityCheckPending,
       result: this.eventChestLastResult,
       errorMessage: this.eventChestUiError
     };
@@ -3709,6 +3800,13 @@ export class AppController {
       });
       return;
     }
+    const locallyExpired = getEventChestAvailabilityPresentation(chest.availability).expired;
+    const authoritativelyConfirmed = this.eventChestExpiryAuthorityConfirmedKey === modalKey;
+    if (locallyExpired && !authoritativelyConfirmed) {
+      this.eventChestAvailabilityCheckPending = true;
+      view.checkingAvailability = true;
+    }
+    view.authoritativelyAvailable = locallyExpired && authoritativelyConfirmed;
     if (this.eventChestModalKey && this.eventChestModalKey !== modalKey) {
       this.eventChestLastResult = null;
       this.eventChestUiError = "";
@@ -3722,14 +3820,16 @@ export class AppController {
         {
           label: "Close",
           onClick: () => {
-            this.eventChestModalOpen = false;
-            this.eventChestModalKey = null;
-            this.modalManager.hide();
+            this.closeEventChestModal();
           }
         }
       ],
       modalClassName: "daily-element-chest-modal-shell event-chest-modal-shell"
     });
+    this.startEventChestModalRefreshTimer();
+    if (locallyExpired && !authoritativelyConfirmed) {
+      this.requestEventChestExpiryConfirmation();
+    }
 
     globalThis.document
       ?.getElementById?.("event-chest-free-open-btn")
@@ -3831,6 +3931,13 @@ export class AppController {
   async openEventChestDirect(method) {
     const safeMethod = String(method ?? "").trim();
     if (!["paid", "free"].includes(safeMethod)) {
+      return null;
+    }
+    if (this.eventChestAvailabilityCheckPending) {
+      this.eventChestUiError = "Checking Event Chest availability. Please wait.";
+      if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
+        this.showEventChestModal();
+      }
       return null;
     }
     if (this.eventChestDirectOpenPromises.size > 0) {
@@ -4488,6 +4595,10 @@ export class AppController {
     this.eventChestDirectToastKeys.clear();
     this.eventChestModalOpen = false;
     this.eventChestModalKey = null;
+    this.clearEventChestModalRefreshTimer();
+    this.eventChestExpirySyncPending = false;
+    this.eventChestAvailabilityCheckPending = false;
+    this.eventChestExpiryAuthorityConfirmedKey = null;
     this.eventChestPendingDirectOpenMethod = null;
     this.eventChestLastResult = null;
     this.eventChestUiError = "";
@@ -4943,6 +5054,7 @@ export class AppController {
     const syncPromise = (async () => {
       try {
         const result = await syncEntitlements({});
+        const wasExpiryConfirmation = this.eventChestExpirySyncPending;
         this.lastEventChestEntitlementSyncResult = result ?? null;
         this.availableEventChestEntitlement =
           this.normalizeEventChestEntitlementMenuState(result) ?? null;
@@ -4950,12 +5062,25 @@ export class AppController {
           result?.directOpen && typeof result.directOpen === "object"
             ? result.directOpen
             : null;
+        this.eventChestExpirySyncPending = false;
+        this.eventChestAvailabilityCheckPending = false;
+        if (wasExpiryConfirmation) {
+          this.eventChestExpiryAuthorityConfirmedKey = this.availableEventChestDirectOpen?.available
+            ? this.buildEventChestModalKey(this.availableEventChestDirectOpen)
+            : null;
+        }
         if (this.eventChestModalOpen && this.isEventChestModalOpen()) {
-          const nextKey = this.buildEventChestModalKey(this.availableEventChestDirectOpen);
-          if (this.eventChestModalKey && nextKey && this.eventChestModalKey !== nextKey) {
-            this.eventChestUiError = "Event Chest revision changed. Reopen the chest before opening.";
+          const nextKey = this.availableEventChestDirectOpen?.available
+            ? this.buildEventChestModalKey(this.availableEventChestDirectOpen)
+            : null;
+          if (!nextKey) {
+            this.closeEventChestModal();
+          } else {
+            if (this.eventChestModalKey && this.eventChestModalKey !== nextKey) {
+              this.eventChestUiError = "Event Chest revision changed. Reopen the chest before opening.";
+            }
+            this.showEventChestModal();
           }
-          this.showEventChestModal();
         }
         const deliveryStatus = String(result?.deliveryStatus ?? "").trim();
         if (deliveryStatus && deliveryStatus !== "no_active_event_chest") {

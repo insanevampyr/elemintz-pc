@@ -11,7 +11,10 @@ import {
   renderDailyElementChestMiniCard,
   renderDailyElementChestModalBody
 } from "../../src/renderer/ui/screens/dailyElementChestScreen.js";
-import { renderEventChestModalBody } from "../../src/renderer/ui/screens/eventChestScreen.js";
+import {
+  getEventChestAvailabilityPresentation,
+  renderEventChestModalBody
+} from "../../src/renderer/ui/screens/eventChestScreen.js";
 import { buildGameHudPrimaryLine, buildGameLiveUpdateSignature, gameScreen } from "../../src/renderer/ui/screens/gameScreen.js";
 import { howToPlayScreen } from "../../src/renderer/ui/screens/howToPlayScreen.js";
 import { loginScreen } from "../../src/renderer/ui/screens/loginScreen.js";
@@ -17206,8 +17209,8 @@ test("ui: Event Chest modal renders safe active definition presentation", () => 
       },
       availability: {
         state: "available",
-        startsAt: "2026-07-29T00:00:00.000Z",
-        endsAt: "2026-08-01T00:00:00.000Z"
+        startsAt: "2099-07-29T00:00:00.000Z",
+        endsAt: "2099-08-01T00:00:00.000Z"
       },
       tokenBalance: 225,
       methods: {
@@ -17275,8 +17278,10 @@ test("ui: Event Chest modal renders safe active definition presentation", () => 
   assert.match(html, /Player Event Chest/);
   assert.match(html, /Featured rewards\./);
   assert.match(html, /icons\/custom_closed\.png/);
-  assert.match(html, /Availability: Available/);
-  assert.match(html, /2026-07-29T00:00:00\.000Z to 2026-08-01T00:00:00\.000Z/);
+  assert.match(html, /data-event-chest-availability="true">Available now/);
+  assert.match(html, /data-event-chest-window="true">Active /);
+  assert.match(html, /data-event-chest-remaining="true">Ends in /);
+  assert.doesNotMatch(html, /2099-07-29T00:00:00\.000Z|2099-08-01T00:00:00\.000Z/);
   assert.match(html, /data-event-chest-token-balance="true">225</);
   assert.match(html, /id="event-chest-free-open-btn"[\s\S]*Free Open/);
   assert.match(html, /id="event-chest-paid-open-btn"[\s\S]*Open for 100 Tokens/);
@@ -17294,6 +17299,107 @@ test("ui: Event Chest modal renders safe active definition presentation", () => 
   assert.match(html, /data-event-chest-rarity-progress="epic">Epic 0\/1/);
   assert.match(html, /Safe transient error\./);
   assert.doesNotMatch(html, /private-account|private-profile|rewardSettlement|transactionId|definitionHistory/);
+});
+
+test("ui: Event Chest availability uses local human-readable ranges and safe countdown thresholds", () => {
+  const nowMs = Date.parse("2030-08-02T12:00:00.000Z");
+  const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+  const startMs = Date.parse("2030-08-02T14:22:00.000Z");
+  const endMs = Date.parse("2030-09-02T14:22:00.000Z");
+  const multiDay = getEventChestAvailabilityPresentation(
+    { startsAt: new Date(startMs).toISOString(), endsAt: new Date(endMs).toISOString() },
+    { nowMs }
+  );
+  assert.equal(
+    multiDay.windowLabel,
+    `Active ${formatter.format(new Date(startMs))} – ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(endMs))}`
+  );
+  assert.equal(multiDay.remainingLabel, "Ends in 31 days");
+
+  const underSevenDays = getEventChestAvailabilityPresentation(
+    { startsAt: "2030-08-01T12:00:00.000Z", endsAt: "2030-08-07T18:00:00.000Z" },
+    { nowMs }
+  );
+  assert.equal(underSevenDays.remainingLabel, "Ends in 5 days");
+
+  const underDay = getEventChestAvailabilityPresentation(
+    { startsAt: "2030-08-02T01:00:00.000Z", endsAt: "2030-08-02T19:45:00.000Z" },
+    { nowMs }
+  );
+  assert.match(underDay.windowLabel, /^Active until /);
+  assert.equal(underDay.remainingLabel, "Ends in 7 hours");
+
+  const finalHour = getEventChestAvailabilityPresentation(
+    { startsAt: "2030-08-02T01:00:00.000Z", endsAt: "2030-08-02T12:42:00.000Z" },
+    { nowMs }
+  );
+  assert.match(finalHour.windowLabel, /^Active until /);
+  assert.equal(finalHour.remainingLabel, "Ends in 42 minutes");
+
+  const endingSoon = getEventChestAvailabilityPresentation(
+    { startsAt: "2030-08-02T01:00:00.000Z", endsAt: "2030-08-02T12:00:30.000Z" },
+    { nowMs }
+  );
+  assert.equal(endingSoon.remainingLabel, "Ending soon");
+  const dstBoundary = getEventChestAvailabilityPresentation(
+    { startsAt: "2030-03-10T06:00:00.000Z", endsAt: "2030-03-10T08:00:00.000Z" },
+    { nowMs: Date.parse("2030-03-10T06:00:00.000Z") }
+  );
+  assert.equal(dstBoundary.remainingLabel, "Ends in 2 hours");
+  assert.doesNotMatch(`${multiDay.remainingLabel} ${underDay.remainingLabel} ${finalHour.remainingLabel} ${endingSoon.remainingLabel}`, /Ends in 0 (days|hours|minutes)/);
+});
+
+test("ui: Event Chest availability handles cross-month, cross-year, invalid, and expired windows without raw timestamps", () => {
+  const nowMs = Date.parse("2030-12-31T12:00:00.000Z");
+  const crossMonth = getEventChestAvailabilityPresentation(
+    { startsAt: "2030-12-31T10:00:00.000Z", endsAt: "2031-01-02T12:00:00.000Z" },
+    { nowMs }
+  );
+  assert.match(crossMonth.windowLabel, /^Active .*2030 – .*2031$/);
+  assert.equal(crossMonth.remainingLabel, "Ends in 2 days");
+
+  const invalid = getEventChestAvailabilityPresentation(
+    { startsAt: "not-a-time", endsAt: "2030-12-31T12:00:00.000Z" },
+    { nowMs }
+  );
+  assert.equal(invalid.windowLabel, "Limited-time Event Chest");
+  assert.equal(invalid.remainingLabel, "");
+
+  const invalidRange = getEventChestAvailabilityPresentation(
+    { startsAt: "2031-01-01T00:00:00.000Z", endsAt: "2030-12-31T23:59:00.000Z" },
+    { nowMs }
+  );
+  assert.equal(invalidRange.windowLabel, "Limited-time Event Chest");
+
+  const expired = getEventChestAvailabilityPresentation(
+    { startsAt: "2030-12-30T12:00:00.000Z", endsAt: "2030-12-31T12:00:00.000Z" },
+    { nowMs }
+  );
+  assert.equal(expired.expired, true);
+
+  const html = renderEventChestModalBody({
+    chest: {
+      available: true,
+      availability: { startsAt: "not-a-time", endsAt: "2030-12-31T12:00:00.000Z" }
+    }
+  });
+  assert.match(html, /Limited-time Event Chest/);
+  assert.doesNotMatch(html, /not-a-time|2030-12-31T12:00:00\.000Z/);
+
+  const checkingHtml = renderEventChestModalBody({
+    checkingAvailability: true,
+    chest: {
+      available: true,
+      availability: { startsAt: "2020-01-01T00:00:00.000Z", endsAt: "2020-01-02T00:00:00.000Z" },
+      methods: {
+        free: { enabled: true, available: true },
+        paid: { enabled: true, available: true, canAfford: true, costTokens: 100 }
+      }
+    }
+  });
+  assert.match(checkingHtml, /Checking availability…/);
+  assert.match(checkingHtml, /id="event-chest-free-open-btn"[^>]*disabled="disabled"/);
+  assert.match(checkingHtml, /id="event-chest-paid-open-btn"[^>]*disabled="disabled"/);
 });
 
 test("ui: Event Chest modal renders readable free reset copy", () => {
@@ -17316,6 +17422,151 @@ test("ui: Event Chest modal renders readable free reset copy", () => {
 
   assert.match(html, /data-event-chest-next-free="true">Next free: Jul 30,/);
   assert.doesNotMatch(html, /2026-07-30T23:00:00\.000Z/);
+});
+
+test("ui: Event Chest modal refresh is single-instance and defers apparent expiry to one authoritative confirmation", async (t) => {
+  const controller = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => {} },
+    toastManager: { show: () => {} }
+  });
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  let intervalCount = 0;
+  let clearedTimer = null;
+  const timer = { unref: () => {} };
+  globalThis.setInterval = (callback, intervalMs) => {
+    intervalCount += 1;
+    assert.equal(intervalMs, 30000);
+    assert.equal(typeof callback, "function");
+    return timer;
+  };
+  globalThis.clearInterval = (timerId) => {
+    clearedTimer = timerId;
+  };
+  t.after(() => {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  });
+
+  controller.startEventChestModalRefreshTimer();
+  controller.startEventChestModalRefreshTimer();
+  assert.equal(intervalCount, 1);
+  controller.clearEventChestModalRefreshTimer();
+  assert.equal(clearedTimer, timer);
+
+  let resolveSync;
+  let synchronized = 0;
+  controller.eventChestModalOpen = true;
+  controller.isEventChestModalOpen = () => true;
+  controller.closeEventChestModal = () => {
+    throw new Error("client expiry must not close the modal");
+  };
+  controller.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh = ({ reason }) => {
+    synchronized += 1;
+    assert.equal(reason, "modal-window-expired");
+    return new Promise((resolve) => {
+      resolveSync = resolve;
+    });
+  };
+  controller.availableEventChestDirectOpen = {
+    availability: {
+      startsAt: "2030-08-02T10:00:00.000Z",
+      endsAt: "2030-08-02T12:00:00.000Z"
+    }
+  };
+
+  const result = controller.refreshEventChestModalAvailability({
+    nowMs: Date.parse("2030-08-02T12:00:00.000Z")
+  });
+  controller.refreshEventChestModalAvailability({
+    nowMs: Date.parse("2030-08-02T12:00:30.000Z")
+  });
+  assert.deepEqual(result, { active: true, expired: true, checking: true });
+  assert.equal(controller.eventChestModalOpen, true);
+  assert.equal(synchronized, 1);
+  assert.equal(controller.eventChestExpirySyncPending, true);
+  resolveSync(null);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(synchronized, 1);
+  assert.equal(controller.eventChestModalOpen, true);
+  assert.equal(controller.eventChestExpirySyncPending, false);
+  assert.equal(controller.eventChestAvailabilityCheckPending, false);
+});
+
+test("ui: authoritative Event Chest expiry confirmation alone closes unavailable chests and refreshes active chests", async (t) => {
+  const originalWindow = globalThis.window;
+  t.after(() => {
+    globalThis.window = originalWindow;
+  });
+
+  const unavailableModal = { hidden: 0 };
+  const unavailableController = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => { unavailableModal.hidden += 1; } },
+    toastManager: { show: () => {} }
+  });
+  unavailableController.hasAuthenticatedMultiplayerSessionForUsername = () => true;
+  unavailableController.isEventChestModalOpen = () => true;
+  unavailableController.eventChestModalOpen = true;
+  unavailableController.eventChestModalKey = "event_chest:revision_1";
+  unavailableController.eventChestExpirySyncPending = true;
+  unavailableController.eventChestAvailabilityCheckPending = true;
+  globalThis.window = {
+    elemintz: {
+      multiplayer: {
+        syncEventChestEntitlements: async () => ({
+          deliveryStatus: "no_active_event_chest",
+          directOpen: { available: false, chestId: "event_chest", definitionRevisionId: "revision_1" }
+        })
+      }
+    }
+  };
+  await unavailableController.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({
+    reason: "modal-window-expired"
+  });
+  assert.equal(unavailableModal.hidden, 1);
+  assert.equal(unavailableController.eventChestModalOpen, false);
+  assert.equal(unavailableController.availableEventChestDirectOpen?.available, false);
+  assert.equal(unavailableController.buildEventChestMenuView(), null);
+
+  let rerendered = 0;
+  const activeController = new AppController({
+    screenManager: { register: () => {}, show: () => {} },
+    modalManager: { show: () => {}, hide: () => { throw new Error("active chest must remain open"); } },
+    toastManager: { show: () => {} }
+  });
+  activeController.hasAuthenticatedMultiplayerSessionForUsername = () => true;
+  activeController.isEventChestModalOpen = () => true;
+  activeController.showEventChestModal = () => { rerendered += 1; };
+  activeController.eventChestModalOpen = true;
+  activeController.eventChestModalKey = "event_chest:revision_1";
+  activeController.eventChestExpirySyncPending = true;
+  activeController.eventChestAvailabilityCheckPending = true;
+  globalThis.window.elemintz.multiplayer.syncEventChestEntitlements = async () => ({
+    deliveryStatus: "delivered",
+    directOpen: {
+      available: true,
+      chestId: "event_chest",
+      definitionRevisionId: "revision_1",
+      availability: {
+        startsAt: "2030-08-02T10:00:00.000Z",
+        endsAt: "2030-08-02T13:00:00.000Z"
+      }
+    }
+  });
+  await activeController.syncEventChestEntitlementsAfterAuthenticatedProfileRefresh({
+    reason: "modal-window-expired"
+  });
+  assert.equal(rerendered, 1);
+  assert.equal(activeController.eventChestModalOpen, true);
+  assert.equal(activeController.eventChestAvailabilityCheckPending, false);
+  assert.equal(activeController.eventChestExpiryAuthorityConfirmedKey, "event_chest:revision_1");
+  assert.equal(
+    activeController.availableEventChestDirectOpen?.availability?.endsAt,
+    "2030-08-02T13:00:00.000Z"
+  );
 });
 
 test("ui: AppController preserves rich Event Chest modal projection when entitlement drives availability", () => {
