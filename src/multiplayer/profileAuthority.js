@@ -1169,6 +1169,13 @@ export class MultiplayerProfileAuthority {
     return this.coordinator.getEventChestDraftForAdmin(draftId);
   }
 
+  async getEventChestDraftReviewForAdmin(request = {}) {
+    this.logger.info?.(
+      `[ProfileAuthority] getEventChestDraftReviewForAdmin -> ${String(request?.draftId ?? "")}`
+    );
+    return this.coordinator.getEventChestDraftReviewForAdmin(request);
+  }
+
   async getEventChestDraftDeletionEligibilityForAdmin({
     draftId = null,
     expectedDraftRevisionId = null

@@ -7,6 +7,7 @@ import {
 } from "../../src/state/eventChestDefinitions.js";
 import {
   applyEventChestReward,
+  getEventChestRarityProbabilities,
   normalizeEventChestRewardSettlement,
   selectEventChestReward
 } from "../../src/state/eventChestOpening.js";
@@ -135,6 +136,66 @@ test("event chest reward selection: deterministic odds and pity transitions are 
     },
     { epicPlusMisses: 0, legendaryMisses: 0 }
   );
+});
+
+test("event chest reward selection: shared review distributions remain in parity with runtime rarity selection", () => {
+  const candidate = definition();
+  const scenarios = [
+    {
+      scenario: "base",
+      profile: createDefaultProfile("EventChestBaseParity")
+    },
+    {
+      scenario: "epic_plus_due",
+      profile: {
+        ...createDefaultProfile("EventChestEpicParity"),
+        eventChestPity: applyEventChestPityState(
+          createDefaultEventChestPity(),
+          candidate.chestId,
+          {
+            epicPlusMisses: candidate.pity.epicPlusThreshold - 1,
+            legendaryMisses: 0,
+            updatedAt: "2026-08-01T00:00:00.000Z"
+          }
+        )
+      }
+    },
+    {
+      scenario: "legendary_due",
+      profile: {
+        ...createDefaultProfile("EventChestLegendaryParity"),
+        eventChestPity: applyEventChestPityState(
+          createDefaultEventChestPity(),
+          candidate.chestId,
+          {
+            epicPlusMisses: candidate.pity.epicPlusThreshold - 1,
+            legendaryMisses: candidate.pity.legendaryThreshold - 1,
+            updatedAt: "2026-08-01T00:00:00.000Z"
+          }
+        )
+      }
+    }
+  ];
+
+  for (const { scenario, profile } of scenarios) {
+    const probabilities = getEventChestRarityProbabilities(candidate, scenario);
+    let lowerBound = 0;
+    for (const rarity of ["common", "rare", "epic", "legendary"]) {
+      const probability = probabilities[rarity];
+      if (probability <= 0) {
+        continue;
+      }
+      const rarityRoll = lowerBound + probability / 2;
+      const rolls = scenario === "legendary_due" ? [0] : [rarityRoll, 0];
+      const selected = selectEventChestReward({
+        definition: candidate,
+        profile,
+        random: () => rolls.shift() ?? 0
+      });
+      assert.equal(selected.rarity, rarity, `${scenario} should select ${rarity}`);
+      lowerBound += probability;
+    }
+  }
 });
 
 test("event chest duplicate conversion uses authoritative ownership and exact definition value", () => {

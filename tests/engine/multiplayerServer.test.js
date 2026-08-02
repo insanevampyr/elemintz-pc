@@ -499,6 +499,223 @@ test("multiplayer foundation: health endpoint responds for deployment checks", a
   }
 });
 
+test("multiplayer foundation: Event Chest draft review is exact, admin-only, redacted, and read-only", async () => {
+  const dataDir = await createTempDataDir();
+  let now = "2026-08-01T12:00:00.000Z";
+  const coordinator = new StateCoordinator({
+    dataDir,
+    eventChestRegistryStore: new EventChestRegistryStore({
+      dataDir,
+      now: () => now,
+      logger: { warn: () => {} }
+    })
+  });
+  const accountStore = new MultiplayerAccountStore({
+    dataDir,
+    logger: { info: () => {} }
+  });
+  const profileAuthority = new MultiplayerProfileAuthority({
+    coordinator,
+    logger: { info: () => {} }
+  });
+  const foundation = createMultiplayerFoundation({
+    port: 0,
+    profileAuthority,
+    accountStore,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+  let adminClient = null;
+  let playerClient = null;
+  let unauthenticatedClient = null;
+
+  try {
+    await accountStore.register({
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123",
+      username: "VampyrLee"
+    });
+    await accountStore.register({
+      email: "event-review-player@example.com",
+      password: "PlayerPass123",
+      username: "EventReviewPlayer"
+    });
+    const port = await foundation.start();
+    adminClient = await connectClient(port);
+    playerClient = await connectClient(port);
+    unauthenticatedClient = await connectClient(port);
+    const adminLogin = await loginAccount(adminClient, {
+      email: "insanevampyr@gmail.com",
+      password: "AdminPass123"
+    });
+    const playerLogin = await loginAccount(playerClient, {
+      email: "event-review-player@example.com",
+      password: "PlayerPass123"
+    });
+    assert.equal(adminLogin?.ok, true);
+    assert.equal(playerLogin?.ok, true);
+
+    const reviewDefinition = {
+      ...structuredClone(DAILY_ELEMINTZ_CHEST_DEFAULT_PRESET),
+      chestId: "event_chest_admin_review_route",
+      lifecycle: { status: "draft", defaultPreset: false }
+    };
+    const seededDraft = await coordinator.eventChestDraftStore.saveDraft({
+      draftId: "draft_admin_review_route",
+      chestId: reviewDefinition.chestId,
+      status: "ready",
+      definition: reviewDefinition,
+      createdBy: "PrivateCreator",
+      updatedBy: "PrivateUpdater"
+    });
+    const publication = await coordinator.eventChestRegistryStore.publishEventChestDraftDefinition({
+      definition: seededDraft.definition,
+      actor: "PrivatePublisher",
+      sourceDraftId: seededDraft.draftId,
+      sourceDraftRevisionId: seededDraft.draftRevisionId
+    });
+    const exactPublished = publication.publishedDefinition;
+    now = "2026-08-01T12:01:00.000Z";
+    await coordinator.eventChestActivationStore.archive({
+      chestId: exactPublished.chestId,
+      definitionRevisionId: exactPublished.definitionRevisionId,
+      actor: "PrivateArchiver"
+    });
+
+    const request = {
+      draftId: seededDraft.draftId,
+      expectedDraftRevisionId: seededDraft.draftRevisionId,
+      comparison: {
+        chestId: exactPublished.chestId,
+        definitionRevisionId: exactPublished.definitionRevisionId
+      }
+    };
+    const unauthenticated = await emitWithAck(
+      unauthenticatedClient,
+      "admin:getEventChestDraftReview",
+      request
+    );
+    assert.equal(unauthenticated?.ok, false);
+    assert.ok(["SESSION_REQUIRED", "ADMIN_AUTH_REQUIRED"].includes(unauthenticated?.error?.code));
+
+    const nonAdmin = await emitWithAck(playerClient, "admin:getEventChestDraftReview", {
+      ...request,
+      sessionToken: playerLogin.session.token
+    });
+    assert.equal(nonAdmin?.ok, false);
+    assert.equal(nonAdmin?.error?.code, "ADMIN_ACCESS_DENIED");
+
+    const invalid = await emitWithAck(adminClient, "admin:getEventChestDraftReview", {
+      sessionToken: adminLogin.session.token,
+      draftId: seededDraft.draftId
+    });
+    assert.equal(invalid?.ok, false);
+    assert.equal(invalid?.error?.code, "EVENT_CHEST_REVIEW_INVALID_REQUEST");
+
+    const missingDraft = await emitWithAck(adminClient, "admin:getEventChestDraftReview", {
+      sessionToken: adminLogin.session.token,
+      draftId: "missing_event_chest_review_draft",
+      expectedDraftRevisionId: "missing_event_chest_review_revision",
+      comparison: null
+    });
+    assert.equal(missingDraft?.ok, false);
+    assert.equal(missingDraft?.error?.code, "EVENT_CHEST_DRAFT_NOT_FOUND");
+
+    const stale = await emitWithAck(adminClient, "admin:getEventChestDraftReview", {
+      ...request,
+      sessionToken: adminLogin.session.token,
+      expectedDraftRevisionId: "stale_revision"
+    });
+    assert.equal(stale?.ok, false);
+    assert.equal(stale?.error?.code, "EVENT_CHEST_DRAFT_STALE");
+
+    const mismatch = await emitWithAck(adminClient, "admin:getEventChestDraftReview", {
+      ...request,
+      sessionToken: adminLogin.session.token,
+      comparison: {
+        chestId: "different_chest",
+        definitionRevisionId: exactPublished.definitionRevisionId
+      }
+    });
+    assert.equal(mismatch?.ok, false);
+    assert.equal(mismatch?.error?.code, "EVENT_CHEST_COMPARISON_CHEST_MISMATCH");
+
+    const missingRevision = await emitWithAck(adminClient, "admin:getEventChestDraftReview", {
+      ...request,
+      sessionToken: adminLogin.session.token,
+      comparison: {
+        chestId: exactPublished.chestId,
+        definitionRevisionId: "missing_published_revision"
+      }
+    });
+    assert.equal(missingRevision?.ok, false);
+    assert.equal(missingRevision?.error?.code, "EVENT_CHEST_REVISION_NOT_FOUND");
+
+    const persistencePaths = [
+      path.join(dataDir, "accounts.json"),
+      path.join(dataDir, "server-data", EVENT_CHEST_DRAFT_STORE_FILENAME),
+      path.join(dataDir, "server-data", EVENT_CHEST_REGISTRY_FILENAME),
+      path.join(dataDir, "server-data", EVENT_CHEST_ACTIVATION_FILENAME)
+    ];
+    const beforePersistence = await Promise.all(
+      persistencePaths.map((filePath) => fs.readFile(filePath, "utf8"))
+    );
+    coordinator.profiles.getProfile = async () => {
+      throw new Error("review route must not read profiles");
+    };
+    const reviewed = await emitWithAck(adminClient, "admin:getEventChestDraftReview", {
+      ...request,
+      sessionToken: adminLogin.session.token
+    });
+    assert.equal(reviewed?.ok, true);
+    assert.deepEqual(reviewed.result.target, {
+      kind: "draft",
+      draftId: seededDraft.draftId,
+      draftRevisionId: seededDraft.draftRevisionId,
+      chestId: seededDraft.chestId
+    });
+    assert.equal(
+      reviewed.result.comparison.publishedIdentity.definitionRevisionId,
+      exactPublished.definitionRevisionId
+    );
+    assert.equal(reviewed.result.comparison.publishedIdentity.archived, true);
+    assert.equal(reviewed.result.comparison.status, "unchanged");
+    assert.equal(reviewed.result.preview.lifecycle.archived, true);
+    assert.equal(reviewed.result.preview.lifecycle.latest, true);
+    assert.equal(reviewed.result.preview.lifecycle.active, false);
+    assert.equal(reviewed.result.preview.lifecycle.runtimeState, "archived");
+    assert.equal(reviewed.result.preview.odds.valid, true);
+    assert.ok(reviewed.result.preview.odds.scenarios.every((scenario) => scenario.valid));
+    const serialized = JSON.stringify(reviewed.result);
+    for (const privateField of [
+      "createdBy",
+      "updatedBy",
+      "publishedBy",
+      "actor",
+      "sessionToken",
+      "entitlementId",
+      "settlementId",
+      "transactionId",
+      "ownedCosmetics",
+      "eventChestPity",
+      "filePath",
+      "queue"
+    ]) {
+      assert.equal(serialized.includes(privateField), false, `${privateField} must remain private`);
+    }
+    const afterPersistence = await Promise.all(
+      persistencePaths.map((filePath) => fs.readFile(filePath, "utf8"))
+    );
+    assert.deepEqual(afterPersistence, beforePersistence, "review route must not mutate Event Chest persistence");
+    await assert.rejects(fs.access(path.join(dataDir, "profiles.json")), /ENOENT/);
+  } finally {
+    adminClient?.disconnect();
+    playerClient?.disconnect();
+    unauthenticatedClient?.disconnect();
+    await foundation.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("multiplayer rooms: invalid or missing visibility defaults rooms to private and keeps them out of the public list", () => {
   const store = createRoomStore({
     random: (() => {

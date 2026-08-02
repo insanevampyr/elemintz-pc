@@ -111,6 +111,7 @@ import {
 import { mirrorDailyElementChestProgressToEventChests } from "./eventChestProfileProgress.js";
 import { EventChestActivationStore } from "./eventChestActivationStore.js";
 import { EventChestRegistryStore } from "./eventChestRegistryStore.js";
+import { buildEventChestDraftReview } from "./eventChestReview.js";
 import {
   EVENT_CHEST_DRAFT_REFERENCE_PROOF_REASONS,
   buildEventChestDraftDeletionReferenceProof
@@ -1866,6 +1867,130 @@ export class StateCoordinator {
       throw new Error(`Event Chest draft '${String(draftId ?? "").trim()}' was not found.`);
     }
     return draft;
+  }
+
+  async getEventChestDraftReviewForAdmin(request = {}) {
+    return this.runEventChestAuthoringMutation(() =>
+      this.getEventChestDraftReviewWithinAuthoringLock(request)
+    );
+  }
+
+  async getEventChestDraftReviewWithinAuthoringLock(request = {}) {
+    const draftId = strictEventChestDraftIdentity(request?.draftId);
+    const expectedDraftRevisionId = strictEventChestDraftIdentity(
+      request?.expectedDraftRevisionId
+    );
+    const comparisonInput = request?.comparison;
+    if (!draftId || !expectedDraftRevisionId) {
+      throw Object.assign(
+        new Error("draftId and expectedDraftRevisionId are required exact identifiers."),
+        { code: "EVENT_CHEST_REVIEW_INVALID_REQUEST" }
+      );
+    }
+    if (
+      comparisonInput !== null &&
+      comparisonInput !== undefined &&
+      (typeof comparisonInput !== "object" || Array.isArray(comparisonInput))
+    ) {
+      throw Object.assign(new Error("comparison must be an exact published revision or null."), {
+        code: "EVENT_CHEST_REVIEW_INVALID_REQUEST"
+      });
+    }
+
+    let comparisonIdentity = null;
+    if (comparisonInput != null) {
+      const chestId = strictEventChestDraftIdentity(comparisonInput.chestId);
+      const definitionRevisionId = strictEventChestDraftIdentity(
+        comparisonInput.definitionRevisionId
+      );
+      if (!chestId || !definitionRevisionId) {
+        throw Object.assign(
+          new Error("comparison chestId and definitionRevisionId are required exact identifiers."),
+          { code: "EVENT_CHEST_REVIEW_INVALID_REQUEST" }
+        );
+      }
+      comparisonIdentity = { chestId, definitionRevisionId };
+    }
+
+    let draft = null;
+    try {
+      draft = await this.eventChestDraftStore.getDraft(draftId);
+    } catch {
+      throw Object.assign(new Error("The requested Event Chest draft is unavailable."), {
+        code: "EVENT_CHEST_REVIEW_UNAVAILABLE"
+      });
+    }
+    if (!draft) {
+      throw Object.assign(new Error("Event Chest draft was not found."), {
+        code: "EVENT_CHEST_DRAFT_NOT_FOUND"
+      });
+    }
+    if (draft.draftRevisionId !== expectedDraftRevisionId) {
+      throw Object.assign(
+        new Error("The Event Chest draft changed. Reload the exact current revision."),
+        { code: "EVENT_CHEST_DRAFT_STALE" }
+      );
+    }
+    if (comparisonIdentity && comparisonIdentity.chestId !== draft.chestId) {
+      throw Object.assign(
+        new Error("The comparison revision must belong to the same Event Chest as the draft."),
+        { code: "EVENT_CHEST_COMPARISON_CHEST_MISMATCH" }
+      );
+    }
+
+    let registryRead = null;
+    let lifecycle = null;
+    try {
+      [registryRead, lifecycle] = await Promise.all([
+        this.eventChestRegistryStore.getEventChestRegistryReadModel(),
+        this.eventChestActivationStore.readLifecycle()
+      ]);
+    } catch {
+      throw Object.assign(new Error("Event Chest review data is unavailable."), {
+        code: "EVENT_CHEST_REVIEW_UNAVAILABLE"
+      });
+    }
+    if (!registryRead?.ok) {
+      throw Object.assign(new Error("Event Chest review data is unavailable."), {
+        code: "EVENT_CHEST_REVIEW_UNAVAILABLE"
+      });
+    }
+
+    let publishedDefinition = null;
+    if (comparisonIdentity) {
+      publishedDefinition = (Array.isArray(registryRead.definitions)
+        ? registryRead.definitions
+        : []
+      ).find(
+        (definition) =>
+          definition?.chestId === comparisonIdentity.chestId &&
+          definition?.definitionRevisionId === comparisonIdentity.definitionRevisionId &&
+          String(definition?.publishedAt ?? "").trim()
+      ) ?? null;
+      if (!publishedDefinition) {
+        throw Object.assign(new Error("The exact published Event Chest revision was not found."), {
+          code: "EVENT_CHEST_REVISION_NOT_FOUND"
+        });
+      }
+    }
+
+    const readAt =
+      typeof this.eventChestRegistryStore.now === "function"
+        ? this.eventChestRegistryStore.now()
+        : new Date().toISOString();
+    try {
+      return buildEventChestDraftReview({
+        draft,
+        publishedDefinition,
+        publishedDefinitions: registryRead.definitions,
+        lifecycle,
+        readAt
+      });
+    } catch {
+      throw Object.assign(new Error("Event Chest review data is unavailable."), {
+        code: "EVENT_CHEST_REVIEW_UNAVAILABLE"
+      });
+    }
   }
 
   async validateEventChestDraftForAdmin({ definition = null, draftId = null } = {}) {

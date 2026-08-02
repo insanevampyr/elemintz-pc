@@ -206,6 +206,32 @@ function chooseWeightedRarity(roll, odds) {
   return EVENT_CHEST_RARITIES.at(-1);
 }
 
+export function getEventChestRarityProbabilities(definition, scenario = "base") {
+  if (scenario === "legendary_due") {
+    return Object.fromEntries(
+      EVENT_CHEST_RARITIES.map((rarity) => [rarity, rarity === "legendary" ? 1 : 0])
+    );
+  }
+
+  if (scenario === "epic_plus_due") {
+    return Object.fromEntries(
+      EVENT_CHEST_RARITIES.map((rarity) => [
+        rarity,
+        (Array.isArray(definition?.pity?.epicPlusTable)
+          ? definition.pity.epicPlusTable
+          : []
+        )
+          .filter((entry) => entry?.rarity === rarity)
+          .reduce((sum, entry) => sum + Number(entry?.weight ?? 0), 0)
+      ])
+    );
+  }
+
+  return Object.fromEntries(
+    EVENT_CHEST_RARITIES.map((rarity) => [rarity, Number(definition?.odds?.[rarity] ?? 0)])
+  );
+}
+
 function pickEntry(entries, random) {
   if (!Array.isArray(entries) || entries.length === 0) {
     return null;
@@ -258,24 +284,16 @@ export function selectEventChestReward({
     pityRules.epicPlusEnabled &&
     pityBefore.epicPlusMisses + 1 >= pityRules.epicPlusThreshold;
   const appliedPityTarget = legendaryDue ? "legendary" : epicPlusDue ? "epic_plus" : null;
-  const epicPlusOdds = Object.fromEntries(
-    EVENT_CHEST_RARITIES.map((rarityKey) => [
-      rarityKey,
-      (definition.pity?.epicPlusTable ?? [])
-        .filter((entry) => entry.rarity === rarityKey)
-        .reduce((sum, entry) => sum + Number(entry.weight ?? 0), 0)
-    ])
-  );
   const rarity = legendaryDue
     ? "legendary"
     : epicPlusDue
       ? chooseWeightedRarity(
           typeof random === "function" ? random() : Math.random(),
-          epicPlusOdds
+          getEventChestRarityProbabilities(definition, "epic_plus_due")
         )
       : chooseWeightedRarity(
           typeof random === "function" ? random() : Math.random(),
-          definition.odds
+          getEventChestRarityProbabilities(definition, "base")
         );
   const rarityPool = Array.isArray(definition?.pool?.[rarity]) ? definition.pool[rarity] : [];
   const validEntries = rarityPool.map((entry) => validateRewardEntry(entry, rarity));

@@ -4193,6 +4193,31 @@ export function createMultiplayerFoundation({
       }
     });
 
+    socket.on("admin:getEventChestDraftReview", async (payload = {}, respond = () => {}) => {
+      respond = toAckCallback(respond);
+      const sessionResult = await ensureAdminSession(socket, payload);
+      if (!sessionResult?.ok) {
+        respond(buildAdminError(sessionResult?.error, "ADMIN_AUTH_REQUIRED"));
+        return;
+      }
+      try {
+        assertAdminAccessForSession(sessionResult.session);
+        if (typeof profileAuthority?.getEventChestDraftReviewForAdmin !== "function") {
+          throw Object.assign(new Error("Event Chest review authority is not available."), {
+            code: "EVENT_CHEST_REVIEW_AUTHORITY_UNAVAILABLE"
+          });
+        }
+        const result = await profileAuthority.getEventChestDraftReviewForAdmin({
+          draftId: payload?.draftId,
+          expectedDraftRevisionId: payload?.expectedDraftRevisionId,
+          comparison: payload?.comparison ?? null
+        });
+        respond({ ok: true, result });
+      } catch (error) {
+        respond(buildAdminError(error, "EVENT_CHEST_REVIEW_UNAVAILABLE"));
+      }
+    });
+
     socket.on("admin:getEventChestDraftDeletionEligibility", async (payload = {}, respond = () => {}) => {
       respond = toAckCallback(respond);
       const sessionResult = await ensureAdminSession(socket, payload);
